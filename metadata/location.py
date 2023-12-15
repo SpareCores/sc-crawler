@@ -1,19 +1,24 @@
 """Helpers to work with physical addresses."""
 
 
+from Countrydetails import country, countries
+
+
 class Location:
     """Structured physical address reference including continent, country etc.
 
     Examples:
-        >>> Location('Europe', 'United Kingdom', 'England', 'London', '221B Baker Street', '', 'NW1 6XE')
-        Location('Europe', 'United Kingdom', 'England', 'London', '221B Baker Street', '', 'NW1 6XE')
+        >>> Location('United Kingdom', 'England', 'London', '221B Baker Street', '', 'NW1 6XE')
+        Location('United Kingdom', 'England', 'London', '221B Baker Street', '', 'NW1 6XE')
     """
 
     def __init__(self,
-                 continent: str, country: str, state: str, city: str,
+                 country: str, state: str, city: str,
                  address_line1: str, address_line2: str, zip_code: str):
-        self.continent = continent # TODO drop? should be evident from the country .. lookup
+        if country not in countries.all_countries().countries():
+            raise LookupError('Unknown country')
         self.country = country
+        self.continent = country.country_details(country_name = country).continent()
         self.state = state
         self.city = city
         self.address_line1 = address_line1
@@ -48,4 +53,3 @@ class Location:
         address += '\n' + self.city + ' ' + self.state + ' ' + self.zip_code
         address += '\n' + self.country
         return address
-
