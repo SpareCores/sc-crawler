@@ -1,3 +1,3 @@
 """Helper methods for each cloud compute resource provider."""
 
-from .vendors import aws
+from .vendors import aws, gcp

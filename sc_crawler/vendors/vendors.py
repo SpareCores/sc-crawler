@@ -11,3 +11,15 @@ aws = Vendor(
     ),
     found_date=2002,
 )
+
+gcp = Vendor(
+    identifier='gcp',
+    name='Google Cloud Platform',
+    homepage='https://cloud.google.com',
+    location=Location(
+        country='US',
+        city='Mountain View',
+        address_line1='1600 Amphitheatre Pkwy'
+    ),
+    found_date=2008,
+)
