@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sc_crawler"
+version = "0.0.1"
+authors = [
+  { name="Attila Nagy" },
+  { name="Gergely Daroczi" },
+  { name="Balazs Hodobay" },
+]
+maintainers = [
+  { name="Spare Cores team", email="pkg@sparecores.com" }
+]
+description = "Fetch metadata on cloud compute resource providers."
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)",
+  "Operating System :: OS Independent",
+  "Development Status :: 1 - Planning",
+]
+
+[project.urls]
+Homepage = "https://github.com/SpareCores/TODO"
+Issues = "https://github.com/SpareCores/TODO/issues"
