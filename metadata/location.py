@@ -1,6 +1,6 @@
 """Helpers to work with physical addresses."""
 
-from pydantic import BaseModel, computed_field
+from pydantic import BaseModel, computed_field, field_validator
 from pydantic_extra_types.country import CountryAlpha2
 from typing import Optional
 
@@ -36,6 +36,13 @@ class Location(BaseModel):
     address_line2: Optional[str] = None
     zip_code: Optional[str] = None
 
+    @field_validator('country')
+    @classmethod
+    def country_code_known(cls, country: str) -> str:
+        if country not in country_continent_mapping.keys():
+            raise LookupError('Unknown country')
+        return country
+
     @computed_field
     @property
     def continent(self) -> str:
@@ -52,3 +59,4 @@ class Location(BaseModel):
             address += ' ' + self.zip_code
         address += '\n' + self.country.short_name
         return address
+
