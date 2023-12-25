@@ -1,7 +1,7 @@
 """Helpers to work with physical addresses."""
 
 
-# source: https://github.com/manumanoj0010/countrydetails/blob/master/Countrydetails/data/continents.json
+# source: https://github.com/manumanoj0010/countrydetails/blob/master/Countrydetails/data/continents.json  # noqa: E501
 country_continent_mapping = {
     'Afghanistan': 'Asia',
     'Albania': 'Europe',
@@ -258,7 +258,7 @@ class Location:
     Examples:
         >>> Location('United Kingdom', 'England', 'London', '221B Baker Street', '', 'NW1 6XE')
         Location('United Kingdom', 'England', 'London', '221B Baker Street', '', 'NW1 6XE')
-    """
+    """  # noqa: E501
 
     def __init__(self,
                  country: str, state: str, city: str,
