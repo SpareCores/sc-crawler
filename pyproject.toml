@@ -5,6 +5,11 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "sc_crawler"
 version = "0.0.1"
+dependencies = [
+  "pydantic",
+  "pydantic_extra_types",
+  "pycountry",
+]
 authors = [
   { name="Attila Nagy" },
   { name="Gergely Daroczi" },
