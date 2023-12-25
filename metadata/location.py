@@ -1,303 +1,54 @@
 """Helpers to work with physical addresses."""
 
+from pydantic import BaseModel, computed_field
+from pydantic_extra_types.country import CountryAlpha2
+from typing import Optional
 
-# source: https://github.com/manumanoj0010/countrydetails/blob/master/Countrydetails/data/continents.json  # noqa: E501
+# country codes: https://en.wikipedia.org/wiki/ISO_3166-1#Codes
+# mapping: https://github.com/manumanoj0010/countrydetails/blob/master/Countrydetails/data/continents.json  # noqa: E501
 country_continent_mapping = {
-    'Afghanistan': 'Asia',
-    'Albania': 'Europe',
-    'Algeria': 'Africa',
-    'American Samoa': 'Oceania',
-    'Andorra': 'Europe',
-    'Angola': 'Africa',
-    'Anguilla': 'North America',
-    'Antarctica': 'Antarctica',
-    'Antigua and Barbuda': 'North America',
-    'Argentina': 'South America',
-    'Armenia': 'Asia',
-    'Aruba': 'North America',
-    'Australia': 'Oceania',
-    'Austria': 'Europe',
-    'Azerbaijan': 'Asia',
-    'Bahamas': 'North America',
-    'Bahrain': 'Asia',
-    'Bangladesh': 'Asia',
-    'Barbados': 'North America',
-    'Belarus': 'Europe',
-    'Belgium': 'Europe',
-    'Belize': 'North America',
-    'Benin': 'Africa',
-    'Bermuda': 'North America',
-    'Bhutan': 'Asia',
-    'Bolivia': 'South America',
-    'Bosnia and Herzegovina': 'Europe',
-    'Botswana': 'Africa',
-    'Bouvet Island': 'Antarctica',
-    'Brazil': 'South America',
-    'British Indian Ocean Territory': 'Africa',
-    'Brunei': 'Asia',
-    'Bulgaria': 'Europe',
-    'Burkina Faso': 'Africa',
-    'Burundi': 'Africa',
-    'Cambodia': 'Asia',
-    'Cameroon': 'Africa',
-    'Canada': 'North America',
-    'Cape Verde': 'Africa',
-    'Cayman Islands': 'North America',
-    'Central African Republic': 'Africa',
-    'Chad': 'Africa',
-    'Chile': 'South America',
-    'China': 'Asia',
-    'Christmas Island': 'Oceania',
-    'Cocos (Keeling) Islands': 'Oceania',
-    'Colombia': 'South America',
-    'Comoros': 'Africa',
-    'Congo': 'Africa',
-    'Cook Islands': 'Oceania',
-    'Costa Rica': 'North America',
-    'Croatia': 'Europe',
-    'Cuba': 'North America',
-    'Cyprus': 'Asia',
-    'Czech Republic': 'Europe',
-    'Denmark': 'Europe',
-    'Djibouti': 'Africa',
-    'Dominica': 'North America',
-    'Dominican Republic': 'North America',
-    'East Timor': 'Asia',
-    'Ecuador': 'South America',
-    'Egypt': 'Africa',
-    'El Salvador': 'North America',
-    'England': 'Europe',
-    'Equatorial Guinea': 'Africa',
-    'Eritrea': 'Africa',
-    'Estonia': 'Europe',
-    'Ethiopia': 'Africa',
-    'Falkland Islands': 'South America',
-    'Faroe Islands': 'Europe',
-    'Fiji Islands': 'Oceania',
-    'Finland': 'Europe',
-    'France': 'Europe',
-    'French Guiana': 'South America',
-    'French Polynesia': 'Oceania',
-    'French Southern territories': 'Antarctica',
-    'Gabon': 'Africa',
-    'Gambia': 'Africa',
-    'Georgia': 'Asia',
-    'Germany': 'Europe',
-    'Ghana': 'Africa',
-    'Gibraltar': 'Europe',
-    'Greece': 'Europe',
-    'Greenland': 'North America',
-    'Grenada': 'North America',
-    'Guadeloupe': 'North America',
-    'Guam': 'Oceania',
-    'Guatemala': 'North America',
-    'Guinea': 'Africa',
-    'Guinea-Bissau': 'Africa',
-    'Guyana': 'South America',
-    'Haiti': 'North America',
-    'Heard Island and McDonald Islands': 'Antarctica',
-    'Holy See (Vatican City State)': 'Europe',
-    'Honduras': 'North America',
-    'Hong Kong': 'Asia',
-    'Hungary': 'Europe',
-    'Iceland': 'Europe',
-    'India': 'Asia',
-    'Indonesia': 'Asia',
-    'Iran': 'Asia',
-    'Iraq': 'Asia',
-    'Ireland': 'Europe',
-    'Israel': 'Asia',
-    'Italy': 'Europe',
-    'Ivory Coast': 'Africa',
-    'Jamaica': 'North America',
-    'Japan': 'Asia',
-    'Jordan': 'Asia',
-    'Kazakhstan': 'Asia',
-    'Kenya': 'Africa',
-    'Kiribati': 'Oceania',
-    'Kuwait': 'Asia',
-    'Kyrgyzstan': 'Asia',
-    'Laos': 'Asia',
-    'Latvia': 'Europe',
-    'Lebanon': 'Asia',
-    'Lesotho': 'Africa',
-    'Liberia': 'Africa',
-    'Libyan Arab Jamahiriya': 'Africa',
-    'Liechtenstein': 'Europe',
-    'Lithuania': 'Europe',
-    'Luxembourg': 'Europe',
-    'Macao': 'Asia',
-    'North Macedonia': 'Europe',
-    'Madagascar': 'Africa',
-    'Malawi': 'Africa',
-    'Malaysia': 'Asia',
-    'Maldives': 'Asia',
-    'Mali': 'Africa',
-    'Malta': 'Europe',
-    'Marshall Islands': 'Oceania',
-    'Martinique': 'North America',
-    'Mauritania': 'Africa',
-    'Mauritius': 'Africa',
-    'Mayotte': 'Africa',
-    'Mexico': 'North America',
-    'Micronesia, Federated States of': 'Oceania',
-    'Moldova': 'Europe',
-    'Monaco': 'Europe',
-    'Mongolia': 'Asia',
-    'Montenegro': 'Europe',
-    'Montserrat': 'North America',
-    'Morocco': 'Africa',
-    'Mozambique': 'Africa',
-    'Myanmar': 'Asia',
-    'Namibia': 'Africa',
-    'Nauru': 'Oceania',
-    'Nepal': 'Asia',
-    'Netherlands': 'Europe',
-    'Netherlands Antilles': 'North America',
-    'New Caledonia': 'Oceania',
-    'New Zealand': 'Oceania',
-    'Nicaragua': 'North America',
-    'Niger': 'Africa',
-    'Nigeria': 'Africa',
-    'Niue': 'Oceania',
-    'Norfolk Island': 'Oceania',
-    'North Korea': 'Asia',
-    'Northern Ireland': 'Europe',
-    'Northern Mariana Islands': 'Oceania',
-    'Norway': 'Europe',
-    'Oman': 'Asia',
-    'Pakistan': 'Asia',
-    'Palau': 'Oceania',
-    'Palestine': 'Asia',
-    'Panama': 'North America',
-    'Papua New Guinea': 'Oceania',
-    'Paraguay': 'South America',
-    'Peru': 'South America',
-    'Philippines': 'Asia',
-    'Pitcairn': 'Oceania',
-    'Poland': 'Europe',
-    'Portugal': 'Europe',
-    'Puerto Rico': 'North America',
-    'Qatar': 'Asia',
-    'Reunion': 'Africa',
-    'Romania': 'Europe',
-    'Russian Federation': 'Europe',
-    'Rwanda': 'Africa',
-    'Saint Helena': 'Africa',
-    'Saint Kitts and Nevis': 'North America',
-    'Saint Lucia': 'North America',
-    'Saint Pierre and Miquelon': 'North America',
-    'Saint Vincent and the Grenadines': 'North America',
-    'Samoa': 'Oceania',
-    'San Marino': 'Europe',
-    'Sao Tome and Principe': 'Africa',
-    'Saudi Arabia': 'Asia',
-    'Scotland': 'Europe',
-    'Senegal': 'Africa',
-    'Seychelles': 'Africa',
-    'Sierra Leone': 'Africa',
-    'Singapore': 'Asia',
-    'Slovakia': 'Europe',
-    'Slovenia': 'Europe',
-    'Solomon Islands': 'Oceania',
-    'Somalia': 'Africa',
-    'South Africa': 'Africa',
-    'South Georgia and the South Sandwich Islands': 'Antarctica',
-    'South Korea': 'Asia',
-    'South Sudan': 'Africa',
-    'Spain': 'Europe',
-    'Sri Lanka': 'Asia',
-    'Sudan': 'Africa',
-    'Suriname': 'South America',
-    'Svalbard and Jan Mayen': 'Europe',
-    'Swaziland': 'Africa',
-    'Sweden': 'Europe',
-    'Switzerland': 'Europe',
-    'Syria': 'Asia',
-    'Tajikistan': 'Asia',
-    'Tanzania': 'Africa',
-    'Thailand': 'Asia',
-    'The Democratic Republic of Congo': 'Africa',
-    'Togo': 'Africa',
-    'Tokelau': 'Oceania',
-    'Tonga': 'Oceania',
-    'Trinidad and Tobago': 'North America',
-    'Tunisia': 'Africa',
-    'Turkey': 'Asia',
-    'Turkmenistan': 'Asia',
-    'Turks and Caicos Islands': 'North America',
-    'Tuvalu': 'Oceania',
-    'Uganda': 'Africa',
-    'Ukraine': 'Europe',
-    'United Arab Emirates': 'Asia',
-    'United Kingdom': 'Europe',
-    'United States': 'North America',
-    'United States Minor Outlying Islands': 'Oceania',
-    'Uruguay': 'South America',
-    'Uzbekistan': 'Asia',
-    'Vanuatu': 'Oceania',
-    'Venezuela': 'South America',
-    'Vietnam': 'Asia',
-    'Virgin Islands, British': 'North America',
-    'Virgin Islands, U.S.': 'North America',
-    'Wales': 'Europe',
-    'Wallis and Futuna': 'Oceania',
-    'Western Sahara': 'Africa',
-    'Yemen': 'Asia',
-    'Yugoslavia': 'Europe',
-    'Zambia': 'Africa',
-    'Zimbabwe': 'Africa',
+    'FI': 'Europe',
+    'FR': 'Europe',
+    'DE': 'Europe',
+    'NL': 'Europe',
+    'GB': 'Europe',
+    'US': 'North America',
 }
-# TODO switch to ISO 3166-1 alpha-2 codes?
-# TODO drop unused countries, add later as needed
 
 
-class Location:
+class Location(BaseModel):
     """Structured physical address reference including continent, country etc.
 
     Examples:
-        >>> Location('United Kingdom', 'England', 'London', '221B Baker Street', '', 'NW1 6XE')
-        Location('United Kingdom', 'England', 'London', '221B Baker Street', '', 'NW1 6XE')
+        >>> l=Location(country='GB', city='London', address_line1='221B Baker Street', zip_code='NW1 6XE')
+        >>> l
+        Location(country='GB', state=None, city='London', address_line1='221B Baker Street', address_line2=None, zip_code='NW1 6XE', continent='Europe')
+        >>> print(l)
+        221B Baker Street
+        London NW1 6XE
+        United Kingdom
     """  # noqa: E501
 
-    def __init__(self,
-                 country: str, state: str, city: str,
-                 address_line1: str, address_line2: str, zip_code: str):
-        if country not in country_continent_mapping.keys():
-            raise LookupError('Unknown country')
-        self.country = country
-        self.continent = country_continent_mapping.get(country)
-        self.state = state
-        self.city = city
-        self.address_line1 = address_line1
-        self.address_line2 = address_line2
-        self.zip_code = zip_code
+    country: CountryAlpha2
+    state: Optional[str] = None
+    city: str
+    address_line1: Optional[str] = None
+    address_line2: Optional[str] = None
+    zip_code: Optional[str] = None
 
-    def get_continent(self):
-        return self.continent
-
-    def get_country(self):
-        return self.country
-
-    def get_state(self):
-        return self.state
-
-    def get_city(self, city):
-        return self.city
-
-    def get_address_line1(self):
-        return self.address_line1
-
-    def get_address_line2(self):
-        return self.address_line2
-
-    def get_zip_code(self):
-        return self.zip_code
+    @computed_field
+    @property
+    def continent(self) -> str:
+        return country_continent_mapping.get(self.country)
 
     def __str__(self):
         address = self.address_line1
         if self.address_line2:
             address += ' ' + self.address_line2
-        address += '\n' + self.city + ' ' + self.state + ' ' + self.zip_code
-        address += '\n' + self.country
+        address += '\n' + self.city
+        if self.state:
+            address += ' ' + self.state
+        if self.zip_code:
+            address += ' ' + self.zip_code
+        address += '\n' + self.country.short_name
         return address
