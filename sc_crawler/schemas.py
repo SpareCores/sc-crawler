@@ -1,4 +1,5 @@
-"""Cloud compute resource vendors."""
+"""Schemas for vendors, datacenters, zones, and other resources."""
+
 
 from .location import Location
 
@@ -21,15 +22,13 @@ class Vendor(BaseModel):
     location: Location
     found_date: int
 
-
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         try:
             self.methods = __import__('providers.' + self.identifier)
-        except:
+        except Exception:
             raise NotImplementedError('Unsupported vendor')
             pass
 
     def get_instance_types(self):
         return self.methods.get_instance_types()
-
