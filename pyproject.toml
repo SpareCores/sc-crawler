@@ -30,3 +30,6 @@ classifiers = [
 [project.urls]
 Homepage = "https://github.com/SpareCores/sc-crawler"
 Issues = "https://github.com/SpareCores/sc-crawler/issues"
+
+[project.optional-dependencies]
+aws = ["boto3"]
