@@ -6,7 +6,13 @@ from .location import Location
 from importlib import import_module
 from types import ModuleType
 from typing import Literal, Optional
-from pydantic import BaseModel, HttpUrl, ImportString, PrivateAttr, computed_field
+from pydantic import (
+    BaseModel,
+    HttpUrl,
+    ImportString,
+    PrivateAttr,
+    computed_field,
+)
 
 
 class Vendor(BaseModel):
