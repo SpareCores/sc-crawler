@@ -32,4 +32,5 @@ Homepage = "https://github.com/SpareCores/sc-crawler"
 Issues = "https://github.com/SpareCores/sc-crawler/issues"
 
 [project.optional-dependencies]
+testing = ["pytest"]
 aws = ["boto3"]
