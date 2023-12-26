@@ -5,8 +5,8 @@ from .location import Location
 
 from importlib import import_module
 from types import ModuleType
-from typing import Optional
-from pydantic import BaseModel, HttpUrl, ImportString, PrivateAttr
+from typing import Literal, Optional
+from pydantic import BaseModel, HttpUrl, ImportString, PrivateAttr, computed_field
 
 
 class Vendor(BaseModel):
@@ -45,3 +45,65 @@ class Vendor(BaseModel):
 
     def get_instance_types(self):
         return self._methods.get_instance_types()
+
+
+class Datacenter(BaseModel):
+    identifier: str
+    name: str
+    vendor: Vendor
+
+
+class Zone(BaseModel):
+    identifier: str
+    name: str
+    datacenter: Datacenter
+
+    @computed_field
+    @property
+    def vendor(self) -> Vendor:
+        return self.datacenter.vendor
+
+
+class Resource(BaseModel):
+    # vendor-specific resources (e.g. instance types) should be
+    # prefixed with the vendor id, e.g. "aws:m5.xlarge"
+    identifier: str
+    name: str
+    description: Optional[str]
+    kind: Literal["compute", "traffic", "storage"]
+    billable_unit: str  # e.g. GB, GiB, TB, runtime hours
+
+
+class Server(Resource):
+    kind: str = "compute"
+    vcpus: int
+    memory: int
+    storage_size: int = 0  # GB
+    storage_type: Optional[str]
+
+
+class Storage(Resource):
+    kind: str = "storage"
+    max_iops: Optional[int]
+    max_throughput: Optional[int]  # MiB/s
+    min_size: Optional[int]  # GiB
+    max_size: Optional[int]  # GiB
+    billable_unit: str = "GiB"
+
+
+class Traffic(Resource):
+    kind: str = "traffic"
+    direction: Literal["inbound", "outbound"]
+    billable_unit: str = "GB"
+
+
+class Availability(BaseModel):
+    vendor: Vendor
+    # a resource might be available in all or only in one/few
+    # datacenters and zones e.g. incoming traffic is priced per
+    # datacenter, but sport instance price per zone
+    datacenter: Optional[Datacenter]
+    zone: Optional[Zone]
+    resource: Resource
+    allocation: Literal["ondemand", "spot"] = "ondemand"
+    price: float
