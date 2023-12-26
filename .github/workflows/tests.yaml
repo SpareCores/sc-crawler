@@ -10,8 +10,10 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: 3.11
-      - name: Install tox and any other packages
+      - name: Install tox
         run: pip install tox
+      - name: Install local pkg
+        run: pip install .
       - name: Tests
         run: tox
       - name: Litners
