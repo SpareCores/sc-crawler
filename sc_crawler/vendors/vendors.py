@@ -9,7 +9,7 @@ aws = Vendor(
         city='Seattle',
         address_line1='410 Terry Ave N'
     ),
-    found_date=2002,
+    founding_year=2002,
 )
 
 gcp = Vendor(
@@ -21,5 +21,5 @@ gcp = Vendor(
         city='Mountain View',
         address_line1='1600 Amphitheatre Pkwy'
     ),
-    found_date=2008,
+    founding_year=2008,
 )

@@ -15,7 +15,7 @@ class Vendor(BaseModel):
     Examples:
         >>> from sc_crawler import Location, Vendor, vendors
         >>> aws_loc = Location(country='US', city='Seattle', address_line1='410 Terry Ave N')
-        >>> aws = Vendor(identifier='aws', name='Amazon Web Services', homepage='https://aws.amazon.com', location=aws_loc, found_date=2002)
+        >>> aws = Vendor(identifier='aws', name='Amazon Web Services', homepage='https://aws.amazon.com', location=aws_loc, founding_year=2002)
         >>> aws
         Vendor(identifier='aws'...
         >>> vendors.aws
@@ -27,7 +27,11 @@ class Vendor(BaseModel):
     logo: Optional[HttpUrl] = None  # TODO upload to cdn.sparecores.com
     homepage: HttpUrl
     location: Location
-    found_date: int
+
+    # https://dbpedia.org/ontology/Organisation
+    founding_year: int
+
+    # private attributes
     _methods: ImportString[ModuleType] = PrivateAttr()
 
     def __init__(self, **kwargs):
