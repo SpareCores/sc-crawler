@@ -37,10 +37,10 @@ class Vendor(BaseModel):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         try:
-            vm = 'sc_crawler.vendors.' + self.identifier
+            vm = "sc_crawler.vendors." + self.identifier
             self._methods = import_module(vm)
         except Exception:
-            raise NotImplementedError('Unsupported vendor')
+            raise NotImplementedError("Unsupported vendor")
             pass
 
     def get_instance_types(self):

@@ -7,12 +7,12 @@ from typing import Optional
 # country codes: https://en.wikipedia.org/wiki/ISO_3166-1#Codes
 # mapping: https://github.com/manumanoj0010/countrydetails/blob/master/Countrydetails/data/continents.json  # noqa: E501
 country_continent_mapping = {
-    'FI': 'Europe',
-    'FR': 'Europe',
-    'DE': 'Europe',
-    'NL': 'Europe',
-    'GB': 'Europe',
-    'US': 'North America',
+    "FI": "Europe",
+    "FR": "Europe",
+    "DE": "Europe",
+    "NL": "Europe",
+    "GB": "Europe",
+    "US": "North America",
 }
 
 
@@ -36,11 +36,11 @@ class Location(BaseModel):
     address_line2: Optional[str] = None
     zip_code: Optional[str] = None
 
-    @field_validator('country')
+    @field_validator("country")
     @classmethod
     def country_code_known(cls, country: str) -> str:
         if country not in country_continent_mapping.keys():
-            raise LookupError('Unknown country')
+            raise LookupError("Unknown country")
         return country
 
     @computed_field
@@ -51,12 +51,11 @@ class Location(BaseModel):
     def __str__(self):
         address = self.address_line1
         if self.address_line2:
-            address += ' ' + self.address_line2
-        address += '\n' + self.city
+            address += " " + self.address_line2
+        address += "\n" + self.city
         if self.state:
-            address += ' ' + self.state
+            address += " " + self.state
         if self.zip_code:
-            address += ' ' + self.zip_code
-        address += '\n' + self.country.short_name
+            address += " " + self.zip_code
+        address += "\n" + self.country.short_name
         return address
-
