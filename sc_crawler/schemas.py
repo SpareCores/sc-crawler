@@ -57,9 +57,19 @@ class Vendor(BaseModel):
     def get_instance_types(self):
         return self._methods.get_instance_types()
 
-    def get_datacenters(self):
-        self._datacenters = self._methods.get_datacenters(self)
-        return self._datacenters
+    def get_datacenters(self, identifiers: [str] = None):
+        """Get datacenters of the vendor.
+
+        Args:
+            identifiers: datacenter ids to filter for
+        """
+        if not hasattr(self, '_datacenters'):
+            self._datacenters = self._methods.get_datacenters(self)
+        datacenters = self._datacenters
+        if identifiers:
+            datacenters = [datacenter for datacenter in datacenters
+                           if datacenter.identifier in identifiers]
+        return datacenters
 
 
 class Datacenter(BaseModel):
