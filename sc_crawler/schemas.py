@@ -69,7 +69,6 @@ class Vendor(BaseModel):
             self._methods = import_module(vm)
         except Exception:
             raise NotImplementedError("Unsupported vendor")
-            pass
 
     def get_datacenters(self, identifiers: [str] = None):
         """Get datacenters of the vendor.
@@ -89,7 +88,7 @@ class Vendor(BaseModel):
         return datacenters
 
     def get_zones(self):
-        """Get zones of the vendor."""
+        """Get zones of the vendor from its datacenters."""
         # make sure datacenters filled in
         self._methods.get_datacenters(self)
         # unlist
@@ -98,6 +97,7 @@ class Vendor(BaseModel):
         )
 
     def get_instance_types(self):
+        raise NotImplementedError
         return self._methods.get_instance_types()  # TODO
 
 
