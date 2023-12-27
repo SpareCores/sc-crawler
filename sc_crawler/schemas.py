@@ -48,7 +48,7 @@ class Vendor(BaseModel):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         try:
-            vm = __name__.split('.')[0] + ".vendors." + self.identifier
+            vm = __name__.split(".")[0] + ".vendors." + self.identifier
             self._methods = import_module(vm)
         except Exception:
             raise NotImplementedError("Unsupported vendor")
@@ -63,12 +63,15 @@ class Vendor(BaseModel):
         Args:
             identifiers: datacenter ids to filter for
         """
-        if not hasattr(self, '_datacenters'):
+        if not hasattr(self, "_datacenters"):
             self._datacenters = self._methods.get_datacenters(self)
         datacenters = self._datacenters
         if identifiers:
-            datacenters = [datacenter for datacenter in datacenters
-                           if datacenter.identifier in identifiers]
+            datacenters = [
+                datacenter
+                for datacenter in datacenters
+                if datacenter.identifier in identifiers
+            ]
         return datacenters
 
 

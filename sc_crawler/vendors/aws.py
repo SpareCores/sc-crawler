@@ -1,4 +1,4 @@
-# import boto3
+import boto3
 
 from .. import Location
 from ..schemas import Datacenter
@@ -174,21 +174,18 @@ def get_datacenters(vendor, *args, **kwargs):
             vendor=vendor,
             location=Location(country="US", state="North Virgina"),  # NOTE city unknown
         ),
-
         Datacenter(
             identifier="us-east-2",
             name="US East (Ohio)",
             vendor=vendor,
             location=Location(country="US", state="Ohio"),  # NOTE city unknown
         ),
-
         Datacenter(
             identifier="us-west-1",
             name="US West (N. California)",
             vendor=vendor,
             location=Location(country="US", state="California"),  # NOTE city unknown
         ),
-
         Datacenter(
             identifier="us-west-2",
             name="US West (Oregon)",
@@ -196,6 +193,19 @@ def get_datacenters(vendor, *args, **kwargs):
             location=Location(country="US", state="Oregon"),  # NOTE city unknown
         ),
     ]
+
+    # check if documented
+    supported_regions = [d.identifier for d in datacenters]
+    ec2 = boto3.client("ec2")
+    regions = ec2.describe_regions().get("Regions", [])
+    for region in regions:
+        region_name = region.get("RegionName")
+        if "gov" in region_name:
+            next()
+        if region_name not in supported_regions:
+            raise NotImplementedError(
+                f"Unsupported AWS datacenter: {region_name}")
+
     return datacenters
 
 
