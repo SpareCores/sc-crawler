@@ -5,7 +5,7 @@ from .location import Location
 
 from importlib import import_module
 from types import ModuleType
-from typing import Literal, Optional
+from typing import List, Literal, Optional, ForwardRef
 from pydantic import (
     BaseModel,
     HttpUrl,
@@ -39,6 +39,11 @@ class Vendor(BaseModel):
 
     # private attributes
     _methods: ImportString[ModuleType] = PrivateAttr()
+    _datacenters: List[ForwardRef("Datacenter")] = PrivateAttr()
+    _zones: List[ForwardRef("Zone")] = PrivateAttr()
+    _servers: List[ForwardRef("Server")] = PrivateAttr()
+    _storages: List[ForwardRef("Storage")] = PrivateAttr()
+    _traffics: List[ForwardRef("Traffic")] = PrivateAttr()
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -113,3 +118,6 @@ class Availability(BaseModel):
     resource: Resource
     allocation: Literal["ondemand", "spot"] = "ondemand"
     price: float
+
+
+Vendor.update_forward_refs()
