@@ -247,7 +247,7 @@ def get_datacenters(vendor, *args, **kwargs):
     ]
 
     # make it easier to access by region name
-    #datacenters = {datacenter.identifier: datacenter for datacenter in datacenters}
+    # datacenters = {datacenter.identifier: datacenter for datacenter in datacenters}
 
     # add zones
     for datacenter in datacenters:

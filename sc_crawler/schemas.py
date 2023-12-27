@@ -3,6 +3,7 @@
 
 from .location import Location
 
+from collections import ChainMap
 from importlib import import_module
 from types import ModuleType
 from typing import Dict, List, Literal, Optional, ForwardRef
@@ -54,9 +55,6 @@ class Vendor(BaseModel):
             raise NotImplementedError("Unsupported vendor")
             pass
 
-    def get_instance_types(self):
-        return self._methods.get_instance_types()
-
     def get_datacenters(self, identifiers: [str] = None):
         """Get datacenters of the vendor.
 
@@ -73,6 +71,18 @@ class Vendor(BaseModel):
                 if datacenter.identifier in identifiers
             ]
         return datacenters
+
+    def get_zones(self):
+        """Get zones of the vendor."""
+        # make sure datacenters filled in
+        self._methods.get_datacenters(self)
+        # unlist
+        self._zones = dict(
+            ChainMap(*[datacenter._zones for datacenter in self._datacenters])
+        )
+
+    def get_instance_types(self):
+        return self._methods.get_instance_types()  # TODO
 
 
 class Datacenter(BaseModel):
