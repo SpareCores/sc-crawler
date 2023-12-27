@@ -41,12 +41,18 @@ class Vendor(BaseModel):
     @computed_field
     @property
     def datacenters(self) -> int:
-        return len(self._datacenters)
+        if hasattr(self, "_datacenters"):
+            return len(self._datacenters)
+        else:
+            return 0
 
     @computed_field
     @property
     def zones(self) -> int:
-        return sum([datacenter.zones for datacenter in self._datacenters])
+        if hasattr(self, "_datacenters"):
+            return sum([datacenter.zones for datacenter in self._datacenters])
+        else:
+            return 0
 
     # private attributes
     _methods: ImportString[ModuleType] = PrivateAttr()
