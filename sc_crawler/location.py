@@ -13,6 +13,7 @@ country_continent_mapping = {
     "NL": "Europe",
     "GB": "Europe",
     "US": "North America",
+    "ZA": "Africa",
 }
 
 

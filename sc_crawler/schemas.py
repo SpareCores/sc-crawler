@@ -57,11 +57,16 @@ class Vendor(BaseModel):
     def get_instance_types(self):
         return self._methods.get_instance_types()
 
+    def get_datacenters(self):
+        self._datacenters = self._methods.get_datacenters(self)
+        return self._datacenters
+
 
 class Datacenter(BaseModel):
     identifier: str
     name: str
     vendor: Vendor
+    location: Location
 
 
 class Zone(BaseModel):
