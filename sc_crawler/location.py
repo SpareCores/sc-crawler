@@ -7,11 +7,29 @@ from typing import Optional
 # country codes: https://en.wikipedia.org/wiki/ISO_3166-1#Codes
 # mapping: https://github.com/manumanoj0010/countrydetails/blob/master/Countrydetails/data/continents.json  # noqa: E501
 country_continent_mapping = {
+    "AE": "Asia",
+    "AU": "Oceania",
+    "BH": "Asia",
+    "BR": "South America",
+    "CA": "North America",
+    "CH": "Europe",
+    "CN": "Asia",
+    "DE": "Europe",
+    "ES": "Europe",
     "FI": "Europe",
     "FR": "Europe",
-    "DE": "Europe",
-    "NL": "Europe",
     "GB": "Europe",
+    "HK": "Asia",
+    "ID": "Asia",
+    "IE": "Europe",
+    "IL": "Asia",
+    "IT": "Europe",
+    "IN": "Asia",
+    "JP": "Asia",
+    "KR": "Asia",
+    "NL": "Europe",
+    "SE": "Europe",
+    "SG": "Asia",
     "US": "North America",
     "ZA": "Africa",
 }
@@ -32,7 +50,7 @@ class Location(BaseModel):
 
     country: CountryAlpha2
     state: Optional[str] = None
-    city: str
+    city: Optional[str] = None
     address_line1: Optional[str] = None
     address_line2: Optional[str] = None
     zip_code: Optional[str] = None
