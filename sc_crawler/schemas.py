@@ -5,7 +5,7 @@ from .location import Location
 
 from importlib import import_module
 from types import ModuleType
-from typing import List, Literal, Optional, ForwardRef
+from typing import Dict, List, Literal, Optional, ForwardRef
 from pydantic import (
     BaseModel,
     HttpUrl,
@@ -81,6 +81,7 @@ class Datacenter(BaseModel):
     vendor: Vendor
     location: Location
     founding_year: Optional[int] = None
+    _zones: Dict[str, ForwardRef("Zone")] = PrivateAttr()
 
 
 class Zone(BaseModel):
@@ -140,3 +141,4 @@ class Availability(BaseModel):
 
 
 Vendor.update_forward_refs()
+Datacenter.update_forward_refs()

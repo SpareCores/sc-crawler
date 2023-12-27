@@ -1,7 +1,7 @@
 import boto3
 
 from .. import Location
-from ..schemas import Datacenter
+from ..schemas import Datacenter, Zone
 
 
 def get_datacenters(vendor, *args, **kwargs):
@@ -245,6 +245,27 @@ def get_datacenters(vendor, *args, **kwargs):
         for datacenter in datacenters
         if datacenter.identifier in [region.get("RegionName") for region in regions]
     ]
+
+    # make it easier to access by region name
+    #datacenters = {datacenter.identifier: datacenter for datacenter in datacenters}
+
+    # add zones
+    for datacenter in datacenters:
+        ec2 = boto3.client("ec2", region_name=datacenter.identifier)
+        zones = ec2.describe_availability_zones(
+            Filters=[
+                {"Name": "zone-type", "Values": ["availability-zone"]},
+            ],
+            AllAvailabilityZones=True,
+        ).get("AvailabilityZones")
+        datacenter._zones = {
+            zone.get("ZoneId"): Zone(
+                identifier=zone.get("ZoneId"),
+                name=zone.get("ZoneName"),
+                datacenter=datacenter,
+            )
+            for zone in zones
+        }
 
     return datacenters
 
