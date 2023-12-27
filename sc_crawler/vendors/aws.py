@@ -228,7 +228,7 @@ def get_datacenters(vendor, *args, **kwargs):
         ),
     ]
 
-    # check if documented
+    # look for undocumented (new) datacenters in AWS
     supported_regions = [d.identifier for d in datacenters]
     ec2 = boto3.client("ec2")
     regions = ec2.describe_regions().get("Regions", [])
@@ -238,6 +238,13 @@ def get_datacenters(vendor, *args, **kwargs):
             next()
         if region_name not in supported_regions:
             raise NotImplementedError(f"Unsupported AWS datacenter: {region_name}")
+
+    # filter for datacenters enabled for the account
+    datacenters = [
+        datacenter
+        for datacenter in datacenters
+        if datacenter.identifier in [region.get("RegionName") for region in regions]
+    ]
 
     return datacenters
 
