@@ -124,7 +124,7 @@ def get_datacenters(vendor, *args, **kwargs):
             name="Europe (Zurich)",
             vendor=vendor,
             location=Location(country="CH", city="Zurich"),
-            founding_year=2022
+            founding_year=2022,
         ),
         Datacenter(
             identifier="eu-north-1",
@@ -200,7 +200,9 @@ def get_datacenters(vendor, *args, **kwargs):
             identifier="us-east-1",
             name="US East (N. Virginia)",
             vendor=vendor,
-            location=Location(country="US", state="Northern Virgina"),  # NOTE city unknown
+            location=Location(
+                country="US", state="Northern Virgina"
+            ),  # NOTE city unknown
             founding_year=2006,
         ),
         Datacenter(
@@ -235,8 +237,7 @@ def get_datacenters(vendor, *args, **kwargs):
         if "gov" in region_name:
             next()
         if region_name not in supported_regions:
-            raise NotImplementedError(
-                f"Unsupported AWS datacenter: {region_name}")
+            raise NotImplementedError(f"Unsupported AWS datacenter: {region_name}")
 
     return datacenters
 
