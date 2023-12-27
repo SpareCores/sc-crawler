@@ -251,6 +251,7 @@ def get_datacenters(vendor, *args, **kwargs):
 
     # add zones
     for datacenter in datacenters:
+        # need to create a new clien in each AWS region
         ec2 = boto3.client("ec2", region_name=datacenter.identifier)
         zones = ec2.describe_availability_zones(
             Filters=[

@@ -93,6 +93,11 @@ class Datacenter(BaseModel):
     founding_year: Optional[int] = None
     _zones: Dict[str, ForwardRef("Zone")] = PrivateAttr()
 
+    @computed_field
+    @property
+    def zones(self) -> int:
+        return len(self._zones)
+
 
 class Zone(BaseModel):
     identifier: str
