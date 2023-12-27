@@ -38,6 +38,16 @@ class Vendor(BaseModel):
     # https://dbpedia.org/ontology/Organisation
     founding_year: int
 
+    @computed_field
+    @property
+    def datacenters(self) -> int:
+        return len(self._datacenters)
+
+    @computed_field
+    @property
+    def zones(self) -> int:
+        return sum([datacenter.zones for datacenter in self._datacenters])
+
     # private attributes
     _methods: ImportString[ModuleType] = PrivateAttr()
     _datacenters: List[ForwardRef("Datacenter")] = PrivateAttr()
