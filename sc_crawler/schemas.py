@@ -80,6 +80,7 @@ class Datacenter(BaseModel):
     name: str
     vendor: Vendor
     location: Location
+    founding_year: Optional[int] = None
 
 
 class Zone(BaseModel):
