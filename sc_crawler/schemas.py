@@ -101,8 +101,14 @@ class Vendor(BaseModel):
 
     def get_instance_types(self):
         if not hasattr(self, "_servers"):
-            self._servers = self._methods.get_instance_types()
+            self._servers = self._methods.get_instance_types(self)
         return self._servers
+
+    def get_all(self):
+        self.get_datacenters()
+        self.get_zones()
+        self.get_instance_types()
+        return
 
 
 class Datacenter(BaseModel):
