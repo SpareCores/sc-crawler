@@ -100,8 +100,9 @@ class Vendor(BaseModel):
         )
 
     def get_instance_types(self):
-        raise NotImplementedError
-        return self._methods.get_instance_types()  # TODO
+        if not hasattr(self, "_servers"):
+            self._servers = self._methods.get_instance_types()
+        return self._servers
 
 
 class Datacenter(BaseModel):
@@ -144,9 +145,11 @@ class Resource(BaseModel):
 class Server(Resource):
     kind: str = "compute"
     vcpus: int
+    cores: int
     memory: int
     storage_size: int = 0  # GB
-    storage_type: Optional[str]
+    storage_type: Optional[Literal["ssd", "hdd"]]
+    network_speed: Optional[str]
 
 
 class Storage(Resource):

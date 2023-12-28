@@ -1,7 +1,9 @@
 import boto3
+from functools import cache
+import re
 
 from .. import Location
-from ..schemas import Datacenter, Zone
+from ..schemas import Datacenter, Zone, Server
 
 
 def get_datacenters(vendor, *args, **kwargs):
@@ -307,5 +309,111 @@ def get_datacenters(vendor, *args, **kwargs):
     return datacenters
 
 
-def get_instance_types(*args, **kwargs):
-    return []
+@cache
+def describe_instance_types(region):
+    ec2 = boto3.client("ec2", region_name=region)
+    return ec2.describe_instance_types().get("InstanceTypes")
+
+
+instance_families = {
+    "c": "Compute optimized",
+    "d": "Dense storage",
+    "f": "FPGA",
+    "g": "Graphics intensive",
+    "hpc": "High performance computing",
+    "i": "Storage optimized",
+    "im": "Storage optimized with a one to four ratio of vCPU to memory",
+    "is": "Storage optimized with a one to six ratio of vCPU to memory",
+    "inf": "AWS Inferentia",
+    "m": "General purpose",
+    "mac": "macOS",
+    "p": "GPU accelerated",
+    "r": "Memory optimized",
+    "t": "Burstable performance",
+    "trn": "AWS Trainium",
+    "u": "High memory",
+    "vt": "Video transcoding",
+    "x": "Memory intensive",
+    "z": "High frequency",
+}
+
+instance_suffixes = {
+    # Processor families
+    "a": "AMD processors",
+    "g": "AWS Graviton processors",
+    "i": "Intel processors",
+    # Additional capabilities
+    "d": "Instance store volumes",
+    "n": "Network and EBS optimized",
+    "e": "Extra storage or memory",
+    "z": "High performance",
+    "q": "Qualcomm inference accelerators",
+    "flex": "Flex instance",
+}
+
+
+def annotate_instance_type(instance_type_id):
+    """Resolve instance type coding to human-friendly description.
+
+    Source: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instance-types.html#instance-type-names
+    """  # noqa: E501
+    kind = instance_type_id.split(".")[0]
+    family, extras = re.split(r"[0-9]", kind)
+    generation = re.findall(r"[0-9]", kind)[0]
+    size = instance_type_id.split(".")[1]
+
+    text = instance_families.get(family)
+    for k, v in instance_suffixes.items():
+        if k in extras:
+            text += " [" + v + "]"
+    text += " Gen" + generation
+    text += " " + size
+
+    return text
+
+
+def get_storage(instance_type):
+    """Get storage size and type (tupple) from instance details."""
+    if not "InstanceStorageInfo" in instance_type:
+        return (0, None)
+    info = instance_type.get("InstanceStorageInfo")
+    storage_size = info.get("TotalSizeInGB", 0) * 1024 * 1024
+    storage_type=info.get("Disks")[0].get("Type").lower()
+    return (storage_size, storage_type)
+
+
+def get_instance_types(vendor, *args, **kwargs):
+    if not hasattr(vendor, "_datacenters"):
+        raise AttributeError("Datacenters not defined yet, run get_datacenters()")
+    regions = [datacenter.identifier for datacenter in vendor._datacenters]
+    instance_types = {}
+    # there might be some instance types specific to a few or even a single region
+    for region in regions:
+        local_instance_types = describe_instance_types(region)
+        for instance_type in local_instance_types:
+            it = instance_type.get("InstanceType")
+            if it not in list(instance_types.keys()):
+                storage_size = instance_type.get(
+                    "InstanceStorageInfo", {}
+                ).get("TotalSizeInGB", 0) * 1024 * 1024
+                storage_type=None if not "InstanceStorageInfo" in instance_type else instance_type.get("InstanceStorageInfo", {}).get("Disks")[0].get("Type").lower()
+                instance_types.update(
+                    {
+                        it: Server(
+                            identifier=it,
+                            name=it,
+                            description=annotate_instance_type(it),
+                            vcpus=instance_type.get("VCpuInfo").get("DefaultVCpus"),
+                            cores=instance_type.get("VCpuInfo").get("DefaultCores"),
+                            memory=instance_type.get("MemoryInfo").get("SizeInMiB"),
+                            storage_size=get_storage(instance_type)[0],
+                            storage_type=get_storage(instance_type)[1],
+                            network_speed=instance_type.get("NetworkInfo").get(
+                                "NetworkPerformance"
+                            ),
+                            billable_unit="hour",
+                        )
+                    }
+                )
+
+    return instance_types
