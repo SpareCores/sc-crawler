@@ -10,6 +10,5 @@ aws.zones
 
 from rich import print as pp
 pp(aws)
-
 pp(aws._datacenters[1]._zones)
 ```

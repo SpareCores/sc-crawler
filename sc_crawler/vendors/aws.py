@@ -5,7 +5,12 @@ from ..schemas import Datacenter, Zone
 
 
 def get_datacenters(vendor, *args, **kwargs):
-    # launch date: https://aws.amazon.com/about-aws/global-infrastructure/regions_az/
+    """List all available AWS datacenters.
+
+    Some data sources are not available from APIs, and were collected manually:
+    - launch date: https://aws.amazon.com/about-aws/global-infrastructure/regions_az/
+    - energy source: https://sustainability.aboutamazon.com/products-services/the-cloud?energyType=true#renewable-energy
+    """  # noqa: E501
     datacenters = [
         Datacenter(
             identifier="af-south-1",
@@ -13,6 +18,7 @@ def get_datacenters(vendor, *args, **kwargs):
             vendor=vendor,
             location=Location(country="ZA", city="Cape Town"),
             founding_year=2020,
+            green_energy=False,
         ),
         Datacenter(
             identifier="ap-east-1",
@@ -20,6 +26,7 @@ def get_datacenters(vendor, *args, **kwargs):
             vendor=vendor,
             location=Location(country="HK", city="Hong Kong"),
             founding_year=2019,
+            green_energy=False,
         ),
         Datacenter(
             identifier="ap-northeast-1",
@@ -27,6 +34,7 @@ def get_datacenters(vendor, *args, **kwargs):
             vendor=vendor,
             location=Location(country="JP", city="Tokyo"),
             founding_year=2011,
+            green_energy=False,
         ),
         Datacenter(
             identifier="ap-northeast-2",
@@ -34,6 +42,7 @@ def get_datacenters(vendor, *args, **kwargs):
             vendor=vendor,
             location=Location(country="KR", city="Seoul"),
             founding_year=2016,
+            green_energy=False,
         ),
         Datacenter(
             identifier="ap-northeast-3",
@@ -41,6 +50,7 @@ def get_datacenters(vendor, *args, **kwargs):
             vendor=vendor,
             location=Location(country="JP", city="Osaka"),
             founding_year=2021,
+            green_energy=False,
         ),
         Datacenter(
             identifier="ap-south-1",
@@ -48,6 +58,7 @@ def get_datacenters(vendor, *args, **kwargs):
             vendor=vendor,
             location=Location(country="IN", city="Mumbai"),
             founding_year=2016,
+            green_energy=True,
         ),
         Datacenter(
             identifier="ap-south-2",
@@ -55,6 +66,7 @@ def get_datacenters(vendor, *args, **kwargs):
             vendor=vendor,
             location=Location(country="IN", city="Hyderabad"),
             founding_year=2022,
+            green_energy=True,
         ),
         Datacenter(
             identifier="ap-southeast-1",
@@ -62,6 +74,7 @@ def get_datacenters(vendor, *args, **kwargs):
             vendor=vendor,
             location=Location(country="SG", city="Singapore"),
             founding_year=2010,
+            green_energy=False,
         ),
         Datacenter(
             identifier="ap-southeast-2",
@@ -69,6 +82,7 @@ def get_datacenters(vendor, *args, **kwargs):
             vendor=vendor,
             location=Location(country="AU", city="Sydney"),
             founding_year=2012,
+            green_energy=False,
         ),
         Datacenter(
             identifier="ap-southeast-3",
@@ -76,6 +90,7 @@ def get_datacenters(vendor, *args, **kwargs):
             vendor=vendor,
             location=Location(country="ID", city="Jakarta"),
             founding_year=2021,
+            green_energy=False,
         ),
         Datacenter(
             identifier="ap-southeast-4",
@@ -83,6 +98,7 @@ def get_datacenters(vendor, *args, **kwargs):
             vendor=vendor,
             location=Location(country="AU", city="Melbourne"),
             founding_year=2023,
+            green_energy=False,
         ),
         Datacenter(
             identifier="ca-central-1",
@@ -90,6 +106,7 @@ def get_datacenters(vendor, *args, **kwargs):
             vendor=vendor,
             location=Location(country="CA", city="Quebec"),  # NOTE needs city name
             founding_year=2016,
+            green_energy=True,
         ),
         Datacenter(
             identifier="ca-west-1",
@@ -97,6 +114,7 @@ def get_datacenters(vendor, *args, **kwargs):
             vendor=vendor,
             location=Location(country="CA", city="Calgary"),
             founding_year=2023,
+            green_energy=False,
         ),
         Datacenter(
             identifier="cn-north-1",
@@ -104,6 +122,7 @@ def get_datacenters(vendor, *args, **kwargs):
             vendor=vendor,
             location=Location(country="CN", city="Beijing"),
             founding_year=2016,
+            green_energy=True,
         ),
         Datacenter(
             identifier="cn-northwest-1",
@@ -111,6 +130,7 @@ def get_datacenters(vendor, *args, **kwargs):
             vendor=vendor,
             location=Location(country="CN", city="Ningxia"),  # NOTE needs city name
             founding_year=2017,
+            green_energy=True,
         ),
         Datacenter(
             identifier="eu-central-1",
@@ -118,6 +138,7 @@ def get_datacenters(vendor, *args, **kwargs):
             vendor=vendor,
             location=Location(country="DE", city="Frankfurt"),
             founding_year=2014,
+            green_energy=True,
         ),
         Datacenter(
             identifier="eu-central-2",
@@ -125,6 +146,7 @@ def get_datacenters(vendor, *args, **kwargs):
             vendor=vendor,
             location=Location(country="CH", city="Zurich"),
             founding_year=2022,
+            green_energy=True,
         ),
         Datacenter(
             identifier="eu-north-1",
@@ -132,6 +154,7 @@ def get_datacenters(vendor, *args, **kwargs):
             vendor=vendor,
             location=Location(country="SE", city="Stockholm"),
             founding_year=2018,
+            green_energy=True,
         ),
         Datacenter(
             identifier="eu-south-1",
@@ -139,6 +162,7 @@ def get_datacenters(vendor, *args, **kwargs):
             vendor=vendor,
             location=Location(country="IT", city="Milan"),
             founding_year=2020,
+            green_energy=True,
         ),
         Datacenter(
             identifier="eu-south-2",
@@ -146,6 +170,7 @@ def get_datacenters(vendor, *args, **kwargs):
             vendor=vendor,
             location=Location(country="ES", city="Aragón"),  # NOTE needs city name
             founding_year=2022,
+            green_energy=True,
         ),
         Datacenter(
             identifier="eu-west-1",
@@ -153,6 +178,7 @@ def get_datacenters(vendor, *args, **kwargs):
             vendor=vendor,
             location=Location(country="IE", city="Dublin"),
             founding_year=2007,
+            green_energy=True,
         ),
         Datacenter(
             identifier="eu-west-2",
@@ -160,6 +186,7 @@ def get_datacenters(vendor, *args, **kwargs):
             vendor=vendor,
             location=Location(country="GB", city="London"),
             founding_year=2016,
+            green_energy=True,
         ),
         Datacenter(
             identifier="eu-west-3",
@@ -167,6 +194,7 @@ def get_datacenters(vendor, *args, **kwargs):
             vendor=vendor,
             location=Location(country="FR", city="Paris"),
             founding_year=2017,
+            green_energy=True,
         ),
         Datacenter(
             identifier="il-central-1",
@@ -174,6 +202,7 @@ def get_datacenters(vendor, *args, **kwargs):
             vendor=vendor,
             location=Location(country="IL", city="Tel Aviv"),
             founding_year=2023,
+            green_energy=False,
         ),
         Datacenter(
             identifier="me-central-1",
@@ -181,6 +210,7 @@ def get_datacenters(vendor, *args, **kwargs):
             vendor=vendor,
             location=Location(country="AE"),  # NOTE city unknown
             founding_year=2022,
+            green_energy=False,
         ),
         Datacenter(
             identifier="me-central-2",
@@ -188,6 +218,7 @@ def get_datacenters(vendor, *args, **kwargs):
             vendor=vendor,
             location=Location(country="BH"),  # NOTE city unknown
             founding_year=2019,
+            green_energy=False,
         ),
         Datacenter(
             identifier="sa-east-1",
@@ -195,6 +226,7 @@ def get_datacenters(vendor, *args, **kwargs):
             vendor=vendor,
             location=Location(country="BR", city="Sao Paulo"),
             founding_year=2011,
+            green_energy=False,
         ),
         Datacenter(
             identifier="us-east-1",
@@ -204,6 +236,7 @@ def get_datacenters(vendor, *args, **kwargs):
                 country="US", state="Northern Virgina"
             ),  # NOTE city unknown
             founding_year=2006,
+            green_energy=True,
         ),
         Datacenter(
             identifier="us-east-2",
@@ -211,6 +244,7 @@ def get_datacenters(vendor, *args, **kwargs):
             vendor=vendor,
             location=Location(country="US", state="Ohio"),  # NOTE city unknown
             founding_year=2016,
+            green_energy=True,
         ),
         Datacenter(
             identifier="us-west-1",
@@ -218,6 +252,7 @@ def get_datacenters(vendor, *args, **kwargs):
             vendor=vendor,
             location=Location(country="US", state="California"),  # NOTE city unknown
             founding_year=2009,
+            green_energy=True,
         ),
         Datacenter(
             identifier="us-west-2",
@@ -225,6 +260,7 @@ def get_datacenters(vendor, *args, **kwargs):
             vendor=vendor,
             location=Location(country="US", state="Oregon"),  # NOTE city unknown
             founding_year=2011,
+            green_energy=True,
         ),
     ]
 

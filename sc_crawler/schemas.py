@@ -107,6 +107,8 @@ class Datacenter(BaseModel):
     vendor: Vendor
     location: Location
     founding_year: Optional[int] = None
+    green_energy: Optional[bool] = None
+
     _zones: Dict[str, ForwardRef("Zone")] = PrivateAttr()
 
     @computed_field
