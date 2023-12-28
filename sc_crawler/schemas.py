@@ -39,6 +39,8 @@ class Vendor(BaseModel):
     founding_year: int
 
     compliance_frameworks: List[ForwardRef("ComplianceFramework")] = []
+    status_page: Optional[HttpUrl] = None
+
     @computed_field
     @property
     def datacenters(self) -> int:

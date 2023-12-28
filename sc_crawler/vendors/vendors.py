@@ -8,6 +8,7 @@ aws = Vendor(
     location=Location(country="US", city="Seattle", address_line1="410 Terry Ave N"),
     founding_year=2002,
     compliance_frameworks=[hipaa, soc2t2],
+    status_page="https://health.aws.amazon.com/health/status",
 )
 
 gcp = Vendor(
@@ -19,4 +20,5 @@ gcp = Vendor(
     ),
     founding_year=2008,
     compliance_frameworks=[hipaa, soc2t2],
+    status_page="https://status.cloud.google.com/",
 )
