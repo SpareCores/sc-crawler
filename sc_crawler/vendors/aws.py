@@ -1,9 +1,12 @@
 import boto3
 from functools import cache
+import logging
 import re
 
 from .. import Location
 from ..schemas import Datacenter, Zone, Server
+
+logger = logging.getLogger(__name__)
 
 
 def get_datacenters(vendor, *args, **kwargs):
@@ -358,6 +361,10 @@ def annotate_instance_type(instance_type_id):
     Source: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instance-types.html#instance-type-names
     """  # noqa: E501
     kind = instance_type_id.split(".")[0]
+    # drop suffixes for now after the dash, e.g. "Mac2-m2", "Mac2-m2pro"
+    if "-" in kind:
+        logger.warning(f"Truncating instance type after the dash: {kind}")
+    kind = kind.split("-")[0]
     family, extras = re.split(r"[0-9]", kind)
     generation = re.findall(r"[0-9]", kind)[0]
     size = instance_type_id.split(".")[1]
@@ -384,19 +391,16 @@ def get_storage(instance_type):
 
 def get_instance_types(vendor, *args, **kwargs):
     if not hasattr(vendor, "_datacenters"):
-        raise AttributeError("Datacenters not defined yet, run get_datacenters()")
+        raise AttributeError("Datacenters not defined, run get_datacenters()")
     regions = [datacenter.identifier for datacenter in vendor._datacenters]
     instance_types = {}
-    # there might be some instance types specific to a few or even a single region
+    # might be instance types specific to a few or even a single region
     for region in regions:
+        logger.debug(f"Looking up instance types in region {region}")
         local_instance_types = describe_instance_types(region)
         for instance_type in local_instance_types:
             it = instance_type.get("InstanceType")
             if it not in list(instance_types.keys()):
-                storage_size = instance_type.get(
-                    "InstanceStorageInfo", {}
-                ).get("TotalSizeInGB", 0) * 1024 * 1024
-                storage_type=None if not "InstanceStorageInfo" in instance_type else instance_type.get("InstanceStorageInfo", {}).get("Disks")[0].get("Type").lower()
                 instance_types.update(
                     {
                         it: Server(
