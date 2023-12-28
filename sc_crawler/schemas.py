@@ -38,6 +38,7 @@ class Vendor(BaseModel):
     # https://dbpedia.org/ontology/Organisation
     founding_year: int
 
+    compliance_frameworks: List[ForwardRef("ComplianceFramework")] = []
     @computed_field
     @property
     def datacenters(self) -> int:
@@ -171,6 +172,15 @@ class Availability(BaseModel):
     resource: Resource
     allocation: Literal["ondemand", "spot"] = "ondemand"
     price: float
+
+
+class ComplianceFramework(BaseModel):
+    id: str
+    name: str
+    abbreviation: Optional[str]
+    description: Optional[str]
+    logo: Optional[HttpUrl] = None  # TODO upload to cdn.sparecores.com
+    homepage: Optional[HttpUrl] = None
 
 
 Vendor.update_forward_refs()
