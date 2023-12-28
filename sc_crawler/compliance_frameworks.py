@@ -16,3 +16,12 @@ soc2t2 = ComplianceFramework(
     description="SOC 2 Type 2 is a framework for assessing and certifying the effectiveness of a service organization's information security policies and procedures over time, emphasizing the operational aspects and ongoing monitoring of controls.",  # noqa: E501
     homepage="https://www.aicpa-cima.com/topic/audit-assurance/audit-and-assurance-greater-than-soc-2",  # noqa: E501
 )
+
+# TODO add morem e.g.
+# soc2t1
+# iso27001
+# iso27701
+# gdpr
+# pci
+# ccpa
+# csa
