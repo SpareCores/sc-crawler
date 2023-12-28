@@ -385,7 +385,7 @@ def get_storage(instance_type):
         return (0, None)
     info = instance_type.get("InstanceStorageInfo")
     storage_size = info.get("TotalSizeInGB", 0) * 1024 * 1024
-    storage_type=info.get("Disks")[0].get("Type").lower()
+    storage_type = info.get("Disks")[0].get("Type").lower()
     return (storage_size, storage_type)
 
 
