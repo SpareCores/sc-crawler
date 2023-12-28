@@ -381,7 +381,7 @@ def annotate_instance_type(instance_type_id):
 
 def get_storage(instance_type):
     """Get storage size and type (tupple) from instance details."""
-    if not "InstanceStorageInfo" in instance_type:
+    if "InstanceStorageInfo" not in instance_type:
         return (0, None)
     info = instance_type.get("InstanceStorageInfo")
     storage_size = info.get("TotalSizeInGB", 0) * 1024 * 1024
