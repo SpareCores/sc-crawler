@@ -1,5 +1,6 @@
 import boto3
 from functools import cache
+from itertools import chain
 import logging
 import re
 
@@ -403,8 +404,12 @@ def get_storages(instance_type):
             kind = "nvme ssd"
         return Storage(size=disk.get("SizeInGB"), storage_type=kind)
 
+    # replicate number of disks
+    disks = info.get("Disks")
+    disks = [[disk] * disk.get("Count") for disk in disks]
+    disks = list(chain(*disks))
     return [to_storage(disk, nvme=info.get("NvmeSupport", False))
-            for disk in info.get("Disks")]
+            for disk in disks]
 
 
 def get_instance_types(vendor, *args, **kwargs):

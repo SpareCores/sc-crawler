@@ -12,5 +12,5 @@ from rich import print as pp
 pp(aws)
 pp(aws._datacenters[1]._zones)
 pp(aws._servers.get("t3a.2xlarge"))
-pp(aws._servers.get("c5d.large"))
+pp(aws._servers.get("i3en.12xlarge"))
 ```
