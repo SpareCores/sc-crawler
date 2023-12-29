@@ -173,6 +173,7 @@ class Gpu(BaseModel):
     manufacturer: str
     name: str
     memory: int  # MiB
+    firmware: Optional[str] = None
 
 
 class Server(Resource):
