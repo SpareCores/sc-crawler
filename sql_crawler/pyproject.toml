@@ -1,0 +1,21 @@
+[project]
+name = "sc_crawler"
+version = "0.0.1"
+description = "Spare Cores crawler"
+readme = "README.md"
+requires-python = ">=3.8"
+authors = [
+    {name = "John Doe", email = "jd@example.com" }
+]
+
+dependencies = [
+    "alembic",
+    "validators",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/SpareCores/sc-crawler"
+"Source" = "https://github.com/SpareCores/sc-crawler"
+
+[tool.setuptools.packages.find]
+where = ["src"]
