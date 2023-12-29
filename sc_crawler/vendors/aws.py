@@ -412,6 +412,41 @@ def get_storages(instance_type):
             for disk in disks]
 
 
+def get_gpu(instance_type):
+    """Get overall GPU count, memory and manufacturer/name."""
+    if "GpuInfo" not in instance_type:
+        return (0, None, None)
+    info = instance_type.get("GpuInfo")
+    memory = info.get("TotalGpuMemoryInMiB", 0)
+
+    def mn(gpu):
+        return gpu.get("Manufacturer") + " " + gpu.get("Name")
+
+    # iterate over each GPU
+    count = sum([gpu.get("Count") for gpu in info.get("Gpus")])
+    names = ", ".join([mn(gpu) for gpu in info.get("Gpus")])
+    return (count, memory, names)
+
+
+def get_gpus(instance_type):
+    """Get individual GPUs as an array."""
+    if "InstanceStorageInfo" not in instance_type:
+        return []
+    info = instance_type.get("GpuInfo")
+
+    def to_gpu(gpu):
+        return Gpu(
+            manufacturer=gpu.get("Manufacturer"),
+            name=gpu.get("Name"),
+            memory=gpu.get("MemoryInfo").get("SizeInMiB"))
+
+    # replicate number of disks
+    gpus = info.get("Gpus")
+    gpus = [[gpu] * gpu.get("Count") for gpu in gpus]
+    gpus = list(chain(*gpus))
+    return [to_gpu(gpu) for gpu in gpus]
+
+
 def get_instance_types(vendor, *args, **kwargs):
     if not hasattr(vendor, "_datacenters"):
         raise AttributeError("Datacenters not defined, run get_datacenters()")
@@ -424,6 +459,8 @@ def get_instance_types(vendor, *args, **kwargs):
         for instance_type in local_instance_types:
             it = instance_type.get("InstanceType")
             if it not in list(instance_types.keys()):
+                gpu_info = get_gpu(instance_type)
+                storage_info = get_storage(instance_type)
                 instance_types.update(
                     {
                         it: Server(
@@ -433,8 +470,12 @@ def get_instance_types(vendor, *args, **kwargs):
                             vcpus=instance_type.get("VCpuInfo").get("DefaultVCpus"),
                             cores=instance_type.get("VCpuInfo").get("DefaultCores"),
                             memory=instance_type.get("MemoryInfo").get("SizeInMiB"),
-                            storage_size=get_storage(instance_type)[0],
-                            storage_type=get_storage(instance_type)[1],
+                            gpu_count: gpu_info[0],
+                            gpu_memory: gpu_info[1],
+                            gpu_name: gpu_info[2],
+                            gpus: get_gpus(instance_type),
+                            storage_size=storage_info[0],
+                            storage_type=storage_info[1],
                             storages=get_storages(instance_type),
                             network_speed=instance_type.get("NetworkInfo").get(
                                 "NetworkPerformance"

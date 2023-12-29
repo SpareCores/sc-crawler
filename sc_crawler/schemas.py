@@ -169,11 +169,21 @@ class NetworkStorage(Resource, Storage):
     billable_unit: str = "GiB"
 
 
+class Gpu(BaseModel):
+    manufacturer: str
+    name: str
+    memory: int  # MiB
+
+
 class Server(Resource):
     resource_type: resource_types = "compute"
     vcpus: int
     cores: int
     memory: int
+    gpu_count: int = 0
+    gpu_memory: Optional[int] = None  # MiB
+    gpu_name: Optional[str] = None
+    gpus: List[Gpu] = []
     storage_size: int = 0  # GB
     storage_type: Optional[storage_types]
     storages: List[Storage] = []
