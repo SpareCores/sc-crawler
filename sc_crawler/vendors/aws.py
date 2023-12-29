@@ -1,12 +1,47 @@
 import boto3
-from functools import cache
+from cachier import cachier, set_default_params
+from datetime import timedelta
+from itertools import chain
 import logging
 import re
 
 from .. import Location
-from ..schemas import Datacenter, Zone, Server
+from ..schemas import Datacenter, Zone, Server, Storage, Gpu
 
 logger = logging.getLogger(__name__)
+
+# disable caching by default
+set_default_params(caching_enabled=False)
+
+# ##############################################################################
+# AWS cached helpers
+
+
+@cachier(stale_after=timedelta(days=3))
+def describe_instance_types(region):
+    ec2 = boto3.client("ec2", region_name=region)
+    return ec2.describe_instance_types().get("InstanceTypes")
+
+
+@cachier(stale_after=timedelta(days=3))
+def describe_regions():
+    ec2 = boto3.client("ec2")
+    return ec2.describe_regions().get("Regions", [])
+
+
+@cachier(stale_after=timedelta(days=3))
+def describe_availability_zones(region):
+    ec2 = boto3.client("ec2", region_name=region)
+    zones = ec2.describe_availability_zones(
+        Filters=[
+            {"Name": "zone-type", "Values": ["availability-zone"]},
+        ],
+        AllAvailabilityZones=True,
+    ).get("AvailabilityZones")
+    return zones
+
+
+# ##############################################################################
 
 
 def get_datacenters(vendor, *args, **kwargs):
@@ -271,8 +306,7 @@ def get_datacenters(vendor, *args, **kwargs):
 
     # look for undocumented (new) datacenters in AWS
     supported_regions = [d.identifier for d in datacenters]
-    ec2 = boto3.client("ec2")
-    regions = ec2.describe_regions().get("Regions", [])
+    regions = describe_regions()
     for region in regions:
         region_name = region.get("RegionName")
         if "gov" in region_name:
@@ -292,14 +326,7 @@ def get_datacenters(vendor, *args, **kwargs):
 
     # add zones
     for datacenter in datacenters:
-        # need to create a new clien in each AWS region
-        ec2 = boto3.client("ec2", region_name=datacenter.identifier)
-        zones = ec2.describe_availability_zones(
-            Filters=[
-                {"Name": "zone-type", "Values": ["availability-zone"]},
-            ],
-            AllAvailabilityZones=True,
-        ).get("AvailabilityZones")
+        zones = describe_availability_zones(datacenter.identifier)
         datacenter._zones = {
             zone.get("ZoneId"): Zone(
                 identifier=zone.get("ZoneId"),
@@ -310,12 +337,6 @@ def get_datacenters(vendor, *args, **kwargs):
         }
 
     return datacenters
-
-
-@cache
-def describe_instance_types(region):
-    ec2 = boto3.client("ec2", region_name=region)
-    return ec2.describe_instance_types().get("InstanceTypes")
 
 
 instance_families = {
@@ -379,14 +400,75 @@ def annotate_instance_type(instance_type_id):
     return text
 
 
-def get_storage(instance_type):
-    """Get storage size and type (tupple) from instance details."""
+def get_storage(instance_type, nvme=False):
+    """Get overall storage size and type (tupple) from instance details."""
     if "InstanceStorageInfo" not in instance_type:
         return (0, None)
     info = instance_type.get("InstanceStorageInfo")
-    storage_size = info.get("TotalSizeInGB", 0) * 1024 * 1024
+    storage_size = info.get("TotalSizeInGB", 0)
     storage_type = info.get("Disks")[0].get("Type").lower()
+    if storage_type == "ssd" and info.get("NvmeSupport", False):
+        storage_type = "nvme ssd"
     return (storage_size, storage_type)
+
+
+def array_expand_by_count(array):
+    """Expand an array with its items Count field."""
+    array = [[a] * a.get("Count") for a in array]
+    return list(chain(*array))
+
+
+def get_storages(instance_type):
+    """Get individual storages as an array."""
+    if "InstanceStorageInfo" not in instance_type:
+        return []
+    info = instance_type.get("InstanceStorageInfo")
+
+    def to_storage(disk, nvme=False):
+        kind = disk.get("Type").lower()
+        if kind == "ssd" and nvme:
+            kind = "nvme ssd"
+        return Storage(size=disk.get("SizeInGB"), storage_type=kind)
+
+    # replicate number of disks
+    disks = info.get("Disks")
+    disks = array_expand_by_count(disks)
+    return [to_storage(disk, nvme=info.get("NvmeSupport", False)) for disk in disks]
+
+
+def get_gpu(instance_type):
+    """Get overall GPU count, memory and manufacturer/name."""
+    if "GpuInfo" not in instance_type:
+        return (0, None, None)
+    info = instance_type.get("GpuInfo")
+    memory = info.get("TotalGpuMemoryInMiB", 0)
+
+    def mn(gpu):
+        return gpu.get("Manufacturer") + " " + gpu.get("Name")
+
+    # iterate over each GPU
+    count = sum([gpu.get("Count") for gpu in info.get("Gpus")])
+    names = ", ".join([mn(gpu) for gpu in info.get("Gpus")])
+    return (count, memory, names)
+
+
+def get_gpus(instance_type):
+    """Get individual GPUs as an array."""
+    if "GpuInfo" not in instance_type:
+        return []
+    info = instance_type.get("GpuInfo")
+
+    def to_gpu(gpu):
+        return Gpu(
+            manufacturer=gpu.get("Manufacturer"),
+            name=gpu.get("Name"),
+            memory=gpu.get("MemoryInfo").get("SizeInMiB"),
+        )
+
+    # replicate number of disks
+    gpus = info.get("Gpus")
+    gpus = array_expand_by_count(gpus)
+    return [to_gpu(gpu) for gpu in gpus]
 
 
 def get_instance_types(vendor, *args, **kwargs):
@@ -401,6 +483,8 @@ def get_instance_types(vendor, *args, **kwargs):
         for instance_type in local_instance_types:
             it = instance_type.get("InstanceType")
             if it not in list(instance_types.keys()):
+                gpu_info = get_gpu(instance_type)
+                storage_info = get_storage(instance_type)
                 instance_types.update(
                     {
                         it: Server(
@@ -410,8 +494,13 @@ def get_instance_types(vendor, *args, **kwargs):
                             vcpus=instance_type.get("VCpuInfo").get("DefaultVCpus"),
                             cores=instance_type.get("VCpuInfo").get("DefaultCores"),
                             memory=instance_type.get("MemoryInfo").get("SizeInMiB"),
-                            storage_size=get_storage(instance_type)[0],
-                            storage_type=get_storage(instance_type)[1],
+                            gpu_count=gpu_info[0],
+                            gpu_memory=gpu_info[1],
+                            gpu_name=gpu_info[2],
+                            gpus=get_gpus(instance_type),
+                            storage_size=storage_info[0],
+                            storage_type=storage_info[1],
+                            storages=get_storages(instance_type),
                             network_speed=instance_type.get("NetworkInfo").get(
                                 "NetworkPerformance"
                             ),

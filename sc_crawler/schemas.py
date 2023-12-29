@@ -138,37 +138,61 @@ class Zone(BaseModel):
         return self.datacenter.vendor
 
 
+resource_types = Literal["compute", "traffic", "storage"]
+
+
 class Resource(BaseModel):
     # vendor-specific resources (e.g. instance types) should be
     # prefixed with the vendor id, e.g. "aws:m5.xlarge"
     identifier: str
     name: str
     description: Optional[str]
-    kind: Literal["compute", "traffic", "storage"]
+    resource_type: resource_types
     billable_unit: str  # e.g. GB, GiB, TB, runtime hours
 
 
-class Server(Resource):
-    kind: str = "compute"
-    vcpus: int
-    cores: int
-    memory: int
-    storage_size: int = 0  # GB
-    storage_type: Optional[Literal["ssd", "hdd"]]
-    network_speed: Optional[str]
+storage_types = Literal["hdd", "ssd", "nvme ssd", "network"]
 
 
-class Storage(Resource):
-    kind: str = "storage"
-    max_iops: Optional[int]
-    max_throughput: Optional[int]  # MiB/s
-    min_size: Optional[int]  # GiB
-    max_size: Optional[int]  # GiB
+class Storage(BaseModel):
+    size: int = 0  # GB
+    storage_type: storage_types
+
+
+class NetworkStorage(Resource, Storage):
+    resource_type: resource_types = "storage"
+    storage_type: storage_types = "network"
+    max_iops: Optional[int] = None
+    max_throughput: Optional[int] = None  # MiB/s
+    min_size: Optional[int] = None  # GiB
+    max_size: Optional[int] = None  # GiB
     billable_unit: str = "GiB"
 
 
+class Gpu(BaseModel):
+    manufacturer: str
+    name: str
+    memory: int  # MiB
+    firmware: Optional[str] = None
+
+
+class Server(Resource):
+    resource_type: resource_types = "compute"
+    vcpus: int
+    cores: int
+    memory: int
+    gpu_count: int = 0
+    gpu_memory: Optional[int] = None  # MiB
+    gpu_name: Optional[str] = None
+    gpus: List[Gpu] = []
+    storage_size: int = 0  # GB
+    storage_type: Optional[storage_types]
+    storages: List[Storage] = []
+    network_speed: Optional[str]
+
+
 class Traffic(Resource):
-    kind: str = "traffic"
+    resource_type: resource_types = "traffic"
     direction: Literal["inbound", "outbound"]
     billable_unit: str = "GB"
 
@@ -194,5 +218,5 @@ class ComplianceFramework(BaseModel):
     homepage: Optional[HttpUrl] = None
 
 
-Vendor.update_forward_refs()
-Datacenter.update_forward_refs()
+Vendor.model_rebuild()
+Datacenter.model_rebuild()
