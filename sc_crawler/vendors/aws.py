@@ -5,7 +5,7 @@ import logging
 import re
 
 from .. import Location
-from ..schemas import Datacenter, Zone, Server, Storage
+from ..schemas import Datacenter, Zone, Server, Storage, Gpu
 
 logger = logging.getLogger(__name__)
 
@@ -413,8 +413,7 @@ def get_storages(instance_type):
     # replicate number of disks
     disks = info.get("Disks")
     disks = array_expand_by_count(disks)
-    return [to_storage(disk, nvme=info.get("NvmeSupport", False))
-            for disk in disks]
+    return [to_storage(disk, nvme=info.get("NvmeSupport", False)) for disk in disks]
 
 
 def get_gpu(instance_type):
@@ -443,7 +442,8 @@ def get_gpus(instance_type):
         return Gpu(
             manufacturer=gpu.get("Manufacturer"),
             name=gpu.get("Name"),
-            memory=gpu.get("MemoryInfo").get("SizeInMiB"))
+            memory=gpu.get("MemoryInfo").get("SizeInMiB"),
+        )
 
     # replicate number of disks
     gpus = info.get("Gpus")
@@ -474,10 +474,10 @@ def get_instance_types(vendor, *args, **kwargs):
                             vcpus=instance_type.get("VCpuInfo").get("DefaultVCpus"),
                             cores=instance_type.get("VCpuInfo").get("DefaultCores"),
                             memory=instance_type.get("MemoryInfo").get("SizeInMiB"),
-                            gpu_count: gpu_info[0],
-                            gpu_memory: gpu_info[1],
-                            gpu_name: gpu_info[2],
-                            gpus: get_gpus(instance_type),
+                            gpu_count=gpu_info[0],
+                            gpu_memory=gpu_info[1],
+                            gpu_name=gpu_info[2],
+                            gpus=get_gpus(instance_type),
                             storage_size=storage_info[0],
                             storage_type=storage_info[1],
                             storages=get_storages(instance_type),
