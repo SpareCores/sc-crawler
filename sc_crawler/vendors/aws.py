@@ -434,7 +434,7 @@ def get_gpu(instance_type):
 
 def get_gpus(instance_type):
     """Get individual GPUs as an array."""
-    if "InstanceStorageInfo" not in instance_type:
+    if "GpuInfo" not in instance_type:
         return []
     info = instance_type.get("GpuInfo")
 
