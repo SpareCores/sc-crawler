@@ -392,6 +392,12 @@ def get_storage(instance_type, nvme=False):
     return (storage_size, storage_type)
 
 
+def array_expand_by_count(array):
+    """Expand an array with its items Count field."""
+    array = [[a] * a.get("Count") for a in array]
+    return list(chain(*array))
+
+
 def get_storages(instance_type):
     """Get individual storages as an array."""
     if "InstanceStorageInfo" not in instance_type:
@@ -406,8 +412,7 @@ def get_storages(instance_type):
 
     # replicate number of disks
     disks = info.get("Disks")
-    disks = [[disk] * disk.get("Count") for disk in disks]
-    disks = list(chain(*disks))
+    disks = array_expand_by_count(disks)
     return [to_storage(disk, nvme=info.get("NvmeSupport", False))
             for disk in disks]
 
@@ -442,8 +447,7 @@ def get_gpus(instance_type):
 
     # replicate number of disks
     gpus = info.get("Gpus")
-    gpus = [[gpu] * gpu.get("Count") for gpu in gpus]
-    gpus = list(chain(*gpus))
+    gpus = array_expand_by_count(gpus)
     return [to_gpu(gpu) for gpu in gpus]
 
 
