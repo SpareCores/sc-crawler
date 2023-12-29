@@ -1,5 +1,6 @@
 import boto3
-from functools import cache
+from cachier import cachier, set_default_params
+from datetime import timedelta
 from itertools import chain
 import logging
 import re
@@ -8,6 +9,39 @@ from .. import Location
 from ..schemas import Datacenter, Zone, Server, Storage, Gpu
 
 logger = logging.getLogger(__name__)
+
+# disable caching by default
+set_default_params(caching_enabled=False)
+
+# ##############################################################################
+# AWS cached helpers
+
+
+@cachier(stale_after=timedelta(days=3))
+def describe_instance_types(region):
+    ec2 = boto3.client("ec2", region_name=region)
+    return ec2.describe_instance_types().get("InstanceTypes")
+
+
+@cachier(stale_after=timedelta(days=3))
+def describe_regions():
+    ec2 = boto3.client("ec2")
+    return ec2.describe_regions().get("Regions", [])
+
+
+@cachier(stale_after=timedelta(days=3))
+def describe_availability_zones(region):
+    ec2 = boto3.client("ec2", region_name=region)
+    zones = ec2.describe_availability_zones(
+        Filters=[
+            {"Name": "zone-type", "Values": ["availability-zone"]},
+        ],
+        AllAvailabilityZones=True,
+    ).get("AvailabilityZones")
+    return zones
+
+
+# ##############################################################################
 
 
 def get_datacenters(vendor, *args, **kwargs):
@@ -272,8 +306,7 @@ def get_datacenters(vendor, *args, **kwargs):
 
     # look for undocumented (new) datacenters in AWS
     supported_regions = [d.identifier for d in datacenters]
-    ec2 = boto3.client("ec2")
-    regions = ec2.describe_regions().get("Regions", [])
+    regions = describe_regions()
     for region in regions:
         region_name = region.get("RegionName")
         if "gov" in region_name:
@@ -293,14 +326,7 @@ def get_datacenters(vendor, *args, **kwargs):
 
     # add zones
     for datacenter in datacenters:
-        # need to create a new clien in each AWS region
-        ec2 = boto3.client("ec2", region_name=datacenter.identifier)
-        zones = ec2.describe_availability_zones(
-            Filters=[
-                {"Name": "zone-type", "Values": ["availability-zone"]},
-            ],
-            AllAvailabilityZones=True,
-        ).get("AvailabilityZones")
+        zones = describe_availability_zones(datacenter.identifier)
         datacenter._zones = {
             zone.get("ZoneId"): Zone(
                 identifier=zone.get("ZoneId"),
@@ -311,12 +337,6 @@ def get_datacenters(vendor, *args, **kwargs):
         }
 
     return datacenters
-
-
-@cache
-def describe_instance_types(region):
-    ec2 = boto3.client("ec2", region_name=region)
-    return ec2.describe_instance_types().get("InstanceTypes")
 
 
 instance_families = {
