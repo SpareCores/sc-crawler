@@ -138,37 +138,50 @@ class Zone(BaseModel):
         return self.datacenter.vendor
 
 
+resource_types = Literal["compute", "traffic", "storage"]
+
+
 class Resource(BaseModel):
     # vendor-specific resources (e.g. instance types) should be
     # prefixed with the vendor id, e.g. "aws:m5.xlarge"
     identifier: str
     name: str
     description: Optional[str]
-    kind: Literal["compute", "traffic", "storage"]
+    resource_type: resource_types
     billable_unit: str  # e.g. GB, GiB, TB, runtime hours
 
 
+storage_types = Literal["hdd", "ssd", "nvme ssd", "network"]
+
+
+class Storage(BaseModel):
+    size: int = 0  # GB
+    storage_type: storage_types
+
+
+class NetworkStorage(Resource, Storage):
+    resource_type: resource_types = "storage"
+    storage_type: storage_types = "network"
+    max_iops: Optional[int] = None
+    max_throughput: Optional[int] = None  # MiB/s
+    min_size: Optional[int] = None  # GiB
+    max_size: Optional[int] = None  # GiB
+    billable_unit: str = "GiB"
+
+
 class Server(Resource):
-    kind: str = "compute"
+    resource_type: resource_types = "compute"
     vcpus: int
     cores: int
     memory: int
     storage_size: int = 0  # GB
-    storage_type: Optional[Literal["ssd", "hdd"]]
+    storage_type: Optional[storage_types]
+    storages: List[Storage] = []
     network_speed: Optional[str]
 
 
-class Storage(Resource):
-    kind: str = "storage"
-    max_iops: Optional[int]
-    max_throughput: Optional[int]  # MiB/s
-    min_size: Optional[int]  # GiB
-    max_size: Optional[int]  # GiB
-    billable_unit: str = "GiB"
-
-
 class Traffic(Resource):
-    kind: str = "traffic"
+    resource_type: resource_types = "traffic"
     direction: Literal["inbound", "outbound"]
     billable_unit: str = "GB"
 

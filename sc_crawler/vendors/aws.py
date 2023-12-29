@@ -4,7 +4,7 @@ import logging
 import re
 
 from .. import Location
-from ..schemas import Datacenter, Zone, Server
+from ..schemas import Datacenter, Zone, Server, Storage
 
 logger = logging.getLogger(__name__)
 
@@ -379,14 +379,32 @@ def annotate_instance_type(instance_type_id):
     return text
 
 
-def get_storage(instance_type):
-    """Get storage size and type (tupple) from instance details."""
+def get_storage(instance_type, nvme=False):
+    """Get overall storage size and type (tupple) from instance details."""
     if "InstanceStorageInfo" not in instance_type:
         return (0, None)
     info = instance_type.get("InstanceStorageInfo")
-    storage_size = info.get("TotalSizeInGB", 0) * 1024 * 1024
+    storage_size = info.get("TotalSizeInGB", 0)
     storage_type = info.get("Disks")[0].get("Type").lower()
+    if storage_type == "ssd" and info.get("NvmeSupport", False):
+        storage_type = "nvme ssd"
     return (storage_size, storage_type)
+
+
+def get_storages(instance_type):
+    """Get individual storages as an array."""
+    if "InstanceStorageInfo" not in instance_type:
+        return []
+    info = instance_type.get("InstanceStorageInfo")
+
+    def to_storage(disk, nvme=False):
+        kind = disk.get("Type").lower()
+        if kind == "ssd" and nvme:
+            kind = "nvme ssd"
+        return Storage(size=disk.get("SizeInGB"), storage_type=kind)
+
+    return [to_storage(disk, nvme=info.get("NvmeSupport", False))
+            for disk in info.get("Disks")]
 
 
 def get_instance_types(vendor, *args, **kwargs):
@@ -412,6 +430,7 @@ def get_instance_types(vendor, *args, **kwargs):
                             memory=instance_type.get("MemoryInfo").get("SizeInMiB"),
                             storage_size=get_storage(instance_type)[0],
                             storage_type=get_storage(instance_type)[1],
+                            storages=get_storages(instance_type),
                             network_speed=instance_type.get("NetworkInfo").get(
                                 "NetworkPerformance"
                             ),
