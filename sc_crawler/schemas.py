@@ -194,5 +194,5 @@ class ComplianceFramework(BaseModel):
     homepage: Optional[HttpUrl] = None
 
 
-Vendor.update_forward_refs()
-Datacenter.update_forward_refs()
+Vendor.model_rebuild()
+Datacenter.model_rebuild()
