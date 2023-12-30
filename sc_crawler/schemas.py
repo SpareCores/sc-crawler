@@ -188,7 +188,7 @@ class Server(Resource):
     storage_size: int = 0  # GB
     storage_type: Optional[storage_types]
     storages: List[Storage] = []
-    network_speed: Optional[str]
+    network_speed: Optional[float]  # Gbps
 
 
 class Traffic(Resource):

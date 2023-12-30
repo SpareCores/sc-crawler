@@ -485,6 +485,7 @@ def get_instance_types(vendor, *args, **kwargs):
             if it not in list(instance_types.keys()):
                 gpu_info = get_gpu(instance_type)
                 storage_info = get_storage(instance_type)
+                network_card = instance_type["NetworkInfo"]["NetworkCards"][0]
                 instance_types.update(
                     {
                         it: Server(
@@ -501,9 +502,7 @@ def get_instance_types(vendor, *args, **kwargs):
                             storage_size=storage_info[0],
                             storage_type=storage_info[1],
                             storages=get_storages(instance_type),
-                            network_speed=instance_type["NetworkInfo"][
-                                "NetworkPerformance"
-                            ],
+                            network_speed=network_card["BaselineBandwidthInGbps"],
                             billable_unit="hour",
                         )
                     }
