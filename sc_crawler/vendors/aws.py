@@ -483,6 +483,8 @@ def get_instance_types(vendor, *args, **kwargs):
         for instance_type in local_instance_types:
             it = instance_type["InstanceType"]
             if it not in list(instance_types.keys()):
+                vcpu_info = instance_type["VCpuInfo"]
+                cpu_info = instance_type["ProcessorInfo"]
                 gpu_info = get_gpu(instance_type)
                 storage_info = get_storage(instance_type)
                 network_card = instance_type["NetworkInfo"]["NetworkCards"][0]
@@ -492,8 +494,11 @@ def get_instance_types(vendor, *args, **kwargs):
                             identifier=it,
                             name=it,
                             description=annotate_instance_type(it),
-                            vcpus=instance_type["VCpuInfo"]["DefaultVCpus"],
-                            cores=instance_type["VCpuInfo"]["DefaultCores"],
+                            vcpus=vcpu_info["DefaultVCpus"],
+                            cpu_cores=vcpu_info["DefaultCores"],
+                            cpu_speed=cpu_info.get("SustainedClockSpeedInGhz", None),
+                            cpu_architecture=cpu_info["SupportedArchitectures"][0],
+                            cpu_manufacturer=cpu_info.get("Manufacturer", None),
                             memory=instance_type["MemoryInfo"]["SizeInMiB"],
                             gpu_count=gpu_info[0],
                             gpu_memory=gpu_info[1],

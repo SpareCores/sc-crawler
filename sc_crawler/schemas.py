@@ -179,7 +179,10 @@ class Gpu(BaseModel):
 class Server(Resource):
     resource_type: resource_types = "compute"
     vcpus: int
-    cores: int
+    cpu_cores: int
+    cpu_speed: Optional[float] = None  # Ghz
+    cpu_architecture: Literal["arm64", "arm64_mac", "i386", "x86_64"]
+    cpu_manufacturer: Optional[str] = None
     memory: int
     gpu_count: int = 0
     gpu_memory: Optional[int] = None  # MiB
