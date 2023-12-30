@@ -20,7 +20,7 @@ set_default_params(caching_enabled=False)
 @cachier(stale_after=timedelta(days=3))
 def describe_instance_types(region):
     ec2 = boto3.client("ec2", region_name=region)
-    return ec2.describe_instance_types().get("InstanceTypes")
+    return ec2.describe_instance_types()["InstanceTypes"]
 
 
 @cachier(stale_after=timedelta(days=3))
@@ -37,7 +37,7 @@ def describe_availability_zones(region):
             {"Name": "zone-type", "Values": ["availability-zone"]},
         ],
         AllAvailabilityZones=True,
-    ).get("AvailabilityZones")
+    )["AvailabilityZones"]
     return zones
 
 
@@ -308,7 +308,7 @@ def get_datacenters(vendor, *args, **kwargs):
     supported_regions = [d.identifier for d in datacenters]
     regions = describe_regions()
     for region in regions:
-        region_name = region.get("RegionName")
+        region_name = region["RegionName"]
         if "gov" in region_name:
             next()
         if region_name not in supported_regions:
@@ -318,7 +318,7 @@ def get_datacenters(vendor, *args, **kwargs):
     datacenters = [
         datacenter
         for datacenter in datacenters
-        if datacenter.identifier in [region.get("RegionName") for region in regions]
+        if datacenter.identifier in [region["RegionName"] for region in regions]
     ]
 
     # make it easier to access by region name
@@ -328,9 +328,9 @@ def get_datacenters(vendor, *args, **kwargs):
     for datacenter in datacenters:
         zones = describe_availability_zones(datacenter.identifier)
         datacenter._zones = {
-            zone.get("ZoneId"): Zone(
-                identifier=zone.get("ZoneId"),
-                name=zone.get("ZoneName"),
+            zone["ZoneId"]: Zone(
+                identifier=zone["ZoneId"],
+                name=zone["ZoneName"],
                 datacenter=datacenter,
             )
             for zone in zones
@@ -390,7 +390,7 @@ def annotate_instance_type(instance_type_id):
     generation = re.findall(r"[0-9]", kind)[0]
     size = instance_type_id.split(".")[1]
 
-    text = instance_families.get(family)
+    text = instance_families[family]
     for k, v in instance_suffixes.items():
         if k in extras:
             text += " [" + v + "]"
@@ -404,9 +404,9 @@ def get_storage(instance_type, nvme=False):
     """Get overall storage size and type (tupple) from instance details."""
     if "InstanceStorageInfo" not in instance_type:
         return (0, None)
-    info = instance_type.get("InstanceStorageInfo")
-    storage_size = info.get("TotalSizeInGB", 0)
-    storage_type = info.get("Disks")[0].get("Type").lower()
+    info = instance_type["InstanceStorageInfo"]
+    storage_size = info["TotalSizeInGB"]
+    storage_type = info["Disks"][0].get("Type").lower()
     if storage_type == "ssd" and info.get("NvmeSupport", False):
         storage_type = "nvme ssd"
     return (storage_size, storage_type)
@@ -414,7 +414,7 @@ def get_storage(instance_type, nvme=False):
 
 def array_expand_by_count(array):
     """Expand an array with its items Count field."""
-    array = [[a] * a.get("Count") for a in array]
+    array = [[a] * a["Count"] for a in array]
     return list(chain(*array))
 
 
@@ -422,16 +422,16 @@ def get_storages(instance_type):
     """Get individual storages as an array."""
     if "InstanceStorageInfo" not in instance_type:
         return []
-    info = instance_type.get("InstanceStorageInfo")
+    info = instance_type["InstanceStorageInfo"]
 
     def to_storage(disk, nvme=False):
         kind = disk.get("Type").lower()
         if kind == "ssd" and nvme:
             kind = "nvme ssd"
-        return Storage(size=disk.get("SizeInGB"), storage_type=kind)
+        return Storage(size=disk["SizeInGB"], storage_type=kind)
 
     # replicate number of disks
-    disks = info.get("Disks")
+    disks = info["Disks"]
     disks = array_expand_by_count(disks)
     return [to_storage(disk, nvme=info.get("NvmeSupport", False)) for disk in disks]
 
@@ -440,15 +440,15 @@ def get_gpu(instance_type):
     """Get overall GPU count, memory and manufacturer/name."""
     if "GpuInfo" not in instance_type:
         return (0, None, None)
-    info = instance_type.get("GpuInfo")
-    memory = info.get("TotalGpuMemoryInMiB", 0)
+    info = instance_type["GpuInfo"]
+    memory = info["TotalGpuMemoryInMiB"]
 
     def mn(gpu):
-        return gpu.get("Manufacturer") + " " + gpu.get("Name")
+        return gpu["Manufacturer"] + " " + gpu["Name"]
 
     # iterate over each GPU
-    count = sum([gpu.get("Count") for gpu in info.get("Gpus")])
-    names = ", ".join([mn(gpu) for gpu in info.get("Gpus")])
+    count = sum([gpu["Count"] for gpu in info["Gpus"]])
+    names = ", ".join([mn(gpu) for gpu in info["Gpus"]])
     return (count, memory, names)
 
 
@@ -456,17 +456,17 @@ def get_gpus(instance_type):
     """Get individual GPUs as an array."""
     if "GpuInfo" not in instance_type:
         return []
-    info = instance_type.get("GpuInfo")
+    info = instance_type["GpuInfo"]
 
     def to_gpu(gpu):
         return Gpu(
-            manufacturer=gpu.get("Manufacturer"),
-            name=gpu.get("Name"),
-            memory=gpu.get("MemoryInfo").get("SizeInMiB"),
+            manufacturer=gpu["Manufacturer"],
+            name=gpu["Name"],
+            memory=gpu["MemoryInfo"]["SizeInMiB"],
         )
 
     # replicate number of disks
-    gpus = info.get("Gpus")
+    gpus = info["Gpus"]
     gpus = array_expand_by_count(gpus)
     return [to_gpu(gpu) for gpu in gpus]
 
@@ -481,7 +481,7 @@ def get_instance_types(vendor, *args, **kwargs):
         logger.debug(f"Looking up instance types in region {region}")
         local_instance_types = describe_instance_types(region)
         for instance_type in local_instance_types:
-            it = instance_type.get("InstanceType")
+            it = instance_type["InstanceType"]
             if it not in list(instance_types.keys()):
                 gpu_info = get_gpu(instance_type)
                 storage_info = get_storage(instance_type)
@@ -491,9 +491,9 @@ def get_instance_types(vendor, *args, **kwargs):
                             identifier=it,
                             name=it,
                             description=annotate_instance_type(it),
-                            vcpus=instance_type.get("VCpuInfo").get("DefaultVCpus"),
-                            cores=instance_type.get("VCpuInfo").get("DefaultCores"),
-                            memory=instance_type.get("MemoryInfo").get("SizeInMiB"),
+                            vcpus=instance_type["VCpuInfo"]["DefaultVCpus"],
+                            cores=instance_type["VCpuInfo"]["DefaultCores"],
+                            memory=instance_type["MemoryInfo"]["SizeInMiB"],
                             gpu_count=gpu_info[0],
                             gpu_memory=gpu_info[1],
                             gpu_name=gpu_info[2],
@@ -501,9 +501,9 @@ def get_instance_types(vendor, *args, **kwargs):
                             storage_size=storage_info[0],
                             storage_type=storage_info[1],
                             storages=get_storages(instance_type),
-                            network_speed=instance_type.get("NetworkInfo").get(
+                            network_speed=instance_type["NetworkInfo"][
                                 "NetworkPerformance"
-                            ),
+                            ],
                             billable_unit="hour",
                         )
                     }
