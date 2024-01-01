@@ -1,7 +1,7 @@
 """Schemas for vendors, datacenters, zones, and other resources."""
 
 
-from .location import Location
+from .lookup import Country, countries
 
 from collections import ChainMap
 from importlib import import_module
@@ -34,7 +34,11 @@ class Vendor(SQLModel, table=True):
     name: str
     # logo: Optional[HttpUrl] = None  # TODO upload to cdn.sparecores.com
     # homepage: HttpUrl
-    # location: Location
+    country: str = Field(default=None, foreign_key="country.id")
+    state: Optional[str] = None
+    city: Optional[str] = None
+    address_line: Optional[str] = None
+    zip_code: Optional[str] = None
 
     # https://dbpedia.org/ontology/Organisation
     founding_year: int
@@ -86,12 +90,16 @@ class Datacenter(SQLModel, table=True):
     vendor_id: str = Field(default=None, foreign_key="vendor.id", primary_key=True)
     name: str
     vendor: Vendor
-    _location: Location
     founding_year: Optional[int] = None
     green_energy: Optional[bool] = None
 
     vendor: Vendor = Relationship(back_populates="datacenters")
 
+    country: str = Field(default=None, foreign_key="country.id")
+    state: Optional[str] = None
+    city: Optional[str] = None
+    address_line: Optional[str] = None
+    zip_code: Optional[str] = None
     @computed_field
     @property
     def zones(self) -> int:

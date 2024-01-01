@@ -5,7 +5,7 @@ from itertools import chain
 import logging
 import re
 
-from .. import Location
+from ..lookup import countries
 from ..schemas import Datacenter  # , Zone, Server, Storage, Gpu
 
 logger = logging.getLogger(__name__)
