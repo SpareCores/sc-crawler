@@ -32,15 +32,15 @@ class Vendor(SQLModel, table=True):
 
     id: str = Field(default=None, primary_key=True)
     name: str
-    logo: Optional[HttpUrl] = None  # TODO upload to cdn.sparecores.com
-    homepage: HttpUrl
-    location: Location
+    # logo: Optional[HttpUrl] = None  # TODO upload to cdn.sparecores.com
+    # homepage: HttpUrl
+    # location: Location
 
     # https://dbpedia.org/ontology/Organisation
     founding_year: int
 
-    compliance_frameworks: List[ForwardRef("ComplianceFramework")] = []
-    status_page: Optional[HttpUrl] = None
+    # compliance_frameworks: List[ForwardRef("ComplianceFramework")] = []
+    # status_page: Optional[HttpUrl] = None
 
     # # private attributes
     # _methods: ImportString[ModuleType] = PrivateAttr()
