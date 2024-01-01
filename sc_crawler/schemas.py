@@ -59,8 +59,12 @@ class Vendor(SQLModel, table=True):
 
     id: str = Field(default=None, primary_key=True)
     name: str
-    # logo: Optional[HttpUrl] = None  # TODO upload to cdn.sparecores.com
-    # homepage: HttpUrl
+    # TODO HttpUrl not supported by SQLModel
+    # TODO upload to cdn.sparecores.com
+    logo: Optional[str] = None
+    # TODO HttpUrl not supported by SQLModel
+    homepage: str
+
     country: str = Field(default=None, foreign_key="country.id")
     state: Optional[str] = None
     city: Optional[str] = None
@@ -74,8 +78,11 @@ class Vendor(SQLModel, table=True):
         back_populates="vendors", link_model=VendorComplianceLink
     )
 
-    # # private attributes
-    # _methods: ImportString[ModuleType] = PrivateAttr()
+    # TODO HttpUrl not supported by SQLModel
+    status_page: Optional[str] = None
+
+    # private attributes
+    _methods: ImportString[ModuleType] = PrivateAttr()
 
     # relations
     datacenters: List["Datacenter"] = Relationship(back_populates="vendor")
@@ -115,12 +122,9 @@ class Vendor(SQLModel, table=True):
 
 class Datacenter(SQLModel, table=True):
     id: str = Field(default=None, primary_key=True)
-    vendor_id: str = Field(default=None, foreign_key="vendor.id", primary_key=True)
     name: str
-    vendor: Vendor
-    founding_year: Optional[int] = None
-    green_energy: Optional[bool] = None
 
+    vendor_id: str = Field(default=None, foreign_key="vendor.id", primary_key=True)
     vendor: Vendor = Relationship(back_populates="datacenters")
 
     country: str = Field(default=None, foreign_key="country.id")
@@ -128,6 +132,10 @@ class Datacenter(SQLModel, table=True):
     city: Optional[str] = None
     address_line: Optional[str] = None
     zip_code: Optional[str] = None
+
+    founding_year: Optional[int] = None
+    green_energy: Optional[bool] = None
+
     @computed_field
     @property
     def zones(self) -> int:
