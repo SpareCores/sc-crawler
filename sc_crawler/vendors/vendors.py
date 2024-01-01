@@ -2,7 +2,7 @@ from .. import Location, Vendor
 from ..compliance_frameworks import hipaa, soc2t2
 
 aws = Vendor(
-    identifier="aws",
+    id="aws",
     name="Amazon Web Services",
     homepage="https://aws.amazon.com",
     location=Location(country="US", city="Seattle", address_line1="410 Terry Ave N"),
@@ -12,7 +12,7 @@ aws = Vendor(
 )
 
 gcp = Vendor(
-    identifier="gcp",
+    id="gcp",
     name="Google Cloud Platform",
     homepage="https://cloud.google.com",
     location=Location(

@@ -14,9 +14,10 @@ from pydantic import (
     PrivateAttr,
     computed_field,
 )
+from sqlmodel import Field, Relationship, Session, SQLModel, create_engine, JSON, Column
 
 
-class Vendor(BaseModel):
+class Vendor(SQLModel, table=True):
     """Base class for cloud compute resource vendors.
 
     Examples:
@@ -29,7 +30,7 @@ class Vendor(BaseModel):
         Vendor(identifier='aws'...
     """  # noqa: E501
 
-    identifier: str
+    id: str = Field(default=None, primary_key=True)
     name: str
     logo: Optional[HttpUrl] = None  # TODO upload to cdn.sparecores.com
     homepage: HttpUrl
@@ -41,85 +42,55 @@ class Vendor(BaseModel):
     compliance_frameworks: List[ForwardRef("ComplianceFramework")] = []
     status_page: Optional[HttpUrl] = None
 
-    @computed_field
-    @property
-    def datacenters(self) -> int:
-        if hasattr(self, "_datacenters"):
-            return len(self._datacenters)
-        else:
-            return 0
+    # # private attributes
+    # _methods: ImportString[ModuleType] = PrivateAttr()
 
-    @computed_field
-    @property
-    def zones(self) -> int:
-        if hasattr(self, "_datacenters"):
-            return sum([datacenter.zones for datacenter in self._datacenters])
-        else:
-            return 0
-
-    # private attributes
-    _methods: ImportString[ModuleType] = PrivateAttr()
-    _datacenters: List[ForwardRef("Datacenter")] = PrivateAttr()
-    _zones: List[ForwardRef("Zone")] = PrivateAttr()
-    _servers: List[ForwardRef("Server")] = PrivateAttr()
-    _storages: List[ForwardRef("Storage")] = PrivateAttr()
-    _traffics: List[ForwardRef("Traffic")] = PrivateAttr()
+    # relations
+    datacenters: List["Datacenter"] = Relationship(back_populates="vendor")
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         try:
-            vm = __name__.split(".")[0] + ".vendors." + self.identifier
-            self._methods = import_module(vm)
-        except Exception:
-            raise NotImplementedError("Unsupported vendor")
+            vendor_module = __name__.split(".")[0] + ".vendors." + self.id
+            self._methods = import_module(vendor_module)
+        except Exception as exc:
+            raise NotImplementedError("Unsupported vendor") from exc
 
-    def get_datacenters(self, identifiers: [str] = None):
-        """Get datacenters of the vendor.
+    def get_datacenters(self, session):
+        """Get datacenters of the vendor."""
+        return self._methods.get_datacenters(self)
 
-        Args:
-            identifiers: datacenter ids to filter for
-        """
-        if not hasattr(self, "_datacenters"):
-            self._datacenters = self._methods.get_datacenters(self)
-        datacenters = self._datacenters
-        if identifiers:
-            datacenters = [
-                datacenter
-                for datacenter in datacenters
-                if datacenter.identifier in identifiers
-            ]
-        return datacenters
+    # def get_zones(self):
+    #     """Get zones of the vendor from its datacenters."""
+    #     # make sure datacenters filled in
+    #     self._methods.get_datacenters(self)
+    #     # unlist
+    #     self._zones = dict(
+    #         ChainMap(*[datacenter._zones for datacenter in self._datacenters])
+    #     )
 
-    def get_zones(self):
-        """Get zones of the vendor from its datacenters."""
-        # make sure datacenters filled in
-        self._methods.get_datacenters(self)
-        # unlist
-        self._zones = dict(
-            ChainMap(*[datacenter._zones for datacenter in self._datacenters])
-        )
+    # def get_instance_types(self):
+    #     if not hasattr(self, "_servers"):
+    #         self._servers = self._methods.get_instance_types(self)
+    #     return self._servers
 
-    def get_instance_types(self):
-        if not hasattr(self, "_servers"):
-            self._servers = self._methods.get_instance_types(self)
-        return self._servers
-
-    def get_all(self):
-        self.get_datacenters()
-        self.get_zones()
-        self.get_instance_types()
-        return
+    # def get_all(self):
+    #     self.get_datacenters()
+    #     self.get_zones()
+    #     self.get_instance_types()
+    #     return
 
 
-class Datacenter(BaseModel):
-    identifier: str
+class Datacenter(SQLModel, table=True):
+    id: str = Field(default=None, primary_key=True)
+    vendor_id: str = Field(default=None, foreign_key="vendor.id", primary_key=True)
     name: str
     vendor: Vendor
-    location: Location
+    _location: Location
     founding_year: Optional[int] = None
     green_energy: Optional[bool] = None
 
-    _zones: Dict[str, ForwardRef("Zone")] = PrivateAttr()
+    vendor: Vendor = Relationship(back_populates="datacenters")
 
     @computed_field
     @property
@@ -127,89 +98,89 @@ class Datacenter(BaseModel):
         return len(self._zones)
 
 
-class Zone(BaseModel):
-    identifier: str
-    name: str
-    datacenter: Datacenter
+# class Zone(BaseModel):
+#     identifier: str
+#     name: str
+#     datacenter: Datacenter
 
-    @computed_field
-    @property
-    def vendor(self) -> Vendor:
-        return self.datacenter.vendor
-
-
-resource_types = Literal["compute", "traffic", "storage"]
+#     @computed_field
+#     @property
+#     def vendor(self) -> Vendor:
+#         return self.datacenter.vendor
 
 
-class Resource(BaseModel):
-    # vendor-specific resources (e.g. instance types) should be
-    # prefixed with the vendor id, e.g. "aws:m5.xlarge"
-    identifier: str
-    name: str
-    description: Optional[str]
-    resource_type: resource_types
-    billable_unit: str  # e.g. GB, GiB, TB, runtime hours
+# resource_types = Literal["compute", "traffic", "storage"]
 
 
-storage_types = Literal["hdd", "ssd", "nvme ssd", "network"]
+# class Resource(BaseModel):
+#     # vendor-specific resources (e.g. instance types) should be
+#     # prefixed with the vendor id, e.g. "aws:m5.xlarge"
+#     identifier: str
+#     name: str
+#     description: Optional[str]
+#     resource_type: resource_types
+#     billable_unit: str  # e.g. GB, GiB, TB, runtime hours
 
 
-class Storage(BaseModel):
-    size: int = 0  # GB
-    storage_type: storage_types
+# storage_types = Literal["hdd", "ssd", "nvme ssd", "network"]
 
 
-class NetworkStorage(Resource, Storage):
-    resource_type: resource_types = "storage"
-    storage_type: storage_types = "network"
-    max_iops: Optional[int] = None
-    max_throughput: Optional[int] = None  # MiB/s
-    min_size: Optional[int] = None  # GiB
-    max_size: Optional[int] = None  # GiB
-    billable_unit: str = "GiB"
+# class Storage(BaseModel):
+#     size: int = 0  # GB
+#     storage_type: storage_types
 
 
-class Gpu(BaseModel):
-    manufacturer: str
-    name: str
-    memory: int  # MiB
-    firmware: Optional[str] = None
+# class NetworkStorage(Resource, Storage):
+#     resource_type: resource_types = "storage"
+#     storage_type: storage_types = "network"
+#     max_iops: Optional[int] = None
+#     max_throughput: Optional[int] = None  # MiB/s
+#     min_size: Optional[int] = None  # GiB
+#     max_size: Optional[int] = None  # GiB
+#     billable_unit: str = "GiB"
 
 
-class Server(Resource):
-    resource_type: resource_types = "compute"
-    vcpus: int
-    cpu_cores: int
-    cpu_speed: Optional[float] = None  # Ghz
-    cpu_architecture: Literal["arm64", "arm64_mac", "i386", "x86_64"]
-    cpu_manufacturer: Optional[str] = None
-    memory: int
-    gpu_count: int = 0
-    gpu_memory: Optional[int] = None  # MiB
-    gpu_name: Optional[str] = None
-    gpus: List[Gpu] = []
-    storage_size: int = 0  # GB
-    storage_type: Optional[storage_types]
-    storages: List[Storage] = []
-    network_speed: Optional[float]  # Gbps
+# class Gpu(BaseModel):
+#     manufacturer: str
+#     name: str
+#     memory: int  # MiB
+#     firmware: Optional[str] = None
 
 
-class Traffic(Resource):
-    resource_type: resource_types = "traffic"
-    direction: Literal["inbound", "outbound"]
-    billable_unit: str = "GB"
+# class Server(Resource):
+#     resource_type: resource_types = "compute"
+#     vcpus: int
+#     cpu_cores: int
+#     cpu_speed: Optional[float] = None  # Ghz
+#     cpu_architecture: Literal["arm64", "arm64_mac", "i386", "x86_64"]
+#     cpu_manufacturer: Optional[str] = None
+#     memory: int
+#     gpu_count: int = 0
+#     gpu_memory: Optional[int] = None  # MiB
+#     gpu_name: Optional[str] = None
+#     gpus: List[Gpu] = []
+#     storage_size: int = 0  # GB
+#     storage_type: Optional[storage_types]
+#     storages: List[Storage] = []
+#     network_speed: Optional[float]  # Gbps
 
 
-class Availability(BaseModel):
-    vendor: Vendor
-    # a resource might be available in all or only in one/few
-    # datacenters and zones e.g. incoming traffic is priced per
-    # datacenter, but sport instance price per zone
-    datacenter: Optional[Datacenter]
-    zone: Optional[Zone]
-    resource: Resource
-    allocation: Literal["ondemand", "spot"] = "ondemand"
-    price: float
+# class Traffic(Resource):
+#     resource_type: resource_types = "traffic"
+#     direction: Literal["inbound", "outbound"]
+#     billable_unit: str = "GB"
+
+
+# class Availability(BaseModel):
+#     vendor: Vendor
+#     # a resource might be available in all or only in one/few
+#     # datacenters and zones e.g. incoming traffic is priced per
+#     # datacenter, but sport instance price per zone
+#     datacenter: Optional[Datacenter]
+#     zone: Optional[Zone]
+#     resource: Resource
+#     allocation: Literal["ondemand", "spot"] = "ondemand"
+#     price: float
 
 
 class ComplianceFramework(BaseModel):

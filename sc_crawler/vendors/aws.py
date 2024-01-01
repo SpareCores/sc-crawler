@@ -6,7 +6,7 @@ import logging
 import re
 
 from .. import Location
-from ..schemas import Datacenter, Zone, Server, Storage, Gpu
+from ..schemas import Datacenter  # , Zone, Server, Storage, Gpu
 
 logger = logging.getLogger(__name__)
 
