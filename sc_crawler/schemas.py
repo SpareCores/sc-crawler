@@ -1,8 +1,5 @@
 """Schemas for vendors, datacenters, zones, and other resources."""
 
-
-from .lookup import Country, countries
-
 from collections import ChainMap
 from importlib import import_module
 from types import ModuleType
@@ -15,6 +12,36 @@ from pydantic import (
     computed_field,
 )
 from sqlmodel import Field, Relationship, Session, SQLModel, create_engine, JSON, Column
+
+
+class Country(SQLModel, table=True):
+    id: str = Field(default=None, primary_key=True)
+    continent: str
+
+
+class VendorComplianceLink(SQLModel, table=True):
+    vendor: Optional[int] = Field(
+        default=None, foreign_key="vendor.id", primary_key=True
+    )
+    compliance_framework: Optional[int] = Field(
+        default=None, foreign_key="complianceframework.id", primary_key=True
+    )
+
+
+class ComplianceFramework(SQLModel, table=True):
+    id: str = Field(primary_key=True)
+    name: str
+    abbreviation: Optional[str]
+    description: Optional[str]
+    # TODO HttpUrl not supported by SQLModel
+    # TODO upload to cdn.sparecores.com
+    logo: Optional[str] = None
+    # TODO HttpUrl not supported by SQLModel
+    homepage: Optional[str] = None
+
+    vendors: List["Vendor"] = Relationship(
+        back_populates="compliance_frameworks", link_model=VendorComplianceLink
+    )
 
 
 class Vendor(SQLModel, table=True):
@@ -43,8 +70,9 @@ class Vendor(SQLModel, table=True):
     # https://dbpedia.org/ontology/Organisation
     founding_year: int
 
-    # compliance_frameworks: List[ForwardRef("ComplianceFramework")] = []
-    # status_page: Optional[HttpUrl] = None
+    compliance_frameworks: List[ComplianceFramework] = Relationship(
+        back_populates="vendors", link_model=VendorComplianceLink
+    )
 
     # # private attributes
     # _methods: ImportString[ModuleType] = PrivateAttr()
@@ -189,15 +217,6 @@ class Datacenter(SQLModel, table=True):
 #     resource: Resource
 #     allocation: Literal["ondemand", "spot"] = "ondemand"
 #     price: float
-
-
-class ComplianceFramework(BaseModel):
-    id: str
-    name: str
-    abbreviation: Optional[str]
-    description: Optional[str]
-    logo: Optional[HttpUrl] = None  # TODO upload to cdn.sparecores.com
-    homepage: Optional[HttpUrl] = None
 
 
 Vendor.model_rebuild()

@@ -1,6 +1,10 @@
 from ..schemas import Vendor
-from ..lookup import countries
-from ..compliance_frameworks import hipaa, soc2t2
+from ..lookup import countries, compliance_frameworks
+
+
+def get_compliance_frameworks(framework_ids):
+    return [v for k, v in compliance_frameworks.items() if k in framework_ids]
+
 
 aws = Vendor(
     id="aws",
@@ -12,7 +16,7 @@ aws = Vendor(
     address_line="410 Terry Ave N",
     zip_code="98109",
     founding_year=2002,
-    compliance_frameworks=[hipaa, soc2t2],
+    compliance_frameworks=get_compliance_frameworks(["hipaa", "soc2t2"]),
     status_page="https://health.aws.amazon.com/health/status",
 )
 
@@ -26,6 +30,6 @@ gcp = Vendor(
     address_line="1600 Amphitheatre Pkwy",
     zip_code="94043",
     founding_year=2008,
-    compliance_frameworks=[hipaa, soc2t2],
+    compliance_frameworks=get_compliance_frameworks(["hipaa", "soc2t2"]),
     status_page="https://status.cloud.google.com/",
 )
