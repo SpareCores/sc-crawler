@@ -390,6 +390,7 @@ instance_families = {
     "a": "AWS Graviton",
     "c": "Compute optimized",
     "d": "Dense storage",
+    "dl": "Deep Learning",
     "f": "FPGA",
     "g": "Graphics intensive",
     "hpc": "High performance computing",
