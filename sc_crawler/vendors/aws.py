@@ -7,6 +7,7 @@ import logging
 import re
 
 from ..lookup import countries
+
 from ..schemas import Datacenter, Zone, Server, Storage, Gpu
 
 logger = logging.getLogger(__name__)
@@ -515,46 +516,55 @@ def get_gpus(instance_type):
     return [to_gpu(gpu) for gpu in gpus]
 
 
-def get_instance_types(vendor, *args, **kwargs):
-    if not hasattr(vendor, "_datacenters"):
-        raise AttributeError("Datacenters not defined, run get_datacenters()")
-    regions = [datacenter.identifier for datacenter in vendor._datacenters]
-    instance_types = {}
-    # might be instance types specific to a few or even a single region
-    for region in regions:
-        logger.debug(f"Looking up instance types in region {region}")
-        local_instance_types = describe_instance_types(region)
-        for instance_type in local_instance_types:
-            it = instance_type["InstanceType"]
-            if it not in list(instance_types.keys()):
-                vcpu_info = instance_type["VCpuInfo"]
-                cpu_info = instance_type["ProcessorInfo"]
-                gpu_info = get_gpu(instance_type)
-                storage_info = get_storage(instance_type)
-                network_card = instance_type["NetworkInfo"]["NetworkCards"][0]
-                instance_types.update(
-                    {
-                        it: Server(
-                            identifier=it,
-                            name=it,
-                            description=annotate_instance_type(it),
-                            vcpus=vcpu_info["DefaultVCpus"],
-                            cpu_cores=vcpu_info["DefaultCores"],
-                            cpu_speed=cpu_info.get("SustainedClockSpeedInGhz", None),
-                            cpu_architecture=cpu_info["SupportedArchitectures"][0],
-                            cpu_manufacturer=cpu_info.get("Manufacturer", None),
-                            memory=instance_type["MemoryInfo"]["SizeInMiB"],
-                            gpu_count=gpu_info[0],
-                            gpu_memory=gpu_info[1],
-                            gpu_name=gpu_info[2],
-                            gpus=get_gpus(instance_type),
-                            storage_size=storage_info[0],
-                            storage_type=storage_info[1],
-                            storages=get_storages(instance_type),
-                            network_speed=network_card["BaselineBandwidthInGbps"],
-                            billable_unit="hour",
-                        )
-                    }
-                )
+def server_from_instance_type(instance_type, vendor):
+    """Create a SQLModel Server instance from AWS raw API response."""
+    it = instance_type["InstanceType"]
+    vcpu_info = instance_type["VCpuInfo"]
+    cpu_info = instance_type["ProcessorInfo"]
+    gpu_info = get_gpu(instance_type)
+    storage_info = get_storage(instance_type)
+    network_card = instance_type["NetworkInfo"]["NetworkCards"][0]
+    # avoid duplicates
+    if it not in [s.id for s in vendor.servers]:
+        return Server(
+            id=it,
+            vendor=vendor,
+            name=it,
+            description=annotate_instance_type(it),
+            vcpus=vcpu_info["DefaultVCpus"],
+            cpu_cores=vcpu_info["DefaultCores"],
+            cpu_speed=cpu_info.get("SustainedClockSpeedInGhz", None),
+            cpu_architecture=cpu_info["SupportedArchitectures"][0],
+            cpu_manufacturer=cpu_info.get("Manufacturer", None),
+            memory=instance_type["MemoryInfo"]["SizeInMiB"],
+            gpu_count=gpu_info[0],
+            gpu_memory=gpu_info[1],
+            gpu_name=gpu_info[2],
+            gpus=get_gpus(instance_type),
+            storage_size=storage_info[0],
+            storage_type=storage_info[1],
+            storages=get_storages(instance_type),
+            network_speed=network_card["BaselineBandwidthInGbps"],
+            billable_unit="hour",
+        )
 
-    return instance_types
+
+def instance_types_of_region(region, vendor):
+    """List all available instance types of an AWS region."""
+    logger.debug(f"Looking up instance types in region {region}")
+    instance_types = describe_instance_types(region)
+    return [
+        server_from_instance_type(instance_type, vendor)
+        for instance_type in instance_types
+    ]
+
+
+def get_instance_types(vendor, *args, **kwargs):
+    regions = [
+        datacenter.id
+        for datacenter in vendor.datacenters
+        if datacenter.status == "active"
+    ]
+    # might be instance types specific to a few or even a single region
+    instance_types = [instance_types_of_region(region, vendor) for region in regions]
+    return list(chain(*instance_types))

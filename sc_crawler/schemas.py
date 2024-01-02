@@ -2,6 +2,7 @@
 
 
 from enum import Enum
+import json
 from importlib import import_module
 from types import ModuleType
 from typing import List, Optional
@@ -139,16 +140,14 @@ class Vendor(SQLModel, table=True):
         """Get zones of the vendor from its datacenters."""
         return self._methods.get_zones(self)
 
-    # def get_instance_types(self):
-    #     if not hasattr(self, "_servers"):
-    #         self._servers = self._methods.get_instance_types(self)
-    #     return self._servers
+    def get_instance_types(self):
+        return self._methods.get_instance_types(self)
 
-    # def get_all(self):
-    #     self.get_datacenters()
-    #     self.get_zones()
-    #     self.get_instance_types()
-    #     return
+    def get_all(self):
+        self.get_datacenters()
+        self.get_zones()
+        self.get_instance_types()
+        return
 
 
 class Datacenter(SQLModel, table=True):
