@@ -7,6 +7,8 @@ from .vendors import aws
 def crawl():
     create_db_and_tables()
     with Session(engine) as session:
+        # fill lookup tables? might not be needed due to autofill of downstream
+        # TODO check country
         session.add(aws)
         session.commit()
 

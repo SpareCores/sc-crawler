@@ -11,6 +11,9 @@ from pydantic import (
     PrivateAttr,
     computed_field,
 )
+
+# TODO SQLModel does NOT actually do pydantic validations
+#      https://github.com/tiangolo/sqlmodel/issues/52
 from sqlmodel import Field, Relationship, Session, SQLModel, create_engine, JSON, Column
 
 
@@ -57,7 +60,7 @@ class Vendor(SQLModel, table=True):
         Vendor(identifier='aws'...
     """  # noqa: E501
 
-    id: str = Field(default=None, primary_key=True)
+    id: str = Field(primary_key=True)
     name: str
     # TODO HttpUrl not supported by SQLModel
     # TODO upload to cdn.sparecores.com
@@ -65,7 +68,7 @@ class Vendor(SQLModel, table=True):
     # TODO HttpUrl not supported by SQLModel
     homepage: str
 
-    country: str = Field(default=None, foreign_key="country.id")
+    country: str = Field(foreign_key="country.id")
     state: Optional[str] = None
     city: Optional[str] = None
     address_line: Optional[str] = None
@@ -90,8 +93,19 @@ class Vendor(SQLModel, table=True):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         try:
+            # TODO SQLModel does not validates pydantic typing
+            if not self.id:
+                raise ValueError("No vendor id provided")
+            if not self.name:
+                raise ValueError("No vendor name provided")
+            if not self.homepage:
+                raise ValueError("No vendor homepage provided")
+            if not self.country:
+                raise ValueError("No vendor country provided")
             vendor_module = __name__.split(".")[0] + ".vendors." + self.id
             self._methods = import_module(vendor_module)
+        except ValueError as exc:
+            raise exc
         except Exception as exc:
             raise NotImplementedError("Unsupported vendor") from exc
 
