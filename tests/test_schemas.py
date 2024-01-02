@@ -1,5 +1,4 @@
 import pytest
-from pydantic import ValidationError
 from sc_crawler.schemas import Vendor, Country
 
 
