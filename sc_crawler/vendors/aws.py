@@ -387,6 +387,7 @@ def get_zones(vendor, *args, **kwargs):
 
 
 instance_families = {
+    "a": "AWS Graviton",
     "c": "Compute optimized",
     "d": "Dense storage",
     "f": "FPGA",
@@ -429,15 +430,22 @@ def annotate_instance_type(instance_type_id):
     Source: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instance-types.html#instance-type-names
     """  # noqa: E501
     kind = instance_type_id.split(".")[0]
+    # drop X TB suffix after instance family
+    if kind.startswith("u"):
+        logger.warning(f"Removing X TB reference: {kind}")
+        kind = re.sub(r"^u-([0-9]*)tb", "u", kind)
     # drop suffixes for now after the dash, e.g. "Mac2-m2", "Mac2-m2pro"
     if "-" in kind:
         logger.warning(f"Truncating instance type after the dash: {kind}")
-    kind = kind.split("-")[0]
+        kind = kind.split("-")[0]
     family, extras = re.split(r"[0-9]", kind)
     generation = re.findall(r"[0-9]", kind)[0]
     size = instance_type_id.split(".")[1]
 
-    text = instance_families[family]
+    try:
+        text = instance_families[family]
+    except KeyError as exc:
+        raise KeyError("Unknown instance family: " + family) from exc
     for k, v in instance_suffixes.items():
         if k in extras:
             text += " [" + v + "]"
