@@ -1,10 +1,10 @@
 """Schemas for vendors, datacenters, zones, and other resources."""
 
-from collections import ChainMap
+
 from enum import Enum
 from importlib import import_module
 from types import ModuleType
-from typing import Dict, List, Literal, Optional, ForwardRef
+from typing import List, Optional
 from pydantic import (
     BaseModel,
     ImportString,
@@ -13,7 +13,7 @@ from pydantic import (
 
 # TODO SQLModel does NOT actually do pydantic validations
 #      https://github.com/tiangolo/sqlmodel/issues/52
-from sqlmodel import Field, Relationship, Session, SQLModel, create_engine, JSON, Column
+from sqlmodel import Field, Relationship, SQLModel, JSON, Column
 
 
 class Json(BaseModel):
@@ -25,7 +25,8 @@ class Country(SQLModel, table=True):
     id: str = Field(default=None, primary_key=True)
     continent: str
 
-    tenants: List["Vendor"] = Relationship(back_populates="country")
+    vendors: List["Vendor"] = Relationship(back_populates="country")
+    datacenters: List["Datacenter"] = Relationship(back_populates="country")
 
 
 class VendorComplianceLink(SQLModel, table=True):
@@ -95,7 +96,7 @@ class Vendor(SQLModel, table=True):
     _methods: ImportString[ModuleType] = PrivateAttr()
 
     # relations
-    country: Country = Relationship(back_populates="tenants")
+    country: Country = Relationship(back_populates="vendors")
     datacenters: List["Datacenter"] = Relationship(back_populates="vendor")
     zones: List["Zone"] = Relationship(back_populates="vendor")
     addon_storages: List["AddonStorage"] = Relationship(back_populates="vendor")
@@ -153,7 +154,7 @@ class Datacenter(SQLModel, table=True):
     vendor_id: str = Field(foreign_key="vendor.id", primary_key=True)
     vendor: Vendor = Relationship(back_populates="datacenters")
 
-    country: str = Field(default=None, foreign_key="country.id")
+    country_id: str = Field(foreign_key="country.id")
     state: Optional[str] = None
     city: Optional[str] = None
     address_line: Optional[str] = None
@@ -162,6 +163,8 @@ class Datacenter(SQLModel, table=True):
     founding_year: Optional[int] = None
     green_energy: Optional[bool] = None
 
+    # relations
+    country: Country = Relationship(back_populates="datacenters")
     zones: List["Zone"] = Relationship(back_populates="datacenter")
 
 
@@ -274,5 +277,6 @@ class Server(SQLModel, table=True):
 #     price: float
 
 
+Country.model_rebuild()
 Vendor.model_rebuild()
 Datacenter.model_rebuild()
