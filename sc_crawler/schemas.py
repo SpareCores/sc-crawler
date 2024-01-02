@@ -1,20 +1,24 @@
 """Schemas for vendors, datacenters, zones, and other resources."""
 
 from collections import ChainMap
+from enum import Enum
 from importlib import import_module
 from types import ModuleType
 from typing import Dict, List, Literal, Optional, ForwardRef
 from pydantic import (
     BaseModel,
-    HttpUrl,
     ImportString,
     PrivateAttr,
-    computed_field,
 )
 
 # TODO SQLModel does NOT actually do pydantic validations
 #      https://github.com/tiangolo/sqlmodel/issues/52
 from sqlmodel import Field, Relationship, Session, SQLModel, create_engine, JSON, Column
+
+
+class Json(BaseModel):
+    def __json__(self):
+        return self.model_dump()
 
 
 class Country(SQLModel, table=True):
@@ -90,6 +94,10 @@ class Vendor(SQLModel, table=True):
 
     # relations
     datacenters: List["Datacenter"] = Relationship(back_populates="vendor")
+    zones: List["Zone"] = Relationship(back_populates="vendor")
+    addon_storages: List["AddonStorage"] = Relationship(back_populates="vendor")
+    addon_traffics: List["AddonTraffic"] = Relationship(back_populates="vendor")
+    servers: List["Server"] = Relationship(back_populates="vendor")
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -136,10 +144,10 @@ class Vendor(SQLModel, table=True):
 
 
 class Datacenter(SQLModel, table=True):
-    id: str = Field(default=None, primary_key=True)
+    id: str = Field(primary_key=True)
     name: str
 
-    vendor_id: str = Field(default=None, foreign_key="vendor.id", primary_key=True)
+    vendor_id: str = Field(foreign_key="vendor.id", primary_key=True)
     vendor: Vendor = Relationship(back_populates="datacenters")
 
     country: str = Field(default=None, foreign_key="country.id")
@@ -151,83 +159,104 @@ class Datacenter(SQLModel, table=True):
     founding_year: Optional[int] = None
     green_energy: Optional[bool] = None
 
-    @computed_field
-    @property
-    def zones(self) -> int:
-        return len(self._zones)
+    zones: List["Zone"] = Relationship(back_populates="datacenter")
 
 
-# class Zone(BaseModel):
-#     identifier: str
-#     name: str
-#     datacenter: Datacenter
+class Zone(SQLModel, table=True):
+    id: str = Field(primary_key=True)
+    datacenter_id: str = Field(foreign_key="datacenter.id", primary_key=True)
+    vendor_id: str = Field(foreign_key="vendor.id", primary_key=True)
+    name: str
 
-#     @computed_field
-#     @property
-#     def vendor(self) -> Vendor:
-#         return self.datacenter.vendor
+    datacenter: Datacenter = Relationship(back_populates="zones")
+    vendor: Vendor = Relationship(back_populates="zones")
 
 
 # resource_types = Literal["compute", "traffic", "storage"]
 
 
-# class Resource(BaseModel):
-#     # vendor-specific resources (e.g. instance types) should be
-#     # prefixed with the vendor id, e.g. "aws:m5.xlarge"
-#     identifier: str
-#     name: str
-#     description: Optional[str]
-#     resource_type: resource_types
-#     billable_unit: str  # e.g. GB, GiB, TB, runtime hours
+class StorageType(str, Enum):
+    HDD = "hdd"
+    SSD = "ssd"
+    NVME_SSD = "nvme ssd"
+    NETWORK = "network"
 
 
-# storage_types = Literal["hdd", "ssd", "nvme ssd", "network"]
+class AddonStorage(SQLModel, table=True):
+    __tablename__: str = "addon_storage"  # type: ignore
+
+    id: str = Field(primary_key=True)
+    vendor_id: str = Field(foreign_key="vendor.id", primary_key=True)
+    name: str
+    description: Optional[str]
+    size: int = 0
+    storage_type: StorageType
+    max_iops: Optional[int] = None
+    max_throughput: Optional[int] = None  # MiB/s
+    min_size: Optional[int] = None  # GiB
+    max_size: Optional[int] = None  # GiB
+    billable_unit: str = "GiB"
+
+    vendor: Vendor = Relationship(back_populates="addon_storages")
 
 
-# class Storage(BaseModel):
-#     size: int = 0  # GB
-#     storage_type: storage_types
+class TrafficDirection(str, Enum):
+    IN = "inbound"
+    OUT = "outbound"
 
 
-# class NetworkStorage(Resource, Storage):
-#     resource_type: resource_types = "storage"
-#     storage_type: storage_types = "network"
-#     max_iops: Optional[int] = None
-#     max_throughput: Optional[int] = None  # MiB/s
-#     min_size: Optional[int] = None  # GiB
-#     max_size: Optional[int] = None  # GiB
-#     billable_unit: str = "GiB"
+class AddonTraffic(SQLModel, table=True):
+    __tablename__: str = "addon_traffic"  # type: ignore
+
+    id: str = Field(primary_key=True)
+    vendor_id: str = Field(foreign_key="vendor.id", primary_key=True)
+    name: str
+    description: Optional[str]
+    direction: TrafficDirection
+    billable_unit: str = "GB"
+
+    vendor: Vendor = Relationship(back_populates="addon_traffics")
 
 
-# class Gpu(BaseModel):
-#     manufacturer: str
-#     name: str
-#     memory: int  # MiB
-#     firmware: Optional[str] = None
+class Gpu(Json):
+    manufacturer: str
+    name: str
+    memory: int  # MiB
+    firmware: Optional[str] = None
 
 
-# class Server(Resource):
-#     resource_type: resource_types = "compute"
-#     vcpus: int
-#     cpu_cores: int
-#     cpu_speed: Optional[float] = None  # Ghz
-#     cpu_architecture: Literal["arm64", "arm64_mac", "i386", "x86_64"]
-#     cpu_manufacturer: Optional[str] = None
-#     memory: int
-#     gpu_count: int = 0
-#     gpu_memory: Optional[int] = None  # MiB
-#     gpu_name: Optional[str] = None
-#     gpus: List[Gpu] = []
-#     storage_size: int = 0  # GB
-#     storage_type: Optional[storage_types]
-#     storages: List[Storage] = []
-#     network_speed: Optional[float]  # Gbps
+class Storage(Json):
+    size: int = 0  # GiB
+    storage_type: StorageType
 
 
-# class Traffic(Resource):
-#     resource_type: resource_types = "traffic"
-#     direction: Literal["inbound", "outbound"]
-#     billable_unit: str = "GB"
+class CpuArchitecture(str, Enum):
+    ARM64 = "arm64"
+    ARM64_MAC = "arm64_mac"
+    I386 = "i386"
+    X86_64 = "x86_64"
+
+
+class Server(SQLModel, table=True):
+    id: str = Field(primary_key=True)
+    vendor_id: str = Field(foreign_key="vendor.id", primary_key=True)
+    name: str
+    vcpus: int
+    cpu_cores: int
+    cpu_speed: Optional[float] = None  # Ghz
+    cpu_architecture: CpuArchitecture
+    cpu_manufacturer: Optional[str] = None
+    memory: int
+    gpu_count: int = 0
+    gpu_memory: Optional[int] = None  # MiB
+    gpu_name: Optional[str] = None
+    gpus: List[Gpu] = Field(default=[], sa_column=Column(JSON))
+    storage_size: int = 0  # GB
+    storage_type: Optional[StorageType] = None
+    storages: List[Storage] = Field(default=[], sa_column=Column(JSON))
+    network_speed: Optional[float] = None  # Gbps
+
+    vendor: Vendor = Relationship(back_populates="servers")
 
 
 # class Availability(BaseModel):
