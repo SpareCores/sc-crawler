@@ -19,8 +19,12 @@ aws.zones
 # pretty printed objects
 from rich import print as pp
 pp(aws)
-pp(aws._datacenters[1]._zones)
-pp(aws._servers.get("t3a.2xlarge"))
-pp(aws._servers.get("i3en.12xlarge"))
-pp(aws._servers.get("g4dn.metal"))
+pp(aws.datacenters)
+pp(aws.servers[0])
+```
+
+Or simply run:
+
+```shell
+rm /tmp/sc_crawler.db & python -m sc_crawler.app
 ```
