@@ -22,7 +22,9 @@ set_default_params(caching_enabled=False)
 @cachier(stale_after=timedelta(days=3))
 def describe_instance_types(region):
     ec2 = boto3.client("ec2", region_name=region)
-    return ec2.describe_instance_types()["InstanceTypes"]
+    pages = ec2.get_paginator("describe_instance_types")
+    pages = pages.paginate().build_full_result()
+    return pages["InstanceTypes"]
 
 
 @cachier(stale_after=timedelta(days=3))
