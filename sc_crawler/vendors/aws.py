@@ -393,6 +393,7 @@ instance_families = {
     "dl": "Deep Learning",
     "f": "FPGA",
     "g": "Graphics intensive",
+    "h": "Cost-effective storage optimized with HDD",
     "hpc": "High performance computing",
     "i": "Storage optimized",
     "im": "Storage optimized with a one to four ratio of vCPU to memory",
@@ -433,7 +434,7 @@ def annotate_instance_type(instance_type_id):
     kind = instance_type_id.split(".")[0]
     # drop X TB suffix after instance family
     if kind.startswith("u"):
-        logger.warning(f"Removing X TB reference: {kind}")
+        logger.warning(f"Removing X TB reference from instance family: {kind}")
         kind = re.sub(r"^u-([0-9]*)tb", "u", kind)
     # drop suffixes for now after the dash, e.g. "Mac2-m2", "Mac2-m2pro"
     if "-" in kind:
@@ -446,7 +447,9 @@ def annotate_instance_type(instance_type_id):
     try:
         text = instance_families[family]
     except KeyError as exc:
-        raise KeyError("Unknown instance family: " + family) from exc
+        raise KeyError(
+            "Unknown instance family: " + family + " (e.g. " + instance_type_id + ")"
+        ) from exc
     for k, v in instance_suffixes.items():
         if k in extras:
             text += " [" + v + "]"
