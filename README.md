@@ -1,6 +1,26 @@
 This is a playground.
 
-Examples:
+Get all data into a SQLite file:
+
+```shell
+rm /tmp/sc_crawler.db & python -m sc_crawler.app
+```
+
+Read from DB:
+
+```py
+from sc_crawler.database import engine
+from sc_crawler.schemas import Server
+from sqlmodel import Session, select
+session = Session(engine)
+session.exec(select(Server).where(Server.id == 'trn1.32xlarge')).one()
+
+server = session.exec(select(Server).where(Server.id == 'trn1.32xlarge')).one()
+pp(server)
+pp(server.vendor)
+```
+
+Lower level access examples:
 
 ```py
 from sc_crawler.vendors import aws
@@ -21,10 +41,4 @@ from rich import print as pp
 pp(aws)
 pp(aws.datacenters)
 pp(aws.servers[0])
-```
-
-Or simply run:
-
-```shell
-rm /tmp/sc_crawler.db & python -m sc_crawler.app
 ```
