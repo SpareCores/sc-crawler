@@ -1,12 +1,13 @@
 import boto3
 from cachier import cachier, set_default_params
+from collections import ChainMap
 from datetime import timedelta
 from itertools import chain
 import logging
 import re
 
 from ..lookup import countries
-from ..schemas import Datacenter  # , Zone, Server, Storage, Gpu
+from ..schemas import Datacenter, Zone, Server, Storage, Gpu
 
 logger = logging.getLogger(__name__)
 
@@ -337,7 +338,7 @@ def get_datacenters(vendor, *args, **kwargs):
         ),
     ]
 
-    # look for undocumented (new) datacenters in AWS
+    # look for undocumented (new) regions in AWS
     supported_regions = [d.id for d in datacenters]
     regions = describe_regions()
     for region in regions:
@@ -347,6 +348,12 @@ def get_datacenters(vendor, *args, **kwargs):
         if region_name not in supported_regions:
             raise NotImplementedError(f"Unsupported AWS datacenter: {region_name}")
 
+    # mark inactive regions
+    active_regions = [region["RegionName"] for region in regions]
+    for datacenter in datacenters:
+        if datacenter.id not in active_regions:
+            datacenter.status = "inactive"
+
     # filter for datacenters enabled for the account
     datacenters = [
         datacenter
@@ -354,19 +361,26 @@ def get_datacenters(vendor, *args, **kwargs):
         if datacenter.id in [region["RegionName"] for region in regions]
     ]
 
-    # add zones
-    # for datacenter in datacenters:
-    #     zones = describe_availability_zones(datacenter.identifier)
-    #     datacenter._zones = {
-    #         zone["ZoneId"]: Zone(
-    #             identifier=zone["ZoneId"],
-    #             name=zone["ZoneName"],
-    #             datacenter=datacenter,
-    #         )
-    #         for zone in zones
-    #     }
-
     return datacenters
+
+
+def get_zones(vendor, *args, **kwargs):
+    """List all available AWS availability zones."""
+    zones = [
+        [
+            Zone(
+                id=zone["ZoneId"],
+                name=zone["ZoneName"],
+                datacenter=datacenter,
+                vendor=vendor,
+            )
+            for zone in describe_availability_zones(datacenter.id)
+        ]
+        for datacenter in vendor.datacenters
+        if datacenter.status == "active"
+    ]
+    # TODO check if zone is active
+    return ChainMap(*zones)
 
 
 instance_families = {

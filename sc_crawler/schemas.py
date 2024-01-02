@@ -17,8 +17,15 @@ from sqlmodel import Field, Relationship, SQLModel, JSON, Column
 
 
 class Json(BaseModel):
+    """Custom base SQLModel class that supports dumping as JSON."""
+
     def __json__(self):
         return self.model_dump()
+
+
+class Status(str, Enum):
+    ACTIVE = "active"
+    INACTIVE = "inactive"
 
 
 class Country(SQLModel, table=True):
@@ -92,6 +99,8 @@ class Vendor(SQLModel, table=True):
     # TODO HttpUrl not supported by SQLModel
     status_page: Optional[str] = None
 
+    status: Status = "active"
+
     # private attributes
     _methods: ImportString[ModuleType] = PrivateAttr()
 
@@ -126,14 +135,9 @@ class Vendor(SQLModel, table=True):
         """Get datacenters of the vendor."""
         return self._methods.get_datacenters(self)
 
-    # def get_zones(self):
-    #     """Get zones of the vendor from its datacenters."""
-    #     # make sure datacenters filled in
-    #     self._methods.get_datacenters(self)
-    #     # unlist
-    #     self._zones = dict(
-    #         ChainMap(*[datacenter._zones for datacenter in self._datacenters])
-    #     )
+    def get_zones(self):
+        """Get zones of the vendor from its datacenters."""
+        return self._methods.get_zones(self)
 
     # def get_instance_types(self):
     #     if not hasattr(self, "_servers"):
@@ -163,6 +167,8 @@ class Datacenter(SQLModel, table=True):
     founding_year: Optional[int] = None
     green_energy: Optional[bool] = None
 
+    status: Status = "active"
+
     # relations
     country: Country = Relationship(back_populates="datacenters")
     zones: List["Zone"] = Relationship(back_populates="datacenter")
@@ -173,7 +179,9 @@ class Zone(SQLModel, table=True):
     datacenter_id: str = Field(foreign_key="datacenter.id", primary_key=True)
     vendor_id: str = Field(foreign_key="vendor.id", primary_key=True)
     name: str
+    status: Status = "active"
 
+    # relations
     datacenter: Datacenter = Relationship(back_populates="zones")
     vendor: Vendor = Relationship(back_populates="zones")
 
@@ -199,6 +207,7 @@ class AddonStorage(SQLModel, table=True):
     min_size: Optional[int] = None  # GiB
     max_size: Optional[int] = None  # GiB
     billable_unit: str = "GiB"
+    status: Status = "active"
 
     vendor: Vendor = Relationship(back_populates="addon_storages")
 
@@ -217,6 +226,7 @@ class AddonTraffic(SQLModel, table=True):
     description: Optional[str]
     direction: TrafficDirection
     billable_unit: str = "GB"
+    status: Status = "active"
 
     vendor: Vendor = Relationship(back_populates="addon_traffics")
 
@@ -258,6 +268,7 @@ class Server(SQLModel, table=True):
     storage_type: Optional[StorageType] = None
     storages: List[Storage] = Field(default=[], sa_column=Column(JSON))
     network_speed: Optional[float] = None  # Gbps
+    status: Status = "active"
 
     vendor: Vendor = Relationship(back_populates="servers")
 
