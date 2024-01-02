@@ -25,6 +25,8 @@ class Country(SQLModel, table=True):
     id: str = Field(default=None, primary_key=True)
     continent: str
 
+    tenants: List["Vendor"] = Relationship(back_populates="country")
+
 
 class VendorComplianceLink(SQLModel, table=True):
     vendor: Optional[int] = Field(
@@ -73,7 +75,7 @@ class Vendor(SQLModel, table=True):
     # TODO HttpUrl not supported by SQLModel
     homepage: str
 
-    country: str = Field(foreign_key="country.id")
+    country_id: str = Field(foreign_key="country.id")
     state: Optional[str] = None
     city: Optional[str] = None
     address_line: Optional[str] = None
@@ -93,6 +95,7 @@ class Vendor(SQLModel, table=True):
     _methods: ImportString[ModuleType] = PrivateAttr()
 
     # relations
+    country: Country = Relationship(back_populates="tenants")
     datacenters: List["Datacenter"] = Relationship(back_populates="vendor")
     zones: List["Zone"] = Relationship(back_populates="vendor")
     addon_storages: List["AddonStorage"] = Relationship(back_populates="vendor")
