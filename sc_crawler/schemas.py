@@ -122,7 +122,7 @@ class Vendor(SQLModel, table=True):
         except Exception as exc:
             raise NotImplementedError("Unsupported vendor") from exc
 
-    def get_datacenters(self, session):
+    def get_datacenters(self):
         """Get datacenters of the vendor."""
         return self._methods.get_datacenters(self)
 
@@ -176,9 +176,6 @@ class Zone(SQLModel, table=True):
 
     datacenter: Datacenter = Relationship(back_populates="zones")
     vendor: Vendor = Relationship(back_populates="zones")
-
-
-# resource_types = Literal["compute", "traffic", "storage"]
 
 
 class StorageType(str, Enum):

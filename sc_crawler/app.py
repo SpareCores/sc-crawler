@@ -9,8 +9,10 @@ def crawl():
     with Session(engine) as session:
         # fill lookup tables? might not be needed due to autofill of downstream
         # TODO check country
-        session.add(aws)
-        session.commit()
+        for vendor in [aws]:
+            vendor.get_datacenters()
+            session.add(vendor)
+            session.commit()
 
 
 if __name__ == "__main__":
