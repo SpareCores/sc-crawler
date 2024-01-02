@@ -1,38 +1,21 @@
-[build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
-
 [project]
-name = "sc-crawler"
+name = "sc_crawler"
 version = "0.0.1"
-requires-python = ">= 3.7"
-dependencies = [
-  "cachier",
-  "pydantic",
-  "pydantic_extra_types",
-  "pycountry",
-]
-authors = [
-  { name="Attila Nagy" },
-  { name="Gergely Daroczi" },
-  { name="Balazs Hodobay" },
-]
-maintainers = [
-  { name="Spare Cores team", email="pkg@sparecores.com" }
-]
-description = "Collect metadata on cloud compute resources on the fly."
+description = "Spare Cores crawler"
 readme = "README.md"
-classifiers = [
-  "Programming Language :: Python :: 3",
-  "License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)",
-  "Operating System :: OS Independent",
-  "Development Status :: 1 - Planning",
+requires-python = ">=3.8"
+authors = [
+    {name = "John Doe", email = "jd@example.com" }
+]
+
+dependencies = [
+    "alembic",
+    "validators",
 ]
 
 [project.urls]
-Homepage = "https://github.com/SpareCores/sc-crawler"
-Issues = "https://github.com/SpareCores/sc-crawler/issues"
+"Homepage" = "https://github.com/SpareCores/sc-crawler"
+"Source" = "https://github.com/SpareCores/sc-crawler"
 
-[project.optional-dependencies]
-testing = ["pytest"]
-aws = ["boto3"]
+[tool.setuptools.packages.find]
+where = ["src"]
