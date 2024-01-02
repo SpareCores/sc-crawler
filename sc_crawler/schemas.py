@@ -37,10 +37,13 @@ class Country(SQLModel, table=True):
 
 
 class VendorComplianceLink(SQLModel, table=True):
-    vendor: Optional[int] = Field(
+    # TODO add extra fields, e.g. URL references
+    # https://sqlmodel.tiangolo.com/tutorial/many-to-many/link-with-extra-fields/
+    __tablename__: str = "vendor_compliance_link"  # type: ignore
+    vendor_id: Optional[int] = Field(
         default=None, foreign_key="vendor.id", primary_key=True
     )
-    compliance_framework: Optional[int] = Field(
+    compliance_framework_id: Optional[int] = Field(
         default=None, foreign_key="complianceframework.id", primary_key=True
     )
 
