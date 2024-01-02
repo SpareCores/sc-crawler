@@ -9,6 +9,7 @@ from pydantic import (
     BaseModel,
     ImportString,
     PrivateAttr,
+    model_validator,
 )
 
 # TODO SQLModel does NOT actually do pydantic validations
@@ -114,6 +115,7 @@ class Vendor(SQLModel, table=True):
     addon_storages: List["AddonStorage"] = Relationship(back_populates="vendor")
     addon_traffics: List["AddonTraffic"] = Relationship(back_populates="vendor")
     servers: List["Server"] = Relationship(back_populates="vendor")
+    prices: List["Price"] = Relationship(back_populates="vendor")
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -173,6 +175,7 @@ class Datacenter(SQLModel, table=True):
     # relations
     country: Country = Relationship(back_populates="datacenters")
     zones: List["Zone"] = Relationship(back_populates="datacenter")
+    prices: List["Price"] = Relationship(back_populates="datacenter")
 
 
 class Zone(SQLModel, table=True):
@@ -185,6 +188,7 @@ class Zone(SQLModel, table=True):
     # relations
     datacenter: Datacenter = Relationship(back_populates="zones")
     vendor: Vendor = Relationship(back_populates="zones")
+    prices: List["Price"] = Relationship(back_populates="zone")
 
 
 class StorageType(str, Enum):
@@ -211,6 +215,7 @@ class AddonStorage(SQLModel, table=True):
     status: Status = "active"
 
     vendor: Vendor = Relationship(back_populates="addon_storages")
+    prices: List["Price"] = Relationship(back_populates="storage")
 
 
 class TrafficDirection(str, Enum):
@@ -230,6 +235,7 @@ class AddonTraffic(SQLModel, table=True):
     status: Status = "active"
 
     vendor: Vendor = Relationship(back_populates="addon_traffics")
+    prices: List["Price"] = Relationship(back_populates="traffic")
 
 
 class Gpu(Json):
@@ -272,18 +278,46 @@ class Server(SQLModel, table=True):
     status: Status = "active"
 
     vendor: Vendor = Relationship(back_populates="servers")
+    prices: List["Price"] = Relationship(back_populates="server")
 
 
-# class Availability(BaseModel):
-#     vendor: Vendor
-#     # a resource might be available in all or only in one/few
-#     # datacenters and zones e.g. incoming traffic is priced per
-#     # datacenter, but sport instance price per zone
-#     datacenter: Optional[Datacenter]
-#     zone: Optional[Zone]
-#     resource: Resource
-#     allocation: Literal["ondemand", "spot"] = "ondemand"
-#     price: float
+class Price(SQLModel, table=True):
+    vendor_id: str = Field(foreign_key="vendor.id", primary_key=True)
+    # a resource might be available in all or only in one/few
+    # datacenters and zones e.g. incoming traffic is priced per
+    # datacenter, but sport instance price per zone
+    datacenter_id: Optional[str] = Field(
+        default=None, foreign_key="datacenter.id", primary_key=True
+    )
+    zone_id: Optional[str] = Field(
+        default=None, foreign_key="zone.id", primary_key=True
+    )
+    server_id: Optional[str] = Field(
+        default=None, foreign_key="server.id", primary_key=True
+    )
+    traffic_id: Optional[str] = Field(
+        default=None, foreign_key="addon_traffic.id", primary_key=True
+    )
+    storage_id: Optional[str] = Field(
+        default=None, foreign_key="addon_storage.id", primary_key=True
+    )
+    # allocation: Literal["ondemand", "spot"] = "ondemand"
+    price: float
+
+    vendor: Vendor = Relationship(back_populates="prices")
+    datacenter: Datacenter = Relationship(back_populates="prices")
+    zone: Zone = Relationship(back_populates="prices")
+    server: Server = Relationship(back_populates="prices")
+    traffic: AddonTraffic = Relationship(back_populates="prices")
+    storage: AddonStorage = Relationship(back_populates="prices")
+
+    @model_validator(mode="after")
+    def server_or_traffic_or_storage(self) -> "Price":
+        if (self.server_id is None) + (self.traffic_id is None) + (
+            self.storage_id is None
+        ) != 1:
+            raise ValueError("One Server, Traffic or Storage required.")
+        return self
 
 
 Country.model_rebuild()
