@@ -5,6 +5,7 @@ from enum import Enum
 from importlib import import_module
 from types import ModuleType
 from typing import List, Optional
+
 from pydantic import (
     BaseModel,
     ImportString,
@@ -14,7 +15,7 @@ from pydantic import (
 
 # TODO SQLModel does NOT actually do pydantic validations
 #      https://github.com/tiangolo/sqlmodel/issues/52
-from sqlmodel import Field, Relationship, SQLModel, JSON, Column
+from sqlmodel import JSON, Column, Field, Relationship, SQLModel
 
 
 class Json(BaseModel):

@@ -1,5 +1,5 @@
+from ..lookup import compliance_frameworks, countries
 from ..schemas import Vendor
-from ..lookup import countries, compliance_frameworks
 
 
 def get_compliance_frameworks(framework_ids):

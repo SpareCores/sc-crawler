@@ -1,6 +1,5 @@
 from .schemas import ComplianceFramework, Country
 
-
 # country codes: https://en.wikipedia.org/wiki/ISO_3166-1#Codes
 # mapping: https://github.com/manumanoj0010/countrydetails/blob/master/Countrydetails/data/continents.json  # noqa: E501
 country_continent_mapping = {

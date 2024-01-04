@@ -1,5 +1,6 @@
-from cachier import set_default_params
 import logging
+
+from cachier import set_default_params
 from sqlmodel import Session
 
 from .database import create_db_and_tables, engine

@@ -1,14 +1,15 @@
-import boto3
-from cachier import cachier, set_default_params
-from collections import ChainMap
-from datetime import timedelta, datetime
-from itertools import chain
 import json
 import re
+from collections import ChainMap
+from datetime import datetime, timedelta
+from itertools import chain
 
-from ..lookup import countries
+import boto3
+from cachier import cachier, set_default_params
+
 from ..logger import logger
-from ..schemas import Datacenter, Zone, Server, Storage, Gpu, Price
+from ..lookup import countries
+from ..schemas import Datacenter, Gpu, Price, Server, Storage, Zone
 
 # disable caching by default
 set_default_params(caching_enabled=False)

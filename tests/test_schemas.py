@@ -1,5 +1,6 @@
 import pytest
-from sc_crawler.schemas import Vendor, Country
+
+from sc_crawler.schemas import Country, Vendor
 
 
 def test_bad_vendor_definition():
