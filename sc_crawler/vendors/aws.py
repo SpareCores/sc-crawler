@@ -82,8 +82,9 @@ def get_products():
     # return actual list instead of an iterator to be able to cache on disk
     products = []
     for page in paginator.paginate(ServiceCode="AmazonEC2", Filters=filters):
-        for product in page["PriceList"]:
-            products.append(json.loads(product))
+        for product_json in page["PriceList"]:
+            product = json.loads(product_json)
+            products.append(product)
 
     return products
 
@@ -684,7 +685,9 @@ def get_prices(vendor, *args, **kwargs):
     logger.debug(f"Found {len(products)} products in region")
     # return [price_from_product(product, vendor) for product in products]
     for product in products:
-        price_from_product(product, vendor)
+        # drop Gov regions
+        if "GovCloud" not in product["product"]["attributes"]["location"]:
+            price_from_product(product, vendor)
 
     # TODO store raw response
     # TODO reserved pricing options - might decide not to, as not in scope?
