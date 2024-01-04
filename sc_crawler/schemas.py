@@ -267,12 +267,18 @@ class Server(SQLModel, table=True):
     vendor_id: str = Field(foreign_key="vendor.id", primary_key=True)
     name: str
     vcpus: int
+    # TODO join all below cpu fields into a Cpu object?
     cpu_cores: int
     cpu_speed: Optional[float] = None  # Ghz
     cpu_architecture: CpuArchitecture
     cpu_manufacturer: Optional[str] = None
+    # TODO add the below extra fields
+    # cpu_features:  # e.g. AVX; AVX2; AMD Turbo
+    # cpu_allocation: dedicated | burstable | shared
+    # cpu_name: str  # e.g. EPYC 7571
     memory: int
     gpu_count: int = 0
+    # TODO sum and avg/each memory
     gpu_memory: Optional[int] = None  # MiB
     gpu_name: Optional[str] = None
     gpus: List[Gpu] = Field(default=[], sa_column=Column(JSON))
