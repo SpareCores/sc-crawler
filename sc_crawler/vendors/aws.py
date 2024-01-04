@@ -45,13 +45,13 @@ def describe_availability_zones(region):
 
 @cachier(stale_after=timedelta(days=3))
 def get_price_list(region):
-    region = "us-east-1"
-    client = boto3.client("pricing", region_name=region)
+    # pricing API is only available in a few regions
+    client = boto3.client("pricing", region_name="us-east-1")
     price_lists = client.list_price_lists(
         ServiceCode="AmazonEC2",
         EffectiveDate=datetime.now(),
         CurrencyCode="USD",
-        RegionCode="us-west-2",
+        RegionCode=region,
     )
     price_list_url = client.get_price_list_file_url(
         PriceListArn=price_lists["PriceLists"][0]["PriceListArn"], FileFormat="json"
@@ -60,14 +60,15 @@ def get_price_list(region):
 
 
 @cachier(stale_after=timedelta(days=3))
-def get_products(region):
-    region = "us-east-1"
-    client = boto3.client("pricing", region_name=region)
-    filters = filters = {
+def get_products():
+    # pricing API is only available in a few regions
+    client = boto3.client("pricing", region_name="us-east-1")
+    filters = {
         # TODO mac instances?
         "operatingSystem": "Linux",
         "preInstalledSw": "NA",
         "licenseModel": "No License required",
+        "locationType": "AWS Region",
         "capacitystatus": "Used",
         "marketoption": "OnDemand",
         # TODO dedicated options?
@@ -678,25 +679,12 @@ def price_from_product(product, vendor):
     return price
 
 
-def prices_of_region(region, vendor):
-    products = get_products(region)
-    logger.debug(f"Found {len(products)} products in region {region}")
+def get_prices(vendor, *args, **kwargs):
+    products = get_products()
+    logger.debug(f"Found {len(products)} products in region")
     # return [price_from_product(product, vendor) for product in products]
     for product in products:
         price_from_product(product, vendor)
-
-
-def get_prices(vendor, *args, **kwargs):
-    regions = [
-        datacenter.id
-        for datacenter in vendor.datacenters
-        if datacenter.status == "active"
-    ]
-    regions = [regions[0]]
-    # return [prices_of_region(region, vendor) for region in regions]
-    for region in regions:
-        logger.debug(f"Looking up instance prices in region {region}")
-        prices_of_region(region, vendor)
 
     # TODO store raw response
     # TODO reserved pricing options - might decide not to, as not in scope?
