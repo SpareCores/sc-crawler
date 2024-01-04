@@ -675,6 +675,7 @@ def price_from_product(product, vendor):
         vendor=vendor,
         datacenter=datacenter,
         server=server,
+        allocation="ondemand",
         price=price[0],
         currency=price[1],
     )

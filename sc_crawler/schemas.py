@@ -286,6 +286,11 @@ class Server(SQLModel, table=True):
     prices: List["Price"] = Relationship(back_populates="server")
 
 
+class Allocation(str, Enum):
+    ONDEMAND = "ondemand"
+    SPOT = "spot"
+
+
 class Price(SQLModel, table=True):
     id: int = Field(primary_key=True)
     vendor_id: str = Field(foreign_key="vendor.id")
@@ -297,7 +302,7 @@ class Price(SQLModel, table=True):
     server_id: Optional[str] = Field(default=None, foreign_key="server.id")
     traffic_id: Optional[str] = Field(default=None, foreign_key="addon_traffic.id")
     storage_id: Optional[str] = Field(default=None, foreign_key="addon_storage.id")
-    # TODO allocation: Literal["ondemand", "spot"] = "ondemand"
+    allocation: Allocation = "ondemand"
     price: float
     currency: str = "USD"
 
