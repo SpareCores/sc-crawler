@@ -287,26 +287,17 @@ class Server(SQLModel, table=True):
 
 
 class Price(SQLModel, table=True):
-    vendor_id: str = Field(foreign_key="vendor.id", primary_key=True)
+    id: int = Field(primary_key=True)
+    vendor_id: str = Field(foreign_key="vendor.id")
     # a resource might be available in all or only in one/few
     # datacenters and zones e.g. incoming traffic is priced per
     # datacenter, but sport instance price per zone
-    datacenter_id: Optional[str] = Field(
-        default=None, foreign_key="datacenter.id", primary_key=True
-    )
-    zone_id: Optional[str] = Field(
-        default=None, foreign_key="zone.id", primary_key=True
-    )
-    server_id: Optional[str] = Field(
-        default=None, foreign_key="server.id", primary_key=True
-    )
-    traffic_id: Optional[str] = Field(
-        default=None, foreign_key="addon_traffic.id", primary_key=True
-    )
-    storage_id: Optional[str] = Field(
-        default=None, foreign_key="addon_storage.id", primary_key=True
-    )
-    # allocation: Literal["ondemand", "spot"] = "ondemand"
+    datacenter_id: Optional[str] = Field(default=None, foreign_key="datacenter.id")
+    zone_id: Optional[str] = Field(default=None, foreign_key="zone.id")
+    server_id: Optional[str] = Field(default=None, foreign_key="server.id")
+    traffic_id: Optional[str] = Field(default=None, foreign_key="addon_traffic.id")
+    storage_id: Optional[str] = Field(default=None, foreign_key="addon_storage.id")
+    # TODO allocation: Literal["ondemand", "spot"] = "ondemand"
     price: float
 
     vendor: Vendor = Relationship(back_populates="prices")
