@@ -1,15 +1,14 @@
 import boto3
 from cachier import cachier, set_default_params
 from collections import ChainMap
-from datetime import timedelta
+from datetime import timedelta, datetime
 from itertools import chain
+import json
 import re
 
 from ..lookup import countries
-
-from ..schemas import Datacenter, Zone, Server, Storage, Gpu
-
 from ..logger import logger
+from ..schemas import Datacenter, Zone, Server, Storage, Gpu, Price
 
 # disable caching by default
 set_default_params(caching_enabled=False)
@@ -42,6 +41,50 @@ def describe_availability_zones(region):
         AllAvailabilityZones=True,
     )["AvailabilityZones"]
     return zones
+
+
+@cachier(stale_after=timedelta(days=3))
+def get_price_list(region):
+    region = "us-east-1"
+    client = boto3.client("pricing", region_name=region)
+    price_lists = client.list_price_lists(
+        ServiceCode="AmazonEC2",
+        EffectiveDate=datetime.now(),
+        CurrencyCode="USD",
+        RegionCode="us-west-2",
+    )
+    price_list_url = client.get_price_list_file_url(
+        PriceListArn=price_lists["PriceLists"][0]["PriceListArn"], FileFormat="json"
+    )
+    return price_list_url
+
+
+@cachier(stale_after=timedelta(days=3))
+def get_products(region):
+    region = "us-east-1"
+    client = boto3.client("pricing", region_name=region)
+    filters = filters = {
+        # TODO mac instances?
+        "operatingSystem": "Linux",
+        "preInstalledSw": "NA",
+        "licenseModel": "No License required",
+        "capacitystatus": "Used",
+        "marketoption": "OnDemand",
+        # TODO dedicated options?
+        "tenancy": "Shared",
+    }
+    filters = [
+        {"Type": "TERM_MATCH", "Field": k, "Value": v} for k, v in filters.items()
+    ]
+
+    paginator = client.get_paginator("get_products")
+    # return actual list instead of an iterator to be able to cache on disk
+    products = []
+    for page in paginator.paginate(ServiceCode="AmazonEC2", Filters=filters):
+        for product in page["PriceList"]:
+            products.append(json.loads(product))
+
+    return products
 
 
 # ##############################################################################
@@ -193,6 +236,7 @@ def get_datacenters(vendor, *args, **kwargs):
         Datacenter(
             id="eu-central-1",
             name="Europe (Frankfurt)",
+            aliases=["EU (Frankfurt)"],
             vendor=vendor,
             country=countries["DE"],
             city="Frankfurt",
@@ -211,6 +255,7 @@ def get_datacenters(vendor, *args, **kwargs):
         Datacenter(
             id="eu-north-1",
             name="Europe (Stockholm)",
+            aliases=["EU (Stockholm)"],
             vendor=vendor,
             country=countries["SE"],
             city="Stockholm",
@@ -220,6 +265,7 @@ def get_datacenters(vendor, *args, **kwargs):
         Datacenter(
             id="eu-south-1",
             name="Europe (Milan)",
+            aliases=["EU (Milan)"],
             vendor=vendor,
             country=countries["IT"],
             city="Milan",
@@ -238,6 +284,7 @@ def get_datacenters(vendor, *args, **kwargs):
         Datacenter(
             id="eu-west-1",
             name="Europe (Ireland)",
+            aliases=["EU (Ireland)"],
             vendor=vendor,
             country=countries["IE"],
             city="Dublin",
@@ -247,6 +294,7 @@ def get_datacenters(vendor, *args, **kwargs):
         Datacenter(
             id="eu-west-2",
             name="Europe (London)",
+            aliases=["EU (London)"],
             vendor=vendor,
             country=countries["GB"],
             city="London",
@@ -256,6 +304,7 @@ def get_datacenters(vendor, *args, **kwargs):
         Datacenter(
             id="eu-west-3",
             name="Europe (Paris)",
+            aliases=["EU (Paris)"],
             vendor=vendor,
             country=countries["FR"],
             city="Paris",
@@ -573,6 +622,8 @@ def instance_types_of_region(region, vendor):
 
 
 def get_instance_types(vendor, *args, **kwargs):
+    # TODO drop this in favor of pricing.get_products, as it has info e.g. on instanceFamily
+    #      although other fields are messier (e.g. extract memory from string)
     regions = [
         datacenter.id
         for datacenter in vendor.datacenters
@@ -581,3 +632,72 @@ def get_instance_types(vendor, *args, **kwargs):
     # might be instance types specific to a few or even a single region
     instance_types = [instance_types_of_region(region, vendor) for region in regions]
     return list(chain(*instance_types))
+
+
+def extract_ondemand_price(terms):
+    """Extract ondmand price from AWS Terms object."""
+    ondemand_term = list(terms["OnDemand"].values())[0]
+    ondemand_pricing = list(ondemand_term["priceDimensions"].values())[0]
+    # TODO handle non-USD
+    price = float(ondemand_pricing["pricePerUnit"].get("USD", 0))
+    if price == 0:
+        logger.debug(f"Uknown price at {ondemand_pricing}")
+    return float(ondemand_pricing["pricePerUnit"].get("USD", 0))
+
+
+def price_from_product(product, vendor):
+    attributes = product["product"]["attributes"]
+    location = attributes["location"]
+    location_type = attributes["locationType"]
+    instance_type = attributes["instanceType"]
+    try:
+        datacenter = [
+            d for d in vendor.datacenters if location == d.name or location in d.aliases
+        ][0]
+    except IndexError:
+        logger.debug(f"No AWS region found for location: {location} [{location_type}]")
+        return
+    except Exception as exc:
+        raise exc
+    try:
+        server = [
+            d for d in vendor.servers if d.vendor == vendor and d.id == instance_type
+        ][0]
+    except IndexError:
+        logger.debug(f"No server definition found for: {instance_type}")
+        return
+    except Exception as exc:
+        raise exc
+    price = Price(
+        vendor=vendor,
+        datacenter=datacenter,
+        server=server,
+        price=extract_ondemand_price(product["terms"]),
+    )
+
+    return price
+
+
+def prices_of_region(region, vendor):
+    products = get_products(region)
+    logger.debug(f"Found {len(products)} products in region {region}")
+    # return [price_from_product(product, vendor) for product in products]
+    for product in products:
+        price_from_product(product, vendor)
+
+
+def get_prices(vendor, *args, **kwargs):
+    regions = [
+        datacenter.id
+        for datacenter in vendor.datacenters
+        if datacenter.status == "active"
+    ]
+    regions = [regions[0]]
+    # return [prices_of_region(region, vendor) for region in regions]
+    for region in regions:
+        logger.debug(f"Looking up instance prices in region {region}")
+        prices_of_region(region, vendor)
+
+    # TODO store raw response
+    # TODO reserved pricing options - might decide not to, as not in scope?
+    # TODO spot prices

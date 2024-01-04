@@ -21,9 +21,7 @@ def crawl():
     create_db_and_tables()
     with Session(engine) as session:
         for vendor in [aws]:
-            vendor.get_datacenters()
-            vendor.get_zones()
-            vendor.get_instance_types()
+            vendor.get_all()
             session.add(vendor)
             session.commit()
 

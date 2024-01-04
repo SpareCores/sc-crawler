@@ -147,16 +147,21 @@ class Vendor(SQLModel, table=True):
     def get_instance_types(self):
         return self._methods.get_instance_types(self)
 
+    def get_prices(self):
+        return self._methods.get_prices(self)
+
     def get_all(self):
         self.get_datacenters()
         self.get_zones()
         self.get_instance_types()
+        self.get_prices()
         return
 
 
 class Datacenter(SQLModel, table=True):
     id: str = Field(primary_key=True)
     name: str
+    aliases: List[str] = Field(default=[], sa_column=Column(JSON))
 
     vendor_id: str = Field(foreign_key="vendor.id", primary_key=True)
     vendor: Vendor = Relationship(back_populates="datacenters")

@@ -42,3 +42,8 @@ pp(aws)
 pp(aws.datacenters)
 pp(aws.servers[0])
 ```
+
+## TODO
+
+- describe how to set up auth for each vendor
+- list required IAM permissions for each vendor
