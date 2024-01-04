@@ -637,14 +637,14 @@ def get_instance_types(vendor, *args, **kwargs):
 
 
 def extract_ondemand_price(terms):
-    """Extract ondmand price from AWS Terms object."""
+    """Extract ondmand price and the currency from AWS Terms object."""
     ondemand_term = list(terms["OnDemand"].values())[0]
     ondemand_pricing = list(ondemand_term["priceDimensions"].values())[0]
-    # TODO handle non-USD
-    price = float(ondemand_pricing["pricePerUnit"].get("USD", 0))
-    if price == 0:
-        logger.debug(f"Uknown price at {ondemand_pricing}")
-    return float(ondemand_pricing["pricePerUnit"].get("USD", 0))
+    ondemand_pricing = ondemand_pricing["pricePerUnit"]
+    if "USD" in ondemand_pricing.keys():
+        return (float(ondemand_pricing["USD"]), "USD")
+    # get the first currency if USD not found
+    return (float(list(ondemand_pricing.values())[0]), list(ondemand_pricing)[0])
 
 
 def price_from_product(product, vendor):
@@ -670,14 +670,14 @@ def price_from_product(product, vendor):
         return
     except Exception as exc:
         raise exc
-    price = Price(
+    price = extract_ondemand_price(product["terms"])
+    return Price(
         vendor=vendor,
         datacenter=datacenter,
         server=server,
-        price=extract_ondemand_price(product["terms"]),
+        price=price[0],
+        currency=price[1],
     )
-
-    return price
 
 
 def get_prices(vendor, *args, **kwargs):

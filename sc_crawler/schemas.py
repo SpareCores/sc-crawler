@@ -299,6 +299,7 @@ class Price(SQLModel, table=True):
     storage_id: Optional[str] = Field(default=None, foreign_key="addon_storage.id")
     # TODO allocation: Literal["ondemand", "spot"] = "ondemand"
     price: float
+    currency: str = "USD"
 
     vendor: Vendor = Relationship(back_populates="prices")
     datacenter: Datacenter = Relationship(back_populates="prices")
