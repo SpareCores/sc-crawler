@@ -1,12 +1,20 @@
+from cachier import set_default_params
+import logging
 from sqlmodel import Session
 
 from .database import create_db_and_tables, engine
+from .logger import logger
 from .vendors import aws
 
 # enable caching
-from cachier import set_default_params
-
 set_default_params(caching_enabled=True)
+
+# enable logging
+ch = logging.StreamHandler()
+ch.setLevel(logging.DEBUG)
+formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+ch.setFormatter(formatter)
+logger.addHandler(ch)
 
 
 def crawl():

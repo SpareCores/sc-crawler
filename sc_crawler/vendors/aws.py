@@ -3,14 +3,13 @@ from cachier import cachier, set_default_params
 from collections import ChainMap
 from datetime import timedelta
 from itertools import chain
-import logging
 import re
 
 from ..lookup import countries
 
 from ..schemas import Datacenter, Zone, Server, Storage, Gpu
 
-logger = logging.getLogger(__name__)
+from ..logger import logger
 
 # disable caching by default
 set_default_params(caching_enabled=False)
