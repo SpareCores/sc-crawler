@@ -46,6 +46,7 @@ def describe_availability_zones(region):
 
 @cachier(stale_after=timedelta(days=3))
 def get_price_list(region):
+    """Download published AWS price lists. Currently unused."""
     # pricing API is only available in a few regions
     client = boto3.client("pricing", region_name="us-east-1")
     price_lists = client.list_price_lists(
@@ -415,6 +416,7 @@ def get_datacenters(vendor, *args, **kwargs):
         if datacenter.id in [region["RegionName"] for region in regions]
     ]
 
+    # TODO do we really need to return enything? standardize!
     return datacenters
 
 
@@ -667,7 +669,7 @@ def price_from_product(product, vendor):
             d for d in vendor.servers if d.vendor == vendor and d.id == instance_type
         ][0]
     except IndexError:
-        logger.debug(f"No server definition found for: {instance_type}")
+        logger.debug(f"No server definition found for {instance_type} @ {location}")
         return
     except Exception as exc:
         raise exc
@@ -684,7 +686,7 @@ def price_from_product(product, vendor):
 
 def get_prices(vendor, *args, **kwargs):
     products = get_products()
-    logger.debug(f"Found {len(products)} products in region")
+    logger.debug(f"Found {len(products)} products")
     # return [price_from_product(product, vendor) for product in products]
     for product in products:
         # drop Gov regions

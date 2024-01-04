@@ -43,6 +43,16 @@ pp(aws.datacenters)
 pp(aws.servers[0])
 ```
 
+Debug raw AWS responses:
+
+```py
+products = aws._methods.get_products()
+pp(products[1]["product"])
+
+instance_types = aws._methods.describe_instance_types(region="us-west-2")
+pp(instance_types[1])
+```
+
 ## TODO
 
 - describe how to set up auth for each vendor
