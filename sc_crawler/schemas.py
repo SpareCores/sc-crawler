@@ -287,6 +287,8 @@ class Server(SQLModel, table=True):
     storage_type: Optional[StorageType] = None
     storages: List[Storage] = Field(default=[], sa_column=Column(JSON))
     network_speed: Optional[float] = None  # Gbps
+
+    billable_unit: str
     status: Status = "active"
 
     vendor: Vendor = Relationship(back_populates="servers")
