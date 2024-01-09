@@ -297,7 +297,14 @@ class Server(SQLModel, table=True):
 
 class Allocation(str, Enum):
     ONDEMAND = "ondemand"
+    RESERVED = "reserved"
     SPOT = "spot"
+
+
+class PriceTier(Json):
+    lower: float
+    upper: float
+    price: float
 
 
 class Price(SQLModel, table=True):
@@ -312,7 +319,11 @@ class Price(SQLModel, table=True):
     traffic_id: Optional[str] = Field(default=None, foreign_key="addon_traffic.id")
     storage_id: Optional[str] = Field(default=None, foreign_key="addon_storage.id")
     allocation: Allocation = "ondemand"
-    price: float
+    price: float  # max price if tiered
+    # e.g. setup fee for dedicated servers, or upfront costs of a reserved instance type
+    price_upfront: float = 0
+    # TODO needs time interval as well and other complications .. maybe skip for now?
+    price_tiered: List[PriceTier] = Field(default=[], sa_column=Column(JSON))
     currency: str = "USD"
 
     vendor: Vendor = Relationship(back_populates="prices")
