@@ -12,13 +12,13 @@ from ..lookup import countries
 from ..schemas import Datacenter, Gpu, Price, Server, Storage, Zone
 
 # disable caching by default
-set_default_params(caching_enabled=False)
+set_default_params(caching_enabled=False, stale_after=timedelta(days=1))
 
 # ##############################################################################
 # AWS cached helpers
 
 
-@cachier(stale_after=timedelta(days=3))
+@cachier()
 def describe_instance_types(region):
     ec2 = boto3.client("ec2", region_name=region)
     pages = ec2.get_paginator("describe_instance_types")
@@ -26,13 +26,13 @@ def describe_instance_types(region):
     return pages["InstanceTypes"]
 
 
-@cachier(stale_after=timedelta(days=3))
+@cachier()
 def describe_regions():
     ec2 = boto3.client("ec2")
     return ec2.describe_regions().get("Regions", [])
 
 
-@cachier(stale_after=timedelta(days=3))
+@cachier()
 def describe_availability_zones(region):
     ec2 = boto3.client("ec2", region_name=region)
     zones = ec2.describe_availability_zones(
@@ -44,7 +44,7 @@ def describe_availability_zones(region):
     return zones
 
 
-@cachier(stale_after=timedelta(days=3))
+@cachier()
 def get_price_list(region):
     """Download published AWS price lists. Currently unused."""
     # pricing API is only available in a few regions
@@ -61,7 +61,7 @@ def get_price_list(region):
     return price_list_url
 
 
-@cachier(stale_after=timedelta(days=3))
+@cachier()
 def get_products():
     # pricing API is only available in a few regions
     client = boto3.client("pricing", region_name="us-east-1")

@@ -1,4 +1,5 @@
 import logging
+from datetime import timedelta
 from enum import Enum
 from json import dumps
 
@@ -49,11 +50,17 @@ def pull(
     log_level: Annotated[LogLevels, typer.Option(help="Log level threshold.")] = "INFO",
     cache: Annotated[
         bool,
-        typer.Option(help="Enable or disable caching on disk in ~/.cachier folder."),
+        typer.Option(help="Enable or disable caching of all vendor API calls on disk."),
     ] = False,
+    cache_ttl: Annotated[
+        int,
+        typer.Option(help="Cache Time-to-live in minutes. Defaults to one day."),
+    ] = 60 * 24,  # 1 day
 ):
     """
     Pull data from available vendor APIs and store in a database.
+
+    Vendor API calls are optionally cached as Pickle objects in `~/.cachier`.
     """
 
     def custom_serializer(x):
@@ -62,7 +69,10 @@ def pull(
 
     # enable caching
     if cache:
-        set_default_params(caching_enabled=True)
+        set_default_params(
+            caching_enabled=True,
+            stale_after=timedelta(minutes=cache_ttl),
+        )
 
     # enable logging
     channel = logging.StreamHandler()
