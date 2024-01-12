@@ -22,6 +22,10 @@ engine_to_dialect = {
 }
 Engines = Enum("ENGINES", {k: k for k in engine_to_dialect.keys()})
 
+# TODO use logging.getLevelNamesMapping() from Python 3.11
+log_levels = list(logging._nameToLevel.keys())
+LogLevels = Enum("LOGLEVELS", {k: k for k in log_levels})
+
 
 @cli.command()
 def schema(dialect: Engines):
@@ -42,6 +46,7 @@ def pull(
     connection_string: Annotated[
         str, typer.Option(help="Database URL with SQLAlchemy dialect.")
     ] = "sqlite:///sc_crawler.db",
+    log_level: Annotated[LogLevels, typer.Option(help="Log level threshold.")] = "INFO",
 ):
     """
     Pull data from available vendor APIs and store in a database.
@@ -60,7 +65,7 @@ def pull(
         "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
     channel.setFormatter(formatter)
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(log_level.value)
     logger.addHandler(channel)
 
     engine = create_engine(connection_string, json_serializer=custom_serializer)

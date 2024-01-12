@@ -3,7 +3,7 @@ This is a playground.
 Get all data into a SQLite file:
 
 ```shell
-rm sc_crawler.db & sc-crawler pull
+rm sc_crawler.db & sc-crawler pull --log-level DEBUG
 ```
 
 Read from DB:
