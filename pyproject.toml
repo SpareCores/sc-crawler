@@ -12,6 +12,7 @@ dependencies = [
   "pydantic_extra_types",
   "pycountry",
   "sqlmodel",
+  "typer",
 ]
 authors = [
   { name="Attila Nagy" },
@@ -37,6 +38,9 @@ Issues = "https://github.com/SpareCores/sc-crawler/issues"
 [project.optional-dependencies]
 testing = ["pytest"]
 aws = ["boto3"]
+
+[project.scripts]
+sc-crawler = "sc_crawler.cli:cli"
 
 [tool.ruff]
 # Exclude a variety of commonly ignored directories.

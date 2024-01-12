@@ -3,7 +3,7 @@ This is a playground.
 Get all data into a SQLite file:
 
 ```shell
-rm /tmp/sc_crawler.db & python -m sc_crawler.app
+rm sc_crawler.db & sc-crawler pull
 ```
 
 Read from DB:
