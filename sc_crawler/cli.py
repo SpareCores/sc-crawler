@@ -5,6 +5,7 @@ from json import dumps
 import typer
 from cachier import set_default_params
 from sqlmodel import Session, SQLModel, create_engine
+from typing_extensions import Annotated
 
 from .logger import logger
 from .vendors import aws
@@ -37,7 +38,11 @@ def schema(dialect: Engines):
 
 
 @cli.command()
-def pull(connection_string: str = "sqlite:///sc_crawler.db"):
+def pull(
+    connection_string: Annotated[
+        str, typer.Option(help="Database URL with SQLAlchemy dialect.")
+    ] = "sqlite:///sc_crawler.db",
+):
     """
     Pull data from available vendor APIs and store in a database.
     """
