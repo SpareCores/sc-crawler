@@ -47,6 +47,10 @@ def pull(
         str, typer.Option(help="Database URL with SQLAlchemy dialect.")
     ] = "sqlite:///sc_crawler.db",
     log_level: Annotated[LogLevels, typer.Option(help="Log level threshold.")] = "INFO",
+    cache: Annotated[
+        bool,
+        typer.Option(help="Enable or disable caching on disk in ~/.cachier folder."),
+    ] = False,
 ):
     """
     Pull data from available vendor APIs and store in a database.
@@ -57,7 +61,8 @@ def pull(
         return dumps(x, default=lambda x: x.__json__())
 
     # enable caching
-    set_default_params(caching_enabled=True)
+    if cache:
+        set_default_params(caching_enabled=True)
 
     # enable logging
     channel = logging.StreamHandler()
