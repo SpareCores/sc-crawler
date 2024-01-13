@@ -2,17 +2,25 @@ import logging
 from datetime import timedelta
 from enum import Enum
 from json import dumps
+from typing import List, Optional
 
 import typer
 from cachier import set_default_params
 from sqlmodel import Session, SQLModel, create_engine
 from typing_extensions import Annotated
 
+from . import vendors as vendors_module
 from .logger import logger
-from .vendors import aws
+from .schemas import Vendor
+
+supported_vendors = [
+    vendor[1]
+    for vendor in vars(vendors_module).items()
+    if isinstance(vendor[1], Vendor)
+]
+Vendors = Enum("VENDORS", {k.id: k.id for k in supported_vendors})
 
 cli = typer.Typer()
-
 
 engine_to_dialect = {
     "postgresql": "postgresql+psycopg2://",
@@ -47,6 +55,12 @@ def pull(
     connection_string: Annotated[
         str, typer.Option(help="Database URL with SQLAlchemy dialect.")
     ] = "sqlite:///sc_crawler.db",
+    include_vendor: Annotated[
+        Optional[List[Vendors]],
+        typer.Option(
+            help="Filter for specific vendor. Can be specified multiple times to filter for multiple vendors."
+        ),
+    ] = None,
     log_level: Annotated[LogLevels, typer.Option(help="Log level threshold.")] = "INFO",
     cache: Annotated[
         bool,
@@ -83,10 +97,20 @@ def pull(
     logger.setLevel(log_level.value)
     logger.addHandler(channel)
 
+    # filter vendors
+    vendors = supported_vendors
+    if include_vendor:
+        vendors = [
+            vendor
+            for vendor in supported_vendors
+            if vendor.id in [vendor.value for vendor in include_vendor]
+        ]
+
     engine = create_engine(connection_string, json_serializer=custom_serializer)
     SQLModel.metadata.create_all(engine)
     with Session(engine) as session:
-        for vendor in [aws]:
+        for vendor in vendors:
+            logger.info("Starting to collect data from vendor: " + vendor.id)
             vendor.get_all()
             session.add(vendor)
             session.commit()
