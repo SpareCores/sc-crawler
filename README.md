@@ -1,5 +1,7 @@
 This is a playground.
 
+Database schema visualized and documented at https://dbdocs.io/spare-cores/sc-crawler
+
 Get all data into a SQLite file:
 
 ```shell
