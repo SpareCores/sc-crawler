@@ -31,8 +31,13 @@ class Status(str, Enum):
 
 
 class Country(SQLModel, table=True):
-    id: str = Field(default=None, primary_key=True)
-    continent: str
+    __table_args__ = {"comment": "Country and continent mapping."}
+    id: str = Field(
+        default=None,
+        primary_key=True,
+        sa_column_kwargs={"comment": "Country code by ISO 3166 alpha-2."},
+    )
+    continent: str = Field(sa_column_kwargs={"comment": "Continent name."})
 
     vendors: List["Vendor"] = Relationship(back_populates="country")
     datacenters: List["Datacenter"] = Relationship(back_populates="country")
