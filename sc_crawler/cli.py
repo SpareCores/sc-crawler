@@ -2,7 +2,7 @@ import logging
 from datetime import timedelta
 from enum import Enum
 from json import dumps
-from typing import List, Optional
+from typing import List
 
 import typer
 from cachier import set_default_params
@@ -56,11 +56,15 @@ def pull(
         str, typer.Option(help="Database URL with SQLAlchemy dialect.")
     ] = "sqlite:///sc_crawler.db",
     include_vendor: Annotated[
-        Optional[List[Vendors]],
+        List[Vendors],
         typer.Option(
-            help="Filter for specific vendor. Can be specified multiple times to filter for multiple vendors."
+            help="Filter for specific vendor. Can be specified multiple times."
         ),
-    ] = None,
+    ] = [],
+    exclude_vendor: Annotated[
+        List[Vendors],
+        typer.Option(help="Exclude specific vendor. Can be specified multiple times."),
+    ] = [],
     log_level: Annotated[LogLevels, typer.Option(help="Log level threshold.")] = "INFO",
     cache: Annotated[
         bool,
@@ -99,12 +103,14 @@ def pull(
 
     # filter vendors
     vendors = supported_vendors
-    if include_vendor:
-        vendors = [
-            vendor
-            for vendor in supported_vendors
-            if vendor.id in [vendor.value for vendor in include_vendor]
-        ]
+    vendors = [
+        vendor
+        for vendor in vendors
+        if (
+            vendor.id in [vendor.value for vendor in include_vendor]
+            and vendor.id not in [vendor.value for vendor in exclude_vendor]
+        )
+    ]
 
     engine = create_engine(connection_string, json_serializer=custom_serializer)
     SQLModel.metadata.create_all(engine)

@@ -3,7 +3,7 @@ This is a playground.
 Get all data into a SQLite file:
 
 ```shell
-rm sc_crawler.db & sc-crawler pull --cache --log-level DEBUG
+rm sc_crawler.db; sc-crawler pull --cache --log-level DEBUG --include-vendor aws
 ```
 
 Read from DB:
