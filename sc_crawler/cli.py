@@ -44,7 +44,7 @@ def schema(dialect: Engines):
     url = engine_to_dialect[dialect.value]
 
     def metadata_dump(sql, *_args, **_kwargs):
-        typer.echo(sql.compile(dialect=engine.dialect))
+        typer.echo(str(sql.compile(dialect=engine.dialect)) + ";")
 
     engine = create_engine(url, strategy="mock", executor=metadata_dump)
     SQLModel.metadata.create_all(engine)
