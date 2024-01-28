@@ -16,7 +16,7 @@ jobs:
         with:
           python-version: 3.11
       - name: Install local pkg
-        run: pip install .
+        run: pip install .[all]
       - name: Generate SQL schema
         run: sc-crawler schema mysql > schema.sql
       - name: Convert SQL schema to DBML
