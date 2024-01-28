@@ -9,8 +9,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install dbdocs and dbml
-        run: sudo npm install -g @dbml/core dbdocs
+      - name: Install DBML CLI and dbdocs
+        run: sudo npm install -g @dbml/cli dbdocs
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
