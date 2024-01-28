@@ -1,12 +1,33 @@
-This is a playground.
+## Spare Cores Crawler
+
+Note that this repository is still in pre-alpha phase, and is NOT intended for any public use yet.
+Please check back by the end of Q1 2024, or contact us (via a GitHub ticket) if you are interested
+in alpha/beta testing.
+
+## TODO
+
+- [ ] describe how to set up auth for each vendor
+- [ ] list required IAM permissions for each vendor
+
+### Database schema
 
 Database schema visualized and documented at https://dbdocs.io/spare-cores/sc-crawler
 
-Get all data into a SQLite file:
+### Usage
+
+Generate `CREATE TABLE` statements for a MySQL database:
+
+```shell
+sc-crawler schema mysql
+```
+
+Fetch datacenter, zone, products etc  data into a SQLite file:
 
 ```shell
 rm sc_crawler.db; sc-crawler pull --cache --log-level DEBUG --include-vendor aws
 ```
+
+### Other WIP methods
 
 Read from DB:
 
@@ -54,8 +75,3 @@ pp(products[1]["product"])
 instance_types = aws._methods.describe_instance_types(region="us-west-2")
 pp(instance_types[1])
 ```
-
-## TODO
-
-- describe how to set up auth for each vendor
-- list required IAM permissions for each vendor
