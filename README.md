@@ -9,11 +9,19 @@ in alpha/beta testing.
 - [ ] describe how to set up auth for each vendor
 - [ ] list required IAM permissions for each vendor
 
-### Database schema
+## Database schema
 
 Database schema visualized and documented at https://dbdocs.io/spare-cores/sc-crawler
 
-### Usage
+## Usage
+
+The package provides a CLI tool:
+
+```shell
+sc-crawler --help
+```
+
+### Print table definitions
 
 Generate `CREATE TABLE` statements for a MySQL database:
 
@@ -21,13 +29,15 @@ Generate `CREATE TABLE` statements for a MySQL database:
 sc-crawler schema mysql
 ```
 
-Fetch and standardize datacenter, zone, products etc data into a single SQLite file:
+See `sc-crawler schema` for all supported database engines.
+
+### Collect data
+
+Note that you need specific IAM permissions to be able to run the Crawler at the below vendors:
 
 <details>
 
-<summary>Required permissions for AWS</summary>
-
-You will need the following IAM permissions to be able to run the Crawler in AWS:
+<summary>Amazon Web Services (AWS)</summary>
 
 ```json
 {
@@ -52,11 +62,14 @@ You will need the following IAM permissions to be able to run the Crawler in AWS
 
 </details>
 
+
+Fetch and standardize datacenter, zone, products etc data into a single SQLite file:
+
 ```shell
 rm sc_crawler.db; sc-crawler pull --cache --log-level DEBUG --include-vendor aws
 ```
 
-### Other WIP methods
+## Other WIP methods
 
 Read from DB:
 
