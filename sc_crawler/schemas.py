@@ -313,6 +313,8 @@ class PriceTier(Json):
 
 
 class Price(SQLModel, table=True):
+    ## TODO add ipv4 pricing
+    ## TODO created_at
     id: int = Field(primary_key=True)
     vendor_id: str = Field(foreign_key="vendor.id")
     # a resource might be available in all or only in one/few
