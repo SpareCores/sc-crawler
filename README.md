@@ -21,7 +21,36 @@ Generate `CREATE TABLE` statements for a MySQL database:
 sc-crawler schema mysql
 ```
 
-Fetch datacenter, zone, products etc  data into a SQLite file:
+Fetch and standardize datacenter, zone, products etc data into a single SQLite file:
+
+<details>
+
+<summary>Required permissions for AWS</summary>
+
+You will need the following IAM permissions to be able to run the Crawler in AWS:
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "AllowCrawler",
+            "Effect": "Allow",
+            "Action": [
+                "pricing:ListPriceLists",
+                "pricing:GetPriceListFileUrl",
+                "pricing:GetProducts",
+                "ec2:DescribeRegions",
+                "ec2:DescribeAvailabilityZones",
+                "ec2:DescribeInstanceTypes"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
+```
+
+</details>
 
 ```shell
 rm sc_crawler.db; sc-crawler pull --cache --log-level DEBUG --include-vendor aws
