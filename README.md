@@ -8,6 +8,14 @@ in alpha/beta testing.
 
 - [ ] describe how to set up auth for each vendor
 - [ ] list required IAM permissions for each vendor
+- [ ] implement vendors
+    - [x] AWS
+    - [ ] GCP
+    - [ ] Azure
+    - [ ] Scaleway
+    - [ ] Hetzner
+    - [ ] OVH
+    - [ ] add others ...
 
 ## Database schema
 
