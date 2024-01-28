@@ -38,6 +38,8 @@ Issues = "https://github.com/SpareCores/sc-crawler/issues"
 [project.optional-dependencies]
 testing = ["pytest"]
 aws = ["boto3"]
+vendors = ["sc-crawler[aws]"]
+all = ["sc-crawler[testing]", "sc-crawler[vendors]"]
 
 [project.scripts]
 sc-crawler = "sc_crawler.cli:cli"
