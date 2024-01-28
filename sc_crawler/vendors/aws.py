@@ -1,35 +1,38 @@
+import json
+import re
+from collections import ChainMap
+from datetime import datetime, timedelta
+from itertools import chain
+
 import boto3
 from cachier import cachier, set_default_params
-from datetime import timedelta
-from itertools import chain
-import logging
-import re
 
-from .. import Location
-from ..schemas import Datacenter, Zone, Server, Storage, Gpu
-
-logger = logging.getLogger(__name__)
+from ..logger import logger
+from ..lookup import countries
+from ..schemas import Datacenter, Gpu, Price, Server, Storage, Zone
 
 # disable caching by default
-set_default_params(caching_enabled=False)
+set_default_params(caching_enabled=False, stale_after=timedelta(days=1))
 
 # ##############################################################################
 # AWS cached helpers
 
 
-@cachier(stale_after=timedelta(days=3))
+@cachier()
 def describe_instance_types(region):
     ec2 = boto3.client("ec2", region_name=region)
-    return ec2.describe_instance_types()["InstanceTypes"]
+    pages = ec2.get_paginator("describe_instance_types")
+    pages = pages.paginate().build_full_result()
+    return pages["InstanceTypes"]
 
 
-@cachier(stale_after=timedelta(days=3))
+@cachier()
 def describe_regions():
     ec2 = boto3.client("ec2")
     return ec2.describe_regions().get("Regions", [])
 
 
-@cachier(stale_after=timedelta(days=3))
+@cachier()
 def describe_availability_zones(region):
     ec2 = boto3.client("ec2", region_name=region)
     zones = ec2.describe_availability_zones(
@@ -39,6 +42,53 @@ def describe_availability_zones(region):
         AllAvailabilityZones=True,
     )["AvailabilityZones"]
     return zones
+
+
+@cachier()
+def get_price_list(region):
+    """Download published AWS price lists. Currently unused."""
+    # pricing API is only available in a few regions
+    client = boto3.client("pricing", region_name="us-east-1")
+    price_lists = client.list_price_lists(
+        ServiceCode="AmazonEC2",
+        EffectiveDate=datetime.now(),
+        CurrencyCode="USD",
+        RegionCode=region,
+    )
+    price_list_url = client.get_price_list_file_url(
+        PriceListArn=price_lists["PriceLists"][0]["PriceListArn"], FileFormat="json"
+    )
+    return price_list_url
+
+
+@cachier()
+def get_products():
+    # pricing API is only available in a few regions
+    client = boto3.client("pricing", region_name="us-east-1")
+    filters = {
+        # TODO mac instances?
+        "operatingSystem": "Linux",
+        "preInstalledSw": "NA",
+        "licenseModel": "No License required",
+        "locationType": "AWS Region",
+        "capacitystatus": "Used",
+        "marketoption": "OnDemand",
+        # TODO dedicated options?
+        "tenancy": "Shared",
+    }
+    filters = [
+        {"Type": "TERM_MATCH", "Field": k, "Value": v} for k, v in filters.items()
+    ]
+
+    paginator = client.get_paginator("get_products")
+    # return actual list instead of an iterator to be able to cache on disk
+    products = []
+    for page in paginator.paginate(ServiceCode="AmazonEC2", Filters=filters):
+        for product_json in page["PriceList"]:
+            product = json.loads(product_json)
+            products.append(product)
+
+    return products
 
 
 # ##############################################################################
@@ -53,259 +103,298 @@ def get_datacenters(vendor, *args, **kwargs):
     """  # noqa: E501
     datacenters = [
         Datacenter(
-            identifier="af-south-1",
+            id="af-south-1",
             name="Africa (Cape Town)",
             vendor=vendor,
-            location=Location(country="ZA", city="Cape Town"),
+            country=countries["ZA"],
+            city="Cape Town",
             founding_year=2020,
             green_energy=False,
         ),
         Datacenter(
-            identifier="ap-east-1",
+            id="ap-east-1",
             name="Asia Pacific (Hong Kong)",
             vendor=vendor,
-            location=Location(country="HK", city="Hong Kong"),
+            country=countries["HK"],
+            city="Hong Kong",
             founding_year=2019,
             green_energy=False,
         ),
         Datacenter(
-            identifier="ap-northeast-1",
+            id="ap-northeast-1",
             name="Asia Pacific (Tokyo)",
             vendor=vendor,
-            location=Location(country="JP", city="Tokyo"),
+            country=countries["JP"],
+            city="Tokyo",
             founding_year=2011,
             green_energy=False,
         ),
         Datacenter(
-            identifier="ap-northeast-2",
+            id="ap-northeast-2",
             name="Asia Pacific (Seoul)",
             vendor=vendor,
-            location=Location(country="KR", city="Seoul"),
+            country=countries["KR"],
+            city="Seoul",
             founding_year=2016,
             green_energy=False,
         ),
         Datacenter(
-            identifier="ap-northeast-3",
+            id="ap-northeast-3",
             name="Asia Pacific (Osaka)",
             vendor=vendor,
-            location=Location(country="JP", city="Osaka"),
+            country=countries["JP"],
+            city="Osaka",
             founding_year=2021,
             green_energy=False,
         ),
         Datacenter(
-            identifier="ap-south-1",
+            id="ap-south-1",
             name="Asia Pacific (Mumbai)",
             vendor=vendor,
-            location=Location(country="IN", city="Mumbai"),
+            country=countries["IN"],
+            city="Mumbai",
             founding_year=2016,
             green_energy=True,
         ),
         Datacenter(
-            identifier="ap-south-2",
+            id="ap-south-2",
             name="Asia Pacific (Hyderabad)",
             vendor=vendor,
-            location=Location(country="IN", city="Hyderabad"),
+            country=countries["IN"],
+            city="Hyderabad",
             founding_year=2022,
             green_energy=True,
         ),
         Datacenter(
-            identifier="ap-southeast-1",
+            id="ap-southeast-1",
             name="Asia Pacific (Singapore)",
             vendor=vendor,
-            location=Location(country="SG", city="Singapore"),
+            country=countries["SG"],
+            city="Singapore",
             founding_year=2010,
             green_energy=False,
         ),
         Datacenter(
-            identifier="ap-southeast-2",
+            id="ap-southeast-2",
             name="Asia Pacific (Sydney)",
             vendor=vendor,
-            location=Location(country="AU", city="Sydney"),
+            country=countries["AU"],
+            city="Sydney",
             founding_year=2012,
             green_energy=False,
         ),
         Datacenter(
-            identifier="ap-southeast-3",
+            id="ap-southeast-3",
             name="Asia Pacific (Jakarta)",
             vendor=vendor,
-            location=Location(country="ID", city="Jakarta"),
+            country=countries["ID"],
+            city="Jakarta",
             founding_year=2021,
             green_energy=False,
         ),
         Datacenter(
-            identifier="ap-southeast-4",
+            id="ap-southeast-4",
             name="Asia Pacific (Melbourne)",
             vendor=vendor,
-            location=Location(country="AU", city="Melbourne"),
+            country=countries["AU"],
+            city="Melbourne",
             founding_year=2023,
             green_energy=False,
         ),
         Datacenter(
-            identifier="ca-central-1",
+            id="ca-central-1",
             name="Canada (Central)",
             vendor=vendor,
-            location=Location(country="CA", city="Quebec"),  # NOTE needs city name
+            country=countries["CA"],
+            city="Quebec",  # NOTE needs city name
             founding_year=2016,
             green_energy=True,
         ),
         Datacenter(
-            identifier="ca-west-1",
+            id="ca-west-1",
             name="Canada West (Calgary)",
             vendor=vendor,
-            location=Location(country="CA", city="Calgary"),
+            country=countries["CA"],
+            city="Calgary",
             founding_year=2023,
             green_energy=False,
         ),
         Datacenter(
-            identifier="cn-north-1",
+            id="cn-north-1",
             name="China (Beijing)",
             vendor=vendor,
-            location=Location(country="CN", city="Beijing"),
+            country=countries["CN"],
+            city="Beijing",
             founding_year=2016,
             green_energy=True,
         ),
         Datacenter(
-            identifier="cn-northwest-1",
+            id="cn-northwest-1",
             name="China (Ningxia)",
             vendor=vendor,
-            location=Location(country="CN", city="Ningxia"),  # NOTE needs city name
+            country=countries["CN"],
+            city="Ningxia",  # NOTE needs city name
             founding_year=2017,
             green_energy=True,
         ),
         Datacenter(
-            identifier="eu-central-1",
+            id="eu-central-1",
             name="Europe (Frankfurt)",
+            aliases=["EU (Frankfurt)"],
             vendor=vendor,
-            location=Location(country="DE", city="Frankfurt"),
+            country=countries["DE"],
+            city="Frankfurt",
             founding_year=2014,
             green_energy=True,
         ),
         Datacenter(
-            identifier="eu-central-2",
+            id="eu-central-2",
             name="Europe (Zurich)",
             vendor=vendor,
-            location=Location(country="CH", city="Zurich"),
+            country=countries["CH"],
+            city="Zurich",
             founding_year=2022,
             green_energy=True,
         ),
         Datacenter(
-            identifier="eu-north-1",
+            id="eu-north-1",
             name="Europe (Stockholm)",
+            aliases=["EU (Stockholm)"],
             vendor=vendor,
-            location=Location(country="SE", city="Stockholm"),
+            country=countries["SE"],
+            city="Stockholm",
             founding_year=2018,
             green_energy=True,
         ),
         Datacenter(
-            identifier="eu-south-1",
+            id="eu-south-1",
             name="Europe (Milan)",
+            aliases=["EU (Milan)"],
             vendor=vendor,
-            location=Location(country="IT", city="Milan"),
+            country=countries["IT"],
+            city="Milan",
             founding_year=2020,
             green_energy=True,
         ),
         Datacenter(
-            identifier="eu-south-2",
+            id="eu-south-2",
             name="Europe (Spain)",
             vendor=vendor,
-            location=Location(country="ES", city="Aragón"),  # NOTE needs city name
+            country=countries["ES"],
+            city="Aragón",  # NOTE needs city name
             founding_year=2022,
             green_energy=True,
         ),
         Datacenter(
-            identifier="eu-west-1",
+            id="eu-west-1",
             name="Europe (Ireland)",
+            aliases=["EU (Ireland)"],
             vendor=vendor,
-            location=Location(country="IE", city="Dublin"),
+            country=countries["IE"],
+            city="Dublin",
             founding_year=2007,
             green_energy=True,
         ),
         Datacenter(
-            identifier="eu-west-2",
+            id="eu-west-2",
             name="Europe (London)",
+            aliases=["EU (London)"],
             vendor=vendor,
-            location=Location(country="GB", city="London"),
+            country=countries["GB"],
+            city="London",
             founding_year=2016,
             green_energy=True,
         ),
         Datacenter(
-            identifier="eu-west-3",
+            id="eu-west-3",
             name="Europe (Paris)",
+            aliases=["EU (Paris)"],
             vendor=vendor,
-            location=Location(country="FR", city="Paris"),
+            country=countries["FR"],
+            city="Paris",
             founding_year=2017,
             green_energy=True,
         ),
         Datacenter(
-            identifier="il-central-1",
+            id="il-central-1",
             name="Israel (Tel Aviv)",
             vendor=vendor,
-            location=Location(country="IL", city="Tel Aviv"),
+            country=countries["IL"],
+            city="Tel Aviv",
             founding_year=2023,
             green_energy=False,
         ),
         Datacenter(
-            identifier="me-central-1",
+            id="me-central-1",
             name="Middle East (UAE)",
             vendor=vendor,
-            location=Location(country="AE"),  # NOTE city unknown
+            country=countries["AE"],
+            # NOTE city unknown
             founding_year=2022,
             green_energy=False,
         ),
         Datacenter(
-            identifier="me-central-2",
+            id="me-central-2",
             name="Middle East (Bahrain)",
             vendor=vendor,
-            location=Location(country="BH"),  # NOTE city unknown
+            country=countries["BH"],
+            # NOTE city unknown
             founding_year=2019,
             green_energy=False,
         ),
         Datacenter(
-            identifier="sa-east-1",
+            id="sa-east-1",
             name="South America (Sao Paulo)",
             vendor=vendor,
-            location=Location(country="BR", city="Sao Paulo"),
+            country=countries["BR"],
+            city="Sao Paulo",
             founding_year=2011,
             green_energy=False,
         ),
         Datacenter(
-            identifier="us-east-1",
+            id="us-east-1",
             name="US East (N. Virginia)",
             vendor=vendor,
-            location=Location(
-                country="US", state="Northern Virgina"
-            ),  # NOTE city unknown
+            country=countries["US"],
+            state="Northern Virgina",
+            # NOTE city unknown
             founding_year=2006,
             green_energy=True,
         ),
         Datacenter(
-            identifier="us-east-2",
+            id="us-east-2",
             name="US East (Ohio)",
             vendor=vendor,
-            location=Location(country="US", state="Ohio"),  # NOTE city unknown
+            country=countries["US"],
+            state="Ohio",
+            # NOTE city unknown
             founding_year=2016,
             green_energy=True,
         ),
         Datacenter(
-            identifier="us-west-1",
+            id="us-west-1",
             name="US West (N. California)",
             vendor=vendor,
-            location=Location(country="US", state="California"),  # NOTE city unknown
+            country=countries["US"],
+            state="California",
+            # NOTE city unknown
             founding_year=2009,
             green_energy=True,
         ),
         Datacenter(
-            identifier="us-west-2",
+            id="us-west-2",
             name="US West (Oregon)",
             vendor=vendor,
-            location=Location(country="US", state="Oregon"),  # NOTE city unknown
+            country=countries["US"],
+            state="Oregon",
+            # NOTE city unknown
             founding_year=2011,
             green_energy=True,
         ),
     ]
 
-    # look for undocumented (new) datacenters in AWS
-    supported_regions = [d.identifier for d in datacenters]
+    # look for undocumented (new) regions in AWS
+    supported_regions = [d.id for d in datacenters]
     regions = describe_regions()
     for region in regions:
         region_name = region["RegionName"]
@@ -314,36 +403,50 @@ def get_datacenters(vendor, *args, **kwargs):
         if region_name not in supported_regions:
             raise NotImplementedError(f"Unsupported AWS datacenter: {region_name}")
 
+    # mark inactive regions
+    active_regions = [region["RegionName"] for region in regions]
+    for datacenter in datacenters:
+        if datacenter.id not in active_regions:
+            datacenter.status = "inactive"
+
     # filter for datacenters enabled for the account
     datacenters = [
         datacenter
         for datacenter in datacenters
-        if datacenter.identifier in [region["RegionName"] for region in regions]
+        if datacenter.id in [region["RegionName"] for region in regions]
     ]
 
-    # make it easier to access by region name
-    # datacenters = {datacenter.identifier: datacenter for datacenter in datacenters}
-
-    # add zones
-    for datacenter in datacenters:
-        zones = describe_availability_zones(datacenter.identifier)
-        datacenter._zones = {
-            zone["ZoneId"]: Zone(
-                identifier=zone["ZoneId"],
-                name=zone["ZoneName"],
-                datacenter=datacenter,
-            )
-            for zone in zones
-        }
-
+    # TODO do we really need to return enything? standardize!
     return datacenters
 
 
+def get_zones(vendor, *args, **kwargs):
+    """List all available AWS availability zones."""
+    zones = [
+        [
+            Zone(
+                id=zone["ZoneId"],
+                name=zone["ZoneName"],
+                datacenter=datacenter,
+                vendor=vendor,
+            )
+            for zone in describe_availability_zones(datacenter.id)
+        ]
+        for datacenter in vendor.datacenters
+        if datacenter.status == "active"
+    ]
+    # TODO check if zone is active
+    return ChainMap(*zones)
+
+
 instance_families = {
+    "a": "AWS Graviton",
     "c": "Compute optimized",
     "d": "Dense storage",
+    "dl": "Deep Learning",
     "f": "FPGA",
     "g": "Graphics intensive",
+    "h": "Cost-effective storage optimized with HDD",
     "hpc": "High performance computing",
     "i": "Storage optimized",
     "im": "Storage optimized with a one to four ratio of vCPU to memory",
@@ -382,15 +485,24 @@ def annotate_instance_type(instance_type_id):
     Source: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instance-types.html#instance-type-names
     """  # noqa: E501
     kind = instance_type_id.split(".")[0]
+    # drop X TB suffix after instance family
+    if kind.startswith("u"):
+        logger.warning(f"Removing X TB reference from instance family: {kind}")
+        kind = re.sub(r"^u-([0-9]*)tb", "u", kind)
     # drop suffixes for now after the dash, e.g. "Mac2-m2", "Mac2-m2pro"
     if "-" in kind:
         logger.warning(f"Truncating instance type after the dash: {kind}")
-    kind = kind.split("-")[0]
+        kind = kind.split("-")[0]
     family, extras = re.split(r"[0-9]", kind)
     generation = re.findall(r"[0-9]", kind)[0]
     size = instance_type_id.split(".")[1]
 
-    text = instance_families[family]
+    try:
+        text = instance_families[family]
+    except KeyError as exc:
+        raise KeyError(
+            "Unknown instance family: " + family + " (e.g. " + instance_type_id + ")"
+        ) from exc
     for k, v in instance_suffixes.items():
         if k in extras:
             text += " [" + v + "]"
@@ -471,46 +583,116 @@ def get_gpus(instance_type):
     return [to_gpu(gpu) for gpu in gpus]
 
 
-def get_instance_types(vendor, *args, **kwargs):
-    if not hasattr(vendor, "_datacenters"):
-        raise AttributeError("Datacenters not defined, run get_datacenters()")
-    regions = [datacenter.identifier for datacenter in vendor._datacenters]
-    instance_types = {}
-    # might be instance types specific to a few or even a single region
-    for region in regions:
-        logger.debug(f"Looking up instance types in region {region}")
-        local_instance_types = describe_instance_types(region)
-        for instance_type in local_instance_types:
-            it = instance_type["InstanceType"]
-            if it not in list(instance_types.keys()):
-                vcpu_info = instance_type["VCpuInfo"]
-                cpu_info = instance_type["ProcessorInfo"]
-                gpu_info = get_gpu(instance_type)
-                storage_info = get_storage(instance_type)
-                network_card = instance_type["NetworkInfo"]["NetworkCards"][0]
-                instance_types.update(
-                    {
-                        it: Server(
-                            identifier=it,
-                            name=it,
-                            description=annotate_instance_type(it),
-                            vcpus=vcpu_info["DefaultVCpus"],
-                            cpu_cores=vcpu_info["DefaultCores"],
-                            cpu_speed=cpu_info.get("SustainedClockSpeedInGhz", None),
-                            cpu_architecture=cpu_info["SupportedArchitectures"][0],
-                            cpu_manufacturer=cpu_info.get("Manufacturer", None),
-                            memory=instance_type["MemoryInfo"]["SizeInMiB"],
-                            gpu_count=gpu_info[0],
-                            gpu_memory=gpu_info[1],
-                            gpu_name=gpu_info[2],
-                            gpus=get_gpus(instance_type),
-                            storage_size=storage_info[0],
-                            storage_type=storage_info[1],
-                            storages=get_storages(instance_type),
-                            network_speed=network_card["BaselineBandwidthInGbps"],
-                            billable_unit="hour",
-                        )
-                    }
-                )
+def server_from_instance_type(instance_type, vendor):
+    """Create a SQLModel Server instance from AWS raw API response."""
+    it = instance_type["InstanceType"]
+    vcpu_info = instance_type["VCpuInfo"]
+    cpu_info = instance_type["ProcessorInfo"]
+    gpu_info = get_gpu(instance_type)
+    storage_info = get_storage(instance_type)
+    network_card = instance_type["NetworkInfo"]["NetworkCards"][0]
+    # avoid duplicates
+    if it not in [s.id for s in vendor.servers]:
+        return Server(
+            id=it,
+            vendor=vendor,
+            name=it,
+            description=annotate_instance_type(it),
+            vcpus=vcpu_info["DefaultVCpus"],
+            cpu_cores=vcpu_info["DefaultCores"],
+            cpu_speed=cpu_info.get("SustainedClockSpeedInGhz", None),
+            cpu_architecture=cpu_info["SupportedArchitectures"][0],
+            cpu_manufacturer=cpu_info.get("Manufacturer", None),
+            memory=instance_type["MemoryInfo"]["SizeInMiB"],
+            gpu_count=gpu_info[0],
+            gpu_memory=gpu_info[1],
+            gpu_name=gpu_info[2],
+            gpus=get_gpus(instance_type),
+            storage_size=storage_info[0],
+            storage_type=storage_info[1],
+            storages=get_storages(instance_type),
+            network_speed=network_card["BaselineBandwidthInGbps"],
+            billable_unit="hour",
+        )
 
-    return instance_types
+
+def instance_types_of_region(region, vendor):
+    """List all available instance types of an AWS region."""
+    logger.debug(f"Looking up instance types in region {region}")
+    instance_types = describe_instance_types(region)
+    return [
+        server_from_instance_type(instance_type, vendor)
+        for instance_type in instance_types
+    ]
+
+
+def get_instance_types(vendor, *args, **kwargs):
+    # TODO drop this in favor of pricing.get_products, as it has info e.g. on instanceFamily
+    #      although other fields are messier (e.g. extract memory from string)
+    regions = [
+        datacenter.id
+        for datacenter in vendor.datacenters
+        if datacenter.status == "active"
+    ]
+    # might be instance types specific to a few or even a single region
+    instance_types = [instance_types_of_region(region, vendor) for region in regions]
+    return list(chain(*instance_types))
+
+
+def extract_ondemand_price(terms):
+    """Extract ondmand price and the currency from AWS Terms object."""
+    ondemand_term = list(terms["OnDemand"].values())[0]
+    ondemand_pricing = list(ondemand_term["priceDimensions"].values())[0]
+    ondemand_pricing = ondemand_pricing["pricePerUnit"]
+    if "USD" in ondemand_pricing.keys():
+        return (float(ondemand_pricing["USD"]), "USD")
+    # get the first currency if USD not found
+    return (float(list(ondemand_pricing.values())[0]), list(ondemand_pricing)[0])
+
+
+def price_from_product(product, vendor):
+    attributes = product["product"]["attributes"]
+    location = attributes["location"]
+    location_type = attributes["locationType"]
+    instance_type = attributes["instanceType"]
+    try:
+        datacenter = [
+            d for d in vendor.datacenters if location == d.name or location in d.aliases
+        ][0]
+    except IndexError:
+        logger.debug(f"No AWS region found for location: {location} [{location_type}]")
+        return
+    except Exception as exc:
+        raise exc
+    try:
+        server = [
+            d for d in vendor.servers if d.vendor == vendor and d.id == instance_type
+        ][0]
+    except IndexError:
+        logger.debug(f"No server definition found for {instance_type} @ {location}")
+        return
+    except Exception as exc:
+        raise exc
+    price = extract_ondemand_price(product["terms"])
+    return Price(
+        vendor=vendor,
+        datacenter=datacenter,
+        server=server,
+        allocation="ondemand",
+        price=price[0],
+        currency=price[1],
+    )
+
+
+def get_prices(vendor, *args, **kwargs):
+    products = get_products()
+    logger.debug(f"Found {len(products)} products")
+    # return [price_from_product(product, vendor) for product in products]
+    for product in products:
+        # drop Gov regions
+        if "GovCloud" not in product["product"]["attributes"]["location"]:
+            price_from_product(product, vendor)
+
+    # TODO store raw response
+    # TODO reserved pricing options - might decide not to, as not in scope?
+    # TODO spot prices

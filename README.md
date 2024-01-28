@@ -1,6 +1,49 @@
-This is a playground.
+## Spare Cores Crawler
 
-Examples:
+Note that this repository is still in pre-alpha phase, and is NOT intended for any public use yet.
+Please check back by the end of Q1 2024, or contact us (via a GitHub ticket) if you are interested
+in alpha/beta testing.
+
+## TODO
+
+- [ ] describe how to set up auth for each vendor
+- [ ] list required IAM permissions for each vendor
+
+### Database schema
+
+Database schema visualized and documented at https://dbdocs.io/spare-cores/sc-crawler
+
+### Usage
+
+Generate `CREATE TABLE` statements for a MySQL database:
+
+```shell
+sc-crawler schema mysql
+```
+
+Fetch datacenter, zone, products etc  data into a SQLite file:
+
+```shell
+rm sc_crawler.db; sc-crawler pull --cache --log-level DEBUG --include-vendor aws
+```
+
+### Other WIP methods
+
+Read from DB:
+
+```py
+from sc_crawler.database import engine
+from sc_crawler.schemas import Server
+from sqlmodel import Session, select
+session = Session(engine)
+session.exec(select(Server).where(Server.id == 'trn1.32xlarge')).one()
+
+server = session.exec(select(Server).where(Server.id == 'trn1.32xlarge')).one()
+pp(server)
+pp(server.vendor)
+```
+
+Lower level access examples:
 
 ```py
 from sc_crawler.vendors import aws
@@ -19,8 +62,16 @@ aws.zones
 # pretty printed objects
 from rich import print as pp
 pp(aws)
-pp(aws._datacenters[1]._zones)
-pp(aws._servers.get("t3a.2xlarge"))
-pp(aws._servers.get("i3en.12xlarge"))
-pp(aws._servers.get("g4dn.metal"))
+pp(aws.datacenters)
+pp(aws.servers[0])
+```
+
+Debug raw AWS responses:
+
+```py
+products = aws._methods.get_products()
+pp(products[1]["product"])
+
+instance_types = aws._methods.describe_instance_types(region="us-west-2")
+pp(instance_types[1])
 ```

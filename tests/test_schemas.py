@@ -1,26 +1,27 @@
 import pytest
-from pydantic import ValidationError
-from sc_crawler import Vendor, Location
+
+from sc_crawler.schemas import Country, Vendor
 
 
 def test_bad_vendor_definition():
-    with pytest.raises(ValidationError):
+    # TODO ValidationError once SQLModel supports pydantic typehint validation
+    with pytest.raises(ValueError):
         Vendor()
-        Vendor(identifier="foobar")
-        Vendor(identifier="foobar", name="foobar")
-        Vendor(identifier="foobar", name="foobar", homepage="https://foobar")
+        Vendor(id="foobar")
+        Vendor(id="foobar", name="foobar")
+        Vendor(id="foobar", name="foobar", homepage="https://foobar")
         Vendor(
-            identifier="foobar",
+            id="foobar",
             name="foobar",
             homepage="https://foobar",
-            location=Location(country="US", city="Los Angeles"),
+            country=Country(id="US"),
         )
     with pytest.raises(NotImplementedError):
         Vendor(
-            identifier="foobar",
+            id="foobar",
             name="foobar",
             homepage="https://foobar",
-            location=Location(country="US", city="Los Angeles"),
+            country=Country(id="US"),
             founding_year=2042,
         )
 
