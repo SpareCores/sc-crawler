@@ -269,32 +269,120 @@ class CpuArchitecture(str, Enum):
 
 
 class Server(SQLModel, table=True):
-    id: str = Field(primary_key=True)
-    vendor_id: str = Field(foreign_key="vendor.id", primary_key=True)
-    name: str
-    vcpus: int
+    __table_args__ = {"comment": "Server types."}
+    id: str = Field(
+        primary_key=True,
+        sa_column_kwargs={"comment": "Server identifier, as called at the vendor."},
+    )
+    vendor_id: str = Field(
+        foreign_key="vendor.id",
+        primary_key=True,
+        sa_column_kwargs={"comment": "Vendor reference."},
+    )
+    name: str = Field(
+        default=None,
+        sa_column_kwargs={
+            "comment": "Human-friendly name or short description of the server."
+        },
+    )
+    vcpus: int = Field(
+        default=None,
+        sa_column_kwargs={
+            "comment": "Default number of virtual CPUs (vCPU) of the server.."
+        },
+    )
     # TODO join all below cpu fields into a Cpu object?
-    cpu_cores: int
-    cpu_speed: Optional[float] = None  # Ghz
-    cpu_architecture: CpuArchitecture
-    cpu_manufacturer: Optional[str] = None
+    cpu_cores: int = Field(
+        default=None,
+        sa_column_kwargs={
+            "comment": (
+                "Default number of CPU cores of the server. "
+                "Equals to vCPUs when HyperThreading is disabled."
+            )
+        },
+    )
+    cpu_speed: Optional[float] = Field(
+        default=None,
+        sa_column_kwargs={"comment": "CPU clock speed (GHz)."},
+    )
+    cpu_architecture: CpuArchitecture = Field(
+        default=None,
+        sa_column_kwargs={
+            "comment": "CPU Architecture (arm64, arm64_mac, i386, or x86_64)."
+        },
+    )
+    cpu_manufacturer: Optional[str] = Field(
+        default=None,
+        sa_column_kwargs={"comment": "The manufacturer of the processor."},
+    )
     # TODO add the below extra fields
     # cpu_features:  # e.g. AVX; AVX2; AMD Turbo
     # cpu_allocation: dedicated | burstable | shared
     # cpu_name: str  # e.g. EPYC 7571
-    memory: int
-    gpu_count: int = 0
+    memory: int = Field(
+        default=None,
+        sa_column_kwargs={"comment": "RAM amount (MiB)."},
+    )
+    gpu_count: int = Field(
+        default=0,
+        sa_column_kwargs={"comment": "Number of GPU accelerator(s)."},
+    )
     # TODO sum and avg/each memory
-    gpu_memory: Optional[int] = None  # MiB
-    gpu_name: Optional[str] = None
-    gpus: List[Gpu] = Field(default=[], sa_column=Column(JSON))
-    storage_size: int = 0  # GB
-    storage_type: Optional[StorageType] = None
-    storages: List[Storage] = Field(default=[], sa_column=Column(JSON))
-    network_speed: Optional[float] = None  # Gbps
+    gpu_memory: Optional[int] = Field(
+        default=None,
+        sa_column_kwargs={
+            "comment": "Overall memory (MiB) available to all the GPU accelerator(s)."
+        },
+    )
+    gpu_name: Optional[str] = Field(
+        default=None,
+        sa_column_kwargs={
+            "comment": "The manufacturer and the name of the GPU accelerator(s)."
+        },
+    )
+    gpus: List[Gpu] = Field(
+        default=[],
+        sa_column=Column(
+            JSON,
+            comment=(
+                "JSON array of GPU accelerator details, including "
+                "the manufacturer, name, and memory (MiB) of each GPU."
+            ),
+        ),
+    )
+    storage_size: int = Field(
+        default=0,
+        sa_column_kwargs={"comment": "Overall size (GB) of the disk(s)."},
+    )
+    storage_type: Optional[StorageType] = Field(
+        default=None,
+        sa_column_kwargs={"comment": "Disk type (hdd, ssd, nvme ssd, or network)."},
+    )
+    storages: List[Storage] = Field(
+        default=[],
+        sa_column=Column(
+            JSON,
+            comment=(
+                "JSON array of disks attached to the server, including "
+                "the size (MiB) and type of each disk."
+            ),
+        ),
+    )
+    network_speed: Optional[float] = Field(
+        default=None,
+        sa_column_kwargs={
+            "comment": "The baseline network performance (Gbps) of the network card."
+        },
+    )
 
-    billable_unit: str
-    status: Status = "active"
+    billable_unit: str = Field(
+        default=None,
+        sa_column_kwargs={"comment": "Time period for billing, e.g. hour or month."},
+    )
+    status: Status = Field(
+        default="active",
+        sa_column_kwargs={"comment": "Status of the resource (active or inactive)."},
+    )
 
     vendor: Vendor = Relationship(back_populates="servers")
     prices: List["Price"] = Relationship(back_populates="server")
