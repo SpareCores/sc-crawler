@@ -432,8 +432,8 @@ class Price(SQLModel, table=True):
     def server_or_traffic_or_storage(self) -> "Price":
         if (self.server_id is None) + (self.traffic_id is None) + (
             self.storage_id is None
-        ) != 1:
-            raise ValueError("One Server, Traffic or Storage required.")
+        ) != 2:
+            raise ValueError("Exactly one Server, Traffic or Storage required.")
         return self
 
 
