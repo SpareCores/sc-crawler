@@ -266,6 +266,7 @@ class CpuArchitecture(str, Enum):
     ARM64_MAC = "arm64_mac"
     I386 = "i386"
     X86_64 = "x86_64"
+    X86_64_MAC = "x86_64_mac"
 
 
 class Server(SQLModel, table=True):
@@ -288,7 +289,7 @@ class Server(SQLModel, table=True):
     vcpus: int = Field(
         default=None,
         sa_column_kwargs={
-            "comment": "Default number of virtual CPUs (vCPU) of the server.."
+            "comment": "Default number of virtual CPUs (vCPU) of the server."
         },
     )
     # TODO join all below cpu fields into a Cpu object?

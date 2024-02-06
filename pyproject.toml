@@ -44,6 +44,9 @@ all = ["sc-crawler[testing]", "sc-crawler[vendors]"]
 [project.scripts]
 sc-crawler = "sc_crawler.cli:cli"
 
+[tool.setuptools.packages.find]
+where = ["src"]
+
 [tool.ruff]
 # Exclude a variety of commonly ignored directories.
 exclude = [

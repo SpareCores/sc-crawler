@@ -1,5 +1,4 @@
 import pytest
-
 from sc_crawler.schemas import Country, Vendor
 
 
