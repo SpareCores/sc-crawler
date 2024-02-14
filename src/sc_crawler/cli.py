@@ -1,6 +1,7 @@
 import logging
 from datetime import timedelta
 from enum import Enum
+from hashlib import sha1
 from json import dumps
 from typing import List
 
@@ -10,8 +11,20 @@ from sqlmodel import Session, SQLModel, create_engine
 from typing_extensions import Annotated
 
 from . import vendors as vendors_module
+from .hashing import hashrows, get_rows, get_table_name
 from .logger import logger
-from .schemas import Vendor
+from .schemas import (
+    Country,
+    VendorComplianceLink,
+    ComplianceFramework,
+    Vendor,
+    Datacenter,
+    Zone,
+    AddonStorage,
+    AddonTraffic,
+    Server,
+    Price,
+)
 
 supported_vendors = [
     vendor[1]
@@ -48,6 +61,36 @@ def schema(dialect: Engines):
 
     engine = create_engine(url, strategy="mock", executor=metadata_dump)
     SQLModel.metadata.create_all(engine)
+
+
+@cli.command()
+def hash(
+    connection_string: Annotated[
+        str, typer.Option(help="Database URL with SQLAlchemy dialect.")
+    ] = "sqlite:///sc_crawler.db",
+):
+    engine = create_engine(connection_string)
+    tables = [
+        Country,
+        VendorComplianceLink,
+        ComplianceFramework,
+        Vendor,
+        Datacenter,
+        Zone,
+        AddonStorage,
+        AddonTraffic,
+        Server,
+        Price,
+    ]
+
+    with Session(engine) as session:
+        hashes = {
+            get_table_name(table): hashrows(get_rows(table, session))
+            for table in tables
+        }
+
+    hash = sha1(dumps(hashes, sort_keys=True).encode()).hexdigest()
+    print(hash)
 
 
 @cli.command()
