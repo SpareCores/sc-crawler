@@ -11,19 +11,19 @@ from sqlmodel import Session, SQLModel, create_engine
 from typing_extensions import Annotated
 
 from . import vendors as vendors_module
-from .hashing import hashrows, get_rows, get_table_name
+from .hashing import get_rows, get_table_name, hashrows
 from .logger import logger
 from .schemas import (
-    Country,
-    VendorComplianceLink,
-    ComplianceFramework,
-    Vendor,
-    Datacenter,
-    Zone,
     AddonStorage,
     AddonTraffic,
-    Server,
+    ComplianceFramework,
+    Country,
+    Datacenter,
     Price,
+    Server,
+    Vendor,
+    VendorComplianceLink,
+    Zone,
 )
 
 supported_vendors = [
