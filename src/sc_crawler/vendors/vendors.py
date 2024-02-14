@@ -1,5 +1,5 @@
 from ..lookup import compliance_frameworks, countries
-from ..schemas import Vendor
+from ..schemas import Vendor, VendorComplianceLink
 
 
 def get_compliance_frameworks(framework_ids):
@@ -16,9 +16,11 @@ aws = Vendor(
     address_line="410 Terry Ave N",
     zip_code="98109",
     founding_year=2002,
-    compliance_frameworks=get_compliance_frameworks(["hipaa", "soc2t2"]),
     status_page="https://health.aws.amazon.com/health/status",
 )
+
+for cf in ["hipaa", "soc2t2"]:
+    VendorComplianceLink(vendor=aws, compliance_framework=compliance_frameworks[cf])
 
 gcp = Vendor(
     id="gcp",
@@ -30,6 +32,8 @@ gcp = Vendor(
     address_line="1600 Amphitheatre Pkwy",
     zip_code="94043",
     founding_year=2008,
-    compliance_frameworks=get_compliance_frameworks(["hipaa", "soc2t2"]),
     status_page="https://status.cloud.google.com/",
 )
+
+for cf in ["hipaa", "soc2t2"]:
+    VendorComplianceLink(vendor=gcp, compliance_framework=compliance_frameworks[cf])

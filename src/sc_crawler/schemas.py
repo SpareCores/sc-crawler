@@ -44,14 +44,16 @@ class Country(SQLModel, table=True):
 
 
 class VendorComplianceLink(SQLModel, table=True):
-    # TODO add extra fields, e.g. URL references
-    # https://sqlmodel.tiangolo.com/tutorial/many-to-many/link-with-extra-fields/
     __tablename__: str = "vendor_compliance_link"  # type: ignore
-    vendor_id: Optional[int] = Field(
-        default=None, foreign_key="vendor.id", primary_key=True
+    vendor_id: int = Field(foreign_key="vendor.id", primary_key=True)
+    compliance_framework_id: int = Field(
+        foreign_key="complianceframework.id", primary_key=True
     )
-    compliance_framework_id: Optional[int] = Field(
-        default=None, foreign_key="complianceframework.id", primary_key=True
+    comment: Optional[str] = None
+
+    vendor: "Vendor" = Relationship(back_populates="compliance_framework_links")
+    compliance_framework: "ComplianceFramework" = Relationship(
+        back_populates="vendor_links"
     )
 
 
@@ -66,8 +68,8 @@ class ComplianceFramework(SQLModel, table=True):
     # TODO HttpUrl not supported by SQLModel
     homepage: Optional[str] = None
 
-    vendors: List["Vendor"] = Relationship(
-        back_populates="compliance_frameworks", link_model=VendorComplianceLink
+    vendor_links: List[VendorComplianceLink] = Relationship(
+        back_populates="compliance_framework"
     )
 
 
@@ -102,8 +104,8 @@ class Vendor(SQLModel, table=True):
     # https://dbpedia.org/ontology/Organisation
     founding_year: int
 
-    compliance_frameworks: List[ComplianceFramework] = Relationship(
-        back_populates="vendors", link_model=VendorComplianceLink
+    compliance_framework_links: List[VendorComplianceLink] = Relationship(
+        back_populates="vendor"
     )
 
     # TODO HttpUrl not supported by SQLModel
@@ -438,6 +440,7 @@ class Price(SQLModel, table=True):
         return self
 
 
+VendorComplianceLink.model_rebuild()
 Country.model_rebuild()
 Vendor.model_rebuild()
 Datacenter.model_rebuild()
