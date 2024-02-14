@@ -6,7 +6,7 @@ from sqlmodel import select
 
 
 def hashrow(row, ignored=["inserted_at"]):
-    """Return tuple of primary keys and hash of all values expect ignored columns."""
+    """Return tuple of primary keys and hash of values except for the ignored columns."""
     pks = sorted([key.name for key in inspect(row.__class__).primary_key])
     rowdict = row.model_dump()
     rowkeys = tuple(rowdict.get(pk) for pk in pks)
