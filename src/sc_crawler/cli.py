@@ -84,13 +84,14 @@ def hash(
     ]
 
     with Session(engine) as session:
-        hashes = [
+        table_hashes = [
             tuple([get_table_name(table), hashrows(get_rows(table, session))])
             for table in tables
         ]
 
-    hash = sha1(dumps(sorted(hashes), sort_keys=True).encode()).hexdigest()
-    print(hash)
+    json_dump = dumps(sorted(table_hashes), sort_keys=True)
+    db_hash = sha1(json_dump.encode()).hexdigest()
+    print(db_hash)
 
 
 @cli.command()

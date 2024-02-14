@@ -21,7 +21,6 @@ def hashrows(rows, ignored=["inserted_at"]):
 
 
 def get_rows(table, session):
-    print(get_table_name(table))
     return session.exec(statement=select(table))
 
 
