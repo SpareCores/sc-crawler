@@ -17,7 +17,7 @@ def hashrow(row, ignored=["inserted_at"]):
 
 
 def hashrows(rows, ignored=["inserted_at"]):
-    return sorted([hashrow(row) for row in rows])
+    return sorted([hashrow(row, ignored=ignored) for row in rows])
 
 
 def get_rows(table, session):
