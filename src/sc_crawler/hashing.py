@@ -8,7 +8,7 @@ from sqlmodel import select
 def hashrow(row, ignored=["inserted_at"]):
     """Return tuple of primary keys and hash of values except for the ignored columns."""
     pks = sorted([key.name for key in inspect(row.__class__).primary_key])
-    rowdict = row.model_dump()
+    rowdict = row.model_dump(warnings=False)
     rowkeys = tuple(rowdict.get(pk) for pk in pks)
     for dropkey in [*ignored, *pks]:
         rowdict.pop(dropkey, None)
