@@ -84,12 +84,12 @@ def hash(
     ]
 
     with Session(engine) as session:
-        hashes = {
-            get_table_name(table): hashrows(get_rows(table, session))
+        hashes = [
+            tuple([get_table_name(table), hashrows(get_rows(table, session))])
             for table in tables
-        }
+        ]
 
-    hash = sha1(dumps(hashes, sort_keys=True).encode()).hexdigest()
+    hash = sha1(dumps(sorted(hashes), sort_keys=True).encode()).hexdigest()
     print(hash)
 
 

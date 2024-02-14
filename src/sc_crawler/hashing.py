@@ -6,20 +6,18 @@ from sqlmodel import select
 
 
 def hashrow(row, ignored=["inserted_at"]):
-    """Return dict of primary keys and hash of all values expect ignored columns."""
-    rowdict = row.model_dump()
+    """Return tuple of primary keys and hash of all values expect ignored columns."""
     pks = sorted([key.name for key in inspect(row.__class__).primary_key])
-    # need to convert to string for JSON dump
-    rowkeys = str(tuple(rowdict.get(pk) for pk in pks))
+    rowdict = row.model_dump()
+    rowkeys = tuple(rowdict.get(pk) for pk in pks)
     for dropkey in [*ignored, *pks]:
         rowdict.pop(dropkey, None)
     rowhash = sha1(dumps(rowdict, sort_keys=True).encode()).hexdigest()
-    return {rowkeys: rowhash}
+    return tuple([rowkeys, rowhash])
 
 
 def hashrows(rows, ignored=["inserted_at"]):
-    # return sorted([hashrow(row) for row in rows])
-    return dict(ChainMap(*[hashrow(row) for row in rows]))
+    return sorted([hashrow(row) for row in rows])
 
 
 def get_rows(table, session):
