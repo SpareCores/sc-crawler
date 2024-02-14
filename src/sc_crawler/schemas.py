@@ -45,8 +45,8 @@ class Country(SQLModel, table=True):
 
 class VendorComplianceLink(SQLModel, table=True):
     __tablename__: str = "vendor_compliance_link"  # type: ignore
-    vendor_id: int = Field(foreign_key="vendor.id", primary_key=True)
-    compliance_framework_id: int = Field(
+    vendor_id: str = Field(foreign_key="vendor.id", primary_key=True)
+    compliance_framework_id: str = Field(
         foreign_key="complianceframework.id", primary_key=True
     )
     comment: Optional[str] = None
