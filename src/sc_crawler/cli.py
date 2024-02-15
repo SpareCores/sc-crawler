@@ -13,18 +13,7 @@ from typing_extensions import Annotated
 from . import vendors as vendors_module
 from .hashing import get_rows, get_table_name, hashrows
 from .logger import logger
-from .schemas import (
-    AddonStorage,
-    AddonTraffic,
-    ComplianceFramework,
-    Country,
-    Datacenter,
-    Price,
-    Server,
-    Vendor,
-    VendorComplianceLink,
-    Zone,
-)
+from .schemas import tables, Vendor
 
 supported_vendors = [
     vendor[1]
@@ -70,18 +59,6 @@ def hash(
     ] = "sqlite:///sc_crawler.db",
 ):
     engine = create_engine(connection_string)
-    tables = [
-        Country,
-        VendorComplianceLink,
-        ComplianceFramework,
-        Vendor,
-        Datacenter,
-        Zone,
-        AddonStorage,
-        AddonTraffic,
-        Server,
-        Price,
-    ]
 
     with Session(engine) as session:
         table_hashes = [

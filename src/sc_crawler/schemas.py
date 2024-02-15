@@ -444,3 +444,17 @@ VendorComplianceLink.model_rebuild()
 Country.model_rebuild()
 Vendor.model_rebuild()
 Datacenter.model_rebuild()
+
+# TODO update auto-find all ScModel instances
+tables = [
+    Country,
+    VendorComplianceLink,
+    ComplianceFramework,
+    Vendor,
+    Datacenter,
+    Zone,
+    AddonStorage,
+    AddonTraffic,
+    Server,
+    Price,
+]
