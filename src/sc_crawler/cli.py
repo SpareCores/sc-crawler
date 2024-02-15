@@ -11,7 +11,6 @@ from sqlmodel import Session, SQLModel, create_engine
 from typing_extensions import Annotated
 
 from . import vendors as vendors_module
-from .hashing import get_rows, get_table_name, hashrows
 from .logger import logger
 from .schemas import tables, Vendor
 
@@ -38,6 +37,12 @@ log_levels = list(logging._nameToLevel.keys())
 LogLevels = Enum("LOGLEVELS", {k: k for k in log_levels})
 
 
+class HashLevels(Enum):
+    DATABASE = "database"
+    TABLE = "table"
+    ROW = "row"
+
+
 @cli.command()
 def schema(dialect: Engines):
     """
@@ -57,18 +62,32 @@ def hash(
     connection_string: Annotated[
         str, typer.Option(help="Database URL with SQLAlchemy dialect.")
     ] = "sqlite:///sc_crawler.db",
+    level: Annotated[
+        HashLevels,
+        typer.Option(
+            help="Return hashes for the whole database, per table or for each row."
+        ),
+    ] = "database",
 ):
     engine = create_engine(connection_string)
 
     with Session(engine) as session:
         table_hashes = {table.get_table_name(): table.hash(session) for table in tables}
 
-    json_dump = dumps(table_hashes, sort_keys=True)
-    from rich import print as pp
+    if level == HashLevels.TABLE:
+        table_hashes = {
+            k: sha1(dumps(v, sort_keys=True).encode()).hexdigest()
+            for k, v in table_hashes.items()
+        }
+        print(dumps(table_hashes, sort_keys=True))
+        raise typer.Exit()
 
-    pp(json_dump)
-    db_hash = sha1(json_dump.encode()).hexdigest()
-    print(db_hash)
+    json_dump = dumps(table_hashes, sort_keys=True)
+    if level == HashLevels.ROW:
+        print(json_dump)
+
+    if level == HashLevels.DATABASE:
+        print(sha1(json_dump.encode()).hexdigest())
 
 
 @cli.command()
