@@ -476,8 +476,8 @@ Datacenter.model_rebuild()
 
 def is_table(table):
     try:
-        return table.model_config.get("table", False) is True
-    except:
+        return table.model_config["table"] is True
+    except Exception:
         return False
 
 
