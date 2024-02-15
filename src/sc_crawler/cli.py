@@ -12,7 +12,7 @@ from typing_extensions import Annotated
 
 from . import vendors as vendors_module
 from .logger import logger
-from .schemas import tables, Vendor
+from .schemas import Vendor, tables
 
 supported_vendors = [
     vendor[1]
