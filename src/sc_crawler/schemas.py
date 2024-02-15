@@ -473,16 +473,12 @@ Country.model_rebuild()
 Vendor.model_rebuild()
 Datacenter.model_rebuild()
 
-# TODO update auto-find all ScModel instances
-tables = [
-    Country,
-    VendorComplianceLink,
-    ComplianceFramework,
-    Vendor,
-    Datacenter,
-    Zone,
-    AddonStorage,
-    AddonTraffic,
-    Server,
-    Price,
-]
+
+def is_table(table):
+    try:
+        return table.model_config.get("table", False) is True
+    except:
+        return False
+
+
+tables = [o for o in globals().values() if is_table(o)]
