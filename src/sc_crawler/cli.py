@@ -61,12 +61,12 @@ def hash(
     engine = create_engine(connection_string)
 
     with Session(engine) as session:
-        table_hashes = [
-            tuple([get_table_name(table), hashrows(get_rows(table, session))])
-            for table in tables
-        ]
+        table_hashes = {table.get_table_name(): table.hash(session) for table in tables}
 
-    json_dump = dumps(sorted(table_hashes), sort_keys=True)
+    json_dump = dumps(table_hashes, sort_keys=True)
+    from rich import print as pp
+
+    pp(json_dump)
     db_hash = sha1(json_dump.encode()).hexdigest()
     print(db_hash)
 
