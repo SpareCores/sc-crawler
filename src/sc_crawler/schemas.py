@@ -14,7 +14,6 @@ from pydantic import (
     PrivateAttr,
     model_validator,
 )
-
 from sqlalchemy.inspection import inspect
 
 # TODO SQLModel does NOT actually do pydantic validations
