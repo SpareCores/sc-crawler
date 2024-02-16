@@ -78,7 +78,7 @@ def pull(
     ] = [],
     log_level: Annotated[
         LogLevels, typer.Option(help="Log level threshold.")
-    ] = LogLevels.INFO,
+    ] = LogLevels.INFO.value,  # TODO drop .value after updating Enum to StrEnum in Python3.11
     cache: Annotated[
         bool,
         typer.Option(help="Enable or disable caching of all vendor API calls on disk."),
