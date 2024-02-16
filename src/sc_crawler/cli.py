@@ -57,8 +57,8 @@ def schema(dialect: Engines):
     SQLModel.metadata.create_all(engine)
 
 
-@cli.command()
-def hash(
+@cli.command(name="hash")
+def hash_command(
     connection_string: Annotated[
         str, typer.Option(help="Database URL with SQLAlchemy dialect.")
     ] = "sqlite:///sc_crawler.db",
