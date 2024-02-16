@@ -12,6 +12,7 @@ from typing_extensions import Annotated
 from . import vendors as vendors_module
 from .logger import logger
 from .schemas import Vendor
+from .utils import hash_database
 
 supported_vendors = [
     vendor[1]
@@ -50,6 +51,16 @@ def schema(dialect: Engines):
     SQLModel.metadata.create_all(engine)
 
 
+@cli.command(name="hash")
+def hash_command(
+    connection_string: Annotated[
+        str, typer.Option(help="Database URL with SQLAlchemy dialect.")
+    ] = "sqlite:///sc_crawler.db",
+):
+    """Print the hash of the content of a database."""
+    print(hash_database(connection_string))
+
+
 @cli.command()
 def pull(
     connection_string: Annotated[
@@ -65,7 +76,9 @@ def pull(
         List[Vendors],
         typer.Option(help="Exclude specific vendor. Can be specified multiple times."),
     ] = [],
-    log_level: Annotated[LogLevels, typer.Option(help="Log level threshold.")] = "INFO",
+    log_level: Annotated[
+        LogLevels, typer.Option(help="Log level threshold.")
+    ] = LogLevels.INFO,
     cache: Annotated[
         bool,
         typer.Option(help="Enable or disable caching of all vendor API calls on disk."),

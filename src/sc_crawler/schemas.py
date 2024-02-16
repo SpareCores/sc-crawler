@@ -2,7 +2,9 @@
 
 
 from enum import Enum
+from hashlib import sha1
 from importlib import import_module
+from json import dumps
 from types import ModuleType
 from typing import List, Optional
 
@@ -12,10 +14,36 @@ from pydantic import (
     PrivateAttr,
     model_validator,
 )
+from sqlalchemy.inspection import inspect
 
 # TODO SQLModel does NOT actually do pydantic validations
 #      https://github.com/tiangolo/sqlmodel/issues/52
-from sqlmodel import JSON, Column, Field, Relationship, SQLModel
+from sqlmodel import JSON, Column, Field, Relationship, SQLModel, select
+
+
+class ScModel(SQLModel):
+    """Custom extension to SQLModel to support hashing tables."""
+
+    @classmethod
+    def get_table_name(cls) -> str:
+        """Return the SQLModel object's table name."""
+        return cls.__tablename__
+
+    @classmethod
+    def hash(cls, session, ignored: List[str] = ["inserted_at"]) -> dict:
+        pks = sorted([key.name for key in inspect(cls).primary_key])
+        rows = session.exec(statement=select(cls))
+        # no use of a generator as will need to serialize to JSON anyway
+        hashes = {}
+        for row in rows:
+            # NOTE Pydantic is warning when read Gpu/Storage as dict
+            rowdict = row.model_dump(warnings=False)
+            rowkeys = str(tuple(rowdict.get(pk) for pk in pks))
+            for dropkey in [*ignored, *pks]:
+                rowdict.pop(dropkey, None)
+            rowhash = sha1(dumps(rowdict, sort_keys=True).encode()).hexdigest()
+            hashes[rowkeys] = rowhash
+        return hashes
 
 
 class Json(BaseModel):
@@ -30,7 +58,7 @@ class Status(str, Enum):
     INACTIVE = "inactive"
 
 
-class Country(SQLModel, table=True):
+class Country(ScModel, table=True):
     __table_args__ = {"comment": "Country and continent mapping."}
     id: str = Field(
         default=None,
@@ -43,19 +71,21 @@ class Country(SQLModel, table=True):
     datacenters: List["Datacenter"] = Relationship(back_populates="country")
 
 
-class VendorComplianceLink(SQLModel, table=True):
-    # TODO add extra fields, e.g. URL references
-    # https://sqlmodel.tiangolo.com/tutorial/many-to-many/link-with-extra-fields/
+class VendorComplianceLink(ScModel, table=True):
     __tablename__: str = "vendor_compliance_link"  # type: ignore
-    vendor_id: Optional[int] = Field(
-        default=None, foreign_key="vendor.id", primary_key=True
+    vendor_id: str = Field(foreign_key="vendor.id", primary_key=True)
+    compliance_framework_id: str = Field(
+        foreign_key="complianceframework.id", primary_key=True
     )
-    compliance_framework_id: Optional[int] = Field(
-        default=None, foreign_key="complianceframework.id", primary_key=True
+    comment: Optional[str] = None
+
+    vendor: "Vendor" = Relationship(back_populates="compliance_framework_links")
+    compliance_framework: "ComplianceFramework" = Relationship(
+        back_populates="vendor_links"
     )
 
 
-class ComplianceFramework(SQLModel, table=True):
+class ComplianceFramework(ScModel, table=True):
     id: str = Field(primary_key=True)
     name: str
     abbreviation: Optional[str]
@@ -66,12 +96,12 @@ class ComplianceFramework(SQLModel, table=True):
     # TODO HttpUrl not supported by SQLModel
     homepage: Optional[str] = None
 
-    vendors: List["Vendor"] = Relationship(
-        back_populates="compliance_frameworks", link_model=VendorComplianceLink
+    vendor_links: List[VendorComplianceLink] = Relationship(
+        back_populates="compliance_framework"
     )
 
 
-class Vendor(SQLModel, table=True):
+class Vendor(ScModel, table=True):
     """Base class for cloud compute resource vendors.
 
     Examples:
@@ -102,14 +132,14 @@ class Vendor(SQLModel, table=True):
     # https://dbpedia.org/ontology/Organisation
     founding_year: int
 
-    compliance_frameworks: List[ComplianceFramework] = Relationship(
-        back_populates="vendors", link_model=VendorComplianceLink
+    compliance_framework_links: List[VendorComplianceLink] = Relationship(
+        back_populates="vendor"
     )
 
     # TODO HttpUrl not supported by SQLModel
     status_page: Optional[str] = None
 
-    status: Status = "active"
+    status: Status = Status.ACTIVE
 
     # private attributes
     _methods: ImportString[ModuleType] = PrivateAttr()
@@ -164,7 +194,7 @@ class Vendor(SQLModel, table=True):
         return
 
 
-class Datacenter(SQLModel, table=True):
+class Datacenter(ScModel, table=True):
     id: str = Field(primary_key=True)
     name: str
     aliases: List[str] = Field(default=[], sa_column=Column(JSON))
@@ -181,7 +211,7 @@ class Datacenter(SQLModel, table=True):
     founding_year: Optional[int] = None
     green_energy: Optional[bool] = None
 
-    status: Status = "active"
+    status: Status = Status.ACTIVE
 
     # relations
     country: Country = Relationship(back_populates="datacenters")
@@ -189,12 +219,12 @@ class Datacenter(SQLModel, table=True):
     prices: List["Price"] = Relationship(back_populates="datacenter")
 
 
-class Zone(SQLModel, table=True):
+class Zone(ScModel, table=True):
     id: str = Field(primary_key=True)
     datacenter_id: str = Field(foreign_key="datacenter.id", primary_key=True)
     vendor_id: str = Field(foreign_key="vendor.id", primary_key=True)
     name: str
-    status: Status = "active"
+    status: Status = Status.ACTIVE
 
     # relations
     datacenter: Datacenter = Relationship(back_populates="zones")
@@ -209,7 +239,7 @@ class StorageType(str, Enum):
     NETWORK = "network"
 
 
-class AddonStorage(SQLModel, table=True):
+class AddonStorage(ScModel, table=True):
     __tablename__: str = "addon_storage"  # type: ignore
 
     id: str = Field(primary_key=True)
@@ -223,7 +253,7 @@ class AddonStorage(SQLModel, table=True):
     min_size: Optional[int] = None  # GiB
     max_size: Optional[int] = None  # GiB
     billable_unit: str = "GiB"
-    status: Status = "active"
+    status: Status = Status.ACTIVE
 
     vendor: Vendor = Relationship(back_populates="addon_storages")
     prices: List["Price"] = Relationship(back_populates="storage")
@@ -234,7 +264,7 @@ class TrafficDirection(str, Enum):
     OUT = "outbound"
 
 
-class AddonTraffic(SQLModel, table=True):
+class AddonTraffic(ScModel, table=True):
     __tablename__: str = "addon_traffic"  # type: ignore
 
     id: str = Field(primary_key=True)
@@ -243,7 +273,7 @@ class AddonTraffic(SQLModel, table=True):
     description: Optional[str]
     direction: TrafficDirection
     billable_unit: str = "GB"
-    status: Status = "active"
+    status: Status = Status.ACTIVE
 
     vendor: Vendor = Relationship(back_populates="addon_traffics")
     prices: List["Price"] = Relationship(back_populates="traffic")
@@ -269,7 +299,7 @@ class CpuArchitecture(str, Enum):
     X86_64_MAC = "x86_64_mac"
 
 
-class Server(SQLModel, table=True):
+class Server(ScModel, table=True):
     __table_args__ = {"comment": "Server types."}
     id: str = Field(
         primary_key=True,
@@ -381,7 +411,7 @@ class Server(SQLModel, table=True):
         sa_column_kwargs={"comment": "Time period for billing, e.g. hour or month."},
     )
     status: Status = Field(
-        default="active",
+        default=Status.ACTIVE,
         sa_column_kwargs={"comment": "Status of the resource (active or inactive)."},
     )
 
@@ -401,7 +431,7 @@ class PriceTier(Json):
     price: float
 
 
-class Price(SQLModel, table=True):
+class Price(ScModel, table=True):
     ## TODO add ipv4 pricing
     ## TODO created_at
     id: int = Field(primary_key=True)
@@ -414,7 +444,7 @@ class Price(SQLModel, table=True):
     server_id: Optional[str] = Field(default=None, foreign_key="server.id")
     traffic_id: Optional[str] = Field(default=None, foreign_key="addon_traffic.id")
     storage_id: Optional[str] = Field(default=None, foreign_key="addon_storage.id")
-    allocation: Allocation = "ondemand"
+    allocation: Allocation = Allocation.ONDEMAND
     price: float  # max price if tiered
     # e.g. setup fee for dedicated servers, or upfront costs of a reserved instance type
     price_upfront: float = 0
@@ -438,6 +468,17 @@ class Price(SQLModel, table=True):
         return self
 
 
+VendorComplianceLink.model_rebuild()
 Country.model_rebuild()
 Vendor.model_rebuild()
 Datacenter.model_rebuild()
+
+
+def is_table(table):
+    try:
+        return table.model_config["table"] is True
+    except Exception:
+        return False
+
+
+tables = [o for o in globals().values() if is_table(o)]
