@@ -76,7 +76,9 @@ def pull(
         List[Vendors],
         typer.Option(help="Exclude specific vendor. Can be specified multiple times."),
     ] = [],
-    log_level: Annotated[LogLevels, typer.Option(help="Log level threshold.")] = "INFO",
+    log_level: Annotated[
+        LogLevels, typer.Option(help="Log level threshold.")
+    ] = LogLevels.INFO,
     cache: Annotated[
         bool,
         typer.Option(help="Enable or disable caching of all vendor API calls on disk."),

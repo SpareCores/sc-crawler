@@ -30,7 +30,7 @@ class ScModel(SQLModel):
         return cls.__tablename__
 
     @classmethod
-    def hash(cls, session, ignored=["inserted_at"]) -> []:
+    def hash(cls, session, ignored: List[str] = ["inserted_at"]) -> dict:
         pks = sorted([key.name for key in inspect(cls).primary_key])
         rows = session.exec(statement=select(cls))
         # no use of a generator as will need to serialize to JSON anyway
@@ -139,7 +139,7 @@ class Vendor(ScModel, table=True):
     # TODO HttpUrl not supported by SQLModel
     status_page: Optional[str] = None
 
-    status: Status = "active"
+    status: Status = Status.ACTIVE
 
     # private attributes
     _methods: ImportString[ModuleType] = PrivateAttr()
@@ -211,7 +211,7 @@ class Datacenter(ScModel, table=True):
     founding_year: Optional[int] = None
     green_energy: Optional[bool] = None
 
-    status: Status = "active"
+    status: Status = Status.ACTIVE
 
     # relations
     country: Country = Relationship(back_populates="datacenters")
@@ -224,7 +224,7 @@ class Zone(ScModel, table=True):
     datacenter_id: str = Field(foreign_key="datacenter.id", primary_key=True)
     vendor_id: str = Field(foreign_key="vendor.id", primary_key=True)
     name: str
-    status: Status = "active"
+    status: Status = Status.ACTIVE
 
     # relations
     datacenter: Datacenter = Relationship(back_populates="zones")
@@ -253,7 +253,7 @@ class AddonStorage(ScModel, table=True):
     min_size: Optional[int] = None  # GiB
     max_size: Optional[int] = None  # GiB
     billable_unit: str = "GiB"
-    status: Status = "active"
+    status: Status = Status.ACTIVE
 
     vendor: Vendor = Relationship(back_populates="addon_storages")
     prices: List["Price"] = Relationship(back_populates="storage")
@@ -273,7 +273,7 @@ class AddonTraffic(ScModel, table=True):
     description: Optional[str]
     direction: TrafficDirection
     billable_unit: str = "GB"
-    status: Status = "active"
+    status: Status = Status.ACTIVE
 
     vendor: Vendor = Relationship(back_populates="addon_traffics")
     prices: List["Price"] = Relationship(back_populates="traffic")
@@ -411,7 +411,7 @@ class Server(ScModel, table=True):
         sa_column_kwargs={"comment": "Time period for billing, e.g. hour or month."},
     )
     status: Status = Field(
-        default="active",
+        default=Status.ACTIVE,
         sa_column_kwargs={"comment": "Status of the resource (active or inactive)."},
     )
 
@@ -444,7 +444,7 @@ class Price(ScModel, table=True):
     server_id: Optional[str] = Field(default=None, foreign_key="server.id")
     traffic_id: Optional[str] = Field(default=None, foreign_key="addon_traffic.id")
     storage_id: Optional[str] = Field(default=None, foreign_key="addon_storage.id")
-    allocation: Allocation = "ondemand"
+    allocation: Allocation = Allocation.ONDEMAND
     price: float  # max price if tiered
     # e.g. setup fee for dedicated servers, or upfront costs of a reserved instance type
     price_upfront: float = 0
