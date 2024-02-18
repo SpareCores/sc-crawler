@@ -15,14 +15,28 @@ from pydantic import (
     model_validator,
 )
 from sqlalchemy.inspection import inspect
+from sqlalchemy.orm import declared_attr
 
 # TODO SQLModel does NOT actually do pydantic validations
 #      https://github.com/tiangolo/sqlmodel/issues/52
 from sqlmodel import JSON, Column, Field, Relationship, SQLModel, select
 
+from .str import snake_case
+
+
 
 class ScModel(SQLModel):
-    """Custom extension to SQLModel to support hashing tables."""
+    """Custom extension to SQLModel.
+
+    Extra features:
+    - support for hashing table rows,
+    - auto-generated table names using snake_case.
+    """
+
+    @declared_attr  # type: ignore
+    def __tablename__(cls) -> str:
+        """Generate tables names using all-lowercase snake_case."""
+        return snake_case(cls.__name__)
 
     @classmethod
     def get_table_name(cls) -> str:
@@ -72,10 +86,9 @@ class Country(ScModel, table=True):
 
 
 class VendorComplianceLink(ScModel, table=True):
-    __tablename__: str = "vendor_compliance_link"  # type: ignore
     vendor_id: str = Field(foreign_key="vendor.id", primary_key=True)
     compliance_framework_id: str = Field(
-        foreign_key="complianceframework.id", primary_key=True
+        foreign_key="compliance_framework.id", primary_key=True
     )
     comment: Optional[str] = None
 
@@ -240,8 +253,6 @@ class StorageType(str, Enum):
 
 
 class AddonStorage(ScModel, table=True):
-    __tablename__: str = "addon_storage"  # type: ignore
-
     id: str = Field(primary_key=True)
     vendor_id: str = Field(foreign_key="vendor.id", primary_key=True)
     name: str
@@ -265,8 +276,6 @@ class TrafficDirection(str, Enum):
 
 
 class AddonTraffic(ScModel, table=True):
-    __tablename__: str = "addon_traffic"  # type: ignore
-
     id: str = Field(primary_key=True)
     vendor_id: str = Field(foreign_key="vendor.id", primary_key=True)
     name: str
