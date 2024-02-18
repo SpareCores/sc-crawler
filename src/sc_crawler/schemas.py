@@ -41,7 +41,7 @@ class ScModel(SQLModel):
     @classmethod
     def get_table_name(cls) -> str:
         """Return the SQLModel object's table name."""
-        return cls.__tablename__
+        return str(cls.__tablename__)
 
     @classmethod
     def hash(cls, session, ignored: List[str] = ["inserted_at"]) -> dict:
