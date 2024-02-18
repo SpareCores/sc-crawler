@@ -43,7 +43,7 @@ class ReuseDescriptions(SQLModel.__class__):
         if subclass.__doc__ and satable.comment is None:
             satable.comment = subclass.__doc__.splitlines()[0]
         # column comments
-        for k, v in subclass.__fields__.items():
+        for k, v in subclass.model_fields.items():
             comment = satable.columns[k].comment
             if v.description and comment is None:
                 satable.columns[k].comment = v.description
