@@ -24,13 +24,38 @@ from sqlmodel import JSON, Column, Field, Relationship, SQLModel, select
 from .str import snake_case
 
 
+class ReuseDescriptions(SQLModel.__class__):
+    """Reuse description of the table and its fields as SQL comment.
 
-class ScModel(SQLModel):
-    """Custom extension to SQLModel.
+    Checking if the table and its fields have explicit comment set to
+    be shown in the `CREATE TABLE` statements, and if not, reuse the
+    optional table and field descriptions. Table docstrings are
+    truncated to first line.
+    """
+
+    def __init__(subclass, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # early return for non-tables
+        if subclass.model_config.get("table") is None:
+            return
+        # table comment
+        satable = subclass.metadata.tables[subclass.__tablename__]
+        if subclass.__doc__ and satable.comment is None:
+            satable.comment = subclass.__doc__.splitlines()[0]
+        # column comments
+        for k, v in subclass.__fields__.items():
+            comment = satable.columns[k].comment
+            if v.description and comment is None:
+                satable.columns[k].comment = v.description
+
+
+class ScModel(SQLModel, metaclass=ReuseDescriptions):
+    """Custom extensions to SQLModel objects and tables.
 
     Extra features:
+    - auto-generated table names using snake_case,
     - support for hashing table rows,
-    - auto-generated table names using snake_case.
+    - reuse description field of tables/columns as SQL comment.
     """
 
     @declared_attr  # type: ignore
@@ -73,13 +98,14 @@ class Status(str, Enum):
 
 
 class Country(ScModel, table=True):
-    __table_args__ = {"comment": "Country and continent mapping."}
+    """Country and continent mapping."""
+
     id: str = Field(
         default=None,
         primary_key=True,
-        sa_column_kwargs={"comment": "Country code by ISO 3166 alpha-2."},
+        description="Country code by ISO 3166 alpha-2.",
     )
-    continent: str = Field(sa_column_kwargs={"comment": "Continent name."})
+    continent: str = Field(description="Continent name.")
 
     vendors: List["Vendor"] = Relationship(back_populates="country")
     datacenters: List["Datacenter"] = Relationship(back_populates="country")
@@ -115,7 +141,7 @@ class ComplianceFramework(ScModel, table=True):
 
 
 class Vendor(ScModel, table=True):
-    """Base class for cloud compute resource vendors.
+    """Compute resource vendors, such as cloud and server providers.
 
     Examples:
         >>> from sc_crawler.schemas import Vendor
@@ -309,51 +335,43 @@ class CpuArchitecture(str, Enum):
 
 
 class Server(ScModel, table=True):
-    __table_args__ = {"comment": "Server types."}
+    """Server types."""
+
     id: str = Field(
         primary_key=True,
-        sa_column_kwargs={"comment": "Server identifier, as called at the vendor."},
+        description="Server identifier, as called at the vendor.",
     )
     vendor_id: str = Field(
         foreign_key="vendor.id",
         primary_key=True,
-        sa_column_kwargs={"comment": "Vendor reference."},
+        description="Vendor reference.",
     )
     name: str = Field(
         default=None,
-        sa_column_kwargs={
-            "comment": "Human-friendly name or short description of the server."
-        },
+        description="Human-friendly name or short description of the server.",
     )
     vcpus: int = Field(
         default=None,
-        sa_column_kwargs={
-            "comment": "Default number of virtual CPUs (vCPU) of the server."
-        },
+        description="Default number of virtual CPUs (vCPU) of the server.",
     )
     # TODO join all below cpu fields into a Cpu object?
     cpu_cores: int = Field(
         default=None,
-        sa_column_kwargs={
-            "comment": (
-                "Default number of CPU cores of the server. "
-                "Equals to vCPUs when HyperThreading is disabled."
-            )
-        },
+        description=(
+            "Default number of CPU cores of the server. "
+            "Equals to vCPUs when HyperThreading is disabled."
+        ),
     )
     cpu_speed: Optional[float] = Field(
-        default=None,
-        sa_column_kwargs={"comment": "CPU clock speed (GHz)."},
+        default=None, description="CPU clock speed (GHz)."
     )
     cpu_architecture: CpuArchitecture = Field(
         default=None,
-        sa_column_kwargs={
-            "comment": "CPU Architecture (arm64, arm64_mac, i386, or x86_64)."
-        },
+        description="CPU Architecture (arm64, arm64_mac, i386, or x86_64).",
     )
     cpu_manufacturer: Optional[str] = Field(
         default=None,
-        sa_column_kwargs={"comment": "The manufacturer of the processor."},
+        description="The manufacturer of the processor.",
     )
     # TODO add the below extra fields
     # cpu_features:  # e.g. AVX; AVX2; AMD Turbo
@@ -361,67 +379,57 @@ class Server(ScModel, table=True):
     # cpu_name: str  # e.g. EPYC 7571
     memory: int = Field(
         default=None,
-        sa_column_kwargs={"comment": "RAM amount (MiB)."},
+        description="RAM amount (MiB).",
     )
     gpu_count: int = Field(
         default=0,
-        sa_column_kwargs={"comment": "Number of GPU accelerator(s)."},
+        description="Number of GPU accelerator(s).",
     )
     # TODO sum and avg/each memory
     gpu_memory: Optional[int] = Field(
         default=None,
-        sa_column_kwargs={
-            "comment": "Overall memory (MiB) available to all the GPU accelerator(s)."
-        },
+        description="Overall memory (MiB) available to all the GPU accelerator(s).",
     )
     gpu_name: Optional[str] = Field(
         default=None,
-        sa_column_kwargs={
-            "comment": "The manufacturer and the name of the GPU accelerator(s)."
-        },
+        description="The manufacturer and the name of the GPU accelerator(s).",
     )
     gpus: List[Gpu] = Field(
         default=[],
-        sa_column=Column(
-            JSON,
-            comment=(
-                "JSON array of GPU accelerator details, including "
-                "the manufacturer, name, and memory (MiB) of each GPU."
-            ),
+        sa_column=Column(JSON),
+        description=(
+            "JSON array of GPU accelerator details, including "
+            "the manufacturer, name, and memory (MiB) of each GPU."
         ),
     )
     storage_size: int = Field(
         default=0,
-        sa_column_kwargs={"comment": "Overall size (GB) of the disk(s)."},
+        description="Overall size (GB) of the disk(s).",
     )
     storage_type: Optional[StorageType] = Field(
         default=None,
-        sa_column_kwargs={"comment": "Disk type (hdd, ssd, nvme ssd, or network)."},
+        description="Disk type (hdd, ssd, nvme ssd, or network).",
     )
     storages: List[Storage] = Field(
         default=[],
-        sa_column=Column(
-            JSON,
-            comment=(
-                "JSON array of disks attached to the server, including "
-                "the size (MiB) and type of each disk."
-            ),
+        sa_column=Column(JSON),
+        description=(
+            "JSON array of disks attached to the server, including "
+            "the size (MiB) and type of each disk."
         ),
     )
     network_speed: Optional[float] = Field(
         default=None,
-        sa_column_kwargs={
-            "comment": "The baseline network performance (Gbps) of the network card."
-        },
+        description="The baseline network performance (Gbps) of the network card.",
     )
 
     billable_unit: str = Field(
         default=None,
-        sa_column_kwargs={"comment": "Time period for billing, e.g. hour or month."},
+        description="Time period for billing, e.g. hour or month.",
     )
     status: Status = Field(
         default=Status.ACTIVE,
-        sa_column_kwargs={"comment": "Status of the resource (active or inactive)."},
+        description="Status of the resource (active or inactive).",
     )
 
     vendor: Vendor = Relationship(back_populates="servers")
