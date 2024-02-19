@@ -422,6 +422,7 @@ class Server(ScModel, table=True):
         default=None,
         description="The baseline network performance (Gbps) of the network card.",
     )
+    ipv4: bool = Field(default=False, description="Complimentary IPv4 address.")
 
     billable_unit: str = Field(
         default=None,
