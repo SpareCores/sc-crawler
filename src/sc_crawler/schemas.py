@@ -1,6 +1,7 @@
 """Schemas for vendors, datacenters, zones, and other resources."""
 
 
+from datetime import datetime
 from enum import Enum
 from hashlib import sha1
 from importlib import import_module
@@ -13,6 +14,7 @@ from pydantic import (
     ImportString,
     PrivateAttr,
 )
+from sqlalchemy import DateTime, Column
 from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import declared_attr
 from sqlmodel import JSON, Column, Field, Relationship, SQLModel, select
@@ -20,13 +22,17 @@ from sqlmodel import JSON, Column, Field, Relationship, SQLModel, select
 from .str import snake_case
 
 
-class ReuseDescriptions(SQLModel.__class__):
-    """Reuse description of the table and its fields as SQL comment.
+class ScMetaModel(SQLModel.__class__):
+    """Custom class factory to auto-update table models.
 
-    Checking if the table and its fields have explicit comment set to
-    be shown in the `CREATE TABLE` statements, and if not, reuse the
-    optional table and field descriptions. Table docstrings are
-    truncated to first line.
+    - Reuse description of the table and its fields as SQL comment.
+
+        Checking if the table and its fields have explicit comment set
+        to be shown in the `CREATE TABLE` statements, and if not,
+        reuse the optional table and field descriptions. Table
+        docstrings are truncated to first line.
+
+    - Append inserted_at column.
     """
 
     def __init__(subclass, *args, **kwargs):
@@ -43,15 +49,18 @@ class ReuseDescriptions(SQLModel.__class__):
             comment = satable.columns[k].comment
             if v.description and comment is None:
                 satable.columns[k].comment = v.description
+        # append inserted_at as last column
+        satable.append_column(Column("inserted_at", DateTime, default=datetime.utcnow))
 
 
-class ScModel(SQLModel, metaclass=ReuseDescriptions):
+class ScModel(SQLModel, metaclass=ScMetaModel):
     """Custom extensions to SQLModel objects and tables.
 
     Extra features:
     - auto-generated table names using snake_case,
     - support for hashing table rows,
-    - reuse description field of tables/columns as SQL comment.
+    - reuse description field of tables/columns as SQL comment,
+    - automatically append inserted_at column.
     """
 
     @declared_attr  # type: ignore
@@ -72,6 +81,7 @@ class ScModel(SQLModel, metaclass=ReuseDescriptions):
         hashes = {}
         for row in rows:
             # NOTE Pydantic is warning when read Gpu/Storage as dict
+            # https://github.com/tiangolo/sqlmodel/issues/63#issuecomment-1081555082
             rowdict = row.model_dump(warnings=False)
             rowkeys = str(tuple(rowdict.get(pk) for pk in pks))
             for dropkey in [*ignored, *pks]:
