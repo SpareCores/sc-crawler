@@ -9,7 +9,7 @@ from cachier import cachier, set_default_params
 
 from ..logger import logger
 from ..lookup import countries
-from ..schemas import Datacenter, Gpu, Price, Server, Storage, Zone
+from ..schemas import Datacenter, Gpu, Price, Server, Disk, Zone
 
 # disable caching by default
 set_default_params(caching_enabled=False, stale_after=timedelta(days=1))
@@ -540,7 +540,7 @@ def get_storages(instance_type):
         kind = disk.get("Type").lower()
         if kind == "ssd" and nvme:
             kind = "nvme ssd"
-        return Storage(size=disk["SizeInGB"], storage_type=kind)
+        return Disk(size=disk["SizeInGB"], storage_type=kind)
 
     # replicate number of disks
     disks = info["Disks"]
