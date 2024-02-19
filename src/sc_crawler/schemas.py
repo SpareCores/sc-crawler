@@ -198,6 +198,7 @@ class Vendor(ScModel, table=True):
     servers: List["Server"] = Relationship(back_populates="vendor")
     server_prices: List["ServerPrice"] = Relationship(back_populates="vendor")
     traffic_prices: List["TrafficPrice"] = Relationship(back_populates="vendor")
+    ipv4_prices: List["Ipv4Price"] = Relationship(back_populates="vendor")
     storage_prices: List["StoragePrice"] = Relationship(back_populates="vendor")
 
     def __init__(self, **kwargs):
@@ -266,6 +267,7 @@ class Datacenter(ScModel, table=True):
     zones: List["Zone"] = Relationship(back_populates="datacenter")
     server_prices: List["ServerPrice"] = Relationship(back_populates="datacenter")
     traffic_prices: List["TrafficPrice"] = Relationship(back_populates="datacenter")
+    ipv4_prices: List["Ipv4Price"] = Relationship(back_populates="datacenter")
     storage_prices: List["StoragePrice"] = Relationship(back_populates="datacenter")
 
 
@@ -281,6 +283,7 @@ class Zone(ScModel, table=True):
     vendor: Vendor = Relationship(back_populates="zones")
     server_prices: List["ServerPrice"] = Relationship(back_populates="zone")
     traffic_prices: List["TrafficPrice"] = Relationship(back_populates="zone")
+    ipv4_prices: List["Ipv4Price"] = Relationship(back_populates="zone")
     storage_prices: List["StoragePrice"] = Relationship(back_populates="zone")
 
 
@@ -544,6 +547,15 @@ class TrafficPrice(TrafficPriceBase, table=True):
     zone: Zone = Relationship(back_populates="traffic_prices")
     traffic: Traffic = Relationship(back_populates="prices")
 
+
+class Ipv4PriceBase(HasPriceFields, HasVendorOptionalDatacenterZone):
+    pass
+
+
+class Ipv4Price(Ipv4PriceBase, table=True):
+    vendor: Vendor = Relationship(back_populates="ipv4_prices")
+    datacenter: Datacenter = Relationship(back_populates="ipv4_prices")
+    zone: Zone = Relationship(back_populates="ipv4_prices")
 
 
 VendorComplianceLink.model_rebuild()
