@@ -9,7 +9,7 @@ from cachier import cachier, set_default_params
 
 from ..logger import logger
 from ..lookup import countries
-from ..schemas import Datacenter, Gpu, Price, Server, Disk, Zone
+from ..schemas import Datacenter, Gpu, ServerPrice, Duration, Server, Disk, Zone
 
 # disable caching by default
 set_default_params(caching_enabled=False, stale_after=timedelta(days=1))
@@ -674,13 +674,14 @@ def price_from_product(product, vendor):
     except Exception as exc:
         raise exc
     price = extract_ondemand_price(product["terms"])
-    return Price(
+    return ServerPrice(
         vendor=vendor,
         datacenter=datacenter,
         server=server,
         allocation="ondemand",
         price=price[0],
         currency=price[1],
+        duration=Duration.HOUR,
     )
 
 

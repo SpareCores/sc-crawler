@@ -12,13 +12,9 @@ from pydantic import (
     BaseModel,
     ImportString,
     PrivateAttr,
-    model_validator,
 )
 from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import declared_attr
-
-# TODO SQLModel does NOT actually do pydantic validations
-#      https://github.com/tiangolo/sqlmodel/issues/52
 from sqlmodel import JSON, Column, Field, Relationship, SQLModel, select
 
 from .str import snake_case
@@ -130,7 +126,7 @@ class ComplianceFramework(ScModel, table=True):
     abbreviation: Optional[str]
     description: Optional[str]
     # TODO HttpUrl not supported by SQLModel
-    # TODO upload to cdn.sparecores.com
+    # TODO upload to cdn.sparecores.com (s3/cloudfront)
     logo: Optional[str] = None
     # TODO HttpUrl not supported by SQLModel
     homepage: Optional[str] = None
@@ -190,7 +186,9 @@ class Vendor(ScModel, table=True):
     storages: List["Storage"] = Relationship(back_populates="vendor")
     traffics: List["Traffic"] = Relationship(back_populates="vendor")
     servers: List["Server"] = Relationship(back_populates="vendor")
-    prices: List["Price"] = Relationship(back_populates="vendor")
+    server_prices: List["ServerPrice"] = Relationship(back_populates="vendor")
+    traffic_prices: List["TrafficPrice"] = Relationship(back_populates="vendor")
+    storage_prices: List["StoragePrice"] = Relationship(back_populates="vendor")
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -256,7 +254,9 @@ class Datacenter(ScModel, table=True):
     # relations
     country: Country = Relationship(back_populates="datacenters")
     zones: List["Zone"] = Relationship(back_populates="datacenter")
-    prices: List["Price"] = Relationship(back_populates="datacenter")
+    server_prices: List["ServerPrice"] = Relationship(back_populates="datacenter")
+    traffic_prices: List["TrafficPrice"] = Relationship(back_populates="datacenter")
+    storage_prices: List["StoragePrice"] = Relationship(back_populates="datacenter")
 
 
 class Zone(ScModel, table=True):
@@ -269,7 +269,9 @@ class Zone(ScModel, table=True):
     # relations
     datacenter: Datacenter = Relationship(back_populates="zones")
     vendor: Vendor = Relationship(back_populates="zones")
-    prices: List["Price"] = Relationship(back_populates="zone")
+    server_prices: List["ServerPrice"] = Relationship(back_populates="zone")
+    traffic_prices: List["TrafficPrice"] = Relationship(back_populates="zone")
+    storage_prices: List["StoragePrice"] = Relationship(back_populates="zone")
 
 
 class StorageType(str, Enum):
@@ -294,7 +296,7 @@ class Storage(ScModel, table=True):
     status: Status = Status.ACTIVE
 
     vendor: Vendor = Relationship(back_populates="storages")
-    prices: List["Price"] = Relationship(back_populates="storage")
+    prices: List["StoragePrice"] = Relationship(back_populates="storage")
 
 
 class TrafficDirection(str, Enum):
@@ -312,7 +314,7 @@ class Traffic(ScModel, table=True):
     status: Status = Status.ACTIVE
 
     vendor: Vendor = Relationship(back_populates="traffics")
-    prices: List["Price"] = Relationship(back_populates="traffic")
+    prices: List["TrafficPrice"] = Relationship(back_populates="traffic")
 
 
 class Gpu(Json):
@@ -397,7 +399,7 @@ class Server(ScModel, table=True):
     )
     gpus: List[Gpu] = Field(
         default=[],
-        sa_column=Column(JSON),
+        sa_type=JSON,
         description=(
             "JSON array of GPU accelerator details, including "
             "the manufacturer, name, and memory (MiB) of each GPU."
@@ -413,7 +415,7 @@ class Server(ScModel, table=True):
     )
     storages: List[Disk] = Field(
         default=[],
-        sa_column=Column(JSON),
+        sa_type=JSON,
         description=(
             "JSON array of disks attached to the server, including "
             "the size (MiB) and type of each disk."
@@ -435,7 +437,7 @@ class Server(ScModel, table=True):
     )
 
     vendor: Vendor = Relationship(back_populates="servers")
-    prices: List["Price"] = Relationship(back_populates="server")
+    prices: List["ServerPrice"] = Relationship(back_populates="server")
 
 
 class Allocation(str, Enum):
@@ -444,47 +446,87 @@ class Allocation(str, Enum):
     SPOT = "spot"
 
 
+class Duration(str, Enum):
+    YEAR = "year"
+    MONTH = "month"
+    HOUR = "hour"
+
+
 class PriceTier(Json):
     lower: float
     upper: float
     price: float
 
 
-class Price(ScModel, table=True):
-    ## TODO add ipv4 pricing
-    ## TODO created_at
-    id: int = Field(primary_key=True)
-    vendor_id: str = Field(foreign_key="vendor.id")
-    # a resource might be available in all or only in one/few
-    # datacenters and zones e.g. incoming traffic is priced per
-    # datacenter, but sport instance price per zone
-    datacenter_id: Optional[str] = Field(default=None, foreign_key="datacenter.id")
-    zone_id: Optional[str] = Field(default=None, foreign_key="zone.id")
-    server_id: Optional[str] = Field(default=None, foreign_key="server.id")
-    traffic_id: Optional[str] = Field(default=None, foreign_key="traffic.id")
-    storage_id: Optional[str] = Field(default=None, foreign_key="storage.id")
-    allocation: Allocation = Allocation.ONDEMAND
-    price: float  # max price if tiered
-    # e.g. setup fee for dedicated servers, or upfront costs of a reserved instance type
-    price_upfront: float = 0
-    # TODO needs time interval as well and other complications .. maybe skip for now?
-    price_tiered: List[PriceTier] = Field(default=[], sa_column=Column(JSON))
-    currency: str = "USD"
+# helper classes to inherit for most commonly used fields
 
-    vendor: Vendor = Relationship(back_populates="prices")
-    datacenter: Datacenter = Relationship(back_populates="prices")
-    zone: Zone = Relationship(back_populates="prices")
+
+class HasVendor(ScModel):
+    vendor_id: str = Field(foreign_key="vendor.id", primary_key=True)
+
+
+class HasVendorOptionalDatacenterZone(HasVendor):
+    datacenter_id: str = Field(
+        default="", foreign_key="datacenter.id", primary_key=True
+    )
+    zone_id: str = Field(default="", foreign_key="zone.id", primary_key=True)
+
+
+class HasServer(ScModel):
+    server_id: str = Field(foreign_key="server.id", primary_key=True)
+
+
+class HasStorage(ScModel):
+    storage_id: str = Field(foreign_key="storage.id", primary_key=True)
+
+
+class HasTraffic(ScModel):
+    traffic_id: str = Field(foreign_key="traffic.id", primary_key=True)
+
+
+class HasPriceFields(ScModel):
+    # set to max price if tiered
+    price: float
+    # e.g. setup fee for dedicated servers,
+    # or upfront costs of a reserved instance type
+    price_upfront: float = 0
+    price_tiered: List[PriceTier] = Field(default=[], sa_type=JSON)
+    currency: str = "USD"
+    duration: Duration
+
+
+class ServerPriceBase(HasPriceFields, HasServer, HasVendorOptionalDatacenterZone):
+    pass
+
+
+class ServerPrice(ServerPriceBase, table=True):
+    vendor: Vendor = Relationship(back_populates="server_prices")
+    datacenter: Datacenter = Relationship(back_populates="server_prices")
+    zone: Zone = Relationship(back_populates="server_prices")
     server: Server = Relationship(back_populates="prices")
-    traffic: Traffic = Relationship(back_populates="prices")
+
+
+class StoragePriceBase(HasPriceFields, HasStorage, HasVendorOptionalDatacenterZone):
+    pass
+
+
+class StoragePrice(StoragePriceBase, table=True):
+    vendor: Vendor = Relationship(back_populates="storage_prices")
+    datacenter: Datacenter = Relationship(back_populates="storage_prices")
+    zone: Zone = Relationship(back_populates="storage_prices")
     storage: Storage = Relationship(back_populates="prices")
 
-    @model_validator(mode="after")
-    def server_or_traffic_or_storage(self) -> "Price":
-        if (self.server_id is None) + (self.traffic_id is None) + (
-            self.storage_id is None
-        ) != 2:
-            raise ValueError("Exactly one Server, Traffic or Storage required.")
-        return self
+
+class TrafficPriceBase(HasPriceFields, HasTraffic, HasVendorOptionalDatacenterZone):
+    pass
+
+
+class TrafficPrice(TrafficPriceBase, table=True):
+    vendor: Vendor = Relationship(back_populates="traffic_prices")
+    datacenter: Datacenter = Relationship(back_populates="traffic_prices")
+    zone: Zone = Relationship(back_populates="traffic_prices")
+    traffic: Traffic = Relationship(back_populates="prices")
+
 
 
 VendorComplianceLink.model_rebuild()
