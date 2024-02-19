@@ -187,15 +187,16 @@ class Vendor(ScModel, table=True):
     country: Country = Relationship(back_populates="vendors")
     datacenters: List["Datacenter"] = Relationship(back_populates="vendor")
     zones: List["Zone"] = Relationship(back_populates="vendor")
-    addon_storages: List["AddonStorage"] = Relationship(back_populates="vendor")
-    addon_traffics: List["AddonTraffic"] = Relationship(back_populates="vendor")
+    storages: List["Storage"] = Relationship(back_populates="vendor")
+    traffics: List["Traffic"] = Relationship(back_populates="vendor")
     servers: List["Server"] = Relationship(back_populates="vendor")
     prices: List["Price"] = Relationship(back_populates="vendor")
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         try:
-            # TODO SQLModel does not validates pydantic typing
+            # SQLModel does not validates pydantic typing,
+            # only when writing to DB (much later in the process)
             if not self.id:
                 raise ValueError("No vendor id provided")
             if not self.name:
@@ -278,7 +279,7 @@ class StorageType(str, Enum):
     NETWORK = "network"
 
 
-class AddonStorage(ScModel, table=True):
+class Storage(ScModel, table=True):
     id: str = Field(primary_key=True)
     vendor_id: str = Field(foreign_key="vendor.id", primary_key=True)
     name: str
@@ -292,7 +293,7 @@ class AddonStorage(ScModel, table=True):
     billable_unit: str = "GiB"
     status: Status = Status.ACTIVE
 
-    vendor: Vendor = Relationship(back_populates="addon_storages")
+    vendor: Vendor = Relationship(back_populates="storages")
     prices: List["Price"] = Relationship(back_populates="storage")
 
 
@@ -301,7 +302,7 @@ class TrafficDirection(str, Enum):
     OUT = "outbound"
 
 
-class AddonTraffic(ScModel, table=True):
+class Traffic(ScModel, table=True):
     id: str = Field(primary_key=True)
     vendor_id: str = Field(foreign_key="vendor.id", primary_key=True)
     name: str
@@ -310,7 +311,7 @@ class AddonTraffic(ScModel, table=True):
     billable_unit: str = "GB"
     status: Status = Status.ACTIVE
 
-    vendor: Vendor = Relationship(back_populates="addon_traffics")
+    vendor: Vendor = Relationship(back_populates="traffics")
     prices: List["Price"] = Relationship(back_populates="traffic")
 
 
@@ -321,7 +322,7 @@ class Gpu(Json):
     firmware: Optional[str] = None
 
 
-class Storage(Json):
+class Disk(Json):
     size: int = 0  # GiB
     storage_type: StorageType
 
@@ -410,7 +411,7 @@ class Server(ScModel, table=True):
         default=None,
         description="Disk type (hdd, ssd, nvme ssd, or network).",
     )
-    storages: List[Storage] = Field(
+    storages: List[Disk] = Field(
         default=[],
         sa_column=Column(JSON),
         description=(
@@ -460,8 +461,8 @@ class Price(ScModel, table=True):
     datacenter_id: Optional[str] = Field(default=None, foreign_key="datacenter.id")
     zone_id: Optional[str] = Field(default=None, foreign_key="zone.id")
     server_id: Optional[str] = Field(default=None, foreign_key="server.id")
-    traffic_id: Optional[str] = Field(default=None, foreign_key="addon_traffic.id")
-    storage_id: Optional[str] = Field(default=None, foreign_key="addon_storage.id")
+    traffic_id: Optional[str] = Field(default=None, foreign_key="traffic.id")
+    storage_id: Optional[str] = Field(default=None, foreign_key="storage.id")
     allocation: Allocation = Allocation.ONDEMAND
     price: float  # max price if tiered
     # e.g. setup fee for dedicated servers, or upfront costs of a reserved instance type
@@ -474,8 +475,8 @@ class Price(ScModel, table=True):
     datacenter: Datacenter = Relationship(back_populates="prices")
     zone: Zone = Relationship(back_populates="prices")
     server: Server = Relationship(back_populates="prices")
-    traffic: AddonTraffic = Relationship(back_populates="prices")
-    storage: AddonStorage = Relationship(back_populates="prices")
+    traffic: Traffic = Relationship(back_populates="prices")
+    storage: Storage = Relationship(back_populates="prices")
 
     @model_validator(mode="after")
     def server_or_traffic_or_storage(self) -> "Price":
