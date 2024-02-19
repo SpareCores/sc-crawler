@@ -66,7 +66,7 @@ def get_products():
     # pricing API is only available in a few regions
     client = boto3.client("pricing", region_name="us-east-1")
     filters = {
-        # TODO mac instances?
+        # TODO ingest win, mac etc others
         "operatingSystem": "Linux",
         "preInstalledSw": "NA",
         "licenseModel": "No License required",
@@ -678,6 +678,8 @@ def price_from_product(product, vendor):
         vendor=vendor,
         datacenter=datacenter,
         server=server,
+        # TODO ingest other OSs
+        operating_system="Linux",
         allocation="ondemand",
         price=price[0],
         currency=price[1],

@@ -505,7 +505,14 @@ class HasPriceFields(ScModel):
     duration: Duration
 
 
-class ServerPriceBase(HasPriceFields, HasServer, HasVendorOptionalDatacenterZone):
+class ServerPriceExtraFields(ScModel):
+    operating_system: str
+    allocation: Allocation = Allocation.ONDEMAND
+
+
+class ServerPriceBase(
+    HasPriceFields, ServerPriceExtraFields, HasServer, HasVendorOptionalDatacenterZone
+):
     pass
 
 
