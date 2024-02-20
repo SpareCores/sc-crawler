@@ -9,7 +9,7 @@ from cachier import cachier, set_default_params
 
 from ..logger import logger
 from ..lookup import countries
-from ..schemas import Datacenter, Gpu, ServerPrice, Duration, Server, Disk, Zone
+from ..schemas import Datacenter, Disk, Duration, Gpu, Server, ServerPrice, Zone
 
 # disable caching by default
 set_default_params(caching_enabled=False, stale_after=timedelta(days=1))

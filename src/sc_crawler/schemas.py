@@ -14,7 +14,7 @@ from pydantic import (
     ImportString,
     PrivateAttr,
 )
-from sqlalchemy import DateTime, Column
+from sqlalchemy import DateTime
 from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import declared_attr
 from sqlmodel import JSON, Column, Field, Relationship, SQLModel, select
