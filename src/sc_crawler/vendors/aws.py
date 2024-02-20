@@ -349,7 +349,7 @@ def get_compliance_frameworks(vendor):
         )
 
 
-def get_datacenters(vendor, *args, **kwargs):
+def get_datacenters(vendor):
     """List all available AWS datacenters.
 
     Some data sources are not available from APIs, and were collected manually:
@@ -675,7 +675,7 @@ def get_datacenters(vendor, *args, **kwargs):
     return datacenters
 
 
-def get_zones(vendor, *args, **kwargs):
+def get_zones(vendor):
     """List all available AWS availability zones."""
     zones = [
         [

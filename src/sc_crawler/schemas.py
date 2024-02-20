@@ -223,30 +223,30 @@ class Vendor(ScModel, table=True):
 
     def get_compliance_frameworks(self):
         """Get compliance frameworks of the vendor."""
-        return self._methods.get_compliance_frameworks(self)
+        self._methods.get_compliance_frameworks(self)
 
     def get_datacenters(self):
         """Get datacenters of the vendor."""
-        return self._methods.get_datacenters(self)
+        self._methods.get_datacenters(self)
 
     def get_zones(self):
         """Get zones of the vendor in its datacenters."""
-        return self._methods.get_zones(self)
+        self._methods.get_zones(self)
 
     def get_servers(self):
-        return self._methods.get_servers(self)
+        self._methods.get_servers(self)
 
     def get_server_prices(self):
-        return self._methods.get_server_prices(self)
+        self._methods.get_server_prices(self)
 
     def get_storage_prices(self):
-        return self._methods.get_storage_prices(self)
+        self._methods.get_storage_prices(self)
 
     def get_traffic_prices(self):
-        return self._methods.get_traffic_prices(self)
+        self._methods.get_traffic_prices(self)
 
     def get_ipv4_prices(self):
-        return self._methods.get_ipv4_prices(self)
+        self._methods.get_ipv4_prices(self)
 
     def get_prices(self):
         self.get_server_prices()
@@ -260,7 +260,6 @@ class Vendor(ScModel, table=True):
         self.get_zones()
         self.get_servers()
         self.get_prices()
-        return
 
 
 class Datacenter(ScModel, table=True):
