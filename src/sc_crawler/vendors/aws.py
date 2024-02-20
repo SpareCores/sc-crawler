@@ -326,17 +326,19 @@ def _make_price_from_product(product, vendor):
     except Exception as exc:
         raise exc
     price = _extract_ondemand_price(product["terms"])
-    return ServerPrice(
-        vendor=vendor,
-        datacenter=datacenter,
-        server=server,
-        # TODO ingest other OSs
-        operating_system="Linux",
-        allocation="ondemand",
-        price=price[0] * 100,
-        currency=price[1],
-        duration=Duration.HOUR,
-    )
+    for zone in datacenter.zones:
+        ServerPrice(
+            vendor=vendor,
+            datacenter=datacenter,
+            zone=zone,
+            server=server,
+            # TODO ingest other OSs
+            operating_system="Linux",
+            allocation="ondemand",
+            price=price[0] * 100,
+            currency=price[1],
+            duration=Duration.HOUR,
+        )
 
 
 # ##############################################################################
@@ -732,8 +734,10 @@ def get_traffic_prices(vendor):
 
 
 def get_ipv4_prices(vendor):
-    for zone in vendor.zones:
-        Ipv4Price(vendor=vendor, price=0.005, duration=Duration.HOUR, zone=zone)
+    for datacenter in vendor.datacenters:
+        Ipv4Price(
+            vendor=vendor, price=0.005, duration=Duration.HOUR, datacenter=datacenter
+        )
 
 
 # TODO store raw response
