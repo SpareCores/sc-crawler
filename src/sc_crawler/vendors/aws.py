@@ -20,6 +20,7 @@ from ..schemas import (
     ServerPrice,
     Zone,
 )
+from ..utils import jsoned_hash
 
 # disable caching by default
 set_default_params(caching_enabled=False, stale_after=timedelta(days=1))
@@ -71,29 +72,25 @@ def _boto_price_list(region):
     return price_list_url
 
 
-@cachier()
-def _boto_get_products():
+@cachier(hash_func=jsoned_hash)
+def _boto_get_products(service_code: str, filters: dict):
+    """Get products from AWS with auto-paging.
+
+    Args:
+        service_code: AWS ServiceCode, e.g. `AmazonEC2`
+        filters: `dict` of key/value pairs for `TERM_MATCH` filters
+    """
     # pricing API is only available in a few regions
     client = boto3.client("pricing", region_name="us-east-1")
-    filters = {
-        # TODO ingest win, mac etc others
-        "operatingSystem": "Linux",
-        "preInstalledSw": "NA",
-        "licenseModel": "No License required",
-        "locationType": "AWS Region",
-        "capacitystatus": "Used",
-        "marketoption": "OnDemand",
-        # TODO dedicated options?
-        "tenancy": "Shared",
-    }
-    filters = [
+
+    matched_filters = [
         {"Type": "TERM_MATCH", "Field": k, "Value": v} for k, v in filters.items()
     ]
 
     paginator = client.get_paginator("get_products")
     # return actual list instead of an iterator to be able to cache on disk
     products = []
-    for page in paginator.paginate(ServiceCode="AmazonEC2", Filters=filters):
+    for page in paginator.paginate(ServiceCode=service_code, Filters=matched_filters):
         for product_json in page["PriceList"]:
             product = json.loads(product_json)
             products.append(product)
@@ -713,7 +710,20 @@ def get_servers(vendor):
 
 
 def get_server_prices(vendor):
-    products = _boto_get_products()
+    products = _boto_get_products(
+        service_code="AmazonEC2",
+        filters={
+            # TODO ingest win, mac etc others
+            "operatingSystem": "Linux",
+            "preInstalledSw": "NA",
+            "licenseModel": "No License required",
+            "locationType": "AWS Region",
+            "capacitystatus": "Used",
+            "marketoption": "OnDemand",
+            # TODO dedicated options?
+            "tenancy": "Shared",
+        },
+    )
     logger.debug(f"Found {len(products)} products")
     for product in products:
         # drop Gov regions

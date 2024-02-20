@@ -8,6 +8,22 @@ from sqlmodel import Session, create_engine
 from .schemas import tables
 
 
+def jsoned_hash(*args, **kwargs):
+    """Hash the JSON-dump of all positional and keyword arguments.
+
+    Examples:
+        >>> jsoned_hash(42)
+        '0211c62419aece235ba19582d3cf7fd8e25f837c'
+        >>> jsoned_hash(everything=42)
+        '8f8a7fcade8cb632b856f46fc64c1725ee387617'
+        >>> jsoned_hash(42, 42, everything=42)
+        'f04a77f000d85929b13de04b436c60a1272dfbf5'
+    """
+    return sha1(
+        dumps({"args": args, "kwargs": kwargs}, sort_keys=True).encode()
+    ).hexdigest()
+
+
 class HashLevels(Enum):
     DATABASE = "database"
     TABLE = "table"
@@ -38,12 +54,9 @@ def hash_database(
         }
 
     if level == HashLevels.TABLE:
-        hashes = {
-            k: sha1(dumps(v, sort_keys=True).encode()).hexdigest()
-            for k, v in hashes.items()
-        }
+        hashes = {k: jsoned_hash(v) for k, v in hashes.items()}
 
     if level == HashLevels.DATABASE:
-        hashes = sha1(dumps(hashes, sort_keys=True).encode()).hexdigest()
+        hashes = jsoned_hash(hashes)
 
     return hashes

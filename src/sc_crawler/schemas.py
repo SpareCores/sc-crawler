@@ -242,7 +242,7 @@ class Vendor(ScModel, table=True):
         self._methods.get_server_prices(self)
 
     def get_server_prices_spot(self):
-        """Get the current sport prices of all server types."""
+        """Get the current spot prices of all server types."""
         self._methods.get_server_prices_spot(self)
 
     def get_storage_prices(self):
