@@ -9,7 +9,7 @@ from cachier import cachier, set_default_params
 
 from ..logger import logger
 from ..lookup import countries
-from ..schemas import Datacenter, Gpu, Price, Server, Storage, Zone
+from ..schemas import Datacenter, Disk, Duration, Gpu, Server, ServerPrice, Zone
 
 # disable caching by default
 set_default_params(caching_enabled=False, stale_after=timedelta(days=1))
@@ -66,7 +66,7 @@ def get_products():
     # pricing API is only available in a few regions
     client = boto3.client("pricing", region_name="us-east-1")
     filters = {
-        # TODO mac instances?
+        # TODO ingest win, mac etc others
         "operatingSystem": "Linux",
         "preInstalledSw": "NA",
         "licenseModel": "No License required",
@@ -540,7 +540,7 @@ def get_storages(instance_type):
         kind = disk.get("Type").lower()
         if kind == "ssd" and nvme:
             kind = "nvme ssd"
-        return Storage(size=disk["SizeInGB"], storage_type=kind)
+        return Disk(size=disk["SizeInGB"], storage_type=kind)
 
     # replicate number of disks
     disks = info["Disks"]
@@ -674,13 +674,16 @@ def price_from_product(product, vendor):
     except Exception as exc:
         raise exc
     price = extract_ondemand_price(product["terms"])
-    return Price(
+    return ServerPrice(
         vendor=vendor,
         datacenter=datacenter,
         server=server,
+        # TODO ingest other OSs
+        operating_system="Linux",
         allocation="ondemand",
         price=price[0],
         currency=price[1],
+        duration=Duration.HOUR,
     )
 
 

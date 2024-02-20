@@ -1,6 +1,7 @@
 """Schemas for vendors, datacenters, zones, and other resources."""
 
 
+from datetime import datetime
 from enum import Enum
 from hashlib import sha1
 from importlib import import_module
@@ -12,22 +13,65 @@ from pydantic import (
     BaseModel,
     ImportString,
     PrivateAttr,
-    model_validator,
 )
+from sqlalchemy import DateTime
 from sqlalchemy.inspection import inspect
-
-# TODO SQLModel does NOT actually do pydantic validations
-#      https://github.com/tiangolo/sqlmodel/issues/52
+from sqlalchemy.orm import declared_attr
 from sqlmodel import JSON, Column, Field, Relationship, SQLModel, select
 
+from .str import snake_case
 
-class ScModel(SQLModel):
-    """Custom extension to SQLModel to support hashing tables."""
+
+class ScMetaModel(SQLModel.__class__):
+    """Custom class factory to auto-update table models.
+
+    - Reuse description of the table and its fields as SQL comment.
+
+        Checking if the table and its fields have explicit comment set
+        to be shown in the `CREATE TABLE` statements, and if not,
+        reuse the optional table and field descriptions. Table
+        docstrings are truncated to first line.
+
+    - Append inserted_at column.
+    """
+
+    def __init__(subclass, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # early return for non-tables
+        if subclass.model_config.get("table") is None:
+            return
+        # table comment
+        satable = subclass.metadata.tables[subclass.__tablename__]
+        if subclass.__doc__ and satable.comment is None:
+            satable.comment = subclass.__doc__.splitlines()[0]
+        # column comments
+        for k, v in subclass.model_fields.items():
+            comment = satable.columns[k].comment
+            if v.description and comment is None:
+                satable.columns[k].comment = v.description
+        # append inserted_at as last column
+        satable.append_column(Column("inserted_at", DateTime, default=datetime.utcnow))
+
+
+class ScModel(SQLModel, metaclass=ScMetaModel):
+    """Custom extensions to SQLModel objects and tables.
+
+    Extra features:
+    - auto-generated table names using snake_case,
+    - support for hashing table rows,
+    - reuse description field of tables/columns as SQL comment,
+    - automatically append inserted_at column.
+    """
+
+    @declared_attr  # type: ignore
+    def __tablename__(cls) -> str:
+        """Generate tables names using all-lowercase snake_case."""
+        return snake_case(cls.__name__)
 
     @classmethod
     def get_table_name(cls) -> str:
         """Return the SQLModel object's table name."""
-        return cls.__tablename__
+        return str(cls.__tablename__)
 
     @classmethod
     def hash(cls, session, ignored: List[str] = ["inserted_at"]) -> dict:
@@ -37,6 +81,7 @@ class ScModel(SQLModel):
         hashes = {}
         for row in rows:
             # NOTE Pydantic is warning when read Gpu/Storage as dict
+            # https://github.com/tiangolo/sqlmodel/issues/63#issuecomment-1081555082
             rowdict = row.model_dump(warnings=False)
             rowkeys = str(tuple(rowdict.get(pk) for pk in pks))
             for dropkey in [*ignored, *pks]:
@@ -59,23 +104,23 @@ class Status(str, Enum):
 
 
 class Country(ScModel, table=True):
-    __table_args__ = {"comment": "Country and continent mapping."}
+    """Country and continent mapping."""
+
     id: str = Field(
         default=None,
         primary_key=True,
-        sa_column_kwargs={"comment": "Country code by ISO 3166 alpha-2."},
+        description="Country code by ISO 3166 alpha-2.",
     )
-    continent: str = Field(sa_column_kwargs={"comment": "Continent name."})
+    continent: str = Field(description="Continent name.")
 
     vendors: List["Vendor"] = Relationship(back_populates="country")
     datacenters: List["Datacenter"] = Relationship(back_populates="country")
 
 
 class VendorComplianceLink(ScModel, table=True):
-    __tablename__: str = "vendor_compliance_link"  # type: ignore
     vendor_id: str = Field(foreign_key="vendor.id", primary_key=True)
     compliance_framework_id: str = Field(
-        foreign_key="complianceframework.id", primary_key=True
+        foreign_key="compliance_framework.id", primary_key=True
     )
     comment: Optional[str] = None
 
@@ -91,7 +136,7 @@ class ComplianceFramework(ScModel, table=True):
     abbreviation: Optional[str]
     description: Optional[str]
     # TODO HttpUrl not supported by SQLModel
-    # TODO upload to cdn.sparecores.com
+    # TODO upload to cdn.sparecores.com (s3/cloudfront)
     logo: Optional[str] = None
     # TODO HttpUrl not supported by SQLModel
     homepage: Optional[str] = None
@@ -102,7 +147,7 @@ class ComplianceFramework(ScModel, table=True):
 
 
 class Vendor(ScModel, table=True):
-    """Base class for cloud compute resource vendors.
+    """Compute resource vendors, such as cloud and server providers.
 
     Examples:
         >>> from sc_crawler.schemas import Vendor
@@ -148,15 +193,19 @@ class Vendor(ScModel, table=True):
     country: Country = Relationship(back_populates="vendors")
     datacenters: List["Datacenter"] = Relationship(back_populates="vendor")
     zones: List["Zone"] = Relationship(back_populates="vendor")
-    addon_storages: List["AddonStorage"] = Relationship(back_populates="vendor")
-    addon_traffics: List["AddonTraffic"] = Relationship(back_populates="vendor")
+    storages: List["Storage"] = Relationship(back_populates="vendor")
+    traffics: List["Traffic"] = Relationship(back_populates="vendor")
     servers: List["Server"] = Relationship(back_populates="vendor")
-    prices: List["Price"] = Relationship(back_populates="vendor")
+    server_prices: List["ServerPrice"] = Relationship(back_populates="vendor")
+    traffic_prices: List["TrafficPrice"] = Relationship(back_populates="vendor")
+    ipv4_prices: List["Ipv4Price"] = Relationship(back_populates="vendor")
+    storage_prices: List["StoragePrice"] = Relationship(back_populates="vendor")
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         try:
-            # TODO SQLModel does not validates pydantic typing
+            # SQLModel does not validates pydantic typing,
+            # only when writing to DB (much later in the process)
             if not self.id:
                 raise ValueError("No vendor id provided")
             if not self.name:
@@ -216,7 +265,10 @@ class Datacenter(ScModel, table=True):
     # relations
     country: Country = Relationship(back_populates="datacenters")
     zones: List["Zone"] = Relationship(back_populates="datacenter")
-    prices: List["Price"] = Relationship(back_populates="datacenter")
+    server_prices: List["ServerPrice"] = Relationship(back_populates="datacenter")
+    traffic_prices: List["TrafficPrice"] = Relationship(back_populates="datacenter")
+    ipv4_prices: List["Ipv4Price"] = Relationship(back_populates="datacenter")
+    storage_prices: List["StoragePrice"] = Relationship(back_populates="datacenter")
 
 
 class Zone(ScModel, table=True):
@@ -229,7 +281,10 @@ class Zone(ScModel, table=True):
     # relations
     datacenter: Datacenter = Relationship(back_populates="zones")
     vendor: Vendor = Relationship(back_populates="zones")
-    prices: List["Price"] = Relationship(back_populates="zone")
+    server_prices: List["ServerPrice"] = Relationship(back_populates="zone")
+    traffic_prices: List["TrafficPrice"] = Relationship(back_populates="zone")
+    ipv4_prices: List["Ipv4Price"] = Relationship(back_populates="zone")
+    storage_prices: List["StoragePrice"] = Relationship(back_populates="zone")
 
 
 class StorageType(str, Enum):
@@ -239,9 +294,7 @@ class StorageType(str, Enum):
     NETWORK = "network"
 
 
-class AddonStorage(ScModel, table=True):
-    __tablename__: str = "addon_storage"  # type: ignore
-
+class Storage(ScModel, table=True):
     id: str = Field(primary_key=True)
     vendor_id: str = Field(foreign_key="vendor.id", primary_key=True)
     name: str
@@ -255,8 +308,8 @@ class AddonStorage(ScModel, table=True):
     billable_unit: str = "GiB"
     status: Status = Status.ACTIVE
 
-    vendor: Vendor = Relationship(back_populates="addon_storages")
-    prices: List["Price"] = Relationship(back_populates="storage")
+    vendor: Vendor = Relationship(back_populates="storages")
+    prices: List["StoragePrice"] = Relationship(back_populates="storage")
 
 
 class TrafficDirection(str, Enum):
@@ -264,9 +317,7 @@ class TrafficDirection(str, Enum):
     OUT = "outbound"
 
 
-class AddonTraffic(ScModel, table=True):
-    __tablename__: str = "addon_traffic"  # type: ignore
-
+class Traffic(ScModel, table=True):
     id: str = Field(primary_key=True)
     vendor_id: str = Field(foreign_key="vendor.id", primary_key=True)
     name: str
@@ -275,8 +326,8 @@ class AddonTraffic(ScModel, table=True):
     billable_unit: str = "GB"
     status: Status = Status.ACTIVE
 
-    vendor: Vendor = Relationship(back_populates="addon_traffics")
-    prices: List["Price"] = Relationship(back_populates="traffic")
+    vendor: Vendor = Relationship(back_populates="traffics")
+    prices: List["TrafficPrice"] = Relationship(back_populates="traffic")
 
 
 class Gpu(Json):
@@ -286,7 +337,7 @@ class Gpu(Json):
     firmware: Optional[str] = None
 
 
-class Storage(Json):
+class Disk(Json):
     size: int = 0  # GiB
     storage_type: StorageType
 
@@ -300,51 +351,43 @@ class CpuArchitecture(str, Enum):
 
 
 class Server(ScModel, table=True):
-    __table_args__ = {"comment": "Server types."}
+    """Server types."""
+
     id: str = Field(
         primary_key=True,
-        sa_column_kwargs={"comment": "Server identifier, as called at the vendor."},
+        description="Server identifier, as called at the vendor.",
     )
     vendor_id: str = Field(
         foreign_key="vendor.id",
         primary_key=True,
-        sa_column_kwargs={"comment": "Vendor reference."},
+        description="Vendor reference.",
     )
     name: str = Field(
         default=None,
-        sa_column_kwargs={
-            "comment": "Human-friendly name or short description of the server."
-        },
+        description="Human-friendly name or short description of the server.",
     )
     vcpus: int = Field(
         default=None,
-        sa_column_kwargs={
-            "comment": "Default number of virtual CPUs (vCPU) of the server."
-        },
+        description="Default number of virtual CPUs (vCPU) of the server.",
     )
     # TODO join all below cpu fields into a Cpu object?
     cpu_cores: int = Field(
         default=None,
-        sa_column_kwargs={
-            "comment": (
-                "Default number of CPU cores of the server. "
-                "Equals to vCPUs when HyperThreading is disabled."
-            )
-        },
+        description=(
+            "Default number of CPU cores of the server. "
+            "Equals to vCPUs when HyperThreading is disabled."
+        ),
     )
     cpu_speed: Optional[float] = Field(
-        default=None,
-        sa_column_kwargs={"comment": "CPU clock speed (GHz)."},
+        default=None, description="CPU clock speed (GHz)."
     )
     cpu_architecture: CpuArchitecture = Field(
         default=None,
-        sa_column_kwargs={
-            "comment": "CPU Architecture (arm64, arm64_mac, i386, or x86_64)."
-        },
+        description="CPU Architecture (arm64, arm64_mac, i386, or x86_64).",
     )
     cpu_manufacturer: Optional[str] = Field(
         default=None,
-        sa_column_kwargs={"comment": "The manufacturer of the processor."},
+        description="The manufacturer of the processor.",
     )
     # TODO add the below extra fields
     # cpu_features:  # e.g. AVX; AVX2; AMD Turbo
@@ -352,71 +395,62 @@ class Server(ScModel, table=True):
     # cpu_name: str  # e.g. EPYC 7571
     memory: int = Field(
         default=None,
-        sa_column_kwargs={"comment": "RAM amount (MiB)."},
+        description="RAM amount (MiB).",
     )
     gpu_count: int = Field(
         default=0,
-        sa_column_kwargs={"comment": "Number of GPU accelerator(s)."},
+        description="Number of GPU accelerator(s).",
     )
     # TODO sum and avg/each memory
     gpu_memory: Optional[int] = Field(
         default=None,
-        sa_column_kwargs={
-            "comment": "Overall memory (MiB) available to all the GPU accelerator(s)."
-        },
+        description="Overall memory (MiB) available to all the GPU accelerator(s).",
     )
     gpu_name: Optional[str] = Field(
         default=None,
-        sa_column_kwargs={
-            "comment": "The manufacturer and the name of the GPU accelerator(s)."
-        },
+        description="The manufacturer and the name of the GPU accelerator(s).",
     )
     gpus: List[Gpu] = Field(
         default=[],
-        sa_column=Column(
-            JSON,
-            comment=(
-                "JSON array of GPU accelerator details, including "
-                "the manufacturer, name, and memory (MiB) of each GPU."
-            ),
+        sa_type=JSON,
+        description=(
+            "JSON array of GPU accelerator details, including "
+            "the manufacturer, name, and memory (MiB) of each GPU."
         ),
     )
     storage_size: int = Field(
         default=0,
-        sa_column_kwargs={"comment": "Overall size (GB) of the disk(s)."},
+        description="Overall size (GB) of the disk(s).",
     )
     storage_type: Optional[StorageType] = Field(
         default=None,
-        sa_column_kwargs={"comment": "Disk type (hdd, ssd, nvme ssd, or network)."},
+        description="Disk type (hdd, ssd, nvme ssd, or network).",
     )
-    storages: List[Storage] = Field(
+    storages: List[Disk] = Field(
         default=[],
-        sa_column=Column(
-            JSON,
-            comment=(
-                "JSON array of disks attached to the server, including "
-                "the size (MiB) and type of each disk."
-            ),
+        sa_type=JSON,
+        description=(
+            "JSON array of disks attached to the server, including "
+            "the size (MiB) and type of each disk."
         ),
     )
     network_speed: Optional[float] = Field(
         default=None,
-        sa_column_kwargs={
-            "comment": "The baseline network performance (Gbps) of the network card."
-        },
+        description="The baseline network performance (Gbps) of the network card.",
     )
+    ipv4: bool = Field(default=False, description="Complimentary IPv4 address.")
 
     billable_unit: str = Field(
         default=None,
-        sa_column_kwargs={"comment": "Time period for billing, e.g. hour or month."},
+        description="Time period for billing, e.g. hour or month.",
     )
     status: Status = Field(
         default=Status.ACTIVE,
-        sa_column_kwargs={"comment": "Status of the resource (active or inactive)."},
+        description="Status of the resource (active or inactive).",
     )
 
     vendor: Vendor = Relationship(back_populates="servers")
-    prices: List["Price"] = Relationship(back_populates="server")
+    prices: List["ServerPrice"] = Relationship(back_populates="server")
 
 
 class Allocation(str, Enum):
@@ -425,47 +459,103 @@ class Allocation(str, Enum):
     SPOT = "spot"
 
 
+class Duration(str, Enum):
+    YEAR = "year"
+    MONTH = "month"
+    HOUR = "hour"
+
+
 class PriceTier(Json):
     lower: float
     upper: float
     price: float
 
 
-class Price(ScModel, table=True):
-    ## TODO add ipv4 pricing
-    ## TODO created_at
-    id: int = Field(primary_key=True)
-    vendor_id: str = Field(foreign_key="vendor.id")
-    # a resource might be available in all or only in one/few
-    # datacenters and zones e.g. incoming traffic is priced per
-    # datacenter, but sport instance price per zone
-    datacenter_id: Optional[str] = Field(default=None, foreign_key="datacenter.id")
-    zone_id: Optional[str] = Field(default=None, foreign_key="zone.id")
-    server_id: Optional[str] = Field(default=None, foreign_key="server.id")
-    traffic_id: Optional[str] = Field(default=None, foreign_key="addon_traffic.id")
-    storage_id: Optional[str] = Field(default=None, foreign_key="addon_storage.id")
-    allocation: Allocation = Allocation.ONDEMAND
-    price: float  # max price if tiered
-    # e.g. setup fee for dedicated servers, or upfront costs of a reserved instance type
+# helper classes to inherit for most commonly used fields
+
+
+class HasVendor(ScModel):
+    vendor_id: str = Field(foreign_key="vendor.id", primary_key=True)
+
+
+class HasVendorOptionalDatacenterZone(HasVendor):
+    datacenter_id: str = Field(
+        default="", foreign_key="datacenter.id", primary_key=True
+    )
+    zone_id: str = Field(default="", foreign_key="zone.id", primary_key=True)
+
+
+class HasServer(ScModel):
+    server_id: str = Field(foreign_key="server.id", primary_key=True)
+
+
+class HasStorage(ScModel):
+    storage_id: str = Field(foreign_key="storage.id", primary_key=True)
+
+
+class HasTraffic(ScModel):
+    traffic_id: str = Field(foreign_key="traffic.id", primary_key=True)
+
+
+class HasPriceFields(ScModel):
+    # set to max price if tiered
+    price: float
+    # e.g. setup fee for dedicated servers,
+    # or upfront costs of a reserved instance type
     price_upfront: float = 0
-    # TODO needs time interval as well and other complications .. maybe skip for now?
-    price_tiered: List[PriceTier] = Field(default=[], sa_column=Column(JSON))
+    price_tiered: List[PriceTier] = Field(default=[], sa_type=JSON)
     currency: str = "USD"
+    duration: Duration
 
-    vendor: Vendor = Relationship(back_populates="prices")
-    datacenter: Datacenter = Relationship(back_populates="prices")
-    zone: Zone = Relationship(back_populates="prices")
+
+class ServerPriceExtraFields(ScModel):
+    operating_system: str
+    allocation: Allocation = Allocation.ONDEMAND
+
+
+class ServerPriceBase(
+    HasPriceFields, ServerPriceExtraFields, HasServer, HasVendorOptionalDatacenterZone
+):
+    pass
+
+
+class ServerPrice(ServerPriceBase, table=True):
+    vendor: Vendor = Relationship(back_populates="server_prices")
+    datacenter: Datacenter = Relationship(back_populates="server_prices")
+    zone: Zone = Relationship(back_populates="server_prices")
     server: Server = Relationship(back_populates="prices")
-    traffic: AddonTraffic = Relationship(back_populates="prices")
-    storage: AddonStorage = Relationship(back_populates="prices")
 
-    @model_validator(mode="after")
-    def server_or_traffic_or_storage(self) -> "Price":
-        if (self.server_id is None) + (self.traffic_id is None) + (
-            self.storage_id is None
-        ) != 2:
-            raise ValueError("Exactly one Server, Traffic or Storage required.")
-        return self
+
+class StoragePriceBase(HasPriceFields, HasStorage, HasVendorOptionalDatacenterZone):
+    pass
+
+
+class StoragePrice(StoragePriceBase, table=True):
+    vendor: Vendor = Relationship(back_populates="storage_prices")
+    datacenter: Datacenter = Relationship(back_populates="storage_prices")
+    zone: Zone = Relationship(back_populates="storage_prices")
+    storage: Storage = Relationship(back_populates="prices")
+
+
+class TrafficPriceBase(HasPriceFields, HasTraffic, HasVendorOptionalDatacenterZone):
+    pass
+
+
+class TrafficPrice(TrafficPriceBase, table=True):
+    vendor: Vendor = Relationship(back_populates="traffic_prices")
+    datacenter: Datacenter = Relationship(back_populates="traffic_prices")
+    zone: Zone = Relationship(back_populates="traffic_prices")
+    traffic: Traffic = Relationship(back_populates="prices")
+
+
+class Ipv4PriceBase(HasPriceFields, HasVendorOptionalDatacenterZone):
+    pass
+
+
+class Ipv4Price(Ipv4PriceBase, table=True):
+    vendor: Vendor = Relationship(back_populates="ipv4_prices")
+    datacenter: Datacenter = Relationship(back_populates="ipv4_prices")
+    zone: Zone = Relationship(back_populates="ipv4_prices")
 
 
 VendorComplianceLink.model_rebuild()
