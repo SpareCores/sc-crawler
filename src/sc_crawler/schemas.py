@@ -322,13 +322,12 @@ class Storage(ScModel, table=True):
     vendor_id: str = Field(foreign_key="vendor.id", primary_key=True)
     name: str
     description: Optional[str]
-    size: int = 0
+    size: int = 0  # GiB
     storage_type: StorageType
     max_iops: Optional[int] = None
     max_throughput: Optional[int] = None  # MiB/s
     min_size: Optional[int] = None  # GiB
     max_size: Optional[int] = None  # GiB
-    billable_unit: str = "GiB"
     status: Status = Status.ACTIVE
 
     vendor: Vendor = Relationship(back_populates="storages")
@@ -346,7 +345,6 @@ class Traffic(ScModel, table=True):
     name: str
     description: Optional[str]
     direction: TrafficDirection
-    billable_unit: str = "GB"
     status: Status = Status.ACTIVE
 
     vendor: Vendor = Relationship(back_populates="traffics")
@@ -482,10 +480,12 @@ class Allocation(str, Enum):
     SPOT = "spot"
 
 
-class Duration(str, Enum):
+class PriceUnit(str, Enum):
     YEAR = "year"
     MONTH = "month"
     HOUR = "hour"
+    GIB = "GiB"
+    GB = "GB"
 
 
 class PriceTier(Json):
@@ -522,6 +522,7 @@ class HasTraffic(ScModel):
 
 
 class HasPriceFields(ScModel):
+    unit: PriceUnit
     # set to max price if tiered
     price: float
     # e.g. setup fee for dedicated servers,
@@ -529,7 +530,6 @@ class HasPriceFields(ScModel):
     price_upfront: float = 0
     price_tiered: List[PriceTier] = Field(default=[], sa_type=JSON)
     currency: str = "USD"
-    duration: Duration
 
 
 class ServerPriceExtraFields(ScModel):

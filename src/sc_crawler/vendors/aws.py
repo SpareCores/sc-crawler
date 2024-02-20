@@ -13,7 +13,7 @@ from ..schemas import (
     VendorComplianceLink,
     Datacenter,
     Disk,
-    Duration,
+    PriceUnit,
     Gpu,
     Ipv4Price,
     Server,
@@ -95,6 +95,7 @@ def _boto_get_products(service_code: str, filters: dict):
             product = json.loads(product_json)
             products.append(product)
 
+    logger.debug(f"Found {len(products)} {service_code} products")
     return products
 
 
@@ -299,20 +300,33 @@ def _extract_ondemand_price(terms):
     return (float(list(ondemand_pricing.values())[0]), list(ondemand_pricing)[0])
 
 
-def _make_price_from_product(product, vendor):
+def _get_product_datacenter(product, vendor):
     attributes = product["product"]["attributes"]
     location = attributes["location"]
     location_type = attributes["locationType"]
-    instance_type = attributes["instanceType"]
     try:
         datacenter = [
             d for d in vendor.datacenters if location == d.name or location in d.aliases
         ][0]
     except IndexError:
-        logger.debug(f"No AWS region found for location: {location} [{location_type}]")
+        raise IndexError(
+            f"No AWS region found for location: {location} [{location_type}]"
+        )
+    return datacenter
+
+
+def _make_price_from_product(product, vendor):
+    attributes = product["product"]["attributes"]
+    location = attributes["location"]
+    location_type = attributes["locationType"]
+    instance_type = attributes["instanceType"]
+
+    try:
+        datacenter = _get_product_datacenter(product, vendor)
+    except IndexError as e:
+        logger.debug(str(e))
         return
-    except Exception as exc:
-        raise exc
+
     try:
         server = [
             d for d in vendor.servers if d.vendor == vendor and d.id == instance_type
@@ -320,8 +334,7 @@ def _make_price_from_product(product, vendor):
     except IndexError:
         logger.debug(f"No server definition found for {instance_type} @ {location}")
         return
-    except Exception as exc:
-        raise exc
+
     price = _extract_ondemand_price(product["terms"])
     for zone in datacenter.zones:
         ServerPrice(
@@ -332,9 +345,9 @@ def _make_price_from_product(product, vendor):
             # TODO ingest other OSs
             operating_system="Linux",
             allocation="ondemand",
-            price=price[0] * 100,
+            price=price[0],
             currency=price[1],
-            duration=Duration.HOUR,
+            unit=PriceUnit.HOUR,
         )
 
 
@@ -724,7 +737,6 @@ def get_server_prices(vendor):
             "tenancy": "Shared",
         },
     )
-    logger.debug(f"Found {len(products)} products")
     for product in products:
         # drop Gov regions
         if "GovCloud" not in product["product"]["attributes"]["location"]:
@@ -744,9 +756,26 @@ def get_traffic_prices(vendor):
 
 
 def get_ipv4_prices(vendor):
-    for datacenter in vendor.datacenters:
+    products = _boto_get_products(
+        service_code="AmazonVPC",
+        filters={
+            "group": "VPCPublicIPv4Address",
+            "usagetype": "EUS1-PublicIPv4:InUseAddress",
+        },
+    )
+    for product in products:
+        try:
+            datacenter = _get_product_datacenter(product, vendor)
+        except IndexError as e:
+            logger.debug(str(e))
+            continue
+        price = _extract_ondemand_price(product["terms"])
         Ipv4Price(
-            vendor=vendor, price=0.005, duration=Duration.HOUR, datacenter=datacenter
+            vendor=vendor,
+            price=price[0],
+            currency=price[1],
+            unit=PriceUnit.HOUR,
+            datacenter=datacenter,
         )
 
 
