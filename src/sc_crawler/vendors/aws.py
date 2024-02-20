@@ -15,6 +15,7 @@ from ..schemas import (
     Disk,
     Duration,
     Gpu,
+    Ipv4Price,
     Server,
     ServerPrice,
     Zone,
@@ -731,7 +732,7 @@ def get_traffic_prices(vendor):
 
 
 def get_ipv4_prices(vendor):
-    pass
+    Ipv4Price(vendor=vendor, price=0.005, duration=Duration.HOUR)
 
 
 # TODO store raw response
