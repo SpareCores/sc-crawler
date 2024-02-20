@@ -6,7 +6,7 @@ from typing import List
 
 import typer
 from cachier import set_default_params
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import Session, SQLModel, create_engine, select
 from typing_extensions import Annotated
 
 from . import vendors as vendors_module
@@ -131,7 +131,11 @@ def pull(
         for vendor in vendors:
             logger.info("Starting to collect data from vendor: " + vendor.id)
             vendor.get_all()
-            session.add(vendor)
+            # check if vendor is already present in the database and add or merge
+            if session.exec(select(Vendor).where(id == vendor.id)).all():
+                session.merge(vendor)
+            else:
+                session.add(vendor)
             session.commit()
 
 
