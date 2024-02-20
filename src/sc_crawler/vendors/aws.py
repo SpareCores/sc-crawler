@@ -8,16 +8,16 @@ import boto3
 from cachier import cachier, set_default_params
 
 from ..logger import logger
-from ..lookup import countries, compliance_frameworks
+from ..lookup import compliance_frameworks, countries
 from ..schemas import (
-    VendorComplianceLink,
     Datacenter,
     Disk,
-    PriceUnit,
     Gpu,
     Ipv4Price,
+    PriceUnit,
     Server,
     ServerPrice,
+    VendorComplianceLink,
     Zone,
 )
 from ..utils import jsoned_hash
@@ -318,7 +318,6 @@ def _get_product_datacenter(product, vendor):
 def _make_price_from_product(product, vendor):
     attributes = product["product"]["attributes"]
     location = attributes["location"]
-    location_type = attributes["locationType"]
     instance_type = attributes["instanceType"]
 
     try:
