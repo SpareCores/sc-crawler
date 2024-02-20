@@ -9,7 +9,7 @@ Each file should provide the below functions:
 - `get_datacenters`: Define `Datacenter` instances with location, energy source etc for each region/datacenter the vendor has.
 - `get_zones`: Define a `Zone` instance for each availability zone of the vendor in each datacenter.
 - `get_servers`: Define `Server` instances for the vendor's server/instance types.
-- `get_server_prices`: Define `ServerPrice` instances for the standard/ondemand and optionally also for the reserved pricing of the instance types, optionally per datacenter and zone. If a price is the same in multiple zones/datacenters, fill those columns with an empty string (these primary keys cannot be `NULL`).
+- `get_server_prices`: Define the `ServerPrice` instances for the standard/ondemand (or optionally also for the reserved) pricing of the instance types per datacenter and zone.
 - `get_server_prices_spot`: Similar to the above, define `ServerPrice` instances but the `allocation` field set to `Allocation.SPOT`. Very likely to see different spot prices per datacenter/zone.
 - `get_storage_prices`: Define `StoragePrice` instances to describe the available storage options that can be attached to the servers.
 - `get_traffic_prices`: Define `TrafficPrice` instances to describe the pricing of ingress/egress traffic.

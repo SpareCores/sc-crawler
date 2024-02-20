@@ -732,7 +732,8 @@ def get_traffic_prices(vendor):
 
 
 def get_ipv4_prices(vendor):
-    Ipv4Price(vendor=vendor, price=0.005, duration=Duration.HOUR)
+    for zone in vendor.zones:
+        Ipv4Price(vendor=vendor, price=0.005, duration=Duration.HOUR, zone=zone)
 
 
 # TODO store raw response

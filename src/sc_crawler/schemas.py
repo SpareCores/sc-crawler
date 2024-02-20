@@ -308,9 +308,6 @@ class Zone(ScModel, table=True):
     datacenter: Datacenter = Relationship(back_populates="zones")
     vendor: Vendor = Relationship(back_populates="zones")
     server_prices: List["ServerPrice"] = Relationship(back_populates="zone")
-    traffic_prices: List["TrafficPrice"] = Relationship(back_populates="zone")
-    ipv4_prices: List["Ipv4Price"] = Relationship(back_populates="zone")
-    storage_prices: List["StoragePrice"] = Relationship(back_populates="zone")
 
 
 class StorageType(str, Enum):
@@ -500,15 +497,16 @@ class PriceTier(Json):
 # helper classes to inherit for most commonly used fields
 
 
-class HasVendor(ScModel):
+class HasVendorPK(ScModel):
     vendor_id: str = Field(foreign_key="vendor.id", primary_key=True)
 
 
-class HasVendorOptionalDatacenterZone(HasVendor):
-    datacenter_id: str = Field(
-        default="", foreign_key="datacenter.id", primary_key=True
-    )
-    zone_id: str = Field(default="", foreign_key="zone.id", primary_key=True)
+class HasDatacenterPK(ScModel):
+    datacenter_id: str = Field(foreign_key="datacenter.id", primary_key=True)
+
+
+class HasZonePK(ScModel):
+    zone_id: str = Field(foreign_key="zone.id", primary_key=True)
 
 
 class HasServer(ScModel):
@@ -540,7 +538,12 @@ class ServerPriceExtraFields(ScModel):
 
 
 class ServerPriceBase(
-    HasPriceFields, ServerPriceExtraFields, HasServer, HasVendorOptionalDatacenterZone
+    HasPriceFields,
+    ServerPriceExtraFields,
+    HasServer,
+    HasZonePK,
+    HasDatacenterPK,
+    HasVendorPK,
 ):
     pass
 
@@ -552,36 +555,33 @@ class ServerPrice(ServerPriceBase, table=True):
     server: Server = Relationship(back_populates="prices")
 
 
-class StoragePriceBase(HasPriceFields, HasStorage, HasVendorOptionalDatacenterZone):
+class StoragePriceBase(HasPriceFields, HasStorage, HasDatacenterPK, HasVendorPK):
     pass
 
 
 class StoragePrice(StoragePriceBase, table=True):
     vendor: Vendor = Relationship(back_populates="storage_prices")
     datacenter: Datacenter = Relationship(back_populates="storage_prices")
-    zone: Zone = Relationship(back_populates="storage_prices")
     storage: Storage = Relationship(back_populates="prices")
 
 
-class TrafficPriceBase(HasPriceFields, HasTraffic, HasVendorOptionalDatacenterZone):
+class TrafficPriceBase(HasPriceFields, HasTraffic, HasDatacenterPK, HasVendorPK):
     pass
 
 
 class TrafficPrice(TrafficPriceBase, table=True):
     vendor: Vendor = Relationship(back_populates="traffic_prices")
     datacenter: Datacenter = Relationship(back_populates="traffic_prices")
-    zone: Zone = Relationship(back_populates="traffic_prices")
     traffic: Traffic = Relationship(back_populates="prices")
 
 
-class Ipv4PriceBase(HasPriceFields, HasVendorOptionalDatacenterZone):
+class Ipv4PriceBase(HasPriceFields, HasDatacenterPK, HasVendorPK):
     pass
 
 
 class Ipv4Price(Ipv4PriceBase, table=True):
     vendor: Vendor = Relationship(back_populates="ipv4_prices")
     datacenter: Datacenter = Relationship(back_populates="ipv4_prices")
-    zone: Zone = Relationship(back_populates="ipv4_prices")
 
 
 VendorComplianceLink.model_rebuild()
