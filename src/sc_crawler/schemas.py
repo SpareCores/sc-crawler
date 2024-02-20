@@ -222,22 +222,28 @@ class Vendor(ScModel, table=True):
             raise NotImplementedError("Unsupported vendor") from exc
 
     def get_compliance_frameworks(self):
-        """Get compliance frameworks of the vendor."""
+        """Get the vendor's all compliance frameworks."""
         self._methods.get_compliance_frameworks(self)
 
     def get_datacenters(self):
-        """Get datacenters of the vendor."""
+        """Get the vendor's all datacenters."""
         self._methods.get_datacenters(self)
 
     def get_zones(self):
-        """Get zones of the vendor in its datacenters."""
+        """Get all the zones in the vendor's datacenters."""
         self._methods.get_zones(self)
 
     def get_servers(self):
+        """Get the vendor's all server types."""
         self._methods.get_servers(self)
 
     def get_server_prices(self):
+        """Get the current standard/ondemand/reserved prices of all server types."""
         self._methods.get_server_prices(self)
+
+    def get_server_prices_spot(self):
+        """Get the current sport prices of all server types."""
+        self._methods.get_server_prices_spot(self)
 
     def get_storage_prices(self):
         self._methods.get_storage_prices(self)
@@ -250,6 +256,7 @@ class Vendor(ScModel, table=True):
 
     def get_prices(self):
         self.get_server_prices()
+        self.get_server_prices_spot()
         self.get_storage_prices()
         self.get_traffic_prices()
         self.get_ipv4_prices()

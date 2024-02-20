@@ -718,6 +718,10 @@ def get_server_prices(vendor):
             _make_price_from_product(product, vendor)
 
 
+def get_server_prices_spot(vendor):
+    pass
+
+
 def get_storage_prices(vendor):
     pass
 
