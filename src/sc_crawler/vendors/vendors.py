@@ -1,10 +1,5 @@
-from ..lookup import compliance_frameworks, countries
-from ..schemas import Vendor, VendorComplianceLink
-
-
-def get_compliance_frameworks(framework_ids):
-    return [v for k, v in compliance_frameworks.items() if k in framework_ids]
-
+from ..lookup import countries
+from ..schemas import Vendor
 
 aws = Vendor(
     id="aws",
@@ -19,9 +14,6 @@ aws = Vendor(
     status_page="https://health.aws.amazon.com/health/status",
 )
 
-for cf in ["hipaa", "soc2t2"]:
-    VendorComplianceLink(vendor=aws, compliance_framework=compliance_frameworks[cf])
-
 gcp = Vendor(
     id="gcp",
     name="Google Cloud Platform",
@@ -34,6 +26,3 @@ gcp = Vendor(
     founding_year=2008,
     status_page="https://status.cloud.google.com/",
 )
-
-for cf in ["hipaa", "soc2t2"]:
-    VendorComplianceLink(vendor=gcp, compliance_framework=compliance_frameworks[cf])

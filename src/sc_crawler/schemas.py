@@ -221,12 +221,16 @@ class Vendor(ScModel, table=True):
         except Exception as exc:
             raise NotImplementedError("Unsupported vendor") from exc
 
+    def get_compliance_frameworks(self):
+        """Get compliance frameworks of the vendor."""
+        return self._methods.get_compliance_frameworks(self)
+
     def get_datacenters(self):
         """Get datacenters of the vendor."""
         return self._methods.get_datacenters(self)
 
     def get_zones(self):
-        """Get zones of the vendor from its datacenters."""
+        """Get zones of the vendor in its datacenters."""
         return self._methods.get_zones(self)
 
     def get_servers(self):
@@ -236,6 +240,7 @@ class Vendor(ScModel, table=True):
         return self._methods.get_prices(self)
 
     def get_all(self):
+        self.get_compliance_frameworks()
         self.get_datacenters()
         self.get_zones()
         self.get_servers()

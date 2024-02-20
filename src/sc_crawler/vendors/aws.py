@@ -8,8 +8,17 @@ import boto3
 from cachier import cachier, set_default_params
 
 from ..logger import logger
-from ..lookup import countries
-from ..schemas import Datacenter, Disk, Duration, Gpu, Server, ServerPrice, Zone
+from ..lookup import countries, compliance_frameworks
+from ..schemas import (
+    VendorComplianceLink,
+    Datacenter,
+    Disk,
+    Duration,
+    Gpu,
+    Server,
+    ServerPrice,
+    Zone,
+)
 
 # disable caching by default
 set_default_params(caching_enabled=False, stale_after=timedelta(days=1))
@@ -331,6 +340,13 @@ def _make_price_from_product(product, vendor):
 
 # ##############################################################################
 # Public methods to fetch data
+
+
+def get_compliance_frameworks(vendor):
+    for cf in ["hipaa", "soc2t2"]:
+        VendorComplianceLink(
+            vendor=vendor, compliance_framework=compliance_frameworks[cf]
+        )
 
 
 def get_datacenters(vendor, *args, **kwargs):
