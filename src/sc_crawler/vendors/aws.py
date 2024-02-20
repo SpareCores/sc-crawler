@@ -709,13 +709,25 @@ def get_servers(vendor):
     return list(chain(*instance_types))
 
 
-def get_prices(vendor, *args, **kwargs):
+def get_server_prices(vendor):
     products = _boto_get_products()
     logger.debug(f"Found {len(products)} products")
     for product in products:
         # drop Gov regions
         if "GovCloud" not in product["product"]["attributes"]["location"]:
             _make_price_from_product(product, vendor)
+
+
+def get_storage_prices(vendor):
+    pass
+
+
+def get_traffic_prices(vendor):
+    pass
+
+
+def get_ipv4_prices(vendor):
+    pass
 
 
 # TODO store raw response

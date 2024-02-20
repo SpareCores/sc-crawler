@@ -236,8 +236,23 @@ class Vendor(ScModel, table=True):
     def get_servers(self):
         return self._methods.get_servers(self)
 
+    def get_server_prices(self):
+        return self._methods.get_server_prices(self)
+
+    def get_storage_prices(self):
+        return self._methods.get_storage_prices(self)
+
+    def get_traffic_prices(self):
+        return self._methods.get_traffic_prices(self)
+
+    def get_ipv4_prices(self):
+        return self._methods.get_ipv4_prices(self)
+
     def get_prices(self):
-        return self._methods.get_prices(self)
+        self.get_server_prices()
+        self.get_storage_prices()
+        self.get_traffic_prices()
+        self.get_ipv4_prices()
 
     def get_all(self):
         self.get_compliance_frameworks()
