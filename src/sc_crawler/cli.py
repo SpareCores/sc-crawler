@@ -108,7 +108,7 @@ def pull(
     # enable logging
     channel = logging.StreamHandler()
     formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        "%(asctime)s - %(name)s/%(module)s:%(funcName)s - %(levelname)s - %(message)s"
     )
     channel.setFormatter(formatter)
     logger.setLevel(log_level.value)
