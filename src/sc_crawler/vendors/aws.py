@@ -760,7 +760,7 @@ def get_ipv4_prices(vendor):
         service_code="AmazonVPC",
         filters={
             "group": "VPCPublicIPv4Address",
-            "usagetype": "EUS1-PublicIPv4:InUseAddress",
+            "groupDescription": "Hourly charge for In-use Public IPv4 Addresses",
         },
     )
     for product in products:
