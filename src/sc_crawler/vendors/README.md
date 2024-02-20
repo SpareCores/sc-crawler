@@ -32,6 +32,19 @@ Other functions and variables must be prefixed with an underscore to suggest tho
 ## Template file for new vendors
 
 ```python
+from ..schemas import (
+    VendorComplianceLink,
+    Datacenter,
+    Disk,
+    Duration,
+    Gpu,
+    Ipv4Price,
+    Server,
+    ServerPrice,
+    Zone,
+)
+
+
 def get_compliance_frameworks(vendor):
     pass
 
