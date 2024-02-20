@@ -229,8 +229,8 @@ class Vendor(ScModel, table=True):
         """Get zones of the vendor from its datacenters."""
         return self._methods.get_zones(self)
 
-    def get_instance_types(self):
-        return self._methods.get_instance_types(self)
+    def get_servers(self):
+        return self._methods.get_servers(self)
 
     def get_prices(self):
         return self._methods.get_prices(self)
@@ -238,7 +238,7 @@ class Vendor(ScModel, table=True):
     def get_all(self):
         self.get_datacenters()
         self.get_zones()
-        self.get_instance_types()
+        self.get_servers()
         self.get_prices()
         return
 
