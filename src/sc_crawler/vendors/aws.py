@@ -7,7 +7,7 @@ import boto3
 from cachier import cachier, set_default_params
 
 from ..logger import logger
-from ..lookup import compliance_frameworks, countries
+from ..lookup import countries
 from ..schemas import (
     Datacenter,
     Disk,

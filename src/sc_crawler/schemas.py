@@ -19,7 +19,7 @@ from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import declared_attr
 from sqlmodel import JSON, Column, Field, Relationship, Session, SQLModel, select
 
-from .logger import logger, log_start_end
+from .logger import log_start_end
 from .str import snake_case
 
 
