@@ -1,6 +1,5 @@
 import json
 import re
-from collections import ChainMap
 from datetime import datetime, timedelta
 from itertools import chain
 
@@ -355,9 +354,10 @@ def _make_price_from_product(product, vendor):
 
 
 def get_compliance_frameworks(vendor):
-    for cf in ["hipaa", "soc2t2"]:
+    for compliance_framework in ["hipaa", "soc2t2"]:
         VendorComplianceLink(
-            vendor=vendor, compliance_framework=compliance_frameworks[cf]
+            vendor=vendor,
+            compliance_framework_id=compliance_framework,
         )
 
 
@@ -676,49 +676,26 @@ def get_datacenters(vendor):
         if datacenter.id not in active_regions:
             datacenter.status = "inactive"
 
-    # filter for datacenters enabled for the account
-    datacenters = [
-        datacenter
-        for datacenter in datacenters
-        if datacenter.id in [region["RegionName"] for region in regions]
-    ]
-
-    # TODO do we really need to return enything? standardize!
-    return datacenters
-
 
 def get_zones(vendor):
     """List all available AWS availability zones."""
-    zones = [
-        [
-            Zone(
-                id=zone["ZoneId"],
-                name=zone["ZoneName"],
-                datacenter=datacenter,
-                vendor=vendor,
-            )
-            for zone in _boto_describe_availability_zones(datacenter.id)
-        ]
-        for datacenter in vendor.datacenters
-        if datacenter.status == "active"
-    ]
-    # TODO check if zone is active
-    return ChainMap(*zones)
+    for datacenter in vendor.datacenters:
+        if datacenter.status == "active":
+            for zone in _boto_describe_availability_zones(datacenter.id):
+                Zone(
+                    id=zone["ZoneId"],
+                    name=zone["ZoneName"],
+                    datacenter=datacenter,
+                    vendor=vendor,
+                )
 
 
 def get_servers(vendor):
     # TODO drop this in favor of pricing.get_products, as it has info e.g. on instanceFamily
     #      although other fields are messier (e.g. extract memory from string)
-    regions = [
-        datacenter.id
-        for datacenter in vendor.datacenters
-        if datacenter.status == "active"
-    ]
-    # might be instance types specific to a few or even a single region
-    instance_types = [
-        _list_instance_types_of_region(region, vendor) for region in regions
-    ]
-    return list(chain(*instance_types))
+    for datacenter in vendor.datacenters:
+        if datacenter.status == "active":
+            _list_instance_types_of_region(datacenter.id, vendor)
 
 
 def get_server_prices(vendor):
@@ -771,10 +748,10 @@ def get_ipv4_prices(vendor):
         price = _extract_ondemand_price(product["terms"])
         Ipv4Price(
             vendor=vendor,
+            datacenter=datacenter,
             price=price[0],
             currency=price[1],
             unit=PriceUnit.HOUR,
-            datacenter=datacenter,
         )
 
 
