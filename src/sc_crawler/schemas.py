@@ -194,7 +194,8 @@ class Vendor(ScModel, table=True):
     status: Status = Status.ACTIVE
 
     # private attributes
-    _methods: ImportString[ModuleType] = PrivateAttr()
+    _methods: Optional[ImportString[ModuleType]] = PrivateAttr(default=None)
+    _session: Optional[Session] = PrivateAttr()
 
     # relations
     country: Country = Relationship(back_populates="vendors")
@@ -210,56 +211,86 @@ class Vendor(ScModel, table=True):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        # SQLModel does not validates pydantic typing,
+        # only when writing to DB (much later in the process)
+        if not self.id:
+            raise ValueError("No vendor id provided")
+        if not self.name:
+            raise ValueError("No vendor name provided")
+        if not self.homepage:
+            raise ValueError("No vendor homepage provided")
+        if not self.country:
+            raise ValueError("No vendor country provided")
+        # make sure methods are provided
+        methods = self._get_methods().__dir__()
+        for method in [
+            "get_compliance_frameworks",
+            "get_datacenters",
+            "get_zones",
+            "get_servers",
+            "get_server_prices",
+            "get_server_prices_spot",
+            "get_storage_prices",
+            "get_traffic_prices",
+            "get_ipv4_prices",
+        ]:
+            if method not in methods:
+                raise NotImplementedError(
+                    f"Unsupported '{self.id}' vendor: missing '{method}' method."
+                )
+
+    def _get_methods(self):
+        # private attributes are not (always) initialized correctly by SQLmodel
+        # e.g. the attribute is missing alltogether when loaded from DB
+        # https://github.com/tiangolo/sqlmodel/issues/149
         try:
-            # SQLModel does not validates pydantic typing,
-            # only when writing to DB (much later in the process)
-            if not self.id:
-                raise ValueError("No vendor id provided")
-            if not self.name:
-                raise ValueError("No vendor name provided")
-            if not self.homepage:
-                raise ValueError("No vendor homepage provided")
-            if not self.country:
-                raise ValueError("No vendor country provided")
-            vendor_module = __name__.split(".")[0] + ".vendors." + self.id
-            self._methods = import_module(vendor_module)
-        except ValueError as exc:
-            raise exc
-        except Exception as exc:
-            raise NotImplementedError("Unsupported vendor") from exc
+            hasattr(self, "_methods")
+        except Exception:
+            self._methods = None
+        if not self._methods:
+            try:
+                vendor_module = ".".join(
+                    [__name__.split(".", maxsplit=1)[0], "vendors", self.id]
+                )
+                self._methods = import_module(vendor_module)
+            except Exception as exc:
+                raise NotImplementedError(
+                    f"Unsupported '{self.id}' vendor: no methods defined."
+                ) from exc
+        return self._methods
 
     def get_compliance_frameworks(self):
         """Get the vendor's all compliance frameworks."""
-        self._methods.get_compliance_frameworks(self)
+        self._get_methods().get_compliance_frameworks(self)
 
     def get_datacenters(self):
         """Get the vendor's all datacenters."""
-        self._methods.get_datacenters(self)
+        self._get_methods().get_datacenters(self)
 
     def get_zones(self):
         """Get all the zones in the vendor's datacenters."""
-        self._methods.get_zones(self)
+        self._get_methods().get_zones(self)
 
     def get_servers(self):
         """Get the vendor's all server types."""
-        self._methods.get_servers(self)
+        self._get_methods().get_servers(self)
 
     def get_server_prices(self):
         """Get the current standard/ondemand/reserved prices of all server types."""
-        self._methods.get_server_prices(self)
+        self._get_methods().get_server_prices(self)
 
     def get_server_prices_spot(self):
         """Get the current spot prices of all server types."""
-        self._methods.get_server_prices_spot(self)
+        self._get_methods().get_server_prices_spot(self)
 
     def get_storage_prices(self):
-        self._methods.get_storage_prices(self)
+        self._get_methods().get_storage_prices(self)
 
     def get_traffic_prices(self):
-        self._methods.get_traffic_prices(self)
+        self._get_methods().get_traffic_prices(self)
 
     def get_ipv4_prices(self):
-        self._methods.get_ipv4_prices(self)
+        self._get_methods().get_ipv4_prices(self)
 
     def get_prices(self):
         self.get_server_prices()
