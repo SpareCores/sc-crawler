@@ -6,13 +6,13 @@ from typing import List
 
 import typer
 from cachier import set_default_params
-from sqlmodel import Session, SQLModel, create_engine, select
+from sqlmodel import Session, SQLModel, create_engine
 from typing_extensions import Annotated
 
 from . import vendors as vendors_module
 from .logger import logger
 from .lookup import compliance_frameworks, countries
-from .schemas import ComplianceFramework, Country, Vendor
+from .schemas import Vendor
 from .utils import hash_database
 
 supported_vendors = [
@@ -36,6 +36,9 @@ Engines = Enum("ENGINES", {k: k for k in engine_to_dialect.keys()})
 # TODO use logging.getLevelNamesMapping() from Python 3.11
 log_levels = list(logging._nameToLevel.keys())
 LogLevels = Enum("LOGLEVELS", {k: k for k in log_levels})
+
+supported_tables = [m[4:] for m in dir(Vendor) if m.startswith("get_")]
+Tables = Enum("TABLES", {k: k for k in supported_tables})
 
 
 @cli.command()
@@ -77,6 +80,10 @@ def pull(
         List[Vendors],
         typer.Option(help="Exclude specific vendor. Can be specified multiple times."),
     ] = [],
+    update_table: Annotated[
+        List[Tables],
+        typer.Option(help="Tables to be updated. Can be specified multiple times."),
+    ] = supported_tables,
     log_level: Annotated[
         LogLevels, typer.Option(help="Log level threshold.")
     ] = LogLevels.INFO.value,  # TODO drop .value after updating Enum to StrEnum in Python3.11
@@ -139,7 +146,24 @@ def pull(
             logger.info("Starting to collect data from vendor: " + vendor.id)
             vendor = session.merge(vendor)
             vendor.set_session(session)
-            vendor.get_all()
+            if Tables.compliance_frameworks in update_table:
+                vendor.get_compliance_frameworks()
+            if Tables.datacenters in update_table:
+                vendor.get_datacenters()
+            if Tables.zones in update_table:
+                vendor.get_zones()
+            if Tables.servers in update_table:
+                vendor.get_servers()
+            if Tables.server_prices in update_table:
+                vendor.get_server_prices()
+            if Tables.server_prices_spot in update_table:
+                vendor.get_server_prices_spot()
+            if Tables.storage_prices in update_table:
+                vendor.get_storage_prices()
+            if Tables.traffic_prices in update_table:
+                vendor.get_traffic_prices()
+            if Tables.ipv4_prices in update_table:
+                vendor.get_ipv4_prices()
             session.merge(vendor)
             session.commit()
 

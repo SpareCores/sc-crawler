@@ -17,8 +17,6 @@ Each file should provide the below functions:
 
 Each function will be picked up as the related `Vendor` instance's instance methods, so each function should take a single argument, that is the `Vendor` instance. No need to return the objects -- it's enough to define the above-mentioned instances.
 
-There are also a `get_prices` and `get_all` instance method defined for each `Vendor`, which wrappers call the pricing-related or all the above helpers in the above-listed order.
-
 If a helper is not needed (e.g. another helper already provides its output, or there are no spot prices), it is still required, but can return early, e.g. if `Zone` objects were populated by `get_datacenters` already, do something like:
 
 ```python

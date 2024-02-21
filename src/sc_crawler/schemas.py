@@ -313,20 +313,6 @@ class Vendor(ScModel, table=True):
     def get_ipv4_prices(self):
         self._get_methods().get_ipv4_prices(self)
 
-    def get_prices(self):
-        self.get_server_prices()
-        self.get_server_prices_spot()
-        self.get_storage_prices()
-        self.get_traffic_prices()
-        self.get_ipv4_prices()
-
-    def get_all(self):
-        self.get_compliance_frameworks()
-        self.get_datacenters()
-        self.get_zones()
-        self.get_servers()
-        self.get_prices()
-
     def set_session(self, session):
         self._session = session
 
