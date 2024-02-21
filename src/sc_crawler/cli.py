@@ -134,16 +134,13 @@ def pull(
             session.merge(compliance_framework)
         for country in countries.values():
             session.merge(country)
-
         # get data for each vendor and then add/merge to database
         for vendor in vendors:
             logger.info("Starting to collect data from vendor: " + vendor.id)
+            vendor = session.merge(vendor)
+            vendor.set_session(session)
             vendor.get_all()
-            # check if vendor is already present in the database and add or merge
-            if session.exec(select(Vendor).where(id == vendor.id)).all():
-                session.merge(vendor)
-            else:
-                session.add(vendor)
+            session.merge(vendor)
             session.commit()
 
 
