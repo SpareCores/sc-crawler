@@ -11,7 +11,8 @@ from typing_extensions import Annotated
 
 from . import vendors as vendors_module
 from .logger import logger
-from .schemas import Vendor
+from .lookup import compliance_frameworks, countries
+from .schemas import ComplianceFramework, Country, Vendor
 from .utils import hash_database
 
 supported_vendors = [
@@ -128,6 +129,13 @@ def pull(
     engine = create_engine(connection_string, json_serializer=custom_serializer)
     SQLModel.metadata.create_all(engine)
     with Session(engine) as session:
+        # add/merge static objects to database
+        for compliance_framework in compliance_frameworks.values():
+            session.merge(compliance_framework)
+        for country in countries.values():
+            session.merge(country)
+
+        # get data for each vendor and then add/merge to database
         for vendor in vendors:
             logger.info("Starting to collect data from vendor: " + vendor.id)
             vendor.get_all()
