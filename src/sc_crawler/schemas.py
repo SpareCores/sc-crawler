@@ -17,7 +17,7 @@ from pydantic import (
 from sqlalchemy import DateTime
 from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import declared_attr
-from sqlmodel import JSON, Column, Field, Relationship, SQLModel, select
+from sqlmodel import JSON, Column, Field, Relationship, Session, SQLModel, select
 
 from .logger import logger, log_start_end
 from .str import snake_case
@@ -97,6 +97,17 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
             rowhash = sha1(dumps(rowdict, sort_keys=True).encode()).hexdigest()
             hashes[rowkeys] = rowhash
         return hashes
+
+    def __init__(self, *args, **kwargs):
+        """Merge instace with the database if present.
+
+        Checking if there's a parent vendor, and then try to sync the
+        object using the parent's session private attribute.
+        """
+        super().__init__(*args, **kwargs)
+        if hasattr(self, "vendor"):
+            if hasattr(self.vendor, "_session"):
+                self.vendor.merge_dependent(self)
 
 
 class Json(BaseModel):
@@ -315,6 +326,13 @@ class Vendor(ScModel, table=True):
         self.get_zones()
         self.get_servers()
         self.get_prices()
+
+    def set_session(self, session):
+        self._session = session
+
+    def merge_dependent(self, obj):
+        if self._session:
+            self._session.merge(obj)
 
 
 class Datacenter(ScModel, table=True):
