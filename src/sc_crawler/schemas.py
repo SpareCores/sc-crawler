@@ -19,6 +19,7 @@ from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import declared_attr
 from sqlmodel import JSON, Column, Field, Relationship, SQLModel, select
 
+from .logger import logger, log_start_end
 from .str import snake_case
 
 
@@ -259,36 +260,45 @@ class Vendor(ScModel, table=True):
                 ) from exc
         return self._methods
 
+    @log_start_end
     def get_compliance_frameworks(self):
         """Get the vendor's all compliance frameworks."""
         self._get_methods().get_compliance_frameworks(self)
 
+    @log_start_end
     def get_datacenters(self):
         """Get the vendor's all datacenters."""
         self._get_methods().get_datacenters(self)
 
+    @log_start_end
     def get_zones(self):
         """Get all the zones in the vendor's datacenters."""
         self._get_methods().get_zones(self)
 
+    @log_start_end
     def get_servers(self):
         """Get the vendor's all server types."""
         self._get_methods().get_servers(self)
 
+    @log_start_end
     def get_server_prices(self):
         """Get the current standard/ondemand/reserved prices of all server types."""
         self._get_methods().get_server_prices(self)
 
+    @log_start_end
     def get_server_prices_spot(self):
         """Get the current spot prices of all server types."""
         self._get_methods().get_server_prices_spot(self)
 
+    @log_start_end
     def get_storage_prices(self):
         self._get_methods().get_storage_prices(self)
 
+    @log_start_end
     def get_traffic_prices(self):
         self._get_methods().get_traffic_prices(self)
 
+    @log_start_end
     def get_ipv4_prices(self):
         self._get_methods().get_ipv4_prices(self)
 
