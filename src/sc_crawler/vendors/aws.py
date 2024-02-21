@@ -675,6 +675,8 @@ def get_datacenters(vendor):
     for datacenter in datacenters:
         if datacenter.id not in active_regions:
             datacenter.status = "inactive"
+            # note the change of status in the session
+            datacenter.vendor.merge_dependent(datacenter)
 
 
 def get_zones(vendor):
