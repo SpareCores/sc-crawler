@@ -33,7 +33,7 @@ class HashLevels(Enum):
 def hash_database(
     connection_string: str,
     level: HashLevels = HashLevels.DATABASE,
-    ignored: List[str] = ["inserted_at"],
+    ignored: List[str] = ["observed_at"],
 ) -> Union[str, dict]:
     """Hash the content of a database.
 

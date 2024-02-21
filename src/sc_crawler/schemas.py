@@ -32,7 +32,7 @@ class ScMetaModel(SQLModel.__class__):
         reuse the optional table and field descriptions. Table
         docstrings are truncated to first line.
 
-    - Append inserted_at column.
+    - Append observed_at column.
     """
 
     def __init__(subclass, *args, **kwargs):
@@ -49,8 +49,15 @@ class ScMetaModel(SQLModel.__class__):
             comment = satable.columns[k].comment
             if v.description and comment is None:
                 satable.columns[k].comment = v.description
-        # append inserted_at as last column
-        satable.append_column(Column("inserted_at", DateTime, default=datetime.utcnow))
+        # append observed_at as last column
+        satable.append_column(
+            Column(
+                "observed_at",
+                DateTime,
+                default=datetime.utcnow,
+                onupdate=datetime.utcnow,
+            )
+        )
 
 
 class ScModel(SQLModel, metaclass=ScMetaModel):
@@ -60,7 +67,7 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
     - auto-generated table names using snake_case,
     - support for hashing table rows,
     - reuse description field of tables/columns as SQL comment,
-    - automatically append inserted_at column.
+    - automatically append observed_at column.
     """
 
     @declared_attr  # type: ignore
@@ -74,7 +81,7 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
         return str(cls.__tablename__)
 
     @classmethod
-    def hash(cls, session, ignored: List[str] = ["inserted_at"]) -> dict:
+    def hash(cls, session, ignored: List[str] = ["observed_at"]) -> dict:
         pks = sorted([key.name for key in inspect(cls).primary_key])
         rows = session.exec(statement=select(cls))
         # no use of a generator as will need to serialize to JSON anyway
