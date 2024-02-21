@@ -5,7 +5,7 @@ For example, `aws.py` provides functions to be used by its `Vendor` instance, ca
 
 Each file should provide the below functions:
 
-- `get_compliance_frameworks`: Define `VendorComplianceLink` instances to describe which frameworks the vendor complies with. Optionally include references in the `comment` field.
+- `get_compliance_frameworks`: Define `VendorComplianceLink` instances to describe which frameworks the vendor complies with. Optionally include references in the `comment` field. To avoid duplicating `ComplianceFramework` instances, easiest is to use the `compliance_framework_id` field instead of the `compliance_framework` relationship.
 - `get_datacenters`: Define `Datacenter` instances with location, energy source etc for each region/datacenter the vendor has.
 - `get_zones`: Define a `Zone` instance for each availability zone of the vendor in each datacenter.
 - `get_servers`: Define `Server` instances for the vendor's server/instance types.
