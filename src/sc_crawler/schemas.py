@@ -296,7 +296,7 @@ class Vendor(ScModel, table=True):
         (besides the default model.vendor_id filter) referencing the
         model object with SQLModel syntax, e.g.
 
-        >>> aws.set_table_rows_inactive(ServerPrice, ServerPrice.price < 10)
+        >>> aws.set_table_rows_inactive(ServerPrice, ServerPrice.price < 10)  # doctest: +SKIP
         """
         if self._session:
             query = update(model).where(model.vendor_id == self.id)
