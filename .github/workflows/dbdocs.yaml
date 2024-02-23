@@ -21,6 +21,8 @@ jobs:
         run: sc-crawler schema mysql > schema.sql
       - name: Convert SQL schema to DBML
         run: sql2dbml --mysql schema.sql -o schema.dbml
+      - name: Add project description
+        run: cat project.dbml >> schema.dbml
       - name: Update dbdocs project
         env:
           DBDOCS_TOKEN: ${{ secrets.DBDOCS_TOKEN }}
