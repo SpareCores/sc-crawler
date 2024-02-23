@@ -1,6 +1,5 @@
 import json
 import re
-from collections import ChainMap
 from datetime import datetime, timedelta
 from itertools import chain
 
@@ -9,17 +8,28 @@ from cachier import cachier, set_default_params
 
 from ..logger import logger
 from ..lookup import countries
-from ..schemas import Datacenter, Disk, Duration, Gpu, Server, ServerPrice, Zone
+from ..schemas import (
+    Datacenter,
+    Disk,
+    Gpu,
+    Ipv4Price,
+    PriceUnit,
+    Server,
+    ServerPrice,
+    VendorComplianceLink,
+    Zone,
+)
+from ..utils import jsoned_hash
 
 # disable caching by default
 set_default_params(caching_enabled=False, stale_after=timedelta(days=1))
 
 # ##############################################################################
-# AWS cached helpers
+# Cached boto3 wrappers
 
 
 @cachier()
-def describe_instance_types(region):
+def _boto_describe_instance_types(region):
     ec2 = boto3.client("ec2", region_name=region)
     pages = ec2.get_paginator("describe_instance_types")
     pages = pages.paginate().build_full_result()
@@ -27,13 +37,13 @@ def describe_instance_types(region):
 
 
 @cachier()
-def describe_regions():
+def _boto_describe_regions():
     ec2 = boto3.client("ec2")
     return ec2.describe_regions().get("Regions", [])
 
 
 @cachier()
-def describe_availability_zones(region):
+def _boto_describe_availability_zones(region):
     ec2 = boto3.client("ec2", region_name=region)
     zones = ec2.describe_availability_zones(
         Filters=[
@@ -45,7 +55,7 @@ def describe_availability_zones(region):
 
 
 @cachier()
-def get_price_list(region):
+def _boto_price_list(region):
     """Download published AWS price lists. Currently unused."""
     # pricing API is only available in a few regions
     client = boto3.client("pricing", region_name="us-east-1")
@@ -61,40 +71,297 @@ def get_price_list(region):
     return price_list_url
 
 
-@cachier()
-def get_products():
+@cachier(hash_func=jsoned_hash)
+def _boto_get_products(service_code: str, filters: dict):
+    """Get products from AWS with auto-paging.
+
+    Args:
+        service_code: AWS ServiceCode, e.g. `AmazonEC2`
+        filters: `dict` of key/value pairs for `TERM_MATCH` filters
+    """
     # pricing API is only available in a few regions
     client = boto3.client("pricing", region_name="us-east-1")
-    filters = {
-        # TODO ingest win, mac etc others
-        "operatingSystem": "Linux",
-        "preInstalledSw": "NA",
-        "licenseModel": "No License required",
-        "locationType": "AWS Region",
-        "capacitystatus": "Used",
-        "marketoption": "OnDemand",
-        # TODO dedicated options?
-        "tenancy": "Shared",
-    }
-    filters = [
+
+    matched_filters = [
         {"Type": "TERM_MATCH", "Field": k, "Value": v} for k, v in filters.items()
     ]
 
     paginator = client.get_paginator("get_products")
     # return actual list instead of an iterator to be able to cache on disk
     products = []
-    for page in paginator.paginate(ServiceCode="AmazonEC2", Filters=filters):
+    for page in paginator.paginate(ServiceCode=service_code, Filters=matched_filters):
         for product_json in page["PriceList"]:
             product = json.loads(product_json)
             products.append(product)
 
+    logger.debug(f"Found {len(products)} {service_code} products")
     return products
 
 
 # ##############################################################################
+# Internal helpers
+
+_instance_families = {
+    "a": "AWS Graviton",
+    "c": "Compute optimized",
+    "d": "Dense storage",
+    "dl": "Deep Learning",
+    "f": "FPGA",
+    "g": "Graphics intensive",
+    "h": "Cost-effective storage optimized with HDD",
+    "hpc": "High performance computing",
+    "i": "Storage optimized",
+    "im": "Storage optimized with a one to four ratio of vCPU to memory",
+    "is": "Storage optimized with a one to six ratio of vCPU to memory",
+    "inf": "AWS Inferentia",
+    "m": "General purpose",
+    "mac": "macOS",
+    "p": "GPU accelerated",
+    "r": "Memory optimized",
+    "t": "Burstable performance",
+    "trn": "AWS Trainium",
+    "u": "High memory",
+    "vt": "Video transcoding",
+    "x": "Memory intensive",
+    "z": "High frequency",
+}
+
+_instance_suffixes = {
+    # Processor families
+    "a": "AMD processors",
+    "g": "AWS Graviton processors",
+    "i": "Intel processors",
+    # Additional capabilities
+    "d": "Instance store volumes",
+    "n": "Network and EBS optimized",
+    "e": "Extra storage or memory",
+    "z": "High performance",
+    "q": "Qualcomm inference accelerators",
+    "flex": "Flex instance",
+}
 
 
-def get_datacenters(vendor, *args, **kwargs):
+def _annotate_instance_type(instance_type_id):
+    """Resolve instance type coding to human-friendly description.
+
+    Source: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instance-types.html#instance-type-names
+    """  # noqa: E501
+    kind = instance_type_id.split(".")[0]
+    # drop X TB suffix after instance family
+    if kind.startswith("u"):
+        logger.warning(f"Removing X TB reference from instance family: {kind}")
+        kind = re.sub(r"^u-([0-9]*)tb", "u", kind)
+    # drop suffixes for now after the dash, e.g. "Mac2-m2", "Mac2-m2pro"
+    if "-" in kind:
+        logger.warning(f"Truncating instance type after the dash: {kind}")
+        kind = kind.split("-")[0]
+    family, extras = re.split(r"[0-9]", kind)
+    generation = re.findall(r"[0-9]", kind)[0]
+    size = instance_type_id.split(".")[1]
+
+    try:
+        text = _instance_families[family]
+    except KeyError as exc:
+        raise KeyError(
+            "Unknown instance family: " + family + " (e.g. " + instance_type_id + ")"
+        ) from exc
+    for k, v in _instance_suffixes.items():
+        if k in extras:
+            text += " [" + v + "]"
+    text += " Gen" + generation
+    text += " " + size
+
+    return text
+
+
+def _get_storage_of_instance_type(instance_type, nvme=False):
+    """Get overall storage size and type (tupple) from instance details."""
+    if "InstanceStorageInfo" not in instance_type:
+        return (0, None)
+    info = instance_type["InstanceStorageInfo"]
+    storage_size = info["TotalSizeInGB"]
+    storage_type = info["Disks"][0].get("Type").lower()
+    if storage_type == "ssd" and info.get("NvmeSupport", False):
+        storage_type = "nvme ssd"
+    return (storage_size, storage_type)
+
+
+def _array_expand_by_count(array):
+    """Expand an array with its items Count field."""
+    array = [[a] * a["Count"] for a in array]
+    return list(chain(*array))
+
+
+def _get_storages_of_instance_type(instance_type):
+    """Get individual storages as an array."""
+    if "InstanceStorageInfo" not in instance_type:
+        return []
+    info = instance_type["InstanceStorageInfo"]
+
+    def to_storage(disk, nvme=False):
+        kind = disk.get("Type").lower()
+        if kind == "ssd" and nvme:
+            kind = "nvme ssd"
+        return Disk(size=disk["SizeInGB"], storage_type=kind)
+
+    # replicate number of disks
+    disks = info["Disks"]
+    disks = _array_expand_by_count(disks)
+    return [to_storage(disk, nvme=info.get("NvmeSupport", False)) for disk in disks]
+
+
+def _get_gpu_of_instance_type(instance_type):
+    """Get overall GPU count, memory and manufacturer/name."""
+    if "GpuInfo" not in instance_type:
+        return (0, None, None)
+    info = instance_type["GpuInfo"]
+    memory = info["TotalGpuMemoryInMiB"]
+
+    def mn(gpu):
+        return gpu["Manufacturer"] + " " + gpu["Name"]
+
+    # iterate over each GPU
+    count = sum([gpu["Count"] for gpu in info["Gpus"]])
+    names = ", ".join([mn(gpu) for gpu in info["Gpus"]])
+    return (count, memory, names)
+
+
+def _get_gpus_of_instance_type(instance_type):
+    """Get individual GPUs as an array."""
+    if "GpuInfo" not in instance_type:
+        return []
+    info = instance_type["GpuInfo"]
+
+    def to_gpu(gpu):
+        return Gpu(
+            manufacturer=gpu["Manufacturer"],
+            name=gpu["Name"],
+            memory=gpu["MemoryInfo"]["SizeInMiB"],
+        )
+
+    # replicate number of disks
+    gpus = info["Gpus"]
+    gpus = _array_expand_by_count(gpus)
+    return [to_gpu(gpu) for gpu in gpus]
+
+
+def _make_server_from_instance_type(instance_type, vendor):
+    """Create a SQLModel Server instance from AWS raw API response."""
+    it = instance_type["InstanceType"]
+    vcpu_info = instance_type["VCpuInfo"]
+    cpu_info = instance_type["ProcessorInfo"]
+    gpu_info = _get_gpu_of_instance_type(instance_type)
+    storage_info = _get_storage_of_instance_type(instance_type)
+    network_card = instance_type["NetworkInfo"]["NetworkCards"][0]
+    # avoid duplicates
+    if it not in [s.id for s in vendor.servers]:
+        return Server(
+            id=it,
+            vendor=vendor,
+            name=it,
+            description=_annotate_instance_type(it),
+            vcpus=vcpu_info["DefaultVCpus"],
+            cpu_cores=vcpu_info["DefaultCores"],
+            cpu_speed=cpu_info.get("SustainedClockSpeedInGhz", None),
+            cpu_architecture=cpu_info["SupportedArchitectures"][0],
+            cpu_manufacturer=cpu_info.get("Manufacturer", None),
+            memory=instance_type["MemoryInfo"]["SizeInMiB"],
+            gpu_count=gpu_info[0],
+            gpu_memory=gpu_info[1],
+            gpu_name=gpu_info[2],
+            gpus=_get_gpus_of_instance_type(instance_type),
+            storage_size=storage_info[0],
+            storage_type=storage_info[1],
+            storages=_get_storages_of_instance_type(instance_type),
+            network_speed=network_card["BaselineBandwidthInGbps"],
+            billable_unit="hour",
+        )
+
+
+def _list_instance_types_of_region(region, vendor):
+    """List all available instance types of an AWS region."""
+    logger.debug(f"Looking up instance types in region {region}")
+    instance_types = _boto_describe_instance_types(region)
+    return [
+        _make_server_from_instance_type(instance_type, vendor)
+        for instance_type in instance_types
+    ]
+
+
+def _extract_ondemand_price(terms):
+    """Extract ondmand price and the currency from AWS Terms object."""
+    ondemand_term = list(terms["OnDemand"].values())[0]
+    ondemand_pricing = list(ondemand_term["priceDimensions"].values())[0]
+    ondemand_pricing = ondemand_pricing["pricePerUnit"]
+    if "USD" in ondemand_pricing.keys():
+        return (float(ondemand_pricing["USD"]), "USD")
+    # get the first currency if USD not found
+    return (float(list(ondemand_pricing.values())[0]), list(ondemand_pricing)[0])
+
+
+def _get_product_datacenter(product, vendor):
+    attributes = product["product"]["attributes"]
+    location = attributes["location"]
+    location_type = attributes["locationType"]
+    try:
+        datacenter = [
+            d for d in vendor.datacenters if location == d.name or location in d.aliases
+        ][0]
+    except IndexError:
+        raise IndexError(
+            f"No AWS region found for location: {location} [{location_type}]"
+        )
+    return datacenter
+
+
+def _make_price_from_product(product, vendor):
+    attributes = product["product"]["attributes"]
+    location = attributes["location"]
+    instance_type = attributes["instanceType"]
+
+    try:
+        datacenter = _get_product_datacenter(product, vendor)
+    except IndexError as e:
+        logger.debug(str(e))
+        return
+
+    try:
+        server = [
+            d for d in vendor.servers if d.vendor == vendor and d.id == instance_type
+        ][0]
+    except IndexError:
+        logger.debug(f"No server definition found for {instance_type} @ {location}")
+        return
+
+    price = _extract_ondemand_price(product["terms"])
+    for zone in datacenter.zones:
+        ServerPrice(
+            vendor=vendor,
+            datacenter=datacenter,
+            zone=zone,
+            server=server,
+            # TODO ingest other OSs
+            operating_system="Linux",
+            allocation="ondemand",
+            price=price[0],
+            currency=price[1],
+            unit=PriceUnit.HOUR,
+        )
+
+
+# ##############################################################################
+# Public methods to fetch data
+
+
+def inventory_compliance_frameworks(vendor):
+    for compliance_framework in ["hipaa", "soc2t2"]:
+        VendorComplianceLink(
+            vendor=vendor,
+            compliance_framework_id=compliance_framework,
+        )
+
+
+def inventory_datacenters(vendor):
     """List all available AWS datacenters.
 
     Some data sources are not available from APIs, and were collected manually:
@@ -395,7 +662,7 @@ def get_datacenters(vendor, *args, **kwargs):
 
     # look for undocumented (new) regions in AWS
     supported_regions = [d.id for d in datacenters]
-    regions = describe_regions()
+    regions = _boto_describe_regions()
     for region in regions:
         region_name = region["RegionName"]
         if "gov" in region_name:
@@ -408,294 +675,88 @@ def get_datacenters(vendor, *args, **kwargs):
     for datacenter in datacenters:
         if datacenter.id not in active_regions:
             datacenter.status = "inactive"
-
-    # filter for datacenters enabled for the account
-    datacenters = [
-        datacenter
-        for datacenter in datacenters
-        if datacenter.id in [region["RegionName"] for region in regions]
-    ]
-
-    # TODO do we really need to return enything? standardize!
-    return datacenters
+            # note the change of status in the session
+            datacenter.vendor.merge_dependent(datacenter)
 
 
-def get_zones(vendor, *args, **kwargs):
+def inventory_zones(vendor):
     """List all available AWS availability zones."""
-    zones = [
-        [
-            Zone(
-                id=zone["ZoneId"],
-                name=zone["ZoneName"],
-                datacenter=datacenter,
-                vendor=vendor,
-            )
-            for zone in describe_availability_zones(datacenter.id)
-        ]
-        for datacenter in vendor.datacenters
-        if datacenter.status == "active"
-    ]
-    # TODO check if zone is active
-    return ChainMap(*zones)
+    for datacenter in vendor.datacenters:
+        if datacenter.status == "active":
+            for zone in _boto_describe_availability_zones(datacenter.id):
+                Zone(
+                    id=zone["ZoneId"],
+                    name=zone["ZoneName"],
+                    datacenter=datacenter,
+                    vendor=vendor,
+                )
 
 
-instance_families = {
-    "a": "AWS Graviton",
-    "c": "Compute optimized",
-    "d": "Dense storage",
-    "dl": "Deep Learning",
-    "f": "FPGA",
-    "g": "Graphics intensive",
-    "h": "Cost-effective storage optimized with HDD",
-    "hpc": "High performance computing",
-    "i": "Storage optimized",
-    "im": "Storage optimized with a one to four ratio of vCPU to memory",
-    "is": "Storage optimized with a one to six ratio of vCPU to memory",
-    "inf": "AWS Inferentia",
-    "m": "General purpose",
-    "mac": "macOS",
-    "p": "GPU accelerated",
-    "r": "Memory optimized",
-    "t": "Burstable performance",
-    "trn": "AWS Trainium",
-    "u": "High memory",
-    "vt": "Video transcoding",
-    "x": "Memory intensive",
-    "z": "High frequency",
-}
-
-instance_suffixes = {
-    # Processor families
-    "a": "AMD processors",
-    "g": "AWS Graviton processors",
-    "i": "Intel processors",
-    # Additional capabilities
-    "d": "Instance store volumes",
-    "n": "Network and EBS optimized",
-    "e": "Extra storage or memory",
-    "z": "High performance",
-    "q": "Qualcomm inference accelerators",
-    "flex": "Flex instance",
-}
-
-
-def annotate_instance_type(instance_type_id):
-    """Resolve instance type coding to human-friendly description.
-
-    Source: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instance-types.html#instance-type-names
-    """  # noqa: E501
-    kind = instance_type_id.split(".")[0]
-    # drop X TB suffix after instance family
-    if kind.startswith("u"):
-        logger.warning(f"Removing X TB reference from instance family: {kind}")
-        kind = re.sub(r"^u-([0-9]*)tb", "u", kind)
-    # drop suffixes for now after the dash, e.g. "Mac2-m2", "Mac2-m2pro"
-    if "-" in kind:
-        logger.warning(f"Truncating instance type after the dash: {kind}")
-        kind = kind.split("-")[0]
-    family, extras = re.split(r"[0-9]", kind)
-    generation = re.findall(r"[0-9]", kind)[0]
-    size = instance_type_id.split(".")[1]
-
-    try:
-        text = instance_families[family]
-    except KeyError as exc:
-        raise KeyError(
-            "Unknown instance family: " + family + " (e.g. " + instance_type_id + ")"
-        ) from exc
-    for k, v in instance_suffixes.items():
-        if k in extras:
-            text += " [" + v + "]"
-    text += " Gen" + generation
-    text += " " + size
-
-    return text
-
-
-def get_storage(instance_type, nvme=False):
-    """Get overall storage size and type (tupple) from instance details."""
-    if "InstanceStorageInfo" not in instance_type:
-        return (0, None)
-    info = instance_type["InstanceStorageInfo"]
-    storage_size = info["TotalSizeInGB"]
-    storage_type = info["Disks"][0].get("Type").lower()
-    if storage_type == "ssd" and info.get("NvmeSupport", False):
-        storage_type = "nvme ssd"
-    return (storage_size, storage_type)
-
-
-def array_expand_by_count(array):
-    """Expand an array with its items Count field."""
-    array = [[a] * a["Count"] for a in array]
-    return list(chain(*array))
-
-
-def get_storages(instance_type):
-    """Get individual storages as an array."""
-    if "InstanceStorageInfo" not in instance_type:
-        return []
-    info = instance_type["InstanceStorageInfo"]
-
-    def to_storage(disk, nvme=False):
-        kind = disk.get("Type").lower()
-        if kind == "ssd" and nvme:
-            kind = "nvme ssd"
-        return Disk(size=disk["SizeInGB"], storage_type=kind)
-
-    # replicate number of disks
-    disks = info["Disks"]
-    disks = array_expand_by_count(disks)
-    return [to_storage(disk, nvme=info.get("NvmeSupport", False)) for disk in disks]
-
-
-def get_gpu(instance_type):
-    """Get overall GPU count, memory and manufacturer/name."""
-    if "GpuInfo" not in instance_type:
-        return (0, None, None)
-    info = instance_type["GpuInfo"]
-    memory = info["TotalGpuMemoryInMiB"]
-
-    def mn(gpu):
-        return gpu["Manufacturer"] + " " + gpu["Name"]
-
-    # iterate over each GPU
-    count = sum([gpu["Count"] for gpu in info["Gpus"]])
-    names = ", ".join([mn(gpu) for gpu in info["Gpus"]])
-    return (count, memory, names)
-
-
-def get_gpus(instance_type):
-    """Get individual GPUs as an array."""
-    if "GpuInfo" not in instance_type:
-        return []
-    info = instance_type["GpuInfo"]
-
-    def to_gpu(gpu):
-        return Gpu(
-            manufacturer=gpu["Manufacturer"],
-            name=gpu["Name"],
-            memory=gpu["MemoryInfo"]["SizeInMiB"],
-        )
-
-    # replicate number of disks
-    gpus = info["Gpus"]
-    gpus = array_expand_by_count(gpus)
-    return [to_gpu(gpu) for gpu in gpus]
-
-
-def server_from_instance_type(instance_type, vendor):
-    """Create a SQLModel Server instance from AWS raw API response."""
-    it = instance_type["InstanceType"]
-    vcpu_info = instance_type["VCpuInfo"]
-    cpu_info = instance_type["ProcessorInfo"]
-    gpu_info = get_gpu(instance_type)
-    storage_info = get_storage(instance_type)
-    network_card = instance_type["NetworkInfo"]["NetworkCards"][0]
-    # avoid duplicates
-    if it not in [s.id for s in vendor.servers]:
-        return Server(
-            id=it,
-            vendor=vendor,
-            name=it,
-            description=annotate_instance_type(it),
-            vcpus=vcpu_info["DefaultVCpus"],
-            cpu_cores=vcpu_info["DefaultCores"],
-            cpu_speed=cpu_info.get("SustainedClockSpeedInGhz", None),
-            cpu_architecture=cpu_info["SupportedArchitectures"][0],
-            cpu_manufacturer=cpu_info.get("Manufacturer", None),
-            memory=instance_type["MemoryInfo"]["SizeInMiB"],
-            gpu_count=gpu_info[0],
-            gpu_memory=gpu_info[1],
-            gpu_name=gpu_info[2],
-            gpus=get_gpus(instance_type),
-            storage_size=storage_info[0],
-            storage_type=storage_info[1],
-            storages=get_storages(instance_type),
-            network_speed=network_card["BaselineBandwidthInGbps"],
-            billable_unit="hour",
-        )
-
-
-def instance_types_of_region(region, vendor):
-    """List all available instance types of an AWS region."""
-    logger.debug(f"Looking up instance types in region {region}")
-    instance_types = describe_instance_types(region)
-    return [
-        server_from_instance_type(instance_type, vendor)
-        for instance_type in instance_types
-    ]
-
-
-def get_instance_types(vendor, *args, **kwargs):
+def inventory_servers(vendor):
     # TODO drop this in favor of pricing.get_products, as it has info e.g. on instanceFamily
     #      although other fields are messier (e.g. extract memory from string)
-    regions = [
-        datacenter.id
-        for datacenter in vendor.datacenters
-        if datacenter.status == "active"
-    ]
-    # might be instance types specific to a few or even a single region
-    instance_types = [instance_types_of_region(region, vendor) for region in regions]
-    return list(chain(*instance_types))
+    for datacenter in vendor.datacenters:
+        if datacenter.status == "active":
+            _list_instance_types_of_region(datacenter.id, vendor)
 
 
-def extract_ondemand_price(terms):
-    """Extract ondmand price and the currency from AWS Terms object."""
-    ondemand_term = list(terms["OnDemand"].values())[0]
-    ondemand_pricing = list(ondemand_term["priceDimensions"].values())[0]
-    ondemand_pricing = ondemand_pricing["pricePerUnit"]
-    if "USD" in ondemand_pricing.keys():
-        return (float(ondemand_pricing["USD"]), "USD")
-    # get the first currency if USD not found
-    return (float(list(ondemand_pricing.values())[0]), list(ondemand_pricing)[0])
-
-
-def price_from_product(product, vendor):
-    attributes = product["product"]["attributes"]
-    location = attributes["location"]
-    location_type = attributes["locationType"]
-    instance_type = attributes["instanceType"]
-    try:
-        datacenter = [
-            d for d in vendor.datacenters if location == d.name or location in d.aliases
-        ][0]
-    except IndexError:
-        logger.debug(f"No AWS region found for location: {location} [{location_type}]")
-        return
-    except Exception as exc:
-        raise exc
-    try:
-        server = [
-            d for d in vendor.servers if d.vendor == vendor and d.id == instance_type
-        ][0]
-    except IndexError:
-        logger.debug(f"No server definition found for {instance_type} @ {location}")
-        return
-    except Exception as exc:
-        raise exc
-    price = extract_ondemand_price(product["terms"])
-    return ServerPrice(
-        vendor=vendor,
-        datacenter=datacenter,
-        server=server,
-        # TODO ingest other OSs
-        operating_system="Linux",
-        allocation="ondemand",
-        price=price[0],
-        currency=price[1],
-        duration=Duration.HOUR,
+def inventory_server_prices(vendor):
+    products = _boto_get_products(
+        service_code="AmazonEC2",
+        filters={
+            # TODO ingest win, mac etc others
+            "operatingSystem": "Linux",
+            "preInstalledSw": "NA",
+            "licenseModel": "No License required",
+            "locationType": "AWS Region",
+            "capacitystatus": "Used",
+            "marketoption": "OnDemand",
+            # TODO dedicated options?
+            "tenancy": "Shared",
+        },
     )
-
-
-def get_prices(vendor, *args, **kwargs):
-    products = get_products()
-    logger.debug(f"Found {len(products)} products")
-    # return [price_from_product(product, vendor) for product in products]
     for product in products:
         # drop Gov regions
         if "GovCloud" not in product["product"]["attributes"]["location"]:
-            price_from_product(product, vendor)
+            _make_price_from_product(product, vendor)
 
-    # TODO store raw response
-    # TODO reserved pricing options - might decide not to, as not in scope?
-    # TODO spot prices
+
+def inventory_server_prices_spot(vendor):
+    pass
+
+
+def inventory_storage_prices(vendor):
+    pass
+
+
+def inventory_traffic_prices(vendor):
+    pass
+
+
+def inventory_ipv4_prices(vendor):
+    products = _boto_get_products(
+        service_code="AmazonVPC",
+        filters={
+            "group": "VPCPublicIPv4Address",
+            "groupDescription": "Hourly charge for In-use Public IPv4 Addresses",
+        },
+    )
+    for product in products:
+        try:
+            datacenter = _get_product_datacenter(product, vendor)
+        except IndexError as e:
+            logger.debug(str(e))
+            continue
+        price = _extract_ondemand_price(product["terms"])
+        Ipv4Price(
+            vendor=vendor,
+            datacenter=datacenter,
+            price=price[0],
+            currency=price[1],
+            unit=PriceUnit.HOUR,
+        )
+
+
+# TODO store raw response
+# TODO reserved pricing options - might decide not to, as not in scope?
+# TODO spot prices

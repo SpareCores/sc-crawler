@@ -14,11 +14,12 @@ from pydantic import (
     ImportString,
     PrivateAttr,
 )
-from sqlalchemy import DateTime
+from sqlalchemy import DateTime, update
 from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import declared_attr
-from sqlmodel import JSON, Column, Field, Relationship, SQLModel, select
+from sqlmodel import JSON, Column, Field, Relationship, Session, SQLModel, select
 
+from .logger import log_start_end
 from .str import snake_case
 
 
@@ -32,7 +33,7 @@ class ScMetaModel(SQLModel.__class__):
         reuse the optional table and field descriptions. Table
         docstrings are truncated to first line.
 
-    - Append inserted_at column.
+    - Append observed_at column.
     """
 
     def __init__(subclass, *args, **kwargs):
@@ -49,8 +50,15 @@ class ScMetaModel(SQLModel.__class__):
             comment = satable.columns[k].comment
             if v.description and comment is None:
                 satable.columns[k].comment = v.description
-        # append inserted_at as last column
-        satable.append_column(Column("inserted_at", DateTime, default=datetime.utcnow))
+        # append observed_at as last column
+        satable.append_column(
+            Column(
+                "observed_at",
+                DateTime,
+                default=datetime.utcnow,
+                onupdate=datetime.utcnow,
+            )
+        )
 
 
 class ScModel(SQLModel, metaclass=ScMetaModel):
@@ -60,7 +68,7 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
     - auto-generated table names using snake_case,
     - support for hashing table rows,
     - reuse description field of tables/columns as SQL comment,
-    - automatically append inserted_at column.
+    - automatically append observed_at column.
     """
 
     @declared_attr  # type: ignore
@@ -74,7 +82,7 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
         return str(cls.__tablename__)
 
     @classmethod
-    def hash(cls, session, ignored: List[str] = ["inserted_at"]) -> dict:
+    def hash(cls, session, ignored: List[str] = ["observed_at"]) -> dict:
         pks = sorted([key.name for key in inspect(cls).primary_key])
         rows = session.exec(statement=select(cls))
         # no use of a generator as will need to serialize to JSON anyway
@@ -90,17 +98,35 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
             hashes[rowkeys] = rowhash
         return hashes
 
+    def __init__(self, *args, **kwargs):
+        """Merge instace with the database if present.
+
+        Checking if there's a parent vendor, and then try to sync the
+        object using the parent's session private attribute.
+        """
+        super().__init__(*args, **kwargs)
+        if hasattr(self, "vendor"):
+            if hasattr(self.vendor, "_session"):
+                self.vendor.merge_dependent(self)
+
+
+class Status(str, Enum):
+    ACTIVE = "active"
+    INACTIVE = "inactive"
+
+
+class HasStatus(ScModel):
+    status: Status = Field(
+        default=Status.ACTIVE,
+        description="Status of the resource (active or inactive).",
+    )
+
 
 class Json(BaseModel):
     """Custom base SQLModel class that supports dumping as JSON."""
 
     def __json__(self):
         return self.model_dump()
-
-
-class Status(str, Enum):
-    ACTIVE = "active"
-    INACTIVE = "inactive"
 
 
 class Country(ScModel, table=True):
@@ -117,13 +143,15 @@ class Country(ScModel, table=True):
     datacenters: List["Datacenter"] = Relationship(back_populates="country")
 
 
-class VendorComplianceLink(ScModel, table=True):
+class VendorComplianceLinkBase(ScModel):
     vendor_id: str = Field(foreign_key="vendor.id", primary_key=True)
     compliance_framework_id: str = Field(
         foreign_key="compliance_framework.id", primary_key=True
     )
     comment: Optional[str] = None
 
+
+class VendorComplianceLink(HasStatus, VendorComplianceLinkBase, table=True):
     vendor: "Vendor" = Relationship(back_populates="compliance_framework_links")
     compliance_framework: "ComplianceFramework" = Relationship(
         back_populates="vendor_links"
@@ -187,7 +215,8 @@ class Vendor(ScModel, table=True):
     status: Status = Status.ACTIVE
 
     # private attributes
-    _methods: ImportString[ModuleType] = PrivateAttr()
+    _methods: Optional[ImportString[ModuleType]] = PrivateAttr(default=None)
+    _session: Optional[Session] = PrivateAttr()
 
     # relations
     country: Country = Relationship(back_populates="vendors")
@@ -203,44 +232,134 @@ class Vendor(ScModel, table=True):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        # SQLModel does not validates pydantic typing,
+        # only when writing to DB (much later in the process)
+        if not self.id:
+            raise ValueError("No vendor id provided")
+        if not self.name:
+            raise ValueError("No vendor name provided")
+        if not self.homepage:
+            raise ValueError("No vendor homepage provided")
+        if not self.country:
+            raise ValueError("No vendor country provided")
+        # make sure methods are provided
+        methods = self._get_methods().__dir__()
+        for method in [
+            "inventory_compliance_frameworks",
+            "inventory_datacenters",
+            "inventory_zones",
+            "inventory_servers",
+            "inventory_server_prices",
+            "inventory_server_prices_spot",
+            "inventory_storage_prices",
+            "inventory_traffic_prices",
+            "inventory_ipv4_prices",
+        ]:
+            if method not in methods:
+                raise NotImplementedError(
+                    f"Unsupported '{self.id}' vendor: missing '{method}' method."
+                )
+
+    def _get_methods(self):
+        # private attributes are not (always) initialized correctly by SQLmodel
+        # e.g. the attribute is missing alltogether when loaded from DB
+        # https://github.com/tiangolo/sqlmodel/issues/149
         try:
-            # SQLModel does not validates pydantic typing,
-            # only when writing to DB (much later in the process)
-            if not self.id:
-                raise ValueError("No vendor id provided")
-            if not self.name:
-                raise ValueError("No vendor name provided")
-            if not self.homepage:
-                raise ValueError("No vendor homepage provided")
-            if not self.country:
-                raise ValueError("No vendor country provided")
-            vendor_module = __name__.split(".")[0] + ".vendors." + self.id
-            self._methods = import_module(vendor_module)
-        except ValueError as exc:
-            raise exc
-        except Exception as exc:
-            raise NotImplementedError("Unsupported vendor") from exc
+            hasattr(self, "_methods")
+        except Exception:
+            self._methods = None
+        if not self._methods:
+            try:
+                vendor_module = ".".join(
+                    [__name__.split(".", maxsplit=1)[0], "vendors", self.id]
+                )
+                self._methods = import_module(vendor_module)
+            except Exception as exc:
+                raise NotImplementedError(
+                    f"Unsupported '{self.id}' vendor: no methods defined."
+                ) from exc
+        return self._methods
 
-    def get_datacenters(self):
-        """Get datacenters of the vendor."""
-        return self._methods.get_datacenters(self)
+    def set_session(self, session):
+        """Attach a SQLModel session to use for merging dependent objects into the database."""
+        self._session = session
 
-    def get_zones(self):
-        """Get zones of the vendor from its datacenters."""
-        return self._methods.get_zones(self)
+    def merge_dependent(self, obj):
+        """Merge an object into the Vendor's SQLModel session (when available)."""
+        if self._session:
+            # TODO investigate SAWarning
+            # on obj associated with vendor before added to session?
+            self._session.merge(obj)
 
-    def get_instance_types(self):
-        return self._methods.get_instance_types(self)
+    def set_table_rows_inactive(self, model: str, *args) -> None:
+        """Set this vendor's records to INACTIVE in a table
 
-    def get_prices(self):
-        return self._methods.get_prices(self)
+        Positional arguments can be used to pass further filters
+        (besides the default model.vendor_id filter) referencing the
+        model object with SQLModel syntax, e.g.
 
-    def get_all(self):
-        self.get_datacenters()
-        self.get_zones()
-        self.get_instance_types()
-        self.get_prices()
-        return
+        >>> aws.set_table_rows_inactive(ServerPrice, ServerPrice.price < 10)  # doctest: +SKIP
+        """
+        if self._session:
+            query = update(model).where(model.vendor_id == self.id)
+            for arg in args:
+                query = query.where(arg)
+            self._session.execute(query.values(status=Status.INACTIVE))
+
+    @log_start_end
+    def inventory_compliance_frameworks(self):
+        """Get the vendor's all compliance frameworks."""
+        self.set_table_rows_inactive(VendorComplianceLink)
+        self._get_methods().inventory_compliance_frameworks(self)
+
+    @log_start_end
+    def inventory_datacenters(self):
+        """Get the vendor's all datacenters."""
+        self.set_table_rows_inactive(Datacenter)
+        self._get_methods().inventory_datacenters(self)
+
+    @log_start_end
+    def inventory_zones(self):
+        """Get all the zones in the vendor's datacenters."""
+        self.set_table_rows_inactive(Zone)
+        self._get_methods().inventory_zones(self)
+
+    @log_start_end
+    def inventory_servers(self):
+        """Get the vendor's all server types."""
+        self.set_table_rows_inactive(Server)
+        self._get_methods().inventory_servers(self)
+
+    @log_start_end
+    def inventory_server_prices(self):
+        """Get the current standard/ondemand/reserved prices of all server types."""
+        self.set_table_rows_inactive(
+            ServerPrice, ServerPrice.allocation != Allocation.SPOT
+        )
+        self._get_methods().inventory_server_prices(self)
+
+    @log_start_end
+    def inventory_server_prices_spot(self):
+        """Get the current spot prices of all server types."""
+        self.set_table_rows_inactive(
+            ServerPrice, ServerPrice.allocation == Allocation.SPOT
+        )
+        self._get_methods().inventory_server_prices_spot(self)
+
+    @log_start_end
+    def inventory_storage_prices(self):
+        self.set_table_rows_inactive(StoragePrice)
+        self._get_methods().inventory_storage_prices(self)
+
+    @log_start_end
+    def inventory_traffic_prices(self):
+        self.set_table_rows_inactive(TrafficPrice)
+        self._get_methods().inventory_traffic_prices(self)
+
+    @log_start_end
+    def inventory_ipv4_prices(self):
+        self.set_table_rows_inactive(Ipv4Price)
+        self._get_methods().inventory_ipv4_prices(self)
 
 
 class Datacenter(ScModel, table=True):
@@ -282,9 +401,6 @@ class Zone(ScModel, table=True):
     datacenter: Datacenter = Relationship(back_populates="zones")
     vendor: Vendor = Relationship(back_populates="zones")
     server_prices: List["ServerPrice"] = Relationship(back_populates="zone")
-    traffic_prices: List["TrafficPrice"] = Relationship(back_populates="zone")
-    ipv4_prices: List["Ipv4Price"] = Relationship(back_populates="zone")
-    storage_prices: List["StoragePrice"] = Relationship(back_populates="zone")
 
 
 class StorageType(str, Enum):
@@ -299,13 +415,12 @@ class Storage(ScModel, table=True):
     vendor_id: str = Field(foreign_key="vendor.id", primary_key=True)
     name: str
     description: Optional[str]
-    size: int = 0
+    size: int = 0  # GiB
     storage_type: StorageType
     max_iops: Optional[int] = None
     max_throughput: Optional[int] = None  # MiB/s
     min_size: Optional[int] = None  # GiB
     max_size: Optional[int] = None  # GiB
-    billable_unit: str = "GiB"
     status: Status = Status.ACTIVE
 
     vendor: Vendor = Relationship(back_populates="storages")
@@ -323,7 +438,6 @@ class Traffic(ScModel, table=True):
     name: str
     description: Optional[str]
     direction: TrafficDirection
-    billable_unit: str = "GB"
     status: Status = Status.ACTIVE
 
     vendor: Vendor = Relationship(back_populates="traffics")
@@ -459,10 +573,12 @@ class Allocation(str, Enum):
     SPOT = "spot"
 
 
-class Duration(str, Enum):
+class PriceUnit(str, Enum):
     YEAR = "year"
     MONTH = "month"
     HOUR = "hour"
+    GIB = "GiB"
+    GB = "GB"
 
 
 class PriceTier(Json):
@@ -472,17 +588,19 @@ class PriceTier(Json):
 
 
 # helper classes to inherit for most commonly used fields
+# TODO rewrite above classes using helper classes as well
 
 
-class HasVendor(ScModel):
+class HasVendorPK(ScModel):
     vendor_id: str = Field(foreign_key="vendor.id", primary_key=True)
 
 
-class HasVendorOptionalDatacenterZone(HasVendor):
-    datacenter_id: str = Field(
-        default="", foreign_key="datacenter.id", primary_key=True
-    )
-    zone_id: str = Field(default="", foreign_key="zone.id", primary_key=True)
+class HasDatacenterPK(ScModel):
+    datacenter_id: str = Field(foreign_key="datacenter.id", primary_key=True)
+
+
+class HasZonePK(ScModel):
+    zone_id: str = Field(foreign_key="zone.id", primary_key=True)
 
 
 class HasServer(ScModel):
@@ -497,7 +615,8 @@ class HasTraffic(ScModel):
     traffic_id: str = Field(foreign_key="traffic.id", primary_key=True)
 
 
-class HasPriceFields(ScModel):
+class HasPriceFieldsBase(ScModel):
+    unit: PriceUnit
     # set to max price if tiered
     price: float
     # e.g. setup fee for dedicated servers,
@@ -505,7 +624,10 @@ class HasPriceFields(ScModel):
     price_upfront: float = 0
     price_tiered: List[PriceTier] = Field(default=[], sa_type=JSON)
     currency: str = "USD"
-    duration: Duration
+
+
+class HasPriceFields(HasStatus, HasPriceFieldsBase):
+    pass
 
 
 class ServerPriceExtraFields(ScModel):
@@ -514,7 +636,12 @@ class ServerPriceExtraFields(ScModel):
 
 
 class ServerPriceBase(
-    HasPriceFields, ServerPriceExtraFields, HasServer, HasVendorOptionalDatacenterZone
+    HasPriceFields,
+    ServerPriceExtraFields,
+    HasServer,
+    HasZonePK,
+    HasDatacenterPK,
+    HasVendorPK,
 ):
     pass
 
@@ -526,36 +653,33 @@ class ServerPrice(ServerPriceBase, table=True):
     server: Server = Relationship(back_populates="prices")
 
 
-class StoragePriceBase(HasPriceFields, HasStorage, HasVendorOptionalDatacenterZone):
+class StoragePriceBase(HasPriceFields, HasStorage, HasDatacenterPK, HasVendorPK):
     pass
 
 
 class StoragePrice(StoragePriceBase, table=True):
     vendor: Vendor = Relationship(back_populates="storage_prices")
     datacenter: Datacenter = Relationship(back_populates="storage_prices")
-    zone: Zone = Relationship(back_populates="storage_prices")
     storage: Storage = Relationship(back_populates="prices")
 
 
-class TrafficPriceBase(HasPriceFields, HasTraffic, HasVendorOptionalDatacenterZone):
+class TrafficPriceBase(HasPriceFields, HasTraffic, HasDatacenterPK, HasVendorPK):
     pass
 
 
 class TrafficPrice(TrafficPriceBase, table=True):
     vendor: Vendor = Relationship(back_populates="traffic_prices")
     datacenter: Datacenter = Relationship(back_populates="traffic_prices")
-    zone: Zone = Relationship(back_populates="traffic_prices")
     traffic: Traffic = Relationship(back_populates="prices")
 
 
-class Ipv4PriceBase(HasPriceFields, HasVendorOptionalDatacenterZone):
+class Ipv4PriceBase(HasPriceFields, HasDatacenterPK, HasVendorPK):
     pass
 
 
 class Ipv4Price(Ipv4PriceBase, table=True):
     vendor: Vendor = Relationship(back_populates="ipv4_prices")
     datacenter: Datacenter = Relationship(back_populates="ipv4_prices")
-    zone: Zone = Relationship(back_populates="ipv4_prices")
 
 
 VendorComplianceLink.model_rebuild()

@@ -11,6 +11,7 @@ from typing_extensions import Annotated
 
 from . import vendors as vendors_module
 from .logger import logger
+from .lookup import compliance_frameworks, countries
 from .schemas import Vendor
 from .utils import hash_database
 
@@ -35,6 +36,9 @@ Engines = Enum("ENGINES", {k: k for k in engine_to_dialect.keys()})
 # TODO use logging.getLevelNamesMapping() from Python 3.11
 log_levels = list(logging._nameToLevel.keys())
 LogLevels = Enum("LOGLEVELS", {k: k for k in log_levels})
+
+supported_tables = [m[10:] for m in dir(Vendor) if m.startswith("inventory_")]
+Tables = Enum("TABLES", {k: k for k in supported_tables})
 
 
 @cli.command()
@@ -76,6 +80,10 @@ def pull(
         List[Vendors],
         typer.Option(help="Exclude specific vendor. Can be specified multiple times."),
     ] = [],
+    update_table: Annotated[
+        List[Tables],
+        typer.Option(help="Tables to be updated. Can be specified multiple times."),
+    ] = supported_tables,
     log_level: Annotated[
         LogLevels, typer.Option(help="Log level threshold.")
     ] = LogLevels.INFO.value,  # TODO drop .value after updating Enum to StrEnum in Python3.11
@@ -108,7 +116,7 @@ def pull(
     # enable logging
     channel = logging.StreamHandler()
     formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        "%(asctime)s - %(name)s/%(module)s:%(funcName)s - %(levelname)s - %(message)s"
     )
     channel.setFormatter(formatter)
     logger.setLevel(log_level.value)
@@ -128,10 +136,35 @@ def pull(
     engine = create_engine(connection_string, json_serializer=custom_serializer)
     SQLModel.metadata.create_all(engine)
     with Session(engine) as session:
+        # add/merge static objects to database
+        for compliance_framework in compliance_frameworks.values():
+            session.merge(compliance_framework)
+        for country in countries.values():
+            session.merge(country)
+        # get data for each vendor and then add/merge to database
         for vendor in vendors:
             logger.info("Starting to collect data from vendor: " + vendor.id)
-            vendor.get_all()
-            session.add(vendor)
+            vendor = session.merge(vendor)
+            vendor.set_session(session)
+            if Tables.compliance_frameworks in update_table:
+                vendor.inventory_compliance_frameworks()
+            if Tables.datacenters in update_table:
+                vendor.inventory_datacenters()
+            if Tables.zones in update_table:
+                vendor.inventory_zones()
+            if Tables.servers in update_table:
+                vendor.inventory_servers()
+            if Tables.server_prices in update_table:
+                vendor.inventory_server_prices()
+            if Tables.server_prices_spot in update_table:
+                vendor.inventory_server_prices_spot()
+            if Tables.storage_prices in update_table:
+                vendor.inventory_storage_prices()
+            if Tables.traffic_prices in update_table:
+                vendor.inventory_traffic_prices()
+            if Tables.ipv4_prices in update_table:
+                vendor.inventory_ipv4_prices()
+            session.merge(vendor)
             session.commit()
 
 
