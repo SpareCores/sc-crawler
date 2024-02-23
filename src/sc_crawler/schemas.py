@@ -22,7 +22,6 @@ from sqlmodel import JSON, Column, Field, Relationship, Session, SQLModel, selec
 from .logger import log_start_end
 from .str import snake_case
 
-
 # ##############################################################################
 # SQLModel data and model extensions
 
