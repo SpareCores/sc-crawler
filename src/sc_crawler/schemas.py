@@ -287,6 +287,8 @@ class Vendor(ScModel, table=True):
     def merge_dependent(self, obj):
         """Merge an object into the Vendor's SQLModel session (when available)."""
         if self._session:
+            # TODO investigate SAWarning
+            # on obj associated with vendor before added to session?
             self._session.merge(obj)
 
     def set_table_rows_inactive(self, model: str, *args) -> None:
