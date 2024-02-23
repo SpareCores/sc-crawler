@@ -37,7 +37,7 @@ Engines = Enum("ENGINES", {k: k for k in engine_to_dialect.keys()})
 log_levels = list(logging._nameToLevel.keys())
 LogLevels = Enum("LOGLEVELS", {k: k for k in log_levels})
 
-supported_tables = [m[4:] for m in dir(Vendor) if m.startswith("get_")]
+supported_tables = [m[10:] for m in dir(Vendor) if m.startswith("inventory_")]
 Tables = Enum("TABLES", {k: k for k in supported_tables})
 
 
@@ -147,23 +147,23 @@ def pull(
             vendor = session.merge(vendor)
             vendor.set_session(session)
             if Tables.compliance_frameworks in update_table:
-                vendor.get_compliance_frameworks()
+                vendor.inventory_compliance_frameworks()
             if Tables.datacenters in update_table:
-                vendor.get_datacenters()
+                vendor.inventory_datacenters()
             if Tables.zones in update_table:
-                vendor.get_zones()
+                vendor.inventory_zones()
             if Tables.servers in update_table:
-                vendor.get_servers()
+                vendor.inventory_servers()
             if Tables.server_prices in update_table:
-                vendor.get_server_prices()
+                vendor.inventory_server_prices()
             if Tables.server_prices_spot in update_table:
-                vendor.get_server_prices_spot()
+                vendor.inventory_server_prices_spot()
             if Tables.storage_prices in update_table:
-                vendor.get_storage_prices()
+                vendor.inventory_storage_prices()
             if Tables.traffic_prices in update_table:
-                vendor.get_traffic_prices()
+                vendor.inventory_traffic_prices()
             if Tables.ipv4_prices in update_table:
-                vendor.get_ipv4_prices()
+                vendor.inventory_ipv4_prices()
             session.merge(vendor)
             session.commit()
 

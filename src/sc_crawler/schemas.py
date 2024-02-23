@@ -245,15 +245,15 @@ class Vendor(ScModel, table=True):
         # make sure methods are provided
         methods = self._get_methods().__dir__()
         for method in [
-            "get_compliance_frameworks",
-            "get_datacenters",
-            "get_zones",
-            "get_servers",
-            "get_server_prices",
-            "get_server_prices_spot",
-            "get_storage_prices",
-            "get_traffic_prices",
-            "get_ipv4_prices",
+            "inventory_compliance_frameworks",
+            "inventory_datacenters",
+            "inventory_zones",
+            "inventory_servers",
+            "inventory_server_prices",
+            "inventory_server_prices_spot",
+            "inventory_storage_prices",
+            "inventory_traffic_prices",
+            "inventory_ipv4_prices",
         ]:
             if method not in methods:
                 raise NotImplementedError(
@@ -307,59 +307,59 @@ class Vendor(ScModel, table=True):
             self._session.execute(query.values(status=Status.INACTIVE))
 
     @log_start_end
-    def get_compliance_frameworks(self):
+    def inventory_compliance_frameworks(self):
         """Get the vendor's all compliance frameworks."""
         self.set_table_rows_inactive(VendorComplianceLink)
-        self._get_methods().get_compliance_frameworks(self)
+        self._get_methods().inventory_compliance_frameworks(self)
 
     @log_start_end
-    def get_datacenters(self):
+    def inventory_datacenters(self):
         """Get the vendor's all datacenters."""
         self.set_table_rows_inactive(Datacenter)
-        self._get_methods().get_datacenters(self)
+        self._get_methods().inventory_datacenters(self)
 
     @log_start_end
-    def get_zones(self):
+    def inventory_zones(self):
         """Get all the zones in the vendor's datacenters."""
         self.set_table_rows_inactive(Zone)
-        self._get_methods().get_zones(self)
+        self._get_methods().inventory_zones(self)
 
     @log_start_end
-    def get_servers(self):
+    def inventory_servers(self):
         """Get the vendor's all server types."""
         self.set_table_rows_inactive(Server)
-        self._get_methods().get_servers(self)
+        self._get_methods().inventory_servers(self)
 
     @log_start_end
-    def get_server_prices(self):
+    def inventory_server_prices(self):
         """Get the current standard/ondemand/reserved prices of all server types."""
         self.set_table_rows_inactive(
             ServerPrice, ServerPrice.allocation != Allocation.SPOT
         )
-        self._get_methods().get_server_prices(self)
+        self._get_methods().inventory_server_prices(self)
 
     @log_start_end
-    def get_server_prices_spot(self):
+    def inventory_server_prices_spot(self):
         """Get the current spot prices of all server types."""
         self.set_table_rows_inactive(
             ServerPrice, ServerPrice.allocation == Allocation.SPOT
         )
-        self._get_methods().get_server_prices_spot(self)
+        self._get_methods().inventory_server_prices_spot(self)
 
     @log_start_end
-    def get_storage_prices(self):
+    def inventory_storage_prices(self):
         self.set_table_rows_inactive(StoragePrice)
-        self._get_methods().get_storage_prices(self)
+        self._get_methods().inventory_storage_prices(self)
 
     @log_start_end
-    def get_traffic_prices(self):
+    def inventory_traffic_prices(self):
         self.set_table_rows_inactive(TrafficPrice)
-        self._get_methods().get_traffic_prices(self)
+        self._get_methods().inventory_traffic_prices(self)
 
     @log_start_end
-    def get_ipv4_prices(self):
+    def inventory_ipv4_prices(self):
         self.set_table_rows_inactive(Ipv4Price)
-        self._get_methods().get_ipv4_prices(self)
+        self._get_methods().inventory_ipv4_prices(self)
 
 
 class Datacenter(ScModel, table=True):

@@ -353,7 +353,7 @@ def _make_price_from_product(product, vendor):
 # Public methods to fetch data
 
 
-def get_compliance_frameworks(vendor):
+def inventory_compliance_frameworks(vendor):
     for compliance_framework in ["hipaa", "soc2t2"]:
         VendorComplianceLink(
             vendor=vendor,
@@ -361,7 +361,7 @@ def get_compliance_frameworks(vendor):
         )
 
 
-def get_datacenters(vendor):
+def inventory_datacenters(vendor):
     """List all available AWS datacenters.
 
     Some data sources are not available from APIs, and were collected manually:
@@ -679,7 +679,7 @@ def get_datacenters(vendor):
             datacenter.vendor.merge_dependent(datacenter)
 
 
-def get_zones(vendor):
+def inventory_zones(vendor):
     """List all available AWS availability zones."""
     for datacenter in vendor.datacenters:
         if datacenter.status == "active":
@@ -692,7 +692,7 @@ def get_zones(vendor):
                 )
 
 
-def get_servers(vendor):
+def inventory_servers(vendor):
     # TODO drop this in favor of pricing.get_products, as it has info e.g. on instanceFamily
     #      although other fields are messier (e.g. extract memory from string)
     for datacenter in vendor.datacenters:
@@ -700,7 +700,7 @@ def get_servers(vendor):
             _list_instance_types_of_region(datacenter.id, vendor)
 
 
-def get_server_prices(vendor):
+def inventory_server_prices(vendor):
     products = _boto_get_products(
         service_code="AmazonEC2",
         filters={
@@ -721,19 +721,19 @@ def get_server_prices(vendor):
             _make_price_from_product(product, vendor)
 
 
-def get_server_prices_spot(vendor):
+def inventory_server_prices_spot(vendor):
     pass
 
 
-def get_storage_prices(vendor):
+def inventory_storage_prices(vendor):
     pass
 
 
-def get_traffic_prices(vendor):
+def inventory_traffic_prices(vendor):
     pass
 
 
-def get_ipv4_prices(vendor):
+def inventory_ipv4_prices(vendor):
     products = _boto_get_products(
         service_code="AmazonVPC",
         filters={
