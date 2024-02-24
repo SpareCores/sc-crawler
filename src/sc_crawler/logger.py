@@ -3,6 +3,22 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+from rich.progress import (
+    track,
+    Progress,
+    TextColumn,
+    BarColumn,
+    MofNCompleteColumn,
+    TimeRemainingColumn,
+    TimeElapsedColumn,
+    SpinnerColumn,
+)
+from rich.console import Group
+from rich.live import Live
+from rich.panel import Panel
+from rich.rule import Rule
+from rich.padding import Padding
+from rich.align import Align
 from rich.logging import RichHandler
 from rich.traceback import Traceback
 
@@ -54,3 +70,38 @@ class ScRichHandler(RichHandler):
             link_path=record.pathname if self.enable_link_path else None,
         )
         return log_renderable
+
+
+class ProgressPanel:
+    vendors: Progress = Progress(
+        TimeElapsedColumn(),
+        TextColumn("{task.description}"),
+        BarColumn(),
+        TextColumn("({task.completed} of {task.total} steps)"),
+        TimeRemainingColumn(),
+    )
+    tasks: Progress = Progress(
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+        TimeElapsedColumn(),
+        transient=True,
+    )
+    panels: Group = Group(
+        Panel(
+            tasks,
+            title="Running tasks",
+            title_align="left",
+        ),
+        Panel(
+            vendors,
+            title="Vendors",
+            title_align="left",
+        ),
+    )
+
+    def add_task(self, description: str, n: int):
+        self.tasks.add_task(description, total=n)
+
+    def add_vendor(self, vendor_name: str, steps: int):
+        self.vendors.add_task(vendor_name, total=steps)
