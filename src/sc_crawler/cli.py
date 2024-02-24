@@ -10,7 +10,7 @@ from sqlmodel import Session, SQLModel, create_engine
 from typing_extensions import Annotated
 
 from . import vendors as vendors_module
-from .logger import logger
+from .logger import ScRichHandler, logger
 from .lookup import compliance_frameworks, countries
 from .schemas import Vendor
 from .utils import hash_database
@@ -114,10 +114,8 @@ def pull(
         )
 
     # enable logging
-    channel = logging.StreamHandler()
-    formatter = logging.Formatter(
-        "%(asctime)s - %(name)s/%(module)s:%(funcName)s - %(levelname)s - %(message)s"
-    )
+    channel = ScRichHandler()
+    formatter = logging.Formatter("%(message)s")
     channel.setFormatter(formatter)
     logger.setLevel(log_level.value)
     logger.addHandler(channel)
