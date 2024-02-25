@@ -147,13 +147,17 @@ class VendorProgressTracker:
 
     vendor: Vendor
     progress_panel: ProgressPanel
-    # no need to track, stored in Progress.task_ids
-    vendor_progress: Optional[TaskID] = None
-    tasks: List[TaskID] = []
+    # reexport Progress attrubutes of the ProgressPanel
+    vendors: Progress
+    tasks: Progress
+    metadata: Progress
 
     def __init__(self, vendor: Vendor, progress_panel: ProgressPanel):
         self.vendor = vendor
         self.progress_panel = progress_panel
+        self.vendors = progress_panel.vendors
+        self.tasks = progress_panel.tasks
+        self.metadata = progress_panel.metadata
 
     def vendor_start(self, n: int) -> TaskID:
         """Starts a progress bar for the Vendor's steps.
@@ -164,14 +168,11 @@ class VendorProgressTracker:
         Returns:
             TaskId: The progress bar's identifier to be referenced in future updates.
         """
-        self.vendor_progress = self.progress_panel.vendors.add_task(
-            self.vendor.name, total=n, step=""
-        )
-        return self.vendor_progress
+        return self.vendors.add_task(self.vendor.name, total=n, step="")
 
     def vendor_steps_advance(self, by: int = 1):
         """Increment the number of finished steps."""
-        self.progress_panel.vendors.update(self.vendor_progress, advance=by)
+        self.vendors.update(self.vendors.task_ids[0], advance=by)
 
     def vendor_update(self, **kwargs):
         """Update the vendor's progress bar.
@@ -179,7 +180,7 @@ class VendorProgressTracker:
         Useful fields:
         - `step`: Name of the currently running step to be shown on the progress bar.
         """
-        self.progress_panel.vendors.update(self.vendor_progress, **kwargs)
+        self.vendors.update(self.vendors.task_ids[0], **kwargs)
 
     def start_task(self, name: str, n: int) -> TaskID:
         """Starts a progress bar for the Vendor's steps.
@@ -191,7 +192,4 @@ class VendorProgressTracker:
         Returns:
             TaskId: The progress bar's identifier to be referenced in future updates.
         """
-        self.tasks.append(
-            self.progress_panel.tasks.add_task(self.vendor.name + ": " + name, total=n)
-        )
-        return self.tasks[-1]
+        return self.tasks.add_task(self.vendor.name + ": " + name, total=n)
