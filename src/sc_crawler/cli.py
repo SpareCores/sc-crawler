@@ -170,7 +170,7 @@ def pull(
                 vendor.progress_tracker = VendorProgressTracker(
                     vendor=vendor, progress_panel=pbars
                 )
-                vendor.progress_tracker.vendor_start(n=len(update_table))
+                vendor.progress_tracker.start_vendor(n=len(update_table))
                 if Tables.compliance_frameworks in update_table:
                     vendor.inventory_compliance_frameworks()
                 if Tables.datacenters in update_table:
@@ -190,7 +190,7 @@ def pull(
                 if Tables.ipv4_prices in update_table:
                     vendor.inventory_ipv4_prices()
                 # reset current step name
-                vendor.progress_tracker.vendor_update(step="")
+                vendor.progress_tracker.update_vendor(step="")
                 session.merge(vendor)
                 session.commit()
 
