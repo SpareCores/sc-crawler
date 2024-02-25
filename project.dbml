@@ -1,0 +1,11 @@
+Project DBML {
+  Note: '''
+    # Spare Cores (SC) Crawler database schemas
+
+    [Spare Cores](https://sparecores.com), a Python-based open-source ecosystem, provides a comprehensive and standardized inventory, along with performance evaluations of available compute resources across public cloud and server providers. The project providers different components to interact with the database schemas defined here:
+
+    * Run the SC Crawler, to compile your own database: https://github.com/SpareCores/sc-crawler
+    * Use the SC Data package to easily grab a copy of the database: https://github.com/SpareCores/sc-data
+    * Fire up an API using the SC Keeper package on the top of the database: https://github.com/SpareCores/sc-keeper
+  '''
+}
