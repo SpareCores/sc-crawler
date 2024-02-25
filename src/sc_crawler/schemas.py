@@ -19,7 +19,7 @@ from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import declared_attr
 from sqlmodel import JSON, Column, Field, Relationship, Session, SQLModel, select
 
-from .logger import log_start_end
+from .logger import log_start_end, VendorProgressTracker
 from .str import snake_case
 
 # ##############################################################################
@@ -386,6 +386,7 @@ class Vendor(HasName, HasIdPK, table=True):
     # private attributes
     _methods: Optional[ImportString[ModuleType]] = PrivateAttr(default=None)
     _session: Optional[Session] = PrivateAttr()
+    _progress_tracker: Optional[VendorProgressTracker] = PrivateAttr()
 
     # relations
     country: Country = Relationship(back_populates="vendors")
@@ -464,6 +465,23 @@ class Vendor(HasName, HasIdPK, table=True):
     @session.deleter
     def session(self):
         self._session = None
+
+    @property
+    def progress_tracker(self):
+        """The VendorProgressTracker to use for updating progress bars."""
+        return self._progress_tracker
+
+    @progress_tracker.setter
+    def progress_tracker(self, progress_tracker: VendorProgressTracker):
+        self._progress_tracker = progress_tracker
+
+    @progress_tracker.deleter
+    def progress_tracker(self):
+        self._progress_tracker = None
+
+    def register_progress_tracker(self, progress_tracker: VendorProgressTracker):
+        """Attach a VendorProgressTracker to use for updating progress bars."""
+        self._progress_tracker = progress_tracker
 
     def merge_dependent(self, obj):
         """Merge an object into the Vendor's SQLModel session (when available)."""

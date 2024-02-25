@@ -1,7 +1,8 @@
+from __future__ import annotations
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 from rich.progress import (
     track,
@@ -117,3 +118,29 @@ class ProgressPanel:
 
     def add_vendor(self, vendor_name: str, steps: int):
         self.vendors.add_task(vendor_name, total=steps)
+
+if TYPE_CHECKING:
+    from .schemas import Vendor
+
+
+class VendorProgressTracker:
+    """Tracing the progress of the vendor's inventory."""
+
+    vendor: Vendor
+    progress_panel: ProgressPanel
+    vendor_progress: Optional[Progress] = None
+
+    def __init__(self, vendor: Vendor, progress_panel: ProgressPanel):
+        self.vendor = vendor
+        self.progress_panel = progress_panel
+
+    def vendor_steps_init(self, n: int) -> Progress:
+        """Starts a progress bar for the Vendor's steps."""
+        self.vendor_progress = self.progress_panel.vendors.add_task(
+            self.vendor.name, total=n
+        )
+        return self.vendor_progress
+
+    def vendor_steps_advance(self, by: int = 1):
+        """Increment the number of finished steps."""
+        self.progress_panel.vendors.update(self.vendor_progress, advance=by)
