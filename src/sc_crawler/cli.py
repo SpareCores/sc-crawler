@@ -143,7 +143,6 @@ def pull(
         for vendor in vendors:
             logger.info("Starting to collect data from vendor: " + vendor.id)
             vendor = session.merge(vendor)
-            vendor.set_session(session)
             if Tables.compliance_frameworks in update_table:
                 vendor.inventory_compliance_frameworks()
             if Tables.datacenters in update_table:
@@ -164,6 +163,7 @@ def pull(
                 vendor.inventory_ipv4_prices()
             session.merge(vendor)
             session.commit()
+                vendor.session = session
 
 
 if __name__ == "__main__":
