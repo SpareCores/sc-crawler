@@ -695,9 +695,19 @@ def inventory_zones(vendor):
 def inventory_servers(vendor):
     # TODO drop this in favor of pricing.get_products, as it has info e.g. on instanceFamily
     #      although other fields are messier (e.g. extract memory from string)
+    progress = vendor.progress_tracker.start_task(
+        name="Scanning datacenters for servers", n=len(vendor.datacenters)
+    )
     for datacenter in vendor.datacenters:
         if datacenter.status == "active":
-            _list_instance_types_of_region(datacenter.id, vendor)
+            instance_types = _boto_describe_instance_types(datacenter.id)
+            for instance_type in instance_types:
+                _make_server_from_instance_type(instance_type, vendor)
+            logger.info(
+                f"{vendor.name}: {len(instance_types)} servers synced from {datacenter.id}"
+            )
+        vendor.progress_tracker.progress_panel.tasks.update(progress, advance=1)
+    vendor.progress_tracker.progress_panel.tasks.update(progress, visible=False)
 
 
 def inventory_server_prices(vendor):

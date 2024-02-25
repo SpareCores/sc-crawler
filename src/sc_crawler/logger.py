@@ -4,7 +4,7 @@ import logging
 from datetime import datetime
 from importlib.metadata import version
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import List, TYPE_CHECKING, Optional
 
 from rich.console import ConsoleRenderable, Group
 from rich.logging import RichHandler
@@ -147,14 +147,23 @@ class VendorProgressTracker:
 
     vendor: Vendor
     progress_panel: ProgressPanel
-    vendor_progress: Optional[Progress] = None
+    # no need to track, stored in Progress.task_ids
+    vendor_progress: Optional[TaskID] = None
+    tasks: List[TaskID] = []
 
     def __init__(self, vendor: Vendor, progress_panel: ProgressPanel):
         self.vendor = vendor
         self.progress_panel = progress_panel
 
-    def vendor_steps_init(self, n: int) -> TaskID:
-        """Starts a progress bar for the Vendor's steps."""
+    def vendor_start(self, n: int) -> TaskID:
+        """Starts a progress bar for the Vendor's steps.
+
+        Args:
+            n: Overall number of steps to show in the progress bar.
+
+        Returns:
+            TaskId: The progress bar's identifier to be referenced in future updates.
+        """
         self.vendor_progress = self.progress_panel.vendors.add_task(
             self.vendor.name, total=n, step=""
         )
@@ -171,3 +180,18 @@ class VendorProgressTracker:
         - `step`: Name of the currently running step to be shown on the progress bar.
         """
         self.progress_panel.vendors.update(self.vendor_progress, **kwargs)
+
+    def start_task(self, name: str, n: int) -> TaskID:
+        """Starts a progress bar for the Vendor's steps.
+
+        Args:
+            name: Name to show in front of the progress bar. Will be prefixed by Vendor's name.
+            n: Overall number of steps to show in the progress bar.
+
+        Returns:
+            TaskId: The progress bar's identifier to be referenced in future updates.
+        """
+        self.tasks.append(
+            self.progress_panel.tasks.add_task(self.vendor.name + ": " + name, total=n)
+        )
+        return self.tasks[-1]
