@@ -87,18 +87,30 @@ class ProgressPanel:
         TimeElapsedColumn(),
         transient=True,
     )
-    panels: Group = Group(
-        Panel(
-            tasks,
-            title="Running tasks",
-            title_align="left",
-        ),
-        Panel(
-            vendors,
-            title="Vendors",
-            title_align="left",
-        ),
-    )
+    metadata: Text = Text(justify="left")
+    panels: Table = Table.grid(padding=1)
+
+    def __init__(self, *args, **kwargs):
+        self.panels.add_row(
+            Group(
+                Panel(
+                    self.metadata,
+                    title="SC Crawler v" + version("sc_crawler"),
+                    title_align="left",
+                ),
+                Panel(
+                    self.vendors,
+                    title="Vendors",
+                    title_align="left",
+                ),
+            ),
+            Panel(
+                self.tasks,
+                title="Running tasks",
+                title_align="left",
+                expand=False,
+            ),
+        )
 
     def add_task(self, description: str, n: int):
         self.tasks.add_task(description, total=n)
