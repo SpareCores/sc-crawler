@@ -1,26 +1,25 @@
 from __future__ import annotations
+
 import logging
 from datetime import datetime
+from importlib.metadata import version
 from pathlib import Path
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
+from rich.console import ConsoleRenderable, Group
+from rich.logging import RichHandler
+from rich.panel import Panel
 from rich.progress import (
-    track,
-    Progress,
-    TextColumn,
     BarColumn,
     MofNCompleteColumn,
-    TimeRemainingColumn,
+    Progress,
+    TaskID,
+    TextColumn,
     TimeElapsedColumn,
-    SpinnerColumn,
+    TimeRemainingColumn,
 )
-from rich.console import Group
-from rich.live import Live
-from rich.panel import Panel
-from rich.rule import Rule
-from rich.padding import Padding
-from rich.align import Align
-from rich.logging import RichHandler
+from rich.table import Table
+from rich.text import Text
 from rich.traceback import Traceback
 
 logger = logging.getLogger("sc_crawler")
@@ -31,13 +30,30 @@ def log_start_end(func):
     """Log the start and end of the decorated function."""
 
     def wrap(*args, **kwargs):
+        # log start of the step
         try:
             self = args[0]
             fname = f"{self.id}/{func.__name__}"
         except Exception:
             fname = func.__name__
         logger.debug("Starting %s", fname)
+
+        # update Vendor's progress bar with the step name
+        try:
+            self.progress_tracker.vendor_update(
+                # drop `inventory_` prefix and prettify
+                step=func.__name__[10:].replace("_", " ")
+            )
+        except Exception:
+            logger.error("Cannot update step name in the Vendor's progress bar.")
+
+        # actually run step
         result = func(*args, **kwargs)
+
+        # increment Vendor's progress bar
+        self.progress_tracker.vendor_update(advance=1)
+
+        # log end of the step and return
         logger.debug("Finished %s", fname)
         return result
 
@@ -78,14 +94,16 @@ class ProgressPanel:
         TimeElapsedColumn(),
         TextColumn("{task.description}"),
         BarColumn(),
-        TextColumn("({task.completed} of {task.total} steps)"),
-        TimeRemainingColumn(),
+        TextColumn("({task.completed} of {task.total} steps): {task.fields[step]}"),
+        expand=False,
     )
     tasks: Progress = Progress(
+        TimeElapsedColumn(),
         TextColumn("[progress.description]{task.description}"),
         BarColumn(),
         MofNCompleteColumn(),
-        TimeElapsedColumn(),
+        TimeRemainingColumn(),
+        expand=False,
         transient=True,
     )
     metadata: Text = Text(justify="left")
@@ -114,10 +132,11 @@ class ProgressPanel:
         )
 
     def add_task(self, description: str, n: int):
-        self.tasks.add_task(description, total=n)
+        return self.tasks.add_task(description, total=n)
 
     def add_vendor(self, vendor_name: str, steps: int):
-        self.vendors.add_task(vendor_name, total=steps)
+        return self.vendors.add_task(vendor_name, total=steps)
+
 
 if TYPE_CHECKING:
     from .schemas import Vendor
@@ -134,13 +153,21 @@ class VendorProgressTracker:
         self.vendor = vendor
         self.progress_panel = progress_panel
 
-    def vendor_steps_init(self, n: int) -> Progress:
+    def vendor_steps_init(self, n: int) -> TaskID:
         """Starts a progress bar for the Vendor's steps."""
         self.vendor_progress = self.progress_panel.vendors.add_task(
-            self.vendor.name, total=n
+            self.vendor.name, total=n, step=""
         )
         return self.vendor_progress
 
     def vendor_steps_advance(self, by: int = 1):
         """Increment the number of finished steps."""
         self.progress_panel.vendors.update(self.vendor_progress, advance=by)
+
+    def vendor_update(self, **kwargs):
+        """Update the vendor's progress bar.
+
+        Useful fields:
+        - `step`: Name of the currently running step to be shown on the progress bar.
+        """
+        self.progress_panel.vendors.update(self.vendor_progress, **kwargs)
