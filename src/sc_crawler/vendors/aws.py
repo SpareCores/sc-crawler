@@ -706,8 +706,8 @@ def inventory_servers(vendor):
             logger.info(
                 f"{vendor.name}: {len(instance_types)} servers synced from {datacenter.id}"
             )
-        vendor.progress_tracker.tasks.update(progress, advance=1)
-    vendor.progress_tracker.tasks.update(progress, visible=False)
+        vendor.progress_tracker.advance_task(progress)
+    vendor.progress_tracker.hide_task(progress)
 
 
 def inventory_server_prices(vendor):

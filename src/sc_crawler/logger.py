@@ -193,3 +193,9 @@ class VendorProgressTracker:
             TaskId: The progress bar's identifier to be referenced in future updates.
         """
         return self.tasks.add_task(self.vendor.name + ": " + name, total=n)
+
+    def advance_task(self, task_id: TaskID, by: int = 1):
+        self.tasks.update(task_id, advance=by)
+
+    def hide_task(self, task_id: TaskID):
+        self.tasks.update(task_id, visible=False)
