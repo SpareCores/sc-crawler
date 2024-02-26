@@ -4,7 +4,7 @@ import logging
 from datetime import datetime
 from importlib.metadata import version
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import List, TYPE_CHECKING, Optional
 
 from rich.console import ConsoleRenderable, Group
 from rich.logging import RichHandler
@@ -151,6 +151,7 @@ class VendorProgressTracker:
     vendors: Progress
     tasks: Progress
     metadata: Progress
+    task_ids: List[TaskID] = []
 
     def __init__(self, vendor: Vendor, progress_panel: ProgressPanel):
         self.vendor = vendor
@@ -189,6 +190,10 @@ class VendorProgressTracker:
     def start_task(self, name: str, n: int) -> TaskID:
         """Starts a progress bar in the list of current jobs.
 
+        Besides returning the `TaskID`, it will also register in `self.tasks.task_ids`
+        as the last task, which will be the default value for future `advance_task`,
+        `hide_task` etc calls. The latter will remove the `TaskID` from the `task_ids`.
+
         Args:
             name: Name to show in front of the progress bar. Will be prefixed by Vendor's name.
             n: Overall number of steps to show in the progress bar.
@@ -196,21 +201,32 @@ class VendorProgressTracker:
         Returns:
             TaskId: The progress bar's identifier to be referenced in future updates.
         """
-        return self.tasks.add_task(self.vendor.name + ": " + name, total=n)
+        self.task_ids.append(
+            self.tasks.add_task(self.vendor.name + ": " + name, total=n)
+        )
+        return self.last_task()
 
-    def advance_task(self, task_id: TaskID, by: int = 1):
+    def last_task(self) -> TaskID:
+        """Returh the last registered TaskID."""
+        return self.task_ids[-1]
+
+    def advance_task(self, task_id: Optional[TaskID] = None, by: int = 1):
         """Increment the number of finished steps.
 
         Args:
             task_id: The progress bar's identifier returned by `start_task`.
+                Defaults to the most recently created task.
             by: Number of steps to advance.
         """
-        self.tasks.update(task_id, advance=by)
 
-    def hide_task(self, task_id: TaskID):
+        self.tasks.update(task_id or self.last_task(), advance=by)
+
+    def hide_task(self, task_id: Optional[TaskID] = None):
         """Hide a task from the list of progress bars.
 
         Args:
             task_id: The progress bar's identifier returned by `start_task`.
+                Defaults to the most recently created task.
         """
-        self.tasks.update(task_id, visible=False)
+        self.tasks.update(task_id or self.last_task(), visible=False)
+        self.task_ids.pop()
