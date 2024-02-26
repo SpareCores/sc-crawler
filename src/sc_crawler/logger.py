@@ -221,6 +221,21 @@ class VendorProgressTracker:
 
         self.tasks.update(task_id or self.last_task(), advance=by)
 
+    def update_task(self, task_id: Optional[TaskID] = None, **kwargs) -> None:
+        """Update the task's progress bar.
+
+        Args:
+            task_id: The progress bar's identifier returned by `start_task`.
+                Defaults to the most recently created task.
+
+        Keyword Args:
+            step: Name of the currently running step to be shown on the progress bar.
+
+        See `Progress.update` for further keyword arguments:
+        https://rich.readthedocs.io/en/stable/reference/progress.html#rich.progress.Progress.update
+        """
+        self.tasks.update(task_id or self.last_task(), **kwargs)
+
     def hide_task(self, task_id: Optional[TaskID] = None):
         """Hide a task from the list of progress bars.
 
