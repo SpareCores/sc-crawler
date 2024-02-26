@@ -21,3 +21,6 @@ coverage.xml
 
 # Sphinx documentation
 docs/_build/
+
+# Temp linters
+flycheck_*

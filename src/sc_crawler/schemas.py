@@ -1,6 +1,7 @@
 """Schemas for vendors, datacenters, zones, and other resources."""
 
 
+import logging
 from datetime import datetime
 from enum import Enum
 from hashlib import sha1
@@ -19,7 +20,7 @@ from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import declared_attr
 from sqlmodel import JSON, Column, Field, Relationship, Session, SQLModel, select
 
-from .logger import log_start_end
+from .logger import VendorProgressTracker, log_start_end, logger
 from .str import snake_case
 
 # ##############################################################################
@@ -110,7 +111,7 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
         """
         super().__init__(*args, **kwargs)
         if hasattr(self, "vendor"):
-            if hasattr(self.vendor, "_session"):
+            if self.vendor.session:
                 self.vendor.merge_dependent(self)
 
 
@@ -122,7 +123,7 @@ class Json(BaseModel):
 
 
 # ##############################################################################
-# Enumerations and JSON nested data objects used in SC models
+# Enumerations, JSON nested data objects & other helper classes used in SC models
 
 
 class Status(str, Enum):
@@ -386,6 +387,7 @@ class Vendor(HasName, HasIdPK, table=True):
     # private attributes
     _methods: Optional[ImportString[ModuleType]] = PrivateAttr(default=None)
     _session: Optional[Session] = PrivateAttr()
+    _progress_tracker: Optional[VendorProgressTracker] = PrivateAttr()
 
     # relations
     country: Country = Relationship(back_populates="vendors")
@@ -449,16 +451,53 @@ class Vendor(HasName, HasIdPK, table=True):
                 ) from exc
         return self._methods
 
-    def set_session(self, session):
-        """Attach a SQLModel session to use for merging dependent objects into the database."""
+    @property
+    def session(self):
+        """The Session to use for merging dependent objects into the database."""
+        try:
+            return self._session
+        except Exception:
+            return None
+
+    @session.setter
+    def session(self, session: Session):
         self._session = session
+
+    @session.deleter
+    def session(self):
+        self._session = None
+
+    @property
+    def progress_tracker(self):
+        """The VendorProgressTracker to use for updating progress bars."""
+        return self._progress_tracker
+
+    @progress_tracker.setter
+    def progress_tracker(self, progress_tracker: VendorProgressTracker):
+        self._progress_tracker = progress_tracker
+
+    @progress_tracker.deleter
+    def progress_tracker(self):
+        self._progress_tracker = None
+
+    @property
+    def tasks(self):
+        """Reexport progress_tracker.tasks for easier access."""
+        return self._progress_tracker.tasks
+
+    def log(self, message: str, level: int = logging.INFO):
+        logger.log(level, self.name + ": " + message, stacklevel=2)
+
+    def register_progress_tracker(self, progress_tracker: VendorProgressTracker):
+        """Attach a VendorProgressTracker to use for updating progress bars."""
+        self._progress_tracker = progress_tracker
 
     def merge_dependent(self, obj):
         """Merge an object into the Vendor's SQLModel session (when available)."""
-        if self._session:
+        if self.session:
             # TODO investigate SAWarning
             # on obj associated with vendor before added to session?
-            self._session.merge(obj)
+            self.session.merge(obj)
 
     def set_table_rows_inactive(self, model: str, *args) -> None:
         """Set this vendor's records to INACTIVE in a table
@@ -469,11 +508,11 @@ class Vendor(HasName, HasIdPK, table=True):
 
         >>> aws.set_table_rows_inactive(ServerPrice, ServerPrice.price < 10)  # doctest: +SKIP
         """
-        if self._session:
+        if self.session:
             query = update(model).where(model.vendor_id == self.id)
             for arg in args:
                 query = query.where(arg)
-            self._session.execute(query.values(status=Status.INACTIVE))
+            self.session.execute(query.values(status=Status.INACTIVE))
 
     @log_start_end
     def inventory_compliance_frameworks(self):
