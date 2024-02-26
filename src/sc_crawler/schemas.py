@@ -486,7 +486,7 @@ class Vendor(HasName, HasIdPK, table=True):
         return self._progress_tracker.tasks
 
     def log(self, message: str, level: int = logging.INFO):
-        logger.log(level, self.name + ": " + message)
+        logger.log(level, self.name + ": " + message, stacklevel=2)
 
     def register_progress_tracker(self, progress_tracker: VendorProgressTracker):
         """Attach a VendorProgressTracker to use for updating progress bars."""
