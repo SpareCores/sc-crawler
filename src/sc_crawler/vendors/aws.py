@@ -326,9 +326,7 @@ def _make_price_from_product(product, vendor):
         return
 
     try:
-        server = [
-            d for d in vendor.servers if d.vendor == vendor and d.id == instance_type
-        ][0]
+        server = [d for d in vendor.servers if d.id == instance_type][0]
     except IndexError:
         logger.debug(f"No server definition found for {instance_type} @ {location}")
         return
@@ -755,6 +753,7 @@ def inventory_storage_prices(vendor):
 
 
 def inventory_traffic_prices(vendor):
+    # TODO AmazonVPC pricing? -> cache
     pass
 
 
