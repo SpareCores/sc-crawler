@@ -1,11 +1,11 @@
 """Schemas for vendors, datacenters, zones, and other resources."""
 
 
+import logging
 from datetime import datetime
 from enum import Enum
 from hashlib import sha1
 from importlib import import_module
-import logging
 from json import dumps
 from types import ModuleType
 from typing import List, Optional

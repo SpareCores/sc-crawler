@@ -4,7 +4,7 @@ import logging
 from datetime import datetime
 from importlib.metadata import version
 from pathlib import Path
-from typing import List, TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, List, Optional
 
 from rich.console import ConsoleRenderable, Group
 from rich.logging import RichHandler
