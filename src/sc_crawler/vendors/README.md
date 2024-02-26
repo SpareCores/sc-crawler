@@ -39,6 +39,18 @@ To create progress bars, you can use the `Vendor`'s `progress_tracker` attribute
 
 The `start_task` will register a task in the "Current tasks" progress bar list with the provided name automatically prefixed by the vendor name, and the provided number of expected steps. You should call `advance_task` after each step finished, which will by default update the most recently created task's progress bar. If making updates in parallel, store the `TaskID` returned by `start_task` and pass to `advance_task` and `hide_task` explicitly. Make sure to call `hide_task` when the progress bar is not to be shown anymore. It's a good practice to log the number of fetched/synced objects afterwards with `logger.info.` See the manual of `VendorProgressTracker` for more details.
 
+Basic example:
+
+```python
+def inventory_zones(vendor):
+    zones = range(5)
+    vendor.progress_tracker.start_task(name="Searching zones", n=len(zones))
+    for zone in zones:
+        # do something
+        vendor.progress_tracker.advance_task()
+    vendor.progress_tracker.hide_task()
+```
+
 ## Template file for new vendors
 
 ```python
