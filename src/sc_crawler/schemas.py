@@ -5,6 +5,7 @@ from datetime import datetime
 from enum import Enum
 from hashlib import sha1
 from importlib import import_module
+import logging
 from json import dumps
 from types import ModuleType
 from typing import List, Optional
@@ -19,7 +20,7 @@ from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import declared_attr
 from sqlmodel import JSON, Column, Field, Relationship, Session, SQLModel, select
 
-from .logger import VendorProgressTracker, log_start_end
+from .logger import VendorProgressTracker, log_start_end, logger
 from .str import snake_case
 
 # ##############################################################################
@@ -478,6 +479,14 @@ class Vendor(HasName, HasIdPK, table=True):
     @progress_tracker.deleter
     def progress_tracker(self):
         self._progress_tracker = None
+
+    @property
+    def tasks(self):
+        """Reexport progress_tracker.tasks for easier access."""
+        return self._progress_tracker.tasks
+
+    def log(self, message: str, level: int = logging.INFO):
+        logger.log(level, self.name + ": " + message)
 
     def register_progress_tracker(self, progress_tracker: VendorProgressTracker):
         """Attach a VendorProgressTracker to use for updating progress bars."""

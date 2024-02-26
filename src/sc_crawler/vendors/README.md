@@ -22,7 +22,7 @@ Each function will be picked up as the related `Vendor` instance's instance meth
 If a helper is not needed (e.g. another helper already provides its output, or there are no spot prices), it is still required, but can return early, e.g. if `Zone` objects were populated by `inventory_datacenters` already, do something like:
 
 ```python
-def inventory_zones(self):
+def inventory_zones(vendor):
     """Zones were already provided in inventory_datacenters."""
     pass
 ```

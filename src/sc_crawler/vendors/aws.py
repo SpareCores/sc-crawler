@@ -354,11 +354,13 @@ def _make_price_from_product(product, vendor):
 
 
 def inventory_compliance_frameworks(vendor):
-    for compliance_framework in ["hipaa", "soc2t2"]:
+    compliance_frameworks = ["hipaa", "soc2t2"]
+    for compliance_framework in compliance_frameworks:
         VendorComplianceLink(
             vendor=vendor,
             compliance_framework_id=compliance_framework,
         )
+    vendor.log(f"{len(compliance_frameworks)} compliance frameworks synced.")
 
 
 def inventory_datacenters(vendor):
@@ -703,9 +705,7 @@ def inventory_servers(vendor):
             instance_types = _boto_describe_instance_types(datacenter.id)
             for instance_type in instance_types:
                 _make_server_from_instance_type(instance_type, vendor)
-            logger.info(
-                f"{vendor.name}: {len(instance_types)} servers synced from {datacenter.id}"
-            )
+            vendor.log("{len(instance_types)} servers synced from {datacenter.id}.")
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
 
