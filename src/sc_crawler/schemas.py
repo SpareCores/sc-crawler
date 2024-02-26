@@ -22,6 +22,9 @@ from sqlmodel import JSON, Column, Field, Relationship, Session, SQLModel, selec
 from .logger import log_start_end
 from .str import snake_case
 
+# ##############################################################################
+# SQLModel data and model extensions
+
 
 class ScMetaModel(SQLModel.__class__):
     """Custom class factory to auto-update table models.
@@ -57,6 +60,7 @@ class ScMetaModel(SQLModel.__class__):
                 DateTime,
                 default=datetime.utcnow,
                 onupdate=datetime.utcnow,
+                comment="Timestamp of the last observation.",
             )
         )
 
@@ -110,9 +114,79 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
                 self.vendor.merge_dependent(self)
 
 
+class Json(BaseModel):
+    """Custom base SQLModel class that supports dumping as JSON."""
+
+    def __json__(self):
+        return self.model_dump()
+
+
+# ##############################################################################
+# Enumerations and JSON nested data objects used in SC models
+
+
 class Status(str, Enum):
     ACTIVE = "active"
     INACTIVE = "inactive"
+
+
+class Gpu(Json):
+    manufacturer: str
+    name: str
+    memory: int  # MiB
+    firmware: Optional[str] = None
+
+
+class StorageType(str, Enum):
+    HDD = "hdd"
+    SSD = "ssd"
+    NVME_SSD = "nvme ssd"
+    NETWORK = "network"
+
+
+class Disk(Json):
+    size: int = 0  # GiB
+    storage_type: StorageType
+
+
+class TrafficDirection(str, Enum):
+    IN = "inbound"
+    OUT = "outbound"
+
+
+class CpuArchitecture(str, Enum):
+    ARM64 = "arm64"
+    ARM64_MAC = "arm64_mac"
+    I386 = "i386"
+    X86_64 = "x86_64"
+    X86_64_MAC = "x86_64_mac"
+
+
+class Allocation(str, Enum):
+    ONDEMAND = "ondemand"
+    RESERVED = "reserved"
+    SPOT = "spot"
+
+
+class PriceUnit(str, Enum):
+    YEAR = "year"
+    MONTH = "month"
+    HOUR = "hour"
+    GIB = "GiB"
+    GB = "GB"
+
+
+class PriceTier(Json):
+    lower: float
+    upper: float
+    price: float
+
+
+# ##############################################################################
+# Tiny helper classes for the most commonly used fields to be inherited
+#
+# Unfortunately, inheriting is not always convenient due to the order of
+# columns, so some below Fields are sometimes copy/pasted into models.
 
 
 class HasStatus(ScModel):
@@ -122,11 +196,66 @@ class HasStatus(ScModel):
     )
 
 
-class Json(BaseModel):
-    """Custom base SQLModel class that supports dumping as JSON."""
+class HasIdPK(ScModel):
+    id: str = Field(primary_key=True, description="Unique identifier.")
 
-    def __json__(self):
-        return self.model_dump()
+
+class HasName(ScModel):
+    name: str = Field(description="Human-friendly name.")
+
+
+class HasDescription(ScModel):
+    description: Optional[str] = Field(description="Short description.")
+
+
+class HasVendorPK(ScModel):
+    vendor_id: str = Field(
+        foreign_key="vendor.id",
+        primary_key=True,
+        description="Reference to the Vendor.",
+    )
+
+
+class HasDatacenterPK(ScModel):
+    datacenter_id: str = Field(
+        foreign_key="datacenter.id",
+        primary_key=True,
+        description="Reference to the Datacenter.",
+    )
+
+
+class HasZonePK(ScModel):
+    zone_id: str = Field(
+        foreign_key="zone.id", primary_key=True, description="Reference to the Zone."
+    )
+
+
+class HasServer(ScModel):
+    server_id: str = Field(
+        foreign_key="server.id",
+        primary_key=True,
+        description="Reference to the Server.",
+    )
+
+
+class HasStorage(ScModel):
+    storage_id: str = Field(
+        foreign_key="storage.id",
+        primary_key=True,
+        description="Reference to the Storage.",
+    )
+
+
+class HasTraffic(ScModel):
+    traffic_id: str = Field(
+        foreign_key="traffic.id",
+        primary_key=True,
+        description="Reference to the Traffic.",
+    )
+
+
+# ##############################################################################
+# Actual SC data schemas and model definitions
 
 
 class Country(ScModel, table=True):
@@ -143,38 +272,57 @@ class Country(ScModel, table=True):
     datacenters: List["Datacenter"] = Relationship(back_populates="country")
 
 
-class VendorComplianceLinkBase(ScModel):
-    vendor_id: str = Field(foreign_key="vendor.id", primary_key=True)
+class VendorComplianceLinkBase(HasVendorPK):
     compliance_framework_id: str = Field(
-        foreign_key="compliance_framework.id", primary_key=True
+        foreign_key="compliance_framework.id",
+        primary_key=True,
+        description="Reference to the Compliance Framework.",
     )
-    comment: Optional[str] = None
+    comment: Optional[str] = Field(
+        default=None,
+        description="Optional references, such as dates, URLs, and additional information/evidence.",
+    )
 
 
 class VendorComplianceLink(HasStatus, VendorComplianceLinkBase, table=True):
+    """List of known Compliance Frameworks paired with vendors."""
+
     vendor: "Vendor" = Relationship(back_populates="compliance_framework_links")
     compliance_framework: "ComplianceFramework" = Relationship(
         back_populates="vendor_links"
     )
 
 
-class ComplianceFramework(ScModel, table=True):
-    id: str = Field(primary_key=True)
-    name: str
-    abbreviation: Optional[str]
-    description: Optional[str]
+class ComplianceFramework(HasName, HasIdPK, table=True):
+    """List of Compliance Frameworks, such as HIPAA or SOC 2 Type 1."""
+
+    abbreviation: Optional[str] = Field(
+        description="Short abbreviation of the Framework name."
+    )
+    description: Optional[str] = Field(
+        description=(
+            "Description of the framework in a few paragrahs, "
+            "outlining key features and characteristics for reference."
+        )
+    )
     # TODO HttpUrl not supported by SQLModel
     # TODO upload to cdn.sparecores.com (s3/cloudfront)
-    logo: Optional[str] = None
+    logo: Optional[str] = Field(
+        default=None,
+        description="Publicly accessible URL to the image of the Framework's logo.",
+    )
     # TODO HttpUrl not supported by SQLModel
-    homepage: Optional[str] = None
+    homepage: Optional[str] = Field(
+        default=None,
+        description="Public homepage with more information on the Framework.",
+    )
 
     vendor_links: List[VendorComplianceLink] = Relationship(
         back_populates="compliance_framework"
     )
 
 
-class Vendor(ScModel, table=True):
+class Vendor(HasName, HasIdPK, table=True):
     """Compute resource vendors, such as cloud and server providers.
 
     Examples:
@@ -188,31 +336,52 @@ class Vendor(ScModel, table=True):
         Vendor(id='aws'...
     """  # noqa: E501
 
-    id: str = Field(primary_key=True)
-    name: str
     # TODO HttpUrl not supported by SQLModel
-    # TODO upload to cdn.sparecores.com
-    logo: Optional[str] = None
+    # TODO upload to cdn.sparecores.com (s3/cloudfront)
+    logo: Optional[str] = Field(
+        default=None,
+        description="Publicly accessible URL to the image of the Vendor's logo.",
+    )
     # TODO HttpUrl not supported by SQLModel
-    homepage: str
+    homepage: Optional[str] = Field(
+        default=None,
+        description="Public homepage of the Vendor.",
+    )
 
-    country_id: str = Field(foreign_key="country.id")
-    state: Optional[str] = None
-    city: Optional[str] = None
-    address_line: Optional[str] = None
-    zip_code: Optional[str] = None
+    country_id: str = Field(
+        foreign_key="country.id",
+        description="Reference to the Country, where the Vendor's main headquarter is located.",
+    )
+    state: Optional[str] = Field(
+        default=None,
+        description="Optional state/administrative area of the Vendor's location within the Country.",
+    )
+    city: Optional[str] = Field(
+        default=None, description="Optional city name of the Vendor's main location."
+    )
+    address_line: Optional[str] = Field(
+        default=None, description="Optional address line of the Vendor's main location."
+    )
+    zip_code: Optional[str] = Field(
+        default=None, description="Optional ZIP code of the Vendor's main location."
+    )
 
     # https://dbpedia.org/ontology/Organisation
-    founding_year: int
+    founding_year: int = Field(description="4-digit year when the Vendor was founded.")
 
     compliance_framework_links: List[VendorComplianceLink] = Relationship(
         back_populates="vendor"
     )
 
     # TODO HttpUrl not supported by SQLModel
-    status_page: Optional[str] = None
+    status_page: Optional[str] = Field(
+        default=None, description="Public status page of the Vendor."
+    )
 
-    status: Status = Status.ACTIVE
+    status: Status = Field(
+        default=Status.ACTIVE,
+        description="Status of the resource (active or inactive).",
+    )
 
     # private attributes
     _methods: Optional[ImportString[ModuleType]] = PrivateAttr(default=None)
@@ -362,24 +531,52 @@ class Vendor(ScModel, table=True):
         self._get_methods().inventory_ipv4_prices(self)
 
 
-class Datacenter(ScModel, table=True):
-    id: str = Field(primary_key=True)
-    name: str
-    aliases: List[str] = Field(default=[], sa_column=Column(JSON))
+class Datacenter(HasName, HasIdPK, table=True):
+    """Datacenters/regions of Vendors."""
 
-    vendor_id: str = Field(foreign_key="vendor.id", primary_key=True)
+    aliases: List[str] = Field(
+        default=[],
+        sa_column=Column(JSON),
+        description="List of other commonly used names for the same Datacenter.",
+    )
+
+    vendor_id: str = Field(
+        foreign_key="vendor.id",
+        primary_key=True,
+        description="Reference to the Vendor.",
+    )
     vendor: Vendor = Relationship(back_populates="datacenters")
 
-    country_id: str = Field(foreign_key="country.id")
-    state: Optional[str] = None
-    city: Optional[str] = None
-    address_line: Optional[str] = None
-    zip_code: Optional[str] = None
+    country_id: str = Field(
+        foreign_key="country.id",
+        description="Reference to the Country, where the Datacenter is located.",
+    )
+    state: Optional[str] = Field(
+        default=None,
+        description="Optional state/administrative area of the Datacenter's location within the Country.",
+    )
+    city: Optional[str] = Field(
+        default=None, description="Optional city name of the Datacenter's location."
+    )
+    address_line: Optional[str] = Field(
+        default=None, description="Optional address line of the Datacenter's location."
+    )
+    zip_code: Optional[str] = Field(
+        default=None, description="Optional ZIP code of the Datacenter's location."
+    )
 
-    founding_year: Optional[int] = None
-    green_energy: Optional[bool] = None
+    founding_year: Optional[int] = Field(
+        default=None, description="4-digit year when the Datacenter was founded."
+    )
+    green_energy: Optional[bool] = Field(
+        default=None,
+        description="If the Datacenter is 100% powered by renewable energy.",
+    )
 
-    status: Status = Status.ACTIVE
+    status: Status = Field(
+        default=Status.ACTIVE,
+        description="Status of the resource (active or inactive).",
+    )
 
     # relations
     country: Country = Relationship(back_populates="datacenters")
@@ -390,78 +587,57 @@ class Datacenter(ScModel, table=True):
     storage_prices: List["StoragePrice"] = Relationship(back_populates="datacenter")
 
 
-class Zone(ScModel, table=True):
-    id: str = Field(primary_key=True)
-    datacenter_id: str = Field(foreign_key="datacenter.id", primary_key=True)
-    vendor_id: str = Field(foreign_key="vendor.id", primary_key=True)
-    name: str
-    status: Status = Status.ACTIVE
+class Zone(HasStatus, HasName, HasDatacenterPK, HasVendorPK, HasIdPK, table=True):
+    """Availability zones of Datacenters."""
 
-    # relations
     datacenter: Datacenter = Relationship(back_populates="zones")
     vendor: Vendor = Relationship(back_populates="zones")
     server_prices: List["ServerPrice"] = Relationship(back_populates="zone")
 
 
-class StorageType(str, Enum):
-    HDD = "hdd"
-    SSD = "ssd"
-    NVME_SSD = "nvme ssd"
-    NETWORK = "network"
+class Storage(HasDescription, HasName, HasVendorPK, HasIdPK, table=True):
+    """Flexible storage options that can be attached to a Server."""
 
-
-class Storage(ScModel, table=True):
-    id: str = Field(primary_key=True)
-    vendor_id: str = Field(foreign_key="vendor.id", primary_key=True)
-    name: str
-    description: Optional[str]
-    size: int = 0  # GiB
-    storage_type: StorageType
-    max_iops: Optional[int] = None
-    max_throughput: Optional[int] = None  # MiB/s
-    min_size: Optional[int] = None  # GiB
-    max_size: Optional[int] = None  # GiB
-    status: Status = Status.ACTIVE
+    size: int = Field(default=0, description="Size (GiB) of the overall storage.")
+    storage_type: StorageType = Field(
+        description="High-level category of the main storage."
+    )
+    max_iops: Optional[int] = Field(
+        default=None, description="Maximum Input/Output Operations Per Second."
+    )
+    max_throughput: Optional[int] = Field(
+        default=None, description="Maximum Throughput (MiB/s)."
+    )
+    min_size: Optional[int] = Field(
+        default=None, description="Minimum required size (GiB)."
+    )
+    max_size: Optional[int] = Field(
+        default=None, description="Maximum possible size (GiB)."
+    )
+    status: Status = Field(
+        default=Status.ACTIVE,
+        description="Status of the resource (active or inactive).",
+    )
 
     vendor: Vendor = Relationship(back_populates="storages")
     prices: List["StoragePrice"] = Relationship(back_populates="storage")
 
 
-class TrafficDirection(str, Enum):
-    IN = "inbound"
-    OUT = "outbound"
+# TODO this table might not be needed?
+# might be better add the "direction" column directly to the TrafficPrice table
+class Traffic(HasDescription, HasName, HasVendorPK, HasIdPK, table=True):
+    """Extra traffic options tied to a Server."""
 
-
-class Traffic(ScModel, table=True):
-    id: str = Field(primary_key=True)
-    vendor_id: str = Field(foreign_key="vendor.id", primary_key=True)
-    name: str
-    description: Optional[str]
-    direction: TrafficDirection
-    status: Status = Status.ACTIVE
+    direction: TrafficDirection = Field(
+        description="Direction of the traffic: inbound or outbound."
+    )
+    status: Status = Field(
+        default=Status.ACTIVE,
+        description="Status of the resource (active or inactive).",
+    )
 
     vendor: Vendor = Relationship(back_populates="traffics")
     prices: List["TrafficPrice"] = Relationship(back_populates="traffic")
-
-
-class Gpu(Json):
-    manufacturer: str
-    name: str
-    memory: int  # MiB
-    firmware: Optional[str] = None
-
-
-class Disk(Json):
-    size: int = 0  # GiB
-    storage_type: StorageType
-
-
-class CpuArchitecture(str, Enum):
-    ARM64 = "arm64"
-    ARM64_MAC = "arm64_mac"
-    I386 = "i386"
-    X86_64 = "x86_64"
-    X86_64_MAC = "x86_64_mac"
 
 
 class Server(ScModel, table=True):
@@ -469,16 +645,16 @@ class Server(ScModel, table=True):
 
     id: str = Field(
         primary_key=True,
-        description="Server identifier, as called at the vendor.",
+        description="Server's unique identifier, as called at the Vendor.",
     )
     vendor_id: str = Field(
         foreign_key="vendor.id",
         primary_key=True,
-        description="Vendor reference.",
+        description="Reference to the Vendor.",
     )
     name: str = Field(
         default=None,
-        description="Human-friendly name or short description of the server.",
+        description="Human-friendly name or short description.",
     )
     vcpus: int = Field(
         default=None,
@@ -567,63 +743,21 @@ class Server(ScModel, table=True):
     prices: List["ServerPrice"] = Relationship(back_populates="server")
 
 
-class Allocation(str, Enum):
-    ONDEMAND = "ondemand"
-    RESERVED = "reserved"
-    SPOT = "spot"
-
-
-class PriceUnit(str, Enum):
-    YEAR = "year"
-    MONTH = "month"
-    HOUR = "hour"
-    GIB = "GiB"
-    GB = "GB"
-
-
-class PriceTier(Json):
-    lower: float
-    upper: float
-    price: float
-
-
-# helper classes to inherit for most commonly used fields
-# TODO rewrite above classes using helper classes as well
-
-
-class HasVendorPK(ScModel):
-    vendor_id: str = Field(foreign_key="vendor.id", primary_key=True)
-
-
-class HasDatacenterPK(ScModel):
-    datacenter_id: str = Field(foreign_key="datacenter.id", primary_key=True)
-
-
-class HasZonePK(ScModel):
-    zone_id: str = Field(foreign_key="zone.id", primary_key=True)
-
-
-class HasServer(ScModel):
-    server_id: str = Field(foreign_key="server.id", primary_key=True)
-
-
-class HasStorage(ScModel):
-    storage_id: str = Field(foreign_key="storage.id", primary_key=True)
-
-
-class HasTraffic(ScModel):
-    traffic_id: str = Field(foreign_key="traffic.id", primary_key=True)
-
-
 class HasPriceFieldsBase(ScModel):
-    unit: PriceUnit
+    unit: PriceUnit = Field(description="Billing unit of the pricing model.")
     # set to max price if tiered
-    price: float
+    price: float = Field(description="Actual price of a billing unit.")
     # e.g. setup fee for dedicated servers,
     # or upfront costs of a reserved instance type
-    price_upfront: float = 0
-    price_tiered: List[PriceTier] = Field(default=[], sa_type=JSON)
-    currency: str = "USD"
+    price_upfront: float = Field(
+        default=0, description="Price to be paid when setting up the resource."
+    )
+    price_tiered: List[PriceTier] = Field(
+        default=[],
+        sa_type=JSON,
+        description="List of pricing tiers with min/max thresholds and actual prices.",
+    )
+    currency: str = Field(default="USD", description="Currency of the prices.")
 
 
 class HasPriceFields(HasStatus, HasPriceFieldsBase):
@@ -631,8 +765,11 @@ class HasPriceFields(HasStatus, HasPriceFieldsBase):
 
 
 class ServerPriceExtraFields(ScModel):
-    operating_system: str
-    allocation: Allocation = Allocation.ONDEMAND
+    operating_system: str = Field(description="Operating System.")
+    allocation: Allocation = Field(
+        default=Allocation.ONDEMAND,
+        description="Allocation method, e.g. on-demand or spot.",
+    )
 
 
 class ServerPriceBase(
@@ -647,6 +784,8 @@ class ServerPriceBase(
 
 
 class ServerPrice(ServerPriceBase, table=True):
+    """Server type prices per Datacenter and Allocation method."""
+
     vendor: Vendor = Relationship(back_populates="server_prices")
     datacenter: Datacenter = Relationship(back_populates="server_prices")
     zone: Zone = Relationship(back_populates="server_prices")
@@ -658,6 +797,8 @@ class StoragePriceBase(HasPriceFields, HasStorage, HasDatacenterPK, HasVendorPK)
 
 
 class StoragePrice(StoragePriceBase, table=True):
+    """Flexible Storage prices in each Datacenter."""
+
     vendor: Vendor = Relationship(back_populates="storage_prices")
     datacenter: Datacenter = Relationship(back_populates="storage_prices")
     storage: Storage = Relationship(back_populates="prices")
@@ -668,6 +809,8 @@ class TrafficPriceBase(HasPriceFields, HasTraffic, HasDatacenterPK, HasVendorPK)
 
 
 class TrafficPrice(TrafficPriceBase, table=True):
+    """Extra Traffic prices in each Datacenter."""
+
     vendor: Vendor = Relationship(back_populates="traffic_prices")
     datacenter: Datacenter = Relationship(back_populates="traffic_prices")
     traffic: Traffic = Relationship(back_populates="prices")
@@ -678,6 +821,8 @@ class Ipv4PriceBase(HasPriceFields, HasDatacenterPK, HasVendorPK):
 
 
 class Ipv4Price(Ipv4PriceBase, table=True):
+    """Price of an IPv4 address in each Datacenter."""
+
     vendor: Vendor = Relationship(back_populates="ipv4_prices")
     datacenter: Datacenter = Relationship(back_populates="ipv4_prices")
 
