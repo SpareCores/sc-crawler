@@ -394,7 +394,6 @@ class Vendor(HasName, HasIdPK, table=True):
     datacenters: List["Datacenter"] = Relationship(back_populates="vendor")
     zones: List["Zone"] = Relationship(back_populates="vendor")
     storages: List["Storage"] = Relationship(back_populates="vendor")
-    traffics: List["Traffic"] = Relationship(back_populates="vendor")
     servers: List["Server"] = Relationship(back_populates="vendor")
     server_prices: List["ServerPrice"] = Relationship(back_populates="vendor")
     traffic_prices: List["TrafficPrice"] = Relationship(back_populates="vendor")
@@ -662,23 +661,6 @@ class Storage(HasDescription, HasName, HasVendorPK, HasIdPK, table=True):
     prices: List["StoragePrice"] = Relationship(back_populates="storage")
 
 
-# TODO this table might not be needed?
-# might be better add the "direction" column directly to the TrafficPrice table
-class Traffic(HasDescription, HasName, HasVendorPK, HasIdPK, table=True):
-    """Extra traffic options tied to a Server."""
-
-    direction: TrafficDirection = Field(
-        description="Direction of the traffic: inbound or outbound."
-    )
-    status: Status = Field(
-        default=Status.ACTIVE,
-        description="Status of the resource (active or inactive).",
-    )
-
-    vendor: Vendor = Relationship(back_populates="traffics")
-    prices: List["TrafficPrice"] = Relationship(back_populates="traffic")
-
-
 class Server(ScModel, table=True):
     """Server types."""
 
@@ -843,16 +825,21 @@ class StoragePrice(StoragePriceBase, table=True):
     storage: Storage = Relationship(back_populates="prices")
 
 
-class TrafficPriceBase(HasPriceFields, HasTraffic, HasDatacenterPK, HasVendorPK):
-    pass
+class TrafficPriceBase(HasDatacenterPK, HasVendorPK):
+    direction: TrafficDirection = Field(
+        description="Direction of the traffic: inbound or outbound."
+    )
+    status: Status = Field(
+        default=Status.ACTIVE,
+        description="Status of the resource (active or inactive).",
+    )
 
 
-class TrafficPrice(TrafficPriceBase, table=True):
+class TrafficPrice(HasPriceFields, TrafficPriceBase, table=True):
     """Extra Traffic prices in each Datacenter."""
 
     vendor: Vendor = Relationship(back_populates="traffic_prices")
     datacenter: Datacenter = Relationship(back_populates="traffic_prices")
-    traffic: Traffic = Relationship(back_populates="prices")
 
 
 class Ipv4PriceBase(HasPriceFields, HasDatacenterPK, HasVendorPK):
