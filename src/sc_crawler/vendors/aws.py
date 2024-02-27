@@ -2,7 +2,7 @@ import json
 import re
 from datetime import datetime, timedelta
 from itertools import chain
-from typing import Tuple, List
+from typing import List, Tuple
 
 import boto3
 from cachier import cachier, set_default_params
