@@ -827,7 +827,8 @@ class StoragePrice(StoragePriceBase, table=True):
 
 class TrafficPriceBase(HasDatacenterPK, HasVendorPK):
     direction: TrafficDirection = Field(
-        description="Direction of the traffic: inbound or outbound."
+        description="Direction of the traffic: inbound or outbound.",
+        primary_key=True,
     )
     status: Status = Field(
         default=Status.ACTIVE,

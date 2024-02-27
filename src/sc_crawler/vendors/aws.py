@@ -792,38 +792,39 @@ def inventory_storage_prices(vendor):
 
 
 def inventory_traffic_prices(vendor):
-    vendor.progress_tracker.start_task(name="Searching for Traffic prices", n=None)
-
     loc2dc = _location_datacenter_map(vendor)
-    products = _boto_get_products(
-        service_code="AWSDataTransfer",
-        filters={
-            "transferType": "AWS Inbound",
-        },
-    )
-
-    vendor.progress_tracker.update_task(
-        description="Syncing inbound Traffic prices", total=len(products)
-    )
-    for product in products:
-        try:
-            datacenter = loc2dc[product["product"]["attributes"]["toLocation"]]
-        except KeyError:
-            continue
-        finally:
-            vendor.progress_tracker.advance_task()
-        price = _extract_ondemand_prices(product["terms"])
-        TrafficPrice(
-            vendor=vendor,
-            datacenter=datacenter,
-            price=price[0][-1].get("price"),
-            price_tiered=price,
-            currency=price[1],
-            unit="GB",
-            direction=TrafficDirection.IN,
+    for direction in list(TrafficDirection):
+        vendor.progress_tracker.start_task(
+            name=f"Searching for {direction.value} Traffic prices", n=None
         )
-    vendor.progress_tracker.hide_task()
-    vendor.log(f"{len(products)} IPv4 prices synced.")
+        products = _boto_get_products(
+            service_code="AWSDataTransfer",
+            filters={
+                "transferType": "AWS " + direction.value.title(),
+            },
+        )
+        vendor.progress_tracker.update_task(
+            description=f"Syncing {direction.value} Traffic prices", total=len(products)
+        )
+        for product in products:
+            try:
+                datacenter = loc2dc[product["product"]["attributes"]["toLocation"]]
+            except KeyError:
+                continue
+            finally:
+                vendor.progress_tracker.advance_task()
+            price = _extract_ondemand_prices(product["terms"])
+            TrafficPrice(
+                vendor=vendor,
+                datacenter=datacenter,
+                price=price[0][-1].get("price"),
+                price_tiered=price,
+                currency=price[1],
+                unit="GB",
+                direction=direction,
+            )
+        vendor.progress_tracker.hide_task()
+        vendor.log(f"{len(products)} {direction.value} Traffic prices synced.")
 
 
 def inventory_ipv4_prices(vendor):
