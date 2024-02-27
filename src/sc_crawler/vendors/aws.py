@@ -2,6 +2,7 @@ import json
 import re
 from datetime import datetime, timedelta
 from itertools import chain
+from typing import Tuple, List
 
 import boto3
 from cachier import cachier, set_default_params
@@ -16,6 +17,8 @@ from ..schemas import (
     PriceUnit,
     Server,
     ServerPrice,
+    TrafficDirection,
+    TrafficPrice,
     VendorComplianceLink,
     Zone,
 )
@@ -288,8 +291,11 @@ def _list_instance_types_of_region(region, vendor):
     ]
 
 
-def _extract_ondemand_price(terms):
-    """Extract ondmand price and the currency from AWS Terms object."""
+def _extract_ondemand_price(terms) -> Tuple[float, str]:
+    """Extract a single ondemand price and the currency from AWS Terms object.
+
+    Returns:
+        Tuple of a price and currency."""
     ondemand_term = list(terms["OnDemand"].values())[0]
     ondemand_pricing = list(ondemand_term["priceDimensions"].values())[0]
     ondemand_pricing = ondemand_pricing["pricePerUnit"]
@@ -297,6 +303,39 @@ def _extract_ondemand_price(terms):
         return (float(ondemand_pricing["USD"]), "USD")
     # get the first currency if USD not found
     return (float(list(ondemand_pricing.values())[0]), list(ondemand_pricing)[0])
+
+
+def _extract_ondemand_prices(terms) -> Tuple[List[dict], str]:
+    """Extract ondemand tiered pricing and the currency from AWS Terms object.
+
+    Returns:
+        Tuple of a ordered list of tiered prices and currency."""
+    ondemand_terms = list(terms["OnDemand"].values())[0]
+    ondemand_terms = list(ondemand_terms["priceDimensions"].values())
+    tiers = [
+        {
+            "lower": float(term.get("beginRange")),
+            "upper": float(term.get("endRange")),
+            "price": float(list(term.get("pricePerUnit").values())[0]),
+        }
+        for term in ondemand_terms
+    ]
+    tiers.sort(key=lambda x: x.get("lower"))
+    currency = list(ondemand_terms[0].get("pricePerUnit"))[0]
+    return (tiers, currency)
+
+
+def _location_datacenter_map(vendor):
+    if len(vendor.datacenters) == 0:
+        raise ValueError(
+            f"No datacenters found for '{vendor.id}' vendor. Did you run inventory_datacenters?"
+        )
+    locations = {}
+    for dc in vendor.datacenters:
+        locations[dc.name] = dc
+        for a in dc.aliases:
+            locations[a] = dc
+    return locations
 
 
 def _get_product_datacenter(product, vendor):
@@ -753,8 +792,38 @@ def inventory_storage_prices(vendor):
 
 
 def inventory_traffic_prices(vendor):
-    # TODO AmazonVPC pricing? -> cache
-    pass
+    vendor.progress_tracker.start_task(name="Searching for Traffic prices", n=None)
+
+    loc2dc = _location_datacenter_map(vendor)
+    products = _boto_get_products(
+        service_code="AWSDataTransfer",
+        filters={
+            "transferType": "AWS Inbound",
+        },
+    )
+
+    vendor.progress_tracker.update_task(
+        description="Syncing inbound Traffic prices", total=len(products)
+    )
+    for product in products:
+        try:
+            datacenter = loc2dc[product["product"]["attributes"]["toLocation"]]
+        except KeyError:
+            continue
+        finally:
+            vendor.progress_tracker.advance_task()
+        price = _extract_ondemand_prices(product["terms"])
+        TrafficPrice(
+            vendor=vendor,
+            datacenter=datacenter,
+            price=price[0][-1].get("price"),
+            price_tiered=price,
+            currency=price[1],
+            unit="GB",
+            direction=TrafficDirection.IN,
+        )
+    vendor.progress_tracker.hide_task()
+    vendor.log(f"{len(products)} IPv4 prices synced.")
 
 
 def inventory_ipv4_prices(vendor):
