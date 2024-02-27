@@ -776,7 +776,8 @@ def inventory_server_prices(vendor):
     for product in products:
         # drop Gov regions
         if "GovCloud" not in product["product"]["attributes"]["location"]:
-            # TODO optimize this
+            # NOTE this is slow due to adding 13k rows, and
+            # refactor without repeated lookups did not help
             _make_price_from_product(product, vendor)
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
@@ -794,6 +795,7 @@ def inventory_storage_prices(vendor):
 def inventory_traffic_prices(vendor):
     loc2dc = _location_datacenter_map(vendor)
     for direction in list(TrafficDirection):
+        loc_dir = "toLocation" if direction == TrafficDirection.IN else "fromLocation"
         vendor.progress_tracker.start_task(
             name=f"Searching for {direction.value} Traffic prices", n=None
         )
@@ -808,21 +810,21 @@ def inventory_traffic_prices(vendor):
         )
         for product in products:
             try:
-                datacenter = loc2dc[product["product"]["attributes"]["toLocation"]]
+                datacenter = loc2dc[product["product"]["attributes"][loc_dir]]
+                price = _extract_ondemand_prices(product["terms"])
+                TrafficPrice(
+                    vendor=vendor,
+                    datacenter=datacenter,
+                    price=price[0][-1].get("price"),
+                    price_tiered=price,
+                    currency=price[1],
+                    unit="GB",
+                    direction=direction,
+                )
             except KeyError:
                 continue
             finally:
                 vendor.progress_tracker.advance_task()
-            price = _extract_ondemand_prices(product["terms"])
-            TrafficPrice(
-                vendor=vendor,
-                datacenter=datacenter,
-                price=price[0][-1].get("price"),
-                price_tiered=price,
-                currency=price[1],
-                unit="GB",
-                direction=direction,
-            )
         vendor.progress_tracker.hide_task()
         vendor.log(f"{len(products)} {direction.value} Traffic prices synced.")
 
