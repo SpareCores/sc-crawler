@@ -601,7 +601,7 @@ def inventory_datacenters(vendor):
             green_energy=False,
         ),
         Datacenter(
-            id="me-central-2",
+            id="me-south-1",
             name="Middle East (Bahrain)",
             vendor=vendor,
             country=countries["BH"],
