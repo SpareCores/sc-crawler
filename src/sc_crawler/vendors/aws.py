@@ -326,9 +326,7 @@ def _make_price_from_product(product, vendor):
         return
 
     try:
-        server = [
-            d for d in vendor.servers if d.vendor == vendor and d.id == instance_type
-        ][0]
+        server = [d for d in vendor.servers if d.id == instance_type][0]
     except IndexError:
         logger.debug(f"No server definition found for {instance_type} @ {location}")
         return
@@ -354,11 +352,13 @@ def _make_price_from_product(product, vendor):
 
 
 def inventory_compliance_frameworks(vendor):
-    for compliance_framework in ["hipaa", "soc2t2"]:
+    compliance_frameworks = ["hipaa", "soc2t2"]
+    for compliance_framework in compliance_frameworks:
         VendorComplianceLink(
             vendor=vendor,
             compliance_framework_id=compliance_framework,
         )
+    vendor.log(f"{len(compliance_frameworks)} compliance frameworks synced.")
 
 
 def inventory_datacenters(vendor):
@@ -677,10 +677,14 @@ def inventory_datacenters(vendor):
             datacenter.status = "inactive"
             # note the change of status in the session
             datacenter.vendor.merge_dependent(datacenter)
+    vendor.log(f"{len(datacenters)} datacenters synced.")
 
 
 def inventory_zones(vendor):
     """List all available AWS availability zones."""
+    vendor.progress_tracker.start_task(
+        name="Scanning datacenters for zones", n=len(vendor.datacenters)
+    )
     for datacenter in vendor.datacenters:
         if datacenter.status == "active":
             for zone in _boto_describe_availability_zones(datacenter.id):
@@ -690,17 +694,29 @@ def inventory_zones(vendor):
                     datacenter=datacenter,
                     vendor=vendor,
                 )
+        vendor.progress_tracker.advance_task()
+    vendor.progress_tracker.hide_task()
+    vendor.log(f"{len(vendor.zones)} availability zones synced.")
 
 
 def inventory_servers(vendor):
     # TODO drop this in favor of pricing.get_products, as it has info e.g. on instanceFamily
     #      although other fields are messier (e.g. extract memory from string)
+    vendor.progress_tracker.start_task(
+        name="Scanning datacenters for servers", n=len(vendor.datacenters)
+    )
     for datacenter in vendor.datacenters:
         if datacenter.status == "active":
-            _list_instance_types_of_region(datacenter.id, vendor)
+            instance_types = _boto_describe_instance_types(datacenter.id)
+            for instance_type in instance_types:
+                _make_server_from_instance_type(instance_type, vendor)
+            vendor.log(f"{len(instance_types)} servers synced from {datacenter.id}.")
+        vendor.progress_tracker.advance_task()
+    vendor.progress_tracker.hide_task()
 
 
 def inventory_server_prices(vendor):
+    vendor.progress_tracker.start_task(name="Searching for server prices", n=None)
     products = _boto_get_products(
         service_code="AmazonEC2",
         filters={
@@ -715,10 +731,17 @@ def inventory_server_prices(vendor):
             "tenancy": "Shared",
         },
     )
+    vendor.progress_tracker.update_task(
+        description="Syncing server prices", total=len(products)
+    )
     for product in products:
         # drop Gov regions
         if "GovCloud" not in product["product"]["attributes"]["location"]:
+            # TODO optimize this
             _make_price_from_product(product, vendor)
+        vendor.progress_tracker.advance_task()
+    vendor.progress_tracker.hide_task()
+    vendor.log(f"{len(products)} servers prices synced.")
 
 
 def inventory_server_prices_spot(vendor):
@@ -730,16 +753,21 @@ def inventory_storage_prices(vendor):
 
 
 def inventory_traffic_prices(vendor):
+    # TODO AmazonVPC pricing? -> cache
     pass
 
 
 def inventory_ipv4_prices(vendor):
+    vendor.progress_tracker.start_task(name="Searching for IPv4 prices", n=None)
     products = _boto_get_products(
         service_code="AmazonVPC",
         filters={
             "group": "VPCPublicIPv4Address",
             "groupDescription": "Hourly charge for In-use Public IPv4 Addresses",
         },
+    )
+    vendor.progress_tracker.update_task(
+        description="Syncing IPv4 prices", total=len(products)
     )
     for product in products:
         try:
@@ -755,6 +783,9 @@ def inventory_ipv4_prices(vendor):
             currency=price[1],
             unit=PriceUnit.HOUR,
         )
+        vendor.progress_tracker.advance_task()
+    vendor.progress_tracker.hide_task()
+    vendor.log(f"{len(products)} IPv4 prices synced.")
 
 
 # TODO store raw response

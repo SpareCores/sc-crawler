@@ -1,16 +1,18 @@
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 from enum import Enum
 from json import dumps
 from typing import List
 
 import typer
 from cachier import set_default_params
+from rich.live import Live
+from rich.text import Text
 from sqlmodel import Session, SQLModel, create_engine
 from typing_extensions import Annotated
 
 from . import vendors as vendors_module
-from .logger import logger
+from .logger import ProgressPanel, ScRichHandler, VendorProgressTracker, logger
 from .lookup import compliance_frameworks, countries
 from .schemas import Vendor
 from .utils import hash_database
@@ -114,10 +116,8 @@ def pull(
         )
 
     # enable logging
-    channel = logging.StreamHandler()
-    formatter = logging.Formatter(
-        "%(asctime)s - %(name)s/%(module)s:%(funcName)s - %(levelname)s - %(message)s"
-    )
+    channel = ScRichHandler()
+    formatter = logging.Formatter("%(message)s")
     channel.setFormatter(formatter)
     logger.setLevel(log_level.value)
     logger.addHandler(channel)
@@ -135,37 +135,66 @@ def pull(
 
     engine = create_engine(connection_string, json_serializer=custom_serializer)
     SQLModel.metadata.create_all(engine)
-    with Session(engine) as session:
-        # add/merge static objects to database
-        for compliance_framework in compliance_frameworks.values():
-            session.merge(compliance_framework)
-        for country in countries.values():
-            session.merge(country)
-        # get data for each vendor and then add/merge to database
-        for vendor in vendors:
-            logger.info("Starting to collect data from vendor: " + vendor.id)
-            vendor = session.merge(vendor)
-            vendor.set_session(session)
-            if Tables.compliance_frameworks in update_table:
-                vendor.inventory_compliance_frameworks()
-            if Tables.datacenters in update_table:
-                vendor.inventory_datacenters()
-            if Tables.zones in update_table:
-                vendor.inventory_zones()
-            if Tables.servers in update_table:
-                vendor.inventory_servers()
-            if Tables.server_prices in update_table:
-                vendor.inventory_server_prices()
-            if Tables.server_prices_spot in update_table:
-                vendor.inventory_server_prices_spot()
-            if Tables.storage_prices in update_table:
-                vendor.inventory_storage_prices()
-            if Tables.traffic_prices in update_table:
-                vendor.inventory_traffic_prices()
-            if Tables.ipv4_prices in update_table:
-                vendor.inventory_ipv4_prices()
-            session.merge(vendor)
-            session.commit()
+
+    pbars = ProgressPanel()
+    with Live(pbars.panels):
+        # show CLI arguments in the Metadata panel
+        pbars.metadata.append(Text("Update target(s): ", style="bold"))
+        pbars.metadata.append(Text(", ".join([x.value for x in update_table]) + "\n"))
+        pbars.metadata.append(Text("Connection type: ", style="bold"))
+        pbars.metadata.append(Text(connection_string.split(":")[0]))
+        pbars.metadata.append(Text(" Cache: ", style="bold"))
+        if cache:
+            pbars.metadata.append(Text("Enabled (" + str(cache_ttl) + "m)"))
+        else:
+            pbars.metadata.append(Text("Disabled"))
+        pbars.metadata.append(Text(" Time: ", style="bold"))
+        pbars.metadata.append(Text(str(datetime.now())))
+
+        with Session(engine) as session:
+            # add/merge static objects to database
+            for compliance_framework in compliance_frameworks.values():
+                session.merge(compliance_framework)
+            logger.info("%d Compliance Frameworks synced." % len(compliance_frameworks))
+            for country in countries.values():
+                session.merge(country)
+            logger.info("%d Countries synced." % len(countries))
+            # get data for each vendor and then add/merge to database
+            # TODO each vendor should open its own session and run in parallel
+            for vendor in vendors:
+                logger.info("Starting to collect data from vendor: " + vendor.id)
+                vendor = session.merge(vendor)
+                # register session to the Vendor so that dependen objects can auto-merge
+                vendor.session = session
+                # register progress bars so that helpers can update
+                vendor.progress_tracker = VendorProgressTracker(
+                    vendor=vendor, progress_panel=pbars
+                )
+                vendor.progress_tracker.start_vendor(n=len(update_table))
+                if Tables.compliance_frameworks in update_table:
+                    vendor.inventory_compliance_frameworks()
+                if Tables.datacenters in update_table:
+                    vendor.inventory_datacenters()
+                if Tables.zones in update_table:
+                    vendor.inventory_zones()
+                if Tables.servers in update_table:
+                    vendor.inventory_servers()
+                if Tables.server_prices in update_table:
+                    vendor.inventory_server_prices()
+                if Tables.server_prices_spot in update_table:
+                    vendor.inventory_server_prices_spot()
+                if Tables.storage_prices in update_table:
+                    vendor.inventory_storage_prices()
+                if Tables.traffic_prices in update_table:
+                    vendor.inventory_traffic_prices()
+                if Tables.ipv4_prices in update_table:
+                    vendor.inventory_ipv4_prices()
+                # reset current step name
+                vendor.progress_tracker.update_vendor(step="")
+                session.merge(vendor)
+                session.commit()
+
+        pbars.metadata.append(Text(" - " + str(datetime.now())))
 
 
 if __name__ == "__main__":

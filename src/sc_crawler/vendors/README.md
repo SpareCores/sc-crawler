@@ -1,7 +1,9 @@
-## Vendor-specific crawler tools
+# Vendor-specific crawler tools
 
 Each file in this folder provides the required helpers for a given vendor, named as the identifier of the vendor.
 For example, `aws.py` provides functions to be used by its `Vendor` instance, called `aws`.
+
+## Inventory methods
 
 Each file should provide the below functions:
 
@@ -20,12 +22,34 @@ Each function will be picked up as the related `Vendor` instance's instance meth
 If a helper is not needed (e.g. another helper already provides its output, or there are no spot prices), it is still required, but can return early, e.g. if `Zone` objects were populated by `inventory_datacenters` already, do something like:
 
 ```python
-def inventory_zones(self):
+def inventory_zones(vendor):
     """Zones were already provided in inventory_datacenters."""
     pass
 ```
 
 Other functions and variables must be prefixed with an underscore to suggest those are internal tools.
+
+## Progress bars
+
+To create progress bars, you can use the `Vendor`'s `progress_tracker` attribute with the below methods:
+
+* `start_task`
+* `advance_task`
+* `hide_task`
+
+The `start_task` will register a task in the "Current tasks" progress bar list with the provided name automatically prefixed by the vendor name, and the provided number of expected steps. You should call `advance_task` after each step finished, which will by default update the most recently created task's progress bar. If making updates in parallel, store the `TaskID` returned by `start_task` and pass to `advance_task` and `hide_task` explicitly. Make sure to call `hide_task` when the progress bar is not to be shown anymore. It's a good practice to log the number of fetched/synced objects afterwards with `logger.info.` See the manual of `VendorProgressTracker` for more details.
+
+Basic example:
+
+```python
+def inventory_zones(vendor):
+    zones = range(5)
+    vendor.progress_tracker.start_task(name="Searching zones", n=len(zones))
+    for zone in zones:
+        # do something
+        vendor.progress_tracker.advance_task()
+    vendor.progress_tracker.hide_task()
+```
 
 ## Template file for new vendors
 
