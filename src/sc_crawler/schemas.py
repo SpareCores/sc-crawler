@@ -554,6 +554,11 @@ class Vendor(HasName, HasIdPK, table=True):
         self._get_methods().inventory_server_prices_spot(self)
 
     @log_start_end
+    def inventory_storages(self):
+        self.set_table_rows_inactive(Storage)
+        self._get_methods().inventory_storages(self)
+
+    @log_start_end
     def inventory_storage_prices(self):
         self.set_table_rows_inactive(StoragePrice)
         self._get_methods().inventory_storage_prices(self)

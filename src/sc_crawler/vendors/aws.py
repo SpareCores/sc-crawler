@@ -17,11 +17,14 @@ from ..schemas import (
     PriceUnit,
     Server,
     ServerPrice,
+    Storage,
+    StorageType,
     TrafficDirection,
     TrafficPrice,
     VendorComplianceLink,
     Zone,
 )
+from ..str import extract_last_number
 from ..utils import jsoned_hash
 
 # disable caching by default
@@ -786,6 +789,99 @@ def inventory_server_prices(vendor):
 
 def inventory_server_prices_spot(vendor):
     pass
+
+
+def inventory_storages(vendor):
+    # https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ebs-volume-types.html
+    ebs_manual_data = {
+        "standard": {
+            "maxIopsvolume": 200,
+            "maxThroughputvolume": 90,
+            "minVolumeSize": 1 / 1024,
+            "maxVolumeSize": 1,
+        },
+        "gp2": {
+            "maxIopsvolume": 16_000,
+            "maxThroughputvolume": 250,
+            "minVolumeSize": 1 / 1024,
+            "maxVolumeSize": 16,
+        },
+        "gp3": {
+            "maxIopsvolume": 16_000,
+            "maxThroughputvolume": 250,
+            "minVolumeSize": 1 / 1024,
+            "maxVolumeSize": 16,
+        },
+        "st1": {
+            "maxIopsvolume": 500,
+            "maxThroughputvolume": 500,
+            "minVolumeSize": 125 / 1024,
+            "maxVolumeSize": 16,
+        },
+        "sc1": {
+            "maxIopsvolume": 250,
+            "maxThroughputvolume": 250,
+            "minVolumeSize": 125 / 1024,
+            "maxVolumeSize": 16,
+        },
+    }
+    volume_types = [
+        # previous generation
+        "Magnetic",
+        # current generation with free IOPS and Throughput tier
+        "Cold HDD",
+        "Throughput Optimized HDD",
+        "General Purpose",
+        # current generation with dedicated IOPS (disabled)
+        # # "Provisioned IOPS"
+    ]
+
+    vendor.progress_tracker.start_task(
+        name="Searching for Storages", n=len(volume_types)
+    )
+    # look up all volume types in us-east-1
+    products = []
+    for volume_type in volume_types:
+        products.extend(
+            _boto_get_products(
+                # has volumeType
+                service_code="AmazonEC2",
+                filters={
+                    "volumeType": volume_type,
+                    "location": "US East (N. Virginia)",
+                },
+            )
+        )
+
+    for product in products:
+        attributes = product["product"]["attributes"]
+        product_id = attributes["volumeApiName"]
+
+        def get_attr(key: str) -> float:
+            return extract_last_number(
+                attributes.get(
+                    key,
+                    ebs_manual_data[product_id][key],
+                )
+            )
+
+        Storage(
+            id=product_id,
+            vendor=vendor,
+            name=attributes["volumeType"],
+            description=attributes["storageMedia"],
+            storage_type=StorageType.HDD
+            if "HDD" in attributes["storageMedia"]
+            else StorageType.SSD,
+            max_iops=get_attr("maxIopsvolume"),
+            max_throughput=get_attr("maxThroughputvolume"),
+            min_size=get_attr("minVolumeSize") * 1024,
+            max_size=get_attr("maxVolumeSize") * 1024,
+        )
+        vendor.progress_tracker.advance_task()
+
+    vendor.progress_tracker.hide_task()
+    vendor.log(f"{len(products)} Storages synced.")
 
 
 def inventory_storage_prices(vendor):
