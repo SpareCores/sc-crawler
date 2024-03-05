@@ -837,7 +837,7 @@ def inventory_storages(vendor):
     ]
 
     vendor.progress_tracker.start_task(
-        name="Searching for Storages", n=len(volume_types)
+        name="Searching for Storages", n=len(ebs_manual_data)
     )
     # look up all volume types in us-east-1
     products = []
