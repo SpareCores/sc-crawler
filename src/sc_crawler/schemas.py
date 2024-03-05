@@ -636,7 +636,6 @@ class Zone(HasStatus, HasName, HasDatacenterPK, HasVendorPK, HasIdPK, table=True
 class Storage(HasDescription, HasName, HasVendorPK, HasIdPK, table=True):
     """Flexible storage options that can be attached to a Server."""
 
-    size: int = Field(default=0, description="Size (GiB) of the overall storage.")
     storage_type: StorageType = Field(
         description="High-level category of the main storage."
     )
