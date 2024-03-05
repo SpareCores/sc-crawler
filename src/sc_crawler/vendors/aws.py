@@ -852,6 +852,8 @@ def inventory_storages(vendor):
                 },
             )
         )
+        vendor.progress_tracker.advance_task()
+    vendor.progress_tracker.hide_task()
 
     for product in products:
         attributes = product["product"]["attributes"]
@@ -878,9 +880,7 @@ def inventory_storages(vendor):
             min_size=get_attr("minVolumeSize") * 1024,
             max_size=get_attr("maxVolumeSize") * 1024,
         )
-        vendor.progress_tracker.advance_task()
 
-    vendor.progress_tracker.hide_task()
     vendor.log(f"{len(products)} Storages synced.")
 
 
