@@ -791,57 +791,59 @@ def inventory_server_prices_spot(vendor):
     pass
 
 
-def inventory_storages(vendor):
-    # https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ebs-volume-types.html
-    ebs_manual_data = {
-        "standard": {
-            "maxIopsvolume": 200,
-            "maxThroughputvolume": 90,
-            "minVolumeSize": 1 / 1024,
-            "maxVolumeSize": 1,
-        },
-        "gp2": {
-            "maxIopsvolume": 16_000,
-            "maxThroughputvolume": 250,
-            "minVolumeSize": 1 / 1024,
-            "maxVolumeSize": 16,
-        },
-        "gp3": {
-            "maxIopsvolume": 16_000,
-            "maxThroughputvolume": 250,
-            "minVolumeSize": 1 / 1024,
-            "maxVolumeSize": 16,
-        },
-        "st1": {
-            "maxIopsvolume": 500,
-            "maxThroughputvolume": 500,
-            "minVolumeSize": 125 / 1024,
-            "maxVolumeSize": 16,
-        },
-        "sc1": {
-            "maxIopsvolume": 250,
-            "maxThroughputvolume": 250,
-            "minVolumeSize": 125 / 1024,
-            "maxVolumeSize": 16,
-        },
-    }
-    volume_types = [
-        # previous generation
-        "Magnetic",
-        # current generation with free IOPS and Throughput tier
-        "Cold HDD",
-        "Throughput Optimized HDD",
-        "General Purpose",
-        # current generation with dedicated IOPS (disabled)
-        # # "Provisioned IOPS"
-    ]
+storage_types = [
+    # previous generation
+    "Magnetic",
+    # current generation with free IOPS and Throughput tier
+    "Cold HDD",
+    "Throughput Optimized HDD",
+    "General Purpose",
+    # current generation with dedicated IOPS (disabled)
+    # # "Provisioned IOPS"
+]
 
+# https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ebs-volume-types.html
+storage_manual_data = {
+    "standard": {
+        "maxIopsvolume": 200,
+        "maxThroughputvolume": 90,
+        "minVolumeSize": 1 / 1024,
+        "maxVolumeSize": 1,
+    },
+    "gp2": {
+        "maxIopsvolume": 16_000,
+        "maxThroughputvolume": 250,
+        "minVolumeSize": 1 / 1024,
+        "maxVolumeSize": 16,
+    },
+    "gp3": {
+        "maxIopsvolume": 16_000,
+        "maxThroughputvolume": 250,
+        "minVolumeSize": 1 / 1024,
+        "maxVolumeSize": 16,
+    },
+    "st1": {
+        "maxIopsvolume": 500,
+        "maxThroughputvolume": 500,
+        "minVolumeSize": 125 / 1024,
+        "maxVolumeSize": 16,
+    },
+    "sc1": {
+        "maxIopsvolume": 250,
+        "maxThroughputvolume": 250,
+        "minVolumeSize": 125 / 1024,
+        "maxVolumeSize": 16,
+    },
+}
+
+
+def inventory_storages(vendor):
     vendor.progress_tracker.start_task(
-        name="Searching for Storages", n=len(ebs_manual_data)
+        name="Searching for Storages", n=len(storage_manual_data)
     )
     # look up all volume types in us-east-1
     products = []
-    for volume_type in volume_types:
+    for volume_type in storage_types:
         products.extend(
             _boto_get_products(
                 # has volumeType
@@ -863,7 +865,7 @@ def inventory_storages(vendor):
             return extract_last_number(
                 attributes.get(
                     key,
-                    ebs_manual_data[product_id][key],
+                    storage_manual_data[product_id][key],
                 )
             )
 
