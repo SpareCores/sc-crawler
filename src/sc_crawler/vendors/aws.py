@@ -19,6 +19,7 @@ from ..schemas import (
     ServerPrice,
     Storage,
     StorageType,
+    StoragePrice,
     TrafficDirection,
     TrafficPrice,
     VendorComplianceLink,
@@ -846,7 +847,6 @@ def inventory_storages(vendor):
     for volume_type in storage_types:
         products.extend(
             _boto_get_products(
-                # has volumeType
                 service_code="AmazonEC2",
                 filters={
                     "volumeType": volume_type,
