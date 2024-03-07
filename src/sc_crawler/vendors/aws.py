@@ -888,7 +888,44 @@ def inventory_storages(vendor):
 
 
 def inventory_storage_prices(vendor):
-    pass
+    loc2dc = _location_datacenter_map(vendor)
+    vendor_storages = {x.id: x for x in vendor.storages}
+    vendor.progress_tracker.start_task(
+        name="Searching for Storage Prices", n=len(storage_manual_data)
+    )
+    # look up all volume types in us-east-1
+    products = []
+    for volume_type in storage_types:
+        products.extend(
+            _boto_get_products(
+                service_code="AmazonEC2",
+                filters={"volumeType": volume_type},
+            )
+        )
+        vendor.progress_tracker.advance_task()
+    vendor.progress_tracker.hide_task()
+
+    vendor.progress_tracker.start_task(name="Syncing Storage Prices", n=len(products))
+    for product in products:
+        try:
+            attributes = product["product"]["attributes"]
+            datacenter = loc2dc[attributes["location"]]
+            price = _extract_ondemand_price(product["terms"])
+            StoragePrice(
+                vendor=vendor,
+                datacenter=datacenter,
+                storage=vendor_storages[attributes["volumeApiName"]],
+                unit=PriceUnit.GB_MONTH,
+                price=price[0],
+                currency=price[1],
+            )
+        except KeyError:
+            continue
+        finally:
+            vendor.progress_tracker.advance_task()
+
+    vendor.progress_tracker.hide_task()
+    vendor.log(f"{len(products)} Storage Prices synced.")
 
 
 def inventory_traffic_prices(vendor):
@@ -917,7 +954,7 @@ def inventory_traffic_prices(vendor):
                     price=price[0][-1].get("price"),
                     price_tiered=price,
                     currency=price[1],
-                    unit="GB",
+                    unit=PriceUnit.GB_MONTH,
                     direction=direction,
                 )
             except KeyError:

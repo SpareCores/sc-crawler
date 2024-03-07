@@ -175,6 +175,7 @@ class PriceUnit(str, Enum):
     HOUR = "hour"
     GIB = "GiB"
     GB = "GB"
+    GB_MONTH = "GB/month"
 
 
 class PriceTier(Json):
