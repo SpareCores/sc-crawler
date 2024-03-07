@@ -867,14 +867,15 @@ def inventory_storages(vendor):
                 )
             )
 
+        storage_type = (
+            StorageType.HDD if "HDD" in attributes["storageMedia"] else StorageType.SSD
+        )
         Storage(
             id=product_id,
             vendor=vendor,
             name=attributes["volumeType"],
             description=attributes["storageMedia"],
-            storage_type=StorageType.HDD
-            if "HDD" in attributes["storageMedia"]
-            else StorageType.SSD,
+            storage_type=storage_type,
             max_iops=get_attr("maxIopsvolume"),
             max_throughput=get_attr("maxThroughputvolume"),
             min_size=get_attr("minVolumeSize") * 1024,
