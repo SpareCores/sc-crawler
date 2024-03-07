@@ -37,7 +37,7 @@ def extract_last_number(s: str) -> float:
 
     Examples:
         >>> extract_last_number("foo42")
-        42
+        42.0
         >>> extract_last_number("foo24.42bar")
         24.42
     """
