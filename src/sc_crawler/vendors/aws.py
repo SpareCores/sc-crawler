@@ -77,7 +77,7 @@ def _boto_price_list(region):
     return price_list_url
 
 
-@cachier(hash_func=jsoned_hash)
+@cachier(hash_func=jsoned_hash, separate_files=True)
 def _boto_get_products(service_code: str, filters: dict):
     """Get products from AWS with auto-paging.
 
