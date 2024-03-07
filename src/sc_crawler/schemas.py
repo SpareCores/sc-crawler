@@ -1,6 +1,5 @@
 """Schemas for vendors, datacenters, zones, and other resources."""
 
-
 import logging
 from datetime import datetime
 from enum import Enum
