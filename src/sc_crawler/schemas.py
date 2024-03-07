@@ -390,15 +390,34 @@ class Vendor(HasName, HasIdPK, table=True):
     _progress_tracker: Optional[VendorProgressTracker] = PrivateAttr()
 
     # relations
-    country: Country = Relationship(back_populates="vendors")
-    datacenters: List["Datacenter"] = Relationship(back_populates="vendor")
-    zones: List["Zone"] = Relationship(back_populates="vendor")
-    storages: List["Storage"] = Relationship(back_populates="vendor")
-    servers: List["Server"] = Relationship(back_populates="vendor")
-    server_prices: List["ServerPrice"] = Relationship(back_populates="vendor")
-    traffic_prices: List["TrafficPrice"] = Relationship(back_populates="vendor")
-    ipv4_prices: List["Ipv4Price"] = Relationship(back_populates="vendor")
-    storage_prices: List["StoragePrice"] = Relationship(back_populates="vendor")
+    country: Country = Relationship(
+        back_populates="vendors", sa_relationship_kwargs={"lazy": "selectin"}
+    )
+    datacenters: List["Datacenter"] = Relationship(
+        back_populates="vendor", sa_relationship_kwargs={"lazy": "selectin"}
+    )
+    zones: List["Zone"] = Relationship(
+        back_populates="vendor", sa_relationship_kwargs={"lazy": "selectin"}
+    )
+    storages: List["Storage"] = Relationship(
+        back_populates="vendor",
+        sa_relationship_kwargs={"lazy": "selectin", "cascade": None},
+    )
+    servers: List["Server"] = Relationship(
+        back_populates="vendor", sa_relationship_kwargs={"lazy": "selectin"}
+    )
+    server_prices: List["ServerPrice"] = Relationship(
+        back_populates="vendor", sa_relationship_kwargs={"lazy": "selectin"}
+    )
+    traffic_prices: List["TrafficPrice"] = Relationship(
+        back_populates="vendor", sa_relationship_kwargs={"lazy": "selectin"}
+    )
+    ipv4_prices: List["Ipv4Price"] = Relationship(
+        back_populates="vendor", sa_relationship_kwargs={"lazy": "selectin"}
+    )
+    storage_prices: List["StoragePrice"] = Relationship(
+        back_populates="vendor", sa_relationship_kwargs={"lazy": "selectin"}
+    )
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
