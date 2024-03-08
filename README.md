@@ -70,12 +70,15 @@ Note that you need specific IAM permissions to be able to run the Crawler at the
 
 </details>
 
-
 Fetch and standardize datacenter, zone, products etc data into a single SQLite file:
 
 ```shell
 sc-crawler pull --cache --include-vendor aws
 ```
+
+Such an up-to-date SQLite database is managed by the Spare Cores team in the
+[SC Data](https://github.com/SpareCores/sc-data) repository, or you can also
+find it at https://sc-data-public-40e9d310.s3.amazonaws.com/sc-data-all.db.bz2
 
 ## Other WIP methods
 
