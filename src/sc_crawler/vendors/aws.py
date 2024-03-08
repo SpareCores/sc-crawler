@@ -344,9 +344,6 @@ def _extract_ondemand_prices(terms) -> Tuple[List[dict], str]:
     return (tiers, currency)
 
 
-# TODO other privates
-
-
 def _location_datacenter_map(vendor):
     if len(vendor.datacenters) == 0:
         raise ValueError(
@@ -760,23 +757,22 @@ def inventory_zones(vendor):
     vendor.log(f"{len(vendor.zones)} availability zones synced.")
 
 
-def search_servers(datacenter: Datacenter, vendor: Optional[Vendor]) -> List[dict]:
-    instance_types = []
-    if datacenter.status == "active":
-        instance_types = _boto_describe_instance_types(datacenter.id)
-        if vendor:
-            vendor.log(f"{len(instance_types)} Servers found in {datacenter.id}.")
-    if vendor:
-        vendor.progress_tracker.advance_task()
-    return instance_types
-
-
 def inventory_servers(vendor):
     # TODO drop this in favor of pricing.get_products, as it has info e.g. on instanceFamily
     #      although other fields are messier (e.g. extract memory from string)
     vendor.progress_tracker.start_task(
         name="Scanning Datacenters for Servers", n=len(vendor.datacenters)
     )
+
+    def search_servers(datacenter: Datacenter, vendor: Optional[Vendor]) -> List[dict]:
+        instance_types = []
+        if datacenter.status == "active":
+            instance_types = _boto_describe_instance_types(datacenter.id)
+            if vendor:
+                vendor.log(f"{len(instance_types)} Servers found in {datacenter.id}.")
+        if vendor:
+            vendor.progress_tracker.advance_task()
+        return instance_types
 
     with ThreadPoolExecutor(max_workers=8) as executor:
         products = executor.map(search_servers, vendor.datacenters, repeat(vendor))
