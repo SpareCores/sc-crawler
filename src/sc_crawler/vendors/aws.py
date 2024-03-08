@@ -912,7 +912,8 @@ def search_storage(
         service_code="AmazonEC2",
         filters=filters,
     )
-    vendor.progress_tracker.advance_task()
+    if vendor:
+        vendor.progress_tracker.advance_task()
     return volumes
 
 
@@ -968,16 +969,13 @@ def inventory_storage_prices(vendor):
     vendor.progress_tracker.start_task(
         name="Searching for Storage Prices", n=len(storage_manual_data)
     )
-    # look up all volume types in us-east-1
-    products = []
-    for volume_type in storage_types:
-        products.extend(
-            _boto_get_products(
-                service_code="AmazonEC2",
-                filters={"volumeType": volume_type},
-            )
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        products = executor.map(
+            search_storage,
+            storage_types,
+            repeat(vendor),
         )
-        vendor.progress_tracker.advance_task()
+    products = list(chain.from_iterable(products))
     vendor.progress_tracker.hide_task()
 
     vendor.progress_tracker.start_task(name="Syncing Storage Prices", n=len(products))
