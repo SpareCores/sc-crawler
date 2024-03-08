@@ -1,6 +1,5 @@
 """Schemas for vendors, datacenters, zones, and other resources."""
 
-
 import logging
 from datetime import datetime
 from enum import Enum
@@ -111,8 +110,9 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
         """
         super().__init__(*args, **kwargs)
         if hasattr(self, "vendor"):
-            if self.vendor.session:
-                self.vendor.merge_dependent(self)
+            if self.vendor:
+                if self.vendor.session:
+                    self.vendor.merge_dependent(self)
 
 
 class Json(BaseModel):
@@ -175,6 +175,7 @@ class PriceUnit(str, Enum):
     HOUR = "hour"
     GIB = "GiB"
     GB = "GB"
+    GB_MONTH = "GB/month"
 
 
 class PriceTier(Json):
@@ -394,7 +395,6 @@ class Vendor(HasName, HasIdPK, table=True):
     datacenters: List["Datacenter"] = Relationship(back_populates="vendor")
     zones: List["Zone"] = Relationship(back_populates="vendor")
     storages: List["Storage"] = Relationship(back_populates="vendor")
-    traffics: List["Traffic"] = Relationship(back_populates="vendor")
     servers: List["Server"] = Relationship(back_populates="vendor")
     server_prices: List["ServerPrice"] = Relationship(back_populates="vendor")
     traffic_prices: List["TrafficPrice"] = Relationship(back_populates="vendor")
@@ -555,6 +555,11 @@ class Vendor(HasName, HasIdPK, table=True):
         self._get_methods().inventory_server_prices_spot(self)
 
     @log_start_end
+    def inventory_storages(self):
+        self.set_table_rows_inactive(Storage)
+        self._get_methods().inventory_storages(self)
+
+    @log_start_end
     def inventory_storage_prices(self):
         self.set_table_rows_inactive(StoragePrice)
         self._get_methods().inventory_storage_prices(self)
@@ -637,7 +642,6 @@ class Zone(HasStatus, HasName, HasDatacenterPK, HasVendorPK, HasIdPK, table=True
 class Storage(HasDescription, HasName, HasVendorPK, HasIdPK, table=True):
     """Flexible storage options that can be attached to a Server."""
 
-    size: int = Field(default=0, description="Size (GiB) of the overall storage.")
     storage_type: StorageType = Field(
         description="High-level category of the main storage."
     )
@@ -660,23 +664,6 @@ class Storage(HasDescription, HasName, HasVendorPK, HasIdPK, table=True):
 
     vendor: Vendor = Relationship(back_populates="storages")
     prices: List["StoragePrice"] = Relationship(back_populates="storage")
-
-
-# TODO this table might not be needed?
-# might be better add the "direction" column directly to the TrafficPrice table
-class Traffic(HasDescription, HasName, HasVendorPK, HasIdPK, table=True):
-    """Extra traffic options tied to a Server."""
-
-    direction: TrafficDirection = Field(
-        description="Direction of the traffic: inbound or outbound."
-    )
-    status: Status = Field(
-        default=Status.ACTIVE,
-        description="Status of the resource (active or inactive).",
-    )
-
-    vendor: Vendor = Relationship(back_populates="traffics")
-    prices: List["TrafficPrice"] = Relationship(back_populates="traffic")
 
 
 class Server(ScModel, table=True):
@@ -808,6 +795,7 @@ class ServerPriceExtraFields(ScModel):
     allocation: Allocation = Field(
         default=Allocation.ONDEMAND,
         description="Allocation method, e.g. on-demand or spot.",
+        primary_key=True,
     )
 
 
@@ -843,16 +831,22 @@ class StoragePrice(StoragePriceBase, table=True):
     storage: Storage = Relationship(back_populates="prices")
 
 
-class TrafficPriceBase(HasPriceFields, HasTraffic, HasDatacenterPK, HasVendorPK):
-    pass
+class TrafficPriceBase(HasDatacenterPK, HasVendorPK):
+    direction: TrafficDirection = Field(
+        description="Direction of the traffic: inbound or outbound.",
+        primary_key=True,
+    )
+    status: Status = Field(
+        default=Status.ACTIVE,
+        description="Status of the resource (active or inactive).",
+    )
 
 
-class TrafficPrice(TrafficPriceBase, table=True):
+class TrafficPrice(HasPriceFields, TrafficPriceBase, table=True):
     """Extra Traffic prices in each Datacenter."""
 
     vendor: Vendor = Relationship(back_populates="traffic_prices")
     datacenter: Datacenter = Relationship(back_populates="traffic_prices")
-    traffic: Traffic = Relationship(back_populates="prices")
 
 
 class Ipv4PriceBase(HasPriceFields, HasDatacenterPK, HasVendorPK):

@@ -183,6 +183,8 @@ def pull(
                     vendor.inventory_server_prices()
                 if Tables.server_prices_spot in update_table:
                     vendor.inventory_server_prices_spot()
+                if Tables.storages in update_table:
+                    vendor.inventory_storages()
                 if Tables.storage_prices in update_table:
                     vendor.inventory_storage_prices()
                 if Tables.traffic_prices in update_table:

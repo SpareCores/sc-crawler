@@ -1,14 +1,18 @@
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
-from itertools import chain
+from itertools import chain, repeat
+from typing import List, Optional, Tuple
 
 import boto3
+from botocore.exceptions import ClientError
 from cachier import cachier, set_default_params
 
 from ..logger import logger
 from ..lookup import countries
 from ..schemas import (
+    Allocation,
     Datacenter,
     Disk,
     Gpu,
@@ -16,9 +20,16 @@ from ..schemas import (
     PriceUnit,
     Server,
     ServerPrice,
+    Storage,
+    StoragePrice,
+    StorageType,
+    TrafficDirection,
+    TrafficPrice,
+    Vendor,
     VendorComplianceLink,
     Zone,
 )
+from ..str import extract_last_number
 from ..utils import jsoned_hash
 
 # disable caching by default
@@ -28,7 +39,7 @@ set_default_params(caching_enabled=False, stale_after=timedelta(days=1))
 # Cached boto3 wrappers
 
 
-@cachier()
+@cachier(separate_files=True)
 def _boto_describe_instance_types(region):
     ec2 = boto3.client("ec2", region_name=region)
     pages = ec2.get_paginator("describe_instance_types")
@@ -71,7 +82,7 @@ def _boto_price_list(region):
     return price_list_url
 
 
-@cachier(hash_func=jsoned_hash)
+@cachier(hash_func=jsoned_hash, separate_files=True)
 def _boto_get_products(service_code: str, filters: dict):
     """Get products from AWS with auto-paging.
 
@@ -96,6 +107,18 @@ def _boto_get_products(service_code: str, filters: dict):
 
     logger.debug(f"Found {len(products)} {service_code} products")
     return products
+
+
+@cachier(separate_files=True)
+def _describe_spot_price_history(region):
+    ec2 = boto3.client("ec2", region_name=region)
+    pager = ec2.get_paginator("describe_spot_price_history")
+    pages = pager.paginate(
+        # TODO ingests win/mac and others
+        Filters=[{"Name": "product-description", "Values": ["Linux/UNIX"]}],
+        StartTime=datetime.now(),
+    ).build_full_result()
+    return pages["SpotPriceHistory"]
 
 
 # ##############################################################################
@@ -253,29 +276,27 @@ def _make_server_from_instance_type(instance_type, vendor):
     gpu_info = _get_gpu_of_instance_type(instance_type)
     storage_info = _get_storage_of_instance_type(instance_type)
     network_card = instance_type["NetworkInfo"]["NetworkCards"][0]
-    # avoid duplicates
-    if it not in [s.id for s in vendor.servers]:
-        return Server(
-            id=it,
-            vendor=vendor,
-            name=it,
-            description=_annotate_instance_type(it),
-            vcpus=vcpu_info["DefaultVCpus"],
-            cpu_cores=vcpu_info["DefaultCores"],
-            cpu_speed=cpu_info.get("SustainedClockSpeedInGhz", None),
-            cpu_architecture=cpu_info["SupportedArchitectures"][0],
-            cpu_manufacturer=cpu_info.get("Manufacturer", None),
-            memory=instance_type["MemoryInfo"]["SizeInMiB"],
-            gpu_count=gpu_info[0],
-            gpu_memory=gpu_info[1],
-            gpu_name=gpu_info[2],
-            gpus=_get_gpus_of_instance_type(instance_type),
-            storage_size=storage_info[0],
-            storage_type=storage_info[1],
-            storages=_get_storages_of_instance_type(instance_type),
-            network_speed=network_card["BaselineBandwidthInGbps"],
-            billable_unit="hour",
-        )
+    Server(
+        id=it,
+        vendor=vendor,
+        name=it,
+        description=_annotate_instance_type(it),
+        vcpus=vcpu_info["DefaultVCpus"],
+        cpu_cores=vcpu_info["DefaultCores"],
+        cpu_speed=cpu_info.get("SustainedClockSpeedInGhz", None),
+        cpu_architecture=cpu_info["SupportedArchitectures"][0],
+        cpu_manufacturer=cpu_info.get("Manufacturer", None),
+        memory=instance_type["MemoryInfo"]["SizeInMiB"],
+        gpu_count=gpu_info[0],
+        gpu_memory=gpu_info[1],
+        gpu_name=gpu_info[2],
+        gpus=_get_gpus_of_instance_type(instance_type),
+        storage_size=storage_info[0],
+        storage_type=storage_info[1],
+        storages=_get_storages_of_instance_type(instance_type),
+        network_speed=network_card["BaselineBandwidthInGbps"],
+        billable_unit="hour",
+    )
 
 
 def _list_instance_types_of_region(region, vendor):
@@ -288,8 +309,11 @@ def _list_instance_types_of_region(region, vendor):
     ]
 
 
-def _extract_ondemand_price(terms):
-    """Extract ondmand price and the currency from AWS Terms object."""
+def _extract_ondemand_price(terms) -> Tuple[float, str]:
+    """Extract a single ondemand price and the currency from AWS Terms object.
+
+    Returns:
+        Tuple of a price and currency."""
     ondemand_term = list(terms["OnDemand"].values())[0]
     ondemand_pricing = list(ondemand_term["priceDimensions"].values())[0]
     ondemand_pricing = ondemand_pricing["pricePerUnit"]
@@ -297,6 +321,39 @@ def _extract_ondemand_price(terms):
         return (float(ondemand_pricing["USD"]), "USD")
     # get the first currency if USD not found
     return (float(list(ondemand_pricing.values())[0]), list(ondemand_pricing)[0])
+
+
+def _extract_ondemand_prices(terms) -> Tuple[List[dict], str]:
+    """Extract ondemand tiered pricing and the currency from AWS Terms object.
+
+    Returns:
+        Tuple of a ordered list of tiered prices and currency."""
+    ondemand_terms = list(terms["OnDemand"].values())[0]
+    ondemand_terms = list(ondemand_terms["priceDimensions"].values())
+    tiers = [
+        {
+            "lower": float(term.get("beginRange")),
+            "upper": float(term.get("endRange")),
+            "price": float(list(term.get("pricePerUnit").values())[0]),
+        }
+        for term in ondemand_terms
+    ]
+    tiers.sort(key=lambda x: x.get("lower"))
+    currency = list(ondemand_terms[0].get("pricePerUnit"))[0]
+    return (tiers, currency)
+
+
+def _location_datacenter_map(vendor):
+    if len(vendor.datacenters) == 0:
+        raise ValueError(
+            f"No datacenters found for '{vendor.id}' vendor. Did you run inventory_datacenters?"
+        )
+    locations = {}
+    for dc in vendor.datacenters:
+        locations[dc.name] = dc
+        for a in dc.aliases:
+            locations[a] = dc
+    return locations
 
 
 def _get_product_datacenter(product, vendor):
@@ -340,7 +397,7 @@ def _make_price_from_product(product, vendor):
             server=server,
             # TODO ingest other OSs
             operating_system="Linux",
-            allocation="ondemand",
+            allocation=Allocation.ONDEMAND,
             price=price[0],
             currency=price[1],
             unit=PriceUnit.HOUR,
@@ -699,24 +756,44 @@ def inventory_zones(vendor):
     vendor.log(f"{len(vendor.zones)} availability zones synced.")
 
 
+def search_servers(datacenter: Datacenter, vendor: Optional[Vendor]) -> List[dict]:
+    instance_types = []
+    if datacenter.status == "active":
+        instance_types = _boto_describe_instance_types(datacenter.id)
+        if vendor:
+            vendor.log(f"{len(instance_types)} Servers found in {datacenter.id}.")
+    if vendor:
+        vendor.progress_tracker.advance_task()
+    return instance_types
+
+
 def inventory_servers(vendor):
     # TODO drop this in favor of pricing.get_products, as it has info e.g. on instanceFamily
     #      although other fields are messier (e.g. extract memory from string)
     vendor.progress_tracker.start_task(
-        name="Scanning datacenters for servers", n=len(vendor.datacenters)
+        name="Scanning Datacenters for Servers", n=len(vendor.datacenters)
     )
-    for datacenter in vendor.datacenters:
-        if datacenter.status == "active":
-            instance_types = _boto_describe_instance_types(datacenter.id)
-            for instance_type in instance_types:
-                _make_server_from_instance_type(instance_type, vendor)
-            vendor.log(f"{len(instance_types)} servers synced from {datacenter.id}.")
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        products = executor.map(search_servers, vendor.datacenters, repeat(vendor))
+    instance_types = list(chain.from_iterable(products))
+
+    vendor.log(
+        f"{len(instance_types)} Servers found in {len(vendor.datacenters)} regions."
+    )
+    instance_types = list({p["InstanceType"]: p for p in instance_types}.values())
+    vendor.log(f"{len(instance_types)} unique Servers found.")
+    vendor.progress_tracker.hide_task()
+
+    vendor.progress_tracker.start_task(name="Syncing Servers", n=len(instance_types))
+    for instance_type in instance_types:
+        _make_server_from_instance_type(instance_type, vendor)
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
 
 
 def inventory_server_prices(vendor):
-    vendor.progress_tracker.start_task(name="Searching for server prices", n=None)
+    vendor.progress_tracker.start_task(name="Searching for Server Prices", n=None)
     products = _boto_get_products(
         service_code="AmazonEC2",
         filters={
@@ -726,6 +803,7 @@ def inventory_server_prices(vendor):
             "licenseModel": "No License required",
             "locationType": "AWS Region",
             "capacitystatus": "Used",
+            # TODO reserved pricing options - might decide not to, as not in scope?
             "marketoption": "OnDemand",
             # TODO dedicated options?
             "tenancy": "Shared",
@@ -737,7 +815,8 @@ def inventory_server_prices(vendor):
     for product in products:
         # drop Gov regions
         if "GovCloud" not in product["product"]["attributes"]["location"]:
-            # TODO optimize this
+            # NOTE this is slow due to adding 13k rows, and
+            # refactor without repeated lookups did not help
             _make_price_from_product(product, vendor)
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
@@ -745,16 +824,234 @@ def inventory_server_prices(vendor):
 
 
 def inventory_server_prices_spot(vendor):
-    pass
+    vendor.progress_tracker.start_task(
+        name="Scanning datacenters for Spot Prices", n=len(vendor.datacenters)
+    )
+
+    def get_spot_prices(datacenter: Datacenter, vendor: Vendor) -> List[dict]:
+        new = []
+        if datacenter.status == "active":
+            try:
+                new = _describe_spot_price_history(datacenter.id)
+                vendor.log(f"{len(new)} Spot Prices found in {datacenter.id}.")
+            except ClientError as e:
+                vendor.log(f"Cannot get Spot Prices in {datacenter.id}: {str(e)}")
+        vendor.progress_tracker.advance_task()
+        return new
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        products = executor.map(get_spot_prices, vendor.datacenters, repeat(vendor))
+    products = list(chain.from_iterable(products))
+    vendor.log(f"{len(products)} Spot Prices found.")
+    vendor.progress_tracker.hide_task()
+
+    vendor.progress_tracker.start_task(name="Syncing Spot Prices", n=len(products))
+    for product in products:
+        try:
+            zone = [z for z in vendor.zones if z.name == product["AvailabilityZone"]][0]
+            server = [s for s in vendor.servers if s.id == product["InstanceType"]][0]
+        except IndexError as e:
+            logger.debug(str(e))
+            return
+
+        ServerPrice(
+            vendor=vendor,
+            datacenter=zone.datacenter,
+            zone=zone,
+            server=server,
+            # TODO ingest other OSs
+            operating_system="Linux",
+            allocation=Allocation.SPOT,
+            price=product["SpotPrice"],
+            currency="USD",
+            unit=PriceUnit.HOUR,
+        )
+        vendor.progress_tracker.advance_task()
+    vendor.progress_tracker.hide_task()
+    vendor.log(f"{len(products)} Spot Prices synced.")
+
+
+storage_types = [
+    # previous generation
+    "Magnetic",
+    # current generation with free IOPS and Throughput tier
+    "Cold HDD",
+    "Throughput Optimized HDD",
+    "General Purpose",
+    # current generation with dedicated IOPS (disabled)
+    # # "Provisioned IOPS"
+]
+
+# https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ebs-volume-types.html
+storage_manual_data = {
+    "standard": {
+        "maxIopsvolume": 200,
+        "maxThroughputvolume": 90,
+        "minVolumeSize": 1 / 1024,
+        "maxVolumeSize": 1,
+    },
+    "gp2": {
+        "maxIopsvolume": 16_000,
+        "maxThroughputvolume": 250,
+        "minVolumeSize": 1 / 1024,
+        "maxVolumeSize": 16,
+    },
+    "gp3": {
+        "maxIopsvolume": 16_000,
+        "maxThroughputvolume": 250,
+        "minVolumeSize": 1 / 1024,
+        "maxVolumeSize": 16,
+    },
+    "st1": {
+        "maxIopsvolume": 500,
+        "maxThroughputvolume": 500,
+        "minVolumeSize": 125 / 1024,
+        "maxVolumeSize": 16,
+    },
+    "sc1": {
+        "maxIopsvolume": 250,
+        "maxThroughputvolume": 250,
+        "minVolumeSize": 125 / 1024,
+        "maxVolumeSize": 16,
+    },
+}
+
+
+def search_storage(
+    volume_type: str, vendor: Optional[Vendor] = None, location: str = None
+) -> List[dict]:
+    """Search for storage types with optional progress bar updates and location filter."""
+    filters = {"volumeType": volume_type}
+    if location:
+        filters["location"] = location
+    volumes = _boto_get_products(
+        service_code="AmazonEC2",
+        filters=filters,
+    )
+    if vendor:
+        vendor.progress_tracker.advance_task()
+    return volumes
+
+
+def inventory_storages(vendor):
+    vendor.progress_tracker.start_task(
+        name="Searching for Storages", n=len(storage_manual_data)
+    )
+
+    # look up all volume types in us-east-1
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        products = executor.map(
+            search_storage,
+            storage_types,
+            repeat(vendor),
+            repeat("US East (N. Virginia)"),
+        )
+    products = list(chain.from_iterable(products))
+    vendor.progress_tracker.hide_task()
+
+    for product in products:
+        attributes = product["product"]["attributes"]
+        product_id = attributes["volumeApiName"]
+
+        def get_attr(key: str) -> float:
+            return extract_last_number(
+                attributes.get(
+                    key,
+                    storage_manual_data[product_id][key],
+                )
+            )
+
+        storage_type = (
+            StorageType.HDD if "HDD" in attributes["storageMedia"] else StorageType.SSD
+        )
+        Storage(
+            id=product_id,
+            vendor=vendor,
+            name=attributes["volumeType"],
+            description=attributes["storageMedia"],
+            storage_type=storage_type,
+            max_iops=get_attr("maxIopsvolume"),
+            max_throughput=get_attr("maxThroughputvolume"),
+            min_size=get_attr("minVolumeSize") * 1024,
+            max_size=get_attr("maxVolumeSize") * 1024,
+        )
+
+    vendor.log(f"{len(products)} Storages synced.")
 
 
 def inventory_storage_prices(vendor):
-    pass
+    loc2dc = _location_datacenter_map(vendor)
+    vendor_storages = {x.id: x for x in vendor.storages}
+    vendor.progress_tracker.start_task(
+        name="Searching for Storage Prices", n=len(storage_manual_data)
+    )
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        products = executor.map(
+            search_storage,
+            storage_types,
+            repeat(vendor),
+        )
+    products = list(chain.from_iterable(products))
+    vendor.progress_tracker.hide_task()
+
+    vendor.progress_tracker.start_task(name="Syncing Storage Prices", n=len(products))
+    for product in products:
+        try:
+            attributes = product["product"]["attributes"]
+            datacenter = loc2dc[attributes["location"]]
+            price = _extract_ondemand_price(product["terms"])
+            StoragePrice(
+                vendor=vendor,
+                datacenter=datacenter,
+                storage=vendor_storages[attributes["volumeApiName"]],
+                unit=PriceUnit.GB_MONTH,
+                price=price[0],
+                currency=price[1],
+            )
+        except KeyError:
+            continue
+        finally:
+            vendor.progress_tracker.advance_task()
+
+    vendor.progress_tracker.hide_task()
+    vendor.log(f"{len(products)} Storage Prices synced.")
 
 
 def inventory_traffic_prices(vendor):
-    # TODO AmazonVPC pricing? -> cache
-    pass
+    loc2dc = _location_datacenter_map(vendor)
+    for direction in list(TrafficDirection):
+        loc_dir = "toLocation" if direction == TrafficDirection.IN else "fromLocation"
+        vendor.progress_tracker.start_task(
+            name=f"Searching for {direction.value} Traffic prices", n=None
+        )
+        products = _boto_get_products(
+            service_code="AWSDataTransfer",
+            filters={
+                "transferType": "AWS " + direction.value.title(),
+            },
+        )
+        vendor.progress_tracker.update_task(
+            description=f"Syncing {direction.value} Traffic prices", total=len(products)
+        )
+        for product in products:
+            try:
+                datacenter = loc2dc[product["product"]["attributes"][loc_dir]]
+                price = _extract_ondemand_prices(product["terms"])
+                TrafficPrice(
+                    vendor=vendor,
+                    datacenter=datacenter,
+                    price=price[0][-1].get("price"),
+                    price_tiered=price,
+                    currency=price[1],
+                    unit=PriceUnit.GB_MONTH,
+                    direction=direction,
+                )
+            except KeyError:
+                continue
+            finally:
+                vendor.progress_tracker.advance_task()
+        vendor.progress_tracker.hide_task()
+        vendor.log(f"{len(products)} {direction.value} Traffic prices synced.")
 
 
 def inventory_ipv4_prices(vendor):
@@ -786,8 +1083,3 @@ def inventory_ipv4_prices(vendor):
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
     vendor.log(f"{len(products)} IPv4 prices synced.")
-
-
-# TODO store raw response
-# TODO reserved pricing options - might decide not to, as not in scope?
-# TODO spot prices

@@ -30,3 +30,16 @@ def plural(text):
     if search("[aeiou]y$", text):
         return sub("y$", "ies", text)
     return text + "s"
+
+
+def extract_last_number(s: str) -> float:
+    """Extract the last number from a string.
+
+    Examples:
+        >>> extract_last_number("foo42")
+        42.0
+        >>> extract_last_number("foo24.42bar")
+        24.42
+    """
+    match = search(r"([\d\.]+)[^0-9]*$", str(s))
+    return float(match.group(1)) if match else None

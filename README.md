@@ -70,25 +70,29 @@ Note that you need specific IAM permissions to be able to run the Crawler at the
 
 </details>
 
-
 Fetch and standardize datacenter, zone, products etc data into a single SQLite file:
 
 ```shell
-rm sc_crawler.db; sc-crawler pull --cache --log-level DEBUG --include-vendor aws
+sc-crawler pull --cache --include-vendor aws
 ```
+
+Such an up-to-date SQLite database is managed by the Spare Cores team in the
+[SC Data](https://github.com/SpareCores/sc-data) repository, or you can also
+find it at https://sc-data-public-40e9d310.s3.amazonaws.com/sc-data-all.db.bz2
 
 ## Other WIP methods
 
-Read from DB:
+Read from previously pulled DB:
 
 ```py
-from sc_crawler.database import engine
 from sc_crawler.schemas import Server
-from sqlmodel import Session, select
-session = Session(engine)
-session.exec(select(Server).where(Server.id == 'trn1.32xlarge')).one()
+from sqlmodel import create_engine, Session, select
 
+engine = create_engine("sqlite:///sc_crawler.db")
+session = Session(engine)
 server = session.exec(select(Server).where(Server.id == 'trn1.32xlarge')).one()
+
+from rich import print as pp
 pp(server)
 pp(server.vendor)
 ```
