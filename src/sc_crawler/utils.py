@@ -1,11 +1,11 @@
 from enum import Enum
 from hashlib import sha1
 from json import dumps
-from typing import Any, Iterable, List, Union
+from typing import Any, Dict, Iterable, List, Union
 
 from sqlmodel import Session, create_engine
 
-from .schemas import tables, ScModel
+from .schemas import ScModel, tables
 
 
 def jsoned_hash(*args, **kwargs):
@@ -73,9 +73,27 @@ def chunk_list(items: List[Any], size: int) -> Iterable[List[Any]]:
         yield items[i : i + size]
 
 
-def scmodels_to_dict(scmodels: List[ScModel], key: str = "id") -> dict:
-    """Creates a dict indexed by a key of the elements of the list."""
-    return {scmodel.__getattr__(key): scmodel for scmodel in scmodels}
+def scmodels_to_dict(
+    scmodels: List[ScModel], keys: List[str] = ["id"]
+) -> Dict[str, ScModel]:
+    """Creates a dict indexed by key(s) of the elements of the list.
+
+    When multiple keys are provided, an ScModel instance will be stored in
+    the dict with all keys. Conflict of keys is not checked.
+
+    Args:
+        scmodels: list of ScModel instances
+        key: a list of strings referring to ScModel fields to be used as keys
+
+    Examples:
+        >>> scmodels_to_dict([aws], keys=["id", "name"])
+        {'aws': Vendor...
+    """
+    data = {}
+    for key in keys:
+        for scmodel in scmodels:
+            data[getattr(scmodel, key)] = scmodel
+    return data
 
 
 def is_sqlite(session: Session) -> bool:

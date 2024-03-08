@@ -846,7 +846,7 @@ def inventory_server_prices_spot(vendor):
     vendor.progress_tracker.hide_task()
 
     # lookup tables
-    zones = scmodels_to_dict(vendor.zones, key="name")
+    zones = scmodels_to_dict(vendor.zones, keys=["name"])
     servers = scmodels_to_dict(vendor.servers)
 
     # fall back to session.merge for databases with no support for bulk inserts
@@ -900,7 +900,6 @@ def inventory_server_prices_spot(vendor):
         )
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
-
     bulk_insert_server_prices(server_prices, vendor, price_type="Spot")
 
 
