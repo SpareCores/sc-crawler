@@ -5,7 +5,7 @@ from typing import Any, Iterable, List, Union
 
 from sqlmodel import Session, create_engine
 
-from .schemas import tables
+from .schemas import tables, ScModel
 
 
 def jsoned_hash(*args, **kwargs):
@@ -71,3 +71,8 @@ def chunk_list(l: List[Any], size: int) -> Iterable[List[Any]]:
     """
     for i in range(0, len(l), size):
         yield l[i : i + size]
+
+
+def scmodels_to_dict(scmodels: List[ScModel], key: str = "id") -> dict:
+    """Creates a dict indexed by a key of the elements of the list."""
+    return {scmodel.__getattr__(key): scmodel for scmodel in scmodels}

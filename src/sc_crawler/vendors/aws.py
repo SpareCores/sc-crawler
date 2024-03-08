@@ -31,7 +31,7 @@ from ..schemas import (
     Zone,
 )
 from ..str import extract_last_number
-from ..utils import chunk_list, jsoned_hash
+from ..utils import chunk_list, jsoned_hash, scmodels_to_dict
 
 # disable caching by default
 set_default_params(caching_enabled=False, stale_after=timedelta(days=1))
@@ -342,6 +342,9 @@ def _extract_ondemand_prices(terms) -> Tuple[List[dict], str]:
     tiers.sort(key=lambda x: x.get("lower"))
     currency = list(ondemand_terms[0].get("pricePerUnit"))[0]
     return (tiers, currency)
+
+
+# TODO other privates
 
 
 def _location_datacenter_map(vendor):
@@ -848,11 +851,14 @@ def inventory_server_prices_spot(vendor):
 
     vendor.progress_tracker.start_task(name="Preprocess Spot Prices", n=len(products))
     server_prices = []
+    zones = scmodels_to_dict(vendor.zones, key="name")
+    servers = scmodels_to_dict(vendor.servers)
+
     for product in products:
         try:
-            zone = [z for z in vendor.zones if z.name == product["AvailabilityZone"]][0]
-            server = [s for s in vendor.servers if s.id == product["InstanceType"]][0]
-        except IndexError as e:
+            zone = zones[product["AvailabilityZone"]]
+            server = servers[product["InstanceType"]]
+        except KeyError as e:
             logger.debug(str(e))
             continue
         server_prices.append(
