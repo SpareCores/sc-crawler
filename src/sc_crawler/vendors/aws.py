@@ -39,7 +39,7 @@ set_default_params(caching_enabled=False, stale_after=timedelta(days=1))
 # Cached boto3 wrappers
 
 
-@cachier()
+@cachier(separate_files=True)
 def _boto_describe_instance_types(region):
     ec2 = boto3.client("ec2", region_name=region)
     pages = ec2.get_paginator("describe_instance_types")
@@ -276,29 +276,27 @@ def _make_server_from_instance_type(instance_type, vendor):
     gpu_info = _get_gpu_of_instance_type(instance_type)
     storage_info = _get_storage_of_instance_type(instance_type)
     network_card = instance_type["NetworkInfo"]["NetworkCards"][0]
-    # avoid duplicates
-    if it not in [s.id for s in vendor.servers]:
-        return Server(
-            id=it,
-            vendor=vendor,
-            name=it,
-            description=_annotate_instance_type(it),
-            vcpus=vcpu_info["DefaultVCpus"],
-            cpu_cores=vcpu_info["DefaultCores"],
-            cpu_speed=cpu_info.get("SustainedClockSpeedInGhz", None),
-            cpu_architecture=cpu_info["SupportedArchitectures"][0],
-            cpu_manufacturer=cpu_info.get("Manufacturer", None),
-            memory=instance_type["MemoryInfo"]["SizeInMiB"],
-            gpu_count=gpu_info[0],
-            gpu_memory=gpu_info[1],
-            gpu_name=gpu_info[2],
-            gpus=_get_gpus_of_instance_type(instance_type),
-            storage_size=storage_info[0],
-            storage_type=storage_info[1],
-            storages=_get_storages_of_instance_type(instance_type),
-            network_speed=network_card["BaselineBandwidthInGbps"],
-            billable_unit="hour",
-        )
+    Server(
+        id=it,
+        vendor=vendor,
+        name=it,
+        description=_annotate_instance_type(it),
+        vcpus=vcpu_info["DefaultVCpus"],
+        cpu_cores=vcpu_info["DefaultCores"],
+        cpu_speed=cpu_info.get("SustainedClockSpeedInGhz", None),
+        cpu_architecture=cpu_info["SupportedArchitectures"][0],
+        cpu_manufacturer=cpu_info.get("Manufacturer", None),
+        memory=instance_type["MemoryInfo"]["SizeInMiB"],
+        gpu_count=gpu_info[0],
+        gpu_memory=gpu_info[1],
+        gpu_name=gpu_info[2],
+        gpus=_get_gpus_of_instance_type(instance_type),
+        storage_size=storage_info[0],
+        storage_type=storage_info[1],
+        storages=_get_storages_of_instance_type(instance_type),
+        network_speed=network_card["BaselineBandwidthInGbps"],
+        billable_unit="hour",
+    )
 
 
 def _list_instance_types_of_region(region, vendor):
@@ -758,24 +756,44 @@ def inventory_zones(vendor):
     vendor.log(f"{len(vendor.zones)} availability zones synced.")
 
 
+def search_servers(datacenter: Datacenter, vendor: Optional[Vendor]) -> List[dict]:
+    instance_types = []
+    if datacenter.status == "active":
+        instance_types = _boto_describe_instance_types(datacenter.id)
+        if vendor:
+            vendor.log(f"{len(instance_types)} Servers found in {datacenter.id}.")
+    if vendor:
+        vendor.progress_tracker.advance_task()
+    return instance_types
+
+
 def inventory_servers(vendor):
     # TODO drop this in favor of pricing.get_products, as it has info e.g. on instanceFamily
     #      although other fields are messier (e.g. extract memory from string)
     vendor.progress_tracker.start_task(
-        name="Scanning datacenters for servers", n=len(vendor.datacenters)
+        name="Scanning Datacenters for Servers", n=len(vendor.datacenters)
     )
-    for datacenter in vendor.datacenters:
-        if datacenter.status == "active":
-            instance_types = _boto_describe_instance_types(datacenter.id)
-            for instance_type in instance_types:
-                _make_server_from_instance_type(instance_type, vendor)
-            vendor.log(f"{len(instance_types)} servers synced from {datacenter.id}.")
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        products = executor.map(search_servers, vendor.datacenters, repeat(vendor))
+    instance_types = list(chain.from_iterable(products))
+
+    vendor.log(
+        f"{len(instance_types)} Servers found in {len(vendor.datacenters)} regions."
+    )
+    instance_types = list({p["InstanceType"]: p for p in instance_types}.values())
+    vendor.log(f"{len(instance_types)} unique Servers found.")
+    vendor.progress_tracker.hide_task()
+
+    vendor.progress_tracker.start_task(name="Syncing Servers", n=len(instance_types))
+    for instance_type in instance_types:
+        _make_server_from_instance_type(instance_type, vendor)
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
 
 
 def inventory_server_prices(vendor):
-    vendor.progress_tracker.start_task(name="Searching for server prices", n=None)
+    vendor.progress_tracker.start_task(name="Searching for Server Prices", n=None)
     products = _boto_get_products(
         service_code="AmazonEC2",
         filters={
