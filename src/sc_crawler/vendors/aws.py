@@ -108,7 +108,7 @@ def _boto_get_products(service_code: str, filters: dict):
 
 @cachier(separate_files=True)
 def _describe_spot_price_history(region):
-    ec2 = boto3.Session.client("ec2", region_name=region)
+    ec2 = boto3.client("ec2", region_name=region)
     pager = ec2.get_paginator("describe_spot_price_history")
     pages = pager.paginate(
         # TODO ingests win/mac and others
