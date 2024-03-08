@@ -10,6 +10,7 @@ from cachier import cachier, set_default_params
 from ..logger import logger
 from ..lookup import countries
 from ..schemas import (
+    Allocation,
     Datacenter,
     Disk,
     Gpu,
@@ -103,6 +104,18 @@ def _boto_get_products(service_code: str, filters: dict):
 
     logger.debug(f"Found {len(products)} {service_code} products")
     return products
+
+
+@cachier(separate_files=True)
+def _describe_spot_price_history(region):
+    ec2 = boto3.Session.client("ec2", region_name=region)
+    pager = ec2.get_paginator("describe_spot_price_history")
+    pages = pager.paginate(
+        # TODO ingests win/mac and others
+        Filters=[{"Name": "product-description", "Values": ["Linux/UNIX"]}],
+        StartTime=datetime.now(),
+    ).build_full_result()
+    return pages["SpotPriceHistory"]
 
 
 # ##############################################################################
@@ -769,7 +782,8 @@ def inventory_server_prices(vendor):
             "licenseModel": "No License required",
             "locationType": "AWS Region",
             "capacitystatus": "Used",
-            "marketoption": "OnDemand",
+            # TODO reserved pricing options - might decide not to, as not in scope?
+            "marketoption": Allocation.SPOT,
             # TODO dedicated options?
             "tenancy": "Shared",
         },
@@ -789,7 +803,41 @@ def inventory_server_prices(vendor):
 
 
 def inventory_server_prices_spot(vendor):
-    pass
+    vendor.progress_tracker.start_task(
+        name="Scanning datacenters for Spot Prices", n=len(vendor.datacenters)
+    )
+    products = []
+    for datacenter in vendor.datacenters:
+        if datacenter.status == "active":
+            products_new = _describe_spot_price_history(datacenter.id)
+            products.extend(products_new)
+            vendor.log(f"{len(products_new)} Spot Prices found in {datacenter.id}.")
+        vendor.progress_tracker.advance_task()
+    vendor.progress_tracker.hide_task()
+
+    vendor.progress_tracker.start_task(name="Syncing Spot Prices", n=len(products))
+    for product in products:
+        try:
+            zone = [z for z in vendor.zones if z.name == product["AvailabilityZone"]][0]
+            server = [s for s in vendor.servers if s.id == product["InstanceType"]][0]
+        except IndexError as e:
+            logger.debug(str(e))
+            return
+
+        ServerPrice(
+            vendor=vendor,
+            datacenter=zone.datacenter,
+            zone=zone,
+            server=server,
+            # TODO ingest other OSs
+            operating_system="Linux",
+            allocation=Allocation.SPOT,
+            price=product["SpotPrice"],
+            currency="USD",
+            unit=PriceUnit.HOUR,
+        )
+        vendor.progress_tracker.advance_task()
+    vendor.progress_tracker.hide_task()
 
 
 storage_types = [
@@ -994,8 +1042,3 @@ def inventory_ipv4_prices(vendor):
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
     vendor.log(f"{len(products)} IPv4 prices synced.")
-
-
-# TODO store raw response
-# TODO reserved pricing options - might decide not to, as not in scope?
-# TODO spot prices
