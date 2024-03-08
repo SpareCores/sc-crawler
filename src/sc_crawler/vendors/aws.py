@@ -8,6 +8,7 @@ from typing import List, Optional, Tuple
 import boto3
 from botocore.exceptions import ClientError
 from cachier import cachier, set_default_params
+from sqlalchemy.dialects.sqlite import insert
 
 from ..logger import logger
 from ..lookup import countries
@@ -30,7 +31,7 @@ from ..schemas import (
     Zone,
 )
 from ..str import extract_last_number
-from ..utils import jsoned_hash
+from ..utils import chunk_list, jsoned_hash
 
 # disable caching by default
 set_default_params(caching_enabled=False, stale_after=timedelta(days=1))
@@ -845,28 +846,48 @@ def inventory_server_prices_spot(vendor):
     vendor.log(f"{len(products)} Spot Prices found.")
     vendor.progress_tracker.hide_task()
 
-    vendor.progress_tracker.start_task(name="Syncing Spot Prices", n=len(products))
+    vendor.progress_tracker.start_task(name="Preprocess Spot Prices", n=len(products))
+    server_prices = []
     for product in products:
         try:
             zone = [z for z in vendor.zones if z.name == product["AvailabilityZone"]][0]
             server = [s for s in vendor.servers if s.id == product["InstanceType"]][0]
         except IndexError as e:
             logger.debug(str(e))
-            return
-
-        ServerPrice(
-            vendor=vendor,
-            datacenter=zone.datacenter,
-            zone=zone,
-            server=server,
-            # TODO ingest other OSs
-            operating_system="Linux",
-            allocation=Allocation.SPOT,
-            price=product["SpotPrice"],
-            currency="USD",
-            unit=PriceUnit.HOUR,
+            continue
+        server_prices.append(
+            {
+                "vendor_id": vendor.id,
+                "datacenter_id": zone.datacenter.id,
+                "zone_id": zone.id,
+                "server_id": server.id,
+                # TODO ingest other OSs
+                "operating_system": "Linux",
+                "allocation": Allocation.SPOT,
+                "price": float(product["SpotPrice"]),
+                "currency": "USD",
+                "unit": PriceUnit.HOUR,
+            }
         )
         vendor.progress_tracker.advance_task()
+    vendor.progress_tracker.hide_task()
+
+    vendor.progress_tracker.start_task(name="Syncing Spot Prices", n=len(server_prices))
+    # need to split list into smaller chunks to avoid "too many SQL variables"
+    for chunk in chunk_list(server_prices, 100):
+        query = insert(ServerPrice).values(chunk)
+        query = query.on_conflict_do_update(
+            index_elements=[
+                ServerPrice.vendor_id,
+                ServerPrice.datacenter_id,
+                ServerPrice.zone_id,
+                ServerPrice.server_id,
+                ServerPrice.allocation,
+            ],
+            set_=dict(price=query.excluded.price),
+        )
+        vendor.session.execute(query)
+        vendor.progress_tracker.advance_task(by=len(chunk))
     vendor.progress_tracker.hide_task()
     vendor.log(f"{len(products)} Spot Prices synced.")
 

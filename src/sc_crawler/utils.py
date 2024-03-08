@@ -1,7 +1,7 @@
 from enum import Enum
 from hashlib import sha1
 from json import dumps
-from typing import List, Union
+from typing import Any, Iterable, List, Union
 
 from sqlmodel import Session, create_engine
 
@@ -60,3 +60,14 @@ def hash_database(
         hashes = jsoned_hash(hashes)
 
     return hashes
+
+
+def chunk_list(l: List[Any], size: int) -> Iterable[List[Any]]:
+    """Split a list into chunks of a specified size.
+
+    Examples:
+        >>> [len(x) for x in chunk_list(range(10), 3)]
+        [3, 3, 3, 1]
+    """
+    for i in range(0, len(l), size):
+        yield l[i : i + size]
