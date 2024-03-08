@@ -8,8 +8,8 @@ from typing import List, Optional, Tuple
 import boto3
 from botocore.exceptions import ClientError
 from cachier import cachier, set_default_params
-from sqlalchemy.dialects.sqlite import insert
 
+from ..insert import bulk_insert_server_prices
 from ..logger import logger
 from ..lookup import countries
 from ..schemas import (
@@ -31,7 +31,7 @@ from ..schemas import (
     Zone,
 )
 from ..str import extract_last_number
-from ..utils import chunk_list, is_sqlite, jsoned_hash, scmodels_to_dict
+from ..utils import is_sqlite, jsoned_hash, scmodels_to_dict
 
 # disable caching by default
 set_default_params(caching_enabled=False, stale_after=timedelta(days=1))
@@ -901,32 +901,7 @@ def inventory_server_prices_spot(vendor):
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
 
-    vendor.progress_tracker.start_task(name="Syncing Spot Prices", n=len(server_prices))
-    # need to split list into smaller chunks to avoid "too many SQL variables"
-    for chunk in chunk_list(server_prices, 100):
-        query = insert(ServerPrice).values(chunk)
-        query = query.on_conflict_do_update(
-            index_elements=[
-                ServerPrice.vendor_id,
-                ServerPrice.datacenter_id,
-                ServerPrice.zone_id,
-                ServerPrice.server_id,
-                ServerPrice.allocation,
-            ],
-            set_={
-                "operating_system": query.excluded.operating_system,
-                "unit": query.excluded.unit,
-                "price": query.excluded.price,
-                "price_upfront": query.excluded.price_upfront,
-                "price_tiered": query.excluded.price_tiered,
-                "currency": query.excluded.currency,
-                "status": query.excluded.status,
-            },
-        )
-        vendor.session.execute(query)
-        vendor.progress_tracker.advance_task(by=len(chunk))
-    vendor.progress_tracker.hide_task()
-    vendor.log(f"{len(products)} Spot Prices synced.")
+    bulk_insert_server_prices(server_prices, vendor, price_type="Spot")
 
 
 storage_types = [

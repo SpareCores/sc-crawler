@@ -62,15 +62,15 @@ def hash_database(
     return hashes
 
 
-def chunk_list(l: List[Any], size: int) -> Iterable[List[Any]]:
+def chunk_list(items: List[Any], size: int) -> Iterable[List[Any]]:
     """Split a list into chunks of a specified size.
 
     Examples:
         >>> [len(x) for x in chunk_list(range(10), 3)]
         [3, 3, 3, 1]
     """
-    for i in range(0, len(l), size):
-        yield l[i : i + size]
+    for i in range(0, len(items), size):
+        yield items[i : i + size]
 
 
 def scmodels_to_dict(scmodels: List[ScModel], key: str = "id") -> dict:
