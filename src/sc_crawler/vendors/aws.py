@@ -822,9 +822,7 @@ def inventory_server_prices_spot(vendor):
         return new
 
     with ThreadPoolExecutor(max_workers=8) as executor:
-        products = executor.map(
-            get_spot_prices, vendor.datacenters, [vendor] * len(vendor.datacenters)
-        )
+        products = executor.map(get_spot_prices, vendor.datacenters, repeat(vendor))
     products = list(chain.from_iterable(products))
     vendor.log(f"{len(products)} Spot Prices found.")
     vendor.progress_tracker.hide_task()
