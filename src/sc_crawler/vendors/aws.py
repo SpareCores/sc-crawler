@@ -2,7 +2,7 @@ import json
 import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
-from itertools import chain
+from itertools import chain, repeat
 from typing import List, Tuple
 
 import boto3
@@ -905,19 +905,22 @@ def inventory_storages(vendor):
     vendor.progress_tracker.start_task(
         name="Searching for Storages", n=len(storage_manual_data)
     )
-    # look up all volume types in us-east-1
-    products = []
-    for volume_type in storage_types:
-        products.extend(
-            _boto_get_products(
-                service_code="AmazonEC2",
-                filters={
-                    "volumeType": volume_type,
-                    "location": "US East (N. Virginia)",
-                },
-            )
+
+    def search_storage(volume_type: str, vendor: Vendor) -> List[dict]:
+        volume = _boto_get_products(
+            service_code="AmazonEC2",
+            filters={
+                "volumeType": volume_type,
+                "location": "US East (N. Virginia)",
+            },
         )
         vendor.progress_tracker.advance_task()
+        return volume
+
+    # look up all volume types in us-east-1
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        products = executor.map(search_storage, storage_types, repeat(vendor))
+    products = list(chain.from_iterable(products))
     vendor.progress_tracker.hide_task()
 
     for product in products:
