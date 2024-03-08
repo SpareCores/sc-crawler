@@ -913,7 +913,15 @@ def inventory_server_prices_spot(vendor):
                 ServerPrice.server_id,
                 ServerPrice.allocation,
             ],
-            set_=dict(price=query.excluded.price),
+            set_={
+                "operating_system": query.excluded.operating_system,
+                "unit": query.excluded.unit,
+                "price": query.excluded.price,
+                "price_upfront": query.excluded.price_upfront,
+                "price_tiered": query.excluded.price_tiered,
+                "currency": query.excluded.currency,
+                "status": query.excluded.status,
+            },
         )
         vendor.session.execute(query)
         vendor.progress_tracker.advance_task(by=len(chunk))
