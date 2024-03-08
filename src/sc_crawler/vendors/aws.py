@@ -1,10 +1,12 @@
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from itertools import chain
 from typing import List, Tuple
 
 import boto3
+from botocore.exceptions import ClientError
 from cachier import cachier, set_default_params
 
 from ..logger import logger
@@ -23,6 +25,7 @@ from ..schemas import (
     StorageType,
     TrafficDirection,
     TrafficPrice,
+    Vendor,
     VendorComplianceLink,
     Zone,
 )
@@ -806,13 +809,24 @@ def inventory_server_prices_spot(vendor):
     vendor.progress_tracker.start_task(
         name="Scanning datacenters for Spot Prices", n=len(vendor.datacenters)
     )
-    products = []
-    for datacenter in vendor.datacenters:
+
+    def get_spot_prices(datacenter: Datacenter, vendor: Vendor) -> List[dict]:
+        new = []
         if datacenter.status == "active":
-            products_new = _describe_spot_price_history(datacenter.id)
-            products.extend(products_new)
-            vendor.log(f"{len(products_new)} Spot Prices found in {datacenter.id}.")
+            try:
+                new = _describe_spot_price_history(datacenter.id)
+                vendor.log(f"{len(new)} Spot Prices found in {datacenter.id}.")
+            except ClientError as e:
+                vendor.log(f"Cannot get Spot Prices in {datacenter.id}: {str(e)}")
         vendor.progress_tracker.advance_task()
+        return new
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        products = executor.map(
+            get_spot_prices, vendor.datacenters, [vendor] * len(vendor.datacenters)
+        )
+    products = list(chain.from_iterable(products))
+    vendor.log(f"{len(products)} Spot Prices found.")
     vendor.progress_tracker.hide_task()
 
     vendor.progress_tracker.start_task(name="Syncing Spot Prices", n=len(products))
@@ -838,6 +852,7 @@ def inventory_server_prices_spot(vendor):
         )
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
+    vendor.log(f"{len(products)} Spot Prices synced.")
 
 
 storage_types = [
