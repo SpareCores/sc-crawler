@@ -76,3 +76,8 @@ def chunk_list(l: List[Any], size: int) -> Iterable[List[Any]]:
 def scmodels_to_dict(scmodels: List[ScModel], key: str = "id") -> dict:
     """Creates a dict indexed by a key of the elements of the list."""
     return {scmodel.__getattr__(key): scmodel for scmodel in scmodels}
+
+
+def is_sqlite(session: Session) -> bool:
+    """Checks if a SQLModel session is binded to SQLite or other database."""
+    return session.bind.dialect.name == "sqlite"

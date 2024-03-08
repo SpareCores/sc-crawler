@@ -31,7 +31,7 @@ from ..schemas import (
     Zone,
 )
 from ..str import extract_last_number
-from ..utils import chunk_list, jsoned_hash, scmodels_to_dict
+from ..utils import chunk_list, is_sqlite, jsoned_hash, scmodels_to_dict
 
 # disable caching by default
 set_default_params(caching_enabled=False, stale_after=timedelta(days=1))
@@ -845,11 +845,38 @@ def inventory_server_prices_spot(vendor):
     vendor.log(f"{len(products)} Spot Prices found.")
     vendor.progress_tracker.hide_task()
 
-    vendor.progress_tracker.start_task(name="Preprocess Spot Prices", n=len(products))
-    server_prices = []
+    # lookup tables
     zones = scmodels_to_dict(vendor.zones, key="name")
     servers = scmodels_to_dict(vendor.servers)
 
+    # fall back to session.merge for databases with no support for bulk inserts
+    if not is_sqlite(vendor.session):
+        vendor.progress_tracker.start_task(name="Syncing Spot Prices", n=len(products))
+        for product in products:
+            try:
+                zone = zones[product["AvailabilityZone"]]
+                server = servers[product["InstanceType"]]
+                ServerPrice(
+                    vendor=vendor,
+                    datacenter=zone.datacenter,
+                    zone=zone,
+                    server=server,
+                    # TODO ingest other OSs
+                    operating_system="Linux",
+                    allocation=Allocation.SPOT,
+                    price=product["SpotPrice"],
+                    currency="USD",
+                    unit=PriceUnit.HOUR,
+                )
+            except KeyError as e:
+                logger.debug(str(e))
+            finally:
+                vendor.progress_tracker.advance_task()
+        vendor.progress_tracker.hide_task()
+        return
+
+    server_prices = []
+    vendor.progress_tracker.start_task(name="Preprocess Spot Prices", n=len(products))
     for product in products:
         try:
             zone = zones[product["AvailabilityZone"]]
