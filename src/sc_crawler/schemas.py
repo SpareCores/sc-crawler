@@ -795,6 +795,7 @@ class ServerPriceExtraFields(ScModel):
     allocation: Allocation = Field(
         default=Allocation.ONDEMAND,
         description="Allocation method, e.g. on-demand or spot.",
+        primary_key=True,
     )
 
 
