@@ -399,7 +399,7 @@ def _make_price_from_product(product, vendor):
             server=server,
             # TODO ingest other OSs
             operating_system="Linux",
-            allocation="ondemand",
+            allocation=Allocation.ONDEMAND,
             price=price[0],
             currency=price[1],
             unit=PriceUnit.HOUR,
@@ -786,7 +786,7 @@ def inventory_server_prices(vendor):
             "locationType": "AWS Region",
             "capacitystatus": "Used",
             # TODO reserved pricing options - might decide not to, as not in scope?
-            "marketoption": Allocation.SPOT,
+            "marketoption": "OnDemand",
             # TODO dedicated options?
             "tenancy": "Shared",
         },
