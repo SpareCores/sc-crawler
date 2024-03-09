@@ -88,6 +88,7 @@ def scmodels_to_dict(
         key: a list of strings referring to ScModel fields to be used as keys
 
     Examples:
+        >>> from sc_crawler.vendors import aws
         >>> scmodels_to_dict([aws], keys=["id", "name"])
         {'aws': Vendor...
     """
