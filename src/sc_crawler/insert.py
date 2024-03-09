@@ -2,7 +2,7 @@ from typing import List
 
 from sqlalchemy.dialects.sqlite import insert
 
-from .schemas import ServerPrice, Vendor
+from .schemas import ServerPrice, ServerPriceBase, Vendor
 from .utils import chunk_list, is_sqlite
 
 
@@ -57,6 +57,15 @@ def insert_server_prices(server_prices: List[dict], vendor: Vendor, price_type: 
         vendor: related Vendor instance used for database connection, logging and progress bar updates
         price_type: prefix added in front of "Price" in logs and progress bars
     """
+
+    vendor.progress_tracker.start_task(
+        name=f"Validating {price_type} Server Prices", n=len(server_prices)
+    )
+    for server_price in server_prices:
+        ServerPriceBase.model_validate(server_price)
+        vendor.progress_tracker.advance_task()
+    vendor.progress_tracker.hide_task()
+
     if is_sqlite(vendor.session):
         bulk_insert_server_prices(server_prices, vendor, price_type=price_type)
     else:

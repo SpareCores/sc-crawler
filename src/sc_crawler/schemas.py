@@ -260,15 +260,17 @@ class HasTraffic(ScModel):
 # Actual SC data schemas and model definitions
 
 
-class Country(ScModel, table=True):
-    """Country and continent mapping."""
-
+class CountryBase(ScModel):
     id: str = Field(
         default=None,
         primary_key=True,
         description="Country code by ISO 3166 alpha-2.",
     )
     continent: str = Field(description="Continent name.")
+
+
+class Country(CountryBase, table=True):
+    """Country and continent mapping."""
 
     vendors: List["Vendor"] = Relationship(back_populates="country")
     datacenters: List["Datacenter"] = Relationship(back_populates="country")
