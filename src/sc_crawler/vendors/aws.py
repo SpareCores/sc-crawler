@@ -831,8 +831,6 @@ def inventory_server_prices(vendor):
 
     # lookup tables
     datacenters = scmodels_to_dict(vendor.datacenters, keys=["name", "aliases"])
-    zones = scmodels_to_dict(vendor.zones, keys=["name"])
-    servers = scmodels_to_dict(vendor.servers)
 
     server_prices = []
     vendor.progress_tracker.start_task(
