@@ -8,8 +8,8 @@ def bulk_insert_server_prices(server_prices: dict, vendor: Vendor, price_type: s
     """Bulk inserts records into the server_prices table.
 
     Args:
-        server_prices: dictionary with vendor_id, datacenter_id -- matching the colums of server_prices
-        vendor: related Vendor instance for database connection, logging and progress bar updates
+        server_prices: dictionary with vendor_id, datacenter_id etc (all colums of server_prices)
+        vendor: related Vendor instance used for database connection, logging and progress bar updates
         price_type: prefix added in front of "Price" in logs and progress bars
     """
     vendor.progress_tracker.start_task(

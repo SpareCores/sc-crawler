@@ -76,10 +76,12 @@ def chunk_list(items: List[Any], size: int) -> Iterable[List[Any]]:
 def scmodels_to_dict(
     scmodels: List[ScModel], keys: List[str] = ["id"]
 ) -> Dict[str, ScModel]:
-    """Creates a dict indexed by key(s) of the elements of the list.
+    """Creates a dict indexed by key(s) of the ScModels of the list.
 
-    When multiple keys are provided, an ScModel instance will be stored in
-    the dict with all keys. Conflict of keys is not checked.
+    When multiple keys are provided, each ScModel instance will be stored in
+    the dict with all keys. If a key is a list, then each list element is
+    considered (not recursively, only at first level) as a key.
+    Conflict of keys is not checked.
 
     Args:
         scmodels: list of ScModel instances
@@ -101,5 +103,5 @@ def scmodels_to_dict(
 
 
 def is_sqlite(session: Session) -> bool:
-    """Checks if a SQLModel session is binded to SQLite or other database."""
+    """Checks if a SQLModel session is binded to SQLite or another database."""
     return session.bind.dialect.name == "sqlite"
