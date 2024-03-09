@@ -793,7 +793,9 @@ def inventory_servers(vendor):
 
 
 def inventory_server_prices(vendor):
-    vendor.progress_tracker.start_task(name="Searching for Server Prices", n=None)
+    vendor.progress_tracker.start_task(
+        name="Searching for Ondemand Server Prices", n=None
+    )
     products = _boto_get_products(
         service_code="AmazonEC2",
         filters={
@@ -809,18 +811,59 @@ def inventory_server_prices(vendor):
             "tenancy": "Shared",
         },
     )
-    vendor.progress_tracker.update_task(
-        description="Syncing server prices", total=len(products)
+    vendor.progress_tracker.hide_task()
+
+    # fall back to session.merge for databases with no support for bulk inserts
+    if not is_sqlite(vendor.session):
+        vendor.progress_tracker.start_task(
+            name="Syncing server prices", n=len(products)
+        )
+        for product in products:
+            # drop Gov regions
+            if "GovCloud" not in product["product"]["attributes"]["location"]:
+                # NOTE this is slow due to adding 13k rows, and
+                # refactor without repeated lookups did not help
+                _make_price_from_product(product, vendor)
+            vendor.progress_tracker.advance_task()
+        vendor.progress_tracker.hide_task()
+        vendor.log(f"{len(products)} servers prices synced.")
+        return
+
+    # lookup tables
+    datacenters = scmodels_to_dict(vendor.datacenters, keys=["name", "aliases"])
+    zones = scmodels_to_dict(vendor.zones, keys=["name"])
+    servers = scmodels_to_dict(vendor.servers)
+
+    server_prices = []
+    vendor.progress_tracker.start_task(
+        name="Preprocess Ondemand Prices", n=len(products)
     )
     for product in products:
-        # drop Gov regions
-        if "GovCloud" not in product["product"]["attributes"]["location"]:
-            # NOTE this is slow due to adding 13k rows, and
-            # refactor without repeated lookups did not help
-            _make_price_from_product(product, vendor)
-        vendor.progress_tracker.advance_task()
+        try:
+            attributes = product["product"]["attributes"]
+            datacenter = datacenters[attributes["location"]]
+            price = _extract_ondemand_price(product["terms"])
+            for zone in datacenter.zones:
+                server_prices.append(
+                    {
+                        "vendor_id": vendor.id,
+                        "datacenter_id": datacenter.id,
+                        "zone_id": zone.id,
+                        "server_id": attributes["instanceType"],
+                        # TODO ingest other OSs
+                        "operating_system": "Linux",
+                        "allocation": Allocation.ONDEMAND,
+                        "price": price[0],
+                        "currency": price[1],
+                        "unit": PriceUnit.HOUR,
+                    }
+                )
+        except KeyError as e:
+            logger.debug(f"Cannot make Price at {str(e)}")
+        finally:
+            vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
-    vendor.log(f"{len(products)} servers prices synced.")
+    bulk_insert_server_prices(server_prices, vendor, price_type="Ondemand")
 
 
 def inventory_server_prices_spot(vendor):
