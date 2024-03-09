@@ -1,4 +1,5 @@
 from re import search, sub
+from typing import Union
 
 
 # https://www.w3resource.com/python-exercises/string/python-data-type-string-exercise-97.php
@@ -32,8 +33,14 @@ def plural(text):
     return text + "s"
 
 
-def extract_last_number(s: str) -> float:
-    """Extract the last number from a string.
+def extract_last_number(text: str) -> Union[float, None]:
+    """Extract the last non-negative number from a string.
+
+    Args:
+        text: The input string from which to extract the number.
+
+    Returns:
+        The last non-negative number found in the string, or None if no number is found.
 
     Examples:
         >>> extract_last_number("foo42")
@@ -41,5 +48,5 @@ def extract_last_number(s: str) -> float:
         >>> extract_last_number("foo24.42bar")
         24.42
     """
-    match = search(r"([\d\.]+)[^0-9]*$", str(s))
+    match = search(r"([\d\.]+)[^0-9]*$", text)
     return float(match.group(1)) if match else None

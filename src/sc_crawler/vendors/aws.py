@@ -930,9 +930,11 @@ def inventory_storages(vendor):
 
         def get_attr(key: str) -> float:
             return extract_last_number(
-                attributes.get(
-                    key,
-                    storage_manual_data[product_id][key],
+                str(
+                    attributes.get(
+                        key,
+                        storage_manual_data[product_id][key],
+                    )
                 )
             )
 
