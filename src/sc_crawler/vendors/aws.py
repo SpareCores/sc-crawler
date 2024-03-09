@@ -372,39 +372,6 @@ def _get_product_datacenter(product, vendor):
     return datacenter
 
 
-def _make_price_from_product(product, vendor):
-    attributes = product["product"]["attributes"]
-    location = attributes["location"]
-    instance_type = attributes["instanceType"]
-
-    try:
-        datacenter = _get_product_datacenter(product, vendor)
-    except IndexError as e:
-        logger.debug(str(e))
-        return
-
-    try:
-        server = [d for d in vendor.servers if d.id == instance_type][0]
-    except IndexError:
-        logger.debug(f"No server definition found for {instance_type} @ {location}")
-        return
-
-    price = _extract_ondemand_price(product["terms"])
-    for zone in datacenter.zones:
-        ServerPrice(
-            vendor=vendor,
-            datacenter=datacenter,
-            zone=zone,
-            server=server,
-            # TODO ingest other OSs
-            operating_system="Linux",
-            allocation=Allocation.ONDEMAND,
-            price=price[0],
-            currency=price[1],
-            unit=PriceUnit.HOUR,
-        )
-
-
 # ##############################################################################
 # Public methods to fetch data
 
@@ -813,22 +780,6 @@ def inventory_server_prices(vendor):
     )
     vendor.progress_tracker.hide_task()
 
-    # fall back to session.merge for databases with no support for bulk inserts
-    if not is_sqlite(vendor.session):
-        vendor.progress_tracker.start_task(
-            name="Syncing server prices", n=len(products)
-        )
-        for product in products:
-            # drop Gov regions
-            if "GovCloud" not in product["product"]["attributes"]["location"]:
-                # NOTE this is slow due to adding 13k rows, and
-                # refactor without repeated lookups did not help
-                _make_price_from_product(product, vendor)
-            vendor.progress_tracker.advance_task()
-        vendor.progress_tracker.hide_task()
-        vendor.log(f"{len(products)} servers prices synced.")
-        return
-
     # lookup tables
     datacenters = scmodels_to_dict(vendor.datacenters, keys=["name", "aliases"])
 
@@ -839,6 +790,9 @@ def inventory_server_prices(vendor):
     for product in products:
         try:
             attributes = product["product"]["attributes"]
+            # early drop Gov regions
+            if "GovCloud" in attributes["location"]:
+                continue
             datacenter = datacenters[attributes["location"]]
             price = _extract_ondemand_price(product["terms"])
             for zone in datacenter.zones:
@@ -861,7 +815,22 @@ def inventory_server_prices(vendor):
         finally:
             vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
-    bulk_insert_server_prices(server_prices, vendor, price_type="Ondemand")
+
+    if is_sqlite(vendor.session):
+        bulk_insert_server_prices(server_prices, vendor, price_type="Ondemand")
+    else:
+        vendor.progress_tracker.start_task(
+            name="Syncing server prices", n=len(server_prices)
+        )
+        for server_price in server_prices:
+            # vendor's auto session.merge doesn't work due to SQLmodel bug:
+            # - https://github.com/tiangolo/sqlmodel/issues/6
+            # - https://github.com/tiangolo/sqlmodel/issues/342
+            # so need to trigger the merge manually
+            vendor.merge_dependent(ServerPrice.model_validate(server_price))
+            vendor.progress_tracker.advance_task()
+        vendor.progress_tracker.hide_task()
+        vendor.log(f"{len(server_prices)} Server Prices synced.")
 
 
 def inventory_server_prices_spot(vendor):
