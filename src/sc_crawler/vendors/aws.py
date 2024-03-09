@@ -3,6 +3,7 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from itertools import chain, repeat
+from logging import DEBUG
 from typing import List, Optional, Tuple
 
 import boto3
@@ -355,21 +356,6 @@ def _location_datacenter_map(vendor):
         for a in dc.aliases:
             locations[a] = dc
     return locations
-
-
-def _get_product_datacenter(product, vendor):
-    attributes = product["product"]["attributes"]
-    location = attributes["location"]
-    location_type = attributes["locationType"]
-    try:
-        datacenter = [
-            d for d in vendor.datacenters if location == d.name or location in d.aliases
-        ][0]
-    except IndexError:
-        raise IndexError(
-            f"No AWS region found for location: {location} [{location_type}]"
-        )
-    return datacenter
 
 
 # ##############################################################################
@@ -1108,11 +1094,13 @@ def inventory_ipv4_prices(vendor):
     vendor.progress_tracker.update_task(
         description="Syncing IPv4 prices", total=len(products)
     )
+    # lookup tables
+    datacenters = scmodels_to_dict(vendor.datacenters, keys=["name", "aliases"])
     for product in products:
         try:
-            datacenter = _get_product_datacenter(product, vendor)
-        except IndexError as e:
-            logger.debug(str(e))
+            datacenter = datacenters[product["product"]["attributes"]["location"]]
+        except KeyError as e:
+            vendor.log("Datacenter not found: %s" % str(e), DEBUG)
             continue
         price = _extract_ondemand_price(product["terms"])
         Ipv4Price(
