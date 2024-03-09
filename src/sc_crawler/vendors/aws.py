@@ -21,7 +21,6 @@ from ..schemas import (
     Ipv4Price,
     PriceUnit,
     Server,
-    ServerPrice,
     Storage,
     StoragePrice,
     StorageType,

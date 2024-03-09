@@ -1,5 +1,6 @@
-from sqlalchemy.dialects.sqlite import insert
 from typing import List
+
+from sqlalchemy.dialects.sqlite import insert
 
 from .schemas import ServerPrice, Vendor
 from .utils import chunk_list, is_sqlite
