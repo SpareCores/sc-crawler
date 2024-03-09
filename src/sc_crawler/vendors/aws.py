@@ -345,19 +345,6 @@ def _extract_ondemand_prices(terms) -> Tuple[List[dict], str]:
     return (tiers, currency)
 
 
-def _location_datacenter_map(vendor):
-    if len(vendor.datacenters) == 0:
-        raise ValueError(
-            f"No datacenters found for '{vendor.id}' vendor. Did you run inventory_datacenters?"
-        )
-    locations = {}
-    for dc in vendor.datacenters:
-        locations[dc.name] = dc
-        for a in dc.aliases:
-            locations[a] = dc
-    return locations
-
-
 # ##############################################################################
 # Public methods to fetch data
 
@@ -1008,7 +995,6 @@ def inventory_storages(vendor):
 
 
 def inventory_storage_prices(vendor):
-    loc2dc = _location_datacenter_map(vendor)
     vendor_storages = {x.id: x for x in vendor.storages}
     vendor.progress_tracker.start_task(
         name="Searching for Storage Prices", n=len(storage_manual_data)
@@ -1022,11 +1008,14 @@ def inventory_storage_prices(vendor):
     products = list(chain.from_iterable(products))
     vendor.progress_tracker.hide_task()
 
+    # lookup tables
+    datacenters = scmodels_to_dict(vendor.datacenters, keys=["name", "aliases"])
+
     vendor.progress_tracker.start_task(name="Syncing Storage Prices", n=len(products))
     for product in products:
         try:
             attributes = product["product"]["attributes"]
-            datacenter = loc2dc[attributes["location"]]
+            datacenter = datacenters[attributes["location"]]
             price = _extract_ondemand_price(product["terms"])
             StoragePrice(
                 vendor=vendor,
@@ -1046,7 +1035,7 @@ def inventory_storage_prices(vendor):
 
 
 def inventory_traffic_prices(vendor):
-    loc2dc = _location_datacenter_map(vendor)
+    datacenters = scmodels_to_dict(vendor.datacenters, keys=["name", "aliases"])
     for direction in list(TrafficDirection):
         loc_dir = "toLocation" if direction == TrafficDirection.IN else "fromLocation"
         vendor.progress_tracker.start_task(
@@ -1063,7 +1052,7 @@ def inventory_traffic_prices(vendor):
         )
         for product in products:
             try:
-                datacenter = loc2dc[product["product"]["attributes"][loc_dir]]
+                datacenter = datacenters[product["product"]["attributes"][loc_dir]]
                 price = _extract_ondemand_prices(product["terms"])
                 TrafficPrice(
                     vendor=vendor,
