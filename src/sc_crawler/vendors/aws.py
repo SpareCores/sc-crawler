@@ -783,7 +783,7 @@ def inventory_server_prices(vendor):
                     }
                 )
         except KeyError as e:
-            logger.debug(f"Cannot make Price at {str(e)}")
+            vendor.log(f"Cannot make Ondemand Server Price at {str(e)}", DEBUG)
         finally:
             vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
@@ -824,7 +824,7 @@ def inventory_server_prices_spot(vendor):
             zone = zones[product["AvailabilityZone"]]
             server = servers[product["InstanceType"]]
         except KeyError as e:
-            logger.debug(str(e))
+            vendor.log("Cannot make Spot Server Price at %s" % str(e), DEBUG)
             continue
         server_prices.append(
             {
