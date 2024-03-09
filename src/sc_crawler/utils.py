@@ -92,7 +92,11 @@ def scmodels_to_dict(
     data = {}
     for key in keys:
         for scmodel in scmodels:
-            data[getattr(scmodel, key)] = scmodel
+            data_keys = getattr(scmodel, key)
+            if not isinstance(data_keys, list):
+                data_keys = [data_keys]
+            for data_key in data_keys:
+                data[data_key] = scmodel
     return data
 
 
