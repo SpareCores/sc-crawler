@@ -10,7 +10,7 @@ import boto3
 from botocore.exceptions import ClientError
 from cachier import cachier, set_default_params
 
-from ..insert import bulk_insert_server_prices
+from ..insert import insert_server_prices
 from ..logger import logger
 from ..lookup import countries
 from ..schemas import (
@@ -32,7 +32,7 @@ from ..schemas import (
     Zone,
 )
 from ..str import extract_last_number
-from ..utils import is_sqlite, jsoned_hash, scmodels_to_dict
+from ..utils import jsoned_hash, scmodels_to_dict
 
 # disable caching by default
 set_default_params(caching_enabled=False, stale_after=timedelta(days=1))
@@ -789,21 +789,7 @@ def inventory_server_prices(vendor):
             vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
 
-    if is_sqlite(vendor.session):
-        bulk_insert_server_prices(server_prices, vendor, price_type="Ondemand")
-    else:
-        vendor.progress_tracker.start_task(
-            name="Syncing Ondemand Server Prices", n=len(server_prices)
-        )
-        for server_price in server_prices:
-            # vendor's auto session.merge doesn't work due to SQLmodel bug:
-            # - https://github.com/tiangolo/sqlmodel/issues/6
-            # - https://github.com/tiangolo/sqlmodel/issues/342
-            # so need to trigger the merge manually
-            vendor.merge_dependent(ServerPrice.model_validate(server_price))
-            vendor.progress_tracker.advance_task()
-        vendor.progress_tracker.hide_task()
-        vendor.log(f"{len(server_prices)} Ondemand Server Prices synced.")
+    insert_server_prices(server_prices, vendor, price_type="Ondemand")
 
 
 def inventory_server_prices_spot(vendor):
@@ -858,21 +844,7 @@ def inventory_server_prices_spot(vendor):
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
 
-    if is_sqlite(vendor.session):
-        bulk_insert_server_prices(server_prices, vendor, price_type="Spot")
-    else:
-        vendor.progress_tracker.start_task(
-            name="Syncing Spot Server Prices", n=len(server_prices)
-        )
-        for server_price in server_prices:
-            # vendor's auto session.merge doesn't work due to SQLmodel bug:
-            # - https://github.com/tiangolo/sqlmodel/issues/6
-            # - https://github.com/tiangolo/sqlmodel/issues/342
-            # so need to trigger the merge manually
-            vendor.merge_dependent(ServerPrice.model_validate(server_price))
-            vendor.progress_tracker.advance_task()
-        vendor.progress_tracker.hide_task()
-        vendor.log(f"{len(server_prices)} Spot Server Prices synced.")
+    insert_server_prices(server_prices, vendor, price_type="Spot")
 
 
 storage_types = [

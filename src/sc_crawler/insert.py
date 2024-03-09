@@ -1,14 +1,17 @@
 from sqlalchemy.dialects.sqlite import insert
+from typing import List
 
 from .schemas import ServerPrice, Vendor
-from .utils import chunk_list
+from .utils import chunk_list, is_sqlite
 
 
-def bulk_insert_server_prices(server_prices: dict, vendor: Vendor, price_type: str):
+def bulk_insert_server_prices(
+    server_prices: List[dict], vendor: Vendor, price_type: str
+):
     """Bulk inserts records into the server_prices table.
 
     Args:
-        server_prices: dictionary with vendor_id, datacenter_id etc (all colums of server_prices)
+        server_prices: list of dicts with vendor_id, datacenter_id etc (all colums of server_prices)
         vendor: related Vendor instance used for database connection, logging and progress bar updates
         price_type: prefix added in front of "Price" in logs and progress bars
     """
@@ -40,3 +43,31 @@ def bulk_insert_server_prices(server_prices: dict, vendor: Vendor, price_type: s
         vendor.progress_tracker.advance_task(by=len(chunk))
     vendor.progress_tracker.hide_task()
     vendor.log(f"{len(server_prices)} {price_type} Prices synced.")
+
+
+def insert_server_prices(server_prices: List[dict], vendor: Vendor, price_type: str):
+    """Insert Server Prices into the database using bulk or merge.
+
+    Bulk insert is only supported with SQLite, other databases are using the
+    default session.merge (slower) approach.
+
+    Args:
+        server_prices: list of dicts with vendor_id, datacenter_id etc (all colums of server_prices)
+        vendor: related Vendor instance used for database connection, logging and progress bar updates
+        price_type: prefix added in front of "Price" in logs and progress bars
+    """
+    if is_sqlite(vendor.session):
+        bulk_insert_server_prices(server_prices, vendor, price_type=price_type)
+    else:
+        vendor.progress_tracker.start_task(
+            name=f"Syncing {price_type} Server Prices", n=len(server_prices)
+        )
+        for server_price in server_prices:
+            # vendor's auto session.merge doesn't work due to SQLmodel bug:
+            # - https://github.com/tiangolo/sqlmodel/issues/6
+            # - https://github.com/tiangolo/sqlmodel/issues/342
+            # so need to trigger the merge manually
+            vendor.merge_dependent(ServerPrice.model_validate(server_price))
+            vendor.progress_tracker.advance_task()
+        vendor.progress_tracker.hide_task()
+        vendor.log(f"{len(server_prices)} {price_type} Server Prices synced.")
