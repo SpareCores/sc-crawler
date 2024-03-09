@@ -793,7 +793,7 @@ def inventory_server_prices(vendor):
         bulk_insert_server_prices(server_prices, vendor, price_type="Ondemand")
     else:
         vendor.progress_tracker.start_task(
-            name="Syncing server prices", n=len(server_prices)
+            name="Syncing Ondemand Server Prices", n=len(server_prices)
         )
         for server_price in server_prices:
             # vendor's auto session.merge doesn't work due to SQLmodel bug:
@@ -803,7 +803,7 @@ def inventory_server_prices(vendor):
             vendor.merge_dependent(ServerPrice.model_validate(server_price))
             vendor.progress_tracker.advance_task()
         vendor.progress_tracker.hide_task()
-        vendor.log(f"{len(server_prices)} Server Prices synced.")
+        vendor.log(f"{len(server_prices)} Ondemand Server Prices synced.")
 
 
 def inventory_server_prices_spot(vendor):
@@ -832,32 +832,6 @@ def inventory_server_prices_spot(vendor):
     zones = scmodels_to_dict(vendor.zones, keys=["name"])
     servers = scmodels_to_dict(vendor.servers)
 
-    # fall back to session.merge for databases with no support for bulk inserts
-    if not is_sqlite(vendor.session):
-        vendor.progress_tracker.start_task(name="Syncing Spot Prices", n=len(products))
-        for product in products:
-            try:
-                zone = zones[product["AvailabilityZone"]]
-                server = servers[product["InstanceType"]]
-                ServerPrice(
-                    vendor=vendor,
-                    datacenter=zone.datacenter,
-                    zone=zone,
-                    server=server,
-                    # TODO ingest other OSs
-                    operating_system="Linux",
-                    allocation=Allocation.SPOT,
-                    price=product["SpotPrice"],
-                    currency="USD",
-                    unit=PriceUnit.HOUR,
-                )
-            except KeyError as e:
-                logger.debug(str(e))
-            finally:
-                vendor.progress_tracker.advance_task()
-        vendor.progress_tracker.hide_task()
-        return
-
     server_prices = []
     vendor.progress_tracker.start_task(name="Preprocess Spot Prices", n=len(products))
     for product in products:
@@ -883,7 +857,22 @@ def inventory_server_prices_spot(vendor):
         )
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
-    bulk_insert_server_prices(server_prices, vendor, price_type="Spot")
+
+    if is_sqlite(vendor.session):
+        bulk_insert_server_prices(server_prices, vendor, price_type="Spot")
+    else:
+        vendor.progress_tracker.start_task(
+            name="Syncing Spot Server Prices", n=len(server_prices)
+        )
+        for server_price in server_prices:
+            # vendor's auto session.merge doesn't work due to SQLmodel bug:
+            # - https://github.com/tiangolo/sqlmodel/issues/6
+            # - https://github.com/tiangolo/sqlmodel/issues/342
+            # so need to trigger the merge manually
+            vendor.merge_dependent(ServerPrice.model_validate(server_price))
+            vendor.progress_tracker.advance_task()
+        vendor.progress_tracker.hide_task()
+        vendor.log(f"{len(server_prices)} Spot Server Prices synced.")
 
 
 storage_types = [
