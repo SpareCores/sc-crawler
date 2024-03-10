@@ -10,7 +10,7 @@ import boto3
 from botocore.exceptions import ClientError
 from cachier import cachier, set_default_params
 
-from ..insert import insert_server_prices
+from ..insert import insert_items
 from ..logger import logger
 from ..lookup import countries
 from ..schemas import (
@@ -21,6 +21,7 @@ from ..schemas import (
     Ipv4Price,
     PriceUnit,
     Server,
+    ServerPrice,
     Storage,
     StoragePrice,
     StorageType,
@@ -788,7 +789,7 @@ def inventory_server_prices(vendor):
             vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
 
-    insert_server_prices(server_prices, vendor, price_type="Ondemand")
+    insert_items(ServerPrice, server_prices, vendor, suffix="ondemand")
 
 
 def inventory_server_prices_spot(vendor):
@@ -843,7 +844,7 @@ def inventory_server_prices_spot(vendor):
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
 
-    insert_server_prices(server_prices, vendor, price_type="Spot")
+    insert_items(ServerPrice, server_prices, vendor, suffix="spot")
 
 
 storage_types = [
