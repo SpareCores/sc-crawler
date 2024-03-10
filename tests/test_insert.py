@@ -10,8 +10,8 @@ def test_wrap_empty_suffix():
 
 
 def test_wrap_with_suffix():
-    assert wrap("hello") == " [hello]"
+    assert wrap("foo") == " [foo]"
 
 
 def test_wrap_with_whitespace_suffix():
-    assert wrap("   world") == " [   world]"
+    assert wrap("   foobar") == " [   foobar]"
