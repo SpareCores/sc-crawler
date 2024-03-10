@@ -351,12 +351,12 @@ def _extract_ondemand_prices(terms) -> Tuple[List[dict], str]:
 
 def inventory_compliance_frameworks(vendor):
     compliance_frameworks = ["hipaa", "soc2t2"]
+    items = []
     for compliance_framework in compliance_frameworks:
-        VendorComplianceLink(
-            vendor=vendor,
-            compliance_framework_id=compliance_framework,
+        items.append(
+            {"vendor_id": vendor.id, "compliance_framework_id": compliance_framework}
         )
-    vendor.log(f"{len(compliance_frameworks)} compliance frameworks synced.")
+    insert_items(VendorComplianceLink, items, vendor)
 
 
 def inventory_datacenters(vendor):
