@@ -801,7 +801,6 @@ def inventory_server_prices(vendor):
         finally:
             vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
-
     insert_items(ServerPrice, server_prices, vendor, prefix="ondemand")
 
 
@@ -858,7 +857,6 @@ def inventory_server_prices_spot(vendor):
         )
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
-
     insert_items(ServerPrice, server_prices, vendor, prefix="spot")
 
 
@@ -926,7 +924,7 @@ def search_storage(
 
 def inventory_storages(vendor):
     vendor.progress_tracker.start_task(
-        name="Searching for Storages", n=len(storage_manual_data)
+        name="Searching for storages", n=len(storage_manual_data)
     )
 
     # look up all volume types in us-east-1
@@ -940,6 +938,7 @@ def inventory_storages(vendor):
     products = list(chain.from_iterable(products))
     vendor.progress_tracker.hide_task()
 
+    storages = []
     for product in products:
         attributes = product["product"]["attributes"]
         product_id = attributes["volumeApiName"]
@@ -957,23 +956,24 @@ def inventory_storages(vendor):
         storage_type = (
             StorageType.HDD if "HDD" in attributes["storageMedia"] else StorageType.SSD
         )
-        Storage(
-            id=product_id,
-            vendor=vendor,
-            name=attributes["volumeType"],
-            description=attributes["storageMedia"],
-            storage_type=storage_type,
-            max_iops=get_attr("maxIopsvolume"),
-            max_throughput=get_attr("maxThroughputvolume"),
-            min_size=get_attr("minVolumeSize") * 1024,
-            max_size=get_attr("maxVolumeSize") * 1024,
+        storages.append(
+            {
+                "id": product_id,
+                "vendor_id": vendor.id,
+                "name": attributes["volumeType"],
+                "description": attributes["storageMedia"],
+                "storage_type": storage_type,
+                "max_iops": get_attr("maxIopsvolume"),
+                "max_throughput": get_attr("maxThroughputvolume"),
+                "min_size": get_attr("minVolumeSize") * 1024,
+                "max_size": get_attr("maxVolumeSize") * 1024,
+            }
         )
 
-    vendor.log(f"{len(products)} Storages synced.")
+    insert_items(Storage, storages, vendor)
 
 
 def inventory_storage_prices(vendor):
-    vendor_storages = {x.id: x for x in vendor.storages}
     vendor.progress_tracker.start_task(
         name="Searching for Storage Prices", n=len(storage_manual_data)
     )
@@ -985,23 +985,29 @@ def inventory_storage_prices(vendor):
         )
     products = list(chain.from_iterable(products))
     vendor.progress_tracker.hide_task()
+    vendor.log(f"Found {len(products)} storage_price(s).")
 
     # lookup tables
     datacenters = scmodels_to_dict(vendor.datacenters, keys=["name", "aliases"])
 
-    vendor.progress_tracker.start_task(name="Syncing Storage Prices", n=len(products))
+    vendor.progress_tracker.start_task(
+        name="Preprocessing storage_prices", n=len(products)
+    )
+    prices = []
     for product in products:
         try:
             attributes = product["product"]["attributes"]
             datacenter = datacenters[attributes["location"]]
             price = _extract_ondemand_price(product["terms"])
-            StoragePrice(
-                vendor=vendor,
-                datacenter=datacenter,
-                storage=vendor_storages[attributes["volumeApiName"]],
-                unit=PriceUnit.GB_MONTH,
-                price=price[0],
-                currency=price[1],
+            prices.append(
+                {
+                    "vendor_id": vendor.id,
+                    "datacenter_id": datacenter.id,
+                    "storage_id": attributes["volumeApiName"],
+                    "unit": PriceUnit.GB_MONTH,
+                    "price": price[0],
+                    "currency": price[1],
+                }
             )
         except KeyError:
             continue
@@ -1009,7 +1015,7 @@ def inventory_storage_prices(vendor):
             vendor.progress_tracker.advance_task()
 
     vendor.progress_tracker.hide_task()
-    vendor.log(f"{len(products)} Storage Prices synced.")
+    insert_items(StoragePrice, prices, vendor)
 
 
 def inventory_traffic_prices(vendor):
