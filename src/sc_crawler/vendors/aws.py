@@ -683,18 +683,27 @@ def inventory_zones(vendor):
     vendor.progress_tracker.start_task(
         name="Scanning datacenters for zones", n=len(vendor.datacenters)
     )
-    for datacenter in vendor.datacenters:
+
+    def get_zones(datacenter: Datacenter, vendor: Vendor) -> List[dict]:
+        new = []
         if datacenter.status == "active":
             for zone in _boto_describe_availability_zones(datacenter.id):
-                Zone(
-                    id=zone["ZoneId"],
-                    name=zone["ZoneName"],
-                    datacenter=datacenter,
-                    vendor=vendor,
+                new.append(
+                    {
+                        "id": zone["ZoneId"],
+                        "name": zone["ZoneName"],
+                        "datacenter_id": datacenter.id,
+                        "vendor_id": vendor.id,
+                    }
                 )
         vendor.progress_tracker.advance_task()
+        return new
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        zones = executor.map(get_zones, vendor.datacenters, repeat(vendor))
+    zones = list(chain.from_iterable(zones))
     vendor.progress_tracker.hide_task()
-    vendor.log(f"{len(vendor.zones)} availability zones synced.")
+    insert_items(Zone, zones, vendor)
 
 
 def inventory_servers(vendor):
