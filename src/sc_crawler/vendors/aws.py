@@ -734,7 +734,7 @@ def inventory_servers(vendor):
 
 def inventory_server_prices(vendor):
     vendor.progress_tracker.start_task(
-        name="Searching for Ondemand Server Prices", n=None
+        name="Searching for ondemand server_prices", n=None
     )
     products = _boto_get_products(
         service_code="AmazonEC2",
@@ -758,7 +758,7 @@ def inventory_server_prices(vendor):
 
     server_prices = []
     vendor.progress_tracker.start_task(
-        name="Preprocess Ondemand Prices", n=len(products)
+        name="Preprocess ondemand server_prices", n=len(products)
     )
     for product in products:
         try:
@@ -784,7 +784,7 @@ def inventory_server_prices(vendor):
                     }
                 )
         except KeyError as e:
-            vendor.log(f"Cannot make Ondemand Server Price at {str(e)}", DEBUG)
+            vendor.log(f"Cannot make ondemand server_price at {str(e)}", DEBUG)
         finally:
             vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
@@ -794,7 +794,7 @@ def inventory_server_prices(vendor):
 
 def inventory_server_prices_spot(vendor):
     vendor.progress_tracker.start_task(
-        name="Scanning datacenters for Spot Prices", n=len(vendor.datacenters)
+        name="Scanning datacenters for spot server_prices", n=len(vendor.datacenters)
     )
 
     def get_spot_prices(datacenter: Datacenter, vendor: Vendor) -> List[dict]:
@@ -802,16 +802,16 @@ def inventory_server_prices_spot(vendor):
         if datacenter.status == "active":
             try:
                 new = _describe_spot_price_history(datacenter.id)
-                vendor.log(f"{len(new)} Spot Prices found in {datacenter.id}.")
+                vendor.log(f"{len(new)} spot server_price(s) found in {datacenter.id}.")
             except ClientError as e:
-                vendor.log(f"Cannot get Spot Prices in {datacenter.id}: {str(e)}")
+                vendor.log(f"Cannot get spot server_price in {datacenter.id}: {str(e)}")
         vendor.progress_tracker.advance_task()
         return new
 
     with ThreadPoolExecutor(max_workers=8) as executor:
         products = executor.map(get_spot_prices, vendor.datacenters, repeat(vendor))
     products = list(chain.from_iterable(products))
-    vendor.log(f"{len(products)} Spot Prices found.")
+    vendor.log(f"{len(products)} spot server_price(s) found.")
     vendor.progress_tracker.hide_task()
 
     # lookup tables
@@ -819,13 +819,15 @@ def inventory_server_prices_spot(vendor):
     servers = scmodels_to_dict(vendor.servers)
 
     server_prices = []
-    vendor.progress_tracker.start_task(name="Preprocess Spot Prices", n=len(products))
+    vendor.progress_tracker.start_task(
+        name="Preprocess spot server_prices", n=len(products)
+    )
     for product in products:
         try:
             zone = zones[product["AvailabilityZone"]]
             server = servers[product["InstanceType"]]
         except KeyError as e:
-            vendor.log("Cannot make Spot Server Price at %s" % str(e), DEBUG)
+            vendor.log("Cannot make spot server_price at %s" % str(e), DEBUG)
             continue
         server_prices.append(
             {
