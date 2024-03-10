@@ -1070,11 +1070,13 @@ def inventory_ipv4_prices(vendor):
             "groupDescription": "Hourly charge for In-use Public IPv4 Addresses",
         },
     )
+    vendor.log(f"Found {len(products)} ipv4_price(s).")
     vendor.progress_tracker.update_task(
         description="Syncing IPv4 prices", total=len(products)
     )
     # lookup tables
     datacenters = scmodels_to_dict(vendor.datacenters, keys=["name", "aliases"])
+    items = []
     for product in products:
         try:
             datacenter = datacenters[product["product"]["attributes"]["location"]]
@@ -1082,13 +1084,15 @@ def inventory_ipv4_prices(vendor):
             vendor.log("Datacenter not found: %s" % str(e), DEBUG)
             continue
         price = _extract_ondemand_price(product["terms"])
-        Ipv4Price(
-            vendor=vendor,
-            datacenter=datacenter,
-            price=price[0],
-            currency=price[1],
-            unit=PriceUnit.HOUR,
+        items.append(
+            {
+                "vendor_id": vendor.id,
+                "datacenter_id": datacenter.id,
+                "price": price[0],
+                "currency": price[1],
+                "unit": PriceUnit.HOUR,
+            }
         )
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
-    vendor.log(f"{len(products)} IPv4 prices synced.")
+    insert_items(Ipv4Price, items, vendor)
