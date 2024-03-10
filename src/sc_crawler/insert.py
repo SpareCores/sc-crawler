@@ -14,7 +14,7 @@ def validate_items(
     items: List[dict],
     vendor: Optional[Vendor] = None,
     prefix: str = "",
-):
+) -> List[dict]:
     """Validates a list of items against a SQLModel definition.
 
     Args:
@@ -23,14 +23,18 @@ def validate_items(
         vendor: Optional Vendor instance used for logging and progress bar updates.
         prefix: Optional extra description for the model added in front of
             the model name in logs and progress bar updates.
+
+    Returns:
+        List of validated dicts in the same order. Note that missing fields
+        has been filled in with default values (needed for bulk inserts).
     """
     model_name = model.get_table_name()
     if vendor:
         vendor.progress_tracker.start_task(
             name=f"Validating {space_after(prefix)}{model_name}(s)", n=len(items)
         )
-    for item in items:
-        model.model_validate(item)
+    for i, item in enumerate(items):
+        items[i] = model.model_validate(item).model_dump()
         if vendor:
             vendor.progress_tracker.advance_task()
     if vendor:
@@ -40,6 +44,7 @@ def validate_items(
             % (len(items), model_name),
             DEBUG,
         )
+    return items
 
 
 def bulk_insert_items(
@@ -87,7 +92,7 @@ def insert_items(model: SQLModel, items: List[dict], vendor: Vendor, prefix: str
     """
     model_name = model.get_table_name()
     if is_sqlite(vendor.session):
-        validate_items(model, items, vendor, prefix)
+        items = validate_items(model, items, vendor, prefix)
         bulk_insert_items(model, items, vendor, prefix)
     else:
         vendor.progress_tracker.start_task(
