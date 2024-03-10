@@ -103,7 +103,7 @@ def insert_items(model: SQLModel, items: List[dict], vendor: Vendor, prefix: str
             # - https://github.com/tiangolo/sqlmodel/issues/6
             # - https://github.com/tiangolo/sqlmodel/issues/342
             # so need to trigger the merge manually
-            vendor.merge_dependent(model.model_validate(item))
+            vendor.session.merge(model.model_validate(item))
             vendor.progress_tracker.advance_task()
         vendor.progress_tracker.hide_task()
         vendor.log(f"{len(items)} {space_after(prefix)}{model_name}(s) synced.")

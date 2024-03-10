@@ -110,18 +110,6 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
             hashes[rowkeys] = rowhash
         return hashes
 
-    def __init__(self, *args, **kwargs):
-        """Merge instace with the database if present.
-
-        Checking if there's a parent vendor, and then try to sync the
-        object using the parent's session private attribute.
-        """
-        super().__init__(*args, **kwargs)
-        if hasattr(self, "vendor"):
-            if self.vendor:
-                if self.vendor.session:
-                    self.vendor.merge_dependent(self)
-
 
 class Json(BaseModel):
     """Custom base SQLModel class that supports dumping as JSON."""
@@ -501,13 +489,6 @@ class Vendor(HasName, HasIdPK, table=True):
     def register_progress_tracker(self, progress_tracker: VendorProgressTracker):
         """Attach a VendorProgressTracker to use for updating progress bars."""
         self._progress_tracker = progress_tracker
-
-    def merge_dependent(self, obj):
-        """Merge an object into the Vendor's SQLModel session (when available)."""
-        if self.session:
-            # TODO investigate SAWarning
-            # on obj associated with vendor before added to session?
-            self.session.merge(obj)
 
     def set_table_rows_inactive(self, model: str, *args) -> None:
         """Set this vendor's records to INACTIVE in a table
