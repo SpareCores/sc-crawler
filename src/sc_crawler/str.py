@@ -2,6 +2,16 @@ from re import search, sub
 from typing import Union
 
 
+def wrap(text: str = "", before: str = " ", after: str = " ") -> str:
+    """Wrap string between before/after strings (default to spaces) if not empty."""
+    return text if text == "" else before + text + after
+
+
+def space_after(text: str = ""):
+    """Add space after string if not empty."""
+    return wrap(text, before="")
+
+
 # https://www.w3resource.com/python-exercises/string/python-data-type-string-exercise-97.php
 def snake_case(text):
     """Convert CamelCase to snake_case.

@@ -5,17 +5,8 @@ from sqlalchemy.dialects.sqlite import insert
 from sqlmodel import SQLModel
 
 from .schemas import Vendor
+from .str import space_after
 from .utils import chunk_list, is_sqlite
-
-
-def wrap(text: str = "", before: str = " ", after: str = " ") -> str:
-    """Wrap string between before/after strings (default to spaces) if not empty."""
-    return text if text == "" else before + text + after
-
-
-def space_after(text: str = ""):
-    """Add space after string if not empty."""
-    return wrap(text, before="")
 
 
 def validate_items(
