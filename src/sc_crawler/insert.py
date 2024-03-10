@@ -1,26 +1,27 @@
 from logging import DEBUG
 from typing import List, Optional
 
+from pydantic import BaseModel
 from sqlalchemy.dialects.sqlite import insert
 
-from .schemas import ScModel, ServerPrice, ServerPriceBase, Vendor
+from .schemas import ServerPrice, ServerPriceBase, Vendor
 from .utils import chunk_list, is_sqlite
 
 
-def validate_scmodel(
-    scmodel: ScModel, items: List[dict], vendor: Optional[Vendor] = None
+def validate_items(
+    model: BaseModel, items: List[dict], vendor: Optional[Vendor] = None
 ):
-    """Validates a list of objects against a ScModel pydantic definition.
+    """Validates a list of items against a pydantic definition.
 
     Args:
-        scmodel: A Pydantic model (e.g. SQLModel without `table=True`) to be used for validation.
+        model: A Pydantic model (e.g. SQLModel without `table=True`) to be used for validation.
         items: List of dictionaries to be checked against `scmodel`.
         vendor: Optional Vendor instance used for logging and progress bar updates.
     """
 
     # drop the "Base" suffix from class name for better user experience,
     # and as that class will be used by the ORM later anyway
-    model_name = scmodel.__name__
+    model_name = model.__name__
     if model_name.endswith("Base"):
         model_name = model_name[: -len("Base")]
 
@@ -29,7 +30,7 @@ def validate_scmodel(
             name=f"Validating {model_name}", n=len(items)
         )
     for item in items:
-        scmodel.model_validate(item)
+        model.model_validate(item)
         if vendor:
             vendor.progress_tracker.advance_task()
     if vendor:
@@ -88,7 +89,7 @@ def insert_server_prices(server_prices: List[dict], vendor: Vendor, price_type: 
         vendor: related Vendor instance used for database connection, logging and progress bar updates
         price_type: prefix added in front of "Price" in logs and progress bars
     """
-    validate_scmodel(ServerPriceBase, server_prices, vendor)
+    validate_items(ServerPriceBase, server_prices, vendor)
 
     if is_sqlite(vendor.session):
         bulk_insert_server_prices(server_prices, vendor, price_type=price_type)
