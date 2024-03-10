@@ -3,6 +3,7 @@ from typing import List, Optional
 
 from pydantic import BaseModel
 from sqlalchemy.dialects.sqlite import insert
+from sqlmodel import SQLModel
 
 from .schemas import ServerPrice, ServerPriceBase, Vendor
 from .utils import chunk_list, is_sqlite
@@ -38,44 +39,39 @@ def validate_items(
         vendor.log("%d %s objects validated" % (len(items), model_name), DEBUG)
 
 
-def bulk_insert_server_prices(
-    server_prices: List[dict], vendor: Vendor, price_type: str
+# def insert_items()
+
+
+def bulk_insert_items(
+    model: SQLModel, items: List[dict], vendor: Vendor, suffix: str = ""
 ):
-    """Bulk inserts records into the server_prices table.
+    """Bulk inserts items into a SQLModel table with ON CONFLICT update.
 
     Args:
-        server_prices: list of dicts with vendor_id, datacenter_id etc (all colums of server_prices)
-        vendor: related Vendor instance used for database connection, logging and progress bar updates
-        price_type: prefix added in front of "Price" in logs and progress bars
+        model: An SQLModel table definition with primary key(s).
+        items: List of dicts with all columns of the model.
+        vendor: The related Vendor instance used for database connection, logging and progress bar updates.
+        suffix: Optional string added in logs and progress bar updates.
     """
+    model_name = model.__name__
+    columns = model.get_columns()
+    if suffix:
+        suffix = f" [{suffix}]"
+
     vendor.progress_tracker.start_task(
-        name=f"Syncing {price_type} Prices", n=len(server_prices)
+        name=f"Syncing {model_name}{suffix}", n=len(items)
     )
     # need to split list into smaller chunks to avoid "too many SQL variables"
-    for chunk in chunk_list(server_prices, 100):
-        query = insert(ServerPrice).values(chunk)
+    for chunk in chunk_list(items, 100):
+        query = insert(model).values(chunk)
         query = query.on_conflict_do_update(
-            index_elements=[
-                ServerPrice.vendor_id,
-                ServerPrice.datacenter_id,
-                ServerPrice.zone_id,
-                ServerPrice.server_id,
-                ServerPrice.allocation,
-            ],
-            set_={
-                "operating_system": query.excluded.operating_system,
-                "unit": query.excluded.unit,
-                "price": query.excluded.price,
-                "price_upfront": query.excluded.price_upfront,
-                "price_tiered": query.excluded.price_tiered,
-                "currency": query.excluded.currency,
-                "status": query.excluded.status,
-            },
+            index_elements=[getattr(model, c) for c in columns["primary_keys"]],
+            set_={c: query.excluded[c] for c in columns["attributes"]},
         )
         vendor.session.execute(query)
         vendor.progress_tracker.advance_task(by=len(chunk))
     vendor.progress_tracker.hide_task()
-    vendor.log(f"{len(server_prices)} {price_type} Prices synced.")
+    vendor.log(f"{len(items)} {model_name}{suffix} synced.")
 
 
 def insert_server_prices(server_prices: List[dict], vendor: Vendor, price_type: str):
@@ -92,7 +88,7 @@ def insert_server_prices(server_prices: List[dict], vendor: Vendor, price_type: 
     validate_items(ServerPriceBase, server_prices, vendor)
 
     if is_sqlite(vendor.session):
-        bulk_insert_server_prices(server_prices, vendor, price_type=price_type)
+        bulk_insert_items(ServerPrice, server_prices, vendor, suffix=price_type)
     else:
         vendor.progress_tracker.start_task(
             name=f"Syncing {price_type} Server Prices", n=len(server_prices)
