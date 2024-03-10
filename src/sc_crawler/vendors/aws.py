@@ -18,6 +18,7 @@ from ..schemas import (
     Disk,
     Gpu,
     Ipv4Price,
+    PriceTier,
     PriceUnit,
     Server,
     ServerPrice,
@@ -1031,28 +1032,33 @@ def inventory_traffic_prices(vendor):
                 "transferType": "AWS " + direction.value.title(),
             },
         )
+        vendor.log(f"Found {len(products)} {direction.value} traffic_price(s).")
         vendor.progress_tracker.update_task(
             description=f"Syncing {direction.value} Traffic prices", total=len(products)
         )
+        items = []
         for product in products:
             try:
                 datacenter = datacenters[product["product"]["attributes"][loc_dir]]
-                price = _extract_ondemand_prices(product["terms"])
-                TrafficPrice(
-                    vendor=vendor,
-                    datacenter=datacenter,
-                    price=price[0][-1].get("price"),
-                    price_tiered=price,
-                    currency=price[1],
-                    unit=PriceUnit.GB_MONTH,
-                    direction=direction,
+                prices = _extract_ondemand_prices(product["terms"])
+                price = [PriceTier.model_validate(p).model_dump() for p in prices[0]]
+                items.append(
+                    {
+                        "vendor_id": vendor.id,
+                        "datacenter_id": datacenter.id,
+                        "price": prices[0][-1].get("price"),
+                        "price_tiered": price,
+                        "currency": prices[1],
+                        "unit": PriceUnit.GB_MONTH,
+                        "direction": direction,
+                    }
                 )
             except KeyError:
                 continue
             finally:
                 vendor.progress_tracker.advance_task()
         vendor.progress_tracker.hide_task()
-        vendor.log(f"{len(products)} {direction.value} Traffic prices synced.")
+        insert_items(TrafficPrice, items, vendor)
 
 
 def inventory_ipv4_prices(vendor):
