@@ -8,23 +8,35 @@ from .schemas import Vendor
 from .utils import chunk_list, is_sqlite
 
 
-def wrap(suffix: str = "") -> str:
-    """Wraps string in square brackets and adds a leading space if not empty."""
-    return suffix if suffix == "" else f" [{suffix}]"
+def wrap(text: str = "", before: str = " ", after: str = " ") -> str:
+    """Wrap string between before/after strings (default to spaces) if not empty."""
+    return text if text == "" else before + text + after
 
 
-def validate_items(model: SQLModel, items: List[dict], vendor: Optional[Vendor] = None):
+def space_after(text: str = ""):
+    """Add space after string if not empty."""
+    return wrap(text, before="")
+
+
+def validate_items(
+    model: SQLModel,
+    items: List[dict],
+    vendor: Optional[Vendor] = None,
+    prefix: str = "",
+):
     """Validates a list of items against a SQLModel definition.
 
     Args:
         model: An SQLModel model to be used for validation.
         items: List of dictionaries to be checked against `model`.
         vendor: Optional Vendor instance used for logging and progress bar updates.
+        prefix: Optional extra description for the model added in front of
+            the model name in logs and progress bar updates.
     """
     model_name = model.get_table_name()
     if vendor:
         vendor.progress_tracker.start_task(
-            name=f"Validating {model_name}(s)", n=len(items)
+            name=f"Validating {space_after(prefix)}{model_name}(s)", n=len(items)
         )
     for item in items:
         model.model_validate(item)
@@ -32,11 +44,15 @@ def validate_items(model: SQLModel, items: List[dict], vendor: Optional[Vendor] 
             vendor.progress_tracker.advance_task()
     if vendor:
         vendor.progress_tracker.hide_task()
-        vendor.log("%d %s(s) objects validated" % (len(items), model_name), DEBUG)
+        vendor.log(
+            "%d {space_after(prefix)}%s(s) objects validated"
+            % (len(items), model_name),
+            DEBUG,
+        )
 
 
 def bulk_insert_items(
-    model: SQLModel, items: List[dict], vendor: Vendor, suffix: str = ""
+    model: SQLModel, items: List[dict], vendor: Vendor, prefix: str = ""
 ):
     """Bulk inserts items into a SQLModel table with ON CONFLICT update.
 
@@ -44,13 +60,13 @@ def bulk_insert_items(
         model: An SQLModel table definition with primary key(s).
         items: List of dicts with all columns of the model.
         vendor: The related Vendor instance used for database connection, logging and progress bar updates.
-        suffix: Optional string added in logs and progress bar updates.
+        prefix: Optional extra description for the model added in front of
+            the model name in logs and progress bar updates.
     """
     model_name = model.get_table_name()
     columns = model.get_columns()
-
     vendor.progress_tracker.start_task(
-        name=f"Syncing {model_name}(s){wrap(suffix)}", n=len(items)
+        name=f"Syncing {space_after(prefix)}{model_name}(s)", n=len(items)
     )
     # need to split list into smaller chunks to avoid "too many SQL variables"
     for chunk in chunk_list(items, 100):
@@ -62,10 +78,10 @@ def bulk_insert_items(
         vendor.session.execute(query)
         vendor.progress_tracker.advance_task(by=len(chunk))
     vendor.progress_tracker.hide_task()
-    vendor.log(f"{len(items)} {model_name}{wrap(suffix)} synced.")
+    vendor.log(f"{len(items)} {space_after(prefix)}{model_name}(s) synced.")
 
 
-def insert_items(model: SQLModel, items: List[dict], vendor: Vendor, suffix: str = ""):
+def insert_items(model: SQLModel, items: List[dict], vendor: Vendor, prefix: str = ""):
     """Insert items into the related database table using bulk or merge.
 
     Bulk insert is only supported with SQLite, other databases fall back to
@@ -75,16 +91,16 @@ def insert_items(model: SQLModel, items: List[dict], vendor: Vendor, suffix: str
         model: An SQLModel table definition with primary key(s).
         items: List of dicts with all columns of the model.
         vendor: The related Vendor instance used for database connection, logging and progress bar updates.
-        suffix: Optional string added in logs and progress bar updates.
+        prefix: Optional extra description for the model added in front of
+            the model name in logs and progress bar updates.
     """
     model_name = model.get_table_name()
-
     if is_sqlite(vendor.session):
-        validate_items(model, items, vendor)
-        bulk_insert_items(model, items, vendor, suffix=suffix)
+        validate_items(model, items, vendor, prefix)
+        bulk_insert_items(model, items, vendor, prefix)
     else:
         vendor.progress_tracker.start_task(
-            name=f"Syncing {model_name}(s){wrap(suffix)}", n=len(items)
+            name=f"Syncing {space_after(prefix)}{model_name}(s)", n=len(items)
         )
         for item in items:
             # vendor's auto session.merge doesn't work due to SQLmodel bug:
@@ -94,4 +110,4 @@ def insert_items(model: SQLModel, items: List[dict], vendor: Vendor, suffix: str
             vendor.merge_dependent(model.model_validate(item))
             vendor.progress_tracker.advance_task()
         vendor.progress_tracker.hide_task()
-        vendor.log(f"{len(items)} {model_name}(s){wrap(suffix)} synced.")
+        vendor.log(f"{len(items)} {space_after(prefix)}{model_name}(s) synced.")

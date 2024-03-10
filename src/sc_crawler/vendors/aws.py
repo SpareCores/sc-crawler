@@ -789,7 +789,7 @@ def inventory_server_prices(vendor):
             vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
 
-    insert_items(ServerPrice, server_prices, vendor, suffix="ondemand")
+    insert_items(ServerPrice, server_prices, vendor, prefix="ondemand")
 
 
 def inventory_server_prices_spot(vendor):
@@ -846,7 +846,7 @@ def inventory_server_prices_spot(vendor):
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
 
-    insert_items(ServerPrice, server_prices, vendor, suffix="spot")
+    insert_items(ServerPrice, server_prices, vendor, prefix="spot")
 
 
 storage_types = [
