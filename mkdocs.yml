@@ -1,0 +1,8 @@
+site_name: "Spare Cores Crawler"
+repo_url: https://github.com/spareCores/sc-crawler/
+
+theme:
+  name: "material"
+
+plugins:
+- search
