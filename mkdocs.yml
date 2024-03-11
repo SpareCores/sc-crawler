@@ -1,8 +1,34 @@
 site_name: "Spare Cores Crawler"
 repo_url: https://github.com/spareCores/sc-crawler/
+edit_uri: blob/main/docs/
 
 theme:
   name: "material"
+  logo: logo.png
+  icon:
+    repo: fontawesome/brands/github
+  features:
+    - content.action.edit
 
 plugins:
 - search
+- autorefs
+- section-index
+- mkdocstrings:
+    default_handler: python
+    handlers:
+      python:
+        options:
+          show_source: true
+          show_signature: true
+          separate_signature: true
+          show_root_heading: true
+          show_signature_annotations: false
+          show_symbol_type_heading: true
+          show_symbol_type_toc: true
+          signature_crossrefs: true
+          summary: true
+
+markdown_extensions:
+  - toc:
+      permalink: "#"
