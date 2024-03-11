@@ -36,6 +36,8 @@ class ScMetaModel(SQLModel.__class__):
         reuse the optional table and field descriptions. Table
         docstrings are truncated to first line.
 
+    - Reuse description of the fields to dynamically append to the
+        docstring in the Attributes section.
     - Append observed_at column.
     """
 
@@ -63,6 +65,18 @@ class ScMetaModel(SQLModel.__class__):
                 comment="Timestamp of the last observation.",
             )
         )
+        # describe table columns as attributes in docstring
+        attributes = subclass.model_fields.items()
+        subclass.__doc__ = subclass.__doc__ + "\n\nAttributes:\n"
+        for k, v in subclass.model_fields.items():
+            if not hasattr(v.annotation, "__args__"):
+                typehint = v.annotation.__name__
+            else:
+                typehint = str(v.annotation)
+            description = satable.columns[k].comment
+            subclass.__doc__ = (
+                subclass.__doc__ + f"    {k} ({typehint}): {description}\n"
+            )
 
 
 class ScModel(SQLModel, metaclass=ScMetaModel):
