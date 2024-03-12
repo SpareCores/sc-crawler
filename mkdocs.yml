@@ -26,6 +26,8 @@ plugins:
         import:
         - https://docs.python.org/3/objects.inv
         - https://rich.readthedocs.io/en/stable/objects.inv
+        - https://docs.pydantic.dev/latest/objects.inv
+        # TODO objects.inv for SQLModel
         options:
           show_source: true
           show_signature: true
@@ -36,6 +38,8 @@ plugins:
           show_symbol_type_toc: true
           signature_crossrefs: true
           summary: true
+          extensions:
+          - scripts/dynamic_docstrings.py:DynamicDocstrings
 
 markdown_extensions:
   - toc:
