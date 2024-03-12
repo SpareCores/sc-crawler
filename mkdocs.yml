@@ -1,14 +1,26 @@
-site_name: "Spare Cores Crawler"
+site_name: "SC Crawler"
 repo_url: https://github.com/spareCores/sc-crawler/
 edit_uri: blob/main/docs/
 
+extra:
+  homepage: https://sparecores.com
+
 theme:
   name: "material"
-  logo: logo.png
+  logo: logo-horizontal.png
+  favicon: logo-128x128.png
   icon:
     repo: fontawesome/brands/github
   features:
     - content.action.edit
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.expand
+    - navigation.path
+    - toc.integrate
+    - search.suggest
+    - navigation.footer
+    - optimize
 
 plugins:
 - search
