@@ -4,6 +4,15 @@ edit_uri: blob/main/docs/
 
 extra:
   homepage: https://sparecores.com
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/spareCores
+    - icon: fontawesome/brands/linkedin
+      link: https://linkedin.com/company/SpareCores
+    - icon: fontawesome/brands/x-twitter
+      link: https://twitter.com/SpareCores
+    - icon: fontawesome/brands/facebook
+      link: https://www.facebook.com/SpareCores/
 
 theme:
   name: "material"
@@ -55,8 +64,8 @@ plugins:
           summary: true
           extensions:
           - scripts/dynamic_docstrings.py:DynamicDocstrings
-  - social:
-      enabled: !ENV [CI, false]
+- social:
+    enabled: !ENV [CI, false]
 
 markdown_extensions:
   - toc:
