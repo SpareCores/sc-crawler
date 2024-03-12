@@ -36,11 +36,7 @@ for path in sorted(src.rglob("*.py")):
     # TODO clean up this messed up reference to the proper GH page
     mkdocs_gen_files.set_edit_path(
         full_doc_path,
-        Path("../")
-        / Path("../")
-        / Path("blob")
-        / Path("main")
-        / path.relative_to(root),
+        Path("../") / Path("../") / Path("main") / path.relative_to(root),
     )
 
 with mkdocs_gen_files.open("reference/SUMMARY.md", "w") as nav_file:
