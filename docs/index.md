@@ -1,19 +1,23 @@
 ## Spare Cores Crawler
 
-!!! note
+!!! note annotate
 
-    This repository is still in alpha phase, and is NOT intended for any
-    public use yet.  Please check back by the end of Q1 2024, or contact
-    us (via a [GitHub ticket](https://github.com/SpareCores/sc-crawler/issues/new))
+    This repository is still in alpha phase(1), and is NOT intended for any
+    public use yet.
+
+    Please check back by the end of Q1 2024, or contact us (via a
+    [GitHub ticket](https://github.com/SpareCores/sc-crawler/issues/new))
     if you are interested in alpha/beta testing.
 
+1. "The software has the minimal required set of features to be useful. The architecture of the software is clear." Source: [Stages of Software Development](https://martin-thoma.com/software-development-stages/#3-alpha)
+
 SC Crawler is a Python package to pull and standardize data on cloud
-compute resources, with tooling to help organize and update collected
-data into databases.
+compute resources, with tooling to help organize and update the
+collected data into databases.
 
 ## Database schemas
 
-Database schemas and relationships visualized and documented at
+The database schemas and relationships are visualized and documented at
 <https://dbdocs.io/spare-cores/sc-crawler>.
 
 ## Usage
@@ -56,7 +60,8 @@ Note that you need specific IAM permissions to be able to run `sc-crawler` at th
                 "pricing:GetProducts",
                 "ec2:DescribeRegions",
                 "ec2:DescribeAvailabilityZones",
-                "ec2:DescribeInstanceTypes"
+                "ec2:DescribeInstanceTypes",
+                "ec2:DescribeSpotPriceHistory"
             ],
             "Resource": "*"
         }
@@ -78,22 +83,34 @@ find it at <https://sc-data-public-40e9d310.s3.amazonaws.com/sc-data-all.db.bz2>
 
 ### Hash data
 
-TODO
+Database content can be hashed via the `sc-crawler hash` command. It will provide
+a single SHA1 hash value based on all records of all SC Crawler tables, which is
+useful to track if database content has changed.
 
+For advanced usage, check [sc_crawler.utils.hash_database][] to hash tables or rows.
 
-## Other WIP methods
+## ORM
 
-Read from previously pulled DB:
+SC Crawler is using [SQLModel](https://sqlmodel.tiangolo.com/) /
+[SQLAlchemy](https://docs.sqlalchemy.org/) as the ORM to interact with the underlying
+database, and you can also use the defined schemas and models to actually read/filter
+a previously pulled DB. Quick examples:
 
-```py
+```py hl_lines="6"
 from sc_crawler.schemas import Server
 from sqlmodel import create_engine, Session, select
 
-engine = create_engine("sqlite:///sc_crawler.db")
-session = Session(engine)
-server = session.exec(select(Server).where(Server.id == 'trn1.32xlarge')).one()
+engine = create_engine("sqlite:///sc_crawler.db") # (1)!
+session = Session(engine) # (2)!
+server = session.exec(select(Server).where(Server.id == 'trn1.32xlarge')).one() # (3)!
 
-from rich import print as pp
+from rich import print as pp # (4)!
 pp(server)
-pp(server.vendor)
+pp(server.vendor) # (5)!
 ```
+
+1. Creating a [connection (pool)][sqlalchemy.create_engine] to the SQLite database.
+2. Define an [in-memory representation of the database][sqlalchemy.orm.Session] for the ORM objects.
+3. Query the database for the [Server][sc_crawler.schemas.Server] with the `trn1.32xlarge` id.
+4. Use `rich` to pretty-print the objects.
+5. The `vendor` is a [Vendor][sc_crawler.schemas.Vendor] relationship of the [Server][sc_crawler.schemas.Server], in this case being [aws][sc_crawler.vendors.aws].

@@ -7,8 +7,8 @@
 > if you are interested in alpha/beta testing.
 
 SC Crawler is a Python package to pull and standardize data on cloud
-compute resources, with tooling to help organize and update collected
-data into databases.
+compute resources, with tooling to help organize and update the
+collected data into databases.
 
 References:
 
