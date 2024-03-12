@@ -37,11 +37,14 @@ Homepage = "https://github.com/SpareCores/sc-crawler"
 Issues = "https://github.com/SpareCores/sc-crawler/issues"
 
 [project.optional-dependencies]
-testing = ["pytest"]
-mkdocs = ["mkdocs", "mkdocs-material", "mkdocstrings[python]>=0.18", "mkdocs-gen-files", "mkdocs-literate-nav", "section-index"]
+mkdocs = [
+  "mkdocs", "mkdocs-material", "mkdocstrings[python]>=0.18",
+  "mkdocs-gen-files", "mkdocs-literate-nav", "mkdocs-section-index"
+]
+testing = ["pytest", "sc-crawler[mkdocs]"]
 aws = ["boto3"]
 vendors = ["sc-crawler[aws]"]
-all = ["sc-crawler[testing]", "sc-crawler[mkdocs]", "sc-crawler[vendors]"]
+all = ["sc-crawler[testing]", "sc-crawler[vendors]"]
 
 [project.scripts]
 sc-crawler = "sc_crawler.cli:cli"
