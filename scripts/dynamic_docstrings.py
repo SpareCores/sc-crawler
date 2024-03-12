@@ -14,7 +14,7 @@ class DynamicDocstrings(Extension):
         # only import ScModel-like objects
         if (
             str(obj.relative_filepath) != "src/sc_crawler/schemas.py"
-            or obj.name[0].islower()
+            or not obj.is_class
         ):
             return
 
