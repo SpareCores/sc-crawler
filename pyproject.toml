@@ -23,13 +23,13 @@ authors = [
 maintainers = [
   { name="Spare Cores team", email="pkg@sparecores.com" }
 ]
-description = "Collect metadata on cloud compute resources on the fly."
+description = "Pull and standardize data on cloud compute resources."
 readme = "README.md"
 classifiers = [
   "Programming Language :: Python :: 3",
   "License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)",
   "Operating System :: OS Independent",
-  "Development Status :: 1 - Planning",
+  "Development Status :: 3 - Alpha",
 ]
 
 [project.urls]
@@ -37,7 +37,11 @@ Homepage = "https://github.com/SpareCores/sc-crawler"
 Issues = "https://github.com/SpareCores/sc-crawler/issues"
 
 [project.optional-dependencies]
-testing = ["pytest"]
+mkdocs = [
+  "mkdocs", "mkdocs-material", "mkdocstrings[python]>=0.18",
+  "mkdocs-gen-files", "mkdocs-literate-nav", "mkdocs-section-index"
+]
+testing = ["pytest", "sc-crawler[mkdocs]"]
 aws = ["boto3"]
 vendors = ["sc-crawler[aws]"]
 all = ["sc-crawler[testing]", "sc-crawler[vendors]"]
