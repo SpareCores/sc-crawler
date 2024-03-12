@@ -11,7 +11,11 @@ class DynamicDocstrings(Extension):
         if isinstance(node, ObjectNode):
             return  # skip runtime objects, their docstrings are already right
 
-        if str(obj.relative_filepath) != "src/sc_crawler/schemas.py":
+        # only import ScModel-like objects
+        if (
+            str(obj.relative_filepath) != "src/sc_crawler/schemas.py"
+            or obj.name[0].islower()
+        ):
             return
 
         # import object to get its evaluated docstring
