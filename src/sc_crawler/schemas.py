@@ -878,4 +878,5 @@ def is_table(table):
         return False
 
 
-tables = [o for o in globals().values() if is_table(o)]
+tables: List[SQLModel] = [o for o in globals().values() if is_table(o)]
+"""List of all SQLModel (table) models."""
