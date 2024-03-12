@@ -1,21 +1,11 @@
 ## Spare Cores Crawler
 
-Note that this repository is still in pre-alpha phase, and is NOT intended for any public use yet.
-Please check back by the end of Q1 2024, or contact us (via a GitHub ticket) if you are interested
-in alpha/beta testing.
+!!! note
 
-## TODO
-
-- [ ] describe how to set up auth for each vendor
-- [ ] list required IAM permissions for each vendor
-- [ ] implement vendors
-    - [x] AWS
-    - [ ] GCP
-    - [ ] Azure
-    - [ ] Scaleway
-    - [ ] Hetzner
-    - [ ] OVH
-    - [ ] add others ...
+    This repository is still in alpha phase, and is NOT intended for any
+    public use yet.  Please check back by the end of Q1 2024, or contact
+    us (via a [GitHub ticket](https://github.com/SpareCores/sc-crawler/issues/new))
+    if you are interested in alpha/beta testing.
 
 ## Database schema
 
@@ -37,7 +27,7 @@ Generate `CREATE TABLE` statements for a MySQL database:
 sc-crawler schema mysql
 ```
 
-See `sc-crawler schema` for all supported database engines.
+See `sc-crawler schema --help` for all supported database engines.
 
 ### Collect data
 
@@ -70,10 +60,10 @@ Note that you need specific IAM permissions to be able to run the Crawler at the
 
 </details>
 
-Fetch and standardize datacenter, zone, products etc data into a single SQLite file:
+Fetch and standardize datacenter, zone, servers, traffic, storage etc data from AWS into a single SQLite file:
 
 ```shell
-sc-crawler pull --cache --include-vendor aws
+sc-crawler pull --include-vendor aws
 ```
 
 Such an up-to-date SQLite database is managed by the Spare Cores team in the
