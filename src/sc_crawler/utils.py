@@ -1,11 +1,11 @@
 from enum import Enum
 from hashlib import sha1
 from json import dumps
-from typing import List, Union
+from typing import Any, Dict, Iterable, List, Union
 
 from sqlmodel import Session, create_engine
 
-from .schemas import tables
+from .schemas import ScModel, tables
 
 
 def jsoned_hash(*args, **kwargs):
@@ -60,3 +60,49 @@ def hash_database(
         hashes = jsoned_hash(hashes)
 
     return hashes
+
+
+def chunk_list(items: List[Any], size: int) -> Iterable[List[Any]]:
+    """Split a list into chunks of a specified size.
+
+    Examples:
+        >>> [len(x) for x in chunk_list(range(10), 3)]
+        [3, 3, 3, 1]
+    """
+    for i in range(0, len(items), size):
+        yield items[i : i + size]
+
+
+def scmodels_to_dict(
+    scmodels: List[ScModel], keys: List[str] = ["id"]
+) -> Dict[str, ScModel]:
+    """Creates a dict indexed by key(s) of the ScModels of the list.
+
+    When multiple keys are provided, each ScModel instance will be stored in
+    the dict with all keys. If a key is a list, then each list element is
+    considered (not recursively, only at first level) as a key.
+    Conflict of keys is not checked.
+
+    Args:
+        scmodels: list of ScModel instances
+        key: a list of strings referring to ScModel fields to be used as keys
+
+    Examples:
+        >>> from sc_crawler.vendors import aws
+        >>> scmodels_to_dict([aws], keys=["id", "name"])
+        {'aws': Vendor...
+    """
+    data = {}
+    for key in keys:
+        for scmodel in scmodels:
+            data_keys = getattr(scmodel, key)
+            if not isinstance(data_keys, list):
+                data_keys = [data_keys]
+            for data_key in data_keys:
+                data[data_key] = scmodel
+    return data
+
+
+def is_sqlite(session: Session) -> bool:
+    """Checks if a SQLModel session is binded to SQLite or another database."""
+    return session.bind.dialect.name == "sqlite"

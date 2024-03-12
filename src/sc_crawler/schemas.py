@@ -81,13 +81,21 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
         return snake_case(cls.__name__)
 
     @classmethod
+    def get_columns(cls) -> List[str]:
+        """Return the table's column names in a dict for all, primary keys, and attributes."""
+        columns = cls.__table__.columns.keys()
+        pks = [pk.name for pk in inspect(cls).primary_key]
+        attributes = [a for a in columns if a not in set(pks)]
+        return {"all": columns, "primary_keys": pks, "attributes": attributes}
+
+    @classmethod
     def get_table_name(cls) -> str:
         """Return the SQLModel object's table name."""
         return str(cls.__tablename__)
 
     @classmethod
     def hash(cls, session, ignored: List[str] = ["observed_at"]) -> dict:
-        pks = sorted([key.name for key in inspect(cls).primary_key])
+        pks = sorted(cls.get_columns()["primary_keys"])
         rows = session.exec(statement=select(cls))
         # no use of a generator as will need to serialize to JSON anyway
         hashes = {}
@@ -101,18 +109,6 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
             rowhash = sha1(dumps(rowdict, sort_keys=True).encode()).hexdigest()
             hashes[rowkeys] = rowhash
         return hashes
-
-    def __init__(self, *args, **kwargs):
-        """Merge instace with the database if present.
-
-        Checking if there's a parent vendor, and then try to sync the
-        object using the parent's session private attribute.
-        """
-        super().__init__(*args, **kwargs)
-        if hasattr(self, "vendor"):
-            if self.vendor:
-                if self.vendor.session:
-                    self.vendor.merge_dependent(self)
 
 
 class Json(BaseModel):
@@ -260,15 +256,17 @@ class HasTraffic(ScModel):
 # Actual SC data schemas and model definitions
 
 
-class Country(ScModel, table=True):
-    """Country and continent mapping."""
-
+class CountryBase(ScModel):
     id: str = Field(
         default=None,
         primary_key=True,
         description="Country code by ISO 3166 alpha-2.",
     )
     continent: str = Field(description="Continent name.")
+
+
+class Country(CountryBase, table=True):
+    """Country and continent mapping."""
 
     vendors: List["Vendor"] = Relationship(back_populates="country")
     datacenters: List["Datacenter"] = Relationship(back_populates="country")
@@ -491,13 +489,6 @@ class Vendor(HasName, HasIdPK, table=True):
     def register_progress_tracker(self, progress_tracker: VendorProgressTracker):
         """Attach a VendorProgressTracker to use for updating progress bars."""
         self._progress_tracker = progress_tracker
-
-    def merge_dependent(self, obj):
-        """Merge an object into the Vendor's SQLModel session (when available)."""
-        if self.session:
-            # TODO investigate SAWarning
-            # on obj associated with vendor before added to session?
-            self.session.merge(obj)
 
     def set_table_rows_inactive(self, model: str, *args) -> None:
         """Set this vendor's records to INACTIVE in a table

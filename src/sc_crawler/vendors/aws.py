@@ -3,20 +3,22 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from itertools import chain, repeat
+from logging import DEBUG
 from typing import List, Optional, Tuple
 
 import boto3
 from botocore.exceptions import ClientError
 from cachier import cachier, set_default_params
 
+from ..insert import insert_items
 from ..logger import logger
-from ..lookup import countries
 from ..schemas import (
     Allocation,
     Datacenter,
     Disk,
     Gpu,
     Ipv4Price,
+    PriceTier,
     PriceUnit,
     Server,
     ServerPrice,
@@ -30,7 +32,7 @@ from ..schemas import (
     Zone,
 )
 from ..str import extract_last_number
-from ..utils import jsoned_hash
+from ..utils import jsoned_hash, scmodels_to_dict
 
 # disable caching by default
 set_default_params(caching_enabled=False, stale_after=timedelta(days=1))
@@ -268,35 +270,35 @@ def _get_gpus_of_instance_type(instance_type):
     return [to_gpu(gpu) for gpu in gpus]
 
 
-def _make_server_from_instance_type(instance_type, vendor):
-    """Create a SQLModel Server instance from AWS raw API response."""
+def _make_server_from_instance_type(instance_type, vendor) -> dict:
+    """Create a SQLModel Server-compatible dict from AWS raw API response."""
     it = instance_type["InstanceType"]
     vcpu_info = instance_type["VCpuInfo"]
     cpu_info = instance_type["ProcessorInfo"]
     gpu_info = _get_gpu_of_instance_type(instance_type)
     storage_info = _get_storage_of_instance_type(instance_type)
     network_card = instance_type["NetworkInfo"]["NetworkCards"][0]
-    Server(
-        id=it,
-        vendor=vendor,
-        name=it,
-        description=_annotate_instance_type(it),
-        vcpus=vcpu_info["DefaultVCpus"],
-        cpu_cores=vcpu_info["DefaultCores"],
-        cpu_speed=cpu_info.get("SustainedClockSpeedInGhz", None),
-        cpu_architecture=cpu_info["SupportedArchitectures"][0],
-        cpu_manufacturer=cpu_info.get("Manufacturer", None),
-        memory=instance_type["MemoryInfo"]["SizeInMiB"],
-        gpu_count=gpu_info[0],
-        gpu_memory=gpu_info[1],
-        gpu_name=gpu_info[2],
-        gpus=_get_gpus_of_instance_type(instance_type),
-        storage_size=storage_info[0],
-        storage_type=storage_info[1],
-        storages=_get_storages_of_instance_type(instance_type),
-        network_speed=network_card["BaselineBandwidthInGbps"],
-        billable_unit="hour",
-    )
+    return {
+        "id": it,
+        "vendor_id": vendor.id,
+        "name": it,
+        "description": _annotate_instance_type(it),
+        "vcpus": vcpu_info["DefaultVCpus"],
+        "cpu_cores": vcpu_info["DefaultCores"],
+        "cpu_speed": cpu_info.get("SustainedClockSpeedInGhz", None),
+        "cpu_architecture": cpu_info["SupportedArchitectures"][0],
+        "cpu_manufacturer": cpu_info.get("Manufacturer", None),
+        "memory": instance_type["MemoryInfo"]["SizeInMiB"],
+        "gpu_count": gpu_info[0],
+        "gpu_memory": gpu_info[1],
+        "gpu_name": gpu_info[2],
+        "gpus": _get_gpus_of_instance_type(instance_type),
+        "storage_size": storage_info[0],
+        "storage_type": storage_info[1],
+        "storages": _get_storages_of_instance_type(instance_type),
+        "network_speed": network_card["BaselineBandwidthInGbps"],
+        "billable_unit": "hour",
+    }
 
 
 def _list_instance_types_of_region(region, vendor):
@@ -343,79 +345,18 @@ def _extract_ondemand_prices(terms) -> Tuple[List[dict], str]:
     return (tiers, currency)
 
 
-def _location_datacenter_map(vendor):
-    if len(vendor.datacenters) == 0:
-        raise ValueError(
-            f"No datacenters found for '{vendor.id}' vendor. Did you run inventory_datacenters?"
-        )
-    locations = {}
-    for dc in vendor.datacenters:
-        locations[dc.name] = dc
-        for a in dc.aliases:
-            locations[a] = dc
-    return locations
-
-
-def _get_product_datacenter(product, vendor):
-    attributes = product["product"]["attributes"]
-    location = attributes["location"]
-    location_type = attributes["locationType"]
-    try:
-        datacenter = [
-            d for d in vendor.datacenters if location == d.name or location in d.aliases
-        ][0]
-    except IndexError:
-        raise IndexError(
-            f"No AWS region found for location: {location} [{location_type}]"
-        )
-    return datacenter
-
-
-def _make_price_from_product(product, vendor):
-    attributes = product["product"]["attributes"]
-    location = attributes["location"]
-    instance_type = attributes["instanceType"]
-
-    try:
-        datacenter = _get_product_datacenter(product, vendor)
-    except IndexError as e:
-        logger.debug(str(e))
-        return
-
-    try:
-        server = [d for d in vendor.servers if d.id == instance_type][0]
-    except IndexError:
-        logger.debug(f"No server definition found for {instance_type} @ {location}")
-        return
-
-    price = _extract_ondemand_price(product["terms"])
-    for zone in datacenter.zones:
-        ServerPrice(
-            vendor=vendor,
-            datacenter=datacenter,
-            zone=zone,
-            server=server,
-            # TODO ingest other OSs
-            operating_system="Linux",
-            allocation=Allocation.ONDEMAND,
-            price=price[0],
-            currency=price[1],
-            unit=PriceUnit.HOUR,
-        )
-
-
 # ##############################################################################
 # Public methods to fetch data
 
 
 def inventory_compliance_frameworks(vendor):
     compliance_frameworks = ["hipaa", "soc2t2"]
+    items = []
     for compliance_framework in compliance_frameworks:
-        VendorComplianceLink(
-            vendor=vendor,
-            compliance_framework_id=compliance_framework,
+        items.append(
+            {"vendor_id": vendor.id, "compliance_framework_id": compliance_framework}
         )
-    vendor.log(f"{len(compliance_frameworks)} compliance frameworks synced.")
+    insert_items(VendorComplianceLink, items, vendor)
 
 
 def inventory_datacenters(vendor):
@@ -426,299 +367,299 @@ def inventory_datacenters(vendor):
     - energy source: https://sustainability.aboutamazon.com/products-services/the-cloud?energyType=true#renewable-energy
     """  # noqa: E501
     datacenters = [
-        Datacenter(
-            id="af-south-1",
-            name="Africa (Cape Town)",
-            vendor=vendor,
-            country=countries["ZA"],
-            city="Cape Town",
-            founding_year=2020,
-            green_energy=False,
-        ),
-        Datacenter(
-            id="ap-east-1",
-            name="Asia Pacific (Hong Kong)",
-            vendor=vendor,
-            country=countries["HK"],
-            city="Hong Kong",
-            founding_year=2019,
-            green_energy=False,
-        ),
-        Datacenter(
-            id="ap-northeast-1",
-            name="Asia Pacific (Tokyo)",
-            vendor=vendor,
-            country=countries["JP"],
-            city="Tokyo",
-            founding_year=2011,
-            green_energy=False,
-        ),
-        Datacenter(
-            id="ap-northeast-2",
-            name="Asia Pacific (Seoul)",
-            vendor=vendor,
-            country=countries["KR"],
-            city="Seoul",
-            founding_year=2016,
-            green_energy=False,
-        ),
-        Datacenter(
-            id="ap-northeast-3",
-            name="Asia Pacific (Osaka)",
-            vendor=vendor,
-            country=countries["JP"],
-            city="Osaka",
-            founding_year=2021,
-            green_energy=False,
-        ),
-        Datacenter(
-            id="ap-south-1",
-            name="Asia Pacific (Mumbai)",
-            vendor=vendor,
-            country=countries["IN"],
-            city="Mumbai",
-            founding_year=2016,
-            green_energy=True,
-        ),
-        Datacenter(
-            id="ap-south-2",
-            name="Asia Pacific (Hyderabad)",
-            vendor=vendor,
-            country=countries["IN"],
-            city="Hyderabad",
-            founding_year=2022,
-            green_energy=True,
-        ),
-        Datacenter(
-            id="ap-southeast-1",
-            name="Asia Pacific (Singapore)",
-            vendor=vendor,
-            country=countries["SG"],
-            city="Singapore",
-            founding_year=2010,
-            green_energy=False,
-        ),
-        Datacenter(
-            id="ap-southeast-2",
-            name="Asia Pacific (Sydney)",
-            vendor=vendor,
-            country=countries["AU"],
-            city="Sydney",
-            founding_year=2012,
-            green_energy=False,
-        ),
-        Datacenter(
-            id="ap-southeast-3",
-            name="Asia Pacific (Jakarta)",
-            vendor=vendor,
-            country=countries["ID"],
-            city="Jakarta",
-            founding_year=2021,
-            green_energy=False,
-        ),
-        Datacenter(
-            id="ap-southeast-4",
-            name="Asia Pacific (Melbourne)",
-            vendor=vendor,
-            country=countries["AU"],
-            city="Melbourne",
-            founding_year=2023,
-            green_energy=False,
-        ),
-        Datacenter(
-            id="ca-central-1",
-            name="Canada (Central)",
-            vendor=vendor,
-            country=countries["CA"],
-            city="Quebec",  # NOTE needs city name
-            founding_year=2016,
-            green_energy=True,
-        ),
-        Datacenter(
-            id="ca-west-1",
-            name="Canada West (Calgary)",
-            vendor=vendor,
-            country=countries["CA"],
-            city="Calgary",
-            founding_year=2023,
-            green_energy=False,
-        ),
-        Datacenter(
-            id="cn-north-1",
-            name="China (Beijing)",
-            vendor=vendor,
-            country=countries["CN"],
-            city="Beijing",
-            founding_year=2016,
-            green_energy=True,
-        ),
-        Datacenter(
-            id="cn-northwest-1",
-            name="China (Ningxia)",
-            vendor=vendor,
-            country=countries["CN"],
-            city="Ningxia",  # NOTE needs city name
-            founding_year=2017,
-            green_energy=True,
-        ),
-        Datacenter(
-            id="eu-central-1",
-            name="Europe (Frankfurt)",
-            aliases=["EU (Frankfurt)"],
-            vendor=vendor,
-            country=countries["DE"],
-            city="Frankfurt",
-            founding_year=2014,
-            green_energy=True,
-        ),
-        Datacenter(
-            id="eu-central-2",
-            name="Europe (Zurich)",
-            vendor=vendor,
-            country=countries["CH"],
-            city="Zurich",
-            founding_year=2022,
-            green_energy=True,
-        ),
-        Datacenter(
-            id="eu-north-1",
-            name="Europe (Stockholm)",
-            aliases=["EU (Stockholm)"],
-            vendor=vendor,
-            country=countries["SE"],
-            city="Stockholm",
-            founding_year=2018,
-            green_energy=True,
-        ),
-        Datacenter(
-            id="eu-south-1",
-            name="Europe (Milan)",
-            aliases=["EU (Milan)"],
-            vendor=vendor,
-            country=countries["IT"],
-            city="Milan",
-            founding_year=2020,
-            green_energy=True,
-        ),
-        Datacenter(
-            id="eu-south-2",
-            name="Europe (Spain)",
-            vendor=vendor,
-            country=countries["ES"],
-            city="Aragón",  # NOTE needs city name
-            founding_year=2022,
-            green_energy=True,
-        ),
-        Datacenter(
-            id="eu-west-1",
-            name="Europe (Ireland)",
-            aliases=["EU (Ireland)"],
-            vendor=vendor,
-            country=countries["IE"],
-            city="Dublin",
-            founding_year=2007,
-            green_energy=True,
-        ),
-        Datacenter(
-            id="eu-west-2",
-            name="Europe (London)",
-            aliases=["EU (London)"],
-            vendor=vendor,
-            country=countries["GB"],
-            city="London",
-            founding_year=2016,
-            green_energy=True,
-        ),
-        Datacenter(
-            id="eu-west-3",
-            name="Europe (Paris)",
-            aliases=["EU (Paris)"],
-            vendor=vendor,
-            country=countries["FR"],
-            city="Paris",
-            founding_year=2017,
-            green_energy=True,
-        ),
-        Datacenter(
-            id="il-central-1",
-            name="Israel (Tel Aviv)",
-            vendor=vendor,
-            country=countries["IL"],
-            city="Tel Aviv",
-            founding_year=2023,
-            green_energy=False,
-        ),
-        Datacenter(
-            id="me-central-1",
-            name="Middle East (UAE)",
-            vendor=vendor,
-            country=countries["AE"],
+        {
+            "id": "af-south-1",
+            "name": "Africa (Cape Town)",
+            "vendor_id": vendor.id,
+            "country_id": "ZA",
+            "city": "Cape Town",
+            "founding_year": 2020,
+            "green_energy": False,
+        },
+        {
+            "id": "ap-east-1",
+            "name": "Asia Pacific (Hong Kong)",
+            "vendor_id": vendor.id,
+            "country_id": "HK",
+            "city": "Hong Kong",
+            "founding_year": 2019,
+            "green_energy": False,
+        },
+        {
+            "id": "ap-northeast-1",
+            "name": "Asia Pacific (Tokyo)",
+            "vendor_id": vendor.id,
+            "country_id": "JP",
+            "city": "Tokyo",
+            "founding_year": 2011,
+            "green_energy": False,
+        },
+        {
+            "id": "ap-northeast-2",
+            "name": "Asia Pacific (Seoul)",
+            "vendor_id": vendor.id,
+            "country_id": "KR",
+            "city": "Seoul",
+            "founding_year": 2016,
+            "green_energy": False,
+        },
+        {
+            "id": "ap-northeast-3",
+            "name": "Asia Pacific (Osaka)",
+            "vendor_id": vendor.id,
+            "country_id": "JP",
+            "city": "Osaka",
+            "founding_year": 2021,
+            "green_energy": False,
+        },
+        {
+            "id": "ap-south-1",
+            "name": "Asia Pacific (Mumbai)",
+            "vendor_id": vendor.id,
+            "country_id": "IN",
+            "city": "Mumbai",
+            "founding_year": 2016,
+            "green_energy": True,
+        },
+        {
+            "id": "ap-south-2",
+            "name": "Asia Pacific (Hyderabad)",
+            "vendor_id": vendor.id,
+            "country_id": "IN",
+            "city": "Hyderabad",
+            "founding_year": 2022,
+            "green_energy": True,
+        },
+        {
+            "id": "ap-southeast-1",
+            "name": "Asia Pacific (Singapore)",
+            "vendor_id": vendor.id,
+            "country_id": "SG",
+            "city": "Singapore",
+            "founding_year": 2010,
+            "green_energy": False,
+        },
+        {
+            "id": "ap-southeast-2",
+            "name": "Asia Pacific (Sydney)",
+            "vendor_id": vendor.id,
+            "country_id": "AU",
+            "city": "Sydney",
+            "founding_year": 2012,
+            "green_energy": False,
+        },
+        {
+            "id": "ap-southeast-3",
+            "name": "Asia Pacific (Jakarta)",
+            "vendor_id": vendor.id,
+            "country_id": "ID",
+            "city": "Jakarta",
+            "founding_year": 2021,
+            "green_energy": False,
+        },
+        {
+            "id": "ap-southeast-4",
+            "name": "Asia Pacific (Melbourne)",
+            "vendor_id": vendor.id,
+            "country_id": "AU",
+            "city": "Melbourne",
+            "founding_year": 2023,
+            "green_energy": False,
+        },
+        {
+            "id": "ca-central-1",
+            "name": "Canada (Central)",
+            "vendor_id": vendor.id,
+            "country_id": "CA",
+            "city": "Quebec",  # NOTE needs city name
+            "founding_year": 2016,
+            "green_energy": True,
+        },
+        {
+            "id": "ca-west-1",
+            "name": "Canada West (Calgary)",
+            "vendor_id": vendor.id,
+            "country_id": "CA",
+            "city": "Calgary",
+            "founding_year": 2023,
+            "green_energy": False,
+        },
+        {
+            "id": "cn-north-1",
+            "name": "China (Beijing)",
+            "vendor_id": vendor.id,
+            "country_id": "CN",
+            "city": "Beijing",
+            "founding_year": 2016,
+            "green_energy": True,
+        },
+        {
+            "id": "cn-northwest-1",
+            "name": "China (Ningxia)",
+            "vendor_id": vendor.id,
+            "country_id": "CN",
+            "city": "Ningxia",  # NOTE needs city name
+            "founding_year": 2017,
+            "green_energy": True,
+        },
+        {
+            "id": "eu-central-1",
+            "name": "Europe (Frankfurt)",
+            "aliases": ["EU (Frankfurt)"],
+            "vendor_id": vendor.id,
+            "country_id": "DE",
+            "city": "Frankfurt",
+            "founding_year": 2014,
+            "green_energy": True,
+        },
+        {
+            "id": "eu-central-2",
+            "name": "Europe (Zurich)",
+            "vendor_id": vendor.id,
+            "country_id": "CH",
+            "city": "Zurich",
+            "founding_year": 2022,
+            "green_energy": True,
+        },
+        {
+            "id": "eu-north-1",
+            "name": "Europe (Stockholm)",
+            "aliases": ["EU (Stockholm)"],
+            "vendor_id": vendor.id,
+            "country_id": "SE",
+            "city": "Stockholm",
+            "founding_year": 2018,
+            "green_energy": True,
+        },
+        {
+            "id": "eu-south-1",
+            "name": "Europe (Milan)",
+            "aliases": ["EU (Milan)"],
+            "vendor_id": vendor.id,
+            "country_id": "IT",
+            "city": "Milan",
+            "founding_year": 2020,
+            "green_energy": True,
+        },
+        {
+            "id": "eu-south-2",
+            "name": "Europe (Spain)",
+            "vendor_id": vendor.id,
+            "country_id": "ES",
+            "city": "Aragón",  # NOTE needs city name
+            "founding_year": 2022,
+            "green_energy": True,
+        },
+        {
+            "id": "eu-west-1",
+            "name": "Europe (Ireland)",
+            "aliases": ["EU (Ireland)"],
+            "vendor_id": vendor.id,
+            "country_id": "IE",
+            "city": "Dublin",
+            "founding_year": 2007,
+            "green_energy": True,
+        },
+        {
+            "id": "eu-west-2",
+            "name": "Europe (London)",
+            "aliases": ["EU (London)"],
+            "vendor_id": vendor.id,
+            "country_id": "GB",
+            "city": "London",
+            "founding_year": 2016,
+            "green_energy": True,
+        },
+        {
+            "id": "eu-west-3",
+            "name": "Europe (Paris)",
+            "aliases": ["EU (Paris)"],
+            "vendor_id": vendor.id,
+            "country_id": "FR",
+            "city": "Paris",
+            "founding_year": 2017,
+            "green_energy": True,
+        },
+        {
+            "id": "il-central-1",
+            "name": "Israel (Tel Aviv)",
+            "vendor_id": vendor.id,
+            "country_id": "IL",
+            "city": "Tel Aviv",
+            "founding_year": 2023,
+            "green_energy": False,
+        },
+        {
+            "id": "me-central-1",
+            "name": "Middle East (UAE)",
+            "vendor_id": vendor.id,
+            "country_id": "AE",
             # NOTE city unknown
-            founding_year=2022,
-            green_energy=False,
-        ),
-        Datacenter(
-            id="me-south-1",
-            name="Middle East (Bahrain)",
-            vendor=vendor,
-            country=countries["BH"],
+            "founding_year": 2022,
+            "green_energy": False,
+        },
+        {
+            "id": "me-south-1",
+            "name": "Middle East (Bahrain)",
+            "vendor_id": vendor.id,
+            "country_id": "BH",
             # NOTE city unknown
-            founding_year=2019,
-            green_energy=False,
-        ),
-        Datacenter(
-            id="sa-east-1",
-            name="South America (Sao Paulo)",
-            vendor=vendor,
-            country=countries["BR"],
-            city="Sao Paulo",
-            founding_year=2011,
-            green_energy=False,
-        ),
-        Datacenter(
-            id="us-east-1",
-            name="US East (N. Virginia)",
-            vendor=vendor,
-            country=countries["US"],
-            state="Northern Virgina",
+            "founding_year": 2019,
+            "green_energy": False,
+        },
+        {
+            "id": "sa-east-1",
+            "name": "South America (Sao Paulo)",
+            "vendor_id": vendor.id,
+            "country_id": "BR",
+            "city": "Sao Paulo",
+            "founding_year": 2011,
+            "green_energy": False,
+        },
+        {
+            "id": "us-east-1",
+            "name": "US East (N. Virginia)",
+            "vendor_id": vendor.id,
+            "country_id": "US",
+            "state": "Northern Virgina",
             # NOTE city unknown
-            founding_year=2006,
-            green_energy=True,
-        ),
-        Datacenter(
-            id="us-east-2",
-            name="US East (Ohio)",
-            vendor=vendor,
-            country=countries["US"],
-            state="Ohio",
+            "founding_year": 2006,
+            "green_energy": True,
+        },
+        {
+            "id": "us-east-2",
+            "name": "US East (Ohio)",
+            "vendor_id": vendor.id,
+            "country_id": "US",
+            "state": "Ohio",
             # NOTE city unknown
-            founding_year=2016,
-            green_energy=True,
-        ),
-        Datacenter(
-            id="us-west-1",
-            name="US West (N. California)",
-            vendor=vendor,
-            country=countries["US"],
-            state="California",
+            "founding_year": 2016,
+            "green_energy": True,
+        },
+        {
+            "id": "us-west-1",
+            "name": "US West (N. California)",
+            "vendor_id": vendor.id,
+            "country_id": "US",
+            "state": "California",
             # NOTE city unknown
-            founding_year=2009,
-            green_energy=True,
-        ),
-        Datacenter(
-            id="us-west-2",
-            name="US West (Oregon)",
-            vendor=vendor,
-            country=countries["US"],
-            state="Oregon",
+            "founding_year": 2009,
+            "green_energy": True,
+        },
+        {
+            "id": "us-west-2",
+            "name": "US West (Oregon)",
+            "vendor_id": vendor.id,
+            "country_id": "US",
+            "state": "Oregon",
             # NOTE city unknown
-            founding_year=2011,
-            green_energy=True,
-        ),
+            "founding_year": 2011,
+            "green_energy": True,
+        },
     ]
 
     # look for undocumented (new) regions in AWS
-    supported_regions = [d.id for d in datacenters]
+    supported_regions = [d["id"] for d in datacenters]
     regions = _boto_describe_regions()
     for region in regions:
         region_name = region["RegionName"]
@@ -730,11 +671,12 @@ def inventory_datacenters(vendor):
     # mark inactive regions
     active_regions = [region["RegionName"] for region in regions]
     for datacenter in datacenters:
-        if datacenter.id not in active_regions:
-            datacenter.status = "inactive"
-            # note the change of status in the session
-            datacenter.vendor.merge_dependent(datacenter)
-    vendor.log(f"{len(datacenters)} datacenters synced.")
+        if datacenter["id"] in active_regions:
+            datacenter["status"] = "active"
+        else:
+            datacenter["status"] = "inactive"
+
+    insert_items(Datacenter, datacenters, vendor)
 
 
 def inventory_zones(vendor):
@@ -742,58 +684,72 @@ def inventory_zones(vendor):
     vendor.progress_tracker.start_task(
         name="Scanning datacenters for zones", n=len(vendor.datacenters)
     )
-    for datacenter in vendor.datacenters:
+
+    def get_zones(datacenter: Datacenter, vendor: Vendor) -> List[dict]:
+        new = []
         if datacenter.status == "active":
             for zone in _boto_describe_availability_zones(datacenter.id):
-                Zone(
-                    id=zone["ZoneId"],
-                    name=zone["ZoneName"],
-                    datacenter=datacenter,
-                    vendor=vendor,
+                new.append(
+                    {
+                        "id": zone["ZoneId"],
+                        "name": zone["ZoneName"],
+                        "datacenter_id": datacenter.id,
+                        "vendor_id": vendor.id,
+                    }
                 )
         vendor.progress_tracker.advance_task()
+        return new
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        zones = executor.map(get_zones, vendor.datacenters, repeat(vendor))
+    zones = list(chain.from_iterable(zones))
     vendor.progress_tracker.hide_task()
-    vendor.log(f"{len(vendor.zones)} availability zones synced.")
-
-
-def search_servers(datacenter: Datacenter, vendor: Optional[Vendor]) -> List[dict]:
-    instance_types = []
-    if datacenter.status == "active":
-        instance_types = _boto_describe_instance_types(datacenter.id)
-        if vendor:
-            vendor.log(f"{len(instance_types)} Servers found in {datacenter.id}.")
-    if vendor:
-        vendor.progress_tracker.advance_task()
-    return instance_types
+    insert_items(Zone, zones, vendor)
 
 
 def inventory_servers(vendor):
     # TODO drop this in favor of pricing.get_products, as it has info e.g. on instanceFamily
     #      although other fields are messier (e.g. extract memory from string)
     vendor.progress_tracker.start_task(
-        name="Scanning Datacenters for Servers", n=len(vendor.datacenters)
+        name="Scanning datacenters for servers", n=len(vendor.datacenters)
     )
+
+    def search_servers(datacenter: Datacenter, vendor: Optional[Vendor]) -> List[dict]:
+        instance_types = []
+        if datacenter.status == "active":
+            instance_types = _boto_describe_instance_types(datacenter.id)
+            if vendor:
+                vendor.log(f"{len(instance_types)} servers found in {datacenter.id}.")
+        if vendor:
+            vendor.progress_tracker.advance_task()
+        return instance_types
 
     with ThreadPoolExecutor(max_workers=8) as executor:
         products = executor.map(search_servers, vendor.datacenters, repeat(vendor))
     instance_types = list(chain.from_iterable(products))
 
     vendor.log(
-        f"{len(instance_types)} Servers found in {len(vendor.datacenters)} regions."
+        f"{len(instance_types)} servers found in {len(vendor.datacenters)} regions."
     )
     instance_types = list({p["InstanceType"]: p for p in instance_types}.values())
-    vendor.log(f"{len(instance_types)} unique Servers found.")
+    vendor.log(f"{len(instance_types)} unique servers found.")
     vendor.progress_tracker.hide_task()
 
-    vendor.progress_tracker.start_task(name="Syncing Servers", n=len(instance_types))
+    vendor.progress_tracker.start_task(
+        name="Preprocessing servers", n=len(instance_types)
+    )
+    servers = []
     for instance_type in instance_types:
-        _make_server_from_instance_type(instance_type, vendor)
+        servers.append(_make_server_from_instance_type(instance_type, vendor))
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
+    insert_items(Server, servers, vendor)
 
 
 def inventory_server_prices(vendor):
-    vendor.progress_tracker.start_task(name="Searching for Server Prices", n=None)
+    vendor.progress_tracker.start_task(
+        name="Searching for ondemand server_prices", n=None
+    )
     products = _boto_get_products(
         service_code="AmazonEC2",
         filters={
@@ -809,23 +765,49 @@ def inventory_server_prices(vendor):
             "tenancy": "Shared",
         },
     )
-    vendor.progress_tracker.update_task(
-        description="Syncing server prices", total=len(products)
+    vendor.progress_tracker.hide_task()
+
+    # lookup tables
+    datacenters = scmodels_to_dict(vendor.datacenters, keys=["name", "aliases"])
+
+    server_prices = []
+    vendor.progress_tracker.start_task(
+        name="Preprocess ondemand server_prices", n=len(products)
     )
     for product in products:
-        # drop Gov regions
-        if "GovCloud" not in product["product"]["attributes"]["location"]:
-            # NOTE this is slow due to adding 13k rows, and
-            # refactor without repeated lookups did not help
-            _make_price_from_product(product, vendor)
-        vendor.progress_tracker.advance_task()
+        try:
+            attributes = product["product"]["attributes"]
+            # early drop Gov regions
+            if "GovCloud" in attributes["location"]:
+                continue
+            datacenter = datacenters[attributes["location"]]
+            price = _extract_ondemand_price(product["terms"])
+            for zone in datacenter.zones:
+                server_prices.append(
+                    {
+                        "vendor_id": vendor.id,
+                        "datacenter_id": datacenter.id,
+                        "zone_id": zone.id,
+                        "server_id": attributes["instanceType"],
+                        # TODO ingest other OSs
+                        "operating_system": "Linux",
+                        "allocation": Allocation.ONDEMAND,
+                        "price": price[0],
+                        "currency": price[1],
+                        "unit": PriceUnit.HOUR,
+                    }
+                )
+        except KeyError as e:
+            vendor.log(f"Cannot make ondemand server_price at {str(e)}", DEBUG)
+        finally:
+            vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
-    vendor.log(f"{len(products)} servers prices synced.")
+    insert_items(ServerPrice, server_prices, vendor, prefix="ondemand")
 
 
 def inventory_server_prices_spot(vendor):
     vendor.progress_tracker.start_task(
-        name="Scanning datacenters for Spot Prices", n=len(vendor.datacenters)
+        name="Scanning datacenters for spot server_prices", n=len(vendor.datacenters)
     )
 
     def get_spot_prices(datacenter: Datacenter, vendor: Vendor) -> List[dict]:
@@ -833,42 +815,50 @@ def inventory_server_prices_spot(vendor):
         if datacenter.status == "active":
             try:
                 new = _describe_spot_price_history(datacenter.id)
-                vendor.log(f"{len(new)} Spot Prices found in {datacenter.id}.")
+                vendor.log(f"{len(new)} spot server_price(s) found in {datacenter.id}.")
             except ClientError as e:
-                vendor.log(f"Cannot get Spot Prices in {datacenter.id}: {str(e)}")
+                vendor.log(f"Cannot get spot server_price in {datacenter.id}: {str(e)}")
         vendor.progress_tracker.advance_task()
         return new
 
     with ThreadPoolExecutor(max_workers=8) as executor:
         products = executor.map(get_spot_prices, vendor.datacenters, repeat(vendor))
     products = list(chain.from_iterable(products))
-    vendor.log(f"{len(products)} Spot Prices found.")
+    vendor.log(f"{len(products)} spot server_price(s) found.")
     vendor.progress_tracker.hide_task()
 
-    vendor.progress_tracker.start_task(name="Syncing Spot Prices", n=len(products))
+    # lookup tables
+    zones = scmodels_to_dict(vendor.zones, keys=["name"])
+    servers = scmodels_to_dict(vendor.servers)
+
+    server_prices = []
+    vendor.progress_tracker.start_task(
+        name="Preprocess spot server_prices", n=len(products)
+    )
     for product in products:
         try:
-            zone = [z for z in vendor.zones if z.name == product["AvailabilityZone"]][0]
-            server = [s for s in vendor.servers if s.id == product["InstanceType"]][0]
-        except IndexError as e:
-            logger.debug(str(e))
-            return
-
-        ServerPrice(
-            vendor=vendor,
-            datacenter=zone.datacenter,
-            zone=zone,
-            server=server,
-            # TODO ingest other OSs
-            operating_system="Linux",
-            allocation=Allocation.SPOT,
-            price=product["SpotPrice"],
-            currency="USD",
-            unit=PriceUnit.HOUR,
+            zone = zones[product["AvailabilityZone"]]
+            server = servers[product["InstanceType"]]
+        except KeyError as e:
+            vendor.log("Cannot make spot server_price at %s" % str(e), DEBUG)
+            continue
+        server_prices.append(
+            {
+                "vendor_id": vendor.id,
+                "datacenter_id": zone.datacenter.id,
+                "zone_id": zone.id,
+                "server_id": server.id,
+                # TODO ingest other OSs
+                "operating_system": "Linux",
+                "allocation": Allocation.SPOT,
+                "price": float(product["SpotPrice"]),
+                "currency": "USD",
+                "unit": PriceUnit.HOUR,
+            }
         )
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
-    vendor.log(f"{len(products)} Spot Prices synced.")
+    insert_items(ServerPrice, server_prices, vendor, prefix="spot")
 
 
 storage_types = [
@@ -935,7 +925,7 @@ def search_storage(
 
 def inventory_storages(vendor):
     vendor.progress_tracker.start_task(
-        name="Searching for Storages", n=len(storage_manual_data)
+        name="Searching for storages", n=len(storage_manual_data)
     )
 
     # look up all volume types in us-east-1
@@ -949,39 +939,42 @@ def inventory_storages(vendor):
     products = list(chain.from_iterable(products))
     vendor.progress_tracker.hide_task()
 
+    storages = []
     for product in products:
         attributes = product["product"]["attributes"]
         product_id = attributes["volumeApiName"]
 
         def get_attr(key: str) -> float:
             return extract_last_number(
-                attributes.get(
-                    key,
-                    storage_manual_data[product_id][key],
+                str(
+                    attributes.get(
+                        key,
+                        storage_manual_data[product_id][key],
+                    )
                 )
             )
 
         storage_type = (
             StorageType.HDD if "HDD" in attributes["storageMedia"] else StorageType.SSD
         )
-        Storage(
-            id=product_id,
-            vendor=vendor,
-            name=attributes["volumeType"],
-            description=attributes["storageMedia"],
-            storage_type=storage_type,
-            max_iops=get_attr("maxIopsvolume"),
-            max_throughput=get_attr("maxThroughputvolume"),
-            min_size=get_attr("minVolumeSize") * 1024,
-            max_size=get_attr("maxVolumeSize") * 1024,
+        storages.append(
+            {
+                "id": product_id,
+                "vendor_id": vendor.id,
+                "name": attributes["volumeType"],
+                "description": attributes["storageMedia"],
+                "storage_type": storage_type,
+                "max_iops": get_attr("maxIopsvolume"),
+                "max_throughput": get_attr("maxThroughputvolume"),
+                "min_size": get_attr("minVolumeSize") * 1024,
+                "max_size": get_attr("maxVolumeSize") * 1024,
+            }
         )
 
-    vendor.log(f"{len(products)} Storages synced.")
+    insert_items(Storage, storages, vendor)
 
 
 def inventory_storage_prices(vendor):
-    loc2dc = _location_datacenter_map(vendor)
-    vendor_storages = {x.id: x for x in vendor.storages}
     vendor.progress_tracker.start_task(
         name="Searching for Storage Prices", n=len(storage_manual_data)
     )
@@ -993,20 +986,29 @@ def inventory_storage_prices(vendor):
         )
     products = list(chain.from_iterable(products))
     vendor.progress_tracker.hide_task()
+    vendor.log(f"Found {len(products)} storage_price(s).")
 
-    vendor.progress_tracker.start_task(name="Syncing Storage Prices", n=len(products))
+    # lookup tables
+    datacenters = scmodels_to_dict(vendor.datacenters, keys=["name", "aliases"])
+
+    vendor.progress_tracker.start_task(
+        name="Preprocessing storage_prices", n=len(products)
+    )
+    prices = []
     for product in products:
         try:
             attributes = product["product"]["attributes"]
-            datacenter = loc2dc[attributes["location"]]
+            datacenter = datacenters[attributes["location"]]
             price = _extract_ondemand_price(product["terms"])
-            StoragePrice(
-                vendor=vendor,
-                datacenter=datacenter,
-                storage=vendor_storages[attributes["volumeApiName"]],
-                unit=PriceUnit.GB_MONTH,
-                price=price[0],
-                currency=price[1],
+            prices.append(
+                {
+                    "vendor_id": vendor.id,
+                    "datacenter_id": datacenter.id,
+                    "storage_id": attributes["volumeApiName"],
+                    "unit": PriceUnit.GB_MONTH,
+                    "price": price[0],
+                    "currency": price[1],
+                }
             )
         except KeyError:
             continue
@@ -1014,11 +1016,11 @@ def inventory_storage_prices(vendor):
             vendor.progress_tracker.advance_task()
 
     vendor.progress_tracker.hide_task()
-    vendor.log(f"{len(products)} Storage Prices synced.")
+    insert_items(StoragePrice, prices, vendor)
 
 
 def inventory_traffic_prices(vendor):
-    loc2dc = _location_datacenter_map(vendor)
+    datacenters = scmodels_to_dict(vendor.datacenters, keys=["name", "aliases"])
     for direction in list(TrafficDirection):
         loc_dir = "toLocation" if direction == TrafficDirection.IN else "fromLocation"
         vendor.progress_tracker.start_task(
@@ -1030,28 +1032,33 @@ def inventory_traffic_prices(vendor):
                 "transferType": "AWS " + direction.value.title(),
             },
         )
+        vendor.log(f"Found {len(products)} {direction.value} traffic_price(s).")
         vendor.progress_tracker.update_task(
             description=f"Syncing {direction.value} Traffic prices", total=len(products)
         )
+        items = []
         for product in products:
             try:
-                datacenter = loc2dc[product["product"]["attributes"][loc_dir]]
-                price = _extract_ondemand_prices(product["terms"])
-                TrafficPrice(
-                    vendor=vendor,
-                    datacenter=datacenter,
-                    price=price[0][-1].get("price"),
-                    price_tiered=price,
-                    currency=price[1],
-                    unit=PriceUnit.GB_MONTH,
-                    direction=direction,
+                datacenter = datacenters[product["product"]["attributes"][loc_dir]]
+                prices = _extract_ondemand_prices(product["terms"])
+                price = [PriceTier.model_validate(p).model_dump() for p in prices[0]]
+                items.append(
+                    {
+                        "vendor_id": vendor.id,
+                        "datacenter_id": datacenter.id,
+                        "price": prices[0][-1].get("price"),
+                        "price_tiered": price,
+                        "currency": prices[1],
+                        "unit": PriceUnit.GB_MONTH,
+                        "direction": direction,
+                    }
                 )
             except KeyError:
                 continue
             finally:
                 vendor.progress_tracker.advance_task()
         vendor.progress_tracker.hide_task()
-        vendor.log(f"{len(products)} {direction.value} Traffic prices synced.")
+        insert_items(TrafficPrice, items, vendor)
 
 
 def inventory_ipv4_prices(vendor):
@@ -1063,23 +1070,29 @@ def inventory_ipv4_prices(vendor):
             "groupDescription": "Hourly charge for In-use Public IPv4 Addresses",
         },
     )
+    vendor.log(f"Found {len(products)} ipv4_price(s).")
     vendor.progress_tracker.update_task(
         description="Syncing IPv4 prices", total=len(products)
     )
+    # lookup tables
+    datacenters = scmodels_to_dict(vendor.datacenters, keys=["name", "aliases"])
+    items = []
     for product in products:
         try:
-            datacenter = _get_product_datacenter(product, vendor)
-        except IndexError as e:
-            logger.debug(str(e))
+            datacenter = datacenters[product["product"]["attributes"]["location"]]
+        except KeyError as e:
+            vendor.log("Datacenter not found: %s" % str(e), DEBUG)
             continue
         price = _extract_ondemand_price(product["terms"])
-        Ipv4Price(
-            vendor=vendor,
-            datacenter=datacenter,
-            price=price[0],
-            currency=price[1],
-            unit=PriceUnit.HOUR,
+        items.append(
+            {
+                "vendor_id": vendor.id,
+                "datacenter_id": datacenter.id,
+                "price": price[0],
+                "currency": price[1],
+                "unit": PriceUnit.HOUR,
+            }
         )
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
-    vendor.log(f"{len(products)} IPv4 prices synced.")
+    insert_items(Ipv4Price, items, vendor)
