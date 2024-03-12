@@ -66,7 +66,6 @@ class ScMetaModel(SQLModel.__class__):
             )
         )
         # describe table columns as attributes in docstring
-        attributes = subclass.model_fields.items()
         subclass.__doc__ = subclass.__doc__ + "\n\nAttributes:\n"
         for k, v in subclass.model_fields.items():
             if not hasattr(v.annotation, "__args__"):

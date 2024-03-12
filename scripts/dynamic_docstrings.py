@@ -1,6 +1,7 @@
 import ast
 import inspect
-from griffe import Docstring, Extension, Object, ObjectNode, get_logger, dynamic_import
+
+from griffe import Docstring, Extension, Object, ObjectNode, dynamic_import, get_logger
 
 logger = get_logger(__name__)
 
