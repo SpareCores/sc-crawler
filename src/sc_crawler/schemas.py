@@ -141,6 +141,21 @@ class Status(str, Enum):
     INACTIVE = "inactive"
 
 
+class Cpu(Json):
+    manufacturer: Optional[str] = None
+    family: Optional[str] = None
+    model: Optional[str] = None
+    cores: Optional[int] = None
+    threads: Optional[int] = None
+    l1_cache_size: Optional[int] = None  # byte
+    l2_cache_size: Optional[int] = None  # byte
+    l3_cache_size: Optional[int] = None  # byte
+    microcode: Optional[str] = None
+    capabilities: List[str] = []
+    bugs: List[str] = []
+    bogomips: Optional[float] = None
+
+
 class Gpu(Json):
     manufacturer: str
     name: str
@@ -691,7 +706,6 @@ class Server(ScModel, table=True):
         default=None,
         description="Default number of virtual CPUs (vCPU) of the server.",
     )
-    # TODO join all below cpu fields into a Cpu object?
     cpu_cores: int = Field(
         default=None,
         description=(
@@ -700,7 +714,7 @@ class Server(ScModel, table=True):
         ),
     )
     cpu_speed: Optional[float] = Field(
-        default=None, description="CPU clock speed (GHz)."
+        default=None, description="Vendor-reported maximum CPU clock speed (GHz)."
     )
     cpu_architecture: CpuArchitecture = Field(
         default=None,
@@ -708,7 +722,23 @@ class Server(ScModel, table=True):
     )
     cpu_manufacturer: Optional[str] = Field(
         default=None,
-        description="The manufacturer of the processor.",
+        description="The manufacturer of the processor, e.g. Intel or AMD.",
+    )
+    cpu_family: Optional[str] = Field(
+        default=None,
+        description="The product line/family of the processor, e.g. Xeon, Core i7, Ryzen 9.",
+    )
+    cpu_model: Optional[str] = Field(
+        default=None,
+        description="The actual model number of the processor, e.g. 9750H.",
+    )
+    cpus: List[Cpu] = Field(
+        default=[],
+        sa_type=JSON,
+        description=(
+            "JSON array of known CPU details, e.g. the manufacturer, family, model; "
+            "L1/L2/L3 cache size; microcode version; feature flags; bugs etc."
+        ),
     )
     # TODO add the below extra fields
     # cpu_features:  # e.g. AVX; AVX2; AMD Turbo
