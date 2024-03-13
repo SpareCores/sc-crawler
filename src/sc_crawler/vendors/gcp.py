@@ -22,6 +22,10 @@ def inventory_server_prices_spot(vendor):
     pass
 
 
+def inventory_storages(vendor):
+    pass
+
+
 def inventory_storage_prices(vendor):
     pass
 
