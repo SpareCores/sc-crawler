@@ -180,6 +180,12 @@ class TrafficDirection(str, Enum):
     OUT = "outbound"
 
 
+class CpuAllocation(str, Enum):
+    SHARED = "Shared"
+    BURSTABLE = "Burstable"
+    DEDICATED = "Dedicated"
+
+
 class CpuArchitecture(str, Enum):
     ARM64 = "arm64"
     ARM64_MAC = "arm64_mac"
@@ -706,6 +712,10 @@ class Server(ScModel, table=True):
         default=None,
         description="Default number of virtual CPUs (vCPU) of the server.",
     )
+    cpu_allocation: CpuAllocation = Field(
+        default=None,
+        description="Allocation of CPU(s) to the server, e.g. shared, burstable or dedicated.",
+    )
     cpu_cores: int = Field(
         default=None,
         description=(
@@ -740,10 +750,6 @@ class Server(ScModel, table=True):
             "L1/L2/L3 cache size; microcode version; feature flags; bugs etc."
         ),
     )
-    # TODO add the below extra fields
-    # cpu_features:  # e.g. AVX; AVX2; AMD Turbo
-    # cpu_allocation: dedicated | burstable | shared
-    # cpu_name: str  # e.g. EPYC 7571
     memory: int = Field(
         default=None,
         description="RAM amount (MiB).",
