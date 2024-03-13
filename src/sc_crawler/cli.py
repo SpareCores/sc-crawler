@@ -1,3 +1,12 @@
+"""The Spare Cores (SC) Crawler CLI tool.
+
+Provides the `sc-crawler` command and the below subcommands:
+
+- [schema][sc_crawler.cli.schema]
+- [pull][sc_crawler.cli.pull]
+- [hash][sc_crawler.cli.hash]
+"""
+
 import logging
 from datetime import datetime, timedelta
 from enum import Enum
