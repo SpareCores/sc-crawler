@@ -728,19 +728,19 @@ class Server(ScModel, table=True):
     )
     cpu_architecture: CpuArchitecture = Field(
         default=None,
-        description="CPU Architecture (arm64, arm64_mac, i386, or x86_64).",
+        description="CPU architecture (arm64, arm64_mac, i386, or x86_64).",
     )
     cpu_manufacturer: Optional[str] = Field(
         default=None,
-        description="The manufacturer of the processor, e.g. Intel or AMD.",
+        description="The manufacturer of the primary processor, e.g. Intel or AMD.",
     )
     cpu_family: Optional[str] = Field(
         default=None,
-        description="The product line/family of the processor, e.g. Xeon, Core i7, Ryzen 9.",
+        description="The product line/family of the primary processor, e.g. Xeon, Core i7, Ryzen 9.",
     )
     cpu_model: Optional[str] = Field(
         default=None,
-        description="The actual model number of the processor, e.g. 9750H.",
+        description="The model number of the primary processor, e.g. 9750H.",
     )
     cpus: List[Cpu] = Field(
         default=[],
