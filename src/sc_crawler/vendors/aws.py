@@ -1047,7 +1047,7 @@ def inventory_traffic_prices(vendor):
                     {
                         "vendor_id": vendor.id,
                         "datacenter_id": datacenter.id,
-                        "price": prices[0][-1].get("price"),
+                        "price": max([t["price"] for t in prices[0]]),
                         "price_tiered": price,
                         "currency": prices[1],
                         "unit": PriceUnit.GB_MONTH,
