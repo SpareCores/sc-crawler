@@ -760,6 +760,14 @@ class Server(ScModel, table=True):
         description="The baseline network performance (Gbps) of the network card.",
     )
     ipv4: bool = Field(default=False, description="Complimentary IPv4 address.")
+    inbound_traffic: float = Field(
+        default=0,
+        description="Amount of complimentary inbound traffic (GB) per month.",
+    )
+    outbound_traffic: float = Field(
+        default=0,
+        description="Amount of complimentary outbound traffic (GB) per month.",
+    )
 
     billable_unit: str = Field(
         default=None,
