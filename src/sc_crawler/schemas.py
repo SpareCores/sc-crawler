@@ -712,6 +712,10 @@ class Server(ScModel, table=True):
         default=None,
         description="Default number of virtual CPUs (vCPU) of the server.",
     )
+    hypervisor: Optional[str] = Field(
+        default=None,
+        description="Hypervisor of the virtual server, e.g. Xen, KVM, Nitro or Dedicated.",
+    )
     cpu_allocation: CpuAllocation = Field(
         default=None,
         description="Allocation of CPU(s) to the server, e.g. shared, burstable or dedicated.",
