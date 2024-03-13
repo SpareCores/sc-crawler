@@ -669,7 +669,7 @@ class Storage(HasDescription, HasName, HasVendorPK, HasIdPK, table=True):
     """Flexible storage options that can be attached to a Server."""
 
     storage_type: StorageType = Field(
-        description="High-level category of the main storage."
+        description="High-level category of the storage, e.g. HDD or SDD."
     )
     max_iops: Optional[int] = Field(
         default=None, description="Maximum Input/Output Operations Per Second."
@@ -788,7 +788,7 @@ class Server(ScModel, table=True):
     )
     storage_type: Optional[StorageType] = Field(
         default=None,
-        description="Disk type (hdd, ssd, nvme ssd, or network).",
+        description="Primary disk type, e.g. HDD, SSD, NVMe SSD, or network).",
     )
     storages: List[Disk] = Field(
         default=[],
