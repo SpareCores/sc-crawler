@@ -156,6 +156,8 @@ def pull(
     pbars = ProgressPanel()
     with Live(pbars.panels):
         # show CLI arguments in the Metadata panel
+        pbars.metadata.append(Text("Data sources: ", style="bold"))
+        pbars.metadata.append(Text(", ".join([x.id for x in vendors]) + " "))
         pbars.metadata.append(Text("Updating records: ", style="bold"))
         pbars.metadata.append(Text(", ".join([x.value for x in records]) + "\n"))
         pbars.metadata.append(Text("Connection type: ", style="bold"))
