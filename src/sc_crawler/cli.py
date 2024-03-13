@@ -48,8 +48,8 @@ Engines = Enum("ENGINES", {k: k for k in engine_to_dialect.keys()})
 log_levels = list(logging._nameToLevel.keys())
 LogLevels = Enum("LOGLEVELS", {k: k for k in log_levels})
 
-supported_tables = [m[10:] for m in dir(Vendor) if m.startswith("inventory_")]
-Tables = Enum("TABLES", {k: k for k in supported_tables})
+supported_records = [r[10:] for r in dir(Vendor) if r.startswith("inventory_")]
+Records = Enum("RECORDS", {k: k for k in supported_records})
 
 
 @cli.command()
@@ -91,10 +91,12 @@ def pull(
         List[Vendors],
         typer.Option(help="Exclude specific vendor. Can be specified multiple times."),
     ] = [],
-    update_table: Annotated[
-        List[Tables],
-        typer.Option(help="Tables to be updated. Can be specified multiple times."),
-    ] = supported_tables,
+    update_records: Annotated[
+        List[Records],
+        typer.Option(
+            help="Database records to be updated. Can be specified multiple times."
+        ),
+    ] = supported_records,
     log_level: Annotated[
         LogLevels, typer.Option(help="Log level threshold.")
     ] = LogLevels.INFO.value,  # TODO drop .value after updating Enum to StrEnum in Python3.11
@@ -148,8 +150,8 @@ def pull(
     pbars = ProgressPanel()
     with Live(pbars.panels):
         # show CLI arguments in the Metadata panel
-        pbars.metadata.append(Text("Update target(s): ", style="bold"))
-        pbars.metadata.append(Text(", ".join([x.value for x in update_table]) + "\n"))
+        pbars.metadata.append(Text("Updating records: ", style="bold"))
+        pbars.metadata.append(Text(", ".join([x.value for x in update_records]) + "\n"))
         pbars.metadata.append(Text("Connection type: ", style="bold"))
         pbars.metadata.append(Text(connection_string.split(":")[0]))
         pbars.metadata.append(Text(" Cache: ", style="bold"))
@@ -179,26 +181,26 @@ def pull(
                 vendor.progress_tracker = VendorProgressTracker(
                     vendor=vendor, progress_panel=pbars
                 )
-                vendor.progress_tracker.start_vendor(n=len(update_table))
-                if Tables.compliance_frameworks in update_table:
+                vendor.progress_tracker.start_vendor(n=len(update_records))
+                if Records.compliance_frameworks in update_records:
                     vendor.inventory_compliance_frameworks()
-                if Tables.datacenters in update_table:
+                if Records.datacenters in update_records:
                     vendor.inventory_datacenters()
-                if Tables.zones in update_table:
+                if Records.zones in update_records:
                     vendor.inventory_zones()
-                if Tables.servers in update_table:
+                if Records.servers in update_records:
                     vendor.inventory_servers()
-                if Tables.server_prices in update_table:
+                if Records.server_prices in update_records:
                     vendor.inventory_server_prices()
-                if Tables.server_prices_spot in update_table:
+                if Records.server_prices_spot in update_records:
                     vendor.inventory_server_prices_spot()
-                if Tables.storages in update_table:
+                if Records.storages in update_records:
                     vendor.inventory_storages()
-                if Tables.storage_prices in update_table:
+                if Records.storage_prices in update_records:
                     vendor.inventory_storage_prices()
-                if Tables.traffic_prices in update_table:
+                if Records.traffic_prices in update_records:
                     vendor.inventory_traffic_prices()
-                if Tables.ipv4_prices in update_table:
+                if Records.ipv4_prices in update_records:
                     vendor.inventory_ipv4_prices()
                 # reset current step name
                 vendor.progress_tracker.update_vendor(step="")
