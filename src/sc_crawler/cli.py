@@ -142,8 +142,8 @@ def pull(
         vendor
         for vendor in supported_vendors
         if (
-            vendor.id in [vendor.value for vendor in include_vendor]
-            and vendor.id not in [vendor.value for vendor in exclude_vendor]
+            vendor.id in [iv.value for iv in include_vendor]
+            and vendor.id not in [ev.value for ev in exclude_vendor]
         )
     ]
 
