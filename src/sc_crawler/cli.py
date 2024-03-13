@@ -83,20 +83,24 @@ def pull(
     ] = "sqlite:///sc_crawler.db",
     include_vendor: Annotated[
         List[Vendors],
-        typer.Option(
-            help="Filter for specific vendor. Can be specified multiple times."
-        ),
-    ] = [],
+        typer.Option(help="Enabled data sources. Can be specified multiple times."),
+    ] = [v.id for v in supported_vendors],
     exclude_vendor: Annotated[
         List[Vendors],
-        typer.Option(help="Exclude specific vendor. Can be specified multiple times."),
+        typer.Option(help="Disabled data sources. Can be specified multiple times."),
     ] = [],
-    update_records: Annotated[
+    include_records: Annotated[
         List[Records],
         typer.Option(
             help="Database records to be updated. Can be specified multiple times."
         ),
     ] = supported_records,
+    exclude_records: Annotated[
+        List[Records],
+        typer.Option(
+            help="Database records NOT to be updated. Can be specified multiple times."
+        ),
+    ] = [],
     log_level: Annotated[
         LogLevels, typer.Option(help="Log level threshold.")
     ] = LogLevels.INFO.value,  # TODO drop .value after updating Enum to StrEnum in Python3.11
@@ -134,15 +138,17 @@ def pull(
     logger.addHandler(channel)
 
     # filter vendors
-    vendors = supported_vendors
     vendors = [
         vendor
-        for vendor in vendors
+        for vendor in supported_vendors
         if (
             vendor.id in [vendor.value for vendor in include_vendor]
             and vendor.id not in [vendor.value for vendor in exclude_vendor]
         )
     ]
+
+    # filter reocrds
+    records = [r for r in include_records if r not in exclude_records]
 
     engine = create_engine(connection_string, json_serializer=custom_serializer)
     SQLModel.metadata.create_all(engine)
@@ -151,7 +157,7 @@ def pull(
     with Live(pbars.panels):
         # show CLI arguments in the Metadata panel
         pbars.metadata.append(Text("Updating records: ", style="bold"))
-        pbars.metadata.append(Text(", ".join([x.value for x in update_records]) + "\n"))
+        pbars.metadata.append(Text(", ".join([x.value for x in records]) + "\n"))
         pbars.metadata.append(Text("Connection type: ", style="bold"))
         pbars.metadata.append(Text(connection_string.split(":")[0]))
         pbars.metadata.append(Text(" Cache: ", style="bold"))
@@ -181,26 +187,26 @@ def pull(
                 vendor.progress_tracker = VendorProgressTracker(
                     vendor=vendor, progress_panel=pbars
                 )
-                vendor.progress_tracker.start_vendor(n=len(update_records))
-                if Records.compliance_frameworks in update_records:
+                vendor.progress_tracker.start_vendor(n=len(records))
+                if Records.compliance_frameworks in records:
                     vendor.inventory_compliance_frameworks()
-                if Records.datacenters in update_records:
+                if Records.datacenters in records:
                     vendor.inventory_datacenters()
-                if Records.zones in update_records:
+                if Records.zones in records:
                     vendor.inventory_zones()
-                if Records.servers in update_records:
+                if Records.servers in records:
                     vendor.inventory_servers()
-                if Records.server_prices in update_records:
+                if Records.server_prices in records:
                     vendor.inventory_server_prices()
-                if Records.server_prices_spot in update_records:
+                if Records.server_prices_spot in records:
                     vendor.inventory_server_prices_spot()
-                if Records.storages in update_records:
+                if Records.storages in records:
                     vendor.inventory_storages()
-                if Records.storage_prices in update_records:
+                if Records.storage_prices in records:
                     vendor.inventory_storage_prices()
-                if Records.traffic_prices in update_records:
+                if Records.traffic_prices in records:
                     vendor.inventory_traffic_prices()
-                if Records.ipv4_prices in update_records:
+                if Records.ipv4_prices in records:
                     vendor.inventory_ipv4_prices()
                 # reset current step name
                 vendor.progress_tracker.update_vendor(step="")
