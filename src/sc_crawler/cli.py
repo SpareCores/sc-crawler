@@ -209,7 +209,7 @@ def pull(
                 if Records.ipv4_prices in records:
                     vendor.inventory_ipv4_prices()
                 # reset current step name
-                vendor.progress_tracker.update_vendor(step="")
+                vendor.progress_tracker.update_vendor(step="✔")
                 session.merge(vendor)
                 session.commit()
 
