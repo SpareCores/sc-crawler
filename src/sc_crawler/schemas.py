@@ -82,10 +82,11 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
     """Custom extensions to SQLModel objects and tables.
 
     Extra features:
+
     - auto-generated table names using snake_case,
     - support for hashing table rows,
     - reuse description field of tables/columns as SQL comment,
-    - automatically append observed_at column.
+    - automatically append `observed_at` column.
     """
 
     @declared_attr  # type: ignore

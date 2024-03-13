@@ -1,3 +1,12 @@
+"""The Spare Cores (SC) Crawler CLI tool.
+
+Provides the `sc-crawler` command and the below subcommands:
+
+- [schema][sc_crawler.cli.schema]
+- [pull][sc_crawler.cli.pull]
+- [hash][sc_crawler.cli.hash]
+"""
+
 import logging
 from datetime import datetime, timedelta
 from enum import Enum
@@ -39,8 +48,8 @@ Engines = Enum("ENGINES", {k: k for k in engine_to_dialect.keys()})
 log_levels = list(logging._nameToLevel.keys())
 LogLevels = Enum("LOGLEVELS", {k: k for k in log_levels})
 
-supported_tables = [m[10:] for m in dir(Vendor) if m.startswith("inventory_")]
-Tables = Enum("TABLES", {k: k for k in supported_tables})
+supported_records = [r[10:] for r in dir(Vendor) if r.startswith("inventory_")]
+Records = Enum("RECORDS", {k: k for k in supported_records})
 
 
 @cli.command()
@@ -74,18 +83,24 @@ def pull(
     ] = "sqlite:///sc_crawler.db",
     include_vendor: Annotated[
         List[Vendors],
-        typer.Option(
-            help="Filter for specific vendor. Can be specified multiple times."
-        ),
-    ] = [],
+        typer.Option(help="Enabled data sources. Can be specified multiple times."),
+    ] = [v.id for v in supported_vendors],
     exclude_vendor: Annotated[
         List[Vendors],
-        typer.Option(help="Exclude specific vendor. Can be specified multiple times."),
+        typer.Option(help="Disabled data sources. Can be specified multiple times."),
     ] = [],
-    update_table: Annotated[
-        List[Tables],
-        typer.Option(help="Tables to be updated. Can be specified multiple times."),
-    ] = supported_tables,
+    include_records: Annotated[
+        List[Records],
+        typer.Option(
+            help="Database records to be updated. Can be specified multiple times."
+        ),
+    ] = supported_records,
+    exclude_records: Annotated[
+        List[Records],
+        typer.Option(
+            help="Database records NOT to be updated. Can be specified multiple times."
+        ),
+    ] = [],
     log_level: Annotated[
         LogLevels, typer.Option(help="Log level threshold.")
     ] = LogLevels.INFO.value,  # TODO drop .value after updating Enum to StrEnum in Python3.11
@@ -123,15 +138,17 @@ def pull(
     logger.addHandler(channel)
 
     # filter vendors
-    vendors = supported_vendors
     vendors = [
         vendor
-        for vendor in vendors
+        for vendor in supported_vendors
         if (
-            vendor.id in [vendor.value for vendor in include_vendor]
-            and vendor.id not in [vendor.value for vendor in exclude_vendor]
+            vendor.id in [iv.value for iv in include_vendor]
+            and vendor.id not in [ev.value for ev in exclude_vendor]
         )
     ]
+
+    # filter reocrds
+    records = [r for r in include_records if r not in exclude_records]
 
     engine = create_engine(connection_string, json_serializer=custom_serializer)
     SQLModel.metadata.create_all(engine)
@@ -139,8 +156,10 @@ def pull(
     pbars = ProgressPanel()
     with Live(pbars.panels):
         # show CLI arguments in the Metadata panel
-        pbars.metadata.append(Text("Update target(s): ", style="bold"))
-        pbars.metadata.append(Text(", ".join([x.value for x in update_table]) + "\n"))
+        pbars.metadata.append(Text("Data sources: ", style="bold"))
+        pbars.metadata.append(Text(", ".join([x.id for x in vendors]) + " "))
+        pbars.metadata.append(Text("Updating records: ", style="bold"))
+        pbars.metadata.append(Text(", ".join([x.value for x in records]) + "\n"))
         pbars.metadata.append(Text("Connection type: ", style="bold"))
         pbars.metadata.append(Text(connection_string.split(":")[0]))
         pbars.metadata.append(Text(" Cache: ", style="bold"))
@@ -170,29 +189,29 @@ def pull(
                 vendor.progress_tracker = VendorProgressTracker(
                     vendor=vendor, progress_panel=pbars
                 )
-                vendor.progress_tracker.start_vendor(n=len(update_table))
-                if Tables.compliance_frameworks in update_table:
+                vendor.progress_tracker.start_vendor(n=len(records))
+                if Records.compliance_frameworks in records:
                     vendor.inventory_compliance_frameworks()
-                if Tables.datacenters in update_table:
+                if Records.datacenters in records:
                     vendor.inventory_datacenters()
-                if Tables.zones in update_table:
+                if Records.zones in records:
                     vendor.inventory_zones()
-                if Tables.servers in update_table:
+                if Records.servers in records:
                     vendor.inventory_servers()
-                if Tables.server_prices in update_table:
+                if Records.server_prices in records:
                     vendor.inventory_server_prices()
-                if Tables.server_prices_spot in update_table:
+                if Records.server_prices_spot in records:
                     vendor.inventory_server_prices_spot()
-                if Tables.storages in update_table:
+                if Records.storages in records:
                     vendor.inventory_storages()
-                if Tables.storage_prices in update_table:
+                if Records.storage_prices in records:
                     vendor.inventory_storage_prices()
-                if Tables.traffic_prices in update_table:
+                if Records.traffic_prices in records:
                     vendor.inventory_traffic_prices()
-                if Tables.ipv4_prices in update_table:
+                if Records.ipv4_prices in records:
                     vendor.inventory_ipv4_prices()
                 # reset current step name
-                vendor.progress_tracker.update_vendor(step="")
+                vendor.progress_tracker.update_vendor(step="✔")
                 session.merge(vendor)
                 session.commit()
 
