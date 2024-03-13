@@ -177,7 +177,7 @@ class VendorProgressTracker:
         Args:
             by: Number of steps to advance.
         """
-        self.vendors.update(self.vendors.task_ids[0], advance=by)
+        self.vendors.update(self.vendors.task_ids[-1], advance=by)
 
     def update_vendor(self, **kwargs) -> None:
         """Update the vendor's progress bar.
@@ -185,7 +185,7 @@ class VendorProgressTracker:
         Useful fields:
         - `step`: Name of the currently running step to be shown on the progress bar.
         """
-        self.vendors.update(self.vendors.task_ids[0], **kwargs)
+        self.vendors.update(self.vendors.task_ids[-1], **kwargs)
 
     def start_task(self, name: str, n: int) -> TaskID:
         """Starts a progress bar in the list of current jobs.
