@@ -15,7 +15,6 @@ from ..insert import insert_items
 from ..logger import logger
 from ..schemas import (
     Allocation,
-    Cpu,
     CpuAllocation,
     Datacenter,
     Disk,
