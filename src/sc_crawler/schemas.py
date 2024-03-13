@@ -758,14 +758,21 @@ class Server(ScModel, table=True):
         default=0,
         description="Number of GPU accelerator(s).",
     )
-    # TODO sum and avg/each memory
-    gpu_memory: Optional[int] = Field(
+    gpu_memory_min: Optional[int] = Field(
         default=None,
-        description="Overall memory (MiB) available to all the GPU accelerator(s).",
+        description="Memory (MiB) allocated to the lowest-end GPU accelerator.",
     )
-    gpu_name: Optional[str] = Field(
+    gpu_memory_total: Optional[int] = Field(
         default=None,
-        description="The manufacturer and the name of the GPU accelerator(s).",
+        description="Overall memory (MiB) allocated to all the GPU accelerator(s).",
+    )
+    gpu_manufacturer: Optional[str] = Field(
+        default=None,
+        description="The manufacturer of the primary GPU accelerator.",
+    )
+    gpu_model: Optional[str] = Field(
+        default=None,
+        description="The model number of the primary GPU accelerator.",
     )
     gpus: List[Gpu] = Field(
         default=[],
