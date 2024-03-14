@@ -282,8 +282,8 @@ def _make_server_from_instance_type(instance_type, vendor) -> dict:
     storage_info = _get_storage_of_instance_type(instance_type)
     network_card = instance_type["NetworkInfo"]["NetworkCards"][0]
     return {
-        "id": it,
-        "vendor_id": vendor.id,
+        "server_id": it,
+        "vendor_id": vendor.vendor_id,
         "name": it,
         "description": _annotate_instance_type(it),
         "hypervisor": instance_type.get("Hypervisor", None),
@@ -361,7 +361,10 @@ def inventory_compliance_frameworks(vendor):
     items = []
     for compliance_framework in compliance_frameworks:
         items.append(
-            {"vendor_id": vendor.id, "compliance_framework_id": compliance_framework}
+            {
+                "vendor_id": vendor.vendor_id,
+                "compliance_framework_id": compliance_framework,
+            }
         )
     insert_items(VendorComplianceLink, items, vendor)
 
@@ -375,258 +378,258 @@ def inventory_datacenters(vendor):
     """  # noqa: E501
     datacenters = [
         {
-            "id": "af-south-1",
+            "datacenter_id": "af-south-1",
             "name": "Africa (Cape Town)",
-            "vendor_id": vendor.id,
+            "vendor_id": vendor.vendor_id,
             "country_id": "ZA",
             "city": "Cape Town",
             "founding_year": 2020,
             "green_energy": False,
         },
         {
-            "id": "ap-east-1",
+            "datacenter_id": "ap-east-1",
             "name": "Asia Pacific (Hong Kong)",
-            "vendor_id": vendor.id,
+            "vendor_id": vendor.vendor_id,
             "country_id": "HK",
             "city": "Hong Kong",
             "founding_year": 2019,
             "green_energy": False,
         },
         {
-            "id": "ap-northeast-1",
+            "datacenter_id": "ap-northeast-1",
             "name": "Asia Pacific (Tokyo)",
-            "vendor_id": vendor.id,
+            "vendor_id": vendor.vendor_id,
             "country_id": "JP",
             "city": "Tokyo",
             "founding_year": 2011,
             "green_energy": False,
         },
         {
-            "id": "ap-northeast-2",
+            "datacenter_id": "ap-northeast-2",
             "name": "Asia Pacific (Seoul)",
-            "vendor_id": vendor.id,
+            "vendor_id": vendor.vendor_id,
             "country_id": "KR",
             "city": "Seoul",
             "founding_year": 2016,
             "green_energy": False,
         },
         {
-            "id": "ap-northeast-3",
+            "datacenter_id": "ap-northeast-3",
             "name": "Asia Pacific (Osaka)",
-            "vendor_id": vendor.id,
+            "vendor_id": vendor.vendor_id,
             "country_id": "JP",
             "city": "Osaka",
             "founding_year": 2021,
             "green_energy": False,
         },
         {
-            "id": "ap-south-1",
+            "datacenter_id": "ap-south-1",
             "name": "Asia Pacific (Mumbai)",
-            "vendor_id": vendor.id,
+            "vendor_id": vendor.vendor_id,
             "country_id": "IN",
             "city": "Mumbai",
             "founding_year": 2016,
             "green_energy": True,
         },
         {
-            "id": "ap-south-2",
+            "datacenter_id": "ap-south-2",
             "name": "Asia Pacific (Hyderabad)",
-            "vendor_id": vendor.id,
+            "vendor_id": vendor.vendor_id,
             "country_id": "IN",
             "city": "Hyderabad",
             "founding_year": 2022,
             "green_energy": True,
         },
         {
-            "id": "ap-southeast-1",
+            "datacenter_id": "ap-southeast-1",
             "name": "Asia Pacific (Singapore)",
-            "vendor_id": vendor.id,
+            "vendor_id": vendor.vendor_id,
             "country_id": "SG",
             "city": "Singapore",
             "founding_year": 2010,
             "green_energy": False,
         },
         {
-            "id": "ap-southeast-2",
+            "datacenter_id": "ap-southeast-2",
             "name": "Asia Pacific (Sydney)",
-            "vendor_id": vendor.id,
+            "vendor_id": vendor.vendor_id,
             "country_id": "AU",
             "city": "Sydney",
             "founding_year": 2012,
             "green_energy": False,
         },
         {
-            "id": "ap-southeast-3",
+            "datacenter_id": "ap-southeast-3",
             "name": "Asia Pacific (Jakarta)",
-            "vendor_id": vendor.id,
-            "country_id": "ID",
+            "vendor_id": vendor.vendor_id,
+            "country_id": "DATACENTER_ID",
             "city": "Jakarta",
             "founding_year": 2021,
             "green_energy": False,
         },
         {
-            "id": "ap-southeast-4",
+            "datacenter_id": "ap-southeast-4",
             "name": "Asia Pacific (Melbourne)",
-            "vendor_id": vendor.id,
+            "vendor_id": vendor.vendor_id,
             "country_id": "AU",
             "city": "Melbourne",
             "founding_year": 2023,
             "green_energy": False,
         },
         {
-            "id": "ca-central-1",
+            "datacenter_id": "ca-central-1",
             "name": "Canada (Central)",
-            "vendor_id": vendor.id,
+            "vendor_id": vendor.vendor_id,
             "country_id": "CA",
             "city": "Quebec",  # NOTE needs city name
             "founding_year": 2016,
             "green_energy": True,
         },
         {
-            "id": "ca-west-1",
+            "datacenter_id": "ca-west-1",
             "name": "Canada West (Calgary)",
-            "vendor_id": vendor.id,
+            "vendor_id": vendor.vendor_id,
             "country_id": "CA",
             "city": "Calgary",
             "founding_year": 2023,
             "green_energy": False,
         },
         {
-            "id": "cn-north-1",
+            "datacenter_id": "cn-north-1",
             "name": "China (Beijing)",
-            "vendor_id": vendor.id,
+            "vendor_id": vendor.vendor_id,
             "country_id": "CN",
             "city": "Beijing",
             "founding_year": 2016,
             "green_energy": True,
         },
         {
-            "id": "cn-northwest-1",
+            "datacenter_id": "cn-northwest-1",
             "name": "China (Ningxia)",
-            "vendor_id": vendor.id,
+            "vendor_id": vendor.vendor_id,
             "country_id": "CN",
             "city": "Ningxia",  # NOTE needs city name
             "founding_year": 2017,
             "green_energy": True,
         },
         {
-            "id": "eu-central-1",
+            "datacenter_id": "eu-central-1",
             "name": "Europe (Frankfurt)",
             "aliases": ["EU (Frankfurt)"],
-            "vendor_id": vendor.id,
+            "vendor_id": vendor.vendor_id,
             "country_id": "DE",
             "city": "Frankfurt",
             "founding_year": 2014,
             "green_energy": True,
         },
         {
-            "id": "eu-central-2",
+            "datacenter_id": "eu-central-2",
             "name": "Europe (Zurich)",
-            "vendor_id": vendor.id,
+            "vendor_id": vendor.vendor_id,
             "country_id": "CH",
             "city": "Zurich",
             "founding_year": 2022,
             "green_energy": True,
         },
         {
-            "id": "eu-north-1",
+            "datacenter_id": "eu-north-1",
             "name": "Europe (Stockholm)",
             "aliases": ["EU (Stockholm)"],
-            "vendor_id": vendor.id,
+            "vendor_id": vendor.vendor_id,
             "country_id": "SE",
             "city": "Stockholm",
             "founding_year": 2018,
             "green_energy": True,
         },
         {
-            "id": "eu-south-1",
+            "datacenter_id": "eu-south-1",
             "name": "Europe (Milan)",
             "aliases": ["EU (Milan)"],
-            "vendor_id": vendor.id,
+            "vendor_id": vendor.vendor_id,
             "country_id": "IT",
             "city": "Milan",
             "founding_year": 2020,
             "green_energy": True,
         },
         {
-            "id": "eu-south-2",
+            "datacenter_id": "eu-south-2",
             "name": "Europe (Spain)",
-            "vendor_id": vendor.id,
+            "vendor_id": vendor.vendor_id,
             "country_id": "ES",
             "city": "Aragón",  # NOTE needs city name
             "founding_year": 2022,
             "green_energy": True,
         },
         {
-            "id": "eu-west-1",
+            "datacenter_id": "eu-west-1",
             "name": "Europe (Ireland)",
             "aliases": ["EU (Ireland)"],
-            "vendor_id": vendor.id,
+            "vendor_id": vendor.vendor_id,
             "country_id": "IE",
             "city": "Dublin",
             "founding_year": 2007,
             "green_energy": True,
         },
         {
-            "id": "eu-west-2",
+            "datacenter_id": "eu-west-2",
             "name": "Europe (London)",
             "aliases": ["EU (London)"],
-            "vendor_id": vendor.id,
+            "vendor_id": vendor.vendor_id,
             "country_id": "GB",
             "city": "London",
             "founding_year": 2016,
             "green_energy": True,
         },
         {
-            "id": "eu-west-3",
+            "datacenter_id": "eu-west-3",
             "name": "Europe (Paris)",
             "aliases": ["EU (Paris)"],
-            "vendor_id": vendor.id,
+            "vendor_id": vendor.vendor_id,
             "country_id": "FR",
             "city": "Paris",
             "founding_year": 2017,
             "green_energy": True,
         },
         {
-            "id": "il-central-1",
+            "datacenter_id": "il-central-1",
             "name": "Israel (Tel Aviv)",
-            "vendor_id": vendor.id,
+            "vendor_id": vendor.vendor_id,
             "country_id": "IL",
             "city": "Tel Aviv",
             "founding_year": 2023,
             "green_energy": False,
         },
         {
-            "id": "me-central-1",
+            "datacenter_id": "me-central-1",
             "name": "Middle East (UAE)",
-            "vendor_id": vendor.id,
+            "vendor_id": vendor.vendor_id,
             "country_id": "AE",
             # NOTE city unknown
             "founding_year": 2022,
             "green_energy": False,
         },
         {
-            "id": "me-south-1",
+            "datacenter_id": "me-south-1",
             "name": "Middle East (Bahrain)",
-            "vendor_id": vendor.id,
+            "vendor_id": vendor.vendor_id,
             "country_id": "BH",
             # NOTE city unknown
             "founding_year": 2019,
             "green_energy": False,
         },
         {
-            "id": "sa-east-1",
+            "datacenter_id": "sa-east-1",
             "name": "South America (Sao Paulo)",
-            "vendor_id": vendor.id,
+            "vendor_id": vendor.vendor_id,
             "country_id": "BR",
             "city": "Sao Paulo",
             "founding_year": 2011,
             "green_energy": False,
         },
         {
-            "id": "us-east-1",
+            "datacenter_id": "us-east-1",
             "name": "US East (N. Virginia)",
-            "vendor_id": vendor.id,
+            "vendor_id": vendor.vendor_id,
             "country_id": "US",
             "state": "Northern Virgina",
             # NOTE city unknown
@@ -634,9 +637,9 @@ def inventory_datacenters(vendor):
             "green_energy": True,
         },
         {
-            "id": "us-east-2",
+            "datacenter_id": "us-east-2",
             "name": "US East (Ohio)",
-            "vendor_id": vendor.id,
+            "vendor_id": vendor.vendor_id,
             "country_id": "US",
             "state": "Ohio",
             # NOTE city unknown
@@ -644,9 +647,9 @@ def inventory_datacenters(vendor):
             "green_energy": True,
         },
         {
-            "id": "us-west-1",
+            "datacenter_id": "us-west-1",
             "name": "US West (N. California)",
-            "vendor_id": vendor.id,
+            "vendor_id": vendor.vendor_id,
             "country_id": "US",
             "state": "California",
             # NOTE city unknown
@@ -654,9 +657,9 @@ def inventory_datacenters(vendor):
             "green_energy": True,
         },
         {
-            "id": "us-west-2",
+            "datacenter_id": "us-west-2",
             "name": "US West (Oregon)",
-            "vendor_id": vendor.id,
+            "vendor_id": vendor.vendor_id,
             "country_id": "US",
             "state": "Oregon",
             # NOTE city unknown
@@ -666,7 +669,7 @@ def inventory_datacenters(vendor):
     ]
 
     # look for undocumented (new) regions in AWS
-    supported_regions = [d["id"] for d in datacenters]
+    supported_regions = [d["datacenter_id"] for d in datacenters]
     regions = _boto_describe_regions()
     for region in regions:
         region_name = region["RegionName"]
@@ -678,7 +681,7 @@ def inventory_datacenters(vendor):
     # mark inactive regions
     active_regions = [region["RegionName"] for region in regions]
     for datacenter in datacenters:
-        if datacenter["id"] in active_regions:
+        if datacenter["datacenter_id"] in active_regions:
             datacenter["status"] = "active"
         else:
             datacenter["status"] = "inactive"
@@ -695,13 +698,13 @@ def inventory_zones(vendor):
     def get_zones(datacenter: Datacenter, vendor: Vendor) -> List[dict]:
         new = []
         if datacenter.status == "active":
-            for zone in _boto_describe_availability_zones(datacenter.id):
+            for zone in _boto_describe_availability_zones(datacenter.datacenter_id):
                 new.append(
                     {
-                        "id": zone["ZoneId"],
+                        "zone_id": zone["ZoneId"],
                         "name": zone["ZoneName"],
-                        "datacenter_id": datacenter.id,
-                        "vendor_id": vendor.id,
+                        "datacenter_id": datacenter.datacenter_id,
+                        "vendor_id": vendor.vendor_id,
                     }
                 )
         vendor.progress_tracker.advance_task()
@@ -724,9 +727,11 @@ def inventory_servers(vendor):
     def search_servers(datacenter: Datacenter, vendor: Optional[Vendor]) -> List[dict]:
         instance_types = []
         if datacenter.status == "active":
-            instance_types = _boto_describe_instance_types(datacenter.id)
+            instance_types = _boto_describe_instance_types(datacenter.datacenter_id)
             if vendor:
-                vendor.log(f"{len(instance_types)} server(s) found in {datacenter.id}.")
+                vendor.log(
+                    f"{len(instance_types)} server(s) found in {datacenter.datacenter_id}."
+                )
         if vendor:
             vendor.progress_tracker.advance_task()
         return instance_types
@@ -792,9 +797,9 @@ def inventory_server_prices(vendor):
             for zone in datacenter.zones:
                 server_prices.append(
                     {
-                        "vendor_id": vendor.id,
-                        "datacenter_id": datacenter.id,
-                        "zone_id": zone.id,
+                        "vendor_id": vendor.vendor_id,
+                        "datacenter_id": datacenter.datacenter_id,
+                        "zone_id": zone.zone_id,
                         "server_id": attributes["instanceType"],
                         # TODO ingest other OSs
                         "operating_system": "Linux",
@@ -821,10 +826,14 @@ def inventory_server_prices_spot(vendor):
         new = []
         if datacenter.status == "active":
             try:
-                new = _describe_spot_price_history(datacenter.id)
-                vendor.log(f"{len(new)} spot server_price(s) found in {datacenter.id}.")
+                new = _describe_spot_price_history(datacenter.datacenter_id)
+                vendor.log(
+                    f"{len(new)} spot server_price(s) found in {datacenter.datacenter_id}."
+                )
             except ClientError as e:
-                vendor.log(f"Cannot get spot server_price in {datacenter.id}: {str(e)}")
+                vendor.log(
+                    f"Cannot get spot server_price in {datacenter.datacenter_id}: {str(e)}"
+                )
         vendor.progress_tracker.advance_task()
         return new
 
@@ -836,7 +845,7 @@ def inventory_server_prices_spot(vendor):
 
     # lookup tables
     zones = scmodels_to_dict(vendor.zones, keys=["name"])
-    servers = scmodels_to_dict(vendor.servers)
+    servers = scmodels_to_dict(vendor.servers, keys=["server_id"])
 
     server_prices = []
     vendor.progress_tracker.start_task(
@@ -851,10 +860,10 @@ def inventory_server_prices_spot(vendor):
             continue
         server_prices.append(
             {
-                "vendor_id": vendor.id,
-                "datacenter_id": zone.datacenter.id,
-                "zone_id": zone.id,
-                "server_id": server.id,
+                "vendor_id": vendor.vendor_id,
+                "datacenter_id": zone.datacenter.datacenter_id,
+                "zone_id": zone.zone_id,
+                "server_id": server.server_id,
                 # TODO ingest other OSs
                 "operating_system": "Linux",
                 "allocation": Allocation.SPOT,
@@ -966,8 +975,8 @@ def inventory_storages(vendor):
         )
         storages.append(
             {
-                "id": product_id,
-                "vendor_id": vendor.id,
+                "storage_id": product_id,
+                "vendor_id": vendor.vendor_id,
                 "name": attributes["volumeType"],
                 "description": attributes["storageMedia"],
                 "storage_type": storage_type,
@@ -1009,8 +1018,8 @@ def inventory_storage_prices(vendor):
             price = _extract_ondemand_price(product["terms"])
             prices.append(
                 {
-                    "vendor_id": vendor.id,
-                    "datacenter_id": datacenter.id,
+                    "vendor_id": vendor.vendor_id,
+                    "datacenter_id": datacenter.datacenter_id,
                     "storage_id": attributes["volumeApiName"],
                     "unit": PriceUnit.GB_MONTH,
                     "price": price[0],
@@ -1052,8 +1061,8 @@ def inventory_traffic_prices(vendor):
                 price = [PriceTier.model_validate(p).model_dump() for p in prices[0]]
                 items.append(
                     {
-                        "vendor_id": vendor.id,
-                        "datacenter_id": datacenter.id,
+                        "vendor_id": vendor.vendor_id,
+                        "datacenter_id": datacenter.datacenter_id,
                         "price": max([t["price"] for t in prices[0]]),
                         "price_tiered": price,
                         "currency": prices[1],
@@ -1094,8 +1103,8 @@ def inventory_ipv4_prices(vendor):
         price = _extract_ondemand_price(product["terms"])
         items.append(
             {
-                "vendor_id": vendor.id,
-                "datacenter_id": datacenter.id,
+                "vendor_id": vendor.vendor_id,
+                "datacenter_id": datacenter.datacenter_id,
                 "price": price[0],
                 "currency": price[1],
                 "unit": PriceUnit.HOUR,

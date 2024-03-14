@@ -73,9 +73,7 @@ def chunk_list(items: List[Any], size: int) -> Iterable[List[Any]]:
         yield items[i : i + size]
 
 
-def scmodels_to_dict(
-    scmodels: List[ScModel], keys: List[str] = ["id"]
-) -> Dict[str, ScModel]:
+def scmodels_to_dict(scmodels: List[ScModel], keys: List[str]) -> Dict[str, ScModel]:
     """Creates a dict indexed by key(s) of the ScModels of the list.
 
     When multiple keys are provided, each ScModel instance will be stored in
@@ -89,7 +87,7 @@ def scmodels_to_dict(
 
     Examples:
         >>> from sc_crawler.vendors import aws
-        >>> scmodels_to_dict([aws], keys=["id", "name"])
+        >>> scmodels_to_dict([aws], keys=["vendor_id", "name"])
         {'aws': Vendor...
     """
     data = {}

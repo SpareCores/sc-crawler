@@ -229,10 +229,6 @@ class HasStatus(ScModel):
     )
 
 
-class HasIdPK(ScModel):
-    id: str = Field(primary_key=True, description="Unique identifier.")
-
-
 class HasName(ScModel):
     name: str = Field(description="Human-friendly name.")
 
@@ -243,7 +239,7 @@ class HasDescription(ScModel):
 
 class HasVendorPK(ScModel):
     vendor_id: str = Field(
-        foreign_key="vendor.id",
+        foreign_key="vendor",
         primary_key=True,
         description="Reference to the Vendor.",
     )
@@ -251,7 +247,7 @@ class HasVendorPK(ScModel):
 
 class HasDatacenterPK(ScModel):
     datacenter_id: str = Field(
-        foreign_key="datacenter.id",
+        foreign_key="datacenter",
         primary_key=True,
         description="Reference to the Datacenter.",
     )
@@ -259,13 +255,13 @@ class HasDatacenterPK(ScModel):
 
 class HasZonePK(ScModel):
     zone_id: str = Field(
-        foreign_key="zone.id", primary_key=True, description="Reference to the Zone."
+        foreign_key="zone", primary_key=True, description="Reference to the Zone."
     )
 
 
 class HasServer(ScModel):
     server_id: str = Field(
-        foreign_key="server.id",
+        foreign_key="server",
         primary_key=True,
         description="Reference to the Server.",
     )
@@ -273,17 +269,9 @@ class HasServer(ScModel):
 
 class HasStorage(ScModel):
     storage_id: str = Field(
-        foreign_key="storage.id",
+        foreign_key="storage",
         primary_key=True,
         description="Reference to the Storage.",
-    )
-
-
-class HasTraffic(ScModel):
-    traffic_id: str = Field(
-        foreign_key="traffic.id",
-        primary_key=True,
-        description="Reference to the Traffic.",
     )
 
 
@@ -292,7 +280,7 @@ class HasTraffic(ScModel):
 
 
 class CountryBase(ScModel):
-    id: str = Field(
+    country_id: str = Field(
         default=None,
         primary_key=True,
         description="Country code by ISO 3166 alpha-2.",
@@ -309,7 +297,7 @@ class Country(CountryBase, table=True):
 
 class VendorComplianceLinkBase(HasVendorPK):
     compliance_framework_id: str = Field(
-        foreign_key="compliance_framework.id",
+        foreign_key="compliance_framework",
         primary_key=True,
         description="Reference to the Compliance Framework.",
     )
@@ -328,9 +316,12 @@ class VendorComplianceLink(HasStatus, VendorComplianceLinkBase, table=True):
     )
 
 
-class ComplianceFramework(HasName, HasIdPK, table=True):
+class ComplianceFramework(HasName, table=True):
     """List of Compliance Frameworks, such as HIPAA or SOC 2 Type 1."""
 
+    compliance_framework_id: str = Field(
+        primary_key=True, description="Unique identifier."
+    )
     abbreviation: Optional[str] = Field(
         description="Short abbreviation of the Framework name."
     )
@@ -357,20 +348,21 @@ class ComplianceFramework(HasName, HasIdPK, table=True):
     )
 
 
-class Vendor(HasName, HasIdPK, table=True):
+class Vendor(HasName, table=True):
     """Compute resource vendors, such as cloud and server providers.
 
     Examples:
         >>> from sc_crawler.schemas import Vendor
         >>> from sc_crawler.lookup import countries
-        >>> aws = Vendor(id='aws', name='Amazon Web Services', homepage='https://aws.amazon.com', country=countries["US"], founding_year=2002)
+        >>> aws = Vendor(vendor_id='aws', name='Amazon Web Services', homepage='https://aws.amazon.com', country=countries["US"], founding_year=2002)
         >>> aws
-        Vendor(id='aws'...
+        Vendor(vendor_id='aws'...
         >>> from sc_crawler import vendors
         >>> vendors.aws
-        Vendor(id='aws'...
+        Vendor(vendor_id='aws'...
     """  # noqa: E501
 
+    vendor_id: str = Field(primary_key=True, description="Unique identifier.")
     # TODO HttpUrl not supported by SQLModel
     # TODO upload to cdn.sparecores.com (s3/cloudfront)
     logo: Optional[str] = Field(
@@ -384,7 +376,7 @@ class Vendor(HasName, HasIdPK, table=True):
     )
 
     country_id: str = Field(
-        foreign_key="country.id",
+        foreign_key="country",
         description="Reference to the Country, where the Vendor's main headquarter is located.",
     )
     state: Optional[str] = Field(
@@ -438,7 +430,7 @@ class Vendor(HasName, HasIdPK, table=True):
         super().__init__(**kwargs)
         # SQLModel does not validates pydantic typing,
         # only when writing to DB (much later in the process)
-        if not self.id:
+        if not self.vendor_id:
             raise ValueError("No vendor id provided")
         if not self.name:
             raise ValueError("No vendor name provided")
@@ -461,7 +453,7 @@ class Vendor(HasName, HasIdPK, table=True):
         ]:
             if method not in methods:
                 raise NotImplementedError(
-                    f"Unsupported '{self.id}' vendor: missing '{method}' method."
+                    f"Unsupported '{self.vendor_id}' vendor: missing '{method}' method."
                 )
 
     def _get_methods(self):
@@ -475,12 +467,12 @@ class Vendor(HasName, HasIdPK, table=True):
         if not self._methods:
             try:
                 vendor_module = ".".join(
-                    [__name__.split(".", maxsplit=1)[0], "vendors", self.id]
+                    [__name__.split(".", maxsplit=1)[0], "vendors", self.vendor_id]
                 )
                 self._methods = import_module(vendor_module)
             except Exception as exc:
                 raise NotImplementedError(
-                    f"Unsupported '{self.id}' vendor: no methods defined."
+                    f"Unsupported '{self.vendor_id}' vendor: no methods defined."
                 ) from exc
         return self._methods
 
@@ -535,7 +527,7 @@ class Vendor(HasName, HasIdPK, table=True):
         >>> aws.set_table_rows_inactive(ServerPrice, ServerPrice.price < 10)  # doctest: +SKIP
         """
         if self.session:
-            query = update(model).where(model.vendor_id == self.id)
+            query = update(model).where(model.vendor_id == self.vendor_id)
             for arg in args:
                 query = query.where(arg)
             self.session.execute(query.values(status=Status.INACTIVE))
@@ -601,9 +593,10 @@ class Vendor(HasName, HasIdPK, table=True):
         self._get_methods().inventory_ipv4_prices(self)
 
 
-class Datacenter(HasName, HasIdPK, table=True):
+class Datacenter(HasName, table=True):
     """Datacenters/regions of Vendors."""
 
+    datacenter_id: str = Field(primary_key=True, description="Unique identifier.")
     aliases: List[str] = Field(
         default=[],
         sa_column=Column(JSON),
@@ -611,14 +604,14 @@ class Datacenter(HasName, HasIdPK, table=True):
     )
 
     vendor_id: str = Field(
-        foreign_key="vendor.id",
+        foreign_key="vendor",
         primary_key=True,
         description="Reference to the Vendor.",
     )
     vendor: Vendor = Relationship(back_populates="datacenters")
 
     country_id: str = Field(
-        foreign_key="country.id",
+        foreign_key="country",
         description="Reference to the Country, where the Datacenter is located.",
     )
     state: Optional[str] = Field(
@@ -657,17 +650,20 @@ class Datacenter(HasName, HasIdPK, table=True):
     storage_prices: List["StoragePrice"] = Relationship(back_populates="datacenter")
 
 
-class Zone(HasStatus, HasName, HasDatacenterPK, HasVendorPK, HasIdPK, table=True):
+class Zone(HasStatus, HasName, HasDatacenterPK, HasVendorPK, table=True):
     """Availability zones of Datacenters."""
+
+    zone_id: str = Field(primary_key=True, description="Unique identifier.")
 
     datacenter: Datacenter = Relationship(back_populates="zones")
     vendor: Vendor = Relationship(back_populates="zones")
     server_prices: List["ServerPrice"] = Relationship(back_populates="zone")
 
 
-class Storage(HasDescription, HasName, HasVendorPK, HasIdPK, table=True):
+class Storage(HasDescription, HasName, HasVendorPK, table=True):
     """Flexible storage options that can be attached to a Server."""
 
+    storage_id: str = Field(primary_key=True, description="Unique identifier.")
     storage_type: StorageType = Field(
         description="High-level category of the storage, e.g. HDD or SDD."
     )
@@ -695,12 +691,12 @@ class Storage(HasDescription, HasName, HasVendorPK, HasIdPK, table=True):
 class Server(ScModel, table=True):
     """Server types."""
 
-    id: str = Field(
+    server_id: str = Field(
         primary_key=True,
         description="Server's unique identifier, as called at the Vendor.",
     )
     vendor_id: str = Field(
-        foreign_key="vendor.id",
+        foreign_key="vendor",
         primary_key=True,
         description="Reference to the Vendor.",
     )

@@ -11,7 +11,7 @@ def test_chunk_list():
 
 def test_scmodels_to_dict_by_single_id():
     cflist = [v for _, v in compliance_frameworks.items()]
-    cfdict = scmodels_to_dict(cflist, keys=["id"])
+    cfdict = scmodels_to_dict(cflist, keys=["compliance_framework_id"])
     assert isinstance(cfdict, dict)
     assert len(cfdict) == len(cflist)
     assert list(cfdict.items())[0][1] == cflist[0]
@@ -19,6 +19,6 @@ def test_scmodels_to_dict_by_single_id():
 
 def test_scmodels_to_dict_by_multiple_ids():
     cflist = [v for _, v in compliance_frameworks.items()]
-    cfdict = scmodels_to_dict(cflist, keys=["id", "abbreviation"])
+    cfdict = scmodels_to_dict(cflist, keys=["compliance_framework_id", "abbreviation"])
     assert len(cfdict) == len(cflist) * 2
     assert list(cfdict.items())[0][1] == cflist[0]

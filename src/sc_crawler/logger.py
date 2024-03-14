@@ -33,7 +33,7 @@ def log_start_end(func):
         # log start of the step
         try:
             self = args[0]
-            fname = f"{self.id}/{func.__name__}"
+            fname = f"{self.vendor_id}/{func.__name__}"
         except Exception:
             fname = func.__name__
         logger.debug("Starting %s", fname)

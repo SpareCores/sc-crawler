@@ -31,7 +31,7 @@ supported_vendors = [
     for vendor in vars(vendors_module).items()
     if isinstance(vendor[1], Vendor)
 ]
-Vendors = Enum("VENDORS", {k.id: k.id for k in supported_vendors})
+Vendors = Enum("VENDORS", {k.vendor_id: k.vendor_id for k in supported_vendors})
 
 cli = typer.Typer()
 
@@ -84,7 +84,7 @@ def pull(
     include_vendor: Annotated[
         List[Vendors],
         typer.Option(help="Enabled data sources. Can be specified multiple times."),
-    ] = [v.id for v in supported_vendors],
+    ] = [v.vendor_id for v in supported_vendors],
     exclude_vendor: Annotated[
         List[Vendors],
         typer.Option(help="Disabled data sources. Can be specified multiple times."),
@@ -142,8 +142,8 @@ def pull(
         vendor
         for vendor in supported_vendors
         if (
-            vendor.id in [iv.value for iv in include_vendor]
-            and vendor.id not in [ev.value for ev in exclude_vendor]
+            vendor.vendor_id in [iv.value for iv in include_vendor]
+            and vendor.vendor_id not in [ev.value for ev in exclude_vendor]
         )
     ]
 
@@ -157,7 +157,7 @@ def pull(
     with Live(pbars.panels):
         # show CLI arguments in the Metadata panel
         pbars.metadata.append(Text("Data sources: ", style="bold"))
-        pbars.metadata.append(Text(", ".join([x.id for x in vendors]) + " "))
+        pbars.metadata.append(Text(", ".join([x.vendor_id for x in vendors]) + " "))
         pbars.metadata.append(Text("Updating records: ", style="bold"))
         pbars.metadata.append(Text(", ".join([x.value for x in records]) + "\n"))
         pbars.metadata.append(Text("Connection type: ", style="bold"))
@@ -181,7 +181,7 @@ def pull(
             # get data for each vendor and then add/merge to database
             # TODO each vendor should open its own session and run in parallel
             for vendor in vendors:
-                logger.info("Starting to collect data from vendor: " + vendor.id)
+                logger.info("Starting to collect data from vendor: " + vendor.vendor_id)
                 vendor = session.merge(vendor)
                 # register session to the Vendor so that dependen objects can auto-merge
                 vendor.session = session

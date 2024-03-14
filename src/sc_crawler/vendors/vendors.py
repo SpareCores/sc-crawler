@@ -2,7 +2,7 @@ from ..lookup import countries
 from ..schemas import Vendor
 
 aws = Vendor(
-    id="aws",
+    vendor_id="aws",
     name="Amazon Web Services",
     homepage="https://aws.amazon.com",
     country=countries["US"],
@@ -15,7 +15,7 @@ aws = Vendor(
 )
 
 gcp = Vendor(
-    id="gcp",
+    vendor_id="gcp",
     name="Google Cloud Platform",
     homepage="https://cloud.google.com",
     country=countries["US"],
