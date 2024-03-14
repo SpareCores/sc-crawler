@@ -4,7 +4,7 @@ Provides the `sc-crawler` command and the below subcommands:
 
 - [schema][sc_crawler.cli.schema]
 - [pull][sc_crawler.cli.pull]
-- [hash][sc_crawler.cli.hash]
+- [hash][sc_crawler.cli.hash_command]
 """
 
 import logging
