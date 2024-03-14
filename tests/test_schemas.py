@@ -13,7 +13,7 @@ def test_bad_vendor_definition():
             vendor_id="foobar",
             name="foobar",
             homepage="https://foobar",
-            country=Country(id="US"),
+            country=Country(country_id="US"),
         )
     with pytest.raises(NotImplementedError):
         Vendor(

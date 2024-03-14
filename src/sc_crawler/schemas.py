@@ -229,6 +229,40 @@ class HasStatus(ScModel):
     )
 
 
+class HasComplianceFrameworkIdPK(ScModel):
+    compliance_framework_id: str = Field(
+        primary_key=True, description="Unique identifier."
+    )
+
+
+class HasVendorIdPK(ScModel):
+    vendor_id: str = Field(primary_key=True, description="Unique identifier.")
+
+
+class HasDatacenterIdPK(ScModel):
+    datacenter_id: str = Field(
+        primary_key=True, description="Unique identifier, as called at the Vendor."
+    )
+
+
+class HasZoneIdPK(ScModel):
+    zone_id: str = Field(
+        primary_key=True, description="Unique identifier, as called at the Vendor."
+    )
+
+
+class HasStorageIdPK(ScModel):
+    storage_id: str = Field(
+        primary_key=True, description="Unique identifier, as called at the Vendor."
+    )
+
+
+class HasServerIdPK(ScModel):
+    server_id: str = Field(
+        primary_key=True, description="Unique identifier, as called at the Vendor."
+    )
+
+
 class HasName(ScModel):
     name: str = Field(description="Human-friendly name.")
 
@@ -281,7 +315,6 @@ class HasStorage(ScModel):
 
 class CountryBase(ScModel):
     country_id: str = Field(
-        default=None,
         primary_key=True,
         description="Country code by ISO 3166 alpha-2.",
     )
@@ -316,12 +349,9 @@ class VendorComplianceLink(HasStatus, VendorComplianceLinkBase, table=True):
     )
 
 
-class ComplianceFramework(HasName, table=True):
+class ComplianceFramework(HasName, HasComplianceFrameworkIdPK, table=True):
     """List of Compliance Frameworks, such as HIPAA or SOC 2 Type 1."""
 
-    compliance_framework_id: str = Field(
-        primary_key=True, description="Unique identifier."
-    )
     abbreviation: Optional[str] = Field(
         description="Short abbreviation of the Framework name."
     )
@@ -348,7 +378,7 @@ class ComplianceFramework(HasName, table=True):
     )
 
 
-class Vendor(HasName, table=True):
+class Vendor(HasName, HasVendorIdPK, table=True):
     """Compute resource vendors, such as cloud and server providers.
 
     Examples:
@@ -362,7 +392,6 @@ class Vendor(HasName, table=True):
         Vendor(vendor_id='aws'...
     """  # noqa: E501
 
-    vendor_id: str = Field(primary_key=True, description="Unique identifier.")
     # TODO HttpUrl not supported by SQLModel
     # TODO upload to cdn.sparecores.com (s3/cloudfront)
     logo: Optional[str] = Field(
@@ -593,10 +622,9 @@ class Vendor(HasName, table=True):
         self._get_methods().inventory_ipv4_prices(self)
 
 
-class Datacenter(HasName, table=True):
+class Datacenter(HasName, HasDatacenterIdPK, table=True):
     """Datacenters/regions of Vendors."""
 
-    datacenter_id: str = Field(primary_key=True, description="Unique identifier.")
     aliases: List[str] = Field(
         default=[],
         sa_column=Column(JSON),
@@ -650,20 +678,17 @@ class Datacenter(HasName, table=True):
     storage_prices: List["StoragePrice"] = Relationship(back_populates="datacenter")
 
 
-class Zone(HasStatus, HasName, HasDatacenterPK, HasVendorPK, table=True):
+class Zone(HasStatus, HasName, HasDatacenterPK, HasVendorPK, HasZoneIdPK, table=True):
     """Availability zones of Datacenters."""
-
-    zone_id: str = Field(primary_key=True, description="Unique identifier.")
 
     datacenter: Datacenter = Relationship(back_populates="zones")
     vendor: Vendor = Relationship(back_populates="zones")
     server_prices: List["ServerPrice"] = Relationship(back_populates="zone")
 
 
-class Storage(HasDescription, HasName, HasVendorPK, table=True):
+class Storage(HasDescription, HasName, HasVendorPK, HasStorageIdPK, table=True):
     """Flexible storage options that can be attached to a Server."""
 
-    storage_id: str = Field(primary_key=True, description="Unique identifier.")
     storage_type: StorageType = Field(
         description="High-level category of the storage, e.g. HDD or SDD."
     )
@@ -688,13 +713,9 @@ class Storage(HasDescription, HasName, HasVendorPK, table=True):
     prices: List["StoragePrice"] = Relationship(back_populates="storage")
 
 
-class Server(ScModel, table=True):
+class Server(HasServerIdPK, table=True):
     """Server types."""
 
-    server_id: str = Field(
-        primary_key=True,
-        description="Server's unique identifier, as called at the Vendor.",
-    )
     vendor_id: str = Field(
         foreign_key="vendor",
         primary_key=True,
