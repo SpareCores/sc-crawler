@@ -462,7 +462,7 @@ def inventory_datacenters(vendor):
             "datacenter_id": "ap-southeast-3",
             "name": "Asia Pacific (Jakarta)",
             "vendor_id": vendor.vendor_id,
-            "country_id": "DATACENTER_ID",
+            "country_id": "ID",
             "city": "Jakarta",
             "founding_year": 2021,
             "green_energy": False,
