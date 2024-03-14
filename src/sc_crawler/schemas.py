@@ -710,7 +710,16 @@ class Zone(HasStatus, HasName, HasDatacenterPK, HasVendorPKFK, HasZoneIdPK, tabl
             ["datacenter.vendor_id", "datacenter.datacenter_id"],
         ),
     )
-    datacenter: Datacenter = Relationship(back_populates="zones")
+
+    datacenter: Datacenter = Relationship(
+        back_populates="zones",
+        sa_relationship_kwargs={
+            "primaryjoin": (
+                "and_(Datacenter.datacenter_id == foreign(Zone.datacenter_id), "
+                "Vendor.vendor_id == foreign(Zone.vendor_id))"
+            )
+        },
+    )
     vendor: Vendor = Relationship(back_populates="zones")
 
     server_prices: List["ServerPrice"] = Relationship(
@@ -945,9 +954,34 @@ class ServerPrice(ServerPriceBase, table=True):
         ),
     )
     vendor: Vendor = Relationship(back_populates="server_prices")
-    datacenter: Datacenter = Relationship(back_populates="server_prices")
-    zone: Zone = Relationship(back_populates="server_prices")
-    server: Server = Relationship(back_populates="prices")
+    datacenter: Datacenter = Relationship(
+        back_populates="server_prices",
+        sa_relationship_kwargs={
+            "primaryjoin": (
+                "and_(Datacenter.datacenter_id == foreign(ServerPrice.datacenter_id), "
+                "Vendor.vendor_id == foreign(ServerPrice.vendor_id))"
+            )
+        },
+    )
+    zone: Zone = Relationship(
+        back_populates="server_prices",
+        sa_relationship_kwargs={
+            "primaryjoin": (
+                "and_(Zone.zone_id == foreign(ServerPrice.zone_id), "
+                "Datacenter.datacenter_id == foreign(ServerPrice.datacenter_id),"
+                "Vendor.vendor_id == foreign(ServerPrice.vendor_id))"
+            )
+        },
+    )
+    server: Server = Relationship(
+        back_populates="prices",
+        sa_relationship_kwargs={
+            "primaryjoin": (
+                "and_(Server.server_id == foreign(ServerPrice.server_id), "
+                "Vendor.vendor_id == foreign(ServerPrice.vendor_id))"
+            )
+        },
+    )
 
 
 class StoragePriceBase(HasPriceFields, HasStoragePK, HasDatacenterPK, HasVendorPKFK):
@@ -968,8 +1002,24 @@ class StoragePrice(StoragePriceBase, table=True):
         ),
     )
     vendor: Vendor = Relationship(back_populates="storage_prices")
-    datacenter: Datacenter = Relationship(back_populates="storage_prices")
-    storage: Storage = Relationship(back_populates="prices")
+    datacenter: Datacenter = Relationship(
+        back_populates="storage_prices",
+        sa_relationship_kwargs={
+            "primaryjoin": (
+                "and_(Datacenter.datacenter_id == foreign(StoragePrice.datacenter_id),"
+                "Vendor.vendor_id == foreign(StoragePrice.vendor_id))"
+            )
+        },
+    )
+    storage: Storage = Relationship(
+        back_populates="prices",
+        sa_relationship_kwargs={
+            "primaryjoin": (
+                "and_(Storage.storage_id == foreign(StoragePrice.storage_id), "
+                "Vendor.vendor_id == foreign(StoragePrice.vendor_id))"
+            )
+        },
+    )
 
 
 class TrafficPriceBase(HasDatacenterPK, HasVendorPKFK):
@@ -993,7 +1043,15 @@ class TrafficPrice(HasPriceFields, TrafficPriceBase, table=True):
         ),
     )
     vendor: Vendor = Relationship(back_populates="traffic_prices")
-    datacenter: Datacenter = Relationship(back_populates="traffic_prices")
+    datacenter: Datacenter = Relationship(
+        back_populates="traffic_prices",
+        sa_relationship_kwargs={
+            "primaryjoin": (
+                "and_(Datacenter.datacenter_id == foreign(TrafficPrice.datacenter_id),"
+                "Vendor.vendor_id == foreign(TrafficPrice.vendor_id))"
+            )
+        },
+    )
 
 
 class Ipv4PriceBase(HasPriceFields, HasDatacenterPK, HasVendorPKFK):
@@ -1010,7 +1068,15 @@ class Ipv4Price(Ipv4PriceBase, table=True):
         ),
     )
     vendor: Vendor = Relationship(back_populates="ipv4_prices")
-    datacenter: Datacenter = Relationship(back_populates="ipv4_prices")
+    datacenter: Datacenter = Relationship(
+        back_populates="ipv4_prices",
+        sa_relationship_kwargs={
+            "primaryjoin": (
+                "and_(Datacenter.datacenter_id == foreign(Ipv4Price.datacenter_id),"
+                "Vendor.vendor_id == foreign(Ipv4Price.vendor_id))"
+            )
+        },
+    )
 
 
 VendorComplianceLink.model_rebuild()
