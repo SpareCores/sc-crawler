@@ -441,14 +441,31 @@ class Vendor(HasName, HasVendorIdPK, table=True):
 
     # relations
     country: Country = Relationship(back_populates="vendors")
-    datacenters: List["Datacenter"] = Relationship(back_populates="vendor")
-    zones: List["Zone"] = Relationship(back_populates="vendor")
-    storages: List["Storage"] = Relationship(back_populates="vendor")
-    servers: List["Server"] = Relationship(back_populates="vendor")
-    server_prices: List["ServerPrice"] = Relationship(back_populates="vendor")
-    traffic_prices: List["TrafficPrice"] = Relationship(back_populates="vendor")
-    ipv4_prices: List["Ipv4Price"] = Relationship(back_populates="vendor")
-    storage_prices: List["StoragePrice"] = Relationship(back_populates="vendor")
+
+    datacenters: List["Datacenter"] = Relationship(
+        back_populates="vendor", sa_relationship_kwargs={"viewonly": True}
+    )
+    zones: List["Zone"] = Relationship(
+        back_populates="vendor", sa_relationship_kwargs={"viewonly": True}
+    )
+    storages: List["Storage"] = Relationship(
+        back_populates="vendor", sa_relationship_kwargs={"viewonly": True}
+    )
+    servers: List["Server"] = Relationship(
+        back_populates="vendor", sa_relationship_kwargs={"viewonly": True}
+    )
+    server_prices: List["ServerPrice"] = Relationship(
+        back_populates="vendor", sa_relationship_kwargs={"viewonly": True}
+    )
+    traffic_prices: List["TrafficPrice"] = Relationship(
+        back_populates="vendor", sa_relationship_kwargs={"viewonly": True}
+    )
+    ipv4_prices: List["Ipv4Price"] = Relationship(
+        back_populates="vendor", sa_relationship_kwargs={"viewonly": True}
+    )
+    storage_prices: List["StoragePrice"] = Relationship(
+        back_populates="vendor", sa_relationship_kwargs={"viewonly": True}
+    )
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -666,11 +683,22 @@ class Datacenter(HasName, HasDatacenterIdPK, table=True):
 
     # relations
     country: Country = Relationship(back_populates="datacenters")
-    zones: List["Zone"] = Relationship(back_populates="datacenter")
-    server_prices: List["ServerPrice"] = Relationship(back_populates="datacenter")
-    traffic_prices: List["TrafficPrice"] = Relationship(back_populates="datacenter")
-    ipv4_prices: List["Ipv4Price"] = Relationship(back_populates="datacenter")
-    storage_prices: List["StoragePrice"] = Relationship(back_populates="datacenter")
+
+    zones: List["Zone"] = Relationship(
+        back_populates="datacenter", sa_relationship_kwargs={"viewonly": True}
+    )
+    server_prices: List["ServerPrice"] = Relationship(
+        back_populates="datacenter", sa_relationship_kwargs={"viewonly": True}
+    )
+    traffic_prices: List["TrafficPrice"] = Relationship(
+        back_populates="datacenter", sa_relationship_kwargs={"viewonly": True}
+    )
+    ipv4_prices: List["Ipv4Price"] = Relationship(
+        back_populates="datacenter", sa_relationship_kwargs={"viewonly": True}
+    )
+    storage_prices: List["StoragePrice"] = Relationship(
+        back_populates="datacenter", sa_relationship_kwargs={"viewonly": True}
+    )
 
 
 class Zone(HasStatus, HasName, HasDatacenterPK, HasVendorPKFK, HasZoneIdPK, table=True):
@@ -684,7 +712,10 @@ class Zone(HasStatus, HasName, HasDatacenterPK, HasVendorPKFK, HasZoneIdPK, tabl
     )
     datacenter: Datacenter = Relationship(back_populates="zones")
     vendor: Vendor = Relationship(back_populates="zones")
-    server_prices: List["ServerPrice"] = Relationship(back_populates="zone")
+
+    server_prices: List["ServerPrice"] = Relationship(
+        back_populates="zone", sa_relationship_kwargs={"viewonly": True}
+    )
 
 
 class Storage(HasDescription, HasName, HasVendorPKFK, HasStorageIdPK, table=True):
@@ -711,7 +742,10 @@ class Storage(HasDescription, HasName, HasVendorPKFK, HasStorageIdPK, table=True
     )
 
     vendor: Vendor = Relationship(back_populates="storages")
-    prices: List["StoragePrice"] = Relationship(back_populates="storage")
+
+    prices: List["StoragePrice"] = Relationship(
+        back_populates="storage", sa_relationship_kwargs={"viewonly": True}
+    )
 
 
 class Server(HasServerIdPK, table=True):
@@ -846,7 +880,10 @@ class Server(HasServerIdPK, table=True):
     )
 
     vendor: Vendor = Relationship(back_populates="servers")
-    prices: List["ServerPrice"] = Relationship(back_populates="server")
+
+    prices: List["ServerPrice"] = Relationship(
+        back_populates="server", sa_relationship_kwargs={"viewonly": True}
+    )
 
 
 class HasPriceFieldsBase(ScModel):
