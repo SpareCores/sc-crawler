@@ -271,7 +271,7 @@ class HasDescription(ScModel):
     description: Optional[str] = Field(description="Short description.")
 
 
-class HasVendorPK(ScModel):
+class HasVendorPKFK(ScModel):
     vendor_id: str = Field(
         foreign_key="vendor",
         primary_key=True,
@@ -279,25 +279,25 @@ class HasVendorPK(ScModel):
     )
 
 
-class HasDatacenter(ScModel):
+class HasDatacenterPK(ScModel):
     datacenter_id: str = Field(
         primary_key=True,
         description="Reference to the Datacenter.",
     )
 
 
-class HasZone(ScModel):
+class HasZonePK(ScModel):
     zone_id: str = Field(primary_key=True, description="Reference to the Zone.")
 
 
-class HasServer(ScModel):
+class HasServerPK(ScModel):
     server_id: str = Field(
         primary_key=True,
         description="Reference to the Server.",
     )
 
 
-class HasStorage(ScModel):
+class HasStoragePK(ScModel):
     storage_id: str = Field(
         primary_key=True,
         description="Reference to the Storage.",
@@ -323,7 +323,7 @@ class Country(CountryBase, table=True):
     datacenters: List["Datacenter"] = Relationship(back_populates="country")
 
 
-class VendorComplianceLinkBase(HasVendorPK):
+class VendorComplianceLinkBase(HasVendorPKFK):
     compliance_framework_id: str = Field(
         foreign_key="compliance_framework",
         primary_key=True,
@@ -673,7 +673,7 @@ class Datacenter(HasName, HasDatacenterIdPK, table=True):
     storage_prices: List["StoragePrice"] = Relationship(back_populates="datacenter")
 
 
-class Zone(HasStatus, HasName, HasDatacenter, HasVendorPK, HasZoneIdPK, table=True):
+class Zone(HasStatus, HasName, HasDatacenterPK, HasVendorPKFK, HasZoneIdPK, table=True):
     """Availability zones of Datacenters."""
 
     __table_args__ = (
@@ -687,7 +687,7 @@ class Zone(HasStatus, HasName, HasDatacenter, HasVendorPK, HasZoneIdPK, table=Tr
     server_prices: List["ServerPrice"] = Relationship(back_populates="zone")
 
 
-class Storage(HasDescription, HasName, HasVendorPK, HasStorageIdPK, table=True):
+class Storage(HasDescription, HasName, HasVendorPKFK, HasStorageIdPK, table=True):
     """Flexible storage options that can be attached to a Server."""
 
     storage_type: StorageType = Field(
@@ -882,10 +882,10 @@ class ServerPriceExtraFields(ScModel):
 class ServerPriceBase(
     HasPriceFields,
     ServerPriceExtraFields,
-    HasServer,
-    HasZone,
-    HasDatacenter,
-    HasVendorPK,
+    HasServerPK,
+    HasZonePK,
+    HasDatacenterPK,
+    HasVendorPKFK,
 ):
     pass
 
@@ -913,7 +913,7 @@ class ServerPrice(ServerPriceBase, table=True):
     server: Server = Relationship(back_populates="prices")
 
 
-class StoragePriceBase(HasPriceFields, HasStorage, HasDatacenter, HasVendorPK):
+class StoragePriceBase(HasPriceFields, HasStoragePK, HasDatacenterPK, HasVendorPKFK):
     pass
 
 
@@ -935,7 +935,7 @@ class StoragePrice(StoragePriceBase, table=True):
     storage: Storage = Relationship(back_populates="prices")
 
 
-class TrafficPriceBase(HasDatacenter, HasVendorPK):
+class TrafficPriceBase(HasDatacenterPK, HasVendorPKFK):
     direction: TrafficDirection = Field(
         description="Direction of the traffic: inbound or outbound.",
         primary_key=True,
@@ -959,7 +959,7 @@ class TrafficPrice(HasPriceFields, TrafficPriceBase, table=True):
     datacenter: Datacenter = Relationship(back_populates="traffic_prices")
 
 
-class Ipv4PriceBase(HasPriceFields, HasDatacenter, HasVendorPK):
+class Ipv4PriceBase(HasPriceFields, HasDatacenterPK, HasVendorPKFK):
     pass
 
 
