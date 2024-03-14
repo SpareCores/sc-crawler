@@ -14,7 +14,7 @@ from pydantic import (
     ImportString,
     PrivateAttr,
 )
-from sqlalchemy import DateTime, update
+from sqlalchemy import DateTime, ForeignKeyConstraint, update
 from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import declared_attr
 from sqlmodel import JSON, Column, Field, Relationship, Session, SQLModel, select
@@ -279,23 +279,19 @@ class HasVendorPK(ScModel):
     )
 
 
-class HasDatacenterPK(ScModel):
+class HasDatacenter(ScModel):
     datacenter_id: str = Field(
-        foreign_key="datacenter",
         primary_key=True,
         description="Reference to the Datacenter.",
     )
 
 
-class HasZonePK(ScModel):
-    zone_id: str = Field(
-        foreign_key="zone", primary_key=True, description="Reference to the Zone."
-    )
+class HasZone(ScModel):
+    zone_id: str = Field(primary_key=True, description="Reference to the Zone.")
 
 
 class HasServer(ScModel):
     server_id: str = Field(
-        foreign_key="server",
         primary_key=True,
         description="Reference to the Server.",
     )
@@ -303,7 +299,6 @@ class HasServer(ScModel):
 
 class HasStorage(ScModel):
     storage_id: str = Field(
-        foreign_key="storage",
         primary_key=True,
         description="Reference to the Storage.",
     )
@@ -678,9 +673,15 @@ class Datacenter(HasName, HasDatacenterIdPK, table=True):
     storage_prices: List["StoragePrice"] = Relationship(back_populates="datacenter")
 
 
-class Zone(HasStatus, HasName, HasDatacenterPK, HasVendorPK, HasZoneIdPK, table=True):
+class Zone(HasStatus, HasName, HasDatacenter, HasVendorPK, HasZoneIdPK, table=True):
     """Availability zones of Datacenters."""
 
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["vendor_id", "datacenter_id"],
+            ["datacenter.vendor_id", "datacenter.datacenter_id"],
+        ),
+    )
     datacenter: Datacenter = Relationship(back_populates="zones")
     vendor: Vendor = Relationship(back_populates="zones")
     server_prices: List["ServerPrice"] = Relationship(back_populates="zone")
@@ -882,8 +883,8 @@ class ServerPriceBase(
     HasPriceFields,
     ServerPriceExtraFields,
     HasServer,
-    HasZonePK,
-    HasDatacenterPK,
+    HasZone,
+    HasDatacenter,
     HasVendorPK,
 ):
     pass
@@ -892,25 +893,49 @@ class ServerPriceBase(
 class ServerPrice(ServerPriceBase, table=True):
     """Server type prices per Datacenter and Allocation method."""
 
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["vendor_id", "datacenter_id"],
+            ["datacenter.vendor_id", "datacenter.datacenter_id"],
+        ),
+        ForeignKeyConstraint(
+            ["vendor_id", "datacenter_id", "zone_id"],
+            ["zone.vendor_id", "zone.datacenter_id", "zone.zone_id"],
+        ),
+        ForeignKeyConstraint(
+            ["vendor_id", "server_id"],
+            ["server.vendor_id", "server.server_id"],
+        ),
+    )
     vendor: Vendor = Relationship(back_populates="server_prices")
     datacenter: Datacenter = Relationship(back_populates="server_prices")
     zone: Zone = Relationship(back_populates="server_prices")
     server: Server = Relationship(back_populates="prices")
 
 
-class StoragePriceBase(HasPriceFields, HasStorage, HasDatacenterPK, HasVendorPK):
+class StoragePriceBase(HasPriceFields, HasStorage, HasDatacenter, HasVendorPK):
     pass
 
 
 class StoragePrice(StoragePriceBase, table=True):
     """Flexible Storage prices in each Datacenter."""
 
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["vendor_id", "datacenter_id"],
+            ["datacenter.vendor_id", "datacenter.datacenter_id"],
+        ),
+        ForeignKeyConstraint(
+            ["vendor_id", "storage_id"],
+            ["storage.vendor_id", "storage.storage_id"],
+        ),
+    )
     vendor: Vendor = Relationship(back_populates="storage_prices")
     datacenter: Datacenter = Relationship(back_populates="storage_prices")
     storage: Storage = Relationship(back_populates="prices")
 
 
-class TrafficPriceBase(HasDatacenterPK, HasVendorPK):
+class TrafficPriceBase(HasDatacenter, HasVendorPK):
     direction: TrafficDirection = Field(
         description="Direction of the traffic: inbound or outbound.",
         primary_key=True,
@@ -924,17 +949,29 @@ class TrafficPriceBase(HasDatacenterPK, HasVendorPK):
 class TrafficPrice(HasPriceFields, TrafficPriceBase, table=True):
     """Extra Traffic prices in each Datacenter."""
 
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["vendor_id", "datacenter_id"],
+            ["datacenter.vendor_id", "datacenter.datacenter_id"],
+        ),
+    )
     vendor: Vendor = Relationship(back_populates="traffic_prices")
     datacenter: Datacenter = Relationship(back_populates="traffic_prices")
 
 
-class Ipv4PriceBase(HasPriceFields, HasDatacenterPK, HasVendorPK):
+class Ipv4PriceBase(HasPriceFields, HasDatacenter, HasVendorPK):
     pass
 
 
 class Ipv4Price(Ipv4PriceBase, table=True):
     """Price of an IPv4 address in each Datacenter."""
 
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["vendor_id", "datacenter_id"],
+            ["datacenter.vendor_id", "datacenter.datacenter_id"],
+        ),
+    )
     vendor: Vendor = Relationship(back_populates="ipv4_prices")
     datacenter: Datacenter = Relationship(back_populates="ipv4_prices")
 
