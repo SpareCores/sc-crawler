@@ -141,6 +141,21 @@ class Status(str, Enum):
     INACTIVE = "inactive"
 
 
+class Cpu(Json):
+    manufacturer: Optional[str] = None
+    family: Optional[str] = None
+    model: Optional[str] = None
+    cores: Optional[int] = None
+    threads: Optional[int] = None
+    l1_cache_size: Optional[int] = None  # byte
+    l2_cache_size: Optional[int] = None  # byte
+    l3_cache_size: Optional[int] = None  # byte
+    microcode: Optional[str] = None
+    capabilities: List[str] = []
+    bugs: List[str] = []
+    bogomips: Optional[float] = None
+
+
 class Gpu(Json):
     manufacturer: str
     name: str
@@ -163,6 +178,12 @@ class Disk(Json):
 class TrafficDirection(str, Enum):
     IN = "inbound"
     OUT = "outbound"
+
+
+class CpuAllocation(str, Enum):
+    SHARED = "Shared"
+    BURSTABLE = "Burstable"
+    DEDICATED = "Dedicated"
 
 
 class CpuArchitecture(str, Enum):
@@ -648,7 +669,7 @@ class Storage(HasDescription, HasName, HasVendorPK, HasIdPK, table=True):
     """Flexible storage options that can be attached to a Server."""
 
     storage_type: StorageType = Field(
-        description="High-level category of the main storage."
+        description="High-level category of the storage, e.g. HDD or SDD."
     )
     max_iops: Optional[int] = Field(
         default=None, description="Maximum Input/Output Operations Per Second."
@@ -691,7 +712,14 @@ class Server(ScModel, table=True):
         default=None,
         description="Default number of virtual CPUs (vCPU) of the server.",
     )
-    # TODO join all below cpu fields into a Cpu object?
+    hypervisor: Optional[str] = Field(
+        default=None,
+        description="Hypervisor of the virtual server, e.g. Xen, KVM, Nitro or Dedicated.",
+    )
+    cpu_allocation: CpuAllocation = Field(
+        default=None,
+        description="Allocation of CPU(s) to the server, e.g. shared, burstable or dedicated.",
+    )
     cpu_cores: int = Field(
         default=None,
         description=(
@@ -700,20 +728,32 @@ class Server(ScModel, table=True):
         ),
     )
     cpu_speed: Optional[float] = Field(
-        default=None, description="CPU clock speed (GHz)."
+        default=None, description="Vendor-reported maximum CPU clock speed (GHz)."
     )
     cpu_architecture: CpuArchitecture = Field(
         default=None,
-        description="CPU Architecture (arm64, arm64_mac, i386, or x86_64).",
+        description="CPU architecture (arm64, arm64_mac, i386, or x86_64).",
     )
     cpu_manufacturer: Optional[str] = Field(
         default=None,
-        description="The manufacturer of the processor.",
+        description="The manufacturer of the primary processor, e.g. Intel or AMD.",
     )
-    # TODO add the below extra fields
-    # cpu_features:  # e.g. AVX; AVX2; AMD Turbo
-    # cpu_allocation: dedicated | burstable | shared
-    # cpu_name: str  # e.g. EPYC 7571
+    cpu_family: Optional[str] = Field(
+        default=None,
+        description="The product line/family of the primary processor, e.g. Xeon, Core i7, Ryzen 9.",
+    )
+    cpu_model: Optional[str] = Field(
+        default=None,
+        description="The model number of the primary processor, e.g. 9750H.",
+    )
+    cpus: List[Cpu] = Field(
+        default=[],
+        sa_type=JSON,
+        description=(
+            "JSON array of known CPU details, e.g. the manufacturer, family, model; "
+            "L1/L2/L3 cache size; microcode version; feature flags; bugs etc."
+        ),
+    )
     memory: int = Field(
         default=None,
         description="RAM amount (MiB).",
@@ -722,14 +762,21 @@ class Server(ScModel, table=True):
         default=0,
         description="Number of GPU accelerator(s).",
     )
-    # TODO sum and avg/each memory
-    gpu_memory: Optional[int] = Field(
+    gpu_memory_min: Optional[int] = Field(
         default=None,
-        description="Overall memory (MiB) available to all the GPU accelerator(s).",
+        description="Memory (MiB) allocated to the lowest-end GPU accelerator.",
     )
-    gpu_name: Optional[str] = Field(
+    gpu_memory_total: Optional[int] = Field(
         default=None,
-        description="The manufacturer and the name of the GPU accelerator(s).",
+        description="Overall memory (MiB) allocated to all the GPU accelerator(s).",
+    )
+    gpu_manufacturer: Optional[str] = Field(
+        default=None,
+        description="The manufacturer of the primary GPU accelerator.",
+    )
+    gpu_model: Optional[str] = Field(
+        default=None,
+        description="The model number of the primary GPU accelerator.",
     )
     gpus: List[Gpu] = Field(
         default=[],
@@ -745,7 +792,7 @@ class Server(ScModel, table=True):
     )
     storage_type: Optional[StorageType] = Field(
         default=None,
-        description="Disk type (hdd, ssd, nvme ssd, or network).",
+        description="Primary disk type, e.g. HDD, SSD, NVMe SSD, or network).",
     )
     storages: List[Disk] = Field(
         default=[],
@@ -759,7 +806,17 @@ class Server(ScModel, table=True):
         default=None,
         description="The baseline network performance (Gbps) of the network card.",
     )
-    ipv4: bool = Field(default=False, description="Complimentary IPv4 address.")
+    inbound_traffic: float = Field(
+        default=0,
+        description="Amount of complimentary inbound traffic (GB) per month.",
+    )
+    outbound_traffic: float = Field(
+        default=0,
+        description="Amount of complimentary outbound traffic (GB) per month.",
+    )
+    ipv4: int = Field(
+        default=0, description="Number of complimentary IPv4 address(es)."
+    )
 
     billable_unit: str = Field(
         default=None,

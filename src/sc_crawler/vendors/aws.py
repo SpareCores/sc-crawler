@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from itertools import chain, repeat
 from logging import DEBUG
+from statistics import mode
 from typing import List, Optional, Tuple
 
 import boto3
@@ -14,6 +15,7 @@ from ..insert import insert_items
 from ..logger import logger
 from ..schemas import (
     Allocation,
+    CpuAllocation,
     Datacenter,
     Disk,
     Gpu,
@@ -236,19 +238,17 @@ def _get_storages_of_instance_type(instance_type):
 
 
 def _get_gpu_of_instance_type(instance_type):
-    """Get overall GPU count, memory and manufacturer/name."""
+    """Get overall GPU count, min and total memory, and manufacturer, name."""
     if "GpuInfo" not in instance_type:
-        return (0, None, None)
+        return (0, None, None, None, None)
     info = instance_type["GpuInfo"]
-    memory = info["TotalGpuMemoryInMiB"]
-
-    def mn(gpu):
-        return gpu["Manufacturer"] + " " + gpu["Name"]
-
-    # iterate over each GPU
+    memory_min = min([gpu["MemoryInfo"]["SizeInMiB"] for gpu in info["Gpus"]])
+    memory_total = info["TotalGpuMemoryInMiB"]
     count = sum([gpu["Count"] for gpu in info["Gpus"]])
-    names = ", ".join([mn(gpu) for gpu in info["Gpus"]])
-    return (count, memory, names)
+    # most common
+    manufacturer = mode([gpu["Manufacturer"] for gpu in info["Gpus"]])
+    model = mode([gpu["Name"] for gpu in info["Gpus"]])
+    return (count, memory_min, memory_total, manufacturer, model)
 
 
 def _get_gpus_of_instance_type(instance_type):
@@ -273,6 +273,9 @@ def _get_gpus_of_instance_type(instance_type):
 def _make_server_from_instance_type(instance_type, vendor) -> dict:
     """Create a SQLModel Server-compatible dict from AWS raw API response."""
     it = instance_type["InstanceType"]
+    allocation = CpuAllocation.DEDICATED
+    if instance_type.get("BurstablePerformanceSupported", False):
+        allocation = CpuAllocation.BURSTABLE
     vcpu_info = instance_type["VCpuInfo"]
     cpu_info = instance_type["ProcessorInfo"]
     gpu_info = _get_gpu_of_instance_type(instance_type)
@@ -283,15 +286,19 @@ def _make_server_from_instance_type(instance_type, vendor) -> dict:
         "vendor_id": vendor.id,
         "name": it,
         "description": _annotate_instance_type(it),
+        "hypervisor": instance_type.get("Hypervisor", None),
         "vcpus": vcpu_info["DefaultVCpus"],
+        "cpu_allocation": allocation,
         "cpu_cores": vcpu_info["DefaultCores"],
         "cpu_speed": cpu_info.get("SustainedClockSpeedInGhz", None),
         "cpu_architecture": cpu_info["SupportedArchitectures"][0],
         "cpu_manufacturer": cpu_info.get("Manufacturer", None),
         "memory": instance_type["MemoryInfo"]["SizeInMiB"],
         "gpu_count": gpu_info[0],
-        "gpu_memory": gpu_info[1],
-        "gpu_name": gpu_info[2],
+        "gpu_memory_min": gpu_info[1],
+        "gpu_memory_total": gpu_info[2],
+        "gpu_manufacturer": gpu_info[3],
+        "gpu_model": gpu_info[4],
         "gpus": _get_gpus_of_instance_type(instance_type),
         "storage_size": storage_info[0],
         "storage_type": storage_info[1],
@@ -1047,7 +1054,7 @@ def inventory_traffic_prices(vendor):
                     {
                         "vendor_id": vendor.id,
                         "datacenter_id": datacenter.id,
-                        "price": prices[0][-1].get("price"),
+                        "price": max([t["price"] for t in prices[0]]),
                         "price_tiered": price,
                         "currency": prices[1],
                         "unit": PriceUnit.GB_MONTH,
