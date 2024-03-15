@@ -46,8 +46,8 @@ def validate_items(
     if vendor:
         vendor.progress_tracker.hide_task()
         vendor.log(
-            "%d {space_after(prefix)}%s(s) objects validated"
-            % (len(items), model_name),
+            "%d %s%s(s) objects validated"
+            % (len(items), space_after(prefix), model_name),
             DEBUG,
         )
     return items
