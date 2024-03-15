@@ -1,12 +1,18 @@
 from logging import DEBUG
 from typing import List, Optional
 
-from sqlalchemy.dialects.sqlite import insert
-from sqlmodel import SQLModel
+from sqlalchemy.dialects.postgresql import insert as insert_postgresql
+from sqlalchemy.dialects.sqlite import insert as insert_sqlite
+from sqlmodel import Session, SQLModel
 
 from .schemas import Vendor
 from .str import space_after
-from .utils import chunk_list, is_sqlite
+from .utils import chunk_list, is_postgresql, is_sqlite
+
+
+def can_bulk_insert(session: Session) -> bool:
+    """Checks if bulk insert is support for the engine dialect of a SQLModel session."""
+    return is_sqlite(session) or is_postgresql(session)
 
 
 def validate_items(
@@ -66,7 +72,14 @@ def bulk_insert_items(
     )
     # need to split list into smaller chunks to avoid "too many SQL variables"
     for chunk in chunk_list(items, 100):
-        query = insert(model).values(chunk)
+        if is_sqlite(vendor.session):
+            query = insert_sqlite(model).values(chunk)
+        elif is_postgresql(vendor.session):
+            query = insert_postgresql(model).values(chunk)
+        else:
+            raise NotImplementedError(
+                "Unsupported database engine dialect for bulk inserts."
+            )
         query = query.on_conflict_do_update(
             index_elements=[getattr(model, c) for c in columns["primary_keys"]],
             set_={c: query.excluded[c] for c in columns["attributes"]},
@@ -91,7 +104,7 @@ def insert_items(model: SQLModel, items: List[dict], vendor: Vendor, prefix: str
             the model name in logs and progress bar updates.
     """
     model_name = model.get_table_name()
-    if is_sqlite(vendor.session):
+    if can_bulk_insert(vendor.session):
         items = validate_items(model, items, vendor, prefix)
         bulk_insert_items(model, items, vendor, prefix)
     else:

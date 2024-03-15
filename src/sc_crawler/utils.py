@@ -102,5 +102,12 @@ def scmodels_to_dict(scmodels: List[ScModel], keys: List[str]) -> Dict[str, ScMo
 
 
 def is_sqlite(session: Session) -> bool:
-    """Checks if a SQLModel session is binded to SQLite or another database."""
+    """Checks if a SQLModel session is binded to a SQLite database."""
     return session.bind.dialect.name == "sqlite"
+
+
+def is_postgresql(session: Session) -> bool:
+    """Checks if a SQLModel session is binded to a PostgreSQL-like database.
+
+    Dialect name is checked for PostgreSQL or CockroachDB."""
+    return session.bind.dialect.name in ["postgresql", "cockroachdb"]
