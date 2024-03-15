@@ -781,6 +781,7 @@ def inventory_server_prices(vendor):
 
     # lookup tables
     datacenters = scmodels_to_dict(vendor.datacenters, keys=["name", "aliases"])
+    servers = scmodels_to_dict(vendor.servers, keys=["server_id"])
 
     server_prices = []
     vendor.progress_tracker.start_task(
@@ -793,6 +794,7 @@ def inventory_server_prices(vendor):
             if "GovCloud" in attributes["location"]:
                 continue
             datacenter = datacenters[attributes["location"]]
+            server = servers[attributes["instanceType"]]
             price = _extract_ondemand_price(product["terms"])
             for zone in datacenter.zones:
                 server_prices.append(
@@ -800,7 +802,7 @@ def inventory_server_prices(vendor):
                         "vendor_id": vendor.vendor_id,
                         "datacenter_id": datacenter.datacenter_id,
                         "zone_id": zone.zone_id,
-                        "server_id": attributes["instanceType"],
+                        "server_id": server.server_id,
                         # TODO ingest other OSs
                         "operating_system": "Linux",
                         "allocation": Allocation.ONDEMAND,
