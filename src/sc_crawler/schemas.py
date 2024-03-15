@@ -213,7 +213,10 @@ class PriceTier(Json):
     """Price tier definition.
 
     As standard JSON does not support Inf, NaN etc values,
-    thouse should be passed as string, e.g. for the upper bound."""
+    thouse should be passed as string, e.g. for the upper bound.
+
+    See [float_inf_to_str][sc_crawler.utils.float_inf_to_str] for
+    converting an inifinite numeric value into "Infinity"."""
 
     lower: Union[float, str]
     upper: Union[float, str]

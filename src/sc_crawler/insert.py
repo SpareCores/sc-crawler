@@ -11,7 +11,7 @@ from .utils import chunk_list, is_postgresql, is_sqlite
 
 
 def can_bulk_insert(session: Session) -> bool:
-    """Checks if bulk insert is support for the engine dialect of a SQLModel session."""
+    """Checks if bulk insert is supported for the engine dialect of a SQLModel session."""
     return is_sqlite(session) or is_postgresql(session)
 
 
