@@ -121,7 +121,7 @@ def pull(
 
     def custom_serializer(x):
         """Use JSON serializer defined in custom objects."""
-        return dumps(x, default=lambda x: x.__json__())
+        return dumps(x, default=lambda x: x.__json__(), allow_nan=False)
 
     # enable caching
     if cache:

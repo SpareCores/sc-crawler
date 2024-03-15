@@ -1,6 +1,7 @@
 from enum import Enum
 from hashlib import sha1
 from json import dumps
+from math import isinf
 from typing import Any, Dict, Iterable, List, Union
 
 from sqlmodel import Session, create_engine
@@ -111,3 +112,8 @@ def is_postgresql(session: Session) -> bool:
 
     Dialect name is checked for PostgreSQL or CockroachDB."""
     return session.bind.dialect.name in ["postgresql", "cockroachdb"]
+
+
+def float_inf_to_str(x: float) -> Union[float, str]:
+    """Transform to string if a float is inf."""
+    return "Infinity" if isinf(x) else x

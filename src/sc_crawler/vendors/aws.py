@@ -34,7 +34,7 @@ from ..schemas import (
     Zone,
 )
 from ..str import extract_last_number
-from ..utils import jsoned_hash, scmodels_to_dict
+from ..utils import float_inf_to_str, jsoned_hash, scmodels_to_dict
 
 # disable caching by default
 set_default_params(caching_enabled=False, stale_after=timedelta(days=1))
@@ -342,7 +342,7 @@ def _extract_ondemand_prices(terms) -> Tuple[List[dict], str]:
     tiers = [
         {
             "lower": float(term.get("beginRange")),
-            "upper": float(term.get("endRange")),
+            "upper": float_inf_to_str(float(term.get("endRange"))),
             "price": float(list(term.get("pricePerUnit").values())[0]),
         }
         for term in ondemand_terms
@@ -862,7 +862,7 @@ def inventory_server_prices_spot(vendor):
             server = servers[product["InstanceType"]]
         except KeyError as e:
             vendor.log(
-                f"Cannot make ondemand server_price due to unknown {str(e)}: {str(attributes)}",
+                f"Cannot make ondemand server_price due to unknown {str(e)}: {str(product)}",
                 DEBUG,
             )
             continue

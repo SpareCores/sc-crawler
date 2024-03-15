@@ -7,7 +7,7 @@ from hashlib import sha1
 from importlib import import_module
 from json import dumps
 from types import ModuleType
-from typing import List, Optional
+from typing import List, Optional, Union
 
 from pydantic import (
     BaseModel,
@@ -210,8 +210,13 @@ class PriceUnit(str, Enum):
 
 
 class PriceTier(Json):
-    lower: float
-    upper: float
+    """Price tier definition.
+
+    As standard JSON does not support Inf, NaN etc values,
+    thouse should be passed as string, e.g. for the upper bound."""
+
+    lower: Union[float, str]
+    upper: Union[float, str]
     price: float
 
 
