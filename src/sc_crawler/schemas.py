@@ -137,11 +137,15 @@ class Json(BaseModel):
 
 
 class Status(str, Enum):
+    """Status, e.g. active or inactive."""
+
     ACTIVE = "active"
     INACTIVE = "inactive"
 
 
 class Cpu(Json):
+    """CPU details."""
+
     manufacturer: Optional[str] = None
     family: Optional[str] = None
     model: Optional[str] = None
@@ -157,6 +161,8 @@ class Cpu(Json):
 
 
 class Gpu(Json):
+    """GPU accelerator details."""
+
     manufacturer: str
     name: str
     memory: int  # MiB
@@ -164,6 +170,8 @@ class Gpu(Json):
 
 
 class StorageType(str, Enum):
+    """Type of a storage, e.g. HDD or SSD."""
+
     HDD = "hdd"
     SSD = "ssd"
     NVME_SSD = "nvme ssd"
@@ -171,22 +179,30 @@ class StorageType(str, Enum):
 
 
 class Disk(Json):
+    """Disk definition based on size and storage type."""
+
     size: int = 0  # GiB
     storage_type: StorageType
 
 
 class TrafficDirection(str, Enum):
+    """Directio of the network traffic."""
+
     IN = "inbound"
     OUT = "outbound"
 
 
 class CpuAllocation(str, Enum):
+    """CPU allocation methods at cloud vendors."""
+
     SHARED = "Shared"
     BURSTABLE = "Burstable"
     DEDICATED = "Dedicated"
 
 
 class CpuArchitecture(str, Enum):
+    """CPU architectures."""
+
     ARM64 = "arm64"
     ARM64_MAC = "arm64_mac"
     I386 = "i386"
@@ -195,12 +211,16 @@ class CpuArchitecture(str, Enum):
 
 
 class Allocation(str, Enum):
+    """Server allocation options."""
+
     ONDEMAND = "ondemand"
     RESERVED = "reserved"
     SPOT = "spot"
 
 
 class PriceUnit(str, Enum):
+    """Supported units for the price tables."""
+
     YEAR = "year"
     MONTH = "month"
     HOUR = "hour"
