@@ -812,7 +812,10 @@ def inventory_server_prices(vendor):
                     }
                 )
         except KeyError as e:
-            vendor.log(f"Cannot make ondemand server_price at {str(e)}", DEBUG)
+            vendor.log(
+                f"Cannot make ondemand server_price due to unknown {str(e)}: {str(attributes)}",
+                DEBUG,
+            )
         finally:
             vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
@@ -858,7 +861,10 @@ def inventory_server_prices_spot(vendor):
             zone = zones[product["AvailabilityZone"]]
             server = servers[product["InstanceType"]]
         except KeyError as e:
-            vendor.log("Cannot make spot server_price at %s" % str(e), DEBUG)
+            vendor.log(
+                f"Cannot make ondemand server_price due to unknown {str(e)}: {str(attributes)}",
+                DEBUG,
+            )
             continue
         server_prices.append(
             {
