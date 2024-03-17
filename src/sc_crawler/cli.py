@@ -15,6 +15,7 @@ from typing import List
 
 import typer
 from cachier import set_default_params
+from rich.console import Console
 from rich.live import Live
 from rich.progress import track
 from rich.table import Table
@@ -25,7 +26,7 @@ from typing_extensions import Annotated
 from . import vendors as vendors_module
 from .logger import ProgressPanel, ScRichHandler, VendorProgressTracker, logger
 from .lookup import compliance_frameworks, countries
-from .schemas import Vendor, tables
+from .schemas import Status, Vendor, tables
 from .utils import HashLevels, hash_database
 
 supported_vendors = [
@@ -117,8 +118,11 @@ def sync(
     source_hash = hash_database(source, level=HashLevels.ROW)
     target_hash = hash_database(target, level=HashLevels.ROW)
     actions = {
-        k: {table: [] for table in source_hash.keys()} for k in ["update", "new"]
+        k: {table: [] for table in source_hash.keys()}
+        for k in ["update", "new", "deleted"]
     }
+
+    # compare new records with old
     engine = create_engine(source)
     with Session(engine) as session:
         for table_name, items in source_hash.items():
@@ -142,30 +146,47 @@ def sync(
                     obj = session.exec(statement=q).one()
                     actions[action][table_name].append(obj.model_dump())
 
-    ## TODO dropped from old
+    # compare old records with new
+    for table_name, items in target_hash.items():
+        for key, _ in items.items():
+            if key not in source_hash[table_name]:
+                # append primary keys so that later we can set these to INACTIVE
+                actions["deleted"][table_name].append(loads(key))
 
     stats = {ka: {ki: len(vi) for ki, vi in va.items()} for ka, va in actions.items()}
-
     table = Table(title="Sync results")
     table.add_column("Table", no_wrap=True)
     table.add_column("New rows", justify="right")
     table.add_column("Updated rows", justify="right")
     table.add_column("Deleted rows", justify="right")
-
     for table_name in source_hash.keys():
         table.add_row(
             table_name,
             str(stats["new"][table_name]),
             str(stats["update"][table_name]),
-            str(0),
+            str(stats["deleted"][table_name]),
         )
-
-    from rich.console import Console
-
     console = Console()
     console.print(table)
 
-    ## TODO bulk insert
+    engine = create_engine(update or target)
+    with Session(engine) as session:
+        # deleted records
+        for table_name, _ in target_hash.items():
+            model = [t for t in tables if t.get_table_name() == table_name][0]
+            for pks in actions["deleted"][table_name]:
+                q = select(model)
+                for k, v in pks.items():
+                    q = q.where(getattr(model, k) == v)
+                obj = session.exec(statement=q).one()
+                if obj.status != Status.INACTIVE:
+                    obj.status = Status.INACTIVE
+                    obj.observed_at = datetime.utcnow()
+                    session.add(obj)
+        # new or updated records
+        # TODO
+        session.commit()
+
     import pdb
 
     pdb.set_trace()
