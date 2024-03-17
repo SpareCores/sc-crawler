@@ -94,8 +94,8 @@ def bulk_insert_items(
             index_elements=[getattr(model, c) for c in columns["primary_keys"]],
             set_={c: query.excluded[c] for c in columns["attributes"]},
         )
+        session.execute(query)
         if vendor:
-            vendor.session.execute(query)
             vendor.progress_tracker.advance_task(by=len(chunk))
     if vendor:
         vendor.progress_tracker.hide_task()
