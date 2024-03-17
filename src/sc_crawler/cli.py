@@ -10,21 +10,23 @@ Provides the `sc-crawler` command and the below subcommands:
 import logging
 from datetime import datetime, timedelta
 from enum import Enum
-from json import dumps
+from json import dumps, loads
 from typing import List
 
 import typer
 from cachier import set_default_params
 from rich.live import Live
+from rich.progress import track
+from rich.table import Table
 from rich.text import Text
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import Session, SQLModel, create_engine, select
 from typing_extensions import Annotated
 
 from . import vendors as vendors_module
 from .logger import ProgressPanel, ScRichHandler, VendorProgressTracker, logger
 from .lookup import compliance_frameworks, countries
-from .schemas import Vendor
-from .utils import hash_database
+from .schemas import Vendor, tables
+from .utils import HashLevels, hash_database
 
 supported_vendors = [
     vendor[1]
@@ -74,6 +76,99 @@ def hash_command(
 ):
     """Print the hash of the content of a database."""
     print(hash_database(connection_string))
+
+
+@cli.command()
+def sync(
+    source: Annotated[
+        str,
+        typer.Option(
+            help="Database URL (SQLAlchemy connection string) to sync to `update` based on `target`."
+        ),
+    ],
+    target: Annotated[
+        str,
+        typer.Option(
+            help="Database URL (SQLAlchemy connection string) to compare with `source`."
+        ),
+    ],
+    update: Annotated[
+        str,
+        typer.Option(
+            help="Optional database URL (SQLAlchemy connection string) to be updated (defaults to `target`)."
+        ),
+    ] = None,
+):
+    """Sync a database to another one.
+
+    Hasing both the `source` and the `target` databases, then
+    marking for syncing the records from the `source` that are:
+
+    - new (rows with primary keys found in `source`, but not found in `target`),
+
+    - updated (rows with different values in `source` and in `target`).
+
+    The records to be synced are written to the `update` database,
+    which defaultsto the `target` database. It's useful to provide
+    both `target` and `update`, when the `source` is compared to the
+    most recent views of SCD tables.
+
+    """
+    source_hash = hash_database(source, level=HashLevels.ROW)
+    target_hash = hash_database(target, level=HashLevels.ROW)
+    actions = {
+        k: {table: [] for table in source_hash.keys()} for k in ["update", "new"]
+    }
+    engine = create_engine(source)
+    with Session(engine) as session:
+        for table_name, items in source_hash.items():
+            model = [t for t in tables if t.get_table_name() == table_name][0]
+            for pks_json, item in track(
+                items.items(),
+                description=f"Comparing records in table: {table_name}",
+                transient=True,
+            ):
+                action = None
+                try:
+                    if item != target_hash[table_name][pks_json]:
+                        action = "update"
+                except KeyError:
+                    action = "new"
+                if action:
+                    pks = loads(pks_json)
+                    q = select(model)
+                    for k, v in pks.items():
+                        q = q.where(getattr(model, k) == v)
+                    obj = session.exec(statement=q).one()
+                    actions[action][table_name].append(obj.model_dump())
+
+    ## TODO dropped from old
+
+    stats = {ka: {ki: len(vi) for ki, vi in va.items()} for ka, va in actions.items()}
+
+    table = Table(title="Sync results")
+    table.add_column("Table", no_wrap=True)
+    table.add_column("New rows", justify="right")
+    table.add_column("Updated rows", justify="right")
+    table.add_column("Deleted rows", justify="right")
+
+    for table_name in source_hash.keys():
+        table.add_row(
+            table_name,
+            str(stats["new"][table_name]),
+            str(stats["update"][table_name]),
+            str(0),
+        )
+
+    from rich.console import Console
+
+    console = Console()
+    console.print(table)
+
+    ## TODO bulk insert
+    import pdb
+
+    pdb.set_trace()
 
 
 @cli.command()

@@ -14,7 +14,7 @@ from pydantic import (
     ImportString,
     PrivateAttr,
 )
-from sqlalchemy import DateTime, ForeignKeyConstraint, update
+from sqlalchemy import ForeignKeyConstraint, update
 from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import declared_attr
 from sqlmodel import JSON, Column, Field, Relationship, Session, SQLModel, select
@@ -116,7 +116,7 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
             # https://github.com/tiangolo/sqlmodel/issues/63#issuecomment-1081555082
             rowdict = row.model_dump(warnings=False)
             keys = {pk: rowdict.get(pk) for pk in pks}
-            keys_id = dumps(keys)
+            keys_id = dumps(keys, sort_keys=True)
             for dropkey in [*ignored, *pks]:
                 rowdict.pop(dropkey, None)
             rowhash = sha1(dumps(rowdict, sort_keys=True).encode()).hexdigest()
