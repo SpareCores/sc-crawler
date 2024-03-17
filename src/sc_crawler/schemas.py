@@ -97,7 +97,16 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
         return str(cls.__tablename__)
 
     @classmethod
-    def hash(cls, session, ignored: List[str] = ["observed_at"]) -> dict:
+    def hash(cls, session: Session, ignored: List[str] = ["observed_at"]) -> dict:
+        """Hash the content of the rows.
+
+        Args:
+            session: Database connection to use for object lookups.
+            ignored: List of column names to exclude from hashing.
+
+        Returns:
+            Dictionary of the row hashes keyed by the JSON dump of primary keys.
+        """
         pks = sorted(cls.get_columns()["primary_keys"])
         rows = session.exec(statement=select(cls))
         # no use of a generator as will need to serialize to JSON anyway
@@ -106,11 +115,12 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
             # NOTE Pydantic is warning when read Gpu/Storage as dict
             # https://github.com/tiangolo/sqlmodel/issues/63#issuecomment-1081555082
             rowdict = row.model_dump(warnings=False)
-            rowkeys = str(tuple(rowdict.get(pk) for pk in pks))
+            keys = {pk: rowdict.get(pk) for pk in pks}
+            keys_id = dumps(keys)
             for dropkey in [*ignored, *pks]:
                 rowdict.pop(dropkey, None)
             rowhash = sha1(dumps(rowdict, sort_keys=True).encode()).hexdigest()
-            hashes[rowkeys] = rowhash
+            hashes[keys_id] = rowhash
         return hashes
 
 
