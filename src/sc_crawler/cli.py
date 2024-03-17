@@ -24,6 +24,7 @@ from sqlmodel import Session, SQLModel, create_engine, select
 from typing_extensions import Annotated
 
 from . import vendors as vendors_module
+from .insert import insert_items
 from .logger import ProgressPanel, ScRichHandler, VendorProgressTracker, logger
 from .lookup import compliance_frameworks, countries
 from .schemas import Status, Vendor, tables
@@ -122,6 +123,13 @@ def sync(
         for k in ["update", "new", "deleted"]
     }
 
+    # enable logging
+    channel = ScRichHandler()
+    formatter = logging.Formatter("%(message)s")
+    channel.setFormatter(formatter)
+    logger.setLevel(logging.INFO)
+    logger.addHandler(channel)
+
     # compare new records with old
     engine = create_engine(source)
     with Session(engine) as session:
@@ -147,11 +155,20 @@ def sync(
                     actions[action][table_name].append(obj.model_dump())
 
     # compare old records with new
-    for table_name, items in target_hash.items():
-        for key, _ in items.items():
-            if key not in source_hash[table_name]:
-                # append primary keys so that later we can set these to INACTIVE
-                actions["deleted"][table_name].append(loads(key))
+    engine = create_engine(target)
+    with Session(engine) as session:
+        for table_name, items in target_hash.items():
+            model = [t for t in tables if t.get_table_name() == table_name][0]
+            for key, _ in items.items():
+                if key not in source_hash[table_name]:
+                    pks = loads(key)
+                    q = select(model)
+                    for k, v in pks.items():
+                        q = q.where(getattr(model, k) == v)
+                    obj = session.exec(statement=q).one()
+                    # append primary keys so that later we can set these to INACTIVE
+                    if obj.status != Status.INACTIVE:
+                        actions["deleted"][table_name].append(pks)
 
     stats = {ka: {ki: len(vi) for ki, vi in va.items()} for ka, va in actions.items()}
     table = Table(title="Sync results")
@@ -179,17 +196,22 @@ def sync(
                 for k, v in pks.items():
                     q = q.where(getattr(model, k) == v)
                 obj = session.exec(statement=q).one()
-                if obj.status != Status.INACTIVE:
-                    obj.status = Status.INACTIVE
-                    obj.observed_at = datetime.utcnow()
-                    session.add(obj)
+                obj.status = Status.INACTIVE
+                obj.observed_at = datetime.utcnow()
+                session.add(obj)
+            if actions["deleted"][table_name]:
+                logger.info(
+                    "Marked %d %s(s) rows as INACTIVE"
+                    % (len(actions["deleted"][table_name]), table_name)
+                )
         # new or updated records
-        # TODO
+        for table_name, _ in source_hash.items():
+            model = [t for t in tables if t.get_table_name() == table_name][0]
+            items = actions["new"][table_name] + actions["update"][table_name]
+            if len(items):
+                insert_items(model, items, session=session)
+                logger.info("Updated %d %s(s) rows" % (len(items), table_name))
         session.commit()
-
-    import pdb
-
-    pdb.set_trace()
 
 
 @cli.command()
