@@ -103,18 +103,20 @@ def sync(
 ):
     """Sync a database to another one.
 
-    Hasing both the `source` and the `target` databases, then
-    marking for syncing the records from the `source` that are:
+    Hashing both the `source` and the `target` databases, then
+    comparing hashes and marking for syncing the following records:
 
-    - new (rows with primary keys found in `source`, but not found in `target`),
+    - new (rows with primary keys found in `source`, but not found in `target`)
 
-    - updated (rows with different values in `source` and in `target`).
+    - update (rows with different values in `source` and in `target`).
+
+    - inactive rows with primary keys found in `target`, but not found in `source`.
 
     The records to be synced are written to the `update` database,
-    which defaultsto the `target` database. It's useful to provide
+    which defaults to the `target` database. It's useful to provide
     both `target` and `update`, when the `source` is compared to the
-    most recent views of SCD tables.
-
+    most recent views of SCD tables (referenced as `target`), but the
+    updates need to happen in the SCD tables (referenced as `update`).
     """
     source_hash = hash_database(source, level=HashLevels.ROW)
     target_hash = hash_database(target, level=HashLevels.ROW)
