@@ -38,7 +38,6 @@ class ScMetaModel(SQLModel.__class__):
 
     - Reuse description of the fields to dynamically append to the
         docstring in the Attributes section.
-    - Append observed_at column.
     """
 
     def __init__(subclass, *args, **kwargs):
@@ -55,16 +54,6 @@ class ScMetaModel(SQLModel.__class__):
             comment = satable.columns[k].comment
             if v.description and comment is None:
                 satable.columns[k].comment = v.description
-        # append observed_at as last column
-        satable.append_column(
-            Column(
-                "observed_at",
-                DateTime,
-                default=datetime.utcnow,
-                onupdate=datetime.utcnow,
-                comment="Timestamp of the last observation.",
-            )
-        )
         # describe table columns as attributes in docstring
         subclass.__doc__ = subclass.__doc__ + "\n\nAttributes:\n"
         for k, v in subclass.model_fields.items():
@@ -86,7 +75,7 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
     - auto-generated table names using snake_case,
     - support for hashing table rows,
     - reuse description field of tables/columns as SQL comment,
-    - automatically append `observed_at` column.
+    - reuse description field of columns to extend the Attributes section of the docstring.
     """
 
     @declared_attr  # type: ignore
@@ -250,10 +239,17 @@ class PriceTier(Json):
 # columns, so some below Fields are sometimes copy/pasted into models.
 
 
-class HasStatus(ScModel):
+class MetaColumns(ScModel):
+    """Helper class to add the `status` and `observed_at` columns."""
+
     status: Status = Field(
         default=Status.ACTIVE,
         description="Status of the resource (active or inactive).",
+    )
+    observed_at: datetime = Field(
+        default_factory=datetime.utcnow,
+        sa_column_kwargs={"onupdate": datetime.utcnow},
+        description="Timestamp of the last observation.",
     )
 
 
@@ -332,16 +328,41 @@ class HasStoragePK(ScModel):
     )
 
 
+class HasPriceFieldsBase(ScModel):
+    unit: PriceUnit = Field(description="Billing unit of the pricing model.")
+    # set to max price if tiered
+    price: float = Field(description="Actual price of a billing unit.")
+    # e.g. setup fee for dedicated servers,
+    # or upfront costs of a reserved instance type
+    price_upfront: float = Field(
+        default=0, description="Price to be paid when setting up the resource."
+    )
+    price_tiered: List[PriceTier] = Field(
+        default=[],
+        sa_type=JSON,
+        description="List of pricing tiers with min/max thresholds and actual prices.",
+    )
+    currency: str = Field(default="USD", description="Currency of the prices.")
+
+
+class HasPriceFields(MetaColumns, HasPriceFieldsBase):
+    pass
+
+
 # ##############################################################################
 # Actual SC data schemas and model definitions
 
 
-class CountryBase(ScModel):
+class CountryFields(ScModel):
     country_id: str = Field(
         primary_key=True,
         description="Country code by ISO 3166 alpha-2.",
     )
     continent: str = Field(description="Continent name.")
+
+
+class CountryBase(MetaColumns, CountryFields):
+    pass
 
 
 class Country(CountryBase, table=True):
@@ -351,7 +372,7 @@ class Country(CountryBase, table=True):
     datacenters: List["Datacenter"] = Relationship(back_populates="country")
 
 
-class VendorComplianceLinkBase(HasVendorPKFK):
+class VendorComplianceLinkFields(HasVendorPKFK):
     compliance_framework_id: str = Field(
         foreign_key="compliance_framework",
         primary_key=True,
@@ -363,7 +384,11 @@ class VendorComplianceLinkBase(HasVendorPKFK):
     )
 
 
-class VendorComplianceLink(HasStatus, VendorComplianceLinkBase, table=True):
+class VendorComplianceLinkBase(MetaColumns, VendorComplianceLinkFields):
+    pass
+
+
+class VendorComplianceLink(VendorComplianceLinkBase, table=True):
     """List of known Compliance Frameworks paired with vendors."""
 
     vendor: "Vendor" = Relationship(back_populates="compliance_framework_links")
@@ -372,9 +397,7 @@ class VendorComplianceLink(HasStatus, VendorComplianceLinkBase, table=True):
     )
 
 
-class ComplianceFramework(HasName, HasComplianceFrameworkIdPK, table=True):
-    """List of Compliance Frameworks, such as HIPAA or SOC 2 Type 1."""
-
+class ComplianceFrameworkFields(ScData):
     abbreviation: Optional[str] = Field(
         description="Short abbreviation of the Framework name."
     )
@@ -396,25 +419,22 @@ class ComplianceFramework(HasName, HasComplianceFrameworkIdPK, table=True):
         description="Public homepage with more information on the Framework.",
     )
 
+
+class ComplianceFrameworkBase(
+    MetaColumns, ComplianceFrameworkFields, HasName, HasComplianceFrameworkIdPK
+):
+    pass
+
+
+class ComplianceFramework(ComplianceFrameworkBase, table=True):
+    """List of Compliance Frameworks, such as HIPAA or SOC 2 Type 1."""
+
     vendor_links: List[VendorComplianceLink] = Relationship(
         back_populates="compliance_framework"
     )
 
 
-class Vendor(HasName, HasVendorIdPK, table=True):
-    """Compute resource vendors, such as cloud and server providers.
-
-    Examples:
-        >>> from sc_crawler.schemas import Vendor
-        >>> from sc_crawler.lookup import countries
-        >>> aws = Vendor(vendor_id='aws', name='Amazon Web Services', homepage='https://aws.amazon.com', country=countries["US"], founding_year=2002)
-        >>> aws
-        Vendor(vendor_id='aws'...
-        >>> from sc_crawler import vendors
-        >>> vendors.aws
-        Vendor(vendor_id='aws'...
-    """  # noqa: E501
-
+class VendorFields(HasName, HasVendorIdPK):
     # TODO HttpUrl not supported by SQLModel
     # TODO upload to cdn.sparecores.com (s3/cloudfront)
     logo: Optional[str] = Field(
@@ -448,28 +468,34 @@ class Vendor(HasName, HasVendorIdPK, table=True):
     # https://dbpedia.org/ontology/Organisation
     founding_year: int = Field(description="4-digit year when the Vendor was founded.")
 
-    compliance_framework_links: List[VendorComplianceLink] = Relationship(
-        back_populates="vendor"
-    )
-
     # TODO HttpUrl not supported by SQLModel
     status_page: Optional[str] = Field(
         default=None, description="Public status page of the Vendor."
     )
 
-    status: Status = Field(
-        default=Status.ACTIVE,
-        description="Status of the resource (active or inactive).",
+
+class VendorBase(MetaColumns, VendorFields):
+    pass
+
+
+class Vendor(VendorBase, table=True):
+    """Compute resource vendors, such as cloud and server providers.
+
+    Examples:
+        >>> from sc_crawler.schemas import Vendor
+        >>> from sc_crawler.lookup import countries
+        >>> aws = Vendor(vendor_id='aws', name='Amazon Web Services', homepage='https://aws.amazon.com', country=countries["US"], founding_year=2002)
+        >>> aws
+        Vendor(vendor_id='aws'...
+        >>> from sc_crawler import vendors
+        >>> vendors.aws
+        Vendor(vendor_id='aws'...
+    """  # noqa: E501
+
+    compliance_framework_links: List[VendorComplianceLink] = Relationship(
+        back_populates="vendor"
     )
-
-    # private attributes
-    _methods: Optional[ImportString[ModuleType]] = PrivateAttr(default=None)
-    _session: Optional[Session] = PrivateAttr()
-    _progress_tracker: Optional[VendorProgressTracker] = PrivateAttr()
-
-    # relations
     country: Country = Relationship(back_populates="vendors")
-
     datacenters: List["Datacenter"] = Relationship(
         back_populates="vendor", sa_relationship_kwargs={"viewonly": True}
     )
@@ -494,6 +520,11 @@ class Vendor(HasName, HasVendorIdPK, table=True):
     storage_prices: List["StoragePrice"] = Relationship(
         back_populates="vendor", sa_relationship_kwargs={"viewonly": True}
     )
+
+    # private attributes
+    _methods: Optional[ImportString[ModuleType]] = PrivateAttr(default=None)
+    _session: Optional[Session] = PrivateAttr()
+    _progress_tracker: Optional[VendorProgressTracker] = PrivateAttr()
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -662,9 +693,7 @@ class Vendor(HasName, HasVendorIdPK, table=True):
         self._get_methods().inventory_ipv4_prices(self)
 
 
-class Datacenter(HasName, HasDatacenterIdPK, table=True):
-    """Datacenters/regions of Vendors."""
-
+class DatacenterFields(HasName, HasDatacenterIdPK):
     aliases: List[str] = Field(
         default=[],
         sa_column=Column(JSON),
@@ -676,7 +705,6 @@ class Datacenter(HasName, HasDatacenterIdPK, table=True):
         primary_key=True,
         description="Reference to the Vendor.",
     )
-    vendor: Vendor = Relationship(back_populates="datacenters")
 
     country_id: str = Field(
         foreign_key="country",
@@ -704,12 +732,15 @@ class Datacenter(HasName, HasDatacenterIdPK, table=True):
         description="If the Datacenter is 100% powered by renewable energy.",
     )
 
-    status: Status = Field(
-        default=Status.ACTIVE,
-        description="Status of the resource (active or inactive).",
-    )
 
-    # relations
+class DatacenterBase(MetaColumns, DatacenterFields):
+    pass
+
+
+class Datacenter(DatacenterBase, table=True):
+    """Datacenters/regions of Vendors."""
+
+    vendor: Vendor = Relationship(back_populates="datacenters")
     country: Country = Relationship(back_populates="datacenters")
 
     zones: List["Zone"] = Relationship(
@@ -729,7 +760,11 @@ class Datacenter(HasName, HasDatacenterIdPK, table=True):
     )
 
 
-class Zone(HasStatus, HasName, HasDatacenterPK, HasVendorPKFK, HasZoneIdPK, table=True):
+class ZoneBase(MetaColumns, HasName, HasDatacenterPK, HasVendorPKFK, HasZoneIdPK):
+    pass
+
+
+class Zone(ZoneBase, table=True):
     """Availability zones of Datacenters."""
 
     __table_args__ = (
@@ -755,9 +790,7 @@ class Zone(HasStatus, HasName, HasDatacenterPK, HasVendorPKFK, HasZoneIdPK, tabl
     )
 
 
-class Storage(HasDescription, HasName, HasVendorPKFK, HasStorageIdPK, table=True):
-    """Flexible storage options that can be attached to a Server."""
-
+class StorageFields(HasDescription, HasName, HasVendorPKFK, HasStorageIdPK):
     storage_type: StorageType = Field(
         description="High-level category of the storage, e.g. HDD or SDD."
     )
@@ -773,10 +806,14 @@ class Storage(HasDescription, HasName, HasVendorPKFK, HasStorageIdPK, table=True
     max_size: Optional[int] = Field(
         default=None, description="Maximum possible size (GiB)."
     )
-    status: Status = Field(
-        default=Status.ACTIVE,
-        description="Status of the resource (active or inactive).",
-    )
+
+
+class StorageBase(MetaColumns, StorageFields):
+    pass
+
+
+class Storage(StorageBase, table=True):
+    """Flexible storage options that can be attached to a Server."""
 
     vendor: Vendor = Relationship(back_populates="storages")
 
@@ -785,9 +822,7 @@ class Storage(HasDescription, HasName, HasVendorPKFK, HasStorageIdPK, table=True
     )
 
 
-class Server(HasServerIdPK, table=True):
-    """Server types."""
-
+class ServerFields(HasServerIdPK):
     vendor_id: str = Field(
         foreign_key="vendor",
         primary_key=True,
@@ -911,40 +946,22 @@ class Server(HasServerIdPK, table=True):
         default=None,
         description="Time period for billing, e.g. hour or month.",
     )
-    status: Status = Field(
-        default=Status.ACTIVE,
-        description="Status of the resource (active or inactive).",
-    )
+
+
+class ServerBase(MetaColumns, ServerFields):
+    pass
+
+
+class Server(ServerBase, table=True):
+    """Server types."""
 
     vendor: Vendor = Relationship(back_populates="servers")
-
     prices: List["ServerPrice"] = Relationship(
         back_populates="server", sa_relationship_kwargs={"viewonly": True}
     )
 
 
-class HasPriceFieldsBase(ScModel):
-    unit: PriceUnit = Field(description="Billing unit of the pricing model.")
-    # set to max price if tiered
-    price: float = Field(description="Actual price of a billing unit.")
-    # e.g. setup fee for dedicated servers,
-    # or upfront costs of a reserved instance type
-    price_upfront: float = Field(
-        default=0, description="Price to be paid when setting up the resource."
-    )
-    price_tiered: List[PriceTier] = Field(
-        default=[],
-        sa_type=JSON,
-        description="List of pricing tiers with min/max thresholds and actual prices.",
-    )
-    currency: str = Field(default="USD", description="Currency of the prices.")
-
-
-class HasPriceFields(HasStatus, HasPriceFieldsBase):
-    pass
-
-
-class ServerPriceExtraFields(ScModel):
+class ServerPriceFields(ScModel):
     operating_system: str = Field(description="Operating System.")
     allocation: Allocation = Field(
         default=Allocation.ONDEMAND,
@@ -955,7 +972,7 @@ class ServerPriceExtraFields(ScModel):
 
 class ServerPriceBase(
     HasPriceFields,
-    ServerPriceExtraFields,
+    ServerPriceFields,
     HasServerPK,
     HasZonePK,
     HasDatacenterPK,
@@ -1055,10 +1072,6 @@ class TrafficPriceBase(HasDatacenterPK, HasVendorPKFK):
         description="Direction of the traffic: inbound or outbound.",
         primary_key=True,
     )
-    status: Status = Field(
-        default=Status.ACTIVE,
-        description="Status of the resource (active or inactive).",
-    )
 
 
 class TrafficPrice(HasPriceFields, TrafficPriceBase, table=True):
@@ -1107,10 +1120,13 @@ class Ipv4Price(Ipv4PriceBase, table=True):
     )
 
 
-VendorComplianceLink.model_rebuild()
 Country.model_rebuild()
+VendorComplianceLink.model_rebuild()
 Vendor.model_rebuild()
 Datacenter.model_rebuild()
+Zone.model_rebuild()
+Storage.model_rebuild()
+Server.model_rebuild()
 
 
 def is_table(table):
