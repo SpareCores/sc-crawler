@@ -304,7 +304,6 @@ def _make_server_from_instance_type(instance_type, vendor) -> dict:
         "storage_type": storage_info[1],
         "storages": _get_storages_of_instance_type(instance_type),
         "network_speed": network_card["BaselineBandwidthInGbps"],
-        "billable_unit": "hour",
     }
 
 

@@ -952,11 +952,6 @@ class ServerFields(HasServerIdPK):
         default=0, description="Number of complimentary IPv4 address(es)."
     )
 
-    billable_unit: str = Field(
-        default=None,
-        description="Time period for billing, e.g. hour or month.",
-    )
-
 
 class ServerBase(MetaColumns, ServerFields):
     pass
