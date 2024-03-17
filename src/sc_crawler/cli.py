@@ -28,7 +28,7 @@ from .insert import insert_items
 from .logger import ProgressPanel, ScRichHandler, VendorProgressTracker, logger
 from .lookup import compliance_frameworks, countries
 from .schemas import Status, Vendor, tables
-from .utils import HashLevels, hash_database
+from .utils import HashLevels, hash_database, table_name_to_model
 
 supported_vendors = [
     vendor[1]
@@ -136,7 +136,7 @@ def sync(
     engine = create_engine(source)
     with Session(engine) as session:
         for table_name, items in source_hash.items():
-            model = [t for t in tables if t.get_table_name() == table_name][0]
+            model = table_name_to_model(table_name)
             for pks_json, item in track(
                 items.items(),
                 description=f"Comparing records in table: {table_name}",
@@ -160,7 +160,7 @@ def sync(
     engine = create_engine(target)
     with Session(engine) as session:
         for table_name, items in target_hash.items():
-            model = [t for t in tables if t.get_table_name() == table_name][0]
+            model = table_name_to_model(table_name)
             for key, _ in items.items():
                 if key not in source_hash[table_name]:
                     pks = loads(key)
@@ -192,7 +192,7 @@ def sync(
     with Session(engine) as session:
         # deleted records
         for table_name, _ in target_hash.items():
-            model = [t for t in tables if t.get_table_name() == table_name][0]
+            model = table_name_to_model(table_name)
             for pks in actions["deleted"][table_name]:
                 q = select(model)
                 for k, v in pks.items():
@@ -208,7 +208,7 @@ def sync(
                 )
         # new or updated records
         for table_name, _ in source_hash.items():
-            model = [t for t in tables if t.get_table_name() == table_name][0]
+            model = table_name_to_model(table_name)
             items = actions["new"][table_name] + actions["update"][table_name]
             if len(items):
                 insert_items(model, items, session=session)

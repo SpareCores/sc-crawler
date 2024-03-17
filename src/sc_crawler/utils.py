@@ -117,3 +117,8 @@ def is_postgresql(session: Session) -> bool:
 def float_inf_to_str(x: float) -> Union[float, str]:
     """Transform to string if a float is inf."""
     return "Infinity" if isinf(x) else x
+
+
+def table_name_to_model(table_name: str) -> ScModel:
+    """Return the ScModel schema for a table name."""
+    return [t for t in tables if t.get_table_name() == table_name][0]
