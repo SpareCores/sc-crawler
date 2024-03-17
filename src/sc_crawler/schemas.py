@@ -397,7 +397,7 @@ class VendorComplianceLink(VendorComplianceLinkBase, table=True):
     )
 
 
-class ComplianceFrameworkFields(ScData):
+class ComplianceFrameworkFields(ScModel):
     abbreviation: Optional[str] = Field(
         description="Short abbreviation of the Framework name."
     )
