@@ -20,15 +20,15 @@ from rich.live import Live
 from rich.progress import track
 from rich.table import Table
 from rich.text import Text
-from sqlmodel import Session, SQLModel, create_engine, select
+from sqlmodel import Session, SQLModel, create_engine
 from typing_extensions import Annotated
 
 from . import vendors as vendors_module
 from .insert import insert_items
 from .logger import ProgressPanel, ScRichHandler, VendorProgressTracker, logger
 from .lookup import compliance_frameworks, countries
-from .schemas import Status, Vendor, tables
-from .utils import HashLevels, hash_database, table_name_to_model
+from .schemas import Status, Vendor
+from .utils import HashLevels, get_row_by_pk, hash_database, table_name_to_model
 
 supported_vendors = [
     vendor[1]
@@ -151,11 +151,7 @@ def sync(
                 if action:
                     # get the new version of the record from the
                     # source database and store as JSON for future update
-                    pks = loads(pks_json)
-                    q = select(model)
-                    for k, v in pks.items():
-                        q = q.where(getattr(model, k) == v)
-                    obj = session.exec(statement=q).one()
+                    obj = get_row_by_pk(session, model, loads(pks_json))
                     actions[action][table_name].append(obj.model_dump())
 
     # compare old records with new
@@ -167,10 +163,7 @@ def sync(
                 if key not in source_hash[table_name]:
                     # check if the row was already set to INACTIVE
                     pks = loads(key)
-                    q = select(model)
-                    for k, v in pks.items():
-                        q = q.where(getattr(model, k) == v)
-                    obj = session.exec(statement=q).one()
+                    obj = get_row_by_pk(session, model, pks)
                     if obj.status != Status.INACTIVE:
                         # append primary keys for future udpate
                         actions["deleted"][table_name].append(pks)
@@ -197,10 +190,7 @@ def sync(
         for table_name, _ in target_hash.items():
             model = table_name_to_model(table_name)
             for pks in actions["deleted"][table_name]:
-                q = select(model)
-                for k, v in pks.items():
-                    q = q.where(getattr(model, k) == v)
-                obj = session.exec(statement=q).one()
+                obj = get_row_by_pk(session, model, pks)
                 obj.status = Status.INACTIVE
                 obj.observed_at = datetime.utcnow()
                 session.add(obj)

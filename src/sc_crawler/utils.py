@@ -4,7 +4,7 @@ from json import dumps
 from math import isinf
 from typing import Any, Dict, Iterable, List, Union
 
-from sqlmodel import Session, create_engine
+from sqlmodel import Session, create_engine, select
 
 from .schemas import ScModel, tables
 
@@ -122,3 +122,20 @@ def float_inf_to_str(x: float) -> Union[float, str]:
 def table_name_to_model(table_name: str) -> ScModel:
     """Return the ScModel schema for a table name."""
     return [t for t in tables if t.get_table_name() == table_name][0]
+
+
+def get_row_by_pk(session: Session, model: ScModel, pks: dict) -> ScModel:
+    """Get a row from a table definition by primary keys.
+
+    Args:
+        session: Connection for database connections.
+        model: An ScModel schema definition with table reference.
+        pks: Dictionary of all the primary keys for the row,.
+
+    Returns:
+        ScModel object read from the database.
+    """
+    q = select(model)
+    for k, v in pks.items():
+        q = q.where(getattr(model, k) == v)
+    return session.exec(statement=q).one()
