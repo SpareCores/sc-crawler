@@ -149,6 +149,8 @@ def sync(
                 except KeyError:
                     action = "new"
                 if action:
+                    # get the new version of the record from the
+                    # source database and store as JSON for future update
                     pks = loads(pks_json)
                     q = select(model)
                     for k, v in pks.items():
@@ -163,13 +165,14 @@ def sync(
             model = table_name_to_model(table_name)
             for key, _ in items.items():
                 if key not in source_hash[table_name]:
+                    # check if the row was already set to INACTIVE
                     pks = loads(key)
                     q = select(model)
                     for k, v in pks.items():
                         q = q.where(getattr(model, k) == v)
                     obj = session.exec(statement=q).one()
-                    # append primary keys so that later we can set these to INACTIVE
                     if obj.status != Status.INACTIVE:
+                        # append primary keys for future udpate
                         actions["deleted"][table_name].append(pks)
 
     stats = {ka: {ki: len(vi) for ki, vi in va.items()} for ka, va in actions.items()}
