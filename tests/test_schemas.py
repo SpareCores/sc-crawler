@@ -1,5 +1,14 @@
 import pytest
-from sc_crawler.schemas import Country, Vendor
+from sc_crawler.schemas import Country, Vendor, tables
+
+
+def test_scmodels_have_base():
+    """Make sure each SQLModel has a Base Pydantic parent without relations."""
+    for model in tables:
+        schema = model.__base__
+        assert schema.__name__.endswith("Base")
+        assert hasattr(model, "__table__")
+        assert not hasattr(schema, "__table__")
 
 
 def test_bad_vendor_definition():

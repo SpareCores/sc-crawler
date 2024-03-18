@@ -35,12 +35,14 @@ def validate_items(
         has been filled in with default values (needed for bulk inserts).
     """
     model_name = model.get_table_name()
+    # use the Pydantic data model for validation instead of the table definition
+    schema = model.__base__
     if vendor:
         vendor.progress_tracker.start_task(
             name=f"Validating {space_after(prefix)}{model_name}(s)", n=len(items)
         )
     for i, item in enumerate(items):
-        items[i] = model.model_validate(item).model_dump()
+        items[i] = schema.model_validate(item).model_dump()
         if vendor:
             vendor.progress_tracker.advance_task()
     if vendor:

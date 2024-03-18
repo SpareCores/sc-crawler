@@ -1072,14 +1072,18 @@ class StoragePrice(StoragePriceBase, table=True):
     )
 
 
-class TrafficPriceBase(HasDatacenterPK, HasVendorPKFK):
+class TrafficPriceFields(HasDatacenterPK, HasVendorPKFK):
     direction: TrafficDirection = Field(
         description="Direction of the traffic: inbound or outbound.",
         primary_key=True,
     )
 
 
-class TrafficPrice(HasPriceFields, TrafficPriceBase, table=True):
+class TrafficPriceBase(HasPriceFields, TrafficPriceFields):
+    pass
+
+
+class TrafficPrice(TrafficPriceBase, table=True):
     """Extra Traffic prices in each Datacenter."""
 
     __table_args__ = (
