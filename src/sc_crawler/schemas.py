@@ -763,7 +763,7 @@ class Vendor(VendorBase, table=True):
 class DatacenterFields(HasName, HasDatacenterIdPK):
     aliases: List[str] = Field(
         default=[],
-        sa_column=Column(JSON),
+        sa_type=JSON,
         description="List of other commonly used names for the same Datacenter.",
     )
 
