@@ -162,11 +162,11 @@ def sync(
             for key, _ in items.items():
                 if key not in source_hash[table_name]:
                     # check if the row was already set to INACTIVE
-                    pks = loads(key)
-                    obj = get_row_by_pk(session, model, pks)
+                    obj = get_row_by_pk(session, model, loads(key))
                     if obj.status != Status.INACTIVE:
-                        # append primary keys for future udpate
-                        actions["deleted"][table_name].append(pks)
+                        obj.status = Status.INACTIVE
+                        obj.observed_at = datetime.utcnow()
+                        actions["deleted"][table_name].append(obj)
 
     stats = {ka: {ki: len(vi) for ki, vi in va.items()} for ka, va in actions.items()}
     table = Table(title="Sync results")
@@ -186,23 +186,13 @@ def sync(
 
     engine = create_engine(update or target)
     with Session(engine) as session:
-        # deleted records
-        for table_name, _ in target_hash.items():
-            model = table_name_to_model(table_name)
-            for pks in actions["deleted"][table_name]:
-                obj = get_row_by_pk(session, model, pks)
-                obj.status = Status.INACTIVE
-                obj.observed_at = datetime.utcnow()
-                session.add(obj)
-            if actions["deleted"][table_name]:
-                logger.info(
-                    "Marked %d %s(s) rows as INACTIVE"
-                    % (len(actions["deleted"][table_name]), table_name)
-                )
-        # new or updated records
         for table_name, _ in source_hash.items():
             model = table_name_to_model(table_name)
-            items = actions["new"][table_name] + actions["update"][table_name]
+            items = (
+                actions["new"][table_name]
+                + actions["update"][table_name]
+                + actions["deleted"][table_name]
+            )
             if len(items):
                 insert_items(model, items, session=session)
                 logger.info("Updated %d %s(s) rows" % (len(items), table_name))
