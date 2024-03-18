@@ -65,7 +65,17 @@ Records = Enum("RECORDS", {k: k for k in supported_records})
 
 
 @cli.command()
-def schema(dialect: Engines, scd: bool = False):
+def schema(
+    dialect: Annotated[
+        Engines,
+        typer.Option(
+            help="SQLAlchemy dialect to use for generating CREATE TABLE statements."
+        ),
+    ],
+    scd: Annotated[
+        bool, typer.Option(help="If SCD Type 2 tables should be also created.")
+    ] = False,
+):
     """
     Print the database schema in a SQL dialect.
     """
