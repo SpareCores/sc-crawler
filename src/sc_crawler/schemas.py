@@ -43,6 +43,8 @@ class ScMetaModel(SQLModel.__class__):
     - Set __validator__ to the parent Pydantic model without set
         `table=True` for validations. This is found by the parent
         class' name ending in "Base".
+
+    - Auto-generate SCD table docs from the non-SCD table docs.
     """
 
     def __init__(subclass, *args, **kwargs):
@@ -50,26 +52,38 @@ class ScMetaModel(SQLModel.__class__):
         # early return for non-tables
         if subclass.model_config.get("table") is None:
             return
-        # table comment
         satable = subclass.metadata.tables[subclass.__tablename__]
+
+        # generate docstring for SCD tables
+        if subclass.__name__.endswith("Scd"):
+            nonscd = [t for t in tables if t.__name__ == subclass.__name__[:-3]][0]
+            doclines = nonscd.__doc__.splitlines()
+            # drop trailing dot and append SCD
+            doclines[0] = doclines[0][:-1] + " (SCD Type 2)."
+            subclass.__doc__ = "\n".join(doclines)
+        else:
+            # describe table columns as attributes in docstring
+            subclass.__doc__ = subclass.__doc__ + "\n\nAttributes:\n"
+            for k, v in subclass.model_fields.items():
+                if not hasattr(v.annotation, "__args__"):
+                    typehint = v.annotation.__name__
+                else:
+                    typehint = str(v.annotation)
+                description = satable.columns[k].comment
+                subclass.__doc__ = (
+                    subclass.__doc__ + f"    {k} ({typehint}): {description}\n"
+                )
+
+        # table comment
         if subclass.__doc__ and satable.comment is None:
             satable.comment = subclass.__doc__.splitlines()[0]
+
         # column comments
         for k, v in subclass.model_fields.items():
             comment = satable.columns[k].comment
             if v.description and comment is None:
                 satable.columns[k].comment = v.description
-        # describe table columns as attributes in docstring
-        subclass.__doc__ = subclass.__doc__ + "\n\nAttributes:\n"
-        for k, v in subclass.model_fields.items():
-            if not hasattr(v.annotation, "__args__"):
-                typehint = v.annotation.__name__
-            else:
-                typehint = str(v.annotation)
-            description = satable.columns[k].comment
-            subclass.__doc__ = (
-                subclass.__doc__ + f"    {k} ({typehint}): {description}\n"
-            )
+
         # find Pydantic model parent to be used for validating
         subclass.__validator__ = [
             m for m in subclass.__bases__ if m.__name__.endswith("Base")

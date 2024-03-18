@@ -18,8 +18,6 @@ class Scd(ScModel):
 
 
 class CountryScd(Scd, CountryBase, table=True):
-    """Country and continent mapping (SCD Type 2)."""
-
     pass
 
 
