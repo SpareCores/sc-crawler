@@ -36,7 +36,7 @@ def validate_items(
     """
     model_name = model.get_table_name()
     # use the Pydantic data model for validation instead of the table definition
-    schema = model.__base__
+    schema = model.__validator__
     if vendor:
         vendor.progress_tracker.start_task(
             name=f"Validating {space_after(prefix)}{model_name}(s)", n=len(items)

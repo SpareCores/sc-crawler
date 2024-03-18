@@ -39,6 +39,10 @@ class ScMetaModel(SQLModel.__class__):
 
     - Reuse description of the fields to dynamically append to the
         docstring in the Attributes section.
+
+    - Set __validator__ to the parent Pydantic model without set
+        `table=True` for validations. This is found by the parent
+        class' name ending in "Base".
     """
 
     def __init__(subclass, *args, **kwargs):
@@ -66,6 +70,10 @@ class ScMetaModel(SQLModel.__class__):
             subclass.__doc__ = (
                 subclass.__doc__ + f"    {k} ({typehint}): {description}\n"
             )
+        # find Pydantic model parent to be used for validating
+        subclass.__validator__ = [
+            m for m in subclass.__bases__ if m.__name__.endswith("Base")
+        ][0]
 
 
 class ScModel(SQLModel, metaclass=ScMetaModel):
