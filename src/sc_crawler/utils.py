@@ -2,8 +2,9 @@ from enum import Enum
 from hashlib import sha1
 from json import dumps
 from math import isinf
-from typing import Any, Dict, Iterable, List, Union
+from typing import Any, Dict, Iterable, List, Optional, Union
 
+from rich.progress import Progress
 from sqlmodel import Session, create_engine, select
 
 from .schemas import ScModel, tables
@@ -35,6 +36,7 @@ def hash_database(
     connection_string: str,
     level: HashLevels = HashLevels.DATABASE,
     ignored: List[str] = ["observed_at"],
+    progress: Optional[Progress] = None,
 ) -> Union[str, dict]:
     """Hash the content of a database.
 
@@ -42,17 +44,22 @@ def hash_database(
         connection_string: SQLAlchemy connection string to connect to the database.
         level: The level at which to apply hashing. Possible values are 'DATABASE' (default), 'TABLE', or 'ROW'.
         ignored: List of column names to be ignored during hashing.
+        progress: Optional progress bar to track the status of the hashing.
 
     Returns:
         A single SHA1 hash or dict of hashes, depending on the level.
     """
-    engine = create_engine(connection_string)
+    if progress:
+        tables_task_id = progress.add_task("Hashing tables", total=len(tables), step="")
 
+    engine = create_engine(connection_string)
     with Session(engine) as session:
-        hashes = {
-            table.get_table_name(): table.hash(session, ignored=ignored)
-            for table in tables
-        }
+        hashes = {}
+        for table in tables:
+            table_name = table.get_table_name()
+            hashes[table_name] = table.hash(session, ignored=ignored, progress=progress)
+            if progress:
+                progress.update(tables_task_id, advance=1)
 
     if level == HashLevels.TABLE:
         hashes = {k: jsoned_hash(v) for k, v in hashes.items()}

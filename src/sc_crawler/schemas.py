@@ -14,6 +14,7 @@ from pydantic import (
     ImportString,
     PrivateAttr,
 )
+from rich.progress import Progress
 from sqlalchemy import ForeignKeyConstraint, update
 from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import declared_attr
@@ -97,18 +98,29 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
         return str(cls.__tablename__)
 
     @classmethod
-    def hash(cls, session: Session, ignored: List[str] = ["observed_at"]) -> dict:
+    def hash(
+        cls,
+        session: Session,
+        ignored: List[str] = ["observed_at"],
+        progress: Optional[Progress] = None,
+    ) -> dict:
         """Hash the content of the rows.
 
         Args:
             session: Database connection to use for object lookups.
             ignored: List of column names to exclude from hashing.
+            progress: Optional progress bar to track the status of the hashing.
 
         Returns:
             Dictionary of the row hashes keyed by the JSON dump of primary keys.
         """
         pks = sorted(cls.get_columns()["primary_keys"])
         rows = session.exec(statement=select(cls))
+        if progress:
+            table_task_id = progress.add_task(
+                f"Hashing rows of {cls.get_table_name()}",
+                total=session.query(cls).count(),
+            )
         # no use of a generator as will need to serialize to JSON anyway
         hashes = {}
         for row in rows:
@@ -121,6 +133,9 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
                 rowdict.pop(dropkey, None)
             rowhash = sha1(dumps(rowdict, sort_keys=True).encode()).hexdigest()
             hashes[keys_id] = rowhash
+            if progress:
+                progress.update(table_task_id, advance=1)
+
         return hashes
 
 

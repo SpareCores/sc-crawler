@@ -17,7 +17,15 @@ import typer
 from cachier import set_default_params
 from rich.console import Console
 from rich.live import Live
-from rich.progress import track
+from rich.panel import Panel
+from rich.progress import (
+    BarColumn,
+    MofNCompleteColumn,
+    Progress,
+    TextColumn,
+    TimeElapsedColumn,
+    track,
+)
 from rich.table import Table
 from rich.text import Text
 from sqlmodel import Session, SQLModel, create_engine
@@ -118,8 +126,25 @@ def sync(
     most recent views of SCD tables (referenced as `target`), but the
     updates need to happen in the SCD tables (referenced as `update`).
     """
-    source_hash = hash_database(source, level=HashLevels.ROW)
-    target_hash = hash_database(target, level=HashLevels.ROW)
+
+    ps = Progress(
+        TimeElapsedColumn(),
+        TextColumn("{task.description}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+    )
+    pt = Progress(
+        TimeElapsedColumn(),
+        TextColumn("{task.description}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+    )
+    g = Table.grid(padding=1)
+    g.add_row(Panel(ps, title="Source database"), Panel(pt, title="Target database"))
+
+    with Live(g):
+        source_hash = hash_database(source, level=HashLevels.ROW, progress=ps)
+        target_hash = hash_database(target, level=HashLevels.ROW, progress=pt)
     actions = {
         k: {table: [] for table in source_hash.keys()}
         for k in ["update", "new", "deleted"]
