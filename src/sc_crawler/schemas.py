@@ -118,7 +118,7 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
         rows = session.exec(statement=select(cls))
         if progress:
             table_task_id = progress.add_task(
-                f"Hashing rows of {cls.get_table_name()}",
+                cls.get_table_name(),
                 total=session.query(cls).count(),
             )
         # no use of a generator as will need to serialize to JSON anyway

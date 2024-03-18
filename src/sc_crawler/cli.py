@@ -24,7 +24,6 @@ from rich.progress import (
     Progress,
     TextColumn,
     TimeElapsedColumn,
-    track,
 )
 from rich.table import Table
 from rich.text import Text
@@ -140,7 +139,10 @@ def sync(
         MofNCompleteColumn(),
     )
     g = Table.grid(padding=1)
-    g.add_row(Panel(ps, title="Source database"), Panel(pt, title="Target database"))
+    g.add_row(
+        Panel(ps, title="Hashing source database"),
+        Panel(pt, title="Hashing target database"),
+    )
 
     with Live(g):
         source_hash = hash_database(source, level=HashLevels.ROW, progress=ps)
@@ -157,41 +159,63 @@ def sync(
     logger.setLevel(logging.INFO)
     logger.addHandler(channel)
 
-    # compare new records with old
-    engine = create_engine(source)
-    with Session(engine) as session:
-        for table_name, items in source_hash.items():
-            model = table_name_to_model(table_name)
-            for pks_json, item in track(
-                items.items(),
-                description=f"Comparing records in table: {table_name}",
-                transient=True,
-            ):
-                action = None
-                try:
-                    if item != target_hash[table_name][pks_json]:
-                        action = "update"
-                except KeyError:
-                    action = "new"
-                if action:
-                    # get the new version of the record from the
-                    # source database and store as JSON for future update
-                    obj = get_row_by_pk(session, model, loads(pks_json))
-                    actions[action][table_name].append(obj.model_dump())
+    ps = Progress(
+        TimeElapsedColumn(),
+        TextColumn("{task.description}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+    )
+    pt = Progress(
+        TimeElapsedColumn(),
+        TextColumn("{task.description}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+    )
+    g = Table.grid(padding=1)
+    g.add_row(
+        Panel(ps, title="Comparing source database with target"),
+        Panel(pt, title="Comparing target database with source"),
+    )
+    with Live(g):
+        # compare new records with old
+        engine = create_engine(source)
+        with Session(engine) as session:
+            tables_task_id = ps.add_task("Comparing tables", total=len(source_hash))
+            for table_name, items in source_hash.items():
+                table_task_id = ps.add_task(table_name, total=len(items))
+                model = table_name_to_model(table_name)
+                for pks_json, item in items.items():
+                    action = None
+                    try:
+                        if item != target_hash[table_name][pks_json]:
+                            action = "update"
+                    except KeyError:
+                        action = "new"
+                    if action:
+                        # get the new version of the record from the
+                        # source database and store as JSON for future update
+                        obj = get_row_by_pk(session, model, loads(pks_json))
+                        actions[action][table_name].append(obj.model_dump())
+                    ps.update(table_task_id, advance=1)
+                ps.update(tables_task_id, advance=1)
 
-    # compare old records with new
-    engine = create_engine(target)
-    with Session(engine) as session:
-        for table_name, items in target_hash.items():
-            model = table_name_to_model(table_name)
-            for key, _ in items.items():
-                if key not in source_hash[table_name]:
-                    # check if the row was already set to INACTIVE
-                    obj = get_row_by_pk(session, model, loads(key))
-                    if obj.status != Status.INACTIVE:
-                        obj.status = Status.INACTIVE
-                        obj.observed_at = datetime.utcnow()
-                        actions["deleted"][table_name].append(obj)
+        # compare old records with new
+        engine = create_engine(target)
+        with Session(engine) as session:
+            tables_task_id = pt.add_task("Comparing tables", total=len(target_hash))
+            for table_name, items in target_hash.items():
+                table_task_id = pt.add_task(table_name, total=len(items))
+                model = table_name_to_model(table_name)
+                for key, _ in items.items():
+                    if key not in source_hash[table_name]:
+                        # check if the row was already set to INACTIVE
+                        obj = get_row_by_pk(session, model, loads(key))
+                        if obj.status != Status.INACTIVE:
+                            obj.status = Status.INACTIVE
+                            obj.observed_at = datetime.utcnow()
+                            actions["deleted"][table_name].append(obj)
+                    pt.update(table_task_id, advance=1)
+                pt.update(tables_task_id, advance=1)
 
     stats = {ka: {ki: len(vi) for ki, vi in va.items()} for ka, va in actions.items()}
     table = Table(title="Sync results")

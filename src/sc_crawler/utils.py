@@ -50,7 +50,7 @@ def hash_database(
         A single SHA1 hash or dict of hashes, depending on the level.
     """
     if progress:
-        tables_task_id = progress.add_task("Hashing tables", total=len(tables), step="")
+        tables_task_id = progress.add_task("Hashing tables", total=len(tables))
 
     engine = create_engine(connection_string)
     with Session(engine) as session:
