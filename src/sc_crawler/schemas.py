@@ -106,6 +106,26 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
         return str(cls.__tablename__)
 
     @classmethod
+    def get_validator(cls) -> Union["ScModel", None]:
+        """Return the parent Base Pydantic model (without a table definition)."""
+        if cls.model_config.get("table") is None:
+            return None
+        return cls.__validator__
+
+    @classmethod
+    def get_scd(cls) -> Union["ScModel", None]:
+        """Return the SCD version of the SQLModel table."""
+        if cls.model_config.get("table") is None:
+            return None
+        from .scd import scd_tables
+
+        validator = cls.get_validator()
+        scds = [t for t in scd_tables if t.get_validator() == validator]
+        if len(scds) != 1:
+            raise ValueError("Not found SCD definition.")
+        return scds[0]
+
+    @classmethod
     def hash(
         cls,
         session: Session,
