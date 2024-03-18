@@ -5,7 +5,7 @@ from sc_crawler.schemas import Country, Vendor, tables
 
 def test_scmodels_have_base():
     """Make sure each SQLModel has a Base Pydantic parent without relations."""
-    for model in tables:
+    for model in tables + scd_tables:
         assert hasattr(model, "__validator__")
         schema = model.__validator__
         assert schema.__name__.endswith("Base")

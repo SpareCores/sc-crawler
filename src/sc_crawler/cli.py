@@ -34,7 +34,8 @@ from . import vendors as vendors_module
 from .insert import insert_items
 from .logger import ProgressPanel, ScRichHandler, VendorProgressTracker, logger
 from .lookup import compliance_frameworks, countries
-from .schemas import Status, Vendor
+from .scd import scd_tables
+from .schemas import Status, Vendor, tables
 from .utils import HashLevels, get_row_by_pk, hash_database, table_name_to_model
 
 supported_vendors = [
@@ -64,7 +65,7 @@ Records = Enum("RECORDS", {k: k for k in supported_records})
 
 
 @cli.command()
-def schema(dialect: Engines):
+def schema(dialect: Engines, scd: bool = False):
     """
     Print the database schema in a SQL dialect.
     """
@@ -74,7 +75,13 @@ def schema(dialect: Engines):
         typer.echo(str(sql.compile(dialect=engine.dialect)) + ";")
 
     engine = create_engine(url, strategy="mock", executor=metadata_dump)
-    SQLModel.metadata.create_all(engine)
+    # SQLModel.metadata.create_all(engine)
+
+    for table in tables:
+        table.__table__.create(engine)
+    if scd:
+        for table in scd_tables:
+            table.__table__.create(engine)
 
 
 @cli.command(name="hash")
@@ -87,6 +94,7 @@ def hash_command(
     print(hash_database(connection_string))
 
 
+# TODO copy w create
 @cli.command()
 def sync(
     source: Annotated[
