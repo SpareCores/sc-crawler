@@ -127,14 +127,23 @@ def copy(
     for table in tables:
         table.__table__.create(target_engine)
 
+    progress = Progress(
+        TimeElapsedColumn(),
+        TextColumn("{task.description}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+    )
+    panel = Panel(progress, title="Copying tables", expand=False)
+
     with (
+        Live(panel),
         Session(source_engine) as source_session,
         Session(target_engine) as target_session,
     ):
         for table in tables:
             rows = source_session.exec(statement=select(table))
             items = [row.model_dump() for row in rows]
-            insert_items(table, items, session=target_session)
+            insert_items(table, items, session=target_session, progress=progress)
         target_session.commit()
 
 

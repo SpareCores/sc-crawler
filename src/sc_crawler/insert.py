@@ -1,6 +1,7 @@
 from logging import DEBUG
 from typing import List, Optional
 
+from rich.progress import Progress
 from sqlalchemy.dialects.postgresql import insert as insert_postgresql
 from sqlalchemy.dialects.sqlite import insert as insert_sqlite
 from sqlmodel import Session, SQLModel
@@ -60,6 +61,7 @@ def bulk_insert_items(
     items: List[dict],
     vendor: Optional[Vendor] = None,
     session: Optional[Session] = None,
+    progress: Optional[Progress] = None,
     prefix: str = "",
 ):
     """Bulk inserts items into a SQLModel table with ON CONFLICT update.
@@ -68,7 +70,8 @@ def bulk_insert_items(
         model: An SQLModel table definition with primary key(s).
         items: List of dicts with all columns of the model.
         vendor: Optional related Vendor instance used for logging and progress bar updates.
-        session: Connection for database connections. When not provided, defaults to the `vendor`'s session.
+        session: Optional database connections. When not provided, defaults to the `vendor`'s session.
+        progress: Optional progress bar to use instead of `vendor`'s progress bar.
         prefix: Optional extra description for the model added in front of
             the model name in logs and progress bar updates.
     """
@@ -81,6 +84,10 @@ def bulk_insert_items(
     if vendor:
         vendor.progress_tracker.start_task(
             name=f"Syncing {space_after(prefix)}{model_name}(s)", n=len(items)
+        )
+    if progress:
+        pid = progress.add_task(
+            f"Inserting {space_after(prefix)}{model_name}(s)", total=len(items)
         )
     # need to split list into smaller chunks to avoid "too many SQL variables"
     for chunk in chunk_list(items, 100):
@@ -99,6 +106,9 @@ def bulk_insert_items(
         session.execute(query)
         if vendor:
             vendor.progress_tracker.advance_task(by=len(chunk))
+        if progress:
+            progress.update(pid, advance=len(chunk))
+
     if vendor:
         vendor.progress_tracker.hide_task()
         vendor.log(f"{len(items)} {space_after(prefix)}{model_name}(s) synced.")
@@ -109,6 +119,7 @@ def insert_items(
     items: List[dict],
     vendor: Optional[Vendor] = None,
     session: Optional[Session] = None,
+    progress: Optional[Progress] = None,
     prefix: str = "",
 ):
     """Insert items into the related database table using bulk or merge.
@@ -119,7 +130,9 @@ def insert_items(
     Args:
         model: An SQLModel table definition with primary key(s).
         items: List of dicts with all columns of the model.
-        vendor: The related Vendor instance used for database connection, logging and progress bar updates.
+        vendor: Optional related Vendor instance used for database connection, logging and progress bar updates.
+        session: Optional database connections. When not provided, defaults to the `vendor`'s session.
+        progress: Optional progress bar to use instead of `vendor`'s progress bar.
         prefix: Optional extra description for the model added in front of
             the model name in logs and progress bar updates.
     """
@@ -130,11 +143,15 @@ def insert_items(
     model_name = model.get_table_name()
     if can_bulk_insert(session):
         items = validate_items(model, items, vendor, prefix)
-        bulk_insert_items(model, items, vendor, session, prefix)
+        bulk_insert_items(model, items, vendor, session, progress, prefix)
     else:
         if vendor:
             vendor.progress_tracker.start_task(
                 name=f"Syncing {space_after(prefix)}{model_name}(s)", n=len(items)
+            )
+        if progress:
+            pid = progress.add_task(
+                f"Inserting {space_after(prefix)}{model_name}(s)", total=len(items)
             )
         for item in items:
             # vendor's auto session.merge doesn't work due to SQLmodel bug:
@@ -144,6 +161,8 @@ def insert_items(
             session.merge(model.model_validate(item))
             if vendor:
                 vendor.progress_tracker.advance_task()
+            if progress:
+                progress.update(pid, advance=1)
         if vendor:
             vendor.progress_tracker.hide_task()
             vendor.log(f"{len(items)} {space_after(prefix)}{model_name}(s) synced.")
