@@ -27,7 +27,7 @@ from rich.progress import (
 )
 from rich.table import Table
 from rich.text import Text
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import Session, SQLModel, create_engine, select
 from typing_extensions import Annotated
 
 from . import vendors as vendors_module
@@ -104,7 +104,40 @@ def hash_command(
     print(hash_database(connection_string))
 
 
-# TODO copy w create
+@cli.command()
+def copy(
+    source: Annotated[
+        str,
+        typer.Option(
+            help="Database URL (SQLAlchemy connection string) that is to be copied to `target`."
+        ),
+    ],
+    target: Annotated[
+        str,
+        typer.Option(
+            help="Database URL (SQLAlchemy connection string) that is to be populated with the content of `source`."
+        ),
+    ],
+):
+    """Copy the content of a database to a blank database."""
+
+    source_engine = create_engine(source)
+    target_engine = create_engine(target)
+
+    for table in tables:
+        table.__table__.create(target_engine)
+
+    with (
+        Session(source_engine) as source_session,
+        Session(target_engine) as target_session,
+    ):
+        for table in tables:
+            rows = source_session.exec(statement=select(table))
+            items = [row.model_dump() for row in rows]
+            insert_items(table, items, session=target_session)
+        target_session.commit()
+
+
 @cli.command()
 def sync(
     source: Annotated[
