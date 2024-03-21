@@ -81,14 +81,15 @@ def bulk_insert_items(
         session = vendor.session
     model_name = model.get_table_name()
     columns = model.get_columns()
-    if vendor:
-        vendor.progress_tracker.start_task(
-            name=f"Syncing {space_after(prefix)}{model_name}(s)", n=len(items)
-        )
     if progress:
         pid = progress.add_task(
             f"Inserting {space_after(prefix)}{model_name}(s)", total=len(items)
         )
+    elif vendor:
+        pid = vendor.progress_tracker.start_task(
+            name=f"Inserting {space_after(prefix)}{model_name}(s)", n=len(items)
+        )
+        progress = vendor.progress_tracker.tasks
     # need to split list into smaller chunks to avoid "too many SQL variables"
     for chunk in chunk_list(items, 100):
         if is_sqlite(session):
@@ -104,8 +105,6 @@ def bulk_insert_items(
             set_={c: query.excluded[c] for c in columns["attributes"]},
         )
         session.execute(query)
-        if vendor:
-            vendor.progress_tracker.advance_task(by=len(chunk))
         if progress:
             progress.update(pid, advance=len(chunk))
 
