@@ -161,6 +161,10 @@ def sync(
             help="Database URL (SQLAlchemy connection string) to compare with `source`."
         ),
     ],
+    dry_run: Annotated[
+        bool,
+        typer.Option(help="Stop after comparing the databases, do NOT insert rows."),
+    ] = False,
     scd: Annotated[
         bool,
         typer.Option(help="Sync the changes to the SCD tables."),
@@ -290,21 +294,22 @@ def sync(
     console = Console()
     console.print(table)
 
-    engine = create_engine(target)
-    with Session(engine) as session:
-        for table_name, _ in source_hash.items():
-            model = table_name_to_model(table_name)
-            if scd:
-                model = model.get_scd()
-            items = (
-                actions["new"][table_name]
-                + actions["update"][table_name]
-                + actions["deleted"][table_name]
-            )
-            if len(items):
-                insert_items(model, items, session=session)
-                logger.info("Updated %d %s(s) rows" % (len(items), table_name))
-        session.commit()
+    if not dry_run:
+        engine = create_engine(target)
+        with Session(engine) as session:
+            for table_name, _ in source_hash.items():
+                model = table_name_to_model(table_name)
+                if scd:
+                    model = model.get_scd()
+                items = (
+                    actions["new"][table_name]
+                    + actions["update"][table_name]
+                    + actions["deleted"][table_name]
+                )
+                if len(items):
+                    insert_items(model, items, session=session)
+                    logger.info("Updated %d %s(s) rows" % (len(items), table_name))
+            session.commit()
 
 
 @cli.command()
