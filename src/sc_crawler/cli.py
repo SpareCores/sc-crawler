@@ -295,8 +295,15 @@ def sync(
     console.print(table)
 
     if not dry_run:
+        progress = Progress(
+            TimeElapsedColumn(),
+            TextColumn("{task.description}"),
+            BarColumn(),
+            MofNCompleteColumn(),
+        )
+        panel = Panel(progress, title="Updating target", expand=False)
         engine = create_engine(target)
-        with Session(engine) as session:
+        with Live(panel), Session(engine) as session:
             for table_name, _ in source_hash.items():
                 model = table_name_to_model(table_name)
                 if scd:
@@ -307,7 +314,7 @@ def sync(
                     + actions["deleted"][table_name]
                 )
                 if len(items):
-                    insert_items(model, items, session=session)
+                    insert_items(model, items, session=session, progress=progress)
                     logger.info("Updated %d %s(s) rows" % (len(items), table_name))
             session.commit()
 
