@@ -161,12 +161,10 @@ def sync(
             help="Database URL (SQLAlchemy connection string) to compare with `source`."
         ),
     ],
-    update: Annotated[
-        str,
-        typer.Option(
-            help="Optional database URL (SQLAlchemy connection string) to be updated (defaults to `target`)."
-        ),
-    ] = None,
+    scd: Annotated[
+        bool,
+        typer.Option(help="Sync the changes to the SCD tables."),
+    ] = False,
 ):
     """Sync a database to another one.
 
@@ -177,13 +175,12 @@ def sync(
 
     - update (rows with different values in `source` and in `target`).
 
-    - inactive rows with primary keys found in `target`, but not found in `source`.
+    - inactive (rows with primary keys found in `target`, but not found in `source`).
 
-    The records to be synced are written to the `update` database,
-    which defaults to the `target` database. It's useful to provide
-    both `target` and `update`, when the `source` is compared to the
-    most recent views of SCD tables (referenced as `target`), but the
-    updates need to happen in the SCD tables (referenced as `update`).
+    The records marked for syncing are written to the `target` database's
+    standard or SCD tables. When updating the SCD tables, the hashing still
+    happens on the standard tables/views, which are probably based on the
+    most recent records of the SCD tables.
     """
 
     ps = Progress(
@@ -293,10 +290,12 @@ def sync(
     console = Console()
     console.print(table)
 
-    engine = create_engine(update or target)
+    engine = create_engine(target)
     with Session(engine) as session:
         for table_name, _ in source_hash.items():
             model = table_name_to_model(table_name)
+            if scd:
+                model = model.get_scd()
             items = (
                 actions["new"][table_name]
                 + actions["update"][table_name]
