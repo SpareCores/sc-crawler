@@ -125,7 +125,7 @@ def copy(
     target_engine = create_engine(target)
 
     for table in tables:
-        table.__table__.create(target_engine)
+        table.__table__.create(target_engine, checkfirst=True)
 
     progress = Progress(
         TimeElapsedColumn(),
