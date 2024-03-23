@@ -877,6 +877,8 @@ def inventory_server_prices_spot(vendor):
                 "price": float(product["SpotPrice"]),
                 "currency": "USD",
                 "unit": PriceUnit.HOUR,
+                # use reported time instead of current timestamp
+                "observed_at": product["Timestamp"],
             }
         )
         vendor.progress_tracker.advance_task()
