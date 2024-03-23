@@ -439,31 +439,6 @@ class Country(CountryBase, table=True):
     datacenters: List["Datacenter"] = Relationship(back_populates="country")
 
 
-class VendorComplianceLinkFields(HasVendorPKFK):
-    compliance_framework_id: str = Field(
-        foreign_key="compliance_framework",
-        primary_key=True,
-        description="Reference to the Compliance Framework.",
-    )
-    comment: Optional[str] = Field(
-        default=None,
-        description="Optional references, such as dates, URLs, and additional information/evidence.",
-    )
-
-
-class VendorComplianceLinkBase(MetaColumns, VendorComplianceLinkFields):
-    pass
-
-
-class VendorComplianceLink(VendorComplianceLinkBase, table=True):
-    """List of known Compliance Frameworks paired with vendors."""
-
-    vendor: "Vendor" = Relationship(back_populates="compliance_framework_links")
-    compliance_framework: "ComplianceFramework" = Relationship(
-        back_populates="vendor_links"
-    )
-
-
 class ComplianceFrameworkFields(ScModel):
     abbreviation: Optional[str] = Field(
         description="Short abbreviation of the Framework name."
@@ -496,7 +471,7 @@ class ComplianceFrameworkBase(
 class ComplianceFramework(ComplianceFrameworkBase, table=True):
     """List of Compliance Frameworks, such as HIPAA or SOC 2 Type 1."""
 
-    vendor_links: List[VendorComplianceLink] = Relationship(
+    vendor_links: List["VendorComplianceLink"] = Relationship(
         back_populates="compliance_framework"
     )
 
@@ -559,7 +534,7 @@ class Vendor(VendorBase, table=True):
         Vendor(vendor_id='aws'...
     """  # noqa: E501
 
-    compliance_framework_links: List[VendorComplianceLink] = Relationship(
+    compliance_framework_links: List["VendorComplianceLink"] = Relationship(
         back_populates="vendor"
     )
     country: Country = Relationship(back_populates="vendors")
@@ -758,6 +733,31 @@ class Vendor(VendorBase, table=True):
     def inventory_ipv4_prices(self):
         self.set_table_rows_inactive(Ipv4Price)
         self._get_methods().inventory_ipv4_prices(self)
+
+
+class VendorComplianceLinkFields(HasVendorPKFK):
+    compliance_framework_id: str = Field(
+        foreign_key="compliance_framework",
+        primary_key=True,
+        description="Reference to the Compliance Framework.",
+    )
+    comment: Optional[str] = Field(
+        default=None,
+        description="Optional references, such as dates, URLs, and additional information/evidence.",
+    )
+
+
+class VendorComplianceLinkBase(MetaColumns, VendorComplianceLinkFields):
+    pass
+
+
+class VendorComplianceLink(VendorComplianceLinkBase, table=True):
+    """List of known Compliance Frameworks paired with vendors."""
+
+    vendor: Vendor = Relationship(back_populates="compliance_framework_links")
+    compliance_framework: ComplianceFramework = Relationship(
+        back_populates="vendor_links"
+    )
 
 
 class DatacenterFields(HasName, HasDatacenterIdPK):
@@ -1187,8 +1187,9 @@ class Ipv4Price(Ipv4PriceBase, table=True):
 
 
 Country.model_rebuild()
-VendorComplianceLink.model_rebuild()
+ComplianceFramework.model_rebuild()
 Vendor.model_rebuild()
+VendorComplianceLink.model_rebuild()
 Datacenter.model_rebuild()
 Zone.model_rebuild()
 Storage.model_rebuild()
