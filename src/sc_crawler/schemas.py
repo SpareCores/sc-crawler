@@ -18,7 +18,7 @@ from rich.progress import Progress
 from sqlalchemy import ForeignKeyConstraint, update
 from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import declared_attr
-from sqlmodel import JSON, Column, Field, Relationship, Session, SQLModel, select
+from sqlmodel import JSON, Field, Relationship, Session, SQLModel, select
 
 from .logger import VendorProgressTracker, log_start_end, logger
 from .str import snake_case
