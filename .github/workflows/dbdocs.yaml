@@ -18,7 +18,7 @@ jobs:
       - name: Install local pkg
         run: pip install .[vendors]
       - name: Generate SQL schema
-        run: sc-crawler schema mysql > schema.sql
+        run: sc-crawler schema --dialect mysql > schema.sql
       - name: Convert SQL schema to DBML
         run: sql2dbml --mysql schema.sql -o schema.dbml
       - name: Add project description
