@@ -102,7 +102,7 @@ from sqlmodel import create_engine, Session, select
 
 engine = create_engine("sqlite:///sc_crawler.db") # (1)!
 session = Session(engine) # (2)!
-server = session.exec(select(Server).where(Server.id == 'trn1.32xlarge')).one() # (3)!
+server = session.exec(select(Server).where(Server.server_id == 'trn1.32xlarge')).one() # (3)!
 
 from rich import print as pp # (4)!
 pp(server)

@@ -7,17 +7,18 @@ from hashlib import sha1
 from importlib import import_module
 from json import dumps
 from types import ModuleType
-from typing import List, Optional
+from typing import List, Optional, Union
 
 from pydantic import (
     BaseModel,
     ImportString,
     PrivateAttr,
 )
-from sqlalchemy import DateTime, update
+from rich.progress import Progress
+from sqlalchemy import ForeignKeyConstraint, update
 from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import declared_attr
-from sqlmodel import JSON, Column, Field, Relationship, Session, SQLModel, select
+from sqlmodel import JSON, Field, Relationship, Session, SQLModel, select
 
 from .logger import VendorProgressTracker, log_start_end, logger
 from .str import snake_case
@@ -38,7 +39,12 @@ class ScMetaModel(SQLModel.__class__):
 
     - Reuse description of the fields to dynamically append to the
         docstring in the Attributes section.
-    - Append observed_at column.
+
+    - Set __validator__ to the parent Pydantic model without set
+        `table=True` for validations. This is found by the parent
+        class' name ending in "Base".
+
+    - Auto-generate SCD table docs from the non-SCD table docs.
     """
 
     def __init__(subclass, *args, **kwargs):
@@ -46,36 +52,42 @@ class ScMetaModel(SQLModel.__class__):
         # early return for non-tables
         if subclass.model_config.get("table") is None:
             return
-        # table comment
         satable = subclass.metadata.tables[subclass.__tablename__]
+
+        # generate docstring for SCD tables
+        if subclass.__name__.endswith("Scd"):
+            nonscd = [t for t in tables if t.__name__ == subclass.__name__[:-3]][0]
+            doclines = nonscd.__doc__.splitlines()
+            # drop trailing dot and append SCD
+            doclines[0] = doclines[0][:-1] + " (SCD Type 2)."
+            subclass.__doc__ = "\n".join(doclines)
+        else:
+            # describe table columns as attributes in docstring
+            subclass.__doc__ = subclass.__doc__ + "\n\nAttributes:\n"
+            for k, v in subclass.model_fields.items():
+                if not hasattr(v.annotation, "__args__"):
+                    typehint = v.annotation.__name__
+                else:
+                    typehint = str(v.annotation)
+                description = satable.columns[k].comment
+                subclass.__doc__ = (
+                    subclass.__doc__ + f"    {k} ({typehint}): {description}\n"
+                )
+
+        # table comment
         if subclass.__doc__ and satable.comment is None:
             satable.comment = subclass.__doc__.splitlines()[0]
+
         # column comments
         for k, v in subclass.model_fields.items():
             comment = satable.columns[k].comment
             if v.description and comment is None:
                 satable.columns[k].comment = v.description
-        # append observed_at as last column
-        satable.append_column(
-            Column(
-                "observed_at",
-                DateTime,
-                default=datetime.utcnow,
-                onupdate=datetime.utcnow,
-                comment="Timestamp of the last observation.",
-            )
-        )
-        # describe table columns as attributes in docstring
-        subclass.__doc__ = subclass.__doc__ + "\n\nAttributes:\n"
-        for k, v in subclass.model_fields.items():
-            if not hasattr(v.annotation, "__args__"):
-                typehint = v.annotation.__name__
-            else:
-                typehint = str(v.annotation)
-            description = satable.columns[k].comment
-            subclass.__doc__ = (
-                subclass.__doc__ + f"    {k} ({typehint}): {description}\n"
-            )
+
+        # find Pydantic model parent to be used for validating
+        subclass.__validator__ = [
+            m for m in subclass.__bases__ if m.__name__.endswith("Base")
+        ][0]
 
 
 class ScModel(SQLModel, metaclass=ScMetaModel):
@@ -86,7 +98,7 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
     - auto-generated table names using snake_case,
     - support for hashing table rows,
     - reuse description field of tables/columns as SQL comment,
-    - automatically append `observed_at` column.
+    - reuse description field of columns to extend the Attributes section of the docstring.
     """
 
     @declared_attr  # type: ignore
@@ -108,20 +120,64 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
         return str(cls.__tablename__)
 
     @classmethod
-    def hash(cls, session, ignored: List[str] = ["observed_at"]) -> dict:
+    def get_validator(cls) -> Union["ScModel", None]:
+        """Return the parent Base Pydantic model (without a table definition)."""
+        if cls.model_config.get("table") is None:
+            return None
+        return cls.__validator__
+
+    @classmethod
+    def get_scd(cls) -> Union["ScModel", None]:
+        """Return the SCD version of the SQLModel table."""
+        if cls.model_config.get("table") is None:
+            return None
+        from .scd import scd_tables
+
+        validator = cls.get_validator()
+        scds = [t for t in scd_tables if t.get_validator() == validator]
+        if len(scds) != 1:
+            raise ValueError("Not found SCD definition.")
+        return scds[0]
+
+    @classmethod
+    def hash(
+        cls,
+        session: Session,
+        ignored: List[str] = ["observed_at"],
+        progress: Optional[Progress] = None,
+    ) -> dict:
+        """Hash the content of the rows.
+
+        Args:
+            session: Database connection to use for object lookups.
+            ignored: List of column names to exclude from hashing.
+            progress: Optional progress bar to track the status of the hashing.
+
+        Returns:
+            Dictionary of the row hashes keyed by the JSON dump of primary keys.
+        """
         pks = sorted(cls.get_columns()["primary_keys"])
         rows = session.exec(statement=select(cls))
+        if progress:
+            table_task_id = progress.add_task(
+                cls.get_table_name(),
+                total=session.query(cls).count(),
+            )
         # no use of a generator as will need to serialize to JSON anyway
         hashes = {}
         for row in rows:
             # NOTE Pydantic is warning when read Gpu/Storage as dict
             # https://github.com/tiangolo/sqlmodel/issues/63#issuecomment-1081555082
             rowdict = row.model_dump(warnings=False)
-            rowkeys = str(tuple(rowdict.get(pk) for pk in pks))
+            keys = {pk: rowdict.get(pk) for pk in pks}
+            keys_id = dumps(keys, sort_keys=True)
             for dropkey in [*ignored, *pks]:
                 rowdict.pop(dropkey, None)
             rowhash = sha1(dumps(rowdict, sort_keys=True).encode()).hexdigest()
-            hashes[rowkeys] = rowhash
+            hashes[keys_id] = rowhash
+            if progress:
+                progress.update(table_task_id, advance=1)
+
         return hashes
 
 
@@ -137,11 +193,15 @@ class Json(BaseModel):
 
 
 class Status(str, Enum):
+    """Status, e.g. active or inactive."""
+
     ACTIVE = "active"
     INACTIVE = "inactive"
 
 
 class Cpu(Json):
+    """CPU details."""
+
     manufacturer: Optional[str] = None
     family: Optional[str] = None
     model: Optional[str] = None
@@ -157,6 +217,8 @@ class Cpu(Json):
 
 
 class Gpu(Json):
+    """GPU accelerator details."""
+
     manufacturer: str
     name: str
     memory: int  # MiB
@@ -164,6 +226,8 @@ class Gpu(Json):
 
 
 class StorageType(str, Enum):
+    """Type of a storage, e.g. HDD or SSD."""
+
     HDD = "hdd"
     SSD = "ssd"
     NVME_SSD = "nvme ssd"
@@ -171,22 +235,30 @@ class StorageType(str, Enum):
 
 
 class Disk(Json):
+    """Disk definition based on size and storage type."""
+
     size: int = 0  # GiB
     storage_type: StorageType
 
 
 class TrafficDirection(str, Enum):
+    """Directio of the network traffic."""
+
     IN = "inbound"
     OUT = "outbound"
 
 
 class CpuAllocation(str, Enum):
+    """CPU allocation methods at cloud vendors."""
+
     SHARED = "Shared"
     BURSTABLE = "Burstable"
     DEDICATED = "Dedicated"
 
 
 class CpuArchitecture(str, Enum):
+    """CPU architectures."""
+
     ARM64 = "arm64"
     ARM64_MAC = "arm64_mac"
     I386 = "i386"
@@ -195,12 +267,16 @@ class CpuArchitecture(str, Enum):
 
 
 class Allocation(str, Enum):
+    """Server allocation options."""
+
     ONDEMAND = "ondemand"
     RESERVED = "reserved"
     SPOT = "spot"
 
 
 class PriceUnit(str, Enum):
+    """Supported units for the price tables."""
+
     YEAR = "year"
     MONTH = "month"
     HOUR = "hour"
@@ -210,8 +286,16 @@ class PriceUnit(str, Enum):
 
 
 class PriceTier(Json):
-    lower: float
-    upper: float
+    """Price tier definition.
+
+    As standard JSON does not support Inf, NaN etc values,
+    thouse should be passed as string, e.g. for the upper bound.
+
+    See [float_inf_to_str][sc_crawler.utils.float_inf_to_str] for
+    converting an inifinite numeric value into "Infinity"."""
+
+    lower: Union[float, str]
+    upper: Union[float, str]
     price: float
 
 
@@ -222,15 +306,52 @@ class PriceTier(Json):
 # columns, so some below Fields are sometimes copy/pasted into models.
 
 
-class HasStatus(ScModel):
+class MetaColumns(ScModel):
+    """Helper class to add the `status` and `observed_at` columns."""
+
     status: Status = Field(
         default=Status.ACTIVE,
         description="Status of the resource (active or inactive).",
     )
+    observed_at: datetime = Field(
+        default_factory=datetime.utcnow,
+        sa_column_kwargs={"onupdate": datetime.utcnow},
+        description="Timestamp of the last observation.",
+    )
 
 
-class HasIdPK(ScModel):
-    id: str = Field(primary_key=True, description="Unique identifier.")
+class HasComplianceFrameworkIdPK(ScModel):
+    compliance_framework_id: str = Field(
+        primary_key=True, description="Unique identifier."
+    )
+
+
+class HasVendorIdPK(ScModel):
+    vendor_id: str = Field(primary_key=True, description="Unique identifier.")
+
+
+class HasDatacenterIdPK(ScModel):
+    datacenter_id: str = Field(
+        primary_key=True, description="Unique identifier, as called at the Vendor."
+    )
+
+
+class HasZoneIdPK(ScModel):
+    zone_id: str = Field(
+        primary_key=True, description="Unique identifier, as called at the Vendor."
+    )
+
+
+class HasStorageIdPK(ScModel):
+    storage_id: str = Field(
+        primary_key=True, description="Unique identifier, as called at the Vendor."
+    )
+
+
+class HasServerIdPK(ScModel):
+    server_id: str = Field(
+        primary_key=True, description="Unique identifier, as called at the Vendor."
+    )
 
 
 class HasName(ScModel):
@@ -241,9 +362,9 @@ class HasDescription(ScModel):
     description: Optional[str] = Field(description="Short description.")
 
 
-class HasVendorPK(ScModel):
+class HasVendorPKFK(ScModel):
     vendor_id: str = Field(
-        foreign_key="vendor.id",
+        foreign_key="vendor",
         primary_key=True,
         description="Reference to the Vendor.",
     )
@@ -251,53 +372,64 @@ class HasVendorPK(ScModel):
 
 class HasDatacenterPK(ScModel):
     datacenter_id: str = Field(
-        foreign_key="datacenter.id",
         primary_key=True,
         description="Reference to the Datacenter.",
     )
 
 
 class HasZonePK(ScModel):
-    zone_id: str = Field(
-        foreign_key="zone.id", primary_key=True, description="Reference to the Zone."
-    )
+    zone_id: str = Field(primary_key=True, description="Reference to the Zone.")
 
 
-class HasServer(ScModel):
+class HasServerPK(ScModel):
     server_id: str = Field(
-        foreign_key="server.id",
         primary_key=True,
         description="Reference to the Server.",
     )
 
 
-class HasStorage(ScModel):
+class HasStoragePK(ScModel):
     storage_id: str = Field(
-        foreign_key="storage.id",
         primary_key=True,
         description="Reference to the Storage.",
     )
 
 
-class HasTraffic(ScModel):
-    traffic_id: str = Field(
-        foreign_key="traffic.id",
-        primary_key=True,
-        description="Reference to the Traffic.",
+class HasPriceFieldsBase(ScModel):
+    unit: PriceUnit = Field(description="Billing unit of the pricing model.")
+    # set to max price if tiered
+    price: float = Field(description="Actual price of a billing unit.")
+    # e.g. setup fee for dedicated servers,
+    # or upfront costs of a reserved instance type
+    price_upfront: float = Field(
+        default=0, description="Price to be paid when setting up the resource."
     )
+    price_tiered: List[PriceTier] = Field(
+        default=[],
+        sa_type=JSON,
+        description="List of pricing tiers with min/max thresholds and actual prices.",
+    )
+    currency: str = Field(default="USD", description="Currency of the prices.")
+
+
+class HasPriceFields(MetaColumns, HasPriceFieldsBase):
+    pass
 
 
 # ##############################################################################
 # Actual SC data schemas and model definitions
 
 
-class CountryBase(ScModel):
-    id: str = Field(
-        default=None,
+class CountryFields(ScModel):
+    country_id: str = Field(
         primary_key=True,
         description="Country code by ISO 3166 alpha-2.",
     )
     continent: str = Field(description="Continent name.")
+
+
+class CountryBase(MetaColumns, CountryFields):
+    pass
 
 
 class Country(CountryBase, table=True):
@@ -307,30 +439,7 @@ class Country(CountryBase, table=True):
     datacenters: List["Datacenter"] = Relationship(back_populates="country")
 
 
-class VendorComplianceLinkBase(HasVendorPK):
-    compliance_framework_id: str = Field(
-        foreign_key="compliance_framework.id",
-        primary_key=True,
-        description="Reference to the Compliance Framework.",
-    )
-    comment: Optional[str] = Field(
-        default=None,
-        description="Optional references, such as dates, URLs, and additional information/evidence.",
-    )
-
-
-class VendorComplianceLink(HasStatus, VendorComplianceLinkBase, table=True):
-    """List of known Compliance Frameworks paired with vendors."""
-
-    vendor: "Vendor" = Relationship(back_populates="compliance_framework_links")
-    compliance_framework: "ComplianceFramework" = Relationship(
-        back_populates="vendor_links"
-    )
-
-
-class ComplianceFramework(HasName, HasIdPK, table=True):
-    """List of Compliance Frameworks, such as HIPAA or SOC 2 Type 1."""
-
+class ComplianceFrameworkFields(ScModel):
     abbreviation: Optional[str] = Field(
         description="Short abbreviation of the Framework name."
     )
@@ -352,25 +461,22 @@ class ComplianceFramework(HasName, HasIdPK, table=True):
         description="Public homepage with more information on the Framework.",
     )
 
-    vendor_links: List[VendorComplianceLink] = Relationship(
+
+class ComplianceFrameworkBase(
+    MetaColumns, ComplianceFrameworkFields, HasName, HasComplianceFrameworkIdPK
+):
+    pass
+
+
+class ComplianceFramework(ComplianceFrameworkBase, table=True):
+    """List of Compliance Frameworks, such as HIPAA or SOC 2 Type 1."""
+
+    vendor_links: List["VendorComplianceLink"] = Relationship(
         back_populates="compliance_framework"
     )
 
 
-class Vendor(HasName, HasIdPK, table=True):
-    """Compute resource vendors, such as cloud and server providers.
-
-    Examples:
-        >>> from sc_crawler.schemas import Vendor
-        >>> from sc_crawler.lookup import countries
-        >>> aws = Vendor(id='aws', name='Amazon Web Services', homepage='https://aws.amazon.com', country=countries["US"], founding_year=2002)
-        >>> aws
-        Vendor(id='aws'...
-        >>> from sc_crawler import vendors
-        >>> vendors.aws
-        Vendor(id='aws'...
-    """  # noqa: E501
-
+class VendorFields(HasName, HasVendorIdPK):
     # TODO HttpUrl not supported by SQLModel
     # TODO upload to cdn.sparecores.com (s3/cloudfront)
     logo: Optional[str] = Field(
@@ -384,7 +490,7 @@ class Vendor(HasName, HasIdPK, table=True):
     )
 
     country_id: str = Field(
-        foreign_key="country.id",
+        foreign_key="country",
         description="Reference to the Country, where the Vendor's main headquarter is located.",
     )
     state: Optional[str] = Field(
@@ -404,18 +510,57 @@ class Vendor(HasName, HasIdPK, table=True):
     # https://dbpedia.org/ontology/Organisation
     founding_year: int = Field(description="4-digit year when the Vendor was founded.")
 
-    compliance_framework_links: List[VendorComplianceLink] = Relationship(
-        back_populates="vendor"
-    )
-
     # TODO HttpUrl not supported by SQLModel
     status_page: Optional[str] = Field(
         default=None, description="Public status page of the Vendor."
     )
 
-    status: Status = Field(
-        default=Status.ACTIVE,
-        description="Status of the resource (active or inactive).",
+
+class VendorBase(MetaColumns, VendorFields):
+    pass
+
+
+class Vendor(VendorBase, table=True):
+    """Compute resource vendors, such as cloud and server providers.
+
+    Examples:
+        >>> from sc_crawler.schemas import Vendor
+        >>> from sc_crawler.lookup import countries
+        >>> aws = Vendor(vendor_id='aws', name='Amazon Web Services', homepage='https://aws.amazon.com', country=countries["US"], founding_year=2002)
+        >>> aws
+        Vendor(vendor_id='aws'...
+        >>> from sc_crawler import vendors
+        >>> vendors.aws
+        Vendor(vendor_id='aws'...
+    """  # noqa: E501
+
+    compliance_framework_links: List["VendorComplianceLink"] = Relationship(
+        back_populates="vendor"
+    )
+    country: Country = Relationship(back_populates="vendors")
+    datacenters: List["Datacenter"] = Relationship(
+        back_populates="vendor", sa_relationship_kwargs={"viewonly": True}
+    )
+    zones: List["Zone"] = Relationship(
+        back_populates="vendor", sa_relationship_kwargs={"viewonly": True}
+    )
+    storages: List["Storage"] = Relationship(
+        back_populates="vendor", sa_relationship_kwargs={"viewonly": True}
+    )
+    servers: List["Server"] = Relationship(
+        back_populates="vendor", sa_relationship_kwargs={"viewonly": True}
+    )
+    server_prices: List["ServerPrice"] = Relationship(
+        back_populates="vendor", sa_relationship_kwargs={"viewonly": True}
+    )
+    traffic_prices: List["TrafficPrice"] = Relationship(
+        back_populates="vendor", sa_relationship_kwargs={"viewonly": True}
+    )
+    ipv4_prices: List["Ipv4Price"] = Relationship(
+        back_populates="vendor", sa_relationship_kwargs={"viewonly": True}
+    )
+    storage_prices: List["StoragePrice"] = Relationship(
+        back_populates="vendor", sa_relationship_kwargs={"viewonly": True}
     )
 
     # private attributes
@@ -423,22 +568,11 @@ class Vendor(HasName, HasIdPK, table=True):
     _session: Optional[Session] = PrivateAttr()
     _progress_tracker: Optional[VendorProgressTracker] = PrivateAttr()
 
-    # relations
-    country: Country = Relationship(back_populates="vendors")
-    datacenters: List["Datacenter"] = Relationship(back_populates="vendor")
-    zones: List["Zone"] = Relationship(back_populates="vendor")
-    storages: List["Storage"] = Relationship(back_populates="vendor")
-    servers: List["Server"] = Relationship(back_populates="vendor")
-    server_prices: List["ServerPrice"] = Relationship(back_populates="vendor")
-    traffic_prices: List["TrafficPrice"] = Relationship(back_populates="vendor")
-    ipv4_prices: List["Ipv4Price"] = Relationship(back_populates="vendor")
-    storage_prices: List["StoragePrice"] = Relationship(back_populates="vendor")
-
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         # SQLModel does not validates pydantic typing,
         # only when writing to DB (much later in the process)
-        if not self.id:
+        if not self.vendor_id:
             raise ValueError("No vendor id provided")
         if not self.name:
             raise ValueError("No vendor name provided")
@@ -461,7 +595,7 @@ class Vendor(HasName, HasIdPK, table=True):
         ]:
             if method not in methods:
                 raise NotImplementedError(
-                    f"Unsupported '{self.id}' vendor: missing '{method}' method."
+                    f"Unsupported '{self.vendor_id}' vendor: missing '{method}' method."
                 )
 
     def _get_methods(self):
@@ -475,12 +609,12 @@ class Vendor(HasName, HasIdPK, table=True):
         if not self._methods:
             try:
                 vendor_module = ".".join(
-                    [__name__.split(".", maxsplit=1)[0], "vendors", self.id]
+                    [__name__.split(".", maxsplit=1)[0], "vendors", self.vendor_id]
                 )
                 self._methods = import_module(vendor_module)
             except Exception as exc:
                 raise NotImplementedError(
-                    f"Unsupported '{self.id}' vendor: no methods defined."
+                    f"Unsupported '{self.vendor_id}' vendor: no methods defined."
                 ) from exc
         return self._methods
 
@@ -535,7 +669,7 @@ class Vendor(HasName, HasIdPK, table=True):
         >>> aws.set_table_rows_inactive(ServerPrice, ServerPrice.price < 10)  # doctest: +SKIP
         """
         if self.session:
-            query = update(model).where(model.vendor_id == self.id)
+            query = update(model).where(model.vendor_id == self.vendor_id)
             for arg in args:
                 query = query.where(arg)
             self.session.execute(query.values(status=Status.INACTIVE))
@@ -601,24 +735,46 @@ class Vendor(HasName, HasIdPK, table=True):
         self._get_methods().inventory_ipv4_prices(self)
 
 
-class Datacenter(HasName, HasIdPK, table=True):
-    """Datacenters/regions of Vendors."""
+class VendorComplianceLinkFields(HasVendorPKFK):
+    compliance_framework_id: str = Field(
+        foreign_key="compliance_framework",
+        primary_key=True,
+        description="Reference to the Compliance Framework.",
+    )
+    comment: Optional[str] = Field(
+        default=None,
+        description="Optional references, such as dates, URLs, and additional information/evidence.",
+    )
 
+
+class VendorComplianceLinkBase(MetaColumns, VendorComplianceLinkFields):
+    pass
+
+
+class VendorComplianceLink(VendorComplianceLinkBase, table=True):
+    """List of known Compliance Frameworks paired with vendors."""
+
+    vendor: Vendor = Relationship(back_populates="compliance_framework_links")
+    compliance_framework: ComplianceFramework = Relationship(
+        back_populates="vendor_links"
+    )
+
+
+class DatacenterFields(HasName, HasDatacenterIdPK):
     aliases: List[str] = Field(
         default=[],
-        sa_column=Column(JSON),
+        sa_type=JSON,
         description="List of other commonly used names for the same Datacenter.",
     )
 
     vendor_id: str = Field(
-        foreign_key="vendor.id",
+        foreign_key="vendor",
         primary_key=True,
         description="Reference to the Vendor.",
     )
-    vendor: Vendor = Relationship(back_populates="datacenters")
 
     country_id: str = Field(
-        foreign_key="country.id",
+        foreign_key="country",
         description="Reference to the Country, where the Datacenter is located.",
     )
     state: Optional[str] = Field(
@@ -643,31 +799,65 @@ class Datacenter(HasName, HasIdPK, table=True):
         description="If the Datacenter is 100% powered by renewable energy.",
     )
 
-    status: Status = Field(
-        default=Status.ACTIVE,
-        description="Status of the resource (active or inactive).",
+
+class DatacenterBase(MetaColumns, DatacenterFields):
+    pass
+
+
+class Datacenter(DatacenterBase, table=True):
+    """Datacenters/regions of Vendors."""
+
+    vendor: Vendor = Relationship(back_populates="datacenters")
+    country: Country = Relationship(back_populates="datacenters")
+
+    zones: List["Zone"] = Relationship(
+        back_populates="datacenter", sa_relationship_kwargs={"viewonly": True}
+    )
+    server_prices: List["ServerPrice"] = Relationship(
+        back_populates="datacenter", sa_relationship_kwargs={"viewonly": True}
+    )
+    traffic_prices: List["TrafficPrice"] = Relationship(
+        back_populates="datacenter", sa_relationship_kwargs={"viewonly": True}
+    )
+    ipv4_prices: List["Ipv4Price"] = Relationship(
+        back_populates="datacenter", sa_relationship_kwargs={"viewonly": True}
+    )
+    storage_prices: List["StoragePrice"] = Relationship(
+        back_populates="datacenter", sa_relationship_kwargs={"viewonly": True}
     )
 
-    # relations
-    country: Country = Relationship(back_populates="datacenters")
-    zones: List["Zone"] = Relationship(back_populates="datacenter")
-    server_prices: List["ServerPrice"] = Relationship(back_populates="datacenter")
-    traffic_prices: List["TrafficPrice"] = Relationship(back_populates="datacenter")
-    ipv4_prices: List["Ipv4Price"] = Relationship(back_populates="datacenter")
-    storage_prices: List["StoragePrice"] = Relationship(back_populates="datacenter")
+
+class ZoneBase(MetaColumns, HasName, HasDatacenterPK, HasVendorPKFK, HasZoneIdPK):
+    pass
 
 
-class Zone(HasStatus, HasName, HasDatacenterPK, HasVendorPK, HasIdPK, table=True):
+class Zone(ZoneBase, table=True):
     """Availability zones of Datacenters."""
 
-    datacenter: Datacenter = Relationship(back_populates="zones")
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["vendor_id", "datacenter_id"],
+            ["datacenter.vendor_id", "datacenter.datacenter_id"],
+        ),
+    )
+
+    datacenter: Datacenter = Relationship(
+        back_populates="zones",
+        sa_relationship_kwargs={
+            "primaryjoin": (
+                "and_(Datacenter.datacenter_id == foreign(Zone.datacenter_id), "
+                "Vendor.vendor_id == foreign(Zone.vendor_id))"
+            )
+        },
+    )
     vendor: Vendor = Relationship(back_populates="zones")
-    server_prices: List["ServerPrice"] = Relationship(back_populates="zone")
+
+    server_prices: List["ServerPrice"] = Relationship(
+        back_populates="zone", sa_relationship_kwargs={"viewonly": True}
+    )
 
 
-class Storage(HasDescription, HasName, HasVendorPK, HasIdPK, table=True):
-    """Flexible storage options that can be attached to a Server."""
-
+class StorageFields(HasDescription, HasName, HasVendorPKFK, HasStorageIdPK):
     storage_type: StorageType = Field(
         description="High-level category of the storage, e.g. HDD or SDD."
     )
@@ -683,24 +873,25 @@ class Storage(HasDescription, HasName, HasVendorPK, HasIdPK, table=True):
     max_size: Optional[int] = Field(
         default=None, description="Maximum possible size (GiB)."
     )
-    status: Status = Field(
-        default=Status.ACTIVE,
-        description="Status of the resource (active or inactive).",
-    )
+
+
+class StorageBase(MetaColumns, StorageFields):
+    pass
+
+
+class Storage(StorageBase, table=True):
+    """Flexible storage options that can be attached to a Server."""
 
     vendor: Vendor = Relationship(back_populates="storages")
-    prices: List["StoragePrice"] = Relationship(back_populates="storage")
 
-
-class Server(ScModel, table=True):
-    """Server types."""
-
-    id: str = Field(
-        primary_key=True,
-        description="Server's unique identifier, as called at the Vendor.",
+    prices: List["StoragePrice"] = Relationship(
+        back_populates="storage", sa_relationship_kwargs={"viewonly": True}
     )
+
+
+class ServerFields(HasServerIdPK):
     vendor_id: str = Field(
-        foreign_key="vendor.id",
+        foreign_key="vendor",
         primary_key=True,
         description="Reference to the Vendor.",
     )
@@ -818,41 +1009,21 @@ class Server(ScModel, table=True):
         default=0, description="Number of complimentary IPv4 address(es)."
     )
 
-    billable_unit: str = Field(
-        default=None,
-        description="Time period for billing, e.g. hour or month.",
-    )
-    status: Status = Field(
-        default=Status.ACTIVE,
-        description="Status of the resource (active or inactive).",
-    )
 
-    vendor: Vendor = Relationship(back_populates="servers")
-    prices: List["ServerPrice"] = Relationship(back_populates="server")
-
-
-class HasPriceFieldsBase(ScModel):
-    unit: PriceUnit = Field(description="Billing unit of the pricing model.")
-    # set to max price if tiered
-    price: float = Field(description="Actual price of a billing unit.")
-    # e.g. setup fee for dedicated servers,
-    # or upfront costs of a reserved instance type
-    price_upfront: float = Field(
-        default=0, description="Price to be paid when setting up the resource."
-    )
-    price_tiered: List[PriceTier] = Field(
-        default=[],
-        sa_type=JSON,
-        description="List of pricing tiers with min/max thresholds and actual prices.",
-    )
-    currency: str = Field(default="USD", description="Currency of the prices.")
-
-
-class HasPriceFields(HasStatus, HasPriceFieldsBase):
+class ServerBase(MetaColumns, ServerFields):
     pass
 
 
-class ServerPriceExtraFields(ScModel):
+class Server(ServerBase, table=True):
+    """Server types."""
+
+    vendor: Vendor = Relationship(back_populates="servers")
+    prices: List["ServerPrice"] = Relationship(
+        back_populates="server", sa_relationship_kwargs={"viewonly": True}
+    )
+
+
+class ServerPriceFields(ScModel):
     operating_system: str = Field(description="Operating System.")
     allocation: Allocation = Field(
         default=Allocation.ONDEMAND,
@@ -863,11 +1034,11 @@ class ServerPriceExtraFields(ScModel):
 
 class ServerPriceBase(
     HasPriceFields,
-    ServerPriceExtraFields,
-    HasServer,
+    ServerPriceFields,
+    HasServerPK,
     HasZonePK,
     HasDatacenterPK,
-    HasVendorPK,
+    HasVendorPKFK,
 ):
     pass
 
@@ -875,57 +1046,154 @@ class ServerPriceBase(
 class ServerPrice(ServerPriceBase, table=True):
     """Server type prices per Datacenter and Allocation method."""
 
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["vendor_id", "datacenter_id"],
+            ["datacenter.vendor_id", "datacenter.datacenter_id"],
+        ),
+        ForeignKeyConstraint(
+            ["vendor_id", "datacenter_id", "zone_id"],
+            ["zone.vendor_id", "zone.datacenter_id", "zone.zone_id"],
+        ),
+        ForeignKeyConstraint(
+            ["vendor_id", "server_id"],
+            ["server.vendor_id", "server.server_id"],
+        ),
+    )
     vendor: Vendor = Relationship(back_populates="server_prices")
-    datacenter: Datacenter = Relationship(back_populates="server_prices")
-    zone: Zone = Relationship(back_populates="server_prices")
-    server: Server = Relationship(back_populates="prices")
+    datacenter: Datacenter = Relationship(
+        back_populates="server_prices",
+        sa_relationship_kwargs={
+            "primaryjoin": (
+                "and_(Datacenter.datacenter_id == foreign(ServerPrice.datacenter_id), "
+                "Vendor.vendor_id == foreign(ServerPrice.vendor_id))"
+            )
+        },
+    )
+    zone: Zone = Relationship(
+        back_populates="server_prices",
+        sa_relationship_kwargs={
+            "primaryjoin": (
+                "and_(Zone.zone_id == foreign(ServerPrice.zone_id), "
+                "Datacenter.datacenter_id == foreign(ServerPrice.datacenter_id),"
+                "Vendor.vendor_id == foreign(ServerPrice.vendor_id))"
+            )
+        },
+    )
+    server: Server = Relationship(
+        back_populates="prices",
+        sa_relationship_kwargs={
+            "primaryjoin": (
+                "and_(Server.server_id == foreign(ServerPrice.server_id), "
+                "Vendor.vendor_id == foreign(ServerPrice.vendor_id))"
+            )
+        },
+    )
 
 
-class StoragePriceBase(HasPriceFields, HasStorage, HasDatacenterPK, HasVendorPK):
+class StoragePriceBase(HasPriceFields, HasStoragePK, HasDatacenterPK, HasVendorPKFK):
     pass
 
 
 class StoragePrice(StoragePriceBase, table=True):
     """Flexible Storage prices in each Datacenter."""
 
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["vendor_id", "datacenter_id"],
+            ["datacenter.vendor_id", "datacenter.datacenter_id"],
+        ),
+        ForeignKeyConstraint(
+            ["vendor_id", "storage_id"],
+            ["storage.vendor_id", "storage.storage_id"],
+        ),
+    )
     vendor: Vendor = Relationship(back_populates="storage_prices")
-    datacenter: Datacenter = Relationship(back_populates="storage_prices")
-    storage: Storage = Relationship(back_populates="prices")
+    datacenter: Datacenter = Relationship(
+        back_populates="storage_prices",
+        sa_relationship_kwargs={
+            "primaryjoin": (
+                "and_(Datacenter.datacenter_id == foreign(StoragePrice.datacenter_id),"
+                "Vendor.vendor_id == foreign(StoragePrice.vendor_id))"
+            )
+        },
+    )
+    storage: Storage = Relationship(
+        back_populates="prices",
+        sa_relationship_kwargs={
+            "primaryjoin": (
+                "and_(Storage.storage_id == foreign(StoragePrice.storage_id), "
+                "Vendor.vendor_id == foreign(StoragePrice.vendor_id))"
+            )
+        },
+    )
 
 
-class TrafficPriceBase(HasDatacenterPK, HasVendorPK):
+class TrafficPriceFields(HasDatacenterPK, HasVendorPKFK):
     direction: TrafficDirection = Field(
         description="Direction of the traffic: inbound or outbound.",
         primary_key=True,
     )
-    status: Status = Field(
-        default=Status.ACTIVE,
-        description="Status of the resource (active or inactive).",
+
+
+class TrafficPriceBase(HasPriceFields, TrafficPriceFields):
+    pass
+
+
+class TrafficPrice(TrafficPriceBase, table=True):
+    """Extra Traffic prices in each Datacenter."""
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["vendor_id", "datacenter_id"],
+            ["datacenter.vendor_id", "datacenter.datacenter_id"],
+        ),
+    )
+    vendor: Vendor = Relationship(back_populates="traffic_prices")
+    datacenter: Datacenter = Relationship(
+        back_populates="traffic_prices",
+        sa_relationship_kwargs={
+            "primaryjoin": (
+                "and_(Datacenter.datacenter_id == foreign(TrafficPrice.datacenter_id),"
+                "Vendor.vendor_id == foreign(TrafficPrice.vendor_id))"
+            )
+        },
     )
 
 
-class TrafficPrice(HasPriceFields, TrafficPriceBase, table=True):
-    """Extra Traffic prices in each Datacenter."""
-
-    vendor: Vendor = Relationship(back_populates="traffic_prices")
-    datacenter: Datacenter = Relationship(back_populates="traffic_prices")
-
-
-class Ipv4PriceBase(HasPriceFields, HasDatacenterPK, HasVendorPK):
+class Ipv4PriceBase(HasPriceFields, HasDatacenterPK, HasVendorPKFK):
     pass
 
 
 class Ipv4Price(Ipv4PriceBase, table=True):
     """Price of an IPv4 address in each Datacenter."""
 
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["vendor_id", "datacenter_id"],
+            ["datacenter.vendor_id", "datacenter.datacenter_id"],
+        ),
+    )
     vendor: Vendor = Relationship(back_populates="ipv4_prices")
-    datacenter: Datacenter = Relationship(back_populates="ipv4_prices")
+    datacenter: Datacenter = Relationship(
+        back_populates="ipv4_prices",
+        sa_relationship_kwargs={
+            "primaryjoin": (
+                "and_(Datacenter.datacenter_id == foreign(Ipv4Price.datacenter_id),"
+                "Vendor.vendor_id == foreign(Ipv4Price.vendor_id))"
+            )
+        },
+    )
 
 
-VendorComplianceLink.model_rebuild()
 Country.model_rebuild()
+ComplianceFramework.model_rebuild()
 Vendor.model_rebuild()
+VendorComplianceLink.model_rebuild()
 Datacenter.model_rebuild()
+Zone.model_rebuild()
+Storage.model_rebuild()
+Server.model_rebuild()
 
 
 def is_table(table):

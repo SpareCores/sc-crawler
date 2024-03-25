@@ -32,7 +32,7 @@ country_continent_mapping = {
 
 
 countries = {
-    k: Country(id=k, continent=v) for k, v in country_continent_mapping.items()
+    k: Country(country_id=k, continent=v) for k, v in country_continent_mapping.items()
 }
 
 
@@ -41,14 +41,14 @@ countries = {
 
 compliance_frameworks = {
     "hipaa": ComplianceFramework(
-        id="hipaa",
+        compliance_framework_id="hipaa",
         name="The Health Insurance Portability and Accountability Act",
         abbreviation="HIPAA",
         description="HIPAA (Health Insurance Portability and Accountability Act) is a U.S. federal law designed to safeguard the privacy and security of individuals' health information, establishing standards for its protection and regulating its use in the healthcare industry.",  # noqa: E501
         homepage="https://www.cdc.gov/phlp/publications/topic/hipaa.html",
     ),
     "soc2t2": ComplianceFramework(
-        id="soc2t2",
+        compliance_framework_id="soc2t2",
         name="System and Organization Controls Level 2 Type 2",
         abbreviation="SOC 2 Type 2",
         description="SOC 2 Type 2 is a framework for assessing and certifying the effectiveness of a service organization's information security policies and procedures over time, emphasizing the operational aspects and ongoing monitoring of controls.",  # noqa: E501

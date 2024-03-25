@@ -10,28 +10,40 @@ Provides the `sc-crawler` command and the below subcommands:
 import logging
 from datetime import datetime, timedelta
 from enum import Enum
-from json import dumps
+from json import dumps, loads
 from typing import List
 
 import typer
 from cachier import set_default_params
+from rich.console import Console
 from rich.live import Live
+from rich.panel import Panel
+from rich.progress import (
+    BarColumn,
+    MofNCompleteColumn,
+    Progress,
+    TextColumn,
+    TimeElapsedColumn,
+)
+from rich.table import Table
 from rich.text import Text
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import Session, SQLModel, create_engine, select
 from typing_extensions import Annotated
 
 from . import vendors as vendors_module
+from .insert import insert_items
 from .logger import ProgressPanel, ScRichHandler, VendorProgressTracker, logger
 from .lookup import compliance_frameworks, countries
-from .schemas import Vendor
-from .utils import hash_database
+from .scd import scd_tables
+from .schemas import Status, Vendor, tables
+from .utils import HashLevels, get_row_by_pk, hash_database, table_name_to_model
 
 supported_vendors = [
     vendor[1]
     for vendor in vars(vendors_module).items()
     if isinstance(vendor[1], Vendor)
 ]
-Vendors = Enum("VENDORS", {k.id: k.id for k in supported_vendors})
+Vendors = Enum("VENDORS", {k.vendor_id: k.vendor_id for k in supported_vendors})
 
 cli = typer.Typer()
 
@@ -53,7 +65,17 @@ Records = Enum("RECORDS", {k: k for k in supported_records})
 
 
 @cli.command()
-def schema(dialect: Engines):
+def schema(
+    dialect: Annotated[
+        Engines,
+        typer.Option(
+            help="SQLAlchemy dialect to use for generating CREATE TABLE statements."
+        ),
+    ],
+    scd: Annotated[
+        bool, typer.Option(help="If SCD Type 2 tables should be also created.")
+    ] = False,
+):
     """
     Print the database schema in a SQL dialect.
     """
@@ -63,7 +85,13 @@ def schema(dialect: Engines):
         typer.echo(str(sql.compile(dialect=engine.dialect)) + ";")
 
     engine = create_engine(url, strategy="mock", executor=metadata_dump)
-    SQLModel.metadata.create_all(engine)
+    # SQLModel.metadata.create_all(engine)
+
+    for table in tables:
+        table.__table__.create(engine)
+    if scd:
+        for table in scd_tables:
+            table.__table__.create(engine)
 
 
 @cli.command(name="hash")
@@ -77,6 +105,221 @@ def hash_command(
 
 
 @cli.command()
+def copy(
+    source: Annotated[
+        str,
+        typer.Option(
+            help="Database URL (SQLAlchemy connection string) that is to be copied to `target`."
+        ),
+    ],
+    target: Annotated[
+        str,
+        typer.Option(
+            help="Database URL (SQLAlchemy connection string) that is to be populated with the content of `source`."
+        ),
+    ],
+):
+    """Copy the content of a database to a blank database."""
+
+    source_engine = create_engine(source)
+    target_engine = create_engine(target)
+
+    for table in tables:
+        table.__table__.create(target_engine, checkfirst=True)
+
+    progress = Progress(
+        TimeElapsedColumn(),
+        TextColumn("{task.description}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+    )
+    panel = Panel(progress, title="Copying tables", expand=False)
+
+    with (
+        Live(panel),
+        Session(source_engine) as source_session,
+        Session(target_engine) as target_session,
+    ):
+        for table in tables:
+            rows = source_session.exec(statement=select(table))
+            items = [row.model_dump() for row in rows]
+            insert_items(table, items, session=target_session, progress=progress)
+        target_session.commit()
+
+
+@cli.command()
+def sync(
+    source: Annotated[
+        str,
+        typer.Option(
+            help="Database URL (SQLAlchemy connection string) to sync to `update` based on `target`."
+        ),
+    ],
+    target: Annotated[
+        str,
+        typer.Option(
+            help="Database URL (SQLAlchemy connection string) to compare with `source`."
+        ),
+    ],
+    dry_run: Annotated[
+        bool,
+        typer.Option(help="Stop after comparing the databases, do NOT insert rows."),
+    ] = False,
+    scd: Annotated[
+        bool,
+        typer.Option(help="Sync the changes to the SCD tables."),
+    ] = False,
+):
+    """Sync a database to another one.
+
+    Hashing both the `source` and the `target` databases, then
+    comparing hashes and marking for syncing the following records:
+
+    - new (rows with primary keys found in `source`, but not found in `target`)
+
+    - update (rows with different values in `source` and in `target`).
+
+    - inactive (rows with primary keys found in `target`, but not found in `source`).
+
+    The records marked for syncing are written to the `target` database's
+    standard or SCD tables. When updating the SCD tables, the hashing still
+    happens on the standard tables/views, which are probably based on the
+    most recent records of the SCD tables.
+    """
+
+    ps = Progress(
+        TimeElapsedColumn(),
+        TextColumn("{task.description}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+    )
+    pt = Progress(
+        TimeElapsedColumn(),
+        TextColumn("{task.description}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+    )
+    g = Table.grid(padding=1)
+    g.add_row(
+        Panel(ps, title="Hashing source database"),
+        Panel(pt, title="Hashing target database"),
+    )
+
+    with Live(g):
+        source_hash = hash_database(source, level=HashLevels.ROW, progress=ps)
+        target_hash = hash_database(target, level=HashLevels.ROW, progress=pt)
+    actions = {
+        k: {table: [] for table in source_hash.keys()}
+        for k in ["update", "new", "deleted"]
+    }
+
+    # enable logging
+    channel = ScRichHandler()
+    formatter = logging.Formatter("%(message)s")
+    channel.setFormatter(formatter)
+    logger.setLevel(logging.INFO)
+    logger.addHandler(channel)
+
+    ps = Progress(
+        TimeElapsedColumn(),
+        TextColumn("{task.description}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+    )
+    pt = Progress(
+        TimeElapsedColumn(),
+        TextColumn("{task.description}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+    )
+    g = Table.grid(padding=1)
+    g.add_row(
+        Panel(ps, title="Comparing source database with target"),
+        Panel(pt, title="Comparing target database with source"),
+    )
+    with Live(g):
+        # compare new records with old
+        engine = create_engine(source)
+        with Session(engine) as session:
+            tables_task_id = ps.add_task("Comparing tables", total=len(source_hash))
+            for table_name, items in source_hash.items():
+                table_task_id = ps.add_task(table_name, total=len(items))
+                model = table_name_to_model(table_name)
+                for pks_json, item in items.items():
+                    action = None
+                    try:
+                        if item != target_hash[table_name][pks_json]:
+                            action = "update"
+                    except KeyError:
+                        action = "new"
+                    if action:
+                        # get the new version of the record from the
+                        # source database and store as JSON for future update
+                        obj = get_row_by_pk(session, model, loads(pks_json))
+                        actions[action][table_name].append(obj.model_dump())
+                    ps.update(table_task_id, advance=1)
+                ps.update(tables_task_id, advance=1)
+
+        # compare old records with new
+        engine = create_engine(target)
+        with Session(engine) as session:
+            tables_task_id = pt.add_task("Comparing tables", total=len(target_hash))
+            for table_name, items in target_hash.items():
+                table_task_id = pt.add_task(table_name, total=len(items))
+                model = table_name_to_model(table_name)
+                for key, _ in items.items():
+                    if key not in source_hash[table_name]:
+                        # check if the row was already set to INACTIVE
+                        obj = get_row_by_pk(session, model, loads(key))
+                        if obj.status != Status.INACTIVE:
+                            obj.status = Status.INACTIVE
+                            obj.observed_at = datetime.utcnow()
+                            actions["deleted"][table_name].append(obj)
+                    pt.update(table_task_id, advance=1)
+                pt.update(tables_task_id, advance=1)
+
+    stats = {ka: {ki: len(vi) for ki, vi in va.items()} for ka, va in actions.items()}
+    table = Table(title="Sync results")
+    table.add_column("Table", no_wrap=True)
+    table.add_column("New rows", justify="right")
+    table.add_column("Updated rows", justify="right")
+    table.add_column("Deleted rows", justify="right")
+    for table_name in source_hash.keys():
+        table.add_row(
+            table_name,
+            str(stats["new"][table_name]),
+            str(stats["update"][table_name]),
+            str(stats["deleted"][table_name]),
+        )
+    console = Console()
+    console.print(table)
+
+    if not dry_run:
+        progress = Progress(
+            TimeElapsedColumn(),
+            TextColumn("{task.description}"),
+            BarColumn(),
+            MofNCompleteColumn(),
+        )
+        panel = Panel(progress, title="Updating target", expand=False)
+        engine = create_engine(target)
+        with Live(panel), Session(engine) as session:
+            for table_name, _ in source_hash.items():
+                model = table_name_to_model(table_name)
+                if scd:
+                    model = model.get_scd()
+                items = (
+                    actions["new"][table_name]
+                    + actions["update"][table_name]
+                    + actions["deleted"][table_name]
+                )
+                if len(items):
+                    insert_items(model, items, session=session, progress=progress)
+                    logger.info("Updated %d %s(s) rows" % (len(items), table_name))
+            session.commit()
+
+
+@cli.command()
 def pull(
     connection_string: Annotated[
         str, typer.Option(help="Database URL with SQLAlchemy dialect.")
@@ -84,7 +327,7 @@ def pull(
     include_vendor: Annotated[
         List[Vendors],
         typer.Option(help="Enabled data sources. Can be specified multiple times."),
-    ] = [v.id for v in supported_vendors],
+    ] = [v.vendor_id for v in supported_vendors],
     exclude_vendor: Annotated[
         List[Vendors],
         typer.Option(help="Disabled data sources. Can be specified multiple times."),
@@ -121,7 +364,7 @@ def pull(
 
     def custom_serializer(x):
         """Use JSON serializer defined in custom objects."""
-        return dumps(x, default=lambda x: x.__json__())
+        return dumps(x, default=lambda x: x.__json__(), allow_nan=False)
 
     # enable caching
     if cache:
@@ -142,8 +385,8 @@ def pull(
         vendor
         for vendor in supported_vendors
         if (
-            vendor.id in [iv.value for iv in include_vendor]
-            and vendor.id not in [ev.value for ev in exclude_vendor]
+            vendor.vendor_id in [iv.value for iv in include_vendor]
+            and vendor.vendor_id not in [ev.value for ev in exclude_vendor]
         )
     ]
 
@@ -157,7 +400,7 @@ def pull(
     with Live(pbars.panels):
         # show CLI arguments in the Metadata panel
         pbars.metadata.append(Text("Data sources: ", style="bold"))
-        pbars.metadata.append(Text(", ".join([x.id for x in vendors]) + " "))
+        pbars.metadata.append(Text(", ".join([x.vendor_id for x in vendors]) + " "))
         pbars.metadata.append(Text("Updating records: ", style="bold"))
         pbars.metadata.append(Text(", ".join([x.value for x in records]) + "\n"))
         pbars.metadata.append(Text("Connection type: ", style="bold"))
@@ -181,7 +424,7 @@ def pull(
             # get data for each vendor and then add/merge to database
             # TODO each vendor should open its own session and run in parallel
             for vendor in vendors:
-                logger.info("Starting to collect data from vendor: " + vendor.id)
+                logger.info("Starting to collect data from vendor: " + vendor.vendor_id)
                 vendor = session.merge(vendor)
                 # register session to the Vendor so that dependen objects can auto-merge
                 vendor.session = session
