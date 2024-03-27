@@ -432,7 +432,7 @@ def pull(
                 vendor.progress_tracker = VendorProgressTracker(
                     vendor=vendor, progress_panel=pbars
                 )
-                vendor.progress_tracker.start_vendor(n=len(records))
+                vendor.progress_tracker.start_vendor(total=len(records))
                 if Records.compliance_frameworks in records:
                     vendor.inventory_compliance_frameworks()
                 if Records.datacenters in records:

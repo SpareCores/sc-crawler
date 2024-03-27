@@ -160,24 +160,24 @@ class VendorProgressTracker:
         self.tasks = progress_panel.tasks
         self.metadata = progress_panel.metadata
 
-    def start_vendor(self, n: int) -> TaskID:
+    def start_vendor(self, total: int) -> TaskID:
         """Starts a progress bar for the Vendor's steps.
 
         Args:
-            n: Overall number of steps to show in the progress bar.
+            total: Overall number of steps to show in the progress bar.
 
         Returns:
             TaskId: The progress bar's identifier to be referenced in future updates.
         """
-        return self.vendors.add_task(self.vendor.name, total=n, step="")
+        return self.vendors.add_task(self.vendor.name, total=total, step="")
 
-    def advance_vendor(self, by: int = 1) -> None:
+    def advance_vendor(self, advance: int = 1) -> None:
         """Increment the number of finished steps.
 
         Args:
-            by: Number of steps to advance.
+            advance: Number of steps to advance.
         """
-        self.vendors.update(self.vendors.task_ids[-1], advance=by)
+        self.vendors.update(self.vendors.task_ids[-1], advance=advance)
 
     def update_vendor(self, **kwargs) -> None:
         """Update the vendor's progress bar.
@@ -187,7 +187,7 @@ class VendorProgressTracker:
         """
         self.vendors.update(self.vendors.task_ids[-1], **kwargs)
 
-    def start_task(self, name: str, n: int) -> TaskID:
+    def start_task(self, name: str, total: int) -> TaskID:
         """Starts a progress bar in the list of current jobs.
 
         Besides returning the `TaskID`, it will also register in `self.tasks.task_ids`
@@ -196,13 +196,13 @@ class VendorProgressTracker:
 
         Args:
             name: Name to show in front of the progress bar. Will be prefixed by Vendor's name.
-            n: Overall number of steps to show in the progress bar.
+            total: Overall number of steps to show in the progress bar.
 
         Returns:
             TaskId: The progress bar's identifier to be referenced in future updates.
         """
         self.task_ids.append(
-            self.tasks.add_task(self.vendor.name + ": " + name, total=n)
+            self.tasks.add_task(self.vendor.name + ": " + name, total=total)
         )
         return self.last_task()
 
@@ -210,16 +210,16 @@ class VendorProgressTracker:
         """Returh the last registered TaskID."""
         return self.task_ids[-1]
 
-    def advance_task(self, task_id: Optional[TaskID] = None, by: int = 1):
+    def advance_task(self, task_id: Optional[TaskID] = None, advance: int = 1):
         """Increment the number of finished steps.
 
         Args:
             task_id: The progress bar's identifier returned by `start_task`.
                 Defaults to the most recently created task.
-            by: Number of steps to advance.
+            advance: Number of steps to advance.
         """
 
-        self.tasks.update(task_id or self.last_task(), advance=by)
+        self.tasks.update(task_id or self.last_task(), advance=advance)
 
     def update_task(self, task_id: Optional[TaskID] = None, **kwargs) -> None:
         """Update the task's progress bar.

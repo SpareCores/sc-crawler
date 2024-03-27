@@ -45,7 +45,7 @@ Basic example:
 ```python
 def inventory_zones(vendor):
     zones = range(5)
-    vendor.progress_tracker.start_task(name="Searching zones", n=len(zones))
+    vendor.progress_tracker.start_task(name="Searching zones", total=len(zones))
     for zone in zones:
         # do something
         vendor.progress_tracker.advance_task()

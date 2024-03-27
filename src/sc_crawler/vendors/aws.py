@@ -691,7 +691,7 @@ def inventory_datacenters(vendor):
 def inventory_zones(vendor):
     """List all available AWS availability zones."""
     vendor.progress_tracker.start_task(
-        name="Scanning datacenter(s) for zone(s)", n=len(vendor.datacenters)
+        name="Scanning datacenter(s) for zone(s)", total=len(vendor.datacenters)
     )
 
     def get_zones(datacenter: Datacenter, vendor: Vendor) -> List[dict]:
@@ -720,7 +720,7 @@ def inventory_servers(vendor):
     # TODO drop this in favor of pricing.get_products, as it has info e.g. on instanceFamily
     #      although other fields are messier (e.g. extract memory from string)
     vendor.progress_tracker.start_task(
-        name="Scanning datacenter(s) for server(s)", n=len(vendor.datacenters)
+        name="Scanning datacenter(s) for server(s)", total=len(vendor.datacenters)
     )
 
     def search_servers(datacenter: Datacenter, vendor: Optional[Vendor]) -> List[dict]:
@@ -747,7 +747,7 @@ def inventory_servers(vendor):
     vendor.progress_tracker.hide_task()
 
     vendor.progress_tracker.start_task(
-        name="Preprocessing server(s)", n=len(instance_types)
+        name="Preprocessing server(s)", total=len(instance_types)
     )
     servers = []
     for instance_type in instance_types:
@@ -759,7 +759,7 @@ def inventory_servers(vendor):
 
 def inventory_server_prices(vendor):
     vendor.progress_tracker.start_task(
-        name="Searching for ondemand server_price(s)", n=None
+        name="Searching for ondemand server_price(s)", total=None
     )
     products = _boto_get_products(
         service_code="AmazonEC2",
@@ -784,7 +784,7 @@ def inventory_server_prices(vendor):
 
     server_prices = []
     vendor.progress_tracker.start_task(
-        name="Preprocess ondemand server_price(s)", n=len(products)
+        name="Preprocess ondemand server_price(s)", total=len(products)
     )
     for product in products:
         try:
@@ -823,7 +823,8 @@ def inventory_server_prices(vendor):
 
 def inventory_server_prices_spot(vendor):
     vendor.progress_tracker.start_task(
-        name="Scanning datacenters for spot server_price(s)", n=len(vendor.datacenters)
+        name="Scanning datacenters for spot server_price(s)",
+        total=len(vendor.datacenters),
     )
 
     def get_spot_prices(datacenter: Datacenter, vendor: Vendor) -> List[dict]:
@@ -853,7 +854,7 @@ def inventory_server_prices_spot(vendor):
 
     server_prices = []
     vendor.progress_tracker.start_task(
-        name="Preprocess spot server_price(s)", n=len(products)
+        name="Preprocess spot server_price(s)", total=len(products)
     )
     for product in products:
         try:
@@ -950,7 +951,7 @@ def search_storage(
 
 def inventory_storages(vendor):
     vendor.progress_tracker.start_task(
-        name="Searching for storages", n=len(storage_manual_data)
+        name="Searching for storages", total=len(storage_manual_data)
     )
 
     # look up all volume types in us-east-1
@@ -1001,7 +1002,7 @@ def inventory_storages(vendor):
 
 def inventory_storage_prices(vendor):
     vendor.progress_tracker.start_task(
-        name="Searching for storage_price(s)", n=len(storage_manual_data)
+        name="Searching for storage_price(s)", total=len(storage_manual_data)
     )
     with ThreadPoolExecutor(max_workers=8) as executor:
         products = executor.map(
@@ -1017,7 +1018,7 @@ def inventory_storage_prices(vendor):
     datacenters = scmodels_to_dict(vendor.datacenters, keys=["name", "aliases"])
 
     vendor.progress_tracker.start_task(
-        name="Preprocessing storage_price(s)", n=len(products)
+        name="Preprocessing storage_price(s)", total=len(products)
     )
     prices = []
     for product in products:
@@ -1049,7 +1050,7 @@ def inventory_traffic_prices(vendor):
     for direction in list(TrafficDirection):
         loc_dir = "toLocation" if direction == TrafficDirection.IN else "fromLocation"
         vendor.progress_tracker.start_task(
-            name=f"Searching for {direction.value} traffic_price(s)", n=None
+            name=f"Searching for {direction.value} traffic_price(s)", total=None
         )
         products = _boto_get_products(
             service_code="AWSDataTransfer",
@@ -1088,7 +1089,7 @@ def inventory_traffic_prices(vendor):
 
 
 def inventory_ipv4_prices(vendor):
-    vendor.progress_tracker.start_task(name="Searching for ipv4_price(s)", n=None)
+    vendor.progress_tracker.start_task(name="Searching for ipv4_price(s)", total=None)
     products = _boto_get_products(
         service_code="AmazonVPC",
         filters={

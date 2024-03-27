@@ -40,7 +40,7 @@ def validate_items(
     schema = model.__validator__
     if vendor:
         vendor.progress_tracker.start_task(
-            name=f"Validating {space_after(prefix)}{model_name}(s)", n=len(items)
+            name=f"Validating {space_after(prefix)}{model_name}(s)", total=len(items)
         )
     for i, item in enumerate(items):
         items[i] = schema.model_validate(item).model_dump()
@@ -87,7 +87,7 @@ def bulk_insert_items(
         )
     elif vendor:
         pid = vendor.progress_tracker.start_task(
-            name=f"Inserting {space_after(prefix)}{model_name}(s)", n=len(items)
+            name=f"Inserting {space_after(prefix)}{model_name}(s)", total=len(items)
         )
         progress = vendor.progress_tracker.tasks
     # need to split list into smaller chunks to avoid "too many SQL variables"
@@ -146,7 +146,7 @@ def insert_items(
     else:
         if vendor:
             vendor.progress_tracker.start_task(
-                name=f"Syncing {space_after(prefix)}{model_name}(s)", n=len(items)
+                name=f"Syncing {space_after(prefix)}{model_name}(s)", total=len(items)
             )
         if progress:
             pid = progress.add_task(
