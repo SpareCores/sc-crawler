@@ -11,7 +11,21 @@ SC Crawler is a Python package to pull and standardize data on cloud
 compute resources, with tooling to help organize and update the
 collected data into databases.
 
-References:
+## Installation
+
+Stable version from PyPI:
+
+```
+pip install sparecores-crawler
+```
+
+Most recent version from GitHub:
+
+```
+pip install "sparecores-crawler @ git+https://git@github.com/SpareCores/sc-crawler.git"
+```
+
+## References
 
 - [Package documentation](https://sparecores.github.io/sc-crawler/)
 - [Database schemas](https://dbdocs.io/spare-cores/sc-crawler)
