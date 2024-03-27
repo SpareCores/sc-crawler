@@ -33,7 +33,7 @@ from ..schemas import (
     VendorComplianceLink,
     Zone,
 )
-from ..str import extract_last_number
+from ..str_utils import extract_last_number
 from ..utils import float_inf_to_str, jsoned_hash, scmodels_to_dict
 
 # disable caching by default

@@ -7,7 +7,7 @@ from sqlalchemy.dialects.sqlite import insert as insert_sqlite
 from sqlmodel import Session, SQLModel
 
 from .schemas import Vendor
-from .str import space_after
+from .str_utils import space_after
 from .utils import chunk_list, is_postgresql, is_sqlite
 
 

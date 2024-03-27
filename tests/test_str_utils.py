@@ -1,5 +1,5 @@
 from pytest import raises
-from sc_crawler.str import extract_last_number, snake_case, space_after, wrap
+from sc_crawler.str_utils import extract_last_number, snake_case, space_after, wrap
 
 
 def test_wrap_default_text():

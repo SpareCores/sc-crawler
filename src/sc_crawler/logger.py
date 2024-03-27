@@ -229,7 +229,7 @@ class VendorProgressTracker:
                 Defaults to the most recently created task.
 
         Keyword Args:
-            step: Name of the currently running step to be shown on the progress bar.
+            step (str): Name of the currently running step to be shown on the progress bar.
 
         See `Progress.update` for further keyword arguments:
         https://rich.readthedocs.io/en/stable/reference/progress.html#rich.progress.Progress.update

@@ -21,7 +21,7 @@ from sqlalchemy.orm import declared_attr
 from sqlmodel import JSON, Field, Relationship, Session, SQLModel, select
 
 from .logger import VendorProgressTracker, log_start_end, logger
-from .str import snake_case
+from .str_utils import snake_case
 
 # ##############################################################################
 # SQLModel data and model extensions

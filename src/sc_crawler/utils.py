@@ -91,7 +91,7 @@ def scmodels_to_dict(scmodels: List[ScModel], keys: List[str]) -> Dict[str, ScMo
 
     Args:
         scmodels: list of ScModel instances
-        key: a list of strings referring to ScModel fields to be used as keys
+        keys: a list of strings referring to ScModel fields to be used as keys
 
     Examples:
         >>> from sc_crawler.vendors import aws

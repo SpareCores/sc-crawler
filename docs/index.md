@@ -1,16 +1,5 @@
 ## Spare Cores Crawler
 
-!!! note annotate
-
-    This repository is still in alpha phase(1), and is NOT intended for any
-    public use yet.
-
-    Please check back by the end of Q1 2024, or contact us (via a
-    [GitHub ticket](https://github.com/SpareCores/sc-crawler/issues/new))
-    if you are interested in alpha/beta testing.
-
-1. "The software has the minimal required set of features to be useful. The architecture of the software is clear." Source: [Stages of Software Development](https://martin-thoma.com/software-development-stages/#3-alpha)
-
 SC Crawler is a Python package to pull and standardize data on cloud
 compute resources, with tooling to help organize and update the
 collected data into databases.
