@@ -158,7 +158,7 @@ class Vendor(VendorBase, table=True):
 
     @property
     def progress_tracker(self):
-        """The VendorProgressTracker to use for updating progress bars."""
+        """The [sc_crawler.logger.VendorProgressTracker][] to use for updating progress bars."""
         return self._progress_tracker
 
     @progress_tracker.setter
@@ -176,10 +176,6 @@ class Vendor(VendorBase, table=True):
 
     def log(self, message: str, level: int = logging.INFO):
         logger.log(level, self.name + ": " + message, stacklevel=2)
-
-    def register_progress_tracker(self, progress_tracker: VendorProgressTracker):
-        """Attach a VendorProgressTracker to use for updating progress bars."""
-        self._progress_tracker = progress_tracker
 
     def set_table_rows_inactive(self, model: str, *args) -> None:
         """Set this vendor's records to INACTIVE in a table
