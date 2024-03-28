@@ -22,11 +22,11 @@ sc-crawler --help
 Generate `CREATE TABLE` statements e.g. for a MySQL database:
 
 ```shell
-sc-crawler schema mysql
+sc-crawler schema --dialect mysql
 ```
 
-See `sc-crawler schema --help` for all supported database engines,
-mainly thanks to SQLAlchemy.
+See `sc-crawler schema --help` for all supported database engines
+(mainly thanks to SQLAlchemy), and other options.
 
 ### Collect data
 
@@ -63,7 +63,7 @@ Note that you need specific IAM permissions to be able to run `sc-crawler` at th
 Fetch and standardize datacenter, zone, servers, traffic, storage etc data from AWS into a single SQLite file:
 
 ```shell
-sc-crawler pull --include-vendor aws
+sc-crawler pull --connection-string sqlite:///sc-data-all.db --include-vendor aws
 ```
 
 Such an up-to-date SQLite database is managed by the Spare Cores team in the
@@ -76,7 +76,17 @@ Database content can be hashed via the `sc-crawler hash` command. It will provid
 a single SHA1 hash value based on all records of all SC Crawler tables, which is
 useful to track if database content has changed.
 
+```shell
+$ sc-crawler hash --connection-string sqlite:///sc-data-all.db
+b13b9b06cfb917b591851d18c824037914564418
+```
+
 For advanced usage, check [sc_crawler.utils.hash_database][] to hash tables or rows.
+
+### Sync data
+
+To sync data between two databases, you can use the `sync` subcommand, which also
+supports feeding SCD tables.
 
 ## ORM
 
@@ -89,7 +99,7 @@ a previously pulled DB. Quick examples:
 from sc_crawler.tables import Server
 from sqlmodel import create_engine, Session, select
 
-engine = create_engine("sqlite:///sc_crawler.db") # (1)!
+engine = create_engine("sqlite:///sc-data-all.db") # (1)!
 session = Session(engine) # (2)!
 server = session.exec(select(Server).where(Server.server_id == 'trn1.32xlarge')).one() # (3)!
 
