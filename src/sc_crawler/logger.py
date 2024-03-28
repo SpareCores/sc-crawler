@@ -143,15 +143,24 @@ if TYPE_CHECKING:
 
 
 class VendorProgressTracker:
-    """Tracing the progress of the vendor's inventory."""
+    """Tracking the progress of the vendor's inventory updates."""
 
     vendor: Vendor
+    """A [sc_crawler.schemas.Vendor][] instance for which tracking progress."""
     progress_panel: ProgressPanel
-    # reexport Progress attrubutes of the ProgressPanel
+    """
+    A `rich` panel including progress bars.
+    Should not be used directly, see the `vendors`, `tasks` and `metadata` attributes.
+    """
+    # reexport Progress attributes of the ProgressPanel
     vendors: Progress
+    """[rich.progress.Progress][] for tracking the inventory steps of the vendor."""
     tasks: Progress
-    metadata: Progress
+    """[rich.progress.Progress][] for tracking the lower-level tasks within each step."""
+    metadata: Text
+    """[rich.text.Text][] metadata, e.g. data sources and records to be udpated."""
     task_ids: List[TaskID] = []
+    """List of active task ids for the current `vendor`."""
 
     def __init__(self, vendor: Vendor, progress_panel: ProgressPanel):
         self.vendor = vendor
