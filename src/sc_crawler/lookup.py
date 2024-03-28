@@ -31,15 +31,15 @@ country_continent_mapping = {
 }
 
 
-countries = {
+countries: dict = {
     k: Country(country_id=k, continent=v) for k, v in country_continent_mapping.items()
 }
-
+"""Dictionary of [sc_crawler.schemas.Country][] instances keyed by the `country_id`."""
 
 # ##############################################################################
 
 
-compliance_frameworks = {
+compliance_frameworks: dict = {
     "hipaa": ComplianceFramework(
         compliance_framework_id="hipaa",
         name="The Health Insurance Portability and Accountability Act",
@@ -63,3 +63,4 @@ compliance_frameworks = {
     # ccpa
     # csa
 }
+"""Dictionary of [sc_crawler.schemas.ComplianceFramework][] instances keyed by the `compliance_framework_id`."""
