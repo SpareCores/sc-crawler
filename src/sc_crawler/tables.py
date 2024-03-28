@@ -24,7 +24,15 @@ from .table_bases import (
     VendorComplianceLinkBase,
     ZoneBase,
 )
-from .table_fields import Allocation, Status
+from .table_fields import (
+    Allocation,
+    CpuAllocation,  # noqa: F401 imported for mkdocstrings
+    CpuArchitecture,  # noqa: F401 imported for mkdocstrings
+    PriceUnit,  # noqa: F401 imported for mkdocstrings
+    Status,
+    StorageType,  # noqa: F401 imported for mkdocstrings
+    TrafficDirection,  # noqa: F401 imported for mkdocstrings
+)
 
 
 class Country(CountryBase, table=True):
@@ -178,13 +186,14 @@ class Vendor(VendorBase, table=True):
         logger.log(level, self.name + ": " + message, stacklevel=2)
 
     def set_table_rows_inactive(self, model: str, *args) -> None:
-        """Set this vendor's records to INACTIVE in a table
+        """Set this vendor's records to [INACTIVE][sc_crawler.table_fields.Status] in a table.
 
         Positional arguments can be used to pass further filters
         (besides the default model.vendor_id filter) referencing the
-        model object with SQLModel syntax, e.g.
+        model object with SQLModel syntax.
 
-        >>> aws.set_table_rows_inactive(ServerPrice, ServerPrice.price < 10)  # doctest: +SKIP
+        Examples:
+            >>> aws.set_table_rows_inactive(ServerPrice, ServerPrice.price < 10)  # doctest: +SKIP
         """
         if self.session:
             query = update(model).where(model.vendor_id == self.vendor_id)
