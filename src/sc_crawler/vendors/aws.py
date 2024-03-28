@@ -13,27 +13,29 @@ from cachier import cachier, set_default_params
 
 from ..insert import insert_items
 from ..logger import logger
-from ..schemas import (
+from ..str_utils import extract_last_number
+from ..table_fields import (
     Allocation,
     CpuAllocation,
-    Datacenter,
     Disk,
     Gpu,
-    Ipv4Price,
     PriceTier,
     PriceUnit,
+    StorageType,
+    TrafficDirection,
+)
+from ..tables import (
+    Datacenter,
+    Ipv4Price,
     Server,
     ServerPrice,
     Storage,
     StoragePrice,
-    StorageType,
-    TrafficDirection,
     TrafficPrice,
     Vendor,
     VendorComplianceLink,
     Zone,
 )
-from ..str_utils import extract_last_number
 from ..utils import float_inf_to_str, jsoned_hash, scmodels_to_dict
 
 # disable caching by default
@@ -260,7 +262,7 @@ def _get_gpus_of_instance_type(instance_type):
     def to_gpu(gpu):
         return Gpu(
             manufacturer=gpu["Manufacturer"],
-            name=gpu["Name"],
+            model=gpu["Name"],
             memory=gpu["MemoryInfo"]["SizeInMiB"],
         )
 

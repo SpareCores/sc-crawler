@@ -35,7 +35,8 @@ from .insert import insert_items
 from .logger import ProgressPanel, ScRichHandler, VendorProgressTracker, logger
 from .lookup import compliance_frameworks, countries
 from .scd import scd_tables
-from .schemas import Status, Vendor, tables
+from .table_fields import Status
+from .tables import Vendor, tables
 from .utils import HashLevels, get_row_by_pk, hash_database, table_name_to_model
 
 supported_vendors = [

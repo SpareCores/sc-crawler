@@ -86,7 +86,7 @@ database, and you can also use the defined schemas and models to actually read/f
 a previously pulled DB. Quick examples:
 
 ```py hl_lines="6"
-from sc_crawler.schemas import Server
+from sc_crawler.tables import Server
 from sqlmodel import create_engine, Session, select
 
 engine = create_engine("sqlite:///sc_crawler.db") # (1)!
@@ -100,6 +100,6 @@ pp(server.vendor) # (5)!
 
 1. Creating a [connection (pool)][sqlalchemy.create_engine] to the SQLite database.
 2. Define an [in-memory representation of the database][sqlalchemy.orm.Session] for the ORM objects.
-3. Query the database for the [Server][sc_crawler.schemas.Server] with the `trn1.32xlarge` id.
+3. Query the database for the [Server][sc_crawler.tables.Server] with the `trn1.32xlarge` id.
 4. Use `rich` to pretty-print the objects.
-5. The `vendor` is a [Vendor][sc_crawler.schemas.Vendor] relationship of the [Server][sc_crawler.schemas.Server], in this case being [aws][sc_crawler.vendors.aws].
+5. The `vendor` is a [Vendor][sc_crawler.tables.Vendor] relationship of the [Server][sc_crawler.tables.Server], in this case being [aws][sc_crawler.vendors.aws].

@@ -1,6 +1,6 @@
 import pytest
 from sc_crawler.scd import scd_tables
-from sc_crawler.schemas import Country, Vendor, tables
+from sc_crawler.tables import Country, Vendor, tables
 
 
 def test_scmodels_have_base():
@@ -37,7 +37,7 @@ def test_bad_vendor_definition():
 
 
 def test_aws():
-    from sc_crawler import schemas, vendors
+    from sc_crawler import tables, vendors
 
-    assert isinstance(vendors.aws, schemas.Vendor)
+    assert isinstance(vendors.aws, tables.Vendor)
     assert vendors.aws.founding_year == 2002

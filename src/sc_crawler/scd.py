@@ -3,7 +3,7 @@ from typing import List
 
 from sqlmodel import Field, SQLModel
 
-from .schemas import (
+from .table_bases import (
     ComplianceFrameworkBase,
     CountryBase,
     DatacenterBase,
@@ -17,8 +17,8 @@ from .schemas import (
     VendorBase,
     VendorComplianceLinkBase,
     ZoneBase,
-    is_table,
 )
+from .tables import is_table
 
 
 class Scd(ScModel):

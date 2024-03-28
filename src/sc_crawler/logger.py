@@ -139,14 +139,14 @@ class ProgressPanel:
 
 
 if TYPE_CHECKING:
-    from .schemas import Vendor
+    from .tables import Vendor
 
 
 class VendorProgressTracker:
     """Tracking the progress of the vendor's inventory updates."""
 
     vendor: Vendor
-    """A [sc_crawler.schemas.Vendor][] instance for which tracking progress."""
+    """A [sc_crawler.tables.Vendor][] instance for which tracking progress."""
     progress_panel: ProgressPanel
     """
     A `rich` panel including progress bars.

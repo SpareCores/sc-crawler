@@ -7,7 +7,8 @@ from typing import Any, Dict, Iterable, List, Optional, Union
 from rich.progress import Progress
 from sqlmodel import Session, create_engine, select
 
-from .schemas import ScModel, tables
+from .table_bases import ScModel
+from .tables import tables
 
 
 def jsoned_hash(*args, **kwargs):

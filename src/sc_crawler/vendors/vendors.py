@@ -1,5 +1,5 @@
 from ..lookup import countries
-from ..schemas import Vendor
+from ..tables import Vendor
 
 aws = Vendor(
     vendor_id="aws",
