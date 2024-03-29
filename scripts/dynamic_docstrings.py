@@ -13,7 +13,11 @@ class DynamicDocstrings(Extension):
             return  # skip runtime objects, their docstrings are already right
 
         # only import ScModel-like objects
-        if str(obj.relative_filepath) != "src/sc_crawler/tables.py" or not obj.is_class:
+        if (
+            str(obj.relative_filepath)
+            not in ["src/sc_crawler/tables.py", "src/sc_crawler/scd.py"]
+            or not obj.is_class
+        ):
             return
 
         # import object to get its evaluated docstring
