@@ -1,3 +1,5 @@
+"""SCD version of the table definitions in [sc_crawler.tables][]."""
+
 from datetime import datetime
 from typing import List
 
@@ -33,50 +35,74 @@ class Scd(ScModel):
 
 
 class CountryScd(Scd, CountryBase, table=True):
+    """SCD version of .tables.Country."""
+
     pass
 
 
 class VendorComplianceLinkScd(Scd, VendorComplianceLinkBase, table=True):
+    """SCD version of .tables.VendorComplianceLinkScd."""
+
     pass
 
 
 class ComplianceFrameworkScd(Scd, ComplianceFrameworkBase, table=True):
+    """SCD version of .tables.ComplianceFrameworkScd."""
+
     pass
 
 
 class VendorScd(Scd, VendorBase, table=True):
+    """SCD version of .tables.VendorScd."""
+
     pass
 
 
 class DatacenterScd(Scd, DatacenterBase, table=True):
+    """SCD version of .tables.DatacenterScd."""
+
     pass
 
 
 class ZoneScd(Scd, ZoneBase, table=True):
+    """SCD version of .tables.ZoneScd."""
+
     pass
 
 
 class StorageScd(Scd, StorageBase, table=True):
+    """SCD version of .tables.StorageScd."""
+
     pass
 
 
 class ServerScd(Scd, ServerBase, table=True):
+    """SCD version of .tables.ServerScd."""
+
     pass
 
 
 class ServerPriceScd(Scd, ServerPriceBase, table=True):
+    """SCD version of .tables.ServerPriceScd."""
+
     pass
 
 
 class StoragePriceScd(Scd, StoragePriceBase, table=True):
+    """SCD version of .tables.StoragePriceScd."""
+
     pass
 
 
 class TrafficPriceScd(Scd, TrafficPriceBase, table=True):
+    """SCD version of .tables.TrafficPriceScd."""
+
     pass
 
 
 class Ipv4PriceScd(Scd, Ipv4PriceBase, table=True):
+    """SCD version of .tables.Ipv4PriceScd."""
+
     pass
 
 
