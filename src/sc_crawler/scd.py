@@ -20,6 +20,15 @@ from .table_bases import (
     VendorComplianceLinkBase,
     ZoneBase,
 )
+from .table_fields import (
+    Allocation,  # noqa: F401 imported for mkdocstrings
+    CpuAllocation,  # noqa: F401 imported for mkdocstrings
+    CpuArchitecture,  # noqa: F401 imported for mkdocstrings
+    PriceUnit,  # noqa: F401 imported for mkdocstrings
+    Status,  # noqa: F401 imported for mkdocstrings
+    StorageType,  # noqa: F401 imported for mkdocstrings
+    TrafficDirection,  # noqa: F401 imported for mkdocstrings
+)
 from .tables import is_table
 
 
