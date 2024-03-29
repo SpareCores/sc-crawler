@@ -1,11 +1,4 @@
-"""The Spare Cores (SC) Crawler CLI tool.
-
-Provides the `sc-crawler` command and the below subcommands:
-
-- [schema][sc_crawler.cli.schema]
-- [pull][sc_crawler.cli.pull]
-- [hash][sc_crawler.cli.hash_command]
-"""
+"""The Spare Cores (SC) Crawler CLI tool at `sc-crawler`."""
 
 import logging
 from datetime import datetime, timedelta
