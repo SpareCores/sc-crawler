@@ -1,6 +1,7 @@
 from logging import DEBUG
 from typing import List, Optional
 
+from pydantic import BaseModel
 from rich.progress import Progress
 from sqlalchemy.dialects.postgresql import insert as insert_postgresql
 from sqlalchemy.dialects.sqlite import insert as insert_sqlite
@@ -17,12 +18,12 @@ def can_bulk_insert(session: Session) -> bool:
 
 
 def validate_items(
-    model: SQLModel,
+    model: BaseModel,
     items: List[dict],
     vendor: Optional[Vendor] = None,
     prefix: str = "",
 ) -> List[dict]:
-    """Validates a list of items against a SQLModel definition.
+    """Validates a list of items against a [pydantic.BaseModel][] definition.
 
     Args:
         model: An SQLModel model to be used for validation.
@@ -33,7 +34,7 @@ def validate_items(
 
     Returns:
         List of validated dicts in the same order. Note that missing fields
-        has been filled in with default values (needed for bulk inserts).
+            has been filled in with default values (needed for bulk inserts).
     """
     model_name = model.get_table_name()
     # use the Pydantic data model for validation instead of the table definition
@@ -64,7 +65,7 @@ def bulk_insert_items(
     progress: Optional[Progress] = None,
     prefix: str = "",
 ):
-    """Bulk inserts items into a SQLModel table with ON CONFLICT update.
+    """Bulk inserts items into a SQLModel table with `ON CONFLICT` update.
 
     Args:
         model: An SQLModel table definition with primary key(s).

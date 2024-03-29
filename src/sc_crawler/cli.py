@@ -1,4 +1,6 @@
-"""The Spare Cores (SC) Crawler CLI tool at `sc-crawler`."""
+"""The Spare Cores (SC) Crawler CLI functions.
+
+Check `sc-crawler --help` for more details."""
 
 import logging
 from datetime import datetime, timedelta
