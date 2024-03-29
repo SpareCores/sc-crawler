@@ -29,7 +29,7 @@ from . import vendors as vendors_module
 from .insert import insert_items
 from .logger import ProgressPanel, ScRichHandler, VendorProgressTracker, logger
 from .lookup import compliance_frameworks, countries
-from .scd import scd_tables
+from .tables_scd import tables_scd
 from .table_fields import Status
 from .tables import Vendor, tables
 from .utils import HashLevels, get_row_by_pk, hash_database, table_name_to_model
@@ -86,7 +86,7 @@ def schema(
     for table in tables:
         table.__table__.create(engine)
     if scd:
-        for table in scd_tables:
+        for table in tables_scd:
             table.__table__.create(engine)
 
 

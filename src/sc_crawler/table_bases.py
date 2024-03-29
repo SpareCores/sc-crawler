@@ -132,10 +132,10 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
         """Return the SCD version of the SQLModel table."""
         if cls.model_config.get("table") is None:
             return None
-        from .scd import scd_tables
+        from .tables_scd import tables_scd
 
         validator = cls.get_validator()
-        scds = [t for t in scd_tables if t.get_validator() == validator]
+        scds = [t for t in tables_scd if t.get_validator() == validator]
         if len(scds) != 1:
             raise ValueError("Not found SCD definition.")
         return scds[0]

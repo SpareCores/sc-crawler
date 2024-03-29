@@ -115,5 +115,5 @@ class Ipv4PriceScd(Scd, Ipv4PriceBase, table=True):
     pass
 
 
-scd_tables: List[SQLModel] = [o for o in globals().values() if is_table(o)]
+tables_scd: List[SQLModel] = [o for o in globals().values() if is_table(o)]
 """List of all SCD SQLModel (table) models."""
