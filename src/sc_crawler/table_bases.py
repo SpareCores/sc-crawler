@@ -53,6 +53,16 @@ class ScMetaModel(SQLModel.__class__):
             return
         satable = subclass.metadata.tables[subclass.__tablename__]
 
+        # table comment
+        if subclass.__doc__ and satable.comment is None:
+            satable.comment = subclass.__doc__.splitlines()[0]
+
+        # column comments
+        for k, v in subclass.model_fields.items():
+            comment = satable.columns[k].comment
+            if v.description and comment is None:
+                satable.columns[k].comment = v.description
+
         # generate docstring for SCD tables
         if subclass.__name__.endswith("Scd"):
             from .tables import tables
@@ -74,16 +84,6 @@ class ScMetaModel(SQLModel.__class__):
                 subclass.__doc__ = (
                     subclass.__doc__ + f"    {k} ({typehint}): {description}\n"
                 )
-
-        # table comment
-        if subclass.__doc__ and satable.comment is None:
-            satable.comment = subclass.__doc__.splitlines()[0]
-
-        # column comments
-        for k, v in subclass.model_fields.items():
-            comment = satable.columns[k].comment
-            if v.description and comment is None:
-                satable.columns[k].comment = v.description
 
         # find Pydantic model parent to be used for validating
         subclass.__validator__ = [
