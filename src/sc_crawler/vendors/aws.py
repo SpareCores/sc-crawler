@@ -353,6 +353,22 @@ def _extract_ondemand_prices(terms) -> Tuple[List[dict], str]:
     return (tiers, currency)
 
 
+def _search_storage(
+    volume_type: str, vendor: Optional[Vendor] = None, location: str = None
+) -> List[dict]:
+    """Search for storage types with optional progress bar updates and location filter."""
+    filters = {"volumeType": volume_type}
+    if location:
+        filters["location"] = location
+    volumes = _boto_get_products(
+        service_code="AmazonEC2",
+        filters=filters,
+    )
+    if vendor:
+        vendor.progress_tracker.advance_task()
+    return volumes
+
+
 # ##############################################################################
 # Public methods to fetch data
 
@@ -940,22 +956,6 @@ storage_manual_data = {
 }
 
 
-def search_storage(
-    volume_type: str, vendor: Optional[Vendor] = None, location: str = None
-) -> List[dict]:
-    """Search for storage types with optional progress bar updates and location filter."""
-    filters = {"volumeType": volume_type}
-    if location:
-        filters["location"] = location
-    volumes = _boto_get_products(
-        service_code="AmazonEC2",
-        filters=filters,
-    )
-    if vendor:
-        vendor.progress_tracker.advance_task()
-    return volumes
-
-
 def inventory_storages(vendor):
     """List all storage types via `boto3` calls."""
     vendor.progress_tracker.start_task(
@@ -965,7 +965,7 @@ def inventory_storages(vendor):
     # look up all volume types in us-east-1
     with ThreadPoolExecutor(max_workers=8) as executor:
         products = executor.map(
-            search_storage,
+            _search_storage,
             storage_types,
             repeat(vendor),
             repeat("US East (N. Virginia)"),
@@ -1015,7 +1015,7 @@ def inventory_storage_prices(vendor):
     )
     with ThreadPoolExecutor(max_workers=8) as executor:
         products = executor.map(
-            search_storage,
+            _search_storage,
             storage_types,
             repeat(vendor),
         )
