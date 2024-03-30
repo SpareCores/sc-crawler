@@ -83,10 +83,9 @@ b13b9b06cfb917b591851d18c824037914564418
 
 For advanced usage, check [sc_crawler.utils.hash_database][] to hash tables or rows.
 
-### Sync data
+### Copy and sync data
 
-To sync data between two databases, you can use the `sync` subcommand, which also
-supports feeding SCD tables.
+To copy data from a database to another one or sync data between two databases, you can use the `copy` and `sync` subcommands, which also support feeding SCD tables.
 
 ## ORM
 
