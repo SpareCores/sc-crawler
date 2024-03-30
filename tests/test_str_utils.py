@@ -2,8 +2,9 @@ from pytest import raises
 from sc_crawler.str_utils import extract_last_number, snake_case, space_after, wrap
 
 
-def test_wrap_default_text():
-    assert wrap() == ""
+def test_wrap_no_text():
+    with raises(TypeError):
+        wrap()
 
 
 def test_wrap_empty_text():
@@ -22,8 +23,9 @@ def test_wrap_with_before_after():
     assert wrap("foo", before="__", after="__") == "__foo__"
 
 
-def test_space_after_default_text():
-    assert space_after() == ""
+def test_space_after_no_text():
+    with raises(TypeError):
+        space_after()
 
 
 def test_space_after_text():
