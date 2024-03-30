@@ -358,6 +358,7 @@ def _extract_ondemand_prices(terms) -> Tuple[List[dict], str]:
 
 
 def inventory_compliance_frameworks(vendor):
+    """Manual list of compliance frameworks known for AWS."""
     compliance_frameworks = ["hipaa", "soc2t2"]
     items = []
     for compliance_framework in compliance_frameworks:
@@ -371,7 +372,7 @@ def inventory_compliance_frameworks(vendor):
 
 
 def inventory_datacenters(vendor):
-    """List all available AWS datacenters.
+    """List all available AWS datacenters via `boto3` calls.
 
     Some data sources are not available from APIs, and were collected manually:
 
@@ -692,7 +693,7 @@ def inventory_datacenters(vendor):
 
 
 def inventory_zones(vendor):
-    """List all available AWS availability zones."""
+    """List all available AWS availability zones via `boto3` calls."""
     vendor.progress_tracker.start_task(
         name="Scanning datacenter(s) for zone(s)", total=len(vendor.datacenters)
     )
@@ -720,6 +721,7 @@ def inventory_zones(vendor):
 
 
 def inventory_servers(vendor):
+    """List all available AWS instance types in all regions via `boto3` calls."""
     # TODO drop this in favor of pricing.get_products, as it has info e.g. on instanceFamily
     #      although other fields are messier (e.g. extract memory from string)
     vendor.progress_tracker.start_task(
@@ -761,6 +763,7 @@ def inventory_servers(vendor):
 
 
 def inventory_server_prices(vendor):
+    """List all on-demand instance prices in all regions via `boto3` calls."""
     vendor.progress_tracker.start_task(
         name="Searching for ondemand server_price(s)", total=None
     )
@@ -825,6 +828,7 @@ def inventory_server_prices(vendor):
 
 
 def inventory_server_prices_spot(vendor):
+    """List all spot instance prices in all availability zones via `boto3` calls."""
     vendor.progress_tracker.start_task(
         name="Scanning datacenters for spot server_price(s)",
         total=len(vendor.datacenters),
@@ -953,6 +957,7 @@ def search_storage(
 
 
 def inventory_storages(vendor):
+    """List all storage types via `boto3` calls."""
     vendor.progress_tracker.start_task(
         name="Searching for storages", total=len(storage_manual_data)
     )
@@ -1004,6 +1009,7 @@ def inventory_storages(vendor):
 
 
 def inventory_storage_prices(vendor):
+    """List all storage prices in all regions via `boto3` calls."""
     vendor.progress_tracker.start_task(
         name="Searching for storage_price(s)", total=len(storage_manual_data)
     )
@@ -1049,6 +1055,7 @@ def inventory_storage_prices(vendor):
 
 
 def inventory_traffic_prices(vendor):
+    """List all inbound and outbound traffic prices in all regions via `boto3` calls."""
     datacenters = scmodels_to_dict(vendor.datacenters, keys=["name", "aliases"])
     for direction in list(TrafficDirection):
         loc_dir = "toLocation" if direction == TrafficDirection.IN else "fromLocation"
@@ -1092,6 +1099,7 @@ def inventory_traffic_prices(vendor):
 
 
 def inventory_ipv4_prices(vendor):
+    """List IPV4 prices in all regions via `boto3` calls."""
     vendor.progress_tracker.start_task(name="Searching for ipv4_price(s)", total=None)
     products = _boto_get_products(
         service_code="AmazonVPC",

@@ -1,3 +1,5 @@
+"""Supported cloud and VPS provider vendors."""
+
 from ..lookup import countries
 from ..tables import Vendor
 
@@ -13,6 +15,7 @@ aws = Vendor(
     founding_year=2002,
     status_page="https://health.aws.amazon.com/health/status",
 )
+"""Amazon Web Services."""
 
 gcp = Vendor(
     vendor_id="gcp",
@@ -26,3 +29,4 @@ gcp = Vendor(
     founding_year=2008,
     status_page="https://status.cloud.google.com/",
 )
+"""Google Cloud Platform."""
