@@ -240,8 +240,7 @@ class VendorProgressTracker:
         Keyword Args:
             step (str): Name of the currently running step to be shown on the progress bar.
 
-        See `Progress.update` for further keyword arguments:
-        https://rich.readthedocs.io/en/stable/reference/progress.html#rich.progress.Progress.update
+        See [`rich.progress.Progress.update`][] for further keyword arguments.
         """
         self.tasks.update(task_id or self.last_task(), **kwargs)
 

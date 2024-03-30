@@ -374,8 +374,9 @@ def inventory_datacenters(vendor):
     """List all available AWS datacenters.
 
     Some data sources are not available from APIs, and were collected manually:
-    - launch date: https://aws.amazon.com/about-aws/global-infrastructure/regions_az/
-    - energy source: https://sustainability.aboutamazon.com/products-services/the-cloud?energyType=true#renewable-energy
+
+    - launch date: <https://aws.amazon.com/about-aws/global-infrastructure/regions_az/>
+    - energy source: <https://sustainability.aboutamazon.com/products-services/the-cloud?energyType=true#renewable-energy>
     """  # noqa: E501
     datacenters = [
         {
