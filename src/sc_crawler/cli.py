@@ -6,6 +6,7 @@ import logging
 from datetime import datetime, timedelta
 from enum import Enum
 from json import dumps, loads
+from pathlib import Path
 from typing import List
 
 import typer
@@ -58,6 +59,9 @@ LogLevels = Enum("LOGLEVELS", {k: k for k in log_levels})
 
 supported_records = [r[10:] for r in dir(Vendor) if r.startswith("inventory_")]
 Records = Enum("RECORDS", {k: k for k in supported_records})
+
+table_names = [t.get_table_name() for t in tables]
+Tables = Enum("TABLES", {k: k for k in table_names})
 
 
 @cli.command()
@@ -165,6 +169,18 @@ def sync(
         bool,
         typer.Option(help="Sync the changes to the SCD tables."),
     ] = False,
+    log_changes_path: Annotated[
+        Path,
+        typer.Option(
+            help="Optional file path to log the list of new/updated/deleted records."
+        ),
+    ] = None,
+    log_changes_tables: Annotated[
+        List[Tables],
+        typer.Option(
+            help="New/updated/deleted rows of a table to be logged. Can be specified multiple times."
+        ),
+    ] = table_names,
 ):
     """Sync a database to another one.
 
@@ -289,6 +305,26 @@ def sync(
         )
     console = Console()
     console.print(table)
+
+    # log changes
+    if log_changes_path:
+        with open(log_changes_path, "w") as log_file:
+            for table_name, _ in source_hash.items():
+                if table_name in [t.value for t in log_changes_tables]:
+                    if (
+                        actions["new"][table_name]
+                        or actions["update"][table_name]
+                        or actions["deleted"][table_name]
+                    ):
+                        model = table_name_to_model(table_name)
+                        pks = model.get_columns()["primary_keys"]
+                        log_file.write(f"\n# {table_name}\n\n")
+                        for action_types in ["new", "update", "deleted"]:
+                            for item in actions[action_types][table_name]:
+                                identifier = "/".join([item[key] for key in pks])
+                                log_file.write(
+                                    f"- {action_types.title()}: {identifier}\n"
+                                )
 
     if not dry_run:
         progress = Progress(
