@@ -8,7 +8,6 @@ from rich.progress import Progress
 from sqlmodel import Session, create_engine, select
 
 from .table_bases import ScModel
-from .tables import tables
 
 
 def jsoned_hash(*args, **kwargs):
@@ -54,6 +53,8 @@ def hash_database(
         tables_task_id = progress.add_task("Hashing tables", total=len(tables))
 
     engine = create_engine(connection_string)
+    from .tables import tables
+
     with Session(engine) as session:
         hashes = {}
         for table in tables:
@@ -129,6 +130,8 @@ def float_inf_to_str(x: float) -> Union[float, str]:
 
 def table_name_to_model(table_name: str) -> ScModel:
     """Return the ScModel schema for a table name."""
+    from .tables import tables
+
     return [t for t in tables if t.get_table_name() == table_name][0]
 
 

@@ -1,5 +1,5 @@
 from logging import DEBUG
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
 
 from pydantic import BaseModel
 from rich.progress import Progress
@@ -8,8 +8,10 @@ from sqlalchemy.dialects.sqlite import insert as insert_sqlite
 from sqlmodel import Session, SQLModel
 
 from .str_utils import space_after
-from .tables import Vendor
 from .utils import chunk_list, is_postgresql, is_sqlite
+
+if TYPE_CHECKING:
+    from .tables import Vendor
 
 
 def can_bulk_insert(session: Session) -> bool:
@@ -20,7 +22,7 @@ def can_bulk_insert(session: Session) -> bool:
 def validate_items(
     model: BaseModel,
     items: List[dict],
-    vendor: Optional[Vendor] = None,
+    vendor: Optional["Vendor"] = None,
     prefix: str = "",
 ) -> List[dict]:
     """Validates a list of items against a [pydantic.BaseModel][] definition.
@@ -60,7 +62,7 @@ def validate_items(
 def bulk_insert_items(
     model: SQLModel,
     items: List[dict],
-    vendor: Optional[Vendor] = None,
+    vendor: Optional["Vendor"] = None,
     session: Optional[Session] = None,
     progress: Optional[Progress] = None,
     prefix: str = "",
@@ -117,7 +119,7 @@ def bulk_insert_items(
 def insert_items(
     model: SQLModel,
     items: List[dict],
-    vendor: Optional[Vendor] = None,
+    vendor: Optional["Vendor"] = None,
     session: Optional[Session] = None,
     progress: Optional[Progress] = None,
     prefix: str = "",
