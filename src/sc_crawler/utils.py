@@ -49,11 +49,12 @@ def hash_database(
     Returns:
         A single SHA1 hash or dict of hashes, depending on the level.
     """
+    from .tables import tables
+
     if progress:
         tables_task_id = progress.add_task("Hashing tables", total=len(tables))
 
     engine = create_engine(connection_string)
-    from .tables import tables
 
     with Session(engine) as session:
         hashes = {}

@@ -1,5 +1,5 @@
 from logging import DEBUG
-from typing import List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, List, Optional
 
 from pydantic import BaseModel
 from rich.progress import Progress

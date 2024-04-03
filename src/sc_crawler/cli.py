@@ -29,9 +29,9 @@ from . import vendors as vendors_module
 from .insert import insert_items
 from .logger import ProgressPanel, ScRichHandler, VendorProgressTracker, logger
 from .lookup import compliance_frameworks, countries
-from .tables_scd import tables_scd
 from .table_fields import Status
 from .tables import Vendor, tables
+from .tables_scd import tables_scd
 from .utils import HashLevels, get_row_by_pk, hash_database, table_name_to_model
 
 supported_vendors = [
