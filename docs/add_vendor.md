@@ -16,17 +16,9 @@ Each file should provide the below functions:
 - `inventory_traffic_prices`: Define [`TrafficPrice`][sc_crawler.tables.TrafficPrice] instances to describe the pricing of ingress/egress traffic.
 - `inventory_ipv4_prices`: Define [`Ipv4Price`][sc_crawler.tables.Ipv4Price] instances on the price of an IPv4 address.
 
-Each function will be picked up as the related [Vendor][sc_crawler.tables.Vendor] instance's instance methods, so each function should take a single argument, that is the [Vendor][sc_crawler.tables.Vendor] instance. E.g. [sc_crawler.vendors.aws.inventory_datacenters][] is called by [sc_crawler.tables.Vendor.inventory_datacenters][]
+Each function will be picked up as the related [Vendor][sc_crawler.tables.Vendor] instance's instance methods, so each function should take a single argument, that is the [Vendor][sc_crawler.tables.Vendor] instance. E.g. [sc_crawler.vendors.aws.inventory_datacenters][] is called by [sc_crawler.tables.Vendor.inventory_datacenters][].
 
-No need to return the objects -- it's enough to define the above-mentioned instances.
-
-If a helper is not needed (e.g. another helper already provides its output, or there are no spot prices at a vendor), it is still required to define the function, but can return early, e.g. if [Zone][sc_crawler.tables.Zone] objects were populated by `inventory_datacenters` already, do something like:
-
-```python
-def inventory_zones(vendor):
-    """Zones were already provided in inventory_datacenters."""
-    pass
-```
+The functions should return an array of dict representing the related objects. The vendor's `inventory` method will pass the array to [sc_crawler.insert.insert_items][] along with the table object.
 
 Other functions and variables must be prefixed with an underscore to suggest those are internal tools.
 
@@ -50,47 +42,48 @@ def inventory_zones(vendor):
         # do something
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
+    return zones
 ```
 
 ## Template file for new vendors
 
 ```python
 def inventory_compliance_frameworks(vendor):
-    pass
+    return []
 
 
 def inventory_datacenters(vendor):
-    pass
+    return []
 
 
 def inventory_zones(vendor):
-    pass
+    return []
 
 
 def inventory_servers(vendor):
-    pass
+    return []
 
 
 def inventory_server_prices(vendor):
-    pass
+    return []
 
 
 def inventory_server_prices_spot(vendor):
-    pass
+    return []
 
 
 def inventory_storage(vendor):
-    pass
+    return []
 
 
 def inventory_storage_prices(vendor):
-    pass
+    return []
 
 
 def inventory_traffic_prices(vendor):
-    pass
+    return []
 
 
 def inventory_ipv4_prices(vendor):
-    pass
+    return []
 ```

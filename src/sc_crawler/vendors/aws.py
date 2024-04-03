@@ -11,7 +11,6 @@ import boto3
 from botocore.exceptions import ClientError
 from cachier import cachier, set_default_params
 
-from ..insert import insert_items
 from ..logger import logger
 from ..str_utils import extract_last_number
 from ..table_fields import (
@@ -26,15 +25,7 @@ from ..table_fields import (
 )
 from ..tables import (
     Datacenter,
-    Ipv4Price,
-    Server,
-    ServerPrice,
-    Storage,
-    StoragePrice,
-    TrafficPrice,
     Vendor,
-    VendorComplianceLink,
-    Zone,
 )
 from ..utils import float_inf_to_str, jsoned_hash, scmodels_to_dict
 
@@ -384,7 +375,7 @@ def inventory_compliance_frameworks(vendor):
                 "compliance_framework_id": compliance_framework,
             }
         )
-    insert_items(VendorComplianceLink, items, vendor)
+    return items
 
 
 def inventory_datacenters(vendor):
@@ -705,7 +696,7 @@ def inventory_datacenters(vendor):
         else:
             datacenter["status"] = "inactive"
 
-    insert_items(Datacenter, datacenters, vendor)
+    return datacenters
 
 
 def inventory_zones(vendor):
@@ -733,7 +724,7 @@ def inventory_zones(vendor):
         zones = executor.map(get_zones, vendor.datacenters, repeat(vendor))
     zones = list(chain.from_iterable(zones))
     vendor.progress_tracker.hide_task()
-    insert_items(Zone, zones, vendor)
+    return zones
 
 
 def inventory_servers(vendor):
@@ -775,7 +766,7 @@ def inventory_servers(vendor):
         servers.append(_make_server_from_instance_type(instance_type, vendor))
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
-    insert_items(Server, servers, vendor)
+    return servers
 
 
 def inventory_server_prices(vendor):
@@ -840,7 +831,7 @@ def inventory_server_prices(vendor):
         finally:
             vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
-    insert_items(ServerPrice, server_prices, vendor, prefix="ondemand")
+    return server_prices
 
 
 def inventory_server_prices_spot(vendor):
@@ -907,7 +898,7 @@ def inventory_server_prices_spot(vendor):
         )
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
-    insert_items(ServerPrice, server_prices, vendor, prefix="spot")
+    return server_prices
 
 
 storage_types = [
@@ -1005,7 +996,7 @@ def inventory_storages(vendor):
             }
         )
 
-    insert_items(Storage, storages, vendor)
+    return storages
 
 
 def inventory_storage_prices(vendor):
@@ -1051,7 +1042,7 @@ def inventory_storage_prices(vendor):
             vendor.progress_tracker.advance_task()
 
     vendor.progress_tracker.hide_task()
-    insert_items(StoragePrice, prices, vendor)
+    return prices
 
 
 def inventory_traffic_prices(vendor):
@@ -1095,7 +1086,7 @@ def inventory_traffic_prices(vendor):
             finally:
                 vendor.progress_tracker.advance_task()
         vendor.progress_tracker.hide_task()
-        insert_items(TrafficPrice, items, vendor)
+        return items
 
 
 def inventory_ipv4_prices(vendor):
@@ -1133,4 +1124,4 @@ def inventory_ipv4_prices(vendor):
         )
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
-    insert_items(Ipv4Price, items, vendor)
+    return items

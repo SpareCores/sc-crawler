@@ -3,18 +3,20 @@
 import logging
 from importlib import import_module
 from types import ModuleType
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 from pydantic import ImportString, PrivateAttr
 from sqlalchemy import ForeignKeyConstraint, update
 from sqlmodel import Relationship, Session, SQLModel
 
+from .insert import insert_items
 from .logger import VendorProgressTracker, log_start_end, logger
 from .table_bases import (
     ComplianceFrameworkBase,
     CountryBase,
     DatacenterBase,
     Ipv4PriceBase,
+    ScModel,
     ServerBase,
     ServerPriceBase,
     StorageBase,
@@ -201,29 +203,32 @@ class Vendor(VendorBase, table=True):
                 query = query.where(arg)
             self.session.execute(query.values(status=Status.INACTIVE))
 
+    def _inventory(self, table: ScModel, inventory: Callable):
+        """Mark all rows in a table inactive, then insert new/updated items."""
+        self.set_table_rows_inactive(table)
+        insert_items(table, inventory(self), self)
+
     @log_start_end
     def inventory_compliance_frameworks(self):
         """Get the vendor's all compliance frameworks."""
-        self.set_table_rows_inactive(VendorComplianceLink)
-        self._get_methods().inventory_compliance_frameworks(self)
+        self._inventory(
+            VendorComplianceLink, self._get_methods().inventory_compliance_frameworks
+        )
 
     @log_start_end
     def inventory_datacenters(self):
         """Get the vendor's all datacenters."""
-        self.set_table_rows_inactive(Datacenter)
-        self._get_methods().inventory_datacenters(self)
+        self._inventory(Datacenter, self._get_methods().inventory_datacenters)
 
     @log_start_end
     def inventory_zones(self):
         """Get all the zones in the vendor's datacenters."""
-        self.set_table_rows_inactive(Zone)
-        self._get_methods().inventory_zones(self)
+        self._inventory(Zone, self._get_methods().inventory_zones)
 
     @log_start_end
     def inventory_servers(self):
         """Get the vendor's all server types."""
-        self.set_table_rows_inactive(Server)
-        self._get_methods().inventory_servers(self)
+        self._inventory(Server, self._get_methods().inventory_servers)
 
     @log_start_end
     def inventory_server_prices(self):
@@ -231,7 +236,12 @@ class Vendor(VendorBase, table=True):
         self.set_table_rows_inactive(
             ServerPrice, ServerPrice.allocation != Allocation.SPOT
         )
-        self._get_methods().inventory_server_prices(self)
+        insert_items(
+            ServerPrice,
+            self._get_methods().inventory_server_prices(self),
+            self,
+            prefix="ondemand",
+        )
 
     @log_start_end
     def inventory_server_prices_spot(self):
@@ -239,27 +249,28 @@ class Vendor(VendorBase, table=True):
         self.set_table_rows_inactive(
             ServerPrice, ServerPrice.allocation == Allocation.SPOT
         )
-        self._get_methods().inventory_server_prices_spot(self)
+        insert_items(
+            ServerPrice,
+            self._get_methods().inventory_server_prices_spot(self),
+            self,
+            prefix="ondemand",
+        )
 
     @log_start_end
     def inventory_storages(self):
-        self.set_table_rows_inactive(Storage)
-        self._get_methods().inventory_storages(self)
+        self._inventory(Storage, self._get_methods().inventory_storages)
 
     @log_start_end
     def inventory_storage_prices(self):
-        self.set_table_rows_inactive(StoragePrice)
-        self._get_methods().inventory_storage_prices(self)
+        self._inventory(StoragePrice, self._get_methods().inventory_storage_prices)
 
     @log_start_end
     def inventory_traffic_prices(self):
-        self.set_table_rows_inactive(TrafficPrice)
-        self._get_methods().inventory_traffic_prices(self)
+        self._inventory(TrafficPrice, self._get_methods().inventory_traffic_prices)
 
     @log_start_end
     def inventory_ipv4_prices(self):
-        self.set_table_rows_inactive(Ipv4Price)
-        self._get_methods().inventory_ipv4_prices(self)
+        self._inventory(Ipv4Price, self._get_methods().inventory_ipv4_prices)
 
 
 class VendorComplianceLink(VendorComplianceLinkBase, table=True):
