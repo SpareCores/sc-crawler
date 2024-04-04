@@ -5,7 +5,9 @@ from hashlib import sha1
 from json import dumps
 from typing import List, Optional, Union
 
+from pydantic import HttpUrl
 from rich.progress import Progress
+from sqlalchemy import String
 from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import declared_attr
 from sqlmodel import JSON, Field, Session, SQLModel, select
@@ -314,14 +316,13 @@ class ComplianceFrameworkFields(ScModel):
             "outlining key features and characteristics for reference."
         )
     )
-    # TODO HttpUrl not supported by SQLModel
-    # TODO upload to cdn.sparecores.com (s3/cloudfront)
-    logo: Optional[str] = Field(
+    logo: Optional[HttpUrl] = Field(
+        sa_type=String(),
         default=None,
         description="Publicly accessible URL to the image of the Framework's logo.",
     )
-    # TODO HttpUrl not supported by SQLModel
-    homepage: Optional[str] = Field(
+    homepage: Optional[HttpUrl] = Field(
+        sa_type=String(),
         default=None,
         description="Public homepage with more information on the Framework.",
     )
@@ -334,14 +335,13 @@ class ComplianceFrameworkBase(
 
 
 class VendorFields(HasName, HasVendorIdPK):
-    # TODO HttpUrl not supported by SQLModel
-    # TODO upload to cdn.sparecores.com (s3/cloudfront)
-    logo: Optional[str] = Field(
+    logo: Optional[HttpUrl] = Field(
+        sa_type=String(),
         default=None,
         description="Publicly accessible URL to the image of the Vendor's logo.",
     )
-    # TODO HttpUrl not supported by SQLModel
-    homepage: Optional[str] = Field(
+    homepage: Optional[HttpUrl] = Field(
+        sa_type=String(),
         default=None,
         description="Public homepage of the Vendor.",
     )
@@ -367,9 +367,8 @@ class VendorFields(HasName, HasVendorIdPK):
     # https://dbpedia.org/ontology/Organisation
     founding_year: int = Field(description="4-digit year when the Vendor was founded.")
 
-    # TODO HttpUrl not supported by SQLModel
-    status_page: Optional[str] = Field(
-        default=None, description="Public status page of the Vendor."
+    status_page: Optional[HttpUrl] = Field(
+        sa_type=String(), default=None, description="Public status page of the Vendor."
     )
 
 
