@@ -23,7 +23,7 @@ from rich.progress import (
 )
 from rich.table import Table
 from rich.text import Text
-from sqlmodel import Session, SQLModel, create_engine, select
+from sqlmodel import Session, create_engine, select
 from typing_extensions import Annotated
 
 from . import vendors as vendors_module
