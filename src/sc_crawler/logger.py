@@ -114,7 +114,7 @@ class ProgressPanel:
             Group(
                 Panel(
                     self.metadata,
-                    title="SC Crawler v" + version("sc_crawler"),
+                    title="SC Crawler v" + version("sparecores-crawler"),
                     title_align="left",
                 ),
                 Panel(
