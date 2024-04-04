@@ -128,6 +128,8 @@ _instance_families = {
     "dl": "Deep Learning",
     "f": "FPGA",
     "g": "Graphics intensive",
+    # https://aws.amazon.com/ec2/instance-types/g6/
+    "gr": "Graphics intensive with a one to eight ratio of vCPU to memory",
     "h": "Cost-effective storage optimized with HDD",
     "hpc": "High performance computing",
     "i": "Storage optimized",
