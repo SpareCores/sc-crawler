@@ -15,7 +15,12 @@ class DynamicDocstrings(Extension):
         # only import ScModel-like objects
         if (
             str(obj.relative_filepath)
-            not in ["src/sc_crawler/tables.py", "src/sc_crawler/tables_scd.py"]
+            not in [
+                "src/sc_crawler/tables.py",
+                "sc_crawler/tables.py",
+                "src/sc_crawler/tables_scd.py",
+                "sc_crawler/tables_scd.py",
+            ]
             or not obj.is_class
         ):
             return
