@@ -42,6 +42,7 @@ mkdocs = [
   "mkdocs-material[imaging]==9.5.13", "mkdocs-material-extensions",
   "mkdocs-autorefs", "mkdocs-gen-files", "mkdocs-literate-nav", "mkdocs-section-index",
   "mkdocstrings[python]>=0.18",
+  "griffe", "griffe-inherited-docstrings",
 ]
 testing = ["pytest", "sparecores-crawler[mkdocs]"]
 aws = ["boto3"]
