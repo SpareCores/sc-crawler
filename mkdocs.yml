@@ -74,8 +74,8 @@ plugins:
           summary: true
           extensions:
           - scripts/dynamic_docstrings.py:DynamicDocstrings
-- social:
-    enabled: !ENV [CI, false]
+# - social:
+#     enabled: !ENV [CI, false]
 
 markdown_extensions:
   - toc:
