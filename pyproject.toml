@@ -10,7 +10,6 @@ dependencies = [
   "cachier",
   "pydantic",
   "pydantic_extra_types",
-  "pycountry",
   "rich",
   "sqlmodel",
   "typer",
