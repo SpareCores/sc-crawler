@@ -393,19 +393,12 @@ class VendorComplianceLinkBase(MetaColumns, VendorComplianceLinkFields):
     pass
 
 
-class DatacenterFields(HasName, HasDatacenterIdPK):
+class DatacenterFields(HasName, HasDatacenterIdPK, HasVendorPKFK):
     aliases: List[str] = Field(
         default=[],
         sa_type=JSON,
         description="List of other commonly used names for the same Datacenter.",
     )
-
-    vendor_id: str = Field(
-        foreign_key="vendor",
-        primary_key=True,
-        description="Reference to the Vendor.",
-    )
-
     country_id: str = Field(
         foreign_key="country",
         description="Reference to the Country, where the Datacenter is located.",
@@ -437,11 +430,11 @@ class DatacenterBase(MetaColumns, DatacenterFields):
     pass
 
 
-class ZoneBase(MetaColumns, HasName, HasDatacenterPK, HasVendorPKFK, HasZoneIdPK):
+class ZoneBase(MetaColumns, HasName, HasZoneIdPK, HasDatacenterPK, HasVendorPKFK):
     pass
 
 
-class StorageFields(HasDescription, HasName, HasVendorPKFK, HasStorageIdPK):
+class StorageFields(HasDescription, HasName, HasStorageIdPK, HasVendorPKFK):
     storage_type: StorageType = Field(
         description="High-level category of the storage, e.g. HDD or SDD."
     )
@@ -463,12 +456,7 @@ class StorageBase(MetaColumns, StorageFields):
     pass
 
 
-class ServerFields(HasServerIdPK):
-    vendor_id: str = Field(
-        foreign_key="vendor",
-        primary_key=True,
-        description="Reference to the Vendor.",
-    )
+class ServerFields(HasServerIdPK, HasVendorPKFK):
     name: str = Field(
         default=None,
         description="Human-friendly name or short description.",
