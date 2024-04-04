@@ -85,8 +85,6 @@ def schema(
         typer.echo(str(sql.compile(dialect=engine.dialect)) + ";")
 
     engine = create_engine(url, strategy="mock", executor=metadata_dump)
-    # SQLModel.metadata.create_all(engine)
-
     for table in tables:
         table.__table__.create(engine)
     if scd:
@@ -426,7 +424,8 @@ def pull(
     records = [r for r in include_records if r not in exclude_records]
 
     engine = create_engine(connection_string, json_serializer=custom_serializer)
-    SQLModel.metadata.create_all(engine)
+    for table in tables:
+        table.__table__.create(engine, checkfirst=True)
 
     pbars = ProgressPanel()
     with Live(pbars.panels):
