@@ -317,12 +317,12 @@ class ComplianceFrameworkFields(ScModel):
         )
     )
     logo: Optional[HttpUrl] = Field(
-        sa_type=String(),
+        sa_type=String(256),
         default=None,
         description="Publicly accessible URL to the image of the Framework's logo.",
     )
     homepage: Optional[HttpUrl] = Field(
-        sa_type=String(),
+        sa_type=String(256),
         default=None,
         description="Public homepage with more information on the Framework.",
     )
@@ -336,12 +336,12 @@ class ComplianceFrameworkBase(
 
 class VendorFields(HasName, HasVendorIdPK):
     logo: Optional[HttpUrl] = Field(
-        sa_type=String(),
+        sa_type=String(256),
         default=None,
         description="Publicly accessible URL to the image of the Vendor's logo.",
     )
     homepage: Optional[HttpUrl] = Field(
-        sa_type=String(),
+        sa_type=String(256),
         default=None,
         description="Public homepage of the Vendor.",
     )
@@ -368,7 +368,9 @@ class VendorFields(HasName, HasVendorIdPK):
     founding_year: int = Field(description="4-digit year when the Vendor was founded.")
 
     status_page: Optional[HttpUrl] = Field(
-        sa_type=String(), default=None, description="Public status page of the Vendor."
+        sa_type=String(256),
+        default=None,
+        description="Public status page of the Vendor.",
     )
 
 
