@@ -1,14 +1,17 @@
 from logging import DEBUG
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Optional
 
+from pydantic import BaseModel
 from rich.progress import Progress
 from sqlalchemy.dialects.postgresql import insert as insert_postgresql
 from sqlalchemy.dialects.sqlite import insert as insert_sqlite
 from sqlmodel import Session, SQLModel
 
-from .schemas import Vendor
-from .str import space_after
+from .str_utils import space_after
 from .utils import chunk_list, is_postgresql, is_sqlite
+
+if TYPE_CHECKING:
+    from .tables import Vendor
 
 
 def can_bulk_insert(session: Session) -> bool:
@@ -17,12 +20,12 @@ def can_bulk_insert(session: Session) -> bool:
 
 
 def validate_items(
-    model: SQLModel,
+    model: BaseModel,
     items: List[dict],
-    vendor: Optional[Vendor] = None,
+    vendor: Optional["Vendor"] = None,
     prefix: str = "",
 ) -> List[dict]:
-    """Validates a list of items against a SQLModel definition.
+    """Validates a list of items against a [pydantic.BaseModel][] definition.
 
     Args:
         model: An SQLModel model to be used for validation.
@@ -33,14 +36,14 @@ def validate_items(
 
     Returns:
         List of validated dicts in the same order. Note that missing fields
-        has been filled in with default values (needed for bulk inserts).
+            has been filled in with default values (needed for bulk inserts).
     """
     model_name = model.get_table_name()
     # use the Pydantic data model for validation instead of the table definition
     schema = model.__validator__
     if vendor:
         vendor.progress_tracker.start_task(
-            name=f"Validating {space_after(prefix)}{model_name}(s)", n=len(items)
+            name=f"Validating {space_after(prefix)}{model_name}(s)", total=len(items)
         )
     for i, item in enumerate(items):
         items[i] = schema.model_validate(item).model_dump()
@@ -59,12 +62,12 @@ def validate_items(
 def bulk_insert_items(
     model: SQLModel,
     items: List[dict],
-    vendor: Optional[Vendor] = None,
+    vendor: Optional["Vendor"] = None,
     session: Optional[Session] = None,
     progress: Optional[Progress] = None,
     prefix: str = "",
 ):
-    """Bulk inserts items into a SQLModel table with ON CONFLICT update.
+    """Bulk inserts items into a SQLModel table with `ON CONFLICT` update.
 
     Args:
         model: An SQLModel table definition with primary key(s).
@@ -87,7 +90,7 @@ def bulk_insert_items(
         )
     elif vendor:
         pid = vendor.progress_tracker.start_task(
-            name=f"Inserting {space_after(prefix)}{model_name}(s)", n=len(items)
+            name=f"Inserting {space_after(prefix)}{model_name}(s)", total=len(items)
         )
         progress = vendor.progress_tracker.tasks
     # need to split list into smaller chunks to avoid "too many SQL variables"
@@ -116,7 +119,7 @@ def bulk_insert_items(
 def insert_items(
     model: SQLModel,
     items: List[dict],
-    vendor: Optional[Vendor] = None,
+    vendor: Optional["Vendor"] = None,
     session: Optional[Session] = None,
     progress: Optional[Progress] = None,
     prefix: str = "",
@@ -146,7 +149,7 @@ def insert_items(
     else:
         if vendor:
             vendor.progress_tracker.start_task(
-                name=f"Syncing {space_after(prefix)}{model_name}(s)", n=len(items)
+                name=f"Syncing {space_after(prefix)}{model_name}(s)", total=len(items)
             )
         if progress:
             pid = progress.add_task(

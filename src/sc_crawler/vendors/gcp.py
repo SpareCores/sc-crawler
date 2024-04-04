@@ -1,38 +1,38 @@
 def inventory_compliance_frameworks(vendor):
-    pass
+    return []
 
 
 def inventory_datacenters(vendor):
-    pass
+    return []
 
 
 def inventory_zones(vendor):
-    pass
+    return []
 
 
 def inventory_servers(vendor):
-    pass
+    return []
 
 
 def inventory_server_prices(vendor):
-    pass
+    return []
 
 
 def inventory_server_prices_spot(vendor):
-    pass
+    return []
 
 
 def inventory_storages(vendor):
-    pass
+    return []
 
 
 def inventory_storage_prices(vendor):
-    pass
+    return []
 
 
 def inventory_traffic_prices(vendor):
-    pass
+    return []
 
 
 def inventory_ipv4_prices(vendor):
-    pass
+    return []

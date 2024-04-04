@@ -139,19 +139,28 @@ class ProgressPanel:
 
 
 if TYPE_CHECKING:
-    from .schemas import Vendor
+    from .tables import Vendor
 
 
 class VendorProgressTracker:
-    """Tracing the progress of the vendor's inventory."""
+    """Tracking the progress of the vendor's inventory updates."""
 
     vendor: Vendor
+    """A [sc_crawler.tables.Vendor][] instance for which tracking progress."""
     progress_panel: ProgressPanel
-    # reexport Progress attrubutes of the ProgressPanel
+    """
+    A `rich` panel including progress bars.
+    Should not be used directly, see the `vendors`, `tasks` and `metadata` attributes.
+    """
+    # reexport Progress attributes of the ProgressPanel
     vendors: Progress
+    """[rich.progress.Progress][] for tracking the inventory steps of the vendor."""
     tasks: Progress
-    metadata: Progress
+    """[rich.progress.Progress][] for tracking the lower-level tasks within each step."""
+    metadata: Text
+    """[rich.text.Text][] metadata, e.g. data sources and records to be udpated."""
     task_ids: List[TaskID] = []
+    """List of active task ids for the current `vendor`."""
 
     def __init__(self, vendor: Vendor, progress_panel: ProgressPanel):
         self.vendor = vendor
@@ -160,24 +169,24 @@ class VendorProgressTracker:
         self.tasks = progress_panel.tasks
         self.metadata = progress_panel.metadata
 
-    def start_vendor(self, n: int) -> TaskID:
+    def start_vendor(self, total: int) -> TaskID:
         """Starts a progress bar for the Vendor's steps.
 
         Args:
-            n: Overall number of steps to show in the progress bar.
+            total: Overall number of steps to show in the progress bar.
 
         Returns:
             TaskId: The progress bar's identifier to be referenced in future updates.
         """
-        return self.vendors.add_task(self.vendor.name, total=n, step="")
+        return self.vendors.add_task(self.vendor.name, total=total, step="")
 
-    def advance_vendor(self, by: int = 1) -> None:
+    def advance_vendor(self, advance: int = 1) -> None:
         """Increment the number of finished steps.
 
         Args:
-            by: Number of steps to advance.
+            advance: Number of steps to advance.
         """
-        self.vendors.update(self.vendors.task_ids[-1], advance=by)
+        self.vendors.update(self.vendors.task_ids[-1], advance=advance)
 
     def update_vendor(self, **kwargs) -> None:
         """Update the vendor's progress bar.
@@ -187,7 +196,7 @@ class VendorProgressTracker:
         """
         self.vendors.update(self.vendors.task_ids[-1], **kwargs)
 
-    def start_task(self, name: str, n: int) -> TaskID:
+    def start_task(self, name: str, total: int) -> TaskID:
         """Starts a progress bar in the list of current jobs.
 
         Besides returning the `TaskID`, it will also register in `self.tasks.task_ids`
@@ -196,13 +205,13 @@ class VendorProgressTracker:
 
         Args:
             name: Name to show in front of the progress bar. Will be prefixed by Vendor's name.
-            n: Overall number of steps to show in the progress bar.
+            total: Overall number of steps to show in the progress bar.
 
         Returns:
             TaskId: The progress bar's identifier to be referenced in future updates.
         """
         self.task_ids.append(
-            self.tasks.add_task(self.vendor.name + ": " + name, total=n)
+            self.tasks.add_task(self.vendor.name + ": " + name, total=total)
         )
         return self.last_task()
 
@@ -210,16 +219,16 @@ class VendorProgressTracker:
         """Returh the last registered TaskID."""
         return self.task_ids[-1]
 
-    def advance_task(self, task_id: Optional[TaskID] = None, by: int = 1):
+    def advance_task(self, task_id: Optional[TaskID] = None, advance: int = 1):
         """Increment the number of finished steps.
 
         Args:
             task_id: The progress bar's identifier returned by `start_task`.
                 Defaults to the most recently created task.
-            by: Number of steps to advance.
+            advance: Number of steps to advance.
         """
 
-        self.tasks.update(task_id or self.last_task(), advance=by)
+        self.tasks.update(task_id or self.last_task(), advance=advance)
 
     def update_task(self, task_id: Optional[TaskID] = None, **kwargs) -> None:
         """Update the task's progress bar.
@@ -229,10 +238,9 @@ class VendorProgressTracker:
                 Defaults to the most recently created task.
 
         Keyword Args:
-            step: Name of the currently running step to be shown on the progress bar.
+            step (str): Name of the currently running step to be shown on the progress bar.
 
-        See `Progress.update` for further keyword arguments:
-        https://rich.readthedocs.io/en/stable/reference/progress.html#rich.progress.Progress.update
+        See [`rich.progress.Progress.update`][] for further keyword arguments.
         """
         self.tasks.update(task_id or self.last_task(), **kwargs)
 

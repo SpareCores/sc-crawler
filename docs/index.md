@@ -1,16 +1,5 @@
 ## Spare Cores Crawler
 
-!!! note annotate
-
-    This repository is still in alpha phase(1), and is NOT intended for any
-    public use yet.
-
-    Please check back by the end of Q1 2024, or contact us (via a
-    [GitHub ticket](https://github.com/SpareCores/sc-crawler/issues/new))
-    if you are interested in alpha/beta testing.
-
-1. "The software has the minimal required set of features to be useful. The architecture of the software is clear." Source: [Stages of Software Development](https://martin-thoma.com/software-development-stages/#3-alpha)
-
 SC Crawler is a Python package to pull and standardize data on cloud
 compute resources, with tooling to help organize and update the
 collected data into databases.
@@ -33,11 +22,11 @@ sc-crawler --help
 Generate `CREATE TABLE` statements e.g. for a MySQL database:
 
 ```shell
-sc-crawler schema mysql
+sc-crawler schema --dialect mysql
 ```
 
-See `sc-crawler schema --help` for all supported database engines,
-mainly thanks to SQLAlchemy.
+See `sc-crawler schema --help` for all supported database engines
+(mainly thanks to SQLAlchemy), and other options.
 
 ### Collect data
 
@@ -74,7 +63,7 @@ Note that you need specific IAM permissions to be able to run `sc-crawler` at th
 Fetch and standardize datacenter, zone, servers, traffic, storage etc data from AWS into a single SQLite file:
 
 ```shell
-sc-crawler pull --include-vendor aws
+sc-crawler pull --connection-string sqlite:///sc-data-all.db --include-vendor aws
 ```
 
 Such an up-to-date SQLite database is managed by the Spare Cores team in the
@@ -87,7 +76,16 @@ Database content can be hashed via the `sc-crawler hash` command. It will provid
 a single SHA1 hash value based on all records of all SC Crawler tables, which is
 useful to track if database content has changed.
 
+```shell
+$ sc-crawler hash --connection-string sqlite:///sc-data-all.db
+b13b9b06cfb917b591851d18c824037914564418
+```
+
 For advanced usage, check [sc_crawler.utils.hash_database][] to hash tables or rows.
+
+### Copy and sync data
+
+To copy data from a database to another one or sync data between two databases, you can use the `copy` and `sync` subcommands, which also support feeding SCD tables.
 
 ## ORM
 
@@ -97,10 +95,10 @@ database, and you can also use the defined schemas and models to actually read/f
 a previously pulled DB. Quick examples:
 
 ```py hl_lines="6"
-from sc_crawler.schemas import Server
+from sc_crawler.tables import Server
 from sqlmodel import create_engine, Session, select
 
-engine = create_engine("sqlite:///sc_crawler.db") # (1)!
+engine = create_engine("sqlite:///sc-data-all.db") # (1)!
 session = Session(engine) # (2)!
 server = session.exec(select(Server).where(Server.server_id == 'trn1.32xlarge')).one() # (3)!
 
@@ -111,6 +109,6 @@ pp(server.vendor) # (5)!
 
 1. Creating a [connection (pool)][sqlalchemy.create_engine] to the SQLite database.
 2. Define an [in-memory representation of the database][sqlalchemy.orm.Session] for the ORM objects.
-3. Query the database for the [Server][sc_crawler.schemas.Server] with the `trn1.32xlarge` id.
+3. Query the database for the [Server][sc_crawler.tables.Server] with the `trn1.32xlarge` id.
 4. Use `rich` to pretty-print the objects.
-5. The `vendor` is a [Vendor][sc_crawler.schemas.Vendor] relationship of the [Server][sc_crawler.schemas.Server], in this case being [aws][sc_crawler.vendors.aws].
+5. The `vendor` is a [Vendor][sc_crawler.tables.Vendor] relationship of the [Server][sc_crawler.tables.Server], in this case being [aws][sc_crawler.vendors.aws].

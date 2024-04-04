@@ -1,4 +1,4 @@
-from .schemas import ComplianceFramework, Country
+from .tables import ComplianceFramework, Country
 
 # country codes: https://en.wikipedia.org/wiki/ISO_3166-1#Codes
 # mapping: https://github.com/manumanoj0010/countrydetails/blob/master/Countrydetails/data/continents.json  # noqa: E501
@@ -31,15 +31,15 @@ country_continent_mapping = {
 }
 
 
-countries = {
+countries: dict = {
     k: Country(country_id=k, continent=v) for k, v in country_continent_mapping.items()
 }
-
+"""Dictionary of [sc_crawler.tables.Country][] instances keyed by the `country_id`."""
 
 # ##############################################################################
 
 
-compliance_frameworks = {
+compliance_frameworks: dict = {
     "hipaa": ComplianceFramework(
         compliance_framework_id="hipaa",
         name="The Health Insurance Portability and Accountability Act",
@@ -63,3 +63,4 @@ compliance_frameworks = {
     # ccpa
     # csa
 }
+"""Dictionary of [sc_crawler.tables.ComplianceFramework][] instances keyed by the `compliance_framework_id`."""

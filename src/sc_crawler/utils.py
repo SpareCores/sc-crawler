@@ -7,7 +7,7 @@ from typing import Any, Dict, Iterable, List, Optional, Union
 from rich.progress import Progress
 from sqlmodel import Session, create_engine, select
 
-from .schemas import ScModel, tables
+from .table_bases import ScModel
 
 
 def jsoned_hash(*args, **kwargs):
@@ -49,10 +49,13 @@ def hash_database(
     Returns:
         A single SHA1 hash or dict of hashes, depending on the level.
     """
+    from .tables import tables
+
     if progress:
         tables_task_id = progress.add_task("Hashing tables", total=len(tables))
 
     engine = create_engine(connection_string)
+
     with Session(engine) as session:
         hashes = {}
         for table in tables:
@@ -91,7 +94,7 @@ def scmodels_to_dict(scmodels: List[ScModel], keys: List[str]) -> Dict[str, ScMo
 
     Args:
         scmodels: list of ScModel instances
-        key: a list of strings referring to ScModel fields to be used as keys
+        keys: a list of strings referring to ScModel fields to be used as keys
 
     Examples:
         >>> from sc_crawler.vendors import aws
@@ -128,6 +131,8 @@ def float_inf_to_str(x: float) -> Union[float, str]:
 
 def table_name_to_model(table_name: str) -> ScModel:
     """Return the ScModel schema for a table name."""
+    from .tables import tables
+
     return [t for t in tables if t.get_table_name() == table_name][0]
 
 

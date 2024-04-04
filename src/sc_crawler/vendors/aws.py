@@ -11,29 +11,22 @@ import boto3
 from botocore.exceptions import ClientError
 from cachier import cachier, set_default_params
 
-from ..insert import insert_items
 from ..logger import logger
-from ..schemas import (
+from ..str_utils import extract_last_number
+from ..table_fields import (
     Allocation,
     CpuAllocation,
-    Datacenter,
     Disk,
     Gpu,
-    Ipv4Price,
     PriceTier,
     PriceUnit,
-    Server,
-    ServerPrice,
-    Storage,
-    StoragePrice,
     StorageType,
     TrafficDirection,
-    TrafficPrice,
-    Vendor,
-    VendorComplianceLink,
-    Zone,
 )
-from ..str import extract_last_number
+from ..tables import (
+    Datacenter,
+    Vendor,
+)
 from ..utils import float_inf_to_str, jsoned_hash, scmodels_to_dict
 
 # disable caching by default
@@ -260,7 +253,7 @@ def _get_gpus_of_instance_type(instance_type):
     def to_gpu(gpu):
         return Gpu(
             manufacturer=gpu["Manufacturer"],
-            name=gpu["Name"],
+            model=gpu["Name"],
             memory=gpu["MemoryInfo"]["SizeInMiB"],
         )
 
@@ -351,11 +344,28 @@ def _extract_ondemand_prices(terms) -> Tuple[List[dict], str]:
     return (tiers, currency)
 
 
+def _search_storage(
+    volume_type: str, vendor: Optional[Vendor] = None, location: str = None
+) -> List[dict]:
+    """Search for storage types with optional progress bar updates and location filter."""
+    filters = {"volumeType": volume_type}
+    if location:
+        filters["location"] = location
+    volumes = _boto_get_products(
+        service_code="AmazonEC2",
+        filters=filters,
+    )
+    if vendor:
+        vendor.progress_tracker.advance_task()
+    return volumes
+
+
 # ##############################################################################
 # Public methods to fetch data
 
 
 def inventory_compliance_frameworks(vendor):
+    """Manual list of compliance frameworks known for AWS."""
     compliance_frameworks = ["hipaa", "soc2t2"]
     items = []
     for compliance_framework in compliance_frameworks:
@@ -365,15 +375,16 @@ def inventory_compliance_frameworks(vendor):
                 "compliance_framework_id": compliance_framework,
             }
         )
-    insert_items(VendorComplianceLink, items, vendor)
+    return items
 
 
 def inventory_datacenters(vendor):
-    """List all available AWS datacenters.
+    """List all available AWS datacenters via `boto3` calls.
 
     Some data sources are not available from APIs, and were collected manually:
-    - launch date: https://aws.amazon.com/about-aws/global-infrastructure/regions_az/
-    - energy source: https://sustainability.aboutamazon.com/products-services/the-cloud?energyType=true#renewable-energy
+
+    - launch date: <https://aws.amazon.com/about-aws/global-infrastructure/regions_az/>
+    - energy source: <https://sustainability.aboutamazon.com/products-services/the-cloud?energyType=true#renewable-energy>
     """  # noqa: E501
     datacenters = [
         {
@@ -685,13 +696,13 @@ def inventory_datacenters(vendor):
         else:
             datacenter["status"] = "inactive"
 
-    insert_items(Datacenter, datacenters, vendor)
+    return datacenters
 
 
 def inventory_zones(vendor):
-    """List all available AWS availability zones."""
+    """List all available AWS availability zones via `boto3` calls."""
     vendor.progress_tracker.start_task(
-        name="Scanning datacenter(s) for zone(s)", n=len(vendor.datacenters)
+        name="Scanning datacenter(s) for zone(s)", total=len(vendor.datacenters)
     )
 
     def get_zones(datacenter: Datacenter, vendor: Vendor) -> List[dict]:
@@ -713,14 +724,15 @@ def inventory_zones(vendor):
         zones = executor.map(get_zones, vendor.datacenters, repeat(vendor))
     zones = list(chain.from_iterable(zones))
     vendor.progress_tracker.hide_task()
-    insert_items(Zone, zones, vendor)
+    return zones
 
 
 def inventory_servers(vendor):
+    """List all available AWS instance types in all regions via `boto3` calls."""
     # TODO drop this in favor of pricing.get_products, as it has info e.g. on instanceFamily
     #      although other fields are messier (e.g. extract memory from string)
     vendor.progress_tracker.start_task(
-        name="Scanning datacenter(s) for server(s)", n=len(vendor.datacenters)
+        name="Scanning datacenter(s) for server(s)", total=len(vendor.datacenters)
     )
 
     def search_servers(datacenter: Datacenter, vendor: Optional[Vendor]) -> List[dict]:
@@ -747,19 +759,20 @@ def inventory_servers(vendor):
     vendor.progress_tracker.hide_task()
 
     vendor.progress_tracker.start_task(
-        name="Preprocessing server(s)", n=len(instance_types)
+        name="Preprocessing server(s)", total=len(instance_types)
     )
     servers = []
     for instance_type in instance_types:
         servers.append(_make_server_from_instance_type(instance_type, vendor))
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
-    insert_items(Server, servers, vendor)
+    return servers
 
 
 def inventory_server_prices(vendor):
+    """List all on-demand instance prices in all regions via `boto3` calls."""
     vendor.progress_tracker.start_task(
-        name="Searching for ondemand server_price(s)", n=None
+        name="Searching for ondemand server_price(s)", total=None
     )
     products = _boto_get_products(
         service_code="AmazonEC2",
@@ -784,7 +797,7 @@ def inventory_server_prices(vendor):
 
     server_prices = []
     vendor.progress_tracker.start_task(
-        name="Preprocess ondemand server_price(s)", n=len(products)
+        name="Preprocess ondemand server_price(s)", total=len(products)
     )
     for product in products:
         try:
@@ -818,12 +831,14 @@ def inventory_server_prices(vendor):
         finally:
             vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
-    insert_items(ServerPrice, server_prices, vendor, prefix="ondemand")
+    return server_prices
 
 
 def inventory_server_prices_spot(vendor):
+    """List all spot instance prices in all availability zones via `boto3` calls."""
     vendor.progress_tracker.start_task(
-        name="Scanning datacenters for spot server_price(s)", n=len(vendor.datacenters)
+        name="Scanning datacenters for spot server_price(s)",
+        total=len(vendor.datacenters),
     )
 
     def get_spot_prices(datacenter: Datacenter, vendor: Vendor) -> List[dict]:
@@ -853,7 +868,7 @@ def inventory_server_prices_spot(vendor):
 
     server_prices = []
     vendor.progress_tracker.start_task(
-        name="Preprocess spot server_price(s)", n=len(products)
+        name="Preprocess spot server_price(s)", total=len(products)
     )
     for product in products:
         try:
@@ -883,7 +898,7 @@ def inventory_server_prices_spot(vendor):
         )
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
-    insert_items(ServerPrice, server_prices, vendor, prefix="spot")
+    return server_prices
 
 
 storage_types = [
@@ -932,31 +947,16 @@ storage_manual_data = {
 }
 
 
-def search_storage(
-    volume_type: str, vendor: Optional[Vendor] = None, location: str = None
-) -> List[dict]:
-    """Search for storage types with optional progress bar updates and location filter."""
-    filters = {"volumeType": volume_type}
-    if location:
-        filters["location"] = location
-    volumes = _boto_get_products(
-        service_code="AmazonEC2",
-        filters=filters,
-    )
-    if vendor:
-        vendor.progress_tracker.advance_task()
-    return volumes
-
-
 def inventory_storages(vendor):
+    """List all storage types via `boto3` calls."""
     vendor.progress_tracker.start_task(
-        name="Searching for storages", n=len(storage_manual_data)
+        name="Searching for storages", total=len(storage_manual_data)
     )
 
     # look up all volume types in us-east-1
     with ThreadPoolExecutor(max_workers=8) as executor:
         products = executor.map(
-            search_storage,
+            _search_storage,
             storage_types,
             repeat(vendor),
             repeat("US East (N. Virginia)"),
@@ -996,16 +996,17 @@ def inventory_storages(vendor):
             }
         )
 
-    insert_items(Storage, storages, vendor)
+    return storages
 
 
 def inventory_storage_prices(vendor):
+    """List all storage prices in all regions via `boto3` calls."""
     vendor.progress_tracker.start_task(
-        name="Searching for storage_price(s)", n=len(storage_manual_data)
+        name="Searching for storage_price(s)", total=len(storage_manual_data)
     )
     with ThreadPoolExecutor(max_workers=8) as executor:
         products = executor.map(
-            search_storage,
+            _search_storage,
             storage_types,
             repeat(vendor),
         )
@@ -1017,7 +1018,7 @@ def inventory_storage_prices(vendor):
     datacenters = scmodels_to_dict(vendor.datacenters, keys=["name", "aliases"])
 
     vendor.progress_tracker.start_task(
-        name="Preprocessing storage_price(s)", n=len(products)
+        name="Preprocessing storage_price(s)", total=len(products)
     )
     prices = []
     for product in products:
@@ -1041,15 +1042,16 @@ def inventory_storage_prices(vendor):
             vendor.progress_tracker.advance_task()
 
     vendor.progress_tracker.hide_task()
-    insert_items(StoragePrice, prices, vendor)
+    return prices
 
 
 def inventory_traffic_prices(vendor):
+    """List all inbound and outbound traffic prices in all regions via `boto3` calls."""
     datacenters = scmodels_to_dict(vendor.datacenters, keys=["name", "aliases"])
     for direction in list(TrafficDirection):
         loc_dir = "toLocation" if direction == TrafficDirection.IN else "fromLocation"
         vendor.progress_tracker.start_task(
-            name=f"Searching for {direction.value} traffic_price(s)", n=None
+            name=f"Searching for {direction.value} traffic_price(s)", total=None
         )
         products = _boto_get_products(
             service_code="AWSDataTransfer",
@@ -1084,11 +1086,12 @@ def inventory_traffic_prices(vendor):
             finally:
                 vendor.progress_tracker.advance_task()
         vendor.progress_tracker.hide_task()
-        insert_items(TrafficPrice, items, vendor)
+        return items
 
 
 def inventory_ipv4_prices(vendor):
-    vendor.progress_tracker.start_task(name="Searching for ipv4_price(s)", n=None)
+    """List IPV4 prices in all regions via `boto3` calls."""
+    vendor.progress_tracker.start_task(name="Searching for ipv4_price(s)", total=None)
     products = _boto_get_products(
         service_code="AmazonVPC",
         filters={
@@ -1121,4 +1124,4 @@ def inventory_ipv4_prices(vendor):
         )
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
-    insert_items(Ipv4Price, items, vendor)
+    return items

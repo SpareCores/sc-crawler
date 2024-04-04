@@ -2,19 +2,31 @@ from re import search, sub
 from typing import Union
 
 
-def wrap(text: str = "", before: str = " ", after: str = " ") -> str:
-    """Wrap string between before/after strings (default to spaces) if not empty."""
+def wrap(text: str, before: str = " ", after: str = " ") -> str:
+    """Wrap string between before/after strings (default to spaces) if not empty.
+
+    Args:
+        text: A string.
+        before: Characters to be added before the `text`.
+        after: Characters to be added after the `text`.
+    """
     return text if text == "" else before + text + after
 
 
-def space_after(text: str = ""):
+def space_after(text: str) -> str:
     """Add space after string if not empty."""
     return wrap(text, before="")
 
 
 # https://www.w3resource.com/python-exercises/string/python-data-type-string-exercise-97.php
-def snake_case(text):
+def snake_case(text: str) -> str:
     """Convert CamelCase to snake_case.
+
+    Args:
+        text: A CamelCase text.
+
+    Returns:
+        snake_case version of the text.
 
     Examples:
         >>> snake_case('DescriptionToComment')
@@ -24,11 +36,17 @@ def snake_case(text):
 
 
 # https://www.tutorialspoint.com/python-program-to-convert-singular-to-plural
-def plural(text):
+def plural(text: str) -> str:
     """Super basic implementation of pluralizing an English word.
 
     Note that grammar exceptions are not handled, so better to use a
     proper NLP method for real use-cases.
+
+    Args:
+        text: A singular noun.
+
+    Returns:
+        Plural form of the noun.
 
     Examples:
         >>> plural('dog')

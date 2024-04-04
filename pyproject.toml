@@ -3,8 +3,8 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "sc-crawler"
-version = "0.0.1"
+name = "sparecores-crawler"
+version = "0.1.0"
 requires-python = ">= 3.7"
 dependencies = [
   "cachier",
@@ -41,10 +41,10 @@ mkdocs = [
   "mkdocs", "mkdocs-material[imaging]", "mkdocstrings[python]>=0.18",
   "mkdocs-gen-files", "mkdocs-literate-nav", "mkdocs-section-index",
 ]
-testing = ["pytest", "sc-crawler[mkdocs]"]
+testing = ["pytest", "sparecores-crawler[mkdocs]"]
 aws = ["boto3"]
-vendors = ["sc-crawler[aws]"]
-all = ["sc-crawler[testing]", "sc-crawler[vendors]"]
+vendors = ["sparecores-crawler[aws]"]
+all = ["sparecores-crawler[testing]", "sparecores-crawler[vendors]"]
 
 [project.scripts]
 sc-crawler = "sc_crawler.cli:cli"

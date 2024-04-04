@@ -69,6 +69,8 @@ plugins:
           show_symbol_type_heading: true
           show_symbol_type_toc: true
           signature_crossrefs: true
+          members_order: source
+          group_by_category: false
           summary: true
           extensions:
           - scripts/dynamic_docstrings.py:DynamicDocstrings
