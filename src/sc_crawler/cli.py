@@ -316,7 +316,7 @@ def sync(
                     ):
                         model = table_name_to_model(table_name)
                         pks = model.get_columns()["primary_keys"]
-                        log_file.write(f"\n# {table_name}\n\n")
+                        log_file.write(f"\n### {table_name}\n\n")
                         for action_types in ["new", "update", "deleted"]:
                             for item in actions[action_types][table_name]:
                                 identifier = "/".join([item[key] for key in pks])
