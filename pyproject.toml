@@ -32,8 +32,9 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/SpareCores/sc-crawler"
-Issues = "https://github.com/SpareCores/sc-crawler/issues"
+repository = "https://github.com/SpareCores/sc-crawler"
+issues = "https://github.com/SpareCores/sc-crawler/issues"
+documentation = "https://sparecores.github.io/sc-crawler/"
 
 [project.optional-dependencies]
 mkdocs = [
