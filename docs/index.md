@@ -95,10 +95,10 @@ To copy data from a database to another one or sync data between two databases, 
 <script>
   window.onload = function(){
     AsciinemaPlayer.create(
-      '/sc-crawler-pull.cast',
+      'sc-crawler-pull.cast',
       document.getElementById('asciicast-sc-crawler-pull-demo'));
     AsciinemaPlayer.create(
-      '/sc-crawler-sync.cast',
+      'sc-crawler-sync.cast',
       document.getElementById('asciicast-sc-crawler-sync-demo'));
 }
 </script>
