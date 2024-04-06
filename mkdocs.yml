@@ -40,6 +40,10 @@ theme:
 
 extra_css:
   - stylesheets/extra.css
+  - asciinema-player/asciinema-player.css
+
+extra_javascript:
+  - asciinema-player/asciinema-player.min.js
 
 plugins:
 - search

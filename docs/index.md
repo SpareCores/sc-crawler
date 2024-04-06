@@ -70,6 +70,10 @@ Such an up-to-date SQLite database is managed by the Spare Cores team in the
 [SC Data](https://github.com/SpareCores/sc-data) repository, or you can also
 find it at <https://sc-data-public-40e9d310.s3.amazonaws.com/sc-data-all.db.bz2>.
 
+Example run:
+
+<div id="asciicast-sc-crawler-pull-demo" style="z-index: 1; position: relative; max-width: 80%;"></div>
+
 ### Hash data
 
 Database content can be hashed via the `sc-crawler hash` command. It will provide
@@ -86,6 +90,18 @@ For advanced usage, check [sc_crawler.utils.hash_database][] to hash tables or r
 ### Copy and sync data
 
 To copy data from a database to another one or sync data between two databases, you can use the `copy` and `sync` subcommands, which also support feeding SCD tables.
+
+<div id="asciicast-sc-crawler-sync-demo" style="z-index: 1; position: relative; max-width: 80%;"></div>
+<script>
+  window.onload = function(){
+    AsciinemaPlayer.create(
+      '/sc-crawler-pull.cast',
+      document.getElementById('asciicast-sc-crawler-pull-demo'));
+    AsciinemaPlayer.create(
+      '/sc-crawler-sync.cast',
+      document.getElementById('asciicast-sc-crawler-sync-demo'));
+}
+</script>
 
 ## ORM
 
