@@ -1,1 +1,1 @@
-/home/daroczig/projects/sc-crawler/CHANGELOG.md
+../CHANGELOG.md
