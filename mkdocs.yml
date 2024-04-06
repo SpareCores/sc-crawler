@@ -18,6 +18,12 @@ extra:
     - icon: fontawesome/brands/facebook
       link: https://www.facebook.com/SpareCores/
 
+nav:
+  - index.md
+  - add_vendor.md
+  - Reference: reference/
+  - Changelog: CHANGELOG.md
+
 theme:
   name: "material"
   custom_dir: overrides
