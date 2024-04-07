@@ -368,7 +368,7 @@ def _search_storage(
 
 def inventory_compliance_frameworks(vendor):
     """Manual list of compliance frameworks known for AWS."""
-    compliance_frameworks = ["hipaa", "soc2t2"]
+    compliance_frameworks = ["hipaa", "soc2t2", "iso27001"]
     items = []
     for compliance_framework in compliance_frameworks:
         items.append(
