@@ -1,11 +1,30 @@
+from datetime import timedelta
 import os
 
+from functools import cache
 from hcloud import Client
 
 from ..lookup import map_compliance_frameworks_to_vendor
 
-# TODO late load
-client = Client(token=os.environ["HCLOUD_TOKEN"])
+# ##############################################################################
+# Cached client wrappers
+
+
+@cache
+def _client() -> Client:
+    """Authorized Hetzner Cloud client using the HCLOUD_TOKEN env var."""
+    try:
+        token = os.environ["HCLOUD_TOKEN"]
+    except KeyError:
+        raise KeyError("Missing environment variable: HCLOUD_TOKEN")
+    return Client(token=token)
+
+
+# not caching actual client calls, as the API returns highly recursive
+# and often cyclic objects that is not compatible with cachier/pickle
+
+# ##############################################################################
+# Public methods to fetch data
 
 
 def inventory_compliance_frameworks(vendor):
@@ -26,7 +45,7 @@ def inventory_datacenters(vendor):
     <https://www.hetzner.com/unternehmen/umweltschutz/>.
     """
     items = []
-    for datacenter in client.datacenters.get_all():
+    for datacenter in _client().datacenters.get_all():
         items.append(
             {
                 "vendor_id": vendor.vendor_id,
@@ -50,7 +69,8 @@ def inventory_zones(vendor):
     """List all datacenters as availability zones.
 
     There is no concept of having multiple availability zones withing
-    a datacenter at Hetzner Cloud, so creating 1-1 dummy Zones.
+    a datacenter at Hetzner Cloud, so creating 1-1 dummy Zones reusing
+    the Datacenter id and name.
     """
     items = []
     for datacenter in vendor.datacenters:
