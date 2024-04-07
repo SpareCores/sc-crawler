@@ -30,3 +30,17 @@ gcp = Vendor(
     status_page="https://status.cloud.google.com/",
 )
 """Google Cloud Platform."""
+
+hcloud = Vendor(
+    vendor_id="hcloud",
+    name="Hetzner Cloud",
+    homepage="https://www.hetzner.com/cloud/",
+    country=countries["DE"],
+    state="Bavaria",
+    city="Gunzenhausen",
+    address_line="Industriestr. 25",
+    zip_code="91710",
+    founding_year=1997,
+    status_page="https://status.hetzner.com/",
+)
+"""Hetzner Cloud."""

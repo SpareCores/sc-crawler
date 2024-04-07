@@ -47,7 +47,8 @@ mkdocs = [
 ]
 testing = ["pytest", "sparecores-crawler[mkdocs]"]
 aws = ["boto3"]
-vendors = ["sparecores-crawler[aws]"]
+hcloud = ["hcloud"]
+vendors = ["sparecores-crawler[aws]", "sparecores-crawler[hcloud]"]
 all = ["sparecores-crawler[testing]", "sparecores-crawler[vendors]"]
 
 [project.scripts]
