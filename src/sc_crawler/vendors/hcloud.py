@@ -5,6 +5,17 @@ from functools import cache
 from hcloud import Client
 
 from ..lookup import map_compliance_frameworks_to_vendor
+from ..table_fields import (
+    Allocation,
+    CpuAllocation,
+    CpuArchitecture,
+    Disk,
+    Gpu,
+    PriceTier,
+    PriceUnit,
+    StorageType,
+    TrafficDirection,
+)
 
 # ##############################################################################
 # Cached client wrappers
@@ -86,9 +97,54 @@ def inventory_zones(vendor):
 
 
 def inventory_servers(vendor):
-    # https://hcloud-python.readthedocs.io/en/stable/api.clients.server_types.html#hcloud.server_types.client.ServerTypesClient
-    # https://hcloud-python.readthedocs.io/en/stable/api.clients.servers.html#hcloud.servers.client.ServersClient.get_all
-    return []
+    items = []
+    for server in _client().server_types.get_all():
+        items.append(
+            {
+                "vendor_id": vendor.vendor_id,
+                "server_id": str(server.id),
+                "name": server.name,
+                # TODO add server.description
+                "vcpus": server.cores,
+                "hypervisor": None,
+                "cpu_allocation": (
+                    CpuAllocation.SHARED
+                    if server.cpu_type == "shared"
+                    else CpuAllocation.DEDICATED
+                ),
+                "cpu_cores": server.cores,
+                "cpu_speed": None,
+                "cpu_architecture": (
+                    CpuArchitecture.ARM64
+                    if server.architecture == "arm"
+                    else CpuArchitecture.X86_64
+                ),
+                "cpu_manufacturer": None,
+                "cpu_family": None,
+                "cpu_model": None,
+                "cpus": [],
+                "memory": server.memory,
+                "gpu_count": 0,
+                "gpu_memory_min": None,
+                "gpu_memory_total": None,
+                "gpu_manufacturer": None,
+                "gpu_model": None,
+                "gpus": [],
+                "storage_size": server.disk,
+                "storage_type": (
+                    StorageType.SSD
+                    if server.storage_type == "local"
+                    else StorageType.NETWORK
+                ),
+                "storages": [],
+                "network_speed": None,
+                # https://docs.hetzner.com/cloud/billing/faq/#how-do-you-bill-for-traffic
+                "inbound_traffic": 0,  # free
+                "outbound_traffic": server.included_traffic / (1024**3),
+                "ipv4": 0,
+            }
+        )
+    return items
 
 
 def inventory_server_prices(vendor):
