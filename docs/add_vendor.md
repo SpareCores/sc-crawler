@@ -6,7 +6,7 @@ Each file in the [`src/sc_crawler/vendors`](https://github.com/SpareCores/sc-cra
 
 Each file should provide the below functions:
 
-- `inventory_compliance_frameworks`: Define [`VendorComplianceLink`][sc_crawler.tables.VendorComplianceLink] instances to describe which frameworks the vendor complies with. Optionally include references in the `comment` field. To avoid duplicating [`ComplianceFramework`][sc_crawler.tables.ComplianceFramework] instances, easiest is to use the `compliance_framework_id` field instead of the `compliance_framework` relationship.
+- `inventory_compliance_frameworks`: Define [`VendorComplianceLink`][sc_crawler.tables.VendorComplianceLink] instances to describe which frameworks the vendor complies with. Optionally include references in the `comment` field. To avoid duplicating [`ComplianceFramework`][sc_crawler.tables.ComplianceFramework] instances, easiest is to use the `compliance_framework_id` field instead of the `compliance_framework` relationship, preferably via [sc_crawler.lookup.map_compliance_frameworks_to_vendor][].
 - `inventory_datacenters`: Define [`Datacenter`][sc_crawler.tables.Datacenter] instances with location, energy source etc for each region/datacenter the vendor has.
 - `inventory_zones`: Define a [`Zone`][sc_crawler.tables.Zone] instance for each availability zone of the vendor in each datacenter.
 - `inventory_servers`: Define [`Server`][sc_crawler.tables.Server] instances for the vendor's server/instance types.

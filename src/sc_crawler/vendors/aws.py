@@ -12,6 +12,7 @@ from botocore.exceptions import ClientError
 from cachier import cachier, set_default_params
 
 from ..logger import logger
+from ..lookup import map_compliance_frameworks_to_vendor
 from ..str_utils import extract_last_number
 from ..table_fields import (
     Allocation,
@@ -368,16 +369,9 @@ def _search_storage(
 
 def inventory_compliance_frameworks(vendor):
     """Manual list of compliance frameworks known for AWS."""
-    compliance_frameworks = ["hipaa", "soc2t2", "iso27001"]
-    items = []
-    for compliance_framework in compliance_frameworks:
-        items.append(
-            {
-                "vendor_id": vendor.vendor_id,
-                "compliance_framework_id": compliance_framework,
-            }
-        )
-    return items
+    return map_compliance_frameworks_to_vendor(
+        vendor.vendor_id, ["hipaa", "soc2t2", "iso27001"]
+    )
 
 
 def inventory_datacenters(vendor):

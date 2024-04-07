@@ -2,6 +2,8 @@ import os
 
 from hcloud import Client
 
+from ..lookup import map_compliance_frameworks_to_vendor
+
 # TODO late load
 client = Client(token=os.environ["HCLOUD_TOKEN"])
 
@@ -10,17 +12,7 @@ def inventory_compliance_frameworks(vendor):
     """Manual list of known compliance frameworks at Hetzner.
 
     Data collected from <https://www.hetzner.com/unternehmen/zertifizierung>."""
-    ## TODO refactor to helper
-    compliance_frameworks = ["iso27001"]
-    items = []
-    for compliance_framework in compliance_frameworks:
-        items.append(
-            {
-                "vendor_id": vendor.vendor_id,
-                "compliance_framework_id": compliance_framework,
-            }
-        )
-    return items
+    return map_compliance_frameworks_to_vendor(vendor.vendor_id, ["iso27001"])
 
 
 def inventory_datacenters(vendor):

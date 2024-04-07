@@ -1,3 +1,5 @@
+from typing import List
+
 from .tables import ComplianceFramework, Country
 
 # country codes: https://en.wikipedia.org/wiki/ISO_3166-1#Codes
@@ -70,3 +72,26 @@ compliance_frameworks: dict = {
     # csa
 }
 """Dictionary of [sc_crawler.tables.ComplianceFramework][] instances keyed by the `compliance_framework_id`."""
+
+
+def map_compliance_frameworks_to_vendor(
+    vendor_id: str, compliance_framework_ids: List[str]
+) -> dict:
+    """Map compliance frameworks to vendors in a dict.
+
+    Args:
+        vendor_id: identifier of a [Vendor][sc_crawler.tables.Vendor]
+        compliance_framework_ids: identifier(s) of [`ComplianceFramework`][sc_crawler.tables.ComplianceFramework]
+
+    Returns:
+        Array of dictionaroes that can be passed to [sc_crawler.insert.insert_items][].
+    """
+    items = []
+    for compliance_framework_id in compliance_framework_ids:
+        items.append(
+            {
+                "vendor_id": vendor_id,
+                "compliance_framework_id": compliance_framework_id,
+            }
+        )
+    return items
