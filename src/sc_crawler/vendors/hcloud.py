@@ -13,6 +13,7 @@ from ..table_fields import (
     Gpu,
     PriceTier,
     PriceUnit,
+    Status,
     StorageType,
     TrafficDirection,
 )
@@ -142,6 +143,7 @@ def inventory_servers(vendor):
                 "inbound_traffic": 0,  # free
                 "outbound_traffic": server.included_traffic / (1024**3),
                 "ipv4": 0,
+                "status": Status.ACTIVE if not server.deprecation else Status.INACTIVE,
             }
         )
     return items
