@@ -467,7 +467,7 @@ class ServerFields(HasServerIdPK, HasVendorPKFK):
         default=None,
         description="Allocation of CPU(s) to the server, e.g. shared, burstable or dedicated.",
     )
-    cpu_cores: int = Field(
+    cpu_cores: Optional[int] = Field(
         default=None,
         description=(
             "Default number of CPU cores of the server. "

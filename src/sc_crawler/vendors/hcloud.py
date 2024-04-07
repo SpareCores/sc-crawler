@@ -113,7 +113,7 @@ def inventory_servers(vendor):
                     if server.cpu_type == "shared"
                     else CpuAllocation.DEDICATED
                 ),
-                "cpu_cores": server.cores,
+                "cpu_cores": None,
                 "cpu_speed": None,
                 "cpu_architecture": (
                     CpuArchitecture.ARM64
