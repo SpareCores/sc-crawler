@@ -57,19 +57,75 @@ def inventory_zones(vendor):
 
 ```python
 def inventory_compliance_frameworks(vendor):
-    return []
+    return map_compliance_frameworks_to_vendor(vendor.vendor_id, [
+    #    "hipaa",
+    #    "soc2t2",
+    #    "iso27001",
+    ])
 
 
 def inventory_datacenters(vendor):
+    # {
+    #     "vendor_id": "",
+    #     "datacenter_id": "",
+    #     "name": "",
+    #     "aliases": [],
+    #     "country_id": "",
+    #     "state": None,
+    #     "city": None,
+    #     "address_line": None,
+    #     "zip_code": None,
+    #     "founding_year": None,
+    #     "green_energy": None,
+    # }
     return []
 
 
 def inventory_zones(vendor):
+    # {
+    #     "vendor_id": "",
+    #     "datacenter_id": "",
+    #     "zone_id": "",
+    #     "name": "",
+    # }
     return []
 
 
 def inventory_servers(vendor):
-    return []
+    # items = []
+    # for server in _client().server_types.get_all():
+    #     items.append(
+    #         {
+    #             "vendor_id": vendor.vendor_id,
+    #             "server_id": ,
+    #             "name": ,
+    #             "vcpus": ,
+    #             "hypervisor": None,
+    #             "cpu_allocation": CpuAllocation....,
+    #             "cpu_cores": ,
+    #             "cpu_speed": None,
+    #             "cpu_architecture": CpuArchitecture....,
+    #             "cpu_manufacturer": None,
+    #             "cpu_family": None,
+    #             "cpu_model": None,
+    #             "cpus": [],
+    #             "memory": ,
+    #             "gpu_count": 0,
+    #             "gpu_memory_min": None,
+    #             "gpu_memory_total": None,
+    #             "gpu_manufacturer": None,
+    #             "gpu_model": None,
+    #             "gpus": [],
+    #             "storage_size": 0,
+    #             "storage_type": None,
+    #             "storages": [],
+    #             "network_speed": None,
+    #             "inbound_traffic": 0,
+    #             "outbound_traffic": 0,
+    #             "ipv4": 0,
+    #         }
+    #     )
+    # return items
 
 
 def inventory_server_prices(vendor):
