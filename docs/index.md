@@ -36,6 +36,8 @@ Note that you need specific IAM permissions to be able to run `sc-crawler` at th
 
 <summary>Amazon Web Services (AWS)</summary>
 
+A user or role with the below minimum IAM Policy:
+
 ```json
 {
     "Version": "2012-10-17",
@@ -59,6 +61,15 @@ Note that you need specific IAM permissions to be able to run `sc-crawler` at th
 ```
 
 </details>
+
+<details>
+
+<summary>Hetzner Cloud</summary>
+
+Generate token at your Hetzner Cloud project and store it in the `HCLOUD_TOKEN` environment variable.
+
+</details>
+
 
 Fetch and standardize datacenter, zone, servers, traffic, storage etc data from AWS into a single SQLite file:
 
