@@ -2,9 +2,17 @@
 
 Each file in the [`src/sc_crawler/vendors`](https://github.com/SpareCores/sc-crawler/tree/main/src/sc_crawler/vendors) folder provides the required helpers for a given [Vendor][sc_crawler.tables.Vendor], named as the `id` of the vendor. For example, [`aws.py`](https://github.com/SpareCores/sc-crawler/tree/main/src/sc_crawler/vendors/aws.py) provides functions to be used by its [Vendor][sc_crawler.tables.Vendor] instance, called [`aws`][sc_crawler.vendors.aws].
 
+## First steps
+
+1. Define the new [Vendor][sc_crawler.tables.Vendor] instance in `src/sc_crawler/vendors/vendors.py`.
+2. Copy the below [template file](#template-file-for-new-vendors) as a starting point to `src/sc_crawler/vendors/{vendor_id}.py`.
+3. Update `src/sc_crawler/vendors/__init__.py` to include the new vendor.
+4. Update `docs/add_vendor.md` with the credential requirements for the new vendor.
+5. Implement the `inventory` methods.
+
 ## Inventory methods
 
-Each file should provide the below functions:
+Each vendor module should provide the below functions:
 
 - `inventory_compliance_frameworks`: Define [`VendorComplianceLink`][sc_crawler.tables.VendorComplianceLink] instances to describe which frameworks the vendor complies with. Optionally include references in the `comment` field. To avoid duplicating [`ComplianceFramework`][sc_crawler.tables.ComplianceFramework] instances, easiest is to use the `compliance_framework_id` field instead of the `compliance_framework` relationship, preferably via [sc_crawler.lookup.map_compliance_frameworks_to_vendor][].
 - `inventory_datacenters`: Define [`Datacenter`][sc_crawler.tables.Datacenter] instances with location, energy source etc for each region/datacenter the vendor has.
