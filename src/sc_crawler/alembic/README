@@ -1,9 +1,0 @@
-Database migration scripts for changes after initial (v0.1.0) relase of SC Crawler.
-
-To run changes:
-
-```sh
-alembic upgrade head
-```
-
-TODO mkdocs

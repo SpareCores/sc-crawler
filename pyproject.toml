@@ -7,6 +7,7 @@ name = "sparecores-crawler"
 version = "0.1.0"
 requires-python = ">= 3.7"
 dependencies = [
+  "alembic",
   "cachier",
   "pydantic",
   "pydantic_extra_types",
@@ -53,6 +54,9 @@ all = ["sparecores-crawler[testing]", "sparecores-crawler[vendors]"]
 
 [project.scripts]
 sc-crawler = "sc_crawler.cli:cli"
+
+[tool.setuptools]
+include-package-data = true  # see MANIFEST.in
 
 [tool.setuptools.packages.find]
 where = ["src"]
