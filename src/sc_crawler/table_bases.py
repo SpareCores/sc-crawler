@@ -240,7 +240,7 @@ class HasDescription(ScModel):
 
 class HasVendorPKFK(ScModel):
     vendor_id: str = Field(
-        foreign_key="vendor",
+        foreign_key="vendor.vendor_id",
         primary_key=True,
         description="Reference to the Vendor.",
     )
@@ -341,7 +341,7 @@ class VendorFields(HasName, HasVendorIdPK):
     )
 
     country_id: str = Field(
-        foreign_key="country",
+        foreign_key="country.country_id",
         description="Reference to the Country, where the Vendor's main headquarter is located.",
     )
     state: Optional[str] = Field(
@@ -373,7 +373,7 @@ class VendorBase(MetaColumns, VendorFields):
 
 class VendorComplianceLinkFields(HasVendorPKFK):
     compliance_framework_id: str = Field(
-        foreign_key="compliance_framework",
+        foreign_key="compliance_framework.compliance_framework_id",
         primary_key=True,
         description="Reference to the Compliance Framework.",
     )
@@ -394,7 +394,7 @@ class DatacenterFields(HasName, HasDatacenterIdPK, HasVendorPKFK):
         description="List of other commonly used names for the same Datacenter.",
     )
     country_id: str = Field(
-        foreign_key="country",
+        foreign_key="country.country_id",
         description="Reference to the Country, where the Datacenter is located.",
     )
     state: Optional[str] = Field(
