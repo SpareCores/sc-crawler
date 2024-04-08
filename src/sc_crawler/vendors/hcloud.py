@@ -36,6 +36,28 @@ def _client() -> Client:
 # and often cyclic objects that is not compatible with cachier/pickle
 
 # ##############################################################################
+# Internal helpers
+
+
+def _server_cpu(server_name):
+    """Manual mapping of CPU info for server types.
+
+    Source: <https://www.hetzner.com/cloud/>
+    """
+    # not trying to rely on product line name patterns, as might change,
+    # so rather providing a full list of known entities, and fail on unknown
+    if server_name.upper() in ["CX11", "CX21", "CX31", "CX41", "CX51"]:
+        return ("Intel", "Xeon Gold", None)
+    if server_name.upper() in ["CPX11", "CPX21", "CPX31", "CPX41", "CPX51"]:
+        return ("AMD", "EPYC 7002", None)
+    if server_name.upper() in ["CAX11", "CAX21", "CAX31", "CAX41"]:
+        return ("AMD", "Ampere Altra", None)
+    if server_name.upper() in ["CCX13", "CCX23", "CCX33", "CCX43", "CCX53", "CCX63"]:
+        return ("AMD", None, None)
+    raise ValueError("Unknown Hetzner Cloud server name: " + server_name)
+
+
+# ##############################################################################
 # Public methods to fetch data
 
 
@@ -100,6 +122,9 @@ def inventory_zones(vendor):
 def inventory_servers(vendor):
     items = []
     for server in _client().server_types.get_all():
+        # CPU info not available via the API,
+        # collected from https://www.hetzner.com/cloud/
+        cpu = _server_cpu(server.name)
         items.append(
             {
                 "vendor_id": vendor.vendor_id,
@@ -120,9 +145,9 @@ def inventory_servers(vendor):
                     if server.architecture == "arm"
                     else CpuArchitecture.X86_64
                 ),
-                "cpu_manufacturer": None,
-                "cpu_family": None,
-                "cpu_model": None,
+                "cpu_manufacturer": cpu[0],
+                "cpu_family": cpu[1],
+                "cpu_model": cpu[2],
                 "cpus": [],
                 "memory": server.memory,
                 "gpu_count": 0,
