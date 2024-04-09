@@ -13,7 +13,9 @@ from sc_crawler.tables import tables
 config = context.config
 
 # Set up logging if was not done already
-if not logging.getLogger("sc_crawler").handlers:
+if not logging.getLogger("sc_crawler").handlers or config.attributes.get(
+    "force_logging", False
+):
     if config.config_file_name is not None:
         fileConfig(config.config_file_name)
 
