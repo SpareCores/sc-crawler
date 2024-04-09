@@ -8,6 +8,7 @@ from enum import Enum
 from json import dumps, loads
 import os
 from pathlib import Path
+from types import SimpleNamespace
 from typing import List
 
 from alembic.config import Config
@@ -105,16 +106,31 @@ def schema(
 alembic_app = typer.Typer()
 cli.add_typer(alembic_app, name="alembic", help="Database migrations using Alembic.")
 
+options = SimpleNamespace(
+    connection_string=Annotated[
+        str, typer.Option(help="Database URL with SQLAlchemy dialect.")
+    ],
+    revision=Annotated[
+        str,
+        typer.Option(
+            help="Target revision passed to Alembic. Use 'heads' to get to the most recent version."
+        ),
+    ],
+    scd=Annotated[
+        bool,
+        typer.Option(help="Migrate the SCD tables instead of the standard tables."),
+    ],
+    sql=Annotated[
+        bool,
+        typer.Option(help="Dry-run, printing the SQL commands instead of running."),
+    ],
+)
+
 
 @alembic_app.command()
 def current(
-    connection_string: Annotated[
-        str, typer.Option(help="Database URL with SQLAlchemy dialect.")
-    ] = "sqlite:///sc-data-all.db",
-    scd: Annotated[
-        bool,
-        typer.Option(help="Migrate the SCD tables instead of the standard tables."),
-    ] = False,
+    connection_string: options.connection_string = "sqlite:///sc-data-all.db",
+    scd: options.scd = False,
 ):
     """
     Show current database revision.
@@ -130,23 +146,10 @@ def current(
 
 @alembic_app.command()
 def upgrade(
-    connection_string: Annotated[
-        str, typer.Option(help="Database URL with SQLAlchemy dialect.")
-    ] = "sqlite:///sc-data-all.db",
-    revision: Annotated[
-        str,
-        typer.Option(
-            help="Target revision passed to Alembic. Use 'heads' to get to the most recent version."
-        ),
-    ] = "heads",
-    scd: Annotated[
-        bool,
-        typer.Option(help="Migrate the SCD tables instead of the standard tables."),
-    ] = False,
-    sql: Annotated[
-        bool,
-        typer.Option(help="Dry-run, printing the SQL commands instead of running."),
-    ] = False,
+    connection_string: options.connection_string = "sqlite:///sc-data-all.db",
+    revision: options.revision = "heads",
+    scd: options.scd = False,
+    sql: options.sql = False,
 ):
     """
     Upgrade the database schema to a given revision.
