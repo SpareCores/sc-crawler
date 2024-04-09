@@ -1,4 +1,4 @@
-"""Crawler v0.1.0
+"""v0.1.0
 
 Revision ID: 98894dffd37c
 Revises:
