@@ -6,9 +6,12 @@ import logging
 from datetime import datetime, timedelta
 from enum import Enum
 from json import dumps, loads
+import os
 from pathlib import Path
 from typing import List
 
+from alembic.config import Config
+from alembic import command
 import typer
 from cachier import set_default_params
 from rich.console import Console
@@ -64,6 +67,13 @@ table_names = [t.get_table_name() for t in tables]
 Tables = Enum("TABLES", {k: k for k in table_names})
 
 
+class Subcommands(str, Enum):
+    upgrade = "upgrade"
+    downgrade = "downgrade"
+    current = "current"
+    stamp = "stamp"
+
+
 @cli.command()
 def schema(
     dialect: Annotated[
@@ -90,6 +100,49 @@ def schema(
     if scd:
         for table in tables_scd:
             table.__table__.create(engine)
+
+
+@cli.command()
+def alembic(
+    subcommand: Annotated[
+        Subcommands,
+        typer.Option(
+            help="Command to pass to Alembic. Use upgrade to bring the database up-to-date with head, and downgrade to go back one revision."
+        ),
+    ],
+    connection_string: Annotated[
+        str, typer.Option(help="Database URL with SQLAlchemy dialect.")
+    ] = "sqlite:///sc-data-all.db",
+    revision: Annotated[
+        str,
+        typer.Option(
+            help="Target revision passed to Alembic. Use 'heads' to get to the most recent version when upgrading."
+        ),
+    ] = "sqlite:///sc-data-all.db",
+    sql: Annotated[
+        bool,
+        typer.Option(
+            help="Enable for dry-run, printing the SQL commands instead of running."
+        ),
+    ] = False,
+):
+    """
+    Upgrade or downgrade the database schema using Alembic as the migration tool.
+    """
+    engine = create_engine(connection_string)
+    alembic_cfg = Config(os.path.join(os.path.dirname(__file__), "alembic.ini"))
+    alembic_cfg.attributes["force_logging"] = True
+    with engine.begin() as connection:
+        # TODO pass if SCD
+        alembic_cfg.attributes["connection"] = connection
+        if subcommand.value == "upgrade":
+            command.upgrade(alembic_cfg, revision, sql)
+        elif subcommand.value == "downgrade":
+            command.downgrade(alembic_cfg, revision, sql)
+        elif subcommand.value == "current":
+            print(command.current(alembic_cfg))
+        elif subcommand.value == "stamp":
+            command.stamp(alembic_cfg, revision, sql)
 
 
 @cli.command(name="hash")
