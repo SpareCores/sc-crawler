@@ -174,9 +174,7 @@ def upgrade(
 
 @cli.command(name="hash")
 def hash_command(
-    connection_string: Annotated[
-        str, typer.Option(help="Database URL with SQLAlchemy dialect.")
-    ] = "sqlite:///sc-data-all.db",
+    connection_string: options.connection_string = "sqlite:///sc-data-all.db",
 ):
     """Print the hash of the content of a database."""
     print(hash_database(connection_string))
@@ -431,9 +429,7 @@ def sync(
 
 @cli.command()
 def pull(
-    connection_string: Annotated[
-        str, typer.Option(help="Database URL with SQLAlchemy dialect.")
-    ] = "sqlite:///sc-data-all.db",
+    connection_string: options.connection_string = "sqlite:///sc-data-all.db",
     include_vendor: Annotated[
         List[Vendors],
         typer.Option(help="Enabled data sources. Can be specified multiple times."),
