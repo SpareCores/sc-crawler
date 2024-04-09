@@ -9,7 +9,7 @@ from json import dumps, loads
 import os
 from pathlib import Path
 from types import SimpleNamespace
-from typing import List
+from typing import List, Optional
 
 from alembic.config import Config
 from alembic import command
@@ -127,11 +127,12 @@ options = SimpleNamespace(
 )
 
 
-def alembic_cfg(scd: bool, connection) -> Config:
+def alembic_cfg(connection, scd: Optional[bool] = None) -> Config:
     """Loads the Alembic config and sets some dynamic attributes."""
     alembic_cfg = Config(os.path.join(os.path.dirname(__file__), "alembic.ini"))
     alembic_cfg.attributes["force_logging"] = True
-    alembic_cfg.attributes["scd"] = scd
+    if scd is not None:
+        alembic_cfg.attributes["scd"] = scd
     alembic_cfg.attributes["connection"] = connection
     return alembic_cfg
 
@@ -146,7 +147,7 @@ def current(
     """
     engine = create_engine(connection_string)
     with engine.begin() as connection:
-        print(command.current(alembic_cfg(scd, connection)))
+        print(command.current(alembic_cfg(connection, scd)))
 
 
 @alembic_app.command()
@@ -161,7 +162,7 @@ def upgrade(
     """
     engine = create_engine(connection_string)
     with engine.begin() as connection:
-        command.upgrade(alembic_cfg(scd, connection), revision, sql)
+        command.upgrade(alembic_cfg(connection, scd), revision, sql)
 
 
 @alembic_app.command()
@@ -176,7 +177,7 @@ def downgrade(
     """
     engine = create_engine(connection_string)
     with engine.begin() as connection:
-        command.downgrade(alembic_cfg(scd, connection), revision, sql)
+        command.downgrade(alembic_cfg(connection, scd), revision, sql)
 
 
 @alembic_app.command()
@@ -191,7 +192,19 @@ def stamp(
     """
     engine = create_engine(connection_string)
     with engine.begin() as connection:
-        command.stamp(alembic_cfg(scd, connection), revision, sql)
+        command.stamp(alembic_cfg(connection, scd), revision, sql)
+
+
+@alembic_app.command()
+def autogenerate(
+    connection_string: options.connection_string = "sqlite:///sc-data-all.db",
+):
+    """
+    Autogenerate a migrations script based on the current state of a database.
+    """
+    engine = create_engine(connection_string)
+    with engine.begin() as connection:
+        command.revision(alembic_cfg(connection=connection), autogenerate=True)
 
 
 @cli.command(name="hash")
