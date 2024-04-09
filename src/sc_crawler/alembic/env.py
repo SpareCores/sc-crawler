@@ -6,7 +6,6 @@ from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 from sqlmodel import SQLModel
 
-from sc_crawler.tables import tables
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -20,10 +19,9 @@ if not logging_inited or logging_forced:
         fileConfig(config.config_file_name)
 
 # add your model's MetaData object here
-# for 'autogenerate' support
-# from myapp import mymodel
-# target_metadata = mymodel.Base.metadata
-# target_metadata = None
+from sc_crawler.tables import tables  # noqa: F401 E402
+from sc_crawler.tables_scd import tables_scd  # noqa: F401 E402
+
 target_metadata = SQLModel.metadata
 
 
