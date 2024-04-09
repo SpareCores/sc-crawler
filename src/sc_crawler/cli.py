@@ -129,39 +129,36 @@ def current(
 
 
 @alembic_app.command()
-def current(
-    # subcommand: Annotated[
-    #     Subcommands,
-    #     typer.Option(
-    #         help="Command to pass to Alembic. Use upgrade to bring the database up-to-date with head, and downgrade to go back one revision."
-    #     ),
-    # ],
+def upgrade(
     connection_string: Annotated[
         str, typer.Option(help="Database URL with SQLAlchemy dialect.")
     ] = "sqlite:///sc-data-all.db",
     revision: Annotated[
         str,
         typer.Option(
-            help="Target revision passed to Alembic. Use 'heads' to get to the most recent version when upgrading."
+            help="Target revision passed to Alembic. Use 'heads' to get to the most recent version."
         ),
-    ] = "sqlite:///sc-data-all.db",
+    ] = "heads",
+    scd: Annotated[
+        bool,
+        typer.Option(help="Migrate the SCD tables instead of the standard tables."),
+    ] = False,
     sql: Annotated[
         bool,
-        typer.Option(
-            help="Enable for dry-run, printing the SQL commands instead of running."
-        ),
+        typer.Option(help="Dry-run, printing the SQL commands instead of running."),
     ] = False,
 ):
     """
-    Upgrade or downgrade the database schema using Alembic as the migration tool.
+    Upgrade the database schema to a given revision.
     """
     engine = create_engine(connection_string)
     alembic_cfg = Config(os.path.join(os.path.dirname(__file__), "alembic.ini"))
     alembic_cfg.attributes["force_logging"] = True
+    alembic_cfg.attributes["scd"] = scd
     with engine.begin() as connection:
         # TODO pass if SCD
         alembic_cfg.attributes["connection"] = connection
-        print(command.current(alembic_cfg))
+        command.upgrade(alembic_cfg, revision, sql)
         # if subcommand.value == "upgrade":
         #     command.upgrade(alembic_cfg, revision, sql)
         # elif subcommand.value == "downgrade":
