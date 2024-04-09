@@ -102,14 +102,40 @@ def schema(
             table.__table__.create(engine)
 
 
-@cli.command()
-def alembic(
-    subcommand: Annotated[
-        Subcommands,
-        typer.Option(
-            help="Command to pass to Alembic. Use upgrade to bring the database up-to-date with head, and downgrade to go back one revision."
-        ),
-    ],
+alembic_app = typer.Typer()
+cli.add_typer(alembic_app, name="alembic", help="Database migrations using Alembic.")
+
+
+@alembic_app.command()
+def current(
+    connection_string: Annotated[
+        str, typer.Option(help="Database URL with SQLAlchemy dialect.")
+    ] = "sqlite:///sc-data-all.db",
+    scd: Annotated[
+        bool,
+        typer.Option(help="Migrate the SCD tables instead of the standard tables."),
+    ] = False,
+):
+    """
+    Show current database revision.
+    """
+    engine = create_engine(connection_string)
+    alembic_cfg = Config(os.path.join(os.path.dirname(__file__), "alembic.ini"))
+    alembic_cfg.attributes["force_logging"] = True
+    alembic_cfg.attributes["scd"] = scd
+    with engine.begin() as connection:
+        alembic_cfg.attributes["connection"] = connection
+        print(command.current(alembic_cfg))
+
+
+@alembic_app.command()
+def current(
+    # subcommand: Annotated[
+    #     Subcommands,
+    #     typer.Option(
+    #         help="Command to pass to Alembic. Use upgrade to bring the database up-to-date with head, and downgrade to go back one revision."
+    #     ),
+    # ],
     connection_string: Annotated[
         str, typer.Option(help="Database URL with SQLAlchemy dialect.")
     ] = "sqlite:///sc-data-all.db",
@@ -135,14 +161,15 @@ def alembic(
     with engine.begin() as connection:
         # TODO pass if SCD
         alembic_cfg.attributes["connection"] = connection
-        if subcommand.value == "upgrade":
-            command.upgrade(alembic_cfg, revision, sql)
-        elif subcommand.value == "downgrade":
-            command.downgrade(alembic_cfg, revision, sql)
-        elif subcommand.value == "current":
-            print(command.current(alembic_cfg))
-        elif subcommand.value == "stamp":
-            command.stamp(alembic_cfg, revision, sql)
+        print(command.current(alembic_cfg))
+        # if subcommand.value == "upgrade":
+        #     command.upgrade(alembic_cfg, revision, sql)
+        # elif subcommand.value == "downgrade":
+        #     command.downgrade(alembic_cfg, revision, sql)
+        # elif subcommand.value == "current":
+        #     print(command.current(alembic_cfg))
+        # elif subcommand.value == "stamp":
+        #     command.stamp(alembic_cfg, revision, sql)
 
 
 @cli.command(name="hash")
