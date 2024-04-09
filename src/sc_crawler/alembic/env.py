@@ -1,4 +1,5 @@
 import logging
+from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy import engine_from_config
@@ -14,7 +15,7 @@ config = context.config
 # Set up logging if was not done already
 if not logging.getLogger("sc_crawler").handlers:
     if config.config_file_name is not None:
-        logging.config.fileConfig(config.config_file_name)
+        fileConfig(config.config_file_name)
 
 # add your model's MetaData object here
 # for 'autogenerate' support
