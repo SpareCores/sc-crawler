@@ -68,13 +68,6 @@ table_names = [t.get_table_name() for t in tables]
 Tables = Enum("TABLES", {k: k for k in table_names})
 
 
-class Subcommands(str, Enum):
-    upgrade = "upgrade"
-    downgrade = "downgrade"
-    current = "current"
-    stamp = "stamp"
-
-
 @cli.command()
 def schema(
     dialect: Annotated[
