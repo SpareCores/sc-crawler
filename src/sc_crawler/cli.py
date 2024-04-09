@@ -127,6 +127,15 @@ options = SimpleNamespace(
 )
 
 
+def alembic_cfg(scd: bool, connection) -> Config:
+    """Loads the Alembic config and sets some dynamic attributes."""
+    alembic_cfg = Config(os.path.join(os.path.dirname(__file__), "alembic.ini"))
+    alembic_cfg.attributes["force_logging"] = True
+    alembic_cfg.attributes["scd"] = scd
+    alembic_cfg.attributes["connection"] = connection
+    return alembic_cfg
+
+
 @alembic_app.command()
 def current(
     connection_string: options.connection_string = "sqlite:///sc-data-all.db",
@@ -136,12 +145,8 @@ def current(
     Show current database revision.
     """
     engine = create_engine(connection_string)
-    alembic_cfg = Config(os.path.join(os.path.dirname(__file__), "alembic.ini"))
-    alembic_cfg.attributes["force_logging"] = True
-    alembic_cfg.attributes["scd"] = scd
     with engine.begin() as connection:
-        alembic_cfg.attributes["connection"] = connection
-        print(command.current(alembic_cfg))
+        print(command.current(alembic_cfg(scd, connection)))
 
 
 @alembic_app.command()
@@ -155,13 +160,8 @@ def upgrade(
     Upgrade the database schema to a given revision.
     """
     engine = create_engine(connection_string)
-    alembic_cfg = Config(os.path.join(os.path.dirname(__file__), "alembic.ini"))
-    alembic_cfg.attributes["force_logging"] = True
-    alembic_cfg.attributes["scd"] = scd
     with engine.begin() as connection:
-        # TODO pass if SCD
-        alembic_cfg.attributes["connection"] = connection
-        command.upgrade(alembic_cfg, revision, sql)
+        command.upgrade(alembic_cfg(scd, connection), revision, sql)
         # if subcommand.value == "upgrade":
         #     command.upgrade(alembic_cfg, revision, sql)
         # elif subcommand.value == "downgrade":
