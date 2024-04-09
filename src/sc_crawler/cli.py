@@ -162,14 +162,36 @@ def upgrade(
     engine = create_engine(connection_string)
     with engine.begin() as connection:
         command.upgrade(alembic_cfg(scd, connection), revision, sql)
-        # if subcommand.value == "upgrade":
-        #     command.upgrade(alembic_cfg, revision, sql)
-        # elif subcommand.value == "downgrade":
-        #     command.downgrade(alembic_cfg, revision, sql)
-        # elif subcommand.value == "current":
-        #     print(command.current(alembic_cfg))
-        # elif subcommand.value == "stamp":
-        #     command.stamp(alembic_cfg, revision, sql)
+
+
+@alembic_app.command()
+def downgrade(
+    connection_string: options.connection_string = "sqlite:///sc-data-all.db",
+    revision: options.revision = "-1",
+    scd: options.scd = False,
+    sql: options.sql = False,
+):
+    """
+    Downgrade the database schema to a given revision. Default to the previous revision.
+    """
+    engine = create_engine(connection_string)
+    with engine.begin() as connection:
+        command.downgrade(alembic_cfg(scd, connection), revision, sql)
+
+
+@alembic_app.command()
+def stamp(
+    connection_string: options.connection_string = "sqlite:///sc-data-all.db",
+    revision: options.revision = "heads",
+    scd: options.scd = False,
+    sql: options.sql = False,
+):
+    """
+    Set the migration revision mark in he database to a specified revision. Set to "heads" if the database schema is up-to-date.
+    """
+    engine = create_engine(connection_string)
+    with engine.begin() as connection:
+        command.stamp(alembic_cfg(scd, connection), revision, sql)
 
 
 @cli.command(name="hash")
