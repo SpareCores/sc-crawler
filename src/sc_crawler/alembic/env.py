@@ -12,10 +12,10 @@ from sc_crawler.tables import tables
 # access to the values within the .ini file in use.
 config = context.config
 
+logging_forced = config.attributes.get("force_logging", False)
+logging_inited = bool(logging.getLogger("sc_crawler").handlers)
 # Set up logging if was not done already
-if not logging.getLogger("sc_crawler").handlers or config.attributes.get(
-    "force_logging", False
-):
+if not logging_inited or logging_forced:
     if config.config_file_name is not None:
         fileConfig(config.config_file_name)
 
