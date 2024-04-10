@@ -51,6 +51,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        render_as_batch=True,
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -71,6 +72,7 @@ def run_migrations_online() -> None:
             connection=connectable,
             target_metadata=target_metadata,
             version_table="zzz_alembic_version",
+            render_as_batch=True,
         )
         with context.begin_transaction():
             context.run_migrations()
@@ -85,6 +87,7 @@ def run_migrations_online() -> None:
                 connection=connection,
                 target_metadata=target_metadata,
                 version_table="zzz_alembic_version",
+                render_as_batch=True,
             )
             with context.begin_transaction():
                 context.run_migrations()
