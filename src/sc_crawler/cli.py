@@ -229,7 +229,7 @@ def copy(
         ),
     ],
 ):
-    """Copy the content of a database to a blank database."""
+    """Copy the standard SC Crawler tables of a database into a blank database."""
 
     source_engine = create_engine(source)
     target_engine = create_engine(target)
@@ -255,6 +255,8 @@ def copy(
             items = [row.model_dump() for row in rows]
             insert_items(table, items, session=target_session, progress=progress)
         target_session.commit()
+    with target_engine.begin() as connection:
+        command.stamp(alembic_cfg(connection), "heads")
 
 
 @cli.command()
