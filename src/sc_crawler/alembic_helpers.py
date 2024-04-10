@@ -1,5 +1,21 @@
+import os
+from typing import Optional
+
+from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
 from sqlalchemy.engine import Connection
+
+
+def alembic_cfg(
+    connection, scd: Optional[bool] = None, force_logging: bool = True
+) -> Config:
+    """Loads the Alembic config and sets some dynamic attributes."""
+    alembic_cfg = Config(os.path.join(os.path.dirname(__file__), "alembic.ini"))
+    alembic_cfg.attributes["force_logging"] = force_logging
+    if scd is not None:
+        alembic_cfg.attributes["scd"] = scd
+    alembic_cfg.attributes["connection"] = connection
+    return alembic_cfg
 
 
 def get_revision(

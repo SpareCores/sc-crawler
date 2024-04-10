@@ -6,12 +6,10 @@ import logging
 from datetime import datetime, timedelta
 from enum import Enum
 from json import dumps, loads
-import os
 from pathlib import Path
 from types import SimpleNamespace
-from typing import List, Optional
+from typing import List
 
-from alembic.config import Config
 from alembic import command
 import typer
 from cachier import set_default_params
@@ -31,7 +29,7 @@ from sqlmodel import Session, create_engine, select
 from typing_extensions import Annotated
 
 from . import vendors as vendors_module
-from .alembic_helpers import get_revision
+from .alembic_helpers import alembic_cfg, get_revision
 from .insert import insert_items
 from .logger import ProgressPanel, ScRichHandler, VendorProgressTracker, logger
 from .lookup import compliance_frameworks, countries
@@ -119,16 +117,6 @@ options = SimpleNamespace(
         typer.Option(help="Dry-run, printing the SQL commands instead of running."),
     ],
 )
-
-
-def alembic_cfg(connection, scd: Optional[bool] = None) -> Config:
-    """Loads the Alembic config and sets some dynamic attributes."""
-    alembic_cfg = Config(os.path.join(os.path.dirname(__file__), "alembic.ini"))
-    alembic_cfg.attributes["force_logging"] = True
-    if scd is not None:
-        alembic_cfg.attributes["scd"] = scd
-    alembic_cfg.attributes["connection"] = connection
-    return alembic_cfg
 
 
 @alembic_app.command()
