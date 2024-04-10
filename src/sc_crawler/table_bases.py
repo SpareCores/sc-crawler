@@ -450,11 +450,7 @@ class StorageBase(MetaColumns, StorageFields):
     pass
 
 
-class ServerFields(HasServerIdPK, HasVendorPKFK):
-    name: str = Field(
-        default=None,
-        description="Human-friendly name or short description.",
-    )
+class ServerFields(HasDescription, HasName, HasServerIdPK, HasVendorPKFK):
     vcpus: int = Field(
         default=None,
         description="Default number of virtual CPUs (vCPU) of the server.",
@@ -519,7 +515,7 @@ class ServerFields(HasServerIdPK, HasVendorPKFK):
     )
     gpu_manufacturer: Optional[str] = Field(
         default=None,
-        description="The manufacturer of the primary GPU accelerator, e.g. Nvidia or AMD",
+        description="The manufacturer of the primary GPU accelerator, e.g. Nvidia or AMD.",
     )
     gpu_model: Optional[str] = Field(
         default=None,

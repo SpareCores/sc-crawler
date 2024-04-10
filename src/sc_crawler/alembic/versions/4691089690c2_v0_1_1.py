@@ -189,6 +189,14 @@ def upgrade() -> None:
             batch_op.alter_column(
                 "cpu_cores", existing_type=sa.INTEGER(), nullable=True
             )
+            batch_op.add_column(
+                sa.Column(
+                    "description",
+                    sqlmodel.sql.sqltypes.AutoString(),
+                    nullable=True,
+                    comment="Short description.",
+                )
+            )
     else:
         with op.batch_alter_table(
             "server", schema=None, copy_from=server_table
@@ -196,9 +204,25 @@ def upgrade() -> None:
             batch_op.alter_column(
                 "cpu_cores", existing_type=sa.INTEGER(), nullable=True
             )
+            batch_op.add_column(
+                sa.Column(
+                    "description",
+                    sqlmodel.sql.sqltypes.AutoString(),
+                    nullable=True,
+                    comment="Short description.",
+                )
+            )
 
 
 def downgrade() -> None:
+    server_table.append_column(
+        sa.Column(
+            "description",
+            sqlmodel.sql.sqltypes.AutoString(),
+            nullable=True,
+            comment="Short description.",
+        )
+    )
     if op.get_context().config.attributes.get("scd"):
         with op.batch_alter_table(
             "server_scd", schema=None, copy_from=server_table
@@ -206,6 +230,7 @@ def downgrade() -> None:
             batch_op.alter_column(
                 "cpu_cores", existing_type=sa.INTEGER(), nullable=False
             )
+            batch_op.drop_column("description")
     else:
         with op.batch_alter_table(
             "server", schema=None, copy_from=server_table
@@ -213,3 +238,4 @@ def downgrade() -> None:
             batch_op.alter_column(
                 "cpu_cores", existing_type=sa.INTEGER(), nullable=False
             )
+            batch_op.drop_column("description")
