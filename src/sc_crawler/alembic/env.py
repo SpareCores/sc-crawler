@@ -67,7 +67,11 @@ def run_migrations_online() -> None:
     # use DB connection if available
     connectable = config.attributes.get("connection", None)
     if connectable is not None:
-        context.configure(connection=connectable, target_metadata=target_metadata)
+        context.configure(
+            connection=connectable,
+            target_metadata=target_metadata,
+            version_table="zzz_alembic_version",
+        )
         with context.begin_transaction():
             context.run_migrations()
     else:
