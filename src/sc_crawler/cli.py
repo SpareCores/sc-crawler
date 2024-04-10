@@ -140,7 +140,7 @@ def current(
     """
     engine = create_engine(connection_string)
     with engine.begin() as connection:
-        print(command.current(alembic_cfg(connection, scd)))
+        command.current(alembic_cfg(connection, scd))
 
 
 @alembic_app.command()
