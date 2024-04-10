@@ -6,6 +6,8 @@ from ..tables import Vendor
 aws = Vendor(
     vendor_id="aws",
     name="Amazon Web Services",
+    # TODO host on cdn.sparecores.com
+    logo="https://upload.wikimedia.org/wikipedia/commons/9/93/Amazon_Web_Services_Logo.svg",
     homepage="https://aws.amazon.com",
     country=countries["US"],
     state="Washington",
