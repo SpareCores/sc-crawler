@@ -191,13 +191,19 @@ def stamp(
 @alembic_app.command()
 def autogenerate(
     connection_string: options.connection_string = "sqlite:///sc-data-all.db",
+    message: Annotated[
+        str,
+        typer.Option(help="Revision message, e.g. SC Crawler version number."),
+    ] = "empty message",
 ):
     """
     Autogenerate a migrations script based on the current state of a database.
     """
     engine = create_engine(connection_string)
     with engine.begin() as connection:
-        command.revision(alembic_cfg(connection=connection), autogenerate=True)
+        command.revision(
+            alembic_cfg(connection=connection), autogenerate=True, message=message
+        )
 
 
 @cli.command(name="hash")
