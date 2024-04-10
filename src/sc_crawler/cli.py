@@ -557,6 +557,10 @@ def pull(
         pbars.metadata.append(Text(" Time: ", style="bold"))
         pbars.metadata.append(Text(str(datetime.now())))
 
+        # alembic upgrade to ensure using the most recent version of the schemas
+        with engine.begin() as connection:
+            command.upgrade(alembic_cfg(connection, force_logging=False), "heads")
+
         with Session(engine) as session:
             # add/merge static objects to database
             for compliance_framework in compliance_frameworks.values():
