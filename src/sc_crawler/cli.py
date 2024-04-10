@@ -31,6 +31,7 @@ from sqlmodel import Session, create_engine, select
 from typing_extensions import Annotated
 
 from . import vendors as vendors_module
+from .alembic_helpers import get_revision
 from .insert import insert_items
 from .logger import ProgressPanel, ScRichHandler, VendorProgressTracker, logger
 from .lookup import compliance_frameworks, countries
@@ -311,6 +312,21 @@ def sync(
     most recent records of the SCD tables.
     """
 
+    source_engine = create_engine(source)
+    target_engine = create_engine(target)
+
+    # compare source and target database revisions, halt if not matching
+    with source_engine.connect() as connection:
+        current_rev = get_revision(connection)
+    with target_engine.begin() as connection:
+        target_rev = get_revision(connection)
+    if current_rev != target_rev:
+        print(
+            "Database revisions do NOT match, so not risking the sync. "
+            "Upgrade the database(s) before trying again!"
+        )
+        raise typer.Exit(code=1)
+
     ps = Progress(
         TimeElapsedColumn(),
         TextColumn("{task.description}"),
@@ -363,8 +379,7 @@ def sync(
     )
     with Live(g):
         # compare new records with old
-        engine = create_engine(source)
-        with Session(engine) as session:
+        with Session(source_engine) as session:
             tables_task_id = ps.add_task("Comparing tables", total=len(source_hash))
             for table_name, items in source_hash.items():
                 table_task_id = ps.add_task(table_name, total=len(items))
@@ -385,8 +400,7 @@ def sync(
                 ps.update(tables_task_id, advance=1)
 
         # compare old records with new
-        engine = create_engine(target)
-        with Session(engine) as session:
+        with Session(target_engine) as session:
             tables_task_id = pt.add_task("Comparing tables", total=len(target_hash))
             for table_name, items in target_hash.items():
                 table_task_id = pt.add_task(table_name, total=len(items))
@@ -446,8 +460,7 @@ def sync(
             MofNCompleteColumn(),
         )
         panel = Panel(progress, title="Updating target", expand=False)
-        engine = create_engine(target)
-        with Live(panel), Session(engine) as session:
+        with Live(panel), Session(target_engine) as session:
             for table_name, _ in source_hash.items():
                 model = table_name_to_model(table_name)
                 if scd:
