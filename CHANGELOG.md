@@ -1,3 +1,23 @@
+## v0.1.1 (Apr 12, 2024)
+
+New vendors:
+
+- Hetzner Cloud
+
+Infrastructure:
+
+- Use Alembic for database migrations.
+
+CLI tools:
+
+- Database migration helpers.
+- Moved CREATE TABLE generator subcommand under `schemas create`.
+
+Database migrations:
+
+- Add `description` field to `Server`.
+- Update `Server.cpu_cores` to be optional.
+
 ## v0.1.0 (Apr 05, 2024)
 
 Initial PyPI release of `sparecores-crawler`.
