@@ -10,8 +10,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import List, Optional
 
-from alembic import command
 import typer
+from alembic import command
 from cachier import set_default_params
 from rich.console import Console
 from rich.live import Live
