@@ -551,10 +551,6 @@ def pull(
     # filter reocrds
     records = [r for r in include_records if r not in exclude_records]
 
-    engine = create_engine(connection_string, json_serializer=custom_serializer)
-    for table in tables:
-        table.__table__.create(engine, checkfirst=True)
-
     pbars = ProgressPanel()
     with Live(pbars.panels):
         # show CLI arguments in the Metadata panel
@@ -573,6 +569,7 @@ def pull(
         pbars.metadata.append(Text(str(datetime.now())))
 
         # alembic upgrade to ensure using the most recent version of the schemas
+        engine = create_engine(connection_string, json_serializer=custom_serializer)
         with engine.begin() as connection:
             command.upgrade(alembic_cfg(connection, force_logging=False), "heads")
 
