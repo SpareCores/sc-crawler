@@ -130,7 +130,7 @@ def inventory_servers(vendor):
                 "vendor_id": vendor.vendor_id,
                 "server_id": str(server.id),
                 "name": server.name,
-                # TODO add server.description
+                "description": server.description,
                 "vcpus": server.cores,
                 "hypervisor": None,
                 "cpu_allocation": (
