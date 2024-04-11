@@ -8,7 +8,7 @@ from enum import Enum
 from json import dumps, loads
 from pathlib import Path
 from types import SimpleNamespace
-from typing import List
+from typing import List, Optional
 
 from alembic import command
 import typer
@@ -67,36 +67,10 @@ table_names = [t.get_table_name() for t in tables]
 Tables = Enum("TABLES", {k: k for k in table_names})
 
 
-@cli.command()
-def schema(
-    dialect: Annotated[
-        Engines,
-        typer.Option(
-            help="SQLAlchemy dialect to use for generating CREATE TABLE statements."
-        ),
-    ],
-    scd: Annotated[
-        bool, typer.Option(help="If SCD Type 2 tables should be also created.")
-    ] = False,
-):
-    """
-    Print the database schema in a SQL dialect.
-    """
-    url = engine_to_dialect[dialect.value]
-
-    def metadata_dump(sql, *_args, **_kwargs):
-        typer.echo(str(sql.compile(dialect=engine.dialect)) + ";")
-
-    engine = create_engine(url, strategy="mock", executor=metadata_dump)
-    for table in tables:
-        table.__table__.create(engine)
-    if scd:
-        for table in tables_scd:
-            table.__table__.create(engine)
-
-
 alembic_app = typer.Typer()
-cli.add_typer(alembic_app, name="alembic", help="Database migrations using Alembic.")
+cli.add_typer(
+    alembic_app, name="schemas", help="Database migration utilities using Alembic."
+)
 
 options = SimpleNamespace(
     connection_string=Annotated[
@@ -120,6 +94,47 @@ options = SimpleNamespace(
 
 
 @alembic_app.command()
+def create(
+    connection_string: Annotated[
+        Optional[str], typer.Option(help="Database URL with SQLAlchemy dialect.")
+    ] = None,
+    dialect: Annotated[
+        Optional[Engines],
+        typer.Option(
+            help="SQLAlchemy dialect to use for generating CREATE TABLE statements."
+        ),
+    ] = None,
+    scd: Annotated[
+        bool, typer.Option(help="If SCD Type 2 tables should be also created.")
+    ] = False,
+):
+    """
+    Print the database schema in a SQL dialect.
+
+    Either `connection_string` or `dialect` is to be provided to decide
+    what SQL dialect to use to generate the CREATE TABLE (and related)
+    SQL statements.
+    """
+    if connection_string is None and dialect is None:
+        print("Either connection_string or dialect parameters needs to be provided!")
+        raise typer.Exit(code=1)
+    if dialect:
+        url = engine_to_dialect[dialect.value]
+    else:
+        url = connection_string
+
+    def metadata_dump(sql, *_args, **_kwargs):
+        typer.echo(str(sql.compile(dialect=engine.dialect)) + ";")
+
+    engine = create_engine(url, strategy="mock", executor=metadata_dump)
+    for table in tables:
+        table.__table__.create(engine)
+    if scd:
+        for table in tables_scd:
+            table.__table__.create(engine)
+
+
+@alembic_app.command()
 def current(
     connection_string: options.connection_string = "sqlite:///sc-data-all.db",
     scd: options.scd = False,
@@ -140,7 +155,7 @@ def upgrade(
     sql: options.sql = False,
 ):
     """
-    Upgrade the database schema to a given revision.
+    Upgrade the database schema to a given (default: most recent) revision.
     """
     engine = create_engine(connection_string)
     with engine.begin() as connection:
@@ -155,7 +170,7 @@ def downgrade(
     sql: options.sql = False,
 ):
     """
-    Downgrade the database schema to a given revision. Default to the previous revision.
+    Downgrade the database schema to a given (default: previous) revision.
     """
     engine = create_engine(connection_string)
     with engine.begin() as connection:

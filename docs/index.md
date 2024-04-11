@@ -17,17 +17,6 @@ The package provides a CLI tool:
 sc-crawler --help
 ```
 
-### Print table definitions
-
-Generate `CREATE TABLE` statements e.g. for a MySQL database:
-
-```shell
-sc-crawler schema --dialect mysql
-```
-
-See `sc-crawler schema --help` for all supported database engines
-(mainly thanks to SQLAlchemy), and other options.
-
 ### Collect data
 
 Note that you need specific IAM permissions to be able to run `sc-crawler` at the below vendors:
@@ -113,6 +102,24 @@ To copy data from a database to another one or sync data between two databases, 
       document.getElementById('asciicast-sc-crawler-sync-demo'));
 }
 </script>
+
+### Database migrations
+
+To generate `CREATE TABLE` statements using the current version of the Crawler schemas,
+e.g. for a MySQL database:
+
+```shell
+sc-crawler schemas create --dialect mysql
+```
+
+See `sc-crawler schemas create --help` for all supported database engines
+(mainly thanks to SQLAlchemy), and other options.
+
+`sc-crawler schemas` also supports many other subcommands based on Alembic,
+e.g. `upgrade` or `downgrade` schemas in a database (either just printing
+the related SQL commands via the `--sql` flag), printing the current version,
+setting a database version to a specific revision, or auto-generating migration
+scripts (for SC Crawler developers).
 
 ## ORM
 
