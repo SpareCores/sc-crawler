@@ -68,8 +68,13 @@ def inventory_datacenters(vendor):
     """List all datacenters via API call.
 
     Hetzner Cloud uses integers for the datacenter id that we
-    convereted into strings, and the datacenter name is stored as an
-    alias.
+    convert into string. Best to use the unique `name`, which
+    can be also passed instead of the `id` in most `hcloud`
+    API endpoints via the `id_or_name` method.
+
+    Not taking the Hetzner unique `name` as id, as it's not
+    stated to be unique for other resources, and uniqueness
+    for servers might also change in the future.
 
     All datacenters are powered by green energy as per
     <https://www.hetzner.com/unternehmen/umweltschutz/>.
