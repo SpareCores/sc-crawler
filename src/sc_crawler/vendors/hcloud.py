@@ -120,6 +120,9 @@ def inventory_zones(vendor):
 
 
 def inventory_servers(vendor):
+    """List all server types from API and manual data entry from the Hetzner Cloud homepage.
+
+    CPU information is recorded from <https://www.hetzner.com/cloud/> as not exposed via API."""
     items = []
     for server in _client().server_types.get_all():
         # CPU info not available via the API,
@@ -190,22 +193,60 @@ def inventory_server_prices(vendor):
                     "price": float(location["price_hourly"]["net"]),
                     "price_upfront": 0,
                     "price_tiered": [],
-                    "currency": "USD,",
+                    "currency": "EUR",
                 }
             )
     return items
 
 
 def inventory_server_prices_spot(vendor):
+    """There are no spot instaces at Hetzner."""
     return []
 
 
 def inventory_storages(vendor):
-    return []
+    """Block storage volume information collected manually.
+
+    There is not information shared vie the API, so information
+    was collected manually from:
+
+    - <https://www.hetzner.com/cloud/>
+    - <https://docs.hetzner.cloud/#volumes-create-a-volume>
+    """
+    items = [
+        {
+            "storage_id": "block",
+            "vendor_id": vendor.vendor_id,
+            "name": "Block storage volume",
+            "description": None,
+            "storage_type": StorageType.NETWORK,
+            "max_iops": None,
+            "max_throughput": None,
+            "min_size": 10,
+            "max_size": 10240,
+        }
+    ]
+    return items
 
 
 def inventory_storage_prices(vendor):
-    return []
+    """Block storage volume pricing information collected manually.
+
+    Source: <https://www.hetzner.com/cloud/>
+    """
+    items = []
+    for datacenter in vendor.datacenters:
+        items.append(
+            {
+                "vendor_id": vendor.vendor_id,
+                "datacenter_id": datacenter.datacenter_id,
+                "storage_id": "block",
+                "unit": PriceUnit.GB_MONTH,
+                "price": 0.0440,
+                "currency": "EUR",
+            }
+        )
+    return items
 
 
 def inventory_traffic_prices(vendor):

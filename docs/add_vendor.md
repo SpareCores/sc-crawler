@@ -93,12 +93,13 @@ def inventory_zones(vendor):
 
 def inventory_servers(vendor):
     # items = []
-    # for server in _client().server_types.get_all():
+    # for server in []:
     #     items.append(
     #         {
     #             "vendor_id": vendor.vendor_id,
     #             "server_id": ,
     #             "name": ,
+    #             "description": None,
     #             "vcpus": ,
     #             "hypervisor": None,
     #             "cpu_allocation": CpuAllocation....,
@@ -129,7 +130,22 @@ def inventory_servers(vendor):
 
 
 def inventory_server_prices(vendor):
-    return []
+    # items = []
+    # for server in []:
+    #     items.append({
+    #         "vendor_id": ,
+    #         "datacenter_id": ,
+    #         "zone_id": ,
+    #         "server_id": ,
+    #         "operating_system": ,
+    #         "allocation": Allocation....,
+    #         "unit": "hourly",
+    #         "price": ,
+    #         "price_upfront": 0,
+    #         "price_tiered": [],
+    #         "currency": "USD,"
+    #     })
+    # return items
 
 
 def inventory_server_prices_spot(vendor):
@@ -137,11 +153,38 @@ def inventory_server_prices_spot(vendor):
 
 
 def inventory_storage(vendor):
-    return []
+    # items = []
+    # for storage in []:
+    #     items.append(
+    #         {
+    #             "storage_id": ,
+    #             "vendor_id": vendor.vendor_id,
+    #             "name": ,
+    #             "description": None,
+    #             "storage_type": StorageType....,
+    #             "max_iops": None,
+    #             "max_throughput": None,
+    #             "min_size": None,
+    #             "max_size": None,
+    #         }
+    #     )
+    # return items
 
 
 def inventory_storage_prices(vendor):
-    return []
+    # items = []
+    # for price in []:
+    #     items.append(
+    #         {
+    #             "vendor_id": vendor.vendor_id,
+    #             "datacenter_id": ,
+    #             "storage_id": ,
+    #             "unit": PriceUnit.GB_MONTH,
+    #             "price": ,
+    #             "currency": "USD",
+    #         }
+    #     )
+    # return items
 
 
 def inventory_traffic_prices(vendor):
