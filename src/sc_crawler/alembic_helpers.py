@@ -15,6 +15,9 @@ def alembic_cfg(
     if scd is not None:
         alembic_cfg.attributes["scd"] = scd
     alembic_cfg.attributes["connection"] = connection
+    alembic_cfg.set_main_option(
+        "script_location", os.path.join(os.path.dirname(__file__), "alembic")
+    )
     return alembic_cfg
 
 
