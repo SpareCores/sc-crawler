@@ -175,7 +175,25 @@ def inventory_servers(vendor):
 
 
 def inventory_server_prices(vendor):
-    return []
+    items = []
+    for server in _client().server_types.get_all():
+        for location in server.prices:
+            items.append(
+                {
+                    "vendor_id": vendor.vendor_id,
+                    "datacenter_id": location["location"],
+                    "zone_id": location["location"],
+                    "server_id": str(server.id),
+                    "operating_system": "Linux",
+                    "allocation": Allocation.ONDEMAND,
+                    "unit": PriceUnit.HOUR,
+                    "price": float(location["price_hourly"]["net"]),
+                    "price_upfront": 0,
+                    "price_tiered": [],
+                    "currency": "USD,",
+                }
+            )
+    return items
 
 
 def inventory_server_prices_spot(vendor):
