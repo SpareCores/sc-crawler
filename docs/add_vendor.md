@@ -188,9 +188,33 @@ def inventory_storage_prices(vendor):
 
 
 def inventory_traffic_prices(vendor):
-    return []
+    # items = []
+    # for price in []:
+    #     items.append(
+    #         {
+    #             "vendor_id": vendor.vendor_id,
+    #             "datacenter_id": ,
+    #             "price": ,
+    #             "price_tiered": [],
+    #             "currency": "USD",
+    #             "unit": PriceUnit.GB_MONTH,
+    #             "direction": TrafficDirection....,
+    #         }
+    #     )
+    # return items
 
 
 def inventory_ipv4_prices(vendor):
-    return []
+    # items = []
+    # for price in []:
+    #     items.append(
+    #         {
+    #             "vendor_id": vendor.vendor_id,
+    #             "datacenter_id": ,
+    #             "price": ,
+    #             "currency": "USD",
+    #             "unit": PriceUnit.HOUR,
+    #         }
+    #     )
+    # return items
 ```

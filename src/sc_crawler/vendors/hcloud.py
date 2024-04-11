@@ -250,8 +250,51 @@ def inventory_storage_prices(vendor):
 
 
 def inventory_traffic_prices(vendor):
-    return []
+    """Traffic price collected manually.
+
+    Source: <https://docs.hetzner.com/robot/general/traffic/>
+    """
+    items = []
+    for datacenter in vendor.datacenters:
+        items.append(
+            {
+                "vendor_id": vendor.vendor_id,
+                "datacenter_id": datacenter.datacenter_id,
+                "price": 0,
+                "price_tiered": [],
+                "currency": "EUR",
+                "unit": PriceUnit.GB_MONTH,
+                "direction": TrafficDirection.IN,
+            }
+        )
+        items.append(
+            {
+                "vendor_id": vendor.vendor_id,
+                "datacenter_id": datacenter.datacenter_id,
+                "price": 1,
+                "price_tiered": [],
+                "currency": "EUR",
+                "unit": PriceUnit.GB_MONTH,
+                "direction": TrafficDirection.OUT,
+            }
+        )
+    return items
 
 
 def inventory_ipv4_prices(vendor):
-    return []
+    """IPv4 price collected manually.
+
+    Source: <https://docs.hetzner.com/general/others/ipv4-pricing/#cloud>
+    """
+    items = []
+    for datacenter in vendor.datacenters:
+        items.append(
+            {
+                "vendor_id": vendor.vendor_id,
+                "datacenter_id": datacenter.datacenter_id,
+                "price": 0.50,
+                "currency": "EUR",
+                "unit": PriceUnit.MONTH,
+            }
+        )
+    return items
