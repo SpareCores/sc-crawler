@@ -177,7 +177,9 @@ server_table = sa.Table(
         ["vendor_id"],
         ["vendor.vendor_id"],
     ),
-    sa.PrimaryKeyConstraint("vendor_id", "server_id", "observed_at"),
+    sa.PrimaryKeyConstraint("vendor_id", "server_id", "observed_at")
+    if op.get_context().config.attributes.get("scd")
+    else sa.PrimaryKeyConstraint("vendor_id", "server_id"),
 )
 
 
