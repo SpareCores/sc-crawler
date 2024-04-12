@@ -1,9 +1,10 @@
 from os.path import dirname, join
 from typing import Optional
 
+from sqlalchemy.engine import Connection
+
 from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
-from sqlalchemy.engine import Connection
 
 pkg_folder = dirname(dirname(dirname(__file__)))
 
