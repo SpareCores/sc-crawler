@@ -29,4 +29,7 @@ jobs:
             mkdocs-material-
       - name: Install local pkg
         run: pip install .[all]
-      - run: mkdocs gh-deploy --force
+      - name: Build mkdocs
+        run: |
+          rm -rf src/sc_crawler/alembic
+          mkdocs gh-deploy --force
