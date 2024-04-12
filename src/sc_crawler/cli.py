@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from typing import List, Optional
 
 import typer
+from alembic import command
 from cachier import set_default_params
 from rich.console import Console
 from rich.live import Live
@@ -26,8 +27,6 @@ from rich.table import Table
 from rich.text import Text
 from sqlmodel import Session, create_engine, select
 from typing_extensions import Annotated
-
-from alembic import command
 
 from . import vendors as vendors_module
 from .alembic_helpers import alembic_cfg, get_revision
