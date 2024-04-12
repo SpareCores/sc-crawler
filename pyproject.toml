@@ -25,6 +25,7 @@ maintainers = [
 ]
 description = "Pull and standardize data on cloud compute resources."
 readme = "README.md"
+keywords = ["cloud", "compute", "etl", "sqlite", "spot-instances", "cost-optimization"]
 classifiers = [
   "Programming Language :: Python :: 3",
   "License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)",
@@ -36,6 +37,7 @@ classifiers = [
 repository = "https://github.com/SpareCores/sc-crawler"
 issues = "https://github.com/SpareCores/sc-crawler/issues"
 documentation = "https://sparecores.github.io/sc-crawler/"
+homepage = "https://sparecores.com"
 
 [project.optional-dependencies]
 mkdocs = [
