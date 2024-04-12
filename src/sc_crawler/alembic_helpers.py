@@ -1,23 +1,23 @@
-import os
+from os.path import dirname, join
 from typing import Optional
 
 from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
 from sqlalchemy.engine import Connection
 
+pkg_folder = dirname(dirname(dirname(__file__)))
+
 
 def alembic_cfg(
     connection, scd: Optional[bool] = None, force_logging: bool = True
 ) -> Config:
     """Loads the Alembic config and sets some dynamic attributes."""
-    alembic_cfg = Config(os.path.join(os.path.dirname(__file__), "alembic.ini"))
+    alembic_cfg = Config(join(pkg_folder, "alembic.ini"))
     alembic_cfg.attributes["force_logging"] = force_logging
     if scd is not None:
         alembic_cfg.attributes["scd"] = scd
     alembic_cfg.attributes["connection"] = connection
-    alembic_cfg.set_main_option(
-        "script_location", os.path.join(os.path.dirname(__file__), "alembic")
-    )
+    alembic_cfg.set_main_option("script_location", join(pkg_folder, "alembic"))
     return alembic_cfg
 
 
