@@ -1,14 +1,11 @@
-from os.path import dirname, exists, join
+from os.path import dirname, join
 from typing import Optional
-
-from sqlalchemy.engine import Connection
 
 from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
+from sqlalchemy.engine import Connection
 
 pkg_folder = dirname(__file__)
-while not exists(join(pkg_folder, "alembic.ini")):
-    pkg_folder = dirname(pkg_folder)
 
 
 def alembic_cfg(

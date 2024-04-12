@@ -1,3 +1,2 @@
 include README.md
-recursive-include alembic *
-include alembic.ini
+include src/sc_crawler/alembic.ini
