@@ -7,9 +7,11 @@ from datetime import datetime, timedelta
 from enum import Enum
 from json import dumps, loads
 from pathlib import Path
-from typing import List
+from types import SimpleNamespace
+from typing import List, Optional
 
 import typer
+from alembic import command
 from cachier import set_default_params
 from rich.console import Console
 from rich.live import Live
@@ -27,6 +29,7 @@ from sqlmodel import Session, create_engine, select
 from typing_extensions import Annotated
 
 from . import vendors as vendors_module
+from .alembic_helpers import alembic_cfg, get_revision
 from .insert import insert_items
 from .logger import ProgressPanel, ScRichHandler, VendorProgressTracker, logger
 from .lookup import compliance_frameworks, countries
@@ -64,22 +67,61 @@ table_names = [t.get_table_name() for t in tables]
 Tables = Enum("TABLES", {k: k for k in table_names})
 
 
-@cli.command()
-def schema(
+alembic_app = typer.Typer()
+cli.add_typer(
+    alembic_app, name="schemas", help="Database migration utilities using Alembic."
+)
+
+options = SimpleNamespace(
+    connection_string=Annotated[
+        str, typer.Option(help="Database URL with SQLAlchemy dialect.")
+    ],
+    revision=Annotated[
+        str,
+        typer.Option(
+            help="Target revision passed to Alembic. Use 'heads' to get to the most recent version."
+        ),
+    ],
+    scd=Annotated[
+        bool,
+        typer.Option(help="Migrate the SCD tables instead of the standard tables."),
+    ],
+    sql=Annotated[
+        bool,
+        typer.Option(help="Dry-run, printing the SQL commands instead of running."),
+    ],
+)
+
+
+@alembic_app.command()
+def create(
+    connection_string: Annotated[
+        Optional[str], typer.Option(help="Database URL with SQLAlchemy dialect.")
+    ] = None,
     dialect: Annotated[
-        Engines,
+        Optional[Engines],
         typer.Option(
             help="SQLAlchemy dialect to use for generating CREATE TABLE statements."
         ),
-    ],
+    ] = None,
     scd: Annotated[
         bool, typer.Option(help="If SCD Type 2 tables should be also created.")
     ] = False,
 ):
     """
     Print the database schema in a SQL dialect.
+
+    Either `connection_string` or `dialect` is to be provided to decide
+    what SQL dialect to use to generate the CREATE TABLE (and related)
+    SQL statements.
     """
-    url = engine_to_dialect[dialect.value]
+    if connection_string is None and dialect is None:
+        print("Either connection_string or dialect parameters needs to be provided!")
+        raise typer.Exit(code=1)
+    if dialect:
+        url = engine_to_dialect[dialect.value]
+    else:
+        url = connection_string
 
     def metadata_dump(sql, *_args, **_kwargs):
         typer.echo(str(sql.compile(dialect=engine.dialect)) + ";")
@@ -92,11 +134,85 @@ def schema(
             table.__table__.create(engine)
 
 
+@alembic_app.command()
+def current(
+    connection_string: options.connection_string = "sqlite:///sc-data-all.db",
+    scd: options.scd = False,
+):
+    """
+    Show current database revision.
+    """
+    engine = create_engine(connection_string)
+    with engine.begin() as connection:
+        command.current(alembic_cfg(connection, scd))
+
+
+@alembic_app.command()
+def upgrade(
+    connection_string: options.connection_string = "sqlite:///sc-data-all.db",
+    revision: options.revision = "heads",
+    scd: options.scd = False,
+    sql: options.sql = False,
+):
+    """
+    Upgrade the database schema to a given (default: most recent) revision.
+    """
+    engine = create_engine(connection_string)
+    with engine.begin() as connection:
+        command.upgrade(alembic_cfg(connection, scd), revision, sql)
+
+
+@alembic_app.command()
+def downgrade(
+    connection_string: options.connection_string = "sqlite:///sc-data-all.db",
+    revision: options.revision = "-1",
+    scd: options.scd = False,
+    sql: options.sql = False,
+):
+    """
+    Downgrade the database schema to a given (default: previous) revision.
+    """
+    engine = create_engine(connection_string)
+    with engine.begin() as connection:
+        command.downgrade(alembic_cfg(connection, scd), revision, sql)
+
+
+@alembic_app.command()
+def stamp(
+    connection_string: options.connection_string = "sqlite:///sc-data-all.db",
+    revision: options.revision = "heads",
+    scd: options.scd = False,
+    sql: options.sql = False,
+):
+    """
+    Set the migration revision mark in he database to a specified revision. Set to "heads" if the database schema is up-to-date.
+    """
+    engine = create_engine(connection_string)
+    with engine.begin() as connection:
+        command.stamp(alembic_cfg(connection, scd), revision, sql)
+
+
+@alembic_app.command()
+def autogenerate(
+    connection_string: options.connection_string = "sqlite:///sc-data-all.db",
+    message: Annotated[
+        str,
+        typer.Option(help="Revision message, e.g. SC Crawler version number."),
+    ] = "empty message",
+):
+    """
+    Autogenerate a migrations script based on the current state of a database.
+    """
+    engine = create_engine(connection_string)
+    with engine.begin() as connection:
+        command.revision(
+            alembic_cfg(connection=connection), autogenerate=True, message=message
+        )
+
+
 @cli.command(name="hash")
 def hash_command(
-    connection_string: Annotated[
-        str, typer.Option(help="Database URL with SQLAlchemy dialect.")
-    ] = "sqlite:///sc-data-all.db",
+    connection_string: options.connection_string = "sqlite:///sc-data-all.db",
 ):
     """Print the hash of the content of a database."""
     print(hash_database(connection_string))
@@ -117,13 +233,13 @@ def copy(
         ),
     ],
 ):
-    """Copy the content of a database to a blank database."""
+    """Copy the standard SC Crawler tables of a database into a blank database."""
 
     source_engine = create_engine(source)
     target_engine = create_engine(target)
 
     for table in tables:
-        table.__table__.create(target_engine, checkfirst=True)
+        table.__table__.create(target_engine)
 
     progress = Progress(
         TimeElapsedColumn(),
@@ -143,6 +259,8 @@ def copy(
             items = [row.model_dump() for row in rows]
             insert_items(table, items, session=target_session, progress=progress)
         target_session.commit()
+    with target_engine.begin() as connection:
+        command.stamp(alembic_cfg(connection), "heads")
 
 
 @cli.command()
@@ -197,6 +315,21 @@ def sync(
     most recent records of the SCD tables.
     """
 
+    source_engine = create_engine(source)
+    target_engine = create_engine(target)
+
+    # compare source and target database revisions, halt if not matching
+    with source_engine.connect() as connection:
+        current_rev = get_revision(connection)
+    with target_engine.begin() as connection:
+        target_rev = get_revision(connection)
+    if current_rev != target_rev:
+        print(
+            "Database revisions do NOT match, so not risking the sync. "
+            "Upgrade the database(s) before trying again!"
+        )
+        raise typer.Exit(code=1)
+
     ps = Progress(
         TimeElapsedColumn(),
         TextColumn("{task.description}"),
@@ -249,8 +382,7 @@ def sync(
     )
     with Live(g):
         # compare new records with old
-        engine = create_engine(source)
-        with Session(engine) as session:
+        with Session(source_engine) as session:
             tables_task_id = ps.add_task("Comparing tables", total=len(source_hash))
             for table_name, items in source_hash.items():
                 table_task_id = ps.add_task(table_name, total=len(items))
@@ -271,8 +403,7 @@ def sync(
                 ps.update(tables_task_id, advance=1)
 
         # compare old records with new
-        engine = create_engine(target)
-        with Session(engine) as session:
+        with Session(target_engine) as session:
             tables_task_id = pt.add_task("Comparing tables", total=len(target_hash))
             for table_name, items in target_hash.items():
                 table_task_id = pt.add_task(table_name, total=len(items))
@@ -332,8 +463,7 @@ def sync(
             MofNCompleteColumn(),
         )
         panel = Panel(progress, title="Updating target", expand=False)
-        engine = create_engine(target)
-        with Live(panel), Session(engine) as session:
+        with Live(panel), Session(target_engine) as session:
             for table_name, _ in source_hash.items():
                 model = table_name_to_model(table_name)
                 if scd:
@@ -351,9 +481,7 @@ def sync(
 
 @cli.command()
 def pull(
-    connection_string: Annotated[
-        str, typer.Option(help="Database URL with SQLAlchemy dialect.")
-    ] = "sqlite:///sc-data-all.db",
+    connection_string: options.connection_string = "sqlite:///sc-data-all.db",
     include_vendor: Annotated[
         List[Vendors],
         typer.Option(help="Enabled data sources. Can be specified multiple times."),
@@ -423,10 +551,6 @@ def pull(
     # filter reocrds
     records = [r for r in include_records if r not in exclude_records]
 
-    engine = create_engine(connection_string, json_serializer=custom_serializer)
-    for table in tables:
-        table.__table__.create(engine, checkfirst=True)
-
     pbars = ProgressPanel()
     with Live(pbars.panels):
         # show CLI arguments in the Metadata panel
@@ -443,6 +567,11 @@ def pull(
             pbars.metadata.append(Text("Disabled"))
         pbars.metadata.append(Text(" Time: ", style="bold"))
         pbars.metadata.append(Text(str(datetime.now())))
+
+        # alembic upgrade to ensure using the most recent version of the schemas
+        engine = create_engine(connection_string, json_serializer=custom_serializer)
+        with engine.begin() as connection:
+            command.upgrade(alembic_cfg(connection, force_logging=False), "heads")
 
         with Session(engine) as session:
             # add/merge static objects to database

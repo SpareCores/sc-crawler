@@ -240,7 +240,7 @@ class HasDescription(ScModel):
 
 class HasVendorPKFK(ScModel):
     vendor_id: str = Field(
-        foreign_key="vendor",
+        foreign_key="vendor.vendor_id",
         primary_key=True,
         description="Reference to the Vendor.",
     )
@@ -341,7 +341,7 @@ class VendorFields(HasName, HasVendorIdPK):
     )
 
     country_id: str = Field(
-        foreign_key="country",
+        foreign_key="country.country_id",
         description="Reference to the Country, where the Vendor's main headquarter is located.",
     )
     state: Optional[str] = Field(
@@ -373,7 +373,7 @@ class VendorBase(MetaColumns, VendorFields):
 
 class VendorComplianceLinkFields(HasVendorPKFK):
     compliance_framework_id: str = Field(
-        foreign_key="compliance_framework",
+        foreign_key="compliance_framework.compliance_framework_id",
         primary_key=True,
         description="Reference to the Compliance Framework.",
     )
@@ -394,7 +394,7 @@ class DatacenterFields(HasName, HasDatacenterIdPK, HasVendorPKFK):
         description="List of other commonly used names for the same Datacenter.",
     )
     country_id: str = Field(
-        foreign_key="country",
+        foreign_key="country.country_id",
         description="Reference to the Country, where the Datacenter is located.",
     )
     state: Optional[str] = Field(
@@ -450,11 +450,7 @@ class StorageBase(MetaColumns, StorageFields):
     pass
 
 
-class ServerFields(HasServerIdPK, HasVendorPKFK):
-    name: str = Field(
-        default=None,
-        description="Human-friendly name or short description.",
-    )
+class ServerFields(HasDescription, HasName, HasServerIdPK, HasVendorPKFK):
     vcpus: int = Field(
         default=None,
         description="Default number of virtual CPUs (vCPU) of the server.",
@@ -467,7 +463,7 @@ class ServerFields(HasServerIdPK, HasVendorPKFK):
         default=None,
         description="Allocation of CPU(s) to the server, e.g. shared, burstable or dedicated.",
     )
-    cpu_cores: int = Field(
+    cpu_cores: Optional[int] = Field(
         default=None,
         description=(
             "Default number of CPU cores of the server. "
@@ -519,7 +515,7 @@ class ServerFields(HasServerIdPK, HasVendorPKFK):
     )
     gpu_manufacturer: Optional[str] = Field(
         default=None,
-        description="The manufacturer of the primary GPU accelerator, e.g. Nvidia or AMD",
+        description="The manufacturer of the primary GPU accelerator, e.g. Nvidia or AMD.",
     )
     gpu_model: Optional[str] = Field(
         default=None,

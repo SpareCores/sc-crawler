@@ -6,6 +6,8 @@ from ..tables import Vendor
 aws = Vendor(
     vendor_id="aws",
     name="Amazon Web Services",
+    # TODO host on cdn.sparecores.com
+    logo="https://upload.wikimedia.org/wikipedia/commons/9/93/Amazon_Web_Services_Logo.svg",
     homepage="https://aws.amazon.com",
     country=countries["US"],
     state="Washington",
@@ -30,3 +32,17 @@ gcp = Vendor(
     status_page="https://status.cloud.google.com/",
 )
 """Google Cloud Platform."""
+
+hcloud = Vendor(
+    vendor_id="hcloud",
+    name="Hetzner Cloud",
+    homepage="https://www.hetzner.com/cloud/",
+    country=countries["DE"],
+    state="Bavaria",
+    city="Gunzenhausen",
+    address_line="Industriestr. 25",
+    zip_code="91710",
+    founding_year=1997,
+    status_page="https://status.hetzner.com/",
+)
+"""Hetzner Cloud."""

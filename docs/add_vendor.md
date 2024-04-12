@@ -2,11 +2,19 @@
 
 Each file in the [`src/sc_crawler/vendors`](https://github.com/SpareCores/sc-crawler/tree/main/src/sc_crawler/vendors) folder provides the required helpers for a given [Vendor][sc_crawler.tables.Vendor], named as the `id` of the vendor. For example, [`aws.py`](https://github.com/SpareCores/sc-crawler/tree/main/src/sc_crawler/vendors/aws.py) provides functions to be used by its [Vendor][sc_crawler.tables.Vendor] instance, called [`aws`][sc_crawler.vendors.aws].
 
+## First steps
+
+1. Define the new [Vendor][sc_crawler.tables.Vendor] instance in `src/sc_crawler/vendors/vendors.py`.
+2. Copy the below [template file](#template-file-for-new-vendors) as a starting point to `src/sc_crawler/vendors/{vendor_id}.py`.
+3. Update `src/sc_crawler/vendors/__init__.py` to include the new vendor.
+4. Update `docs/add_vendor.md` with the credential requirements for the new vendor.
+5. Implement the `inventory` methods.
+
 ## Inventory methods
 
-Each file should provide the below functions:
+Each vendor module should provide the below functions:
 
-- `inventory_compliance_frameworks`: Define [`VendorComplianceLink`][sc_crawler.tables.VendorComplianceLink] instances to describe which frameworks the vendor complies with. Optionally include references in the `comment` field. To avoid duplicating [`ComplianceFramework`][sc_crawler.tables.ComplianceFramework] instances, easiest is to use the `compliance_framework_id` field instead of the `compliance_framework` relationship.
+- `inventory_compliance_frameworks`: Define [`VendorComplianceLink`][sc_crawler.tables.VendorComplianceLink] instances to describe which frameworks the vendor complies with. Optionally include references in the `comment` field. To avoid duplicating [`ComplianceFramework`][sc_crawler.tables.ComplianceFramework] instances, easiest is to use the `compliance_framework_id` field instead of the `compliance_framework` relationship, preferably via [sc_crawler.lookup.map_compliance_frameworks_to_vendor][].
 - `inventory_datacenters`: Define [`Datacenter`][sc_crawler.tables.Datacenter] instances with location, energy source etc for each region/datacenter the vendor has.
 - `inventory_zones`: Define a [`Zone`][sc_crawler.tables.Zone] instance for each availability zone of the vendor in each datacenter.
 - `inventory_servers`: Define [`Server`][sc_crawler.tables.Server] instances for the vendor's server/instance types.
@@ -49,23 +57,95 @@ def inventory_zones(vendor):
 
 ```python
 def inventory_compliance_frameworks(vendor):
-    return []
+    return map_compliance_frameworks_to_vendor(vendor.vendor_id, [
+    #    "hipaa",
+    #    "soc2t2",
+    #    "iso27001",
+    ])
 
 
 def inventory_datacenters(vendor):
+    # {
+    #     "vendor_id": "",
+    #     "datacenter_id": "",
+    #     "name": "",
+    #     "aliases": [],
+    #     "country_id": "",
+    #     "state": None,
+    #     "city": None,
+    #     "address_line": None,
+    #     "zip_code": None,
+    #     "founding_year": None,
+    #     "green_energy": None,
+    # }
     return []
 
 
 def inventory_zones(vendor):
+    # {
+    #     "vendor_id": "",
+    #     "datacenter_id": "",
+    #     "zone_id": "",
+    #     "name": "",
+    # }
     return []
 
 
 def inventory_servers(vendor):
-    return []
+    # items = []
+    # for server in []:
+    #     items.append(
+    #         {
+    #             "vendor_id": vendor.vendor_id,
+    #             "server_id": ,
+    #             "name": ,
+    #             "description": None,
+    #             "vcpus": ,
+    #             "hypervisor": None,
+    #             "cpu_allocation": CpuAllocation....,
+    #             "cpu_cores": ,
+    #             "cpu_speed": None,
+    #             "cpu_architecture": CpuArchitecture....,
+    #             "cpu_manufacturer": None,
+    #             "cpu_family": None,
+    #             "cpu_model": None,
+    #             "cpus": [],
+    #             "memory": ,
+    #             "gpu_count": 0,
+    #             "gpu_memory_min": None,
+    #             "gpu_memory_total": None,
+    #             "gpu_manufacturer": None,
+    #             "gpu_model": None,
+    #             "gpus": [],
+    #             "storage_size": 0,
+    #             "storage_type": None,
+    #             "storages": [],
+    #             "network_speed": None,
+    #             "inbound_traffic": 0,
+    #             "outbound_traffic": 0,
+    #             "ipv4": 0,
+    #         }
+    #     )
+    # return items
 
 
 def inventory_server_prices(vendor):
-    return []
+    # items = []
+    # for server in []:
+    #     items.append({
+    #         "vendor_id": ,
+    #         "datacenter_id": ,
+    #         "zone_id": ,
+    #         "server_id": ,
+    #         "operating_system": ,
+    #         "allocation": Allocation....,
+    #         "unit": "hourly",
+    #         "price": ,
+    #         "price_upfront": 0,
+    #         "price_tiered": [],
+    #         "currency": "USD,"
+    #     })
+    # return items
 
 
 def inventory_server_prices_spot(vendor):
@@ -73,17 +153,68 @@ def inventory_server_prices_spot(vendor):
 
 
 def inventory_storage(vendor):
-    return []
+    # items = []
+    # for storage in []:
+    #     items.append(
+    #         {
+    #             "storage_id": ,
+    #             "vendor_id": vendor.vendor_id,
+    #             "name": ,
+    #             "description": None,
+    #             "storage_type": StorageType....,
+    #             "max_iops": None,
+    #             "max_throughput": None,
+    #             "min_size": None,
+    #             "max_size": None,
+    #         }
+    #     )
+    # return items
 
 
 def inventory_storage_prices(vendor):
-    return []
+    # items = []
+    # for price in []:
+    #     items.append(
+    #         {
+    #             "vendor_id": vendor.vendor_id,
+    #             "datacenter_id": ,
+    #             "storage_id": ,
+    #             "unit": PriceUnit.GB_MONTH,
+    #             "price": ,
+    #             "currency": "USD",
+    #         }
+    #     )
+    # return items
 
 
 def inventory_traffic_prices(vendor):
-    return []
+    # items = []
+    # for price in []:
+    #     items.append(
+    #         {
+    #             "vendor_id": vendor.vendor_id,
+    #             "datacenter_id": ,
+    #             "price": ,
+    #             "price_tiered": [],
+    #             "currency": "USD",
+    #             "unit": PriceUnit.GB_MONTH,
+    #             "direction": TrafficDirection....,
+    #         }
+    #     )
+    # return items
 
 
 def inventory_ipv4_prices(vendor):
-    return []
+    # items = []
+    # for price in []:
+    #     items.append(
+    #         {
+    #             "vendor_id": vendor.vendor_id,
+    #             "datacenter_id": ,
+    #             "price": ,
+    #             "currency": "USD",
+    #             "unit": PriceUnit.HOUR,
+    #         }
+    #     )
+    # return items
 ```

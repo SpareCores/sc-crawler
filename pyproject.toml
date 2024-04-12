@@ -4,9 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sparecores-crawler"
-version = "0.1.0"
+version = "0.1.1"
 requires-python = ">= 3.7"
 dependencies = [
+  "alembic",
   "cachier",
   "pydantic",
   "pydantic_extra_types",
@@ -47,11 +48,15 @@ mkdocs = [
 ]
 testing = ["pytest", "sparecores-crawler[mkdocs]"]
 aws = ["boto3"]
-vendors = ["sparecores-crawler[aws]"]
+hcloud = ["hcloud"]
+vendors = ["sparecores-crawler[aws]", "sparecores-crawler[hcloud]"]
 all = ["sparecores-crawler[testing]", "sparecores-crawler[vendors]"]
 
 [project.scripts]
 sc-crawler = "sc_crawler.cli:cli"
+
+[tool.setuptools]
+include-package-data = true  # see MANIFEST.in
 
 [tool.setuptools.packages.find]
 where = ["src"]

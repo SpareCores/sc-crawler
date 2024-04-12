@@ -1,3 +1,34 @@
+## v0.1.1 (Apr 12, 2024)
+
+New vendors:
+
+- Hetzner Cloud
+
+Infrastructure:
+
+- Use Alembic for database migrations.
+
+CLI tools:
+
+- Database migration helpers.
+- Moved CREATE TABLE generator subcommand under `schemas create`.
+
+Database migrations:
+
+- Add `description` field to `Server`.
+- Update `Server.cpu_cores` to be optional.
+
+‼ Breaking changes:
+
+As the database migration tool was just introduced, if you have
+been already using SC Crawler to initialize a database and
+collect data (e.g. in SCD tables), you will need to let Alembic
+know that you are already on v0.1.0 via the below command:
+
+```sh
+sc-crawler schemas stamp --revision 98894dffd37c
+```
+
 ## v0.1.0 (Apr 05, 2024)
 
 Initial PyPI release of `sparecores-crawler`.
