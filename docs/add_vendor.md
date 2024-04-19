@@ -65,20 +65,24 @@ def inventory_compliance_frameworks(vendor):
 
 
 def inventory_datacenters(vendor):
-    # {
-    #     "vendor_id": "",
-    #     "datacenter_id": "",
-    #     "name": "",
-    #     "aliases": [],
-    #     "country_id": "",
-    #     "state": None,
-    #     "city": None,
-    #     "address_line": None,
-    #     "zip_code": None,
-    #     "founding_year": None,
-    #     "green_energy": None,
-    # }
-    return []
+    items = []
+    # for datacenter in []:
+    #     items.append(
+    #         {
+    #             "vendor_id": vendor.vendor_id,
+    #             "datacenter_id": "",
+    #             "name": "",
+    #             "aliases": [],
+    #             "country_id": "",
+    #             "state": None,
+    #             "city": None,
+    #             "address_line": None,
+    #             "zip_code": None,
+    #             "founding_year": None,
+    #             "green_energy": None,
+    #         }
+    #     )
+    return items
 
 
 def inventory_zones(vendor):
