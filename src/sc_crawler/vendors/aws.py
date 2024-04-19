@@ -371,6 +371,7 @@ def inventory_compliance_frameworks(vendor):
     """Manual list of compliance frameworks known for AWS.
 
     Resources: <https://aws.amazon.com/compliance/programs/>
+    """
     return map_compliance_frameworks_to_vendor(
         vendor.vendor_id, ["hipaa", "soc2t2", "iso27001"]
     )
