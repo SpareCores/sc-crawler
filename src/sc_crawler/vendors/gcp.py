@@ -1,4 +1,6 @@
+from concurrent.futures import ThreadPoolExecutor
 from functools import cache
+from itertools import chain, repeat
 from typing import List
 
 from cachier import cachier
@@ -14,6 +16,10 @@ from ..table_fields import (
     Status,
     StorageType,
     TrafficDirection,
+)
+from ..tables import (
+    Zone,
+    Vendor,
 )
 
 # ##############################################################################
@@ -375,17 +381,16 @@ def inventory_zones(vendor):
 
 
 def inventory_servers(vendor):
-    items = {}
-    for zone in vendor.zones:
-        zone_servers = _servers(zone.name)
-        for server in zone_servers:
-            if server.name not in items:
-                if server.name in ["c3-standard-4-lssd"]:
-                    raise KeyError("boom")
-                if server.scratch_disks:
-                    raise KeyError("asdada")
-                items[server.name] = {
-                    "vendor_id": "vendor.vendor_id",
+    vendor.progress_tracker.start_task(
+        name="Scanning zone(s) for server(s)", total=len(vendor.zones)
+    )
+
+    def search_servers(zone: Zone, vendor: Vendor) -> List[dict]:
+        zone_servers = []
+        for server in _servers(zone.name):
+            zone_servers.append(
+                {
+                    "vendor_id": vendor.vendor_id,
                     "server_id": str(server.id),
                     "name": server.name,
                     "description": server.description,
@@ -431,7 +436,20 @@ def inventory_servers(vendor):
                     "outbound_traffic": 0,
                     "ipv4": 0,
                 }
-    return list(items.values())
+            )
+        vendor.log(f"{len(zone_servers)} server(s) found in {zone.name}.")
+        vendor.progress_tracker.advance_task()
+        return zone_servers
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        servers = executor.map(search_servers, vendor.zones, repeat(vendor))
+    servers = list(chain.from_iterable(servers))
+
+    vendor.log(f"{len(servers)} server(s) found in {len(vendor.zones)} zones.")
+    servers = list({p["name"]: p for p in servers}.values())
+    vendor.log(f"{len(servers)} unique server(s) found.")
+    vendor.progress_tracker.hide_task()
+    return servers
 
 
 # https://cloud.google.com/billing/docs/reference/rpc/google.type#google.type.Money
