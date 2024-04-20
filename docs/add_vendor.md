@@ -109,7 +109,7 @@ def inventory_servers(vendor):
     #             "vcpus": ,
     #             "hypervisor": None,
     #             "cpu_allocation": CpuAllocation....,
-    #             "cpu_cores": ,
+    #             "cpu_cores": None,
     #             "cpu_speed": None,
     #             "cpu_architecture": CpuArchitecture....,
     #             "cpu_manufacturer": None,
