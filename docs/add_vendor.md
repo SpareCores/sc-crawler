@@ -86,13 +86,15 @@ def inventory_datacenters(vendor):
 
 
 def inventory_zones(vendor):
-    # {
-    #     "vendor_id": "",
-    #     "datacenter_id": "",
-    #     "zone_id": "",
-    #     "name": "",
-    # }
-    return []
+    items =[]
+    # for zone in []:
+    #     items.append({
+    #         "vendor_id": vendor.vendor_id,
+    #         "datacenter_id": "",
+    #         "zone_id": "",
+    #         "name": "",
+    #     })
+    return items
 
 
 def inventory_servers(vendor):

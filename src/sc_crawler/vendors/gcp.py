@@ -28,6 +28,17 @@ def _regions() -> List[compute_v1.types.compute.Region]:
     return items
 
 
+@cachier()
+def _zones() -> List[compute_v1.types.compute.Zone]:
+    client = compute_v1.ZonesClient()
+    pager = client.list(project=_project_id())
+    items = []
+    for page in pager.pages:
+        for item in page.items:
+            items.append(item)
+    return items
+
+
 # ##############################################################################
 # Internal helpers
 
@@ -320,7 +331,7 @@ def inventory_datacenters(vendor):
             raise KeyError(f"Unknown datacenter metadata for {region.name}")
         item = {
             "vendor_id": vendor.vendor_id,
-            "datacenter_id": region.id,
+            "datacenter_id": str(region.id),
             "name": region.name,
         }
         for k, v in manual_data[region.name].items():
@@ -330,13 +341,66 @@ def inventory_datacenters(vendor):
 
 
 def inventory_zones(vendor):
-    return []
+    items = []
+    for zone in _zones():
+        items.append(
+            {
+                "vendor_id": vendor.vendor_id,
+                "datacenter_id": zone.region.split("/")[-1],
+                "zone_id": str(zone.id),
+                "name": zone.name,
+            }
+        )
+    return items
 
 
 def inventory_servers(vendor):
     return []
 
 
+# https://cloud.google.com/billing/docs/reference/rpc/google.type#google.type.Money
+# https://cloud.google.com/billing/docs/reference/rpc/google.cloud.billing.v1#google.cloud.billing.v1.PricingExpression.TierRate
+# tier: start_usage_amount
+
+
+# skus {
+#   name: "services/6F81-5844-456A/skus/B0A0-F02E-7BAB"
+#   sku_id: "B0A0-F02E-7BAB"
+#   description: "Spot Preemptible C2D AMD Instance Ram running in Mumbai"
+#   category {
+#     service_display_name: "Compute Engine"
+#     resource_family: "Compute"
+#     resource_group: "RAM" # CPU, GPU, TPU
+#     usage_type: "Preemptible"
+#   }
+#   service_regions: "asia-south1"
+#   pricing_info {
+#     effective_time {
+#       seconds: 1713362227
+#       nanos: 541394000
+#     }
+#     pricing_expression {
+#       usage_unit: "GiBy.h"
+#       display_quantity: 1
+#       tiered_rates {
+#         unit_price {
+#           currency_code: "USD"
+#           nanos: 491000
+#         }
+#       }
+#       usage_unit_description: "gibibyte hour"
+#       base_unit: "By.s"
+#       base_unit_description: "byte second"
+#       base_unit_conversion_factor: 3865470566400
+#     }
+#     currency_conversion_rate: 1
+#   }
+#   service_provider_name: "Google"
+#   geo_taxonomy {
+#     type_: REGIONAL
+#     regions: "asia-south1"
+#   }
+# }
 def inventory_server_prices(vendor):
     return []
 
@@ -345,14 +409,158 @@ def inventory_server_prices_spot(vendor):
     return []
 
 
+# https://cloud.google.com/python/docs/reference/compute/latest/google.cloud.compute_v1.services.disk_types.DiskTypesClient
 def inventory_storages(vendor):
     return []
+
+
+# skus {
+#   name: "services/6F81-5844-456A/skus/B02F-5C14-5872"
+#   sku_id: "B02F-5C14-5872"
+#   description: "Hyperdisk Balanced IOPS in Santiago"
+#   category {
+#     service_display_name: "Compute Engine"
+#     resource_family: "Storage"
+#     resource_group: "SSD" # HDBSP
+#     usage_type: "OnDemand"
+#   }
+#   service_regions: "southamerica-west1"
+#   pricing_info {
+#     effective_time {
+#       seconds: 1713362227
+#       nanos: 541394000
+#     }
+#     pricing_expression {
+#       usage_unit: "mo"
+#       display_quantity: 1
+#       tiered_rates {
+#         unit_price {
+#           currency_code: "USD"
+#           nanos: 7000000
+#         }
+#       }
+#       usage_unit_description: "month"
+#       base_unit: "s"
+#       base_unit_description: "second"
+#       base_unit_conversion_factor: 2592000
+#     }
+#     currency_conversion_rate: 1
+#   }
+#   service_provider_name: "Google"
+#   geo_taxonomy {
+#     type_: REGIONAL
+#     regions: "southamerica-west1"
+#   }
+# }
 
 
 def inventory_storage_prices(vendor):
     return []
 
 
+# skus {
+#   name: "services/6F81-5844-456A/skus/B0B8-05B5-13DE"
+#   sku_id: "B0B8-05B5-13DE"
+#   description: "Network Standard Internet Data Transfer In to Melbourne"
+#   category {
+#     service_display_name: "Compute Engine"
+#     resource_family: "Network"
+#     resource_group: "StandardInternetIngress"
+#     usage_type: "OnDemand"
+#   }
+#   service_regions: "australia-southeast2"
+#   pricing_info {
+#     effective_time {
+#       seconds: 1713362227
+#       nanos: 541394000
+#     }
+#     pricing_expression {
+#       usage_unit: "GiBy"
+#       display_quantity: 1
+#       tiered_rates {
+#         unit_price {
+#           currency_code: "USD"
+#         }
+#       }
+#       usage_unit_description: "gibibyte"
+#       base_unit: "By"
+#       base_unit_description: "byte"
+#       base_unit_conversion_factor: 1073741824
+#     }
+#     currency_conversion_rate: 1
+#   }
+#   service_provider_name: "Google"
+#   geo_taxonomy {
+#     type_: REGIONAL
+#     regions: "australia-southeast2"
+#   }
+# }
+
+
+# skus {
+#   name: "services/6F81-5844-456A/skus/B096-F403-ED14"
+#   sku_id: "B096-F403-ED14"
+#   description: "Network Standard Data Transfer Out to Internet from Finland"
+#   category {
+#     service_display_name: "Compute Engine"
+#     resource_family: "Network"
+#     resource_group: "StandardInternetEgress"
+#     usage_type: "OnDemand"
+#   }
+#   service_regions: "europe-north1"
+#   pricing_info {
+#     effective_time {
+#       seconds: 1713362227
+#       nanos: 541394000
+#     }
+#     pricing_expression {
+#       usage_unit: "GiBy"
+#       display_quantity: 1
+#       tiered_rates {
+#         unit_price {
+#           currency_code: "USD"
+#         }
+#       }
+#       tiered_rates {
+#         start_usage_amount: 200
+#         unit_price {
+#           currency_code: "USD"
+#           nanos: 85000000
+#         }
+#       }
+#       tiered_rates {
+#         start_usage_amount: 10240
+#         unit_price {
+#           currency_code: "USD"
+#           nanos: 65000000
+#         }
+#       }
+#       tiered_rates {
+#         start_usage_amount: 153600
+#         unit_price {
+#           currency_code: "USD"
+#           nanos: 45000000
+#         }
+#       }
+#       usage_unit_description: "gibibyte"
+#       base_unit: "By"
+#       base_unit_description: "byte"
+#       base_unit_conversion_factor: 1073741824
+#     }
+#     aggregation_info {
+#       aggregation_level: ACCOUNT
+#       aggregation_interval: MONTHLY
+#       aggregation_count: 1
+#     }
+#     currency_conversion_rate: 1
+#   }
+#   service_provider_name: "Google"
+#   geo_taxonomy {
+#     type_: REGIONAL
+#     regions: "europe-north1"
+#   }
+# }
+# Network Standard Internet Data Transfer In/Out
 def inventory_traffic_prices(vendor):
     return []
 
