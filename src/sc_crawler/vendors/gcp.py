@@ -6,6 +6,15 @@ from google.auth import default
 from google.cloud import compute_v1
 
 from ..lookup import map_compliance_frameworks_to_vendor
+from ..table_fields import (
+    Allocation,
+    CpuAllocation,
+    CpuArchitecture,
+    PriceUnit,
+    Status,
+    StorageType,
+    TrafficDirection,
+)
 
 # ##############################################################################
 # Cached gcp client wrappers
@@ -32,6 +41,17 @@ def _regions() -> List[compute_v1.types.compute.Region]:
 def _zones() -> List[compute_v1.types.compute.Zone]:
     client = compute_v1.ZonesClient()
     pager = client.list(project=_project_id())
+    items = []
+    for page in pager.pages:
+        for item in page.items:
+            items.append(item)
+    return items
+
+
+@cachier(separate_files=True)
+def _servers(zone: str) -> List[compute_v1.types.compute.MachineType]:
+    client = compute_v1.services.machine_types.MachineTypesClient()
+    pager = client.list(project=_project_id(), zone=zone)
     items = []
     for page in pager.pages:
         for item in page.items:
@@ -355,7 +375,63 @@ def inventory_zones(vendor):
 
 
 def inventory_servers(vendor):
-    return []
+    items = {}
+    for zone in vendor.zones:
+        zone_servers = _servers(zone.name)
+        for server in zone_servers:
+            if server.name not in items:
+                if server.name in ["c3-standard-4-lssd"]:
+                    raise KeyError("boom")
+                if server.scratch_disks:
+                    raise KeyError("asdada")
+                items[server.name] = {
+                    "vendor_id": "vendor.vendor_id",
+                    "server_id": str(server.id),
+                    "name": server.name,
+                    "description": server.description,
+                    "vcpus": server.guest_cpus,
+                    "hypervisor": None,
+                    "cpu_allocation": (
+                        CpuAllocation.SHARED
+                        if server.is_shared_cpu
+                        else CpuAllocation.DEDICATED
+                    ),
+                    "cpu_cores": None,
+                    "cpu_speed": None,
+                    "cpu_architecture": (
+                        CpuArchitecture.ARM64
+                        if server.name.startswith("t2a")
+                        else CpuArchitecture.X86_64
+                    ),
+                    "cpu_manufacturer": None,
+                    "cpu_family": None,
+                    "cpu_model": None,
+                    "cpus": [],
+                    "memory": server.memory_mb,
+                    "gpu_count": (
+                        server.accelerators[0].guest_accelerator_count
+                        if server.accelerators
+                        else 0
+                    ),
+                    "gpu_memory_min": None,
+                    "gpu_memory_total": None,
+                    "gpu_manufacturer": None,
+                    "gpu_model": (
+                        server.accelerators[0].guest_accelerator_type
+                        if server.accelerators
+                        else None
+                    ),
+                    "gpus": [],
+                    # TODO no API to get local disks for an instnace type
+                    "storage_size": 0,
+                    "storage_type": None,
+                    "storages": [],
+                    "network_speed": None,
+                    "inbound_traffic": 0,
+                    "outbound_traffic": 0,
+                    "ipv4": 0,
+                }
+    return list(items.values())
 
 
 # https://cloud.google.com/billing/docs/reference/rpc/google.type#google.type.Money
