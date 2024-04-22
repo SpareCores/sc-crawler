@@ -155,10 +155,16 @@ def _skus_dict():
     lookup = nesteddefaultdict()
     for sku in skus:
         # skip not processed items early
-        if sku.category.resource_family != "Compute":
+        if sku.category.resource_family not in ["Compute", "Storage"]:
             continue
-        if sku.category.usage_type not in ["OnDemand", "Preemptible"]:
-            continue
+        if sku.category.resource_family == "Compute":
+            if sku.category.usage_type not in ["OnDemand", "Preemptible"]:
+                continue
+        if sku.category.resource_family == "Storage":
+            if sku.category.usage_type != "OnDemand":
+                continue
+            if sku.category.resource_group not in ["HDD", "SSD", "HDBSP", "HDTSP"]:
+                continue
 
         # helper variables
         regions = sku.service_regions
@@ -171,45 +177,67 @@ def _skus_dict():
         price = price_tiers[0].unit_price.nanos / 1e9
         currency = price_tiers[0].unit_price.currency_code
 
-        # servers with pricing as-is
-        if sku.category.resource_group in ["F1Micro", "G1Small"]:
-            name = sku.category.resource_group[:2].lower()
+        if sku.category.resource_family == "Compute":
+            # servers with pricing as-is
+            if sku.category.resource_group in ["F1Micro", "G1Small"]:
+                name = sku.category.resource_group[:2].lower()
+                for region in regions:
+                    lookup["instance"][name][region][allocation] = (price, currency)
+                continue
+
+            # servers with CPU + RAM pricing
+            if (
+                sku.category.resource_group in ["CPU", "RAM"]
+                and "Custom" not in sku.description
+                and "Sole Tenancy" not in sku.description
+                and (
+                    "Instance Core running in" in sku.description
+                    or "Instance Ram running in" in sku.description
+                )
+            ):
+                catgroup = sku.category.resource_group.lower()
+                family = sub(r"^Spot Preemptible ", "", sku.description)
+                family = sub(r" Instance.*", "", family)
+                family = sub(r" AMD$", "", family)
+                family = sub(r" Arm$", "", family)
+
+                # extract instance family from description (?!)
+                if family == "Compute optimized":
+                    family = "C2"
+                if family == "Memory-optimized":
+                    family = "M1"
+                if family == "Memory Optimized Upgrade Premium for Memory-optimized":
+                    family = "M2"
+                if family == "M3 Memory-optimized":
+                    family = "M3"
+                family = family.lower()
+
+                for region in regions:
+                    lookup[catgroup][family][region][allocation] = (price, currency)
+                continue
+
+        if sku.category.resource_family == "Storage":
+            if "Storage PD Capacity" in sku.description:
+                storage_name = "pd-standard"
+            elif "SSD backed PD Capacity" in sku.description:
+                storage_name = "pd-ssd"
+            elif "SSD backed Local Storage" in sku.description:
+                storage_name = "local-ssd"
+            elif "Balanced PD Capacity" in sku.description:
+                storage_name = "pd-balanced"
+            elif "Extreme PD Capacity" in sku.description:
+                storage_name = "pd-extreme"
+            elif "Hyperdisk Extreme Capacity" in sku.description:
+                storage_name = "hyperdisk-extreme"
+            elif "Hyperdisk Throughput Capacity" in sku.description:
+                storage_name = "hyperdisk-throughput"
+            elif "Hyperdisk Throughput Capacity" in sku.description:
+                storage_name = "hyperdisk-balanced"
+            else:
+                continue
             for region in regions:
-                lookup["instance"][name][region][allocation] = (price, currency)
+                lookup["storage"][storage_name][region]["ondemand"] = (price, currency)
             continue
-
-        # servers with CPU + RAM pricing
-        if (
-            sku.category.resource_group in ["CPU", "RAM"]
-            and "Custom" not in sku.description
-            and "Sole Tenancy" not in sku.description
-            and (
-                "Instance Core running in" in sku.description
-                or "Instance Ram running in" in sku.description
-            )
-        ):
-            catgroup = sku.category.resource_group.lower()
-            family = sub(r"^Spot Preemptible ", "", sku.description)
-            family = sub(r" Instance.*", "", family)
-            family = sub(r" AMD$", "", family)
-            family = sub(r" Arm$", "", family)
-
-            # extract instance family from description (?!)
-            if family == "Compute optimized":
-                family = "C2"
-            if family == "Memory-optimized":
-                family = "M1"
-            if family == "Memory Optimized Upgrade Premium for Memory-optimized":
-                family = "M2"
-            if family == "M3 Memory-optimized":
-                family = "M3"
-            family = family.lower()
-
-            for region in regions:
-                lookup[catgroup][family][region][allocation] = (price, currency)
-            continue
-
-        continue
 
     # m2 prices are actually premium on the top of m1
     for region in lookup["ram"]["m2"].keys():
@@ -227,6 +255,7 @@ def _skus_dict():
 
 
 def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dict]:
+    datacenters = scmodels_to_dict(vendor.datacenters, keys=["name"])
     skus = _skus_dict()
     items = []
     for server in vendor.servers:
@@ -247,14 +276,13 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
 
         for region in regions:
             # skip edge regions
-            datacenter = [d for d in vendor.datacenters if d.name == region]
-            if len(datacenter) == 0:
+            datacenter = datacenters.get(region)
+            if datacenter is None:
                 vendor.log(
                     f"Skip unknown '{region}' region for {server.name}",
                     DEBUG,
                 )
                 continue
-            datacenter = datacenter[0]
 
             # try instance-level pricing
             if skus["instance"][family]:
@@ -742,54 +770,41 @@ def inventory_storages(vendor):
     storages = list(chain.from_iterable(storages))
 
     vendor.log(f"{len(storages)} storage(s) found in {len(vendor.zones)} zones.")
-    servers = list({p["name"]: p for p in storages}.values())
+    storages = list({p["name"]: p for p in storages}.values())
     vendor.log(f"{len(storages)} unique storage(s) found.")
     vendor.progress_tracker.hide_task()
     return storages
 
 
-# skus {
-#   name: "services/6F81-5844-456A/skus/B02F-5C14-5872"
-#   sku_id: "B02F-5C14-5872"
-#   description: "Hyperdisk Balanced IOPS in Santiago"
-#   category {
-#     service_display_name: "Compute Engine"
-#     resource_family: "Storage"
-#     resource_group: "SSD" # HDBSP
-#     usage_type: "OnDemand"
-#   }
-#   service_regions: "southamerica-west1"
-#   pricing_info {
-#     effective_time {
-#       seconds: 1713362227
-#       nanos: 541394000
-#     }
-#     pricing_expression {
-#       usage_unit: "mo"
-#       display_quantity: 1
-#       tiered_rates {
-#         unit_price {
-#           currency_code: "USD"
-#           nanos: 7000000
-#         }
-#       }
-#       usage_unit_description: "month"
-#       base_unit: "s"
-#       base_unit_description: "second"
-#       base_unit_conversion_factor: 2592000
-#     }
-#     currency_conversion_rate: 1
-#   }
-#   service_provider_name: "Google"
-#   geo_taxonomy {
-#     type_: REGIONAL
-#     regions: "southamerica-west1"
-#   }
-# }
-
-
 def inventory_storage_prices(vendor):
-    return []
+    datacenters = scmodels_to_dict(vendor.datacenters, keys=["name"])
+    skus = _skus_dict()
+    items = []
+    for storage in vendor.storages:
+        regions = skus["storage"][storage.name].keys()
+        for region in regions:
+            # skip edge regions
+            datacenter = datacenters.get(region)
+            if datacenter is None:
+                vendor.log(
+                    f"Skip unknown '{region}' region for {storage.name}",
+                    DEBUG,
+                )
+                continue
+
+            price, currency = skus["storage"][storage.name][region]["ondemand"]
+            for zone in datacenter.zones:
+                items.append(
+                    {
+                        "vendor_id": vendor.vendor_id,
+                        "datacenter_id": datacenter.datacenter_id,
+                        "storage_id": storage.storage_id,
+                        "unit": PriceUnit.GB_MONTH,
+                        "price": price,
+                        "currency": currency,
+                    }
+                )
+    return items
 
 
 # skus {
