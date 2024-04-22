@@ -71,8 +71,6 @@ List of APIs required to be enabled in the project:
 
 </details>
 
-GOOGLE_APPLICATION_CREDENTIALS
-
 <details>
 
 <summary>Hetzner Cloud</summary>
