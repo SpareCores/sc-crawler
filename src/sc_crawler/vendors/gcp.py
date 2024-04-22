@@ -511,11 +511,12 @@ def inventory_datacenters(vendor):
 
 def inventory_zones(vendor):
     items = []
+    datacenters = scmodels_to_dict(vendor.datacenters, keys=["name"])
     for zone in _zones():
         items.append(
             {
                 "vendor_id": vendor.vendor_id,
-                "datacenter_id": zone.region.split("/")[-1],
+                "datacenter_id": datacenters[zone.region.split("/")[-1]].datacenter_id,
                 "zone_id": str(zone.id),
                 "name": zone.name,
             }
