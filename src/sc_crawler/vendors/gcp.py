@@ -212,6 +212,88 @@ def _skus_dict():
     return lookup
 
 
+def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dict]:
+    skus = _skus_dict()
+    items = []
+    for server in vendor.servers:
+        try:
+            family = _server_family(server.name)
+        except KeyError as e:
+            vendor.log(f"Skip instance: {str(e)}", DEBUG)
+            continue
+
+        # https://cloud.google.com/compute/docs/memory-optimized-machines#m1_series
+        # N1 -> M1 rename "to more clearly identify the machines"
+        if family == "n1":
+            family = "m1"
+
+        # price per instance or cpu/ram
+        regions = [*skus["instance"][family].keys(), *skus["cpu"][family].keys()]
+        assert len(regions) > 0
+
+        for region in regions:
+            # skip edge regions
+            datacenter = [d for d in vendor.datacenters if d.name == region]
+            if len(datacenter) == 0:
+                vendor.log(
+                    f"Skip unknown '{region}' region for {server.name}",
+                    DEBUG,
+                )
+                continue
+            datacenter = datacenter[0]
+
+            # try instance-level pricing
+            if skus["instance"][family]:
+                try:
+                    price, currency = skus["instance"][family][region][
+                        allocation.value.lower()
+                    ]
+                except ValueError:
+                    vendor.log(
+                        f"{allocation.value} price not found for '{server.name}' in '{region}'",
+                        DEBUG,
+                    )
+                    continue
+            # add ram and cpu prices
+            elif skus["cpu"][family]:
+                try:
+                    price = (
+                        skus["cpu"][family][region][allocation.value.lower()][0]
+                        * server.vcpus
+                        + skus["ram"][family][region][allocation.value.lower()][0]
+                        * server.memory
+                        / 1024
+                    )
+                    currency = skus["cpu"][family][region][allocation.value.lower()][1]
+                except (ValueError, TypeError):
+                    vendor.log(
+                        f"{allocation.value} price not found for '{server.name}' in '{region}'",
+                        DEBUG,
+                    )
+                    continue
+            else:
+                raise KeyError(f"SKU not found for {server.name}")
+
+            for zone in datacenter.zones:
+                items.append(
+                    {
+                        "vendor_id": vendor.vendor_id,
+                        "datacenter_id": datacenter.datacenter_id,
+                        "zone_id": zone.zone_id,
+                        "server_id": server.server_id,
+                        "operating_system": "Linux",
+                        "allocation": allocation,
+                        "unit": PriceUnit.HOUR,
+                        "price": round(price, 5),
+                        "price_upfront": 0,
+                        "price_tiered": [],
+                        "currency": currency,
+                    }
+                )
+
+    return items
+
+
 # ##############################################################################
 # Public methods to fetch data
 
@@ -597,71 +679,11 @@ def inventory_servers(vendor):
 
 
 def inventory_server_prices(vendor):
-    skus = _skus_dict()
-    items = []
-    for server in vendor.servers:
-        try:
-            family = _server_family(server.name)
-        except KeyError as e:
-            vendor.log(f"Skip instance: '{str(e)}'", DEBUG)
-            continue
-
-        # https://cloud.google.com/compute/docs/memory-optimized-machines#m1_series
-        # N1 -> M1 rename "to more clearly identify the machines"
-        if family == "n1":
-            family = "m1"
-
-        # price per instance or cpu/ram
-        regions = [*skus["instance"][family].keys(), *skus["cpu"][family].keys()]
-        assert len(regions) > 0
-
-        for region in regions:
-            # skip edge regions
-            datacenter = [d for d in vendor.datacenters if d.name == region]
-            if len(datacenter) == 0:
-                vendor.log(
-                    f"Skip unknown '{region}' region for {server.name}",
-                    DEBUG,
-                )
-                continue
-            datacenter = datacenter[0]
-
-            # try instance-level pricing
-            if skus["instance"][family]:
-                price, currency = skus["instance"][family][region]["ondemand"]
-            # add ram and cpu prices
-            elif skus["cpu"][family]:
-                price = (
-                    skus["cpu"][family][region]["ondemand"][0] * server.vcpus
-                    + skus["ram"][family][region]["ondemand"][0] * server.memory / 1024
-                )
-                currency = skus["cpu"][family][region]["ondemand"][1]
-            else:
-                raise KeyError(f"SKU not found for {server.name}")
-
-            for zone in datacenter.zones:
-                items.append(
-                    {
-                        "vendor_id": vendor.vendor_id,
-                        "datacenter_id": datacenter.datacenter_id,
-                        "zone_id": zone.zone_id,
-                        "server_id": server.server_id,
-                        "operating_system": "Linux",
-                        "allocation": Allocation.ONDEMAND,
-                        "unit": PriceUnit.HOUR,
-                        "price": round(price, 5),
-                        "price_upfront": 0,
-                        "price_tiered": [],
-                        "currency": currency,
-                    }
-                )
-
-    return items
+    return _inventory_server_prices(vendor, Allocation.ONDEMAND)
 
 
 def inventory_server_prices_spot(vendor):
-    # Preemptible
-    return []
+    return _inventory_server_prices(vendor, Allocation.SPOT)
 
 
 # https://cloud.google.com/python/docs/reference/compute/latest/google.cloud.compute_v1.services.disk_types.DiskTypesClient
