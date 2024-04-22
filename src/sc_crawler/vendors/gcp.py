@@ -15,14 +15,12 @@ from ..table_fields import (
     CpuAllocation,
     CpuArchitecture,
     PriceUnit,
-    PriceTier,
-    Status,
     StorageType,
     TrafficDirection,
 )
 from ..tables import (
-    Zone,
     Vendor,
+    Zone,
 )
 from ..utils import nesteddefaultdict, scmodels_to_dict
 
