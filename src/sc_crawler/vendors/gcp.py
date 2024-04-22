@@ -778,6 +778,7 @@ def inventory_storages(vendor):
 
 
 def inventory_storage_prices(vendor):
+    """List all available GCP disk storage prices in all datacenters."""
     datacenters = scmodels_to_dict(vendor.datacenters, keys=["name"])
     skus = _skus_dict()
     items = []
@@ -809,6 +810,7 @@ def inventory_storage_prices(vendor):
 
 
 def inventory_traffic_prices(vendor):
+    """List inbound and outbound network traffic prices in all GCP datacenters."""
     datacenters = scmodels_to_dict(vendor.datacenters, keys=["name"])
     skus = _skus("Compute Engine")
     items = []
@@ -865,4 +867,26 @@ def inventory_traffic_prices(vendor):
 
 
 def inventory_ipv4_prices(vendor):
-    return []
+    """List the price of an attached IPv4 address in all GCP datacenters.
+
+    Note that this data was not found using the APIs (only unattached static IPs),
+    so the values are recorded manually from <https://cloud.google.com/vpc/network-pricing#ipaddress>.
+    """
+    # skus = _skus("Compute Engine")
+    # for sku in skus:
+    #     if sku.category.resource_family != "Network":
+    #         continue
+    #     if sku.description == "Static Ip Charge":
+    #         pass
+    items = []
+    for datacenter in vendor.datacenters:
+        items.append(
+            {
+                "vendor_id": vendor.vendor_id,
+                "datacenter_id": datacenter.datacenter_id,
+                "price": 0.005,
+                "currency": "USD",
+                "unit": PriceUnit.MONTH,
+            }
+        )
+    return items
