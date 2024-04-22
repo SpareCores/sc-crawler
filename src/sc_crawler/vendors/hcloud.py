@@ -272,7 +272,7 @@ def inventory_traffic_prices(vendor):
             {
                 "vendor_id": vendor.vendor_id,
                 "datacenter_id": datacenter.datacenter_id,
-                "price": 1,
+                "price": round(1 / 1024, 8),
                 "price_tiered": [],
                 "currency": "EUR",
                 "unit": PriceUnit.GB_MONTH,
