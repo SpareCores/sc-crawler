@@ -149,7 +149,7 @@ def inventory_server_prices(vendor):
     #         "price": ,
     #         "price_upfront": 0,
     #         "price_tiered": [],
-    #         "currency": "USD,"
+    #         "currency": "USD",
     #     })
     # return items
 

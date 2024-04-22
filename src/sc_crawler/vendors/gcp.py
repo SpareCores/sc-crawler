@@ -1,6 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from functools import cache
 from itertools import chain, repeat
+from logging import DEBUG
 from re import sub
 from typing import List
 
@@ -22,6 +23,7 @@ from ..tables import (
     Zone,
     Vendor,
 )
+from ..utils import nesteddefaultdict, scmodels_to_dict
 
 # ##############################################################################
 # Cached gcp client wrappers
@@ -106,28 +108,27 @@ def _server_family(server_name: str) -> str:
     """Look up server family based on server name"""
     prefix = server_name.lower().split("-")[0]
     if prefix in [
-        "A2",
-        "A3",
-        "C2",  # compute optimized
-        "C2D",
-        "C3",
-        "C3D",
-        "E2",
-        "F1",  # micro instance running on N1
-        "G1",  # micro instance running on N1
-        "G2",
-        "H3",
-        "M1",  # memory optimized
-        "M2",  # memory optimized + premium
-        "M3",
-        "N1",
-        "N1",
-        "N2",
-        "N2D",
-        "N4",
-        "T2A",
-        "T2D",
-        "Z3",
+        "a2",
+        "a3",
+        "c2",  # compute optimized
+        "c2d",
+        "c3",
+        "c3d",
+        "e2",
+        "f1",  # micro instance running on N1
+        "g1",  # micro instance running on N1
+        "g2",
+        "h3",
+        "m1",  # memory optimized
+        "m2",  # memory optimized + premium
+        "m3",
+        "n1",
+        "n2",
+        "n2d",
+        "n4",
+        "t2a",
+        "t2d",
+        "z3",
     ]:
         return prefix
     raise KeyError(f"Not known server family for {server_name}")
@@ -594,54 +595,71 @@ def inventory_servers(vendor):
     return servers
 
 
-# https://cloud.google.com/billing/docs/reference/rpc/google.type#google.type.Money
-# https://cloud.google.com/billing/docs/reference/rpc/google.cloud.billing.v1#google.cloud.billing.v1.PricingExpression.TierRate
-# tier: start_usage_amount
-
-
-# skus {
-#   name: "services/6F81-5844-456A/skus/B0A0-F02E-7BAB"
-#   sku_id: "B0A0-F02E-7BAB"
-#   description: "Spot Preemptible C2D AMD Instance Ram running in Mumbai"
-#   category {
-#     service_display_name: "Compute Engine"
-#     resource_family: "Compute"
-#     resource_group: "RAM" # CPU, GPU, TPU
-#     usage_type: "Preemptible"
-#   }
-#   service_regions: "asia-south1"
-#   pricing_info {
-#     effective_time {
-#       seconds: 1713362227
-#       nanos: 541394000
-#     }
-#     pricing_expression {
-#       usage_unit: "GiBy.h"
-#       display_quantity: 1
-#       tiered_rates {
-#         unit_price {
-#           currency_code: "USD"
-#           nanos: 491000
-#         }
-#       }
-#       usage_unit_description: "gibibyte hour"
-#       base_unit: "By.s"
-#       base_unit_description: "byte second"
-#       base_unit_conversion_factor: 3865470566400
-#     }
-#     currency_conversion_rate: 1
-#   }
-#   service_provider_name: "Google"
-#   geo_taxonomy {
-#     type_: REGIONAL
-#     regions: "asia-south1"
-#   }
-# }
 def inventory_server_prices(vendor):
-    return []
+    skus = _skus_dict()
+    items = []
+    for server in vendor.servers:
+        try:
+            family = _server_family(server.name)
+        except KeyError as e:
+            vendor.log(f"Skip instance: '{str(e)}'", DEBUG)
+            continue
+
+        # https://cloud.google.com/compute/docs/memory-optimized-machines#m1_series
+        # N1 -> M1 rename "to more clearly identify the machines"
+        if family == "n1":
+            family = "m1"
+
+        # price per instance or cpu/ram
+        regions = [*skus["instance"][family].keys(), *skus["cpu"][family].keys()]
+        assert len(regions) > 0
+
+        for region in regions:
+            # skip edge regions
+            datacenter = [d for d in vendor.datacenters if d.name == region]
+            if len(datacenter) == 0:
+                vendor.log(
+                    f"Skip unknown '{region}' region for {server.name}",
+                    DEBUG,
+                )
+                continue
+            datacenter = datacenter[0]
+
+            # try instance-level pricing
+            if skus["instance"][family]:
+                price, currency = skus["instance"][family][region]["ondemand"]
+            # add ram and cpu prices
+            elif skus["cpu"][family]:
+                price = (
+                    skus["cpu"][family][region]["ondemand"][0] * server.vcpus
+                    + skus["ram"][family][region]["ondemand"][0] * server.memory / 1024
+                )
+                currency = skus["cpu"][family][region]["ondemand"][1]
+            else:
+                raise KeyError(f"SKU not found for {server.name}")
+
+            for zone in datacenter.zones:
+                items.append(
+                    {
+                        "vendor_id": vendor.vendor_id,
+                        "datacenter_id": datacenter.datacenter_id,
+                        "zone_id": zone.zone_id,
+                        "server_id": server.server_id,
+                        "operating_system": "Linux",
+                        "allocation": Allocation.ONDEMAND,
+                        "unit": PriceUnit.HOUR,
+                        "price": round(price, 5),
+                        "price_upfront": 0,
+                        "price_tiered": [],
+                        "currency": currency,
+                    }
+                )
+
+    return items
 
 
 def inventory_server_prices_spot(vendor):
+    # Preemptible
     return []
 
 
