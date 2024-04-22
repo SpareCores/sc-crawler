@@ -68,6 +68,20 @@ def _servers(zone: str) -> List[compute_v1.types.compute.MachineType]:
     return items
 
 
+@cachier(separate_files=True)
+def _storages(zone: str) -> List[compute_v1.types.compute.DiskType]:
+    client = compute_v1.services.disk_types.DiskTypesClient()
+    pager = client.list(project=_project_id(), zone=zone)
+    items = []
+    for page in pager.pages:
+        for item in page.items:
+            items.append(item)
+    return items
+
+
+# https://cloud.google.com/python/docs/reference/compute/latest/google.cloud.compute_v1.services.disk_types.DiskTypesClient
+
+
 @cache
 def _service_name_to_id(service_name: str) -> str:
     """Look up programmatic id to be used in _skus based on human-friendly service name.
@@ -592,6 +606,7 @@ def inventory_datacenters(vendor):
 
 
 def inventory_zones(vendor):
+    """List all available GCP zones via API calls."""
     items = []
     datacenters = scmodels_to_dict(vendor.datacenters, keys=["name"])
     for zone in _zones():
@@ -607,6 +622,7 @@ def inventory_zones(vendor):
 
 
 def inventory_servers(vendor):
+    """List all available GCP servers available in all zones."""
     vendor.progress_tracker.start_task(
         name="Scanning zone(s) for server(s)", total=len(vendor.zones)
     )
@@ -679,16 +695,57 @@ def inventory_servers(vendor):
 
 
 def inventory_server_prices(vendor):
+    """List all available GCP server ondemand prices in all datacenters."""
     return _inventory_server_prices(vendor, Allocation.ONDEMAND)
 
 
 def inventory_server_prices_spot(vendor):
+    """List all available GCP server spot prices in all datacenters."""
     return _inventory_server_prices(vendor, Allocation.SPOT)
 
 
-# https://cloud.google.com/python/docs/reference/compute/latest/google.cloud.compute_v1.services.disk_types.DiskTypesClient
 def inventory_storages(vendor):
-    return []
+    """List all available GCP disk storage options available in all zones.
+
+    For more details on the disk types, check <https://cloud.google.com/compute/docs/disks#disk-types>."""
+    vendor.progress_tracker.start_task(
+        name="Scanning zone(s) for storage(s)", total=len(vendor.zones)
+    )
+
+    def search_storages(zone: Zone, vendor: Vendor) -> List[dict]:
+        zone_storages = []
+        for storage in _storages(zone.name):
+            valid_sizes = storage.valid_disk_size.replace("GB", "").split("-")
+            zone_storages.append(
+                {
+                    "storage_id": str(storage.id),
+                    "vendor_id": vendor.vendor_id,
+                    "name": storage.name,
+                    "description": storage.description,
+                    "storage_type": (
+                        StorageType.SSD
+                        if storage.name != "pd-standard"
+                        else StorageType.HDD
+                    ),
+                    "max_iops": None,
+                    "max_throughput": None,
+                    "min_size": int(valid_sizes[0]),
+                    "max_size": int(valid_sizes[1]),
+                }
+            )
+        vendor.log(f"{len(zone_storages)} storage(s) found in {zone.name}.")
+        vendor.progress_tracker.advance_task()
+        return zone_storages
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        storages = executor.map(search_storages, vendor.zones, repeat(vendor))
+    storages = list(chain.from_iterable(storages))
+
+    vendor.log(f"{len(storages)} storage(s) found in {len(vendor.zones)} zones.")
+    servers = list({p["name"]: p for p in storages}.values())
+    vendor.log(f"{len(storages)} unique storage(s) found.")
+    vendor.progress_tracker.hide_task()
+    return storages
 
 
 # skus {
