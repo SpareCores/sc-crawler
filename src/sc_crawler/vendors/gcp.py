@@ -15,6 +15,7 @@ from ..table_fields import (
     CpuAllocation,
     CpuArchitecture,
     PriceUnit,
+    PriceTier,
     Status,
     StorageType,
     TrafficDirection,
@@ -807,111 +808,60 @@ def inventory_storage_prices(vendor):
     return items
 
 
-# skus {
-#   name: "services/6F81-5844-456A/skus/B0B8-05B5-13DE"
-#   sku_id: "B0B8-05B5-13DE"
-#   description: "Network Standard Internet Data Transfer In to Melbourne"
-#   category {
-#     service_display_name: "Compute Engine"
-#     resource_family: "Network"
-#     resource_group: "StandardInternetIngress"
-#     usage_type: "OnDemand"
-#   }
-#   service_regions: "australia-southeast2"
-#   pricing_info {
-#     effective_time {
-#       seconds: 1713362227
-#       nanos: 541394000
-#     }
-#     pricing_expression {
-#       usage_unit: "GiBy"
-#       display_quantity: 1
-#       tiered_rates {
-#         unit_price {
-#           currency_code: "USD"
-#         }
-#       }
-#       usage_unit_description: "gibibyte"
-#       base_unit: "By"
-#       base_unit_description: "byte"
-#       base_unit_conversion_factor: 1073741824
-#     }
-#     currency_conversion_rate: 1
-#   }
-#   service_provider_name: "Google"
-#   geo_taxonomy {
-#     type_: REGIONAL
-#     regions: "australia-southeast2"
-#   }
-# }
-
-
-# skus {
-#   name: "services/6F81-5844-456A/skus/B096-F403-ED14"
-#   sku_id: "B096-F403-ED14"
-#   description: "Network Standard Data Transfer Out to Internet from Finland"
-#   category {
-#     service_display_name: "Compute Engine"
-#     resource_family: "Network"
-#     resource_group: "StandardInternetEgress"
-#     usage_type: "OnDemand"
-#   }
-#   service_regions: "europe-north1"
-#   pricing_info {
-#     effective_time {
-#       seconds: 1713362227
-#       nanos: 541394000
-#     }
-#     pricing_expression {
-#       usage_unit: "GiBy"
-#       display_quantity: 1
-#       tiered_rates {
-#         unit_price {
-#           currency_code: "USD"
-#         }
-#       }
-#       tiered_rates {
-#         start_usage_amount: 200
-#         unit_price {
-#           currency_code: "USD"
-#           nanos: 85000000
-#         }
-#       }
-#       tiered_rates {
-#         start_usage_amount: 10240
-#         unit_price {
-#           currency_code: "USD"
-#           nanos: 65000000
-#         }
-#       }
-#       tiered_rates {
-#         start_usage_amount: 153600
-#         unit_price {
-#           currency_code: "USD"
-#           nanos: 45000000
-#         }
-#       }
-#       usage_unit_description: "gibibyte"
-#       base_unit: "By"
-#       base_unit_description: "byte"
-#       base_unit_conversion_factor: 1073741824
-#     }
-#     aggregation_info {
-#       aggregation_level: ACCOUNT
-#       aggregation_interval: MONTHLY
-#       aggregation_count: 1
-#     }
-#     currency_conversion_rate: 1
-#   }
-#   service_provider_name: "Google"
-#   geo_taxonomy {
-#     type_: REGIONAL
-#     regions: "europe-north1"
-#   }
-# }
-# Network Standard Internet Data Transfer In/Out
 def inventory_traffic_prices(vendor):
-    return []
+    datacenters = scmodels_to_dict(vendor.datacenters, keys=["name"])
+    skus = _skus("Compute Engine")
+    items = []
+    for sku in skus:
+        # skip not processed items early
+        if sku.category.resource_family != "Network":
+            continue
+        if sku.category.resource_group not in [
+            "StandardInternetEgress",
+            "StandardInternetIngress",
+        ]:
+            continue
+
+        # helper variables
+        regions = sku.service_regions
+        tiered_rates = sku.pricing_info[0].pricing_expression.tiered_rates
+        price_tiers = []
+        for i in range(len(tiered_rates)):
+            price_tiers.append(
+                {
+                    "lower": tiered_rates[i].start_usage_amount,
+                    "upper": "Infinity"
+                    if i == len(tiered_rates) - 1
+                    else tiered_rates[i + 1].start_usage_amount,
+                    "price": tiered_rates[i].unit_price.nanos / 1e9,
+                }
+            )
+
+        for region in regions:
+            datacenter = datacenters.get(region)
+            if datacenter is None:
+                vendor.log(
+                    f"Skip unknown '{region}' region for {sku.description}",
+                    DEBUG,
+                )
+                continue
+            items.append(
+                {
+                    "vendor_id": vendor.vendor_id,
+                    "datacenter_id": datacenter.datacenter_id,
+                    "price": max([t["price"] for t in price_tiers]),
+                    "price_tiered": price_tiers,
+                    "currency": tiered_rates[0].unit_price.currency_code,
+                    "unit": PriceUnit.GB_MONTH,
+                    "direction": (
+                        TrafficDirection.OUT
+                        if sku.category.resource_group == "StandardInternetEgress"
+                        else TrafficDirection.IN
+                    ),
+                }
+            )
+
+    return items
 
 
 def inventory_ipv4_prices(vendor):
