@@ -63,7 +63,7 @@ def _servers(zone: str) -> List[compute_v1.types.compute.MachineType]:
 
 @cachier(separate_files=True)
 def _storages(zone: str) -> List[compute_v1.types.compute.DiskType]:
-    return _paginate_list(compute_v1.RegionsClient(), zone)
+    return _paginate_list(compute_v1.services.disk_types.DiskTypesClient(), zone)
 
 
 @cache
