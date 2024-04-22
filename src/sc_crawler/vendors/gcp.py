@@ -1,11 +1,12 @@
 from concurrent.futures import ThreadPoolExecutor
 from functools import cache
 from itertools import chain, repeat
+from re import sub
 from typing import List
 
 from cachier import cachier
 from google.auth import default
-from google.cloud import compute_v1
+from google.cloud import billing_v1, compute_v1
 
 from ..lookup import map_compliance_frameworks_to_vendor
 from ..table_fields import (
@@ -65,8 +66,149 @@ def _servers(zone: str) -> List[compute_v1.types.compute.MachineType]:
     return items
 
 
+@cache
+def _service_name_to_id(service_name: str) -> str:
+    """Look up programmatic id to be used in _skus based on human-friendly service name.
+
+    Examples:
+        >>> _service_name_to_id("Compute Engine")  # doctest: +SKIP
+        'services/6F81-5844-456A'
+    """
+    client = billing_v1.CloudCatalogClient()
+    pager = client.list_services()
+    for page in pager.pages:
+        for service in page.services:
+            if service.display_name == service_name:
+                return service.name
+
+
+@cachier(separate_files=True)
+def _skus(service_name: str) -> List[compute_v1.types.compute.Zone]:
+    """List all products under a GCP Service.
+
+    Args:
+        service_name: Human-friendly service name, e.g. "Compute Engine".
+    """
+    client = billing_v1.CloudCatalogClient()
+    pager = client.list_skus(parent=_service_name_to_id(service_name))
+    items = []
+    for page in pager.pages:
+        for sku in page.skus:
+            items.append(sku)
+    return items
+
+
 # ##############################################################################
 # Internal helpers
+
+
+def _server_family(server_name: str) -> str:
+    """Look up server family based on server name"""
+    prefix = server_name.lower().split("-")[0]
+    if prefix in [
+        "A2",
+        "A3",
+        "C2",  # compute optimized
+        "C2D",
+        "C3",
+        "C3D",
+        "E2",
+        "F1",  # micro instance running on N1
+        "G1",  # micro instance running on N1
+        "G2",
+        "H3",
+        "M1",  # memory optimized
+        "M2",  # memory optimized + premium
+        "M3",
+        "N1",
+        "N1",
+        "N2",
+        "N2D",
+        "N4",
+        "T2A",
+        "T2D",
+        "Z3",
+    ]:
+        return prefix
+    raise KeyError(f"Not known server family for {server_name}")
+
+
+@cache
+def _skus_dict():
+    """Look up all Compute Engine SKUs and return in a lookup dict."""
+    skus = _skus("Compute Engine")
+    lookup = nesteddefaultdict()
+    for sku in skus:
+        # skip not processed items early
+        if sku.category.resource_family != "Compute":
+            continue
+        if sku.category.usage_type not in ["OnDemand", "Preemptible"]:
+            continue
+
+        # helper variables
+        regions = sku.service_regions
+        if sku.category.usage_type == "OnDemand":
+            allocation = "ondemand"
+        else:
+            allocation = "spot"
+        price_tiers = sku.pricing_info[0].pricing_expression.tiered_rates
+        assert len(price_tiers) == 1
+        price = price_tiers[0].unit_price.nanos / 1e9
+        currency = price_tiers[0].unit_price.currency_code
+
+        # servers with pricing as-is
+        if sku.category.resource_group in ["F1Micro", "G1Small"]:
+            name = sku.category.resource_group[:2].lower()
+            for region in regions:
+                lookup["instance"][name][region][allocation] = (price, currency)
+            continue
+
+        # servers with CPU + RAM pricing
+        if (
+            sku.category.resource_group in ["CPU", "RAM"]
+            and "Custom" not in sku.description
+            and "Sole Tenancy" not in sku.description
+            and (
+                "Instance Core running in" in sku.description
+                or "Instance Ram running in" in sku.description
+            )
+        ):
+            catgroup = sku.category.resource_group.lower()
+            family = sub(r"^Spot Preemptible ", "", sku.description)
+            family = sub(r" Instance.*", "", family)
+            family = sub(r" AMD$", "", family)
+            family = sub(r" Arm$", "", family)
+
+            # extract instance family from description (?!)
+            if family == "Compute optimized":
+                family = "C2"
+            if family == "Memory-optimized":
+                family = "M1"
+            if family == "Memory Optimized Upgrade Premium for Memory-optimized":
+                family = "M2"
+            if family == "M3 Memory-optimized":
+                family = "M3"
+            family = family.lower()
+
+            for region in regions:
+                lookup[catgroup][family][region][allocation] = (price, currency)
+            continue
+
+        continue
+
+    # m2 prices are actually premium on the top of m1
+    for region in lookup["ram"]["m2"].keys():
+        for allocation in lookup["ram"]["m2"][region].keys():
+            for what in ["cpu", "ram"]:
+                lookup[what]["m2"][region][allocation] = (
+                    (
+                        lookup[what]["m1"][region][allocation][0]
+                        + lookup[what]["m2"][region][allocation][0]
+                    ),
+                    lookup[what]["m2"][region][allocation][1],
+                )
+
+    return lookup
 
 
 # ##############################################################################
