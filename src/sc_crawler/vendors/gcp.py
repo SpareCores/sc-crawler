@@ -34,51 +34,36 @@ def _project_id() -> str:
     return default()[1]
 
 
-@cachier()
-def _regions() -> List[compute_v1.types.compute.Region]:
-    client = compute_v1.RegionsClient()
-    pager = client.list(project=_project_id())
+def _paginate_list(client, zone=None):
+    if zone:
+        pager = client.list(project=_project_id(), zone=zone)
+    else:
+        pager = client.list(project=_project_id())
     items = []
     for page in pager.pages:
         for item in page.items:
             items.append(item)
     return items
+
+
+@cachier()
+def _regions() -> List[compute_v1.types.compute.Region]:
+    return _paginate_list(compute_v1.RegionsClient())
 
 
 @cachier()
 def _zones() -> List[compute_v1.types.compute.Zone]:
-    client = compute_v1.ZonesClient()
-    pager = client.list(project=_project_id())
-    items = []
-    for page in pager.pages:
-        for item in page.items:
-            items.append(item)
-    return items
+    return _paginate_list(compute_v1.ZonesClient())
 
 
 @cachier(separate_files=True)
 def _servers(zone: str) -> List[compute_v1.types.compute.MachineType]:
-    client = compute_v1.services.machine_types.MachineTypesClient()
-    pager = client.list(project=_project_id(), zone=zone)
-    items = []
-    for page in pager.pages:
-        for item in page.items:
-            items.append(item)
-    return items
+    return _paginate_list(compute_v1.services.machine_types.MachineTypesClient(), zone)
 
 
 @cachier(separate_files=True)
 def _storages(zone: str) -> List[compute_v1.types.compute.DiskType]:
-    client = compute_v1.services.disk_types.DiskTypesClient()
-    pager = client.list(project=_project_id(), zone=zone)
-    items = []
-    for page in pager.pages:
-        for item in page.items:
-            items.append(item)
-    return items
-
-
-# https://cloud.google.com/python/docs/reference/compute/latest/google.cloud.compute_v1.services.disk_types.DiskTypesClient
+    return _paginate_list(compute_v1.RegionsClient(), zone)
 
 
 @cache
