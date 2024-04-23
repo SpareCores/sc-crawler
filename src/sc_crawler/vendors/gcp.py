@@ -203,16 +203,19 @@ def _skus_dict():
                 )
             ):
                 catgroup = sku.category.resource_group.lower()
+                # sku.description examples:
+                # - A2 Instance Ram running in Finland
+                # - Spot Preemptible C3 Instance Core running in Toronto
+                # - N2D AMD Instance Ram running in Virginia
+                # - M3 Memory-optimized Instance Core running in Warsaw
+                # - Spot Preemptible T2A Arm Instance Ram running in Netherlands
                 family = sub(r"^Spot Preemptible ", "", sku.description)
                 family = sub(r" Instance.*", "", family)
                 family = sub(r" AMD$", "", family)
                 family = sub(r" Arm$", "", family)
 
                 # extract instance family from description (?!)
-                for k, v in SERVER_DESCRIPTION_TO_FAMILY.items():
-                    if family == k:
-                        family = v
-                family = family.lower()
+                family = SERVER_DESCRIPTION_TO_FAMILY.get(family, family).lower()
 
                 for region in regions:
                     lookup[catgroup][family][region][allocation] = (price, currency)
