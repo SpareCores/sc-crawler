@@ -892,7 +892,7 @@ def inventory_ipv4_prices(vendor):
                 "datacenter_id": datacenter.datacenter_id,
                 "price": 0.005,
                 "currency": "USD",
-                "unit": PriceUnit.MONTH,
+                "unit": PriceUnit.HOUR,
             }
         )
     return items
