@@ -30,7 +30,7 @@ from ..utils import nesteddefaultdict, scmodels_to_dict
 
 @cache
 def _project_id() -> str:
-    """Returns the project id for the curent user as per Application Default Credentials."""
+    """Returns the project id for the current user as per Application Default Credentials."""
     return default()[1]
 
 
@@ -101,33 +101,56 @@ def _skus(service_name: str) -> List[compute_v1.types.compute.Zone]:
 # ##############################################################################
 # Internal helpers
 
+SERVER_FAMILIES = {
+    "a2",
+    "a3",
+    "c2",  # compute optimized
+    "c2d",
+    "c3",
+    "c3d",
+    "e2",
+    "f1",  # micro instance running on N1
+    "g1",  # micro instance running on N1
+    "g2",
+    "h3",
+    "m1",  # memory optimized
+    "m2",  # memory optimized + premium
+    "m3",
+    "n1",
+    "n2",
+    "n2d",
+    "n4",
+    "t2a",
+    "t2d",
+    "z3",
+}
+
+# there are a few odd descriptions that needs lookup,
+# otherwise the descriptions match the server family
+SERVER_DESCRIPTION_TO_FAMILY = {
+    "Compute optimized": "C2",
+    "Memory-optimized": "M1",
+    "Memory Optimized Upgrade Premium for Memory-optimized": "M2",
+    "M3 Memory-optimized": "M3",
+}
+
+STORAGE_DESCRIPTION_TO_FAMILY = {
+    "Storage PD Capacity": "pd-standard",
+    "SSD backed PD Capacity": "pd-ssd",
+    "SSD backed Local Storage": "local-ssd",
+    "Balanced PD Capacity": "pd-balanced",
+    "Extreme PD Capacity": "pd-extreme",
+    "Hyperdisk Extreme Capacity": "hyperdisk-extreme",
+    "Hyperdisk Throughput Capacity": "hyperdisk-throughput",
+    "Hyperdisk Balanced Capacity": "hyperdisk-balanced",
+}
+
 
 def _server_family(server_name: str) -> str:
     """Look up server family based on server name"""
+    # example server names: f1-micro, n2d-standard-96
     prefix = server_name.lower().split("-")[0]
-    if prefix in [
-        "a2",
-        "a3",
-        "c2",  # compute optimized
-        "c2d",
-        "c3",
-        "c3d",
-        "e2",
-        "f1",  # micro instance running on N1
-        "g1",  # micro instance running on N1
-        "g2",
-        "h3",
-        "m1",  # memory optimized
-        "m2",  # memory optimized + premium
-        "m3",
-        "n1",
-        "n2",
-        "n2d",
-        "n4",
-        "t2a",
-        "t2d",
-        "z3",
-    ]:
+    if prefix in SERVER_FAMILIES:
         return prefix
     raise KeyError(f"Not known server family for {server_name}")
 
@@ -186,14 +209,9 @@ def _skus_dict():
                 family = sub(r" Arm$", "", family)
 
                 # extract instance family from description (?!)
-                if family == "Compute optimized":
-                    family = "C2"
-                if family == "Memory-optimized":
-                    family = "M1"
-                if family == "Memory Optimized Upgrade Premium for Memory-optimized":
-                    family = "M2"
-                if family == "M3 Memory-optimized":
-                    family = "M3"
+                for k, v in SERVER_DESCRIPTION_TO_FAMILY.items():
+                    if family == k:
+                        family = v
                 family = family.lower()
 
                 for region in regions:
@@ -201,22 +219,10 @@ def _skus_dict():
                 continue
 
         if sku.category.resource_family == "Storage":
-            if "Storage PD Capacity" in sku.description:
-                storage_name = "pd-standard"
-            elif "SSD backed PD Capacity" in sku.description:
-                storage_name = "pd-ssd"
-            elif "SSD backed Local Storage" in sku.description:
-                storage_name = "local-ssd"
-            elif "Balanced PD Capacity" in sku.description:
-                storage_name = "pd-balanced"
-            elif "Extreme PD Capacity" in sku.description:
-                storage_name = "pd-extreme"
-            elif "Hyperdisk Extreme Capacity" in sku.description:
-                storage_name = "hyperdisk-extreme"
-            elif "Hyperdisk Throughput Capacity" in sku.description:
-                storage_name = "hyperdisk-throughput"
-            elif "Hyperdisk Throughput Capacity" in sku.description:
-                storage_name = "hyperdisk-balanced"
+            for k, v in STORAGE_DESCRIPTION_TO_FAMILY.items():
+                if k in sku.description:
+                    storage_name = v
+                    break
             else:
                 continue
             for region in regions:
@@ -625,6 +631,8 @@ def inventory_zones(vendor):
         items.append(
             {
                 "vendor_id": vendor.vendor_id,
+                # example `zone.region`:
+                # https://www.googleapis.com/compute/v1/projects/algebraic-pier-412621/regions/us-east4
                 "datacenter_id": datacenters[zone.region.split("/")[-1]].datacenter_id,
                 "zone_id": str(zone.id),
                 "name": zone.name,
@@ -681,7 +689,7 @@ def inventory_servers(vendor):
                         else None
                     ),
                     "gpus": [],
-                    # TODO no API to get local disks for an instnace type
+                    # TODO no API to get local disks for an instance type
                     "storage_size": 0,
                     "storage_type": None,
                     "storages": [],
