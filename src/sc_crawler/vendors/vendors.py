@@ -1,4 +1,8 @@
-"""Supported cloud and VPS provider vendors."""
+"""Supported cloud and VPS provider vendors.
+
+For logos, see e.g. <https://iconduck.com/sets/svg-logos>,
+and edit to square e.g. via <https://boxy-svg.com>.
+"""
 
 from ..lookup import countries
 from ..tables import Vendor
@@ -6,8 +10,7 @@ from ..tables import Vendor
 aws = Vendor(
     vendor_id="aws",
     name="Amazon Web Services",
-    # TODO host on cdn.sparecores.com
-    logo="https://upload.wikimedia.org/wikipedia/commons/9/93/Amazon_Web_Services_Logo.svg",
+    logo="https://sc-data-public-40e9d310.s3.amazonaws.com/cdn/logos/aws.svg",
     homepage="https://aws.amazon.com",
     country=countries["US"],
     state="Washington",
@@ -22,6 +25,7 @@ aws = Vendor(
 gcp = Vendor(
     vendor_id="gcp",
     name="Google Cloud Platform",
+    logo="https://sc-data-public-40e9d310.s3.amazonaws.com/cdn/logos/gcp.svg",
     homepage="https://cloud.google.com",
     country=countries["US"],
     state="California",
@@ -36,6 +40,7 @@ gcp = Vendor(
 hcloud = Vendor(
     vendor_id="hcloud",
     name="Hetzner Cloud",
+    logo="https://sc-data-public-40e9d310.s3.amazonaws.com/cdn/logos/hcloud.svg",
     homepage="https://www.hetzner.com/cloud/",
     country=countries["DE"],
     state="Bavaria",
