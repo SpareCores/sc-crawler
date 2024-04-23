@@ -2,7 +2,7 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import cache
 from itertools import chain, repeat
 from logging import DEBUG
-from re import sub
+from re import match, sub
 from typing import List
 
 from cachier import cachier
@@ -194,7 +194,14 @@ def _skus_dict():
 
             # servers with CPU + RAM pricing
             if (
-                sku.category.resource_group in ["CPU", "RAM"]
+                sku.category.resource_group
+                in [
+                    "CPU",
+                    "RAM",
+                    # this resource group is also using cpu/ram SKUs,
+                    # but can only differentiate by the description
+                    "N1Standard",
+                ]
                 and "Custom" not in sku.description
                 and "Sole Tenancy" not in sku.description
                 and (
@@ -202,23 +209,28 @@ def _skus_dict():
                     or "Instance Ram running in" in sku.description
                 )
             ):
-                catgroup = sku.category.resource_group.lower()
                 # sku.description examples:
                 # - A2 Instance Ram running in Finland
                 # - Spot Preemptible C3 Instance Core running in Toronto
                 # - N2D AMD Instance Ram running in Virginia
                 # - M3 Memory-optimized Instance Core running in Warsaw
                 # - Spot Preemptible T2A Arm Instance Ram running in Netherlands
+                # - N1 Predefined Instance Ram running in EMEA
                 family = sub(r"^Spot Preemptible ", "", sku.description)
                 family = sub(r" Instance.*", "", family)
+                family = sub(r" Predefined$", "", family)
                 family = sub(r" AMD$", "", family)
                 family = sub(r" Arm$", "", family)
+
+                resource = sku.category.resource_group.lower()
+                if sku.category.resource_group == "N1Standard":
+                    resource = "ram" if "Instance Ram" in sku.description else "cpu"
 
                 # extract instance family from description (?!)
                 family = SERVER_DESCRIPTION_TO_FAMILY.get(family, family).lower()
 
                 for region in regions:
-                    lookup[catgroup][family][region][allocation] = (price, currency)
+                    lookup[resource][family][region][allocation] = (price, currency)
                 continue
 
         if sku.category.resource_family == "Storage":
@@ -260,7 +272,7 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
 
         # https://cloud.google.com/compute/docs/memory-optimized-machines#m1_series
         # N1 -> M1 rename "to more clearly identify the machines"
-        if family == "n1":
+        if match("n1-(mega|ultra)mem-[0-9]{2}", server.name):
             family = "m1"
 
         # price per instance or cpu/ram
