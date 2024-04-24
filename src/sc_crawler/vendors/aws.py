@@ -1047,6 +1047,7 @@ def inventory_storage_prices(vendor):
 def inventory_traffic_prices(vendor):
     """List all inbound and outbound traffic prices in all regions via `boto3` calls."""
     datacenters = scmodels_to_dict(vendor.datacenters, keys=["name", "aliases"])
+    items = []
     for direction in list(TrafficDirection):
         loc_dir = "toLocation" if direction == TrafficDirection.IN else "fromLocation"
         vendor.progress_tracker.start_task(
@@ -1063,7 +1064,6 @@ def inventory_traffic_prices(vendor):
             description=f"Syncing {direction.value} traffic_price(s)",
             total=len(products),
         )
-        items = []
         for product in products:
             try:
                 datacenter = datacenters[product["product"]["attributes"][loc_dir]]
@@ -1085,7 +1085,7 @@ def inventory_traffic_prices(vendor):
             finally:
                 vendor.progress_tracker.advance_task()
         vendor.progress_tracker.hide_task()
-        return items
+    return items
 
 
 def inventory_ipv4_prices(vendor):
