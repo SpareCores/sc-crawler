@@ -145,6 +145,9 @@ STORAGE_DESCRIPTION_TO_FAMILY = {
     "Hyperdisk Balanced Capacity": "hyperdisk-balanced",
 }
 
+# partial list of storages to exclude options with extra pricing on IOPS/throughput
+STORAGE_ALLOWLIST = ["pd-standard", "pd-ssd", "pd-balanced"]
+
 
 def _server_family(server_name: str) -> str:
     """Look up server family based on server name"""
@@ -779,6 +782,8 @@ def inventory_storages(vendor):
     vendor.log(f"{len(storages)} storage(s) found in {len(vendor.zones)} zones.")
     storages = list({p["name"]: p for p in storages}.values())
     vendor.log(f"{len(storages)} unique storage(s) found.")
+    storages = [s for s in storages if s["name"] in STORAGE_ALLOWLIST]
+    vendor.log(f"{len(storages)} storage(s) after dropping items with complex pricing.")
     vendor.progress_tracker.hide_task()
     return storages
 
