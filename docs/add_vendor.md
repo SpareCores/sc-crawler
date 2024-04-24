@@ -65,30 +65,36 @@ def inventory_compliance_frameworks(vendor):
 
 
 def inventory_datacenters(vendor):
-    # {
-    #     "vendor_id": "",
-    #     "datacenter_id": "",
-    #     "name": "",
-    #     "aliases": [],
-    #     "country_id": "",
-    #     "state": None,
-    #     "city": None,
-    #     "address_line": None,
-    #     "zip_code": None,
-    #     "founding_year": None,
-    #     "green_energy": None,
-    # }
-    return []
+    items = []
+    # for datacenter in []:
+    #     items.append(
+    #         {
+    #             "vendor_id": vendor.vendor_id,
+    #             "datacenter_id": "",
+    #             "name": "",
+    #             "aliases": [],
+    #             "country_id": "",
+    #             "state": None,
+    #             "city": None,
+    #             "address_line": None,
+    #             "zip_code": None,
+    #             "founding_year": None,
+    #             "green_energy": None,
+    #         }
+    #     )
+    return items
 
 
 def inventory_zones(vendor):
-    # {
-    #     "vendor_id": "",
-    #     "datacenter_id": "",
-    #     "zone_id": "",
-    #     "name": "",
-    # }
-    return []
+    items =[]
+    # for zone in []:
+    #     items.append({
+    #         "vendor_id": vendor.vendor_id,
+    #         "datacenter_id": "",
+    #         "zone_id": "",
+    #         "name": "",
+    #     })
+    return items
 
 
 def inventory_servers(vendor):
@@ -103,7 +109,7 @@ def inventory_servers(vendor):
     #             "vcpus": ,
     #             "hypervisor": None,
     #             "cpu_allocation": CpuAllocation....,
-    #             "cpu_cores": ,
+    #             "cpu_cores": None,
     #             "cpu_speed": None,
     #             "cpu_architecture": CpuArchitecture....,
     #             "cpu_manufacturer": None,
@@ -143,7 +149,7 @@ def inventory_server_prices(vendor):
     #         "price": ,
     #         "price_upfront": 0,
     #         "price_tiered": [],
-    #         "currency": "USD,"
+    #         "currency": "USD",
     #     })
     # return items
 

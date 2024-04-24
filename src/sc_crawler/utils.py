@@ -1,3 +1,4 @@
+from collections import defaultdict
 from enum import Enum
 from hashlib import sha1
 from json import dumps
@@ -151,3 +152,16 @@ def get_row_by_pk(session: Session, model: ScModel, pks: dict) -> ScModel:
     for k, v in pks.items():
         q = q.where(getattr(model, k) == v)
     return session.exec(statement=q).one()
+
+
+def nesteddefaultdict():
+    """Recursive defaultdict.
+
+    Examples:
+        >>> foo = nesteddefaultdict()
+        >>> foo["bar"]["baz"] = 43
+        >>> from json import dumps
+        >>> dumps(foo)
+        '{"bar": {"baz": 43}}'
+    """
+    return defaultdict(nesteddefaultdict)

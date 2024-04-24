@@ -253,7 +253,7 @@ class Vendor(VendorBase, table=True):
             ServerPrice,
             self._get_methods().inventory_server_prices_spot(self),
             self,
-            prefix="ondemand",
+            prefix="spot",
         )
 
     @log_start_end
