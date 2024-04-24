@@ -21,7 +21,7 @@ sc-crawler --help
 
 Note that you need specific IAM permissions to be able to run `sc-crawler` at the below vendors:
 
-<details>
+<details markdown="1">
 
 <summary>Amazon Web Services (AWS)</summary>
 
@@ -53,13 +53,13 @@ The related user or role requires the below minimum IAM policy:
 
 </details>
 
-<details>
+<details markdown="1">
 
 <summary>Google Cloud Platform (GCP)</summary>
 
 Using the [Application Default Credentials](https://cloud.google.com/docs/authentication/application-default-credentials) for interacting with GCP APIs. This is usually the path to a credential configuration file (created at <https://developers.google.com/workspace/guides/create-credentials#service-account>) stored in the `GOOGLE_APPLICATION_CREDENTIALS` environment variable, but could be an attached service account, Workload Identity Federation etc.
 
-The related user or role requires the below minimum roles:
+The related user or service account requires the below minimum roles:
 
 - Commerce Price Management Viewer
 - Compute Viewer
@@ -71,7 +71,7 @@ List of APIs required to be enabled in the project:
 
 </details>
 
-<details>
+<details markdown="1">
 
 <summary>Hetzner Cloud</summary>
 
