@@ -1,3 +1,19 @@
+## v0.1.2 (Apr 24, 2024)
+
+New vendor(s):
+
+- Google Cloud Platform (GCP)
+
+New feature(s):
+
+- SVG logo for all supported vendors.
+
+Fix(es):
+
+- Amazon Web Services' missed outbound traffic prices
+- Hetzner Cloud's outbound traffic price per GB instead of TB
+- Hetzner Cloud's `datacenter_id` reference in the server prices table
+
 ## v0.1.1 (Apr 12, 2024)
 
 New vendors:
@@ -46,7 +62,7 @@ CLI tools:
 
 Supported vendors:
 
-- Amazon Web Services
+- Amazon Web Services (AWS)
 
 Supported records:
 
