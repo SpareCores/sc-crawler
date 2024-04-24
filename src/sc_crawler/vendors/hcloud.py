@@ -13,6 +13,7 @@ from ..table_fields import (
     StorageType,
     TrafficDirection,
 )
+from ..utils import scmodels_to_dict
 
 # ##############################################################################
 # Cached client wrappers
@@ -87,7 +88,7 @@ def inventory_datacenters(vendor):
                 "datacenter_id": str(datacenter.id),
                 "name": datacenter.name,
                 # TODO add datacenter.description
-                "aliases": [],
+                "aliases": [datacenter.location.name],
                 "country_id": datacenter.location.country,
                 "state": None,
                 "city": datacenter.location.city,
@@ -179,14 +180,17 @@ def inventory_servers(vendor):
 
 
 def inventory_server_prices(vendor):
+    datacenters = scmodels_to_dict(vendor.datacenters, keys=["name", "aliases"])
     items = []
     for server in _client().server_types.get_all():
         for location in server.prices:
+            datacenter_id = datacenters[location["location"]].datacenter_id
             items.append(
                 {
                     "vendor_id": vendor.vendor_id,
-                    "datacenter_id": location["location"],
-                    "zone_id": location["location"],
+                    "datacenter_id": datacenter_id,
+                    # zone_id is a dummy datacenter_id as there are no zones at Hetzner
+                    "zone_id": datacenter_id,
                     "server_id": str(server.id),
                     "operating_system": "Linux",
                     "allocation": Allocation.ONDEMAND,
