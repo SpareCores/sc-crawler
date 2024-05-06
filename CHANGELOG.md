@@ -1,3 +1,9 @@
+## v0.1.3 (May 10, 2024)
+
+New feature(s):
+
+- Add latitude and longitude coordinates to `Datacenter`.
+
 ## v0.1.2 (Apr 24, 2024)
 
 New vendor(s):

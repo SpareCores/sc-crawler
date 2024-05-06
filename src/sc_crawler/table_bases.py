@@ -418,6 +418,14 @@ class DatacenterFields(HasName, HasDatacenterIdPK, HasVendorPKFK):
         default=None,
         description="If the Datacenter is 100% powered by renewable energy.",
     )
+    lon: Optional[float] = Field(
+        default=None,
+        description="Longitude coordinate of the Datacenter's known or approximate location.",
+    )
+    lat: Optional[float] = Field(
+        default=None,
+        description="Latitude coordinate of the Datacenter's known or approximate location.",
+    )
 
 
 class DatacenterBase(MetaColumns, DatacenterFields):

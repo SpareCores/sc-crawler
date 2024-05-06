@@ -79,7 +79,34 @@ def inventory_datacenters(vendor):
 
     All datacenters are powered by green energy as per
     <https://www.hetzner.com/unternehmen/umweltschutz/>.
+
+    Lon/lat coordinates were collected by searching for Hetzner
+    locations in the Datacenter's city.
+
     """
+    datacenters = {
+        "2": {  # Nuremberg
+            "lat": 49.4498349,
+            "lon": 11.0128772,
+        },
+        "3": {  # Helsinki
+            "lat": 60.3433291,
+            "lon": 25.02683,
+        },
+        "4": {  # Falkenstein
+            "lat": 50.4793313,
+            "lon": 12.3331105,
+        },
+        "5": {  # Ashburn, VA
+            "lat": 39.0176685,
+            "lon": -77.468102,
+        },
+        "6": {  # Hillsboro, OR
+            "lat": 45.558319,
+            "lon": -122.9306602,
+        },
+    }
+
     items = []
     for datacenter in _client().datacenters.get_all():
         items.append(
@@ -96,6 +123,8 @@ def inventory_datacenters(vendor):
                 "zip_code": None,
                 "founding_year": None,
                 "green_energy": True,
+                "lat": datacenters[str(datacenter.id)]["lat"],
+                "lon": datacenters[str(datacenter.id)]["lon"],
             }
         )
     return items

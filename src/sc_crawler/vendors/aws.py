@@ -382,8 +382,9 @@ def inventory_datacenters(vendor):
 
     Some data sources are not available from APIs, and were collected manually:
 
-    - launch date: <https://aws.amazon.com/about-aws/global-infrastructure/regions_az/>
-    - energy source: <https://sustainability.aboutamazon.com/products-services/the-cloud?energyType=true#renewable-energy>
+    - launch date: <https://aws.amazon.com/about-aws/global-infrastructure/regions_az/>,
+    - energy source: <https://sustainability.aboutamazon.com/products-services/the-cloud?energyType=true#renewable-energy>,
+    - lon/lat coordinates: <https://gist.github.com/martinheidegger/88950cb51ee5bdeafd51bc55287b1092> and approximation based on the city when no more accurate data was available.
     """  # noqa: E501
     datacenters = [
         {
@@ -394,6 +395,8 @@ def inventory_datacenters(vendor):
             "city": "Cape Town",
             "founding_year": 2020,
             "green_energy": False,
+            "lat": -33.914651,
+            "long": 18.3758801,
         },
         {
             "datacenter_id": "ap-east-1",
@@ -403,6 +406,8 @@ def inventory_datacenters(vendor):
             "city": "Hong Kong",
             "founding_year": 2019,
             "green_energy": False,
+            "lat": 22.2908475,
+            "long": 114.2723379,
         },
         {
             "datacenter_id": "ap-northeast-1",
@@ -412,6 +417,8 @@ def inventory_datacenters(vendor):
             "city": "Tokyo",
             "founding_year": 2011,
             "green_energy": False,
+            "lat": 35.617436,
+            "long": 139.7459176,
         },
         {
             "datacenter_id": "ap-northeast-2",
@@ -421,6 +428,8 @@ def inventory_datacenters(vendor):
             "city": "Seoul",
             "founding_year": 2016,
             "green_energy": False,
+            "lat": 37.5616592,
+            "long": 126.8736237,
         },
         {
             "datacenter_id": "ap-northeast-3",
@@ -430,6 +439,8 @@ def inventory_datacenters(vendor):
             "city": "Osaka",
             "founding_year": 2021,
             "green_energy": False,
+            "lat": 34.693889,
+            "long": 135.502222,
         },
         {
             "datacenter_id": "ap-south-1",
@@ -439,6 +450,8 @@ def inventory_datacenters(vendor):
             "city": "Mumbai",
             "founding_year": 2016,
             "green_energy": True,
+            "lat": 19.2425503,
+            "long": 72.9667878,
         },
         {
             "datacenter_id": "ap-south-2",
@@ -448,6 +461,9 @@ def inventory_datacenters(vendor):
             "city": "Hyderabad",
             "founding_year": 2022,
             "green_energy": True,
+            # approximation based on city location
+            "lat": 17.412281,
+            "long": 78.243237,
         },
         {
             "datacenter_id": "ap-southeast-1",
@@ -457,6 +473,8 @@ def inventory_datacenters(vendor):
             "city": "Singapore",
             "founding_year": 2010,
             "green_energy": False,
+            "lat": 1.3218269,
+            "long": 103.6930643,
         },
         {
             "datacenter_id": "ap-southeast-2",
@@ -466,6 +484,8 @@ def inventory_datacenters(vendor):
             "city": "Sydney",
             "founding_year": 2012,
             "green_energy": False,
+            "lat": -33.9117717,
+            "long": 151.1907535,
         },
         {
             "datacenter_id": "ap-southeast-3",
@@ -475,6 +495,8 @@ def inventory_datacenters(vendor):
             "city": "Jakarta",
             "founding_year": 2021,
             "green_energy": False,
+            "lat": -6.2,
+            "long": 106.816667,
         },
         {
             "datacenter_id": "ap-southeast-4",
@@ -484,6 +506,9 @@ def inventory_datacenters(vendor):
             "city": "Melbourne",
             "founding_year": 2023,
             "green_energy": False,
+            # approximation based on city location
+            "lat": -37.8038607,
+            "long": 144.7119569,
         },
         {
             "datacenter_id": "ca-central-1",
@@ -493,6 +518,8 @@ def inventory_datacenters(vendor):
             "city": "Quebec",  # NOTE needs city name
             "founding_year": 2016,
             "green_energy": True,
+            "lat": 45.5,
+            "long": -73.6,
         },
         {
             "datacenter_id": "ca-west-1",
@@ -502,6 +529,9 @@ def inventory_datacenters(vendor):
             "city": "Calgary",
             "founding_year": 2023,
             "green_energy": False,
+            # approximation based on city location
+            "lat": -37.8038607,
+            "long": 144.7119569,
         },
         {
             "datacenter_id": "cn-north-1",
@@ -511,6 +541,8 @@ def inventory_datacenters(vendor):
             "city": "Beijing",
             "founding_year": 2016,
             "green_energy": True,
+            "lat": 39.8094478,
+            "long": 116.5783234,
         },
         {
             "datacenter_id": "cn-northwest-1",
@@ -520,6 +552,8 @@ def inventory_datacenters(vendor):
             "city": "Ningxia",  # NOTE needs city name
             "founding_year": 2017,
             "green_energy": True,
+            "lat": 37.5024418,
+            "long": 105.1627193,
         },
         {
             "datacenter_id": "eu-central-1",
@@ -530,6 +564,8 @@ def inventory_datacenters(vendor):
             "city": "Frankfurt",
             "founding_year": 2014,
             "green_energy": True,
+            "lat": 50.0992094,
+            "long": 8.6303932,
         },
         {
             "datacenter_id": "eu-central-2",
@@ -539,6 +575,9 @@ def inventory_datacenters(vendor):
             "city": "Zurich",
             "founding_year": 2022,
             "green_energy": True,
+            # approximation based on city location
+            "lat": 47.3862924,
+            "long": 8.4448814,
         },
         {
             "datacenter_id": "eu-north-1",
@@ -549,6 +588,8 @@ def inventory_datacenters(vendor):
             "city": "Stockholm",
             "founding_year": 2018,
             "green_energy": True,
+            "lat": 59.326242,
+            "long": 17.8419717,
         },
         {
             "datacenter_id": "eu-south-1",
@@ -559,6 +600,8 @@ def inventory_datacenters(vendor):
             "city": "Milan",
             "founding_year": 2020,
             "green_energy": True,
+            "lat": 45.4628328,
+            "long": 9.1076927,
         },
         {
             "datacenter_id": "eu-south-2",
@@ -568,6 +611,9 @@ def inventory_datacenters(vendor):
             "city": "Aragón",  # NOTE needs city name
             "founding_year": 2022,
             "green_energy": True,
+            # approximation based on city location
+            "lat": 41.7943702,
+            "long": -0.8516735,
         },
         {
             "datacenter_id": "eu-west-1",
@@ -578,6 +624,8 @@ def inventory_datacenters(vendor):
             "city": "Dublin",
             "founding_year": 2007,
             "green_energy": True,
+            "lat": 53.4056545,
+            "long": -6.224503,
         },
         {
             "datacenter_id": "eu-west-2",
@@ -588,6 +636,8 @@ def inventory_datacenters(vendor):
             "city": "London",
             "founding_year": 2016,
             "green_energy": True,
+            "lat": 51.5085036,
+            "long": -0.0609266,
         },
         {
             "datacenter_id": "eu-west-3",
@@ -598,6 +648,8 @@ def inventory_datacenters(vendor):
             "city": "Paris",
             "founding_year": 2017,
             "green_energy": True,
+            "lat": 48.6009709,
+            "long": 2.2976644,
         },
         {
             "datacenter_id": "il-central-1",
@@ -607,6 +659,9 @@ def inventory_datacenters(vendor):
             "city": "Tel Aviv",
             "founding_year": 2023,
             "green_energy": False,
+            # approximation based on city location
+            "lat": 32.0491183,
+            "long": 34.7891105,
         },
         {
             "datacenter_id": "me-central-1",
@@ -616,6 +671,9 @@ def inventory_datacenters(vendor):
             # NOTE city unknown
             "founding_year": 2022,
             "green_energy": False,
+            # approximation based on country
+            "lat": 25.0647937,
+            "long": 55.1363688,
         },
         {
             "datacenter_id": "me-south-1",
@@ -625,6 +683,8 @@ def inventory_datacenters(vendor):
             # NOTE city unknown
             "founding_year": 2019,
             "green_energy": False,
+            "lat": 25.941298,
+            "long": 50.3073907,
         },
         {
             "datacenter_id": "sa-east-1",
@@ -634,6 +694,8 @@ def inventory_datacenters(vendor):
             "city": "Sao Paulo",
             "founding_year": 2011,
             "green_energy": False,
+            "lat": -23.4925798,
+            "long": -46.8105593,
         },
         {
             "datacenter_id": "us-east-1",
@@ -644,6 +706,8 @@ def inventory_datacenters(vendor):
             # NOTE city unknown
             "founding_year": 2006,
             "green_energy": True,
+            "lat": 38.9940541,
+            "long": -77.4524237,
         },
         {
             "datacenter_id": "us-east-2",
@@ -654,6 +718,8 @@ def inventory_datacenters(vendor):
             # NOTE city unknown
             "founding_year": 2016,
             "green_energy": True,
+            "lat": 40.0946354,
+            "long": -82.7541337,
         },
         {
             "datacenter_id": "us-west-1",
@@ -664,6 +730,8 @@ def inventory_datacenters(vendor):
             # NOTE city unknown
             "founding_year": 2009,
             "green_energy": True,
+            "lat": 37.443680,
+            "long": -122.153664,
         },
         {
             "datacenter_id": "us-west-2",
@@ -674,6 +742,8 @@ def inventory_datacenters(vendor):
             # NOTE city unknown
             "founding_year": 2011,
             "green_energy": True,
+            "lat": 45.9174667,
+            "long": -119.2684488,
         },
     ]
 
