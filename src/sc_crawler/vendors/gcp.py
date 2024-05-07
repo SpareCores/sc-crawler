@@ -398,6 +398,7 @@ def inventory_datacenters(vendor):
             # approximation based on country
             "lat": 22.2772377,
             "long": 114.1703066,
+            "display_name": "Hong Kong",
         },
         "asia-northeast1": {
             "country_id": "JP",
@@ -731,6 +732,16 @@ def inventory_datacenters(vendor):
         },
     }
 
+    # add API reference and display names
+    for k, v in manual_data.items():
+        v["api_reference"] = k
+        if v["display_name"] is None:
+            v["display_name"] = v.get("city", v.get("state", ""))
+            if v["display_name"]:
+                v["display_name"] = v["display_name"] + " (" + v["country_id"] + ")"
+            else:
+                v["display_name"] = v["country_id"]
+
     regions = _regions()
     items = []
     for region in regions:
@@ -760,6 +771,8 @@ def inventory_zones(vendor):
                 "datacenter_id": datacenters[zone.region.split("/")[-1]].datacenter_id,
                 "zone_id": str(zone.id),
                 "name": zone.name,
+                "api_reference": zone.name,
+                "display_name": zone.name,
             }
         )
     return items
@@ -779,6 +792,8 @@ def inventory_servers(vendor):
                     "vendor_id": vendor.vendor_id,
                     "server_id": str(server.id),
                     "name": server.name,
+                    "api_reference": server.name,
+                    "display_name": server.name,
                     "description": server.description,
                     "family": server.name.split("-")[0],
                     "vcpus": server.guest_cpus,

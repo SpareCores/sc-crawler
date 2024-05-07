@@ -238,6 +238,22 @@ class HasDescription(ScModel):
     description: Optional[str] = Field(description="Short description.")
 
 
+class HasApiReference(ScModel):
+    api_reference: str = Field(
+        description=(
+            "How this resource is referenced in the vendor API calls. "
+            "This is usually either the id or name of the resource, "
+            "depening on the vendor and actual API endpoint."
+        )
+    )
+
+
+class HasDisplayName(ScModel):
+    display_name: str = Field(
+        description="Human-friendly reference (usually the id or name) of the resource."
+    )
+
+
 class HasVendorPKFK(ScModel):
     vendor_id: str = Field(
         foreign_key="vendor.vendor_id",
@@ -387,7 +403,9 @@ class VendorComplianceLinkBase(MetaColumns, VendorComplianceLinkFields):
     pass
 
 
-class DatacenterFields(HasName, HasDatacenterIdPK, HasVendorPKFK):
+class DatacenterFields(
+    HasDisplayName, HasApiReference, HasName, HasDatacenterIdPK, HasVendorPKFK
+):
     aliases: List[str] = Field(
         default=[],
         sa_type=JSON,
@@ -432,7 +450,15 @@ class DatacenterBase(MetaColumns, DatacenterFields):
     pass
 
 
-class ZoneBase(MetaColumns, HasName, HasZoneIdPK, HasDatacenterPK, HasVendorPKFK):
+class ZoneBase(
+    MetaColumns,
+    HasDisplayName,
+    HasApiReference,
+    HasName,
+    HasZoneIdPK,
+    HasDatacenterPK,
+    HasVendorPKFK,
+):
     pass
 
 
@@ -458,7 +484,14 @@ class StorageBase(MetaColumns, StorageFields):
     pass
 
 
-class ServerFields(HasDescription, HasName, HasServerIdPK, HasVendorPKFK):
+class ServerFields(
+    HasDescription,
+    HasDisplayName,
+    HasApiReference,
+    HasName,
+    HasServerIdPK,
+    HasVendorPKFK,
+):
     family: Optional[str] = Field(
         default=None,
         description="Server family, e.g. General-purpose machine (GCP), or M5g (AWS).",

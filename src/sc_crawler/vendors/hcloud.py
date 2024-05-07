@@ -114,6 +114,8 @@ def inventory_datacenters(vendor):
                 "vendor_id": vendor.vendor_id,
                 "datacenter_id": str(datacenter.id),
                 "name": datacenter.name,
+                "api_reference": datacenter.name,
+                "display_name": datacenter.name,
                 # TODO add datacenter.description
                 "aliases": [datacenter.location.name],
                 "country_id": datacenter.location.country,
@@ -121,10 +123,10 @@ def inventory_datacenters(vendor):
                 "city": datacenter.location.city,
                 "address_line": None,
                 "zip_code": None,
-                "founding_year": None,
-                "green_energy": True,
                 "lat": datacenters[str(datacenter.id)]["lat"],
                 "lon": datacenters[str(datacenter.id)]["lon"],
+                "founding_year": None,
+                "green_energy": True,
             }
         )
     return items
@@ -145,6 +147,8 @@ def inventory_zones(vendor):
                 "datacenter_id": datacenter.datacenter_id,
                 "zone_id": datacenter.datacenter_id,
                 "name": datacenter.name,
+                "api_reference": datacenter.name,
+                "display_name": datacenter.name,
             }
         )
     return items
@@ -164,6 +168,8 @@ def inventory_servers(vendor):
                 "vendor_id": vendor.vendor_id,
                 "server_id": str(server.id),
                 "name": server.name,
+                "api_reference": server.name,
+                "display_name": server.name,
                 "description": server.description,
                 "family": server.name.rstrip("0123456789"),
                 "vcpus": server.cores,

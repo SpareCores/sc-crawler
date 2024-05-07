@@ -281,6 +281,8 @@ def _make_server_from_instance_type(instance_type, vendor) -> dict:
         "server_id": it,
         "vendor_id": vendor.vendor_id,
         "name": it,
+        "api_reference": it,
+        "display_name": it,
         "description": _annotate_instance_type(it),
         "hypervisor": instance_type.get("Hypervisor", None),
         "family": it.split(".")[0],
@@ -748,6 +750,11 @@ def inventory_datacenters(vendor):
         },
     ]
 
+    # add API reference and display names
+    for datacenter in datacenters:
+        datacenter["api_reference"] = datacenter["datacenter_id"]
+        datacenter["display_name"] = datacenter["name"]
+
     # look for undocumented (new) regions in AWS
     supported_regions = [d["datacenter_id"] for d in datacenters]
     regions = _boto_describe_regions()
@@ -783,6 +790,8 @@ def inventory_zones(vendor):
                     {
                         "zone_id": zone["ZoneId"],
                         "name": zone["ZoneName"],
+                        "api_reference": zone["ZoneName"],
+                        "display_name": zone["ZoneName"],
                         "datacenter_id": datacenter.datacenter_id,
                         "vendor_id": vendor.vendor_id,
                     }
