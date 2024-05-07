@@ -1,7 +1,7 @@
-"""v0.1.3
+"""v0.1.3 step #2
 
-Revision ID: f6edf4a96a78
-Revises: 4691089690c2
+Revision ID: f6bf6152039a
+Revises: f6edf4a96a78
 Create Date: 2024-05-07 13:31:37.873389
 
 """
@@ -13,49 +13,28 @@ import sqlmodel
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "f6edf4a96a78"
-down_revision: Union[str, None] = "4691089690c2"
+revision: str = "f6bf6152039a"
+down_revision: Union[str, None] = "f6edf4a96a78"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
 # DRY helper function
-def add_api_reference_and_display_name(batch_op, table: str):
-    # need to add as nullable first, then set values, and update to nullable
-    batch_op.add_column(
-        sa.Column(
-            "api_reference",
-            sqlmodel.sql.sqltypes.AutoString(),
-            nullable=True,
-            comment="How this resource is referenced in the vendor API calls. This is usually either the id or name of the resource, depening on the vendor and actual API endpoint.",
-        ),
-    )
-    batch_op.execute(f"UPDATE {table} SET api_reference = name")
-    if table == "datacenter":
-        batch_op.execute(
-            "UPDATE datacenter SET api_reference = datacenter_id WHERE vendor_id = 'aws'"
-        )
-    batch_op.alter_column(
-        "api_reference",
-        existing_type=sqlmodel.sql.sqltypes.AutoString(),
-        nullable=False,
-    )
+def update_api_reference_and_display_name(batch_op, table: str, reverse: bool):
+    if not reverse:
+        batch_op.execute(f"UPDATE {table} SET api_reference = name")
+        if table == "datacenter":
+            batch_op.execute(
+                "UPDATE datacenter SET api_reference = datacenter_id WHERE vendor_id = 'aws'"
+            )
+        batch_op.execute(f"UPDATE {table} SET display_name = name")
 
-    # need to add as nullable first, then set values, and update to nullable
-    batch_op.add_column(
-        sa.Column(
-            "display_name",
-            sqlmodel.sql.sqltypes.AutoString(),
-            nullable=True,
-            comment="Human-friendly reference (usually the id or name) of the resource.",
-        ),
-    )
-    batch_op.execute("UPDATE server SET display_name = name")
-    batch_op.alter_column(
-        "display_name",
-        existing_type=sqlmodel.sql.sqltypes.AutoString(),
-        nullable=False,
-    )
+    for col in ["api_reference", "display_name"]:
+        batch_op.alter_column(
+            col,
+            existing_type=sqlmodel.sql.sqltypes.AutoString(),
+            nullable=reverse,
+        )
 
 
 # need to provide the table schema for offline mode support
@@ -66,12 +45,16 @@ datacenter_table = sa.Table(
     sa.Column("vendor_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column("datacenter_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column("name", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+    sa.Column("api_reference", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+    sa.Column("display_name", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column("aliases", sa.JSON(), nullable=False),
     sa.Column("country_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column("state", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
     sa.Column("city", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
     sa.Column("address_line", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
     sa.Column("zip_code", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+    sa.Column("lon", sa.Float(), nullable=True),
+    sa.Column("lat", sa.Float(), nullable=True),
     sa.Column("founding_year", sa.Integer(), nullable=True),
     sa.Column("green_energy", sa.Boolean(), nullable=True),
     sa.Column("status", sa.Enum("ACTIVE", "INACTIVE", name="status"), nullable=False),
@@ -89,6 +72,8 @@ zone_table = sa.Table(
     sa.Column("datacenter_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column("zone_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column("name", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+    sa.Column("api_reference", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+    sa.Column("display_name", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column(
         "status",
         sa.Enum("ACTIVE", "INACTIVE", name="status"),
@@ -109,7 +94,10 @@ server_table = sa.Table(
     sa.Column("vendor_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column("server_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column("name", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+    sa.Column("api_reference", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+    sa.Column("display_name", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column("description", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+    sa.Column("family", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
     sa.Column("vcpus", sa.Integer(), nullable=False),
     sa.Column("hypervisor", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
     sa.Column(
@@ -169,142 +157,66 @@ def upgrade() -> None:
         with op.batch_alter_table(
             "datacenter_scd", schema=None, copy_from=datacenter_table
         ) as batch_op:
-            add_api_reference_and_display_name(batch_op, table="datacenter")
-            batch_op.add_column(
-                sa.Column(
-                    "lon",
-                    sa.Float(),
-                    nullable=True,
-                    comment="Longitude coordinate of the Datacenter's known or approximate location.",
-                )
-            )
-            batch_op.add_column(
-                sa.Column(
-                    "lat",
-                    sa.Float(),
-                    nullable=True,
-                    comment="Latitude coordinate of the Datacenter's known or approximate location.",
-                )
-            )
+            update_api_reference_and_display_name(batch_op, "datacenter_scd", False)
     else:
         with op.batch_alter_table(
             "datacenter", schema=None, copy_from=datacenter_table
         ) as batch_op:
-            add_api_reference_and_display_name(batch_op, table="datacenter")
-            batch_op.add_column(
-                sa.Column(
-                    "lon",
-                    sa.Float(),
-                    nullable=True,
-                    comment="Longitude coordinate of the Datacenter's known or approximate location.",
-                )
-            )
-            batch_op.add_column(
-                sa.Column(
-                    "lat",
-                    sa.Float(),
-                    nullable=True,
-                    comment="Latitude coordinate of the Datacenter's known or approximate location.",
-                )
-            )
+            update_api_reference_and_display_name(batch_op, "datacenter", False)
 
     if op.get_context().config.attributes.get("scd"):
         with op.batch_alter_table(
             "zone_scd", schema=None, copy_from=zone_table
         ) as batch_op:
-            add_api_reference_and_display_name(batch_op, table="datacenter")
+            update_api_reference_and_display_name(batch_op, "zone_scd", False)
     else:
         with op.batch_alter_table(
             "zone", schema=None, copy_from=zone_table
         ) as batch_op:
-            add_api_reference_and_display_name(batch_op, table="datacenter")
+            update_api_reference_and_display_name(batch_op, "zone", False)
 
     if op.get_context().config.attributes.get("scd"):
         with op.batch_alter_table(
             "server_scd", schema=None, copy_from=server_table
         ) as batch_op:
-            add_api_reference_and_display_name(batch_op, table="datacenter")
-            batch_op.add_column(
-                sa.Column(
-                    "family",
-                    sqlmodel.sql.sqltypes.AutoString(),
-                    nullable=True,
-                    comment="Server family, e.g. General-purpose machine (GCP), or M5g (AWS).",
-                )
-            )
+            update_api_reference_and_display_name(batch_op, "server_scd", False)
     else:
         with op.batch_alter_table(
             "server", schema=None, copy_from=server_table
         ) as batch_op:
-            add_api_reference_and_display_name(batch_op, table="datacenter")
-            batch_op.add_column(
-                sa.Column(
-                    "family",
-                    sqlmodel.sql.sqltypes.AutoString(),
-                    nullable=True,
-                    comment="Server family, e.g. General-purpose machine (GCP), or M5g (AWS).",
-                )
-            )
+            update_api_reference_and_display_name(batch_op, "server", False)
 
 
 def downgrade() -> None:
-    datacenter_table.append_column(
-        sa.Column("api_reference", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("display_name", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("lon", sa.Float(), nullable=True),
-        sa.Column("lat", sa.Float(), nullable=True),
-    )
-    zone_table.append_column(
-        sa.Column("api_reference", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("display_name", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-    )
-    server_table.append_column(
-        sa.Column("api_reference", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("display_name", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("family", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-    )
-
     if op.get_context().config.attributes.get("scd"):
         with op.batch_alter_table(
             "datacenter_scd", schema=None, copy_from=datacenter_table
         ) as batch_op:
-            batch_op.drop_column("api_reference")
-            batch_op.drop_column("display_name")
-            batch_op.drop_column("lon")
-            batch_op.drop_column("lat")
+            update_api_reference_and_display_name(batch_op, reverse=True)
     else:
         with op.batch_alter_table(
             "datacenter", schema=None, copy_from=datacenter_table
         ) as batch_op:
-            batch_op.drop_column("api_reference")
-            batch_op.drop_column("display_name")
-            batch_op.drop_column("lon")
-            batch_op.drop_column("lat")
+            update_api_reference_and_display_name(batch_op, reverse=True)
 
     if op.get_context().config.attributes.get("scd"):
         with op.batch_alter_table(
             "zone_scd", schema=None, copy_from=zone_table
         ) as batch_op:
-            batch_op.drop_column("api_reference")
-            batch_op.drop_column("display_name")
+            update_api_reference_and_display_name(batch_op, reverse=True)
     else:
         with op.batch_alter_table(
             "zone", schema=None, copy_from=zone_table
         ) as batch_op:
-            batch_op.drop_column("api_reference")
-            batch_op.drop_column("display_name")
+            update_api_reference_and_display_name(batch_op, reverse=True)
 
     if op.get_context().config.attributes.get("scd"):
         with op.batch_alter_table(
             "server_scd", schema=None, copy_from=server_table
         ) as batch_op:
-            batch_op.drop_column("family")
-            batch_op.drop_column("display_name")
-            batch_op.drop_column("api_reference")
+            update_api_reference_and_display_name(batch_op, reverse=True)
     else:
         with op.batch_alter_table(
             "server", schema=None, copy_from=server_table
         ) as batch_op:
-            batch_op.drop_column("family")
-            batch_op.drop_column("display_name")
-            batch_op.drop_column("api_reference")
+            update_api_reference_and_display_name(batch_op, reverse=True)
