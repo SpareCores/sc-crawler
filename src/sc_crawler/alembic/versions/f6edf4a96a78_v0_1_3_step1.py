@@ -237,19 +237,27 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     datacenter_table.append_column(
-        sa.Column("api_reference", sqlmodel.sql.sqltypes.AutoString()),
-        sa.Column("display_name", sqlmodel.sql.sqltypes.AutoString()),
-        sa.Column("lon", sa.Float(), nullable=True),
-        sa.Column("lat", sa.Float(), nullable=True),
+        sa.Column("api_reference", sqlmodel.sql.sqltypes.AutoString())
+    )
+    datacenter_table.append_column(
+        sa.Column("display_name", sqlmodel.sql.sqltypes.AutoString())
+    )
+    datacenter_table.append_column(sa.Column("lon", sa.Float(), nullable=True))
+    datacenter_table.append_column(sa.Column("lat", sa.Float(), nullable=True))
+    zone_table.append_column(
+        sa.Column("api_reference", sqlmodel.sql.sqltypes.AutoString())
     )
     zone_table.append_column(
-        sa.Column("api_reference", sqlmodel.sql.sqltypes.AutoString()),
-        sa.Column("display_name", sqlmodel.sql.sqltypes.AutoString()),
+        sa.Column("display_name", sqlmodel.sql.sqltypes.AutoString())
     )
     server_table.append_column(
-        sa.Column("api_reference", sqlmodel.sql.sqltypes.AutoString()),
-        sa.Column("display_name", sqlmodel.sql.sqltypes.AutoString()),
-        sa.Column("family", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column("api_reference", sqlmodel.sql.sqltypes.AutoString())
+    )
+    server_table.append_column(
+        sa.Column("display_name", sqlmodel.sql.sqltypes.AutoString())
+    )
+    server_table.append_column(
+        sa.Column("family", sqlmodel.sql.sqltypes.AutoString(), nullable=True)
     )
 
     if op.get_context().config.attributes.get("scd"):

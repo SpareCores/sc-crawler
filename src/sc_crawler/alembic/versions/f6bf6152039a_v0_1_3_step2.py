@@ -6,7 +6,7 @@ Create Date: 2024-05-07 13:31:37.873389
 
 """
 
-from typing import Sequence, Union
+from typing import Optional, Sequence, Union
 
 import sqlalchemy as sa
 import sqlmodel
@@ -20,7 +20,9 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 # DRY helper function
-def update_api_reference_and_display_name(batch_op, table: str, reverse: bool):
+def update_api_reference_and_display_name(
+    batch_op, reverse: bool = False, table: Optional[str] = None
+):
     if not reverse:
         batch_op.execute(f"UPDATE {table} SET api_reference = name")
         if table == "datacenter":
@@ -157,34 +159,34 @@ def upgrade() -> None:
         with op.batch_alter_table(
             "datacenter_scd", schema=None, copy_from=datacenter_table
         ) as batch_op:
-            update_api_reference_and_display_name(batch_op, "datacenter_scd", False)
+            update_api_reference_and_display_name(batch_op, table="datacenter_scd")
     else:
         with op.batch_alter_table(
             "datacenter", schema=None, copy_from=datacenter_table
         ) as batch_op:
-            update_api_reference_and_display_name(batch_op, "datacenter", False)
+            update_api_reference_and_display_name(batch_op, table="datacenter")
 
     if op.get_context().config.attributes.get("scd"):
         with op.batch_alter_table(
             "zone_scd", schema=None, copy_from=zone_table
         ) as batch_op:
-            update_api_reference_and_display_name(batch_op, "zone_scd", False)
+            update_api_reference_and_display_name(batch_op, table="zone_scd")
     else:
         with op.batch_alter_table(
             "zone", schema=None, copy_from=zone_table
         ) as batch_op:
-            update_api_reference_and_display_name(batch_op, "zone", False)
+            update_api_reference_and_display_name(batch_op, table="zone")
 
     if op.get_context().config.attributes.get("scd"):
         with op.batch_alter_table(
             "server_scd", schema=None, copy_from=server_table
         ) as batch_op:
-            update_api_reference_and_display_name(batch_op, "server_scd", False)
+            update_api_reference_and_display_name(batch_op, table="server_scd")
     else:
         with op.batch_alter_table(
             "server", schema=None, copy_from=server_table
         ) as batch_op:
-            update_api_reference_and_display_name(batch_op, "server", False)
+            update_api_reference_and_display_name(batch_op, table="server")
 
 
 def downgrade() -> None:
