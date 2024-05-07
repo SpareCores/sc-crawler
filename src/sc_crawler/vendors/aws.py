@@ -283,6 +283,7 @@ def _make_server_from_instance_type(instance_type, vendor) -> dict:
         "name": it,
         "description": _annotate_instance_type(it),
         "hypervisor": instance_type.get("Hypervisor", None),
+        "family": it.split(".")[0],
         "vcpus": vcpu_info["DefaultVCpus"],
         "cpu_allocation": allocation,
         "cpu_cores": vcpu_info["DefaultCores"],

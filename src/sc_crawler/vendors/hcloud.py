@@ -165,6 +165,7 @@ def inventory_servers(vendor):
                 "server_id": str(server.id),
                 "name": server.name,
                 "description": server.description,
+                "family": server.name.rstrip("0123456789"),
                 "vcpus": server.cores,
                 "hypervisor": None,
                 "cpu_allocation": (

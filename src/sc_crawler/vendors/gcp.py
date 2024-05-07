@@ -780,6 +780,7 @@ def inventory_servers(vendor):
                     "server_id": str(server.id),
                     "name": server.name,
                     "description": server.description,
+                    "family": server.name.split("-")[0],
                     "vcpus": server.guest_cpus,
                     "hypervisor": None,
                     "cpu_allocation": (
