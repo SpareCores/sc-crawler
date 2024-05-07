@@ -11,4 +11,5 @@
 - [ ] New features, bugfixes etc are tracked in `CHANGELOG.md`
 - [ ] Package version bumped in `pyproject.toml`
 - [ ] Alembic migrations are provided (or not needed)
+- [ ] `add_vendor.md` is up-to-date
 - [ ] Human approval

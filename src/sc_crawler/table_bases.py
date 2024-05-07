@@ -410,14 +410,6 @@ class DatacenterFields(HasName, HasDatacenterIdPK, HasVendorPKFK):
     zip_code: Optional[str] = Field(
         default=None, description="Optional ZIP code of the Datacenter's location."
     )
-
-    founding_year: Optional[int] = Field(
-        default=None, description="4-digit year when the Datacenter was founded."
-    )
-    green_energy: Optional[bool] = Field(
-        default=None,
-        description="If the Datacenter is 100% powered by renewable energy.",
-    )
     lon: Optional[float] = Field(
         default=None,
         description="Longitude coordinate of the Datacenter's known or approximate location.",
@@ -425,6 +417,14 @@ class DatacenterFields(HasName, HasDatacenterIdPK, HasVendorPKFK):
     lat: Optional[float] = Field(
         default=None,
         description="Latitude coordinate of the Datacenter's known or approximate location.",
+    )
+
+    founding_year: Optional[int] = Field(
+        default=None, description="4-digit year when the Datacenter was founded."
+    )
+    green_energy: Optional[bool] = Field(
+        default=None,
+        description="If the Datacenter is 100% powered by renewable energy.",
     )
 
 
