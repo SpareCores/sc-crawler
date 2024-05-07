@@ -18,7 +18,47 @@ down_revision: Union[str, None] = "4691089690c2"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
-## need to provide the table schema for offline mode support
+
+# DRY helper function
+def add_api_reference_and_display_name(batch_op, table: str):
+    # need to add as nullable first, then set values, and update to nullable
+    batch_op.add_column(
+        sa.Column(
+            "api_reference",
+            sqlmodel.sql.sqltypes.AutoString(),
+            nullable=True,
+            comment="How this resource is referenced in the vendor API calls. This is usually either the id or name of the resource, depening on the vendor and actual API endpoint.",
+        ),
+    )
+    batch_op.execute(f"UPDATE {table} SET api_reference = name")
+    if table == "datacenter":
+        batch_op.execute(
+            "UPDATE datacenter SET api_reference = datacenter_id WHERE vendor_id = 'aws'"
+        )
+    batch_op.alter_column(
+        "api_reference",
+        existing_type=sqlmodel.sql.sqltypes.AutoString(),
+        nullable=False,
+    )
+
+    # need to add as nullable first, then set values, and update to nullable
+    batch_op.add_column(
+        sa.Column(
+            "display_name",
+            sqlmodel.sql.sqltypes.AutoString(),
+            nullable=True,
+            comment="Human-friendly reference (usually the id or name) of the resource.",
+        ),
+    )
+    batch_op.execute("UPDATE server SET display_name = name")
+    batch_op.alter_column(
+        "display_name",
+        existing_type=sqlmodel.sql.sqltypes.AutoString(),
+        nullable=False,
+    )
+
+
+# need to provide the table schema for offline mode support
 meta = sa.MetaData()
 datacenter_table = sa.Table(
     "datacenter_scd" if op.get_context().config.attributes.get("scd") else "datacenter",
@@ -129,22 +169,7 @@ def upgrade() -> None:
         with op.batch_alter_table(
             "datacenter_scd", schema=None, copy_from=datacenter_table
         ) as batch_op:
-            batch_op.add_column(
-                sa.Column(
-                    "api_reference",
-                    sqlmodel.sql.sqltypes.AutoString(),
-                    nullable=False,
-                    comment="How this resource is referenced in the vendor API calls. This is usually either the id or name of the resource, depening on the vendor and actual API endpoint.",
-                )
-            )
-            batch_op.add_column(
-                sa.Column(
-                    "display_name",
-                    sqlmodel.sql.sqltypes.AutoString(),
-                    nullable=False,
-                    comment="Human-friendly reference (usually the id or name) of the resource.",
-                )
-            )
+            add_api_reference_and_display_name(batch_op, table="datacenter")
             batch_op.add_column(
                 sa.Column(
                     "lon",
@@ -165,22 +190,7 @@ def upgrade() -> None:
         with op.batch_alter_table(
             "datacenter", schema=None, copy_from=datacenter_table
         ) as batch_op:
-            batch_op.add_column(
-                sa.Column(
-                    "api_reference",
-                    sqlmodel.sql.sqltypes.AutoString(),
-                    nullable=False,
-                    comment="How this resource is referenced in the vendor API calls. This is usually either the id or name of the resource, depening on the vendor and actual API endpoint.",
-                )
-            )
-            batch_op.add_column(
-                sa.Column(
-                    "display_name",
-                    sqlmodel.sql.sqltypes.AutoString(),
-                    nullable=False,
-                    comment="Human-friendly reference (usually the id or name) of the resource.",
-                )
-            )
+            add_api_reference_and_display_name(batch_op, table="datacenter")
             batch_op.add_column(
                 sa.Column(
                     "lon",
@@ -202,63 +212,18 @@ def upgrade() -> None:
         with op.batch_alter_table(
             "zone_scd", schema=None, copy_from=zone_table
         ) as batch_op:
-            batch_op.add_column(
-                sa.Column(
-                    "api_reference",
-                    sqlmodel.sql.sqltypes.AutoString(),
-                    nullable=False,
-                    comment="How this resource is referenced in the vendor API calls. This is usually either the id or name of the resource, depening on the vendor and actual API endpoint.",
-                )
-            )
-            batch_op.add_column(
-                sa.Column(
-                    "display_name",
-                    sqlmodel.sql.sqltypes.AutoString(),
-                    nullable=False,
-                    comment="Human-friendly reference (usually the id or name) of the resource.",
-                )
-            )
+            add_api_reference_and_display_name(batch_op, table="datacenter")
     else:
         with op.batch_alter_table(
             "zone", schema=None, copy_from=zone_table
         ) as batch_op:
-            batch_op.add_column(
-                sa.Column(
-                    "api_reference",
-                    sqlmodel.sql.sqltypes.AutoString(),
-                    nullable=False,
-                    comment="How this resource is referenced in the vendor API calls. This is usually either the id or name of the resource, depening on the vendor and actual API endpoint.",
-                )
-            )
-            batch_op.add_column(
-                sa.Column(
-                    "display_name",
-                    sqlmodel.sql.sqltypes.AutoString(),
-                    nullable=False,
-                    comment="Human-friendly reference (usually the id or name) of the resource.",
-                )
-            )
+            add_api_reference_and_display_name(batch_op, table="datacenter")
 
     if op.get_context().config.attributes.get("scd"):
         with op.batch_alter_table(
             "server_scd", schema=None, copy_from=server_table
         ) as batch_op:
-            batch_op.add_column(
-                sa.Column(
-                    "api_reference",
-                    sqlmodel.sql.sqltypes.AutoString(),
-                    nullable=False,
-                    comment="How this resource is referenced in the vendor API calls. This is usually either the id or name of the resource, depening on the vendor and actual API endpoint.",
-                )
-            )
-            batch_op.add_column(
-                sa.Column(
-                    "display_name",
-                    sqlmodel.sql.sqltypes.AutoString(),
-                    nullable=False,
-                    comment="Human-friendly reference (usually the id or name) of the resource.",
-                )
-            )
+            add_api_reference_and_display_name(batch_op, table="datacenter")
             batch_op.add_column(
                 sa.Column(
                     "family",
@@ -271,22 +236,7 @@ def upgrade() -> None:
         with op.batch_alter_table(
             "server", schema=None, copy_from=server_table
         ) as batch_op:
-            batch_op.add_column(
-                sa.Column(
-                    "api_reference",
-                    sqlmodel.sql.sqltypes.AutoString(),
-                    nullable=False,
-                    comment="How this resource is referenced in the vendor API calls. This is usually either the id or name of the resource, depening on the vendor and actual API endpoint.",
-                )
-            )
-            batch_op.add_column(
-                sa.Column(
-                    "display_name",
-                    sqlmodel.sql.sqltypes.AutoString(),
-                    nullable=False,
-                    comment="Human-friendly reference (usually the id or name) of the resource.",
-                )
-            )
+            add_api_reference_and_display_name(batch_op, table="datacenter")
             batch_op.add_column(
                 sa.Column(
                     "family",
