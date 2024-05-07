@@ -1,8 +1,10 @@
-## v0.1.3 (May 10, 2024)
+## v0.1.3 (May 7, 2024)
 
 New feature(s):
 
+- Add `api_reference` and `display_name` to `Datacenter`, `Zone`, and `Server`.
 - Add latitude and longitude coordinates to `Datacenter`.
+- Add `family` to `Server`.
 
 ## v0.1.2 (Apr 24, 2024)
 
