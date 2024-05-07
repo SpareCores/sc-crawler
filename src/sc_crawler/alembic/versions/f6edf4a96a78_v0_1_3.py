@@ -321,7 +321,7 @@ def downgrade() -> None:
             batch_op.drop_column("api_reference")
             batch_op.drop_column("display_name")
             batch_op.drop_column("lon")
-            batch_op.drop_column("lata")
+            batch_op.drop_column("lat")
     else:
         with op.batch_alter_table(
             "datacenter", schema=None, copy_from=datacenter_table
@@ -329,7 +329,7 @@ def downgrade() -> None:
             batch_op.drop_column("api_reference")
             batch_op.drop_column("display_name")
             batch_op.drop_column("lon")
-            batch_op.drop_column("lata")
+            batch_op.drop_column("lat")
 
     if op.get_context().config.attributes.get("scd"):
         with op.batch_alter_table(
