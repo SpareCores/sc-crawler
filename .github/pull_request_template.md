@@ -10,10 +10,11 @@
 - [ ] No red flags from coderabbit.ai
 - [ ] New features, bugfixes etc are tracked in `CHANGELOG.md`
 - [ ] Package version bumped in `pyproject.toml`
+- [ ] `add_vendor.md` is up-to-date
 - [ ] Alembic migrations are provided (or not needed)
 
     - [ ] Tested on SQLite
     - [ ] Tested on PostgreSQL
 
-- [ ] `add_vendor.md` is up-to-date
+- [ ] `sc-crawler pull` was tested on all vendors and records
 - [ ] Human approval
