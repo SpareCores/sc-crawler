@@ -671,7 +671,8 @@ def inventory_datacenters(vendor):
             "name": "Middle East (UAE)",
             "vendor_id": vendor.vendor_id,
             "country_id": "AE",
-            # NOTE city unknown
+            # NOTE city and state unknown
+            "display_name": "United Arab Emirates",
             "founding_year": 2022,
             "green_energy": False,
             # approximation based on country
@@ -683,7 +684,8 @@ def inventory_datacenters(vendor):
             "name": "Middle East (Bahrain)",
             "vendor_id": vendor.vendor_id,
             "country_id": "BH",
-            # NOTE city unknown
+            # NOTE city and stateunknown
+            "display_name": "Bahrain",
             "founding_year": 2019,
             "green_energy": False,
             "lat": 25.941298,
@@ -753,7 +755,11 @@ def inventory_datacenters(vendor):
     # add API reference and display names
     for datacenter in datacenters:
         datacenter["api_reference"] = datacenter["datacenter_id"]
-        datacenter["display_name"] = datacenter["name"]
+        if datacenter.get("display_name") is None:
+            display_name_prefix = datacenter.get("city", datacenter.get("state", ""))
+            datacenter["display_name"] = (
+                f"{display_name_prefix} ({datacenter['country_id']})"
+            )
 
     # look for undocumented (new) regions in AWS
     supported_regions = [d["datacenter_id"] for d in datacenters]

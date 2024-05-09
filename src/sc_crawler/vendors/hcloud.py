@@ -115,7 +115,9 @@ def inventory_datacenters(vendor):
                 "datacenter_id": str(datacenter.id),
                 "name": datacenter.name,
                 "api_reference": datacenter.name,
-                "display_name": datacenter.name,
+                "display_name": (
+                    datacenter.location.city + f" ({datacenter.location.country})"
+                ),
                 # TODO add datacenter.description
                 "aliases": [datacenter.location.name],
                 "country_id": datacenter.location.country,
