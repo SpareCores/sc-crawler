@@ -735,9 +735,9 @@ def inventory_datacenters(vendor):
     # add API reference and display names
     for k, v in manual_data.items():
         v["api_reference"] = k
-        if v["display_name"] is None:
+        if v.get("display_name") is None:
             v["display_name"] = v.get("city", v.get("state", ""))
-            if v["display_name"]:
+            if v.get("display_name"):
                 v["display_name"] = v["display_name"] + " (" + v["country_id"] + ")"
             else:
                 v["display_name"] = v["country_id"]
