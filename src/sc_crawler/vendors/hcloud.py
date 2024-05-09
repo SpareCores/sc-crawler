@@ -79,7 +79,34 @@ def inventory_datacenters(vendor):
 
     All datacenters are powered by green energy as per
     <https://www.hetzner.com/unternehmen/umweltschutz/>.
+
+    Lon/lat coordinates were collected by searching for Hetzner
+    locations in the Datacenter's city.
+
     """
+    datacenters = {
+        "2": {  # Nuremberg
+            "lat": 49.4498349,
+            "lon": 11.0128772,
+        },
+        "3": {  # Helsinki
+            "lat": 60.3433291,
+            "lon": 25.02683,
+        },
+        "4": {  # Falkenstein
+            "lat": 50.4793313,
+            "lon": 12.3331105,
+        },
+        "5": {  # Ashburn, VA
+            "lat": 39.0176685,
+            "lon": -77.468102,
+        },
+        "6": {  # Hillsboro, OR
+            "lat": 45.558319,
+            "lon": -122.9306602,
+        },
+    }
+
     items = []
     for datacenter in _client().datacenters.get_all():
         items.append(
@@ -87,6 +114,10 @@ def inventory_datacenters(vendor):
                 "vendor_id": vendor.vendor_id,
                 "datacenter_id": str(datacenter.id),
                 "name": datacenter.name,
+                "api_reference": datacenter.name,
+                "display_name": (
+                    datacenter.location.city + f" ({datacenter.location.country})"
+                ),
                 # TODO add datacenter.description
                 "aliases": [datacenter.location.name],
                 "country_id": datacenter.location.country,
@@ -94,6 +125,8 @@ def inventory_datacenters(vendor):
                 "city": datacenter.location.city,
                 "address_line": None,
                 "zip_code": None,
+                "lat": datacenters[str(datacenter.id)]["lat"],
+                "lon": datacenters[str(datacenter.id)]["lon"],
                 "founding_year": None,
                 "green_energy": True,
             }
@@ -116,6 +149,8 @@ def inventory_zones(vendor):
                 "datacenter_id": datacenter.datacenter_id,
                 "zone_id": datacenter.datacenter_id,
                 "name": datacenter.name,
+                "api_reference": datacenter.name,
+                "display_name": datacenter.name,
             }
         )
     return items
@@ -135,7 +170,10 @@ def inventory_servers(vendor):
                 "vendor_id": vendor.vendor_id,
                 "server_id": str(server.id),
                 "name": server.name,
+                "api_reference": server.name,
+                "display_name": server.name,
                 "description": server.description,
+                "family": server.name.rstrip("0123456789"),
                 "vcpus": server.cores,
                 "hypervisor": None,
                 "cpu_allocation": (

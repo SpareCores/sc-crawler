@@ -362,9 +362,10 @@ def inventory_datacenters(vendor):
 
     Some data sources are not available from APIs, and were collected manually:
 
-    - location: <https://cloud.google.com/compute/docs/regions-zones#available> and <https://en.wikipedia.org/wiki/Google_data_centers>
-    - energy carbon data: <https://cloud.google.com/sustainability/region-carbon#data> and <https://github.com/GoogleCloudPlatform/region-carbon-info>
-    - launch dates were collected from [Wikipedia](https://en.wikipedia.org/wiki/Google_Cloud_Platform#Regions_and_zones) and GCP blog posts, such as <https://medium.com/@retomeier/an-annotated-history-of-googles-cloud-platform-90b90f948920> and <https://cloud.google.com/blog/products/infrastructure/introducing-new-google-cloud-regions>
+    - location: <https://cloud.google.com/compute/docs/regions-zones#available> and <https://en.wikipedia.org/wiki/Google_data_centers>,
+    - lon/lat coordinates: <https://en.wikipedia.org/wiki/Google_data_centers#Locations> and approximation based on the city when no more accurate data was available.
+    - energy carbon data: <https://cloud.google.com/sustainability/region-carbon#data> and <https://github.com/GoogleCloudPlatform/region-carbon-info>,
+    - launch dates were collected from [Wikipedia](https://en.wikipedia.org/wiki/Google_Cloud_Platform#Regions_and_zones) and GCP blog posts, such as <https://medium.com/@retomeier/an-annotated-history-of-googles-cloud-platform-90b90f948920> and <https://cloud.google.com/blog/products/infrastructure/introducing-new-google-cloud-regions>.
 
     Note that many GCP datacenters use more than 90% green energy,
     but the related flag in our database is set to `False` as not being 100%.
@@ -377,18 +378,27 @@ def inventory_datacenters(vendor):
             # https://cloud.google.com/blog/products/infrastructure/heita-south-africa-new-cloud-region
             "founding_year": 2024,
             "green_energy": False,
+            # approximation based on city
+            "lat": 26.0420631,
+            "long": 28.0589808,
         },
         "asia-east1": {
             "country_id": "TW",
             "state": "Changhua County",
             "founding_year": 2013,
             "green_energy": False,
+            "lat": -33.520515,
+            "long": -70.72169,
         },
         "asia-east2": {
             "country_id": "HK",
             # https://cloud.google.com/blog/products/gcp/gcps-region-in-hong-kong-is-now-open
             "founding_year": 2018,
             "green_energy": False,
+            # approximation based on country
+            "lat": 22.2772377,
+            "long": 114.1703066,
+            "display_name": "Hong Kong",
         },
         "asia-northeast1": {
             "country_id": "JP",
@@ -396,72 +406,105 @@ def inventory_datacenters(vendor):
             "state": "Japan",
             "founding_year": 2016,
             "green_energy": False,
+            # approximation based on city
+            "lat": 35.6433846,
+            "lon": 139.7684933,
         },
         "asia-northeast2": {
             "country_id": "JP",
             "city": "Osaka",
             "founding_year": 2019,
             "green_energy": False,
+            # approximation based on city
+            "lat": 34.6696646,
+            "lon": 135.4846612,
         },
         "asia-northeast3": {
             "country_id": "KR",
             "city": "Seoul",
             "founding_year": 2020,
             "green_energy": False,
+            # approximation based on city
+            "lat": 37.5514982,
+            "lon": 126.97784,
         },
         "asia-south1": {
             "country_id": "IN",
             "city": "Mumbai",
             "founding_year": 2017,
             "green_energy": False,
+            # approximation based on city
+            "lat": 19.0709441,
+            "lon": 72.8726468,
         },
         "asia-south2": {
             "country_id": "IN",
             "city": "Delhi",
             "founding_year": 2021,
             "green_energy": False,
+            # approximation based on city
+            "lat": 28.6439839,
+            "lon": 76.9284239,
         },
         "asia-southeast1": {
             "country_id": "SG",
             "city": "Jurong West",
             "founding_year": 2017,
             "green_energy": False,
+            "lat": 1.351333,
+            "lon": 103.709778,
         },
         "asia-southeast2": {
             "country_id": "ID",
             "city": "Jakarta",
             "founding_year": 2020,
             "green_energy": False,
+            # approximation based on city
+            "lat": -6.2297401,
+            "lon": 106.747117,
         },
         "australia-southeast1": {
             "country_id": "AU",
             "city": "Sydney",
             "founding_year": 2017,
             "green_energy": False,
+            # approximation based on city
+            "lat": -33.8375583,
+            "lon": 150.9488095,
         },
         "australia-southeast2": {
             "country_id": "AU",
             "city": "Melbourne",
             "founding_year": 2021,
             "green_energy": False,
+            # approximation based on city
+            "lat": -37.8038607,
+            "lon": 144.7119569,
         },
         "europe-central2": {
             "country_id": "PL",
             "city": "Warsaw",
             "founding_year": 2021,
             "green_energy": False,
+            # approximation based on city
+            "lat": 52.2328871,
+            "lon": 20.8966164,
         },
         "europe-north1": {
             "country_id": "FI",
             "city": "Hamina",
             "founding_year": 2018,
             "green_energy": False,
+            "lat": 60.536578,
+            "lon": 27.117003,
         },
         "europe-southwest1": {
             "country_id": "ES",
             "city": "Madrid",
             "founding_year": 2022,
             "green_energy": False,
+            "lat": 40.519533,
+            "lon": -3.340937,
         },
         "europe-west1": {
             "country_id": "BE",
@@ -469,84 +512,121 @@ def inventory_datacenters(vendor):
             # https://medium.com/@retomeier/an-annotated-history-of-googles-cloud-platform-90b90f948920
             "founding_year": 2015,
             "green_energy": False,
+            "lat": 50.469333,
+            "lon": 3.865472,
         },
         "europe-west10": {
             "country_id": "DE",
             "city": "Berlin",
             "founding_year": 2023,
             "green_energy": False,
+            # approximation based on city
+            "lat": 52.5105672,
+            "lon": 13.3806972,
         },
         "europe-west12": {
             "country_id": "IT",
             "city": "Turin",
             "founding_year": 2023,
             "green_energy": False,
+            "lat": 45.146729,
+            "lon": 7.742147,
         },
         "europe-west2": {
             "country_id": "GB",
             "city": "London",
             "founding_year": 2017,
             "green_energy": False,
+            # approximation based on city
+            "lat": 51.5090133,
+            "lon": -0.2118157,
         },
         "europe-west3": {
             "country_id": "DE",
             "city": "Frankfurt",
             "founding_year": 2017,
             "green_energy": False,
+            "lat": 50.12263,
+            "lon": 8.974168,
         },
         "europe-west4": {
             "country_id": "NL",
             "city": "Eemshaven",
             "founding_year": 2018,
             "green_energy": False,
+            "lat": 52.790105,
+            "lon": 5.029219,
         },
         "europe-west6": {
             "country_id": "CH",
             "city": "Zurich",
             "founding_year": 2019,
             "green_energy": False,
+            "lat": 47.445926,
+            "lon": 8.210909,
         },
         "europe-west8": {
             "country_id": "IT",
             "city": "Milan",
             "founding_year": 2022,
             "green_energy": False,
+            # approximation based on city
+            "lat": 45.4615551,
+            "lon": 9.1389572,
         },
         "europe-west9": {
             "country_id": "FR",
             "city": "Paris",
             "founding_year": 2022,
             "green_energy": False,
+            # approximation based on city
+            "lat": 48.8641797,
+            "lon": 2.3109137,
         },
         "me-central1": {
             "country_id": "QA",
             "city": "Doha",
             "founding_year": 2023,
             "green_energy": False,
+            # approximation based on city
+            "lat": 25.272868,
+            "lon": 51.4717522,
         },
         "me-central2": {
             "country_id": "SA",
             "city": "Dammam",
             "founding_year": 2023,
             "green_energy": False,
+            # approximation based on city
+            "lat": 26.3826288,
+            "lon": 49.9675732,
         },
         "me-west1": {
             "country_id": "IL",
             "city": "Tel Aviv",
             "founding_year": 2022,
             "green_energy": False,
+            # approximation based on city
+            "lat": 32.0491183,
+            "lon": 34.7891105,
         },
         "northamerica-northeast1": {
             "country_id": "CA",
             "city": "Montréal",
             "founding_year": 2018,
             "green_energy": True,
+            # approximation based on city
+            "lat": 45.4933996,
+            "lon": -73.728239,
         },
         "northamerica-northeast2": {
             "country_id": "CA",
             "city": "Toronto",
             "founding_year": 2021,
             "green_energy": False,
+            # approximation based on city
+            "lat": 43.72666,
+            "lon": -79.5355309,
         },
         "southamerica-east1": {
             "country_id": "BR",
@@ -554,12 +634,17 @@ def inventory_datacenters(vendor):
             "state": "São Paulo",
             "founding_year": 2017,
             "green_energy": False,
+            # approximation based on city
+            "lat": -23.5267431,
+            "lon": -46.8096539,
         },
         "southamerica-west1": {
             "country_id": "CL",
             "city": "Santiago",
             "founding_year": 2021,
             "green_energy": False,
+            "lat": -33.520515,
+            "lon": -70.721695,
         },
         "us-central1": {
             "country_id": "US",
@@ -567,6 +652,8 @@ def inventory_datacenters(vendor):
             "state": "Iowa",
             "founding_year": 2009,
             "green_energy": False,
+            "lat": 41.168253,
+            "lon": -95.796125,
         },
         "us-east1": {
             "country_id": "US",
@@ -574,6 +661,8 @@ def inventory_datacenters(vendor):
             "state": "South Carolina",
             "founding_year": 2015,
             "green_energy": False,
+            "lat": 33.064111,
+            "lon": -80.043361,
         },
         "us-east4": {
             "country_id": "US",
@@ -581,6 +670,8 @@ def inventory_datacenters(vendor):
             "state": "Virginia",
             "founding_year": 2017,
             "green_energy": False,
+            "lat": 38.943331,
+            "lon": -77.524336,
         },
         "us-east5": {
             "country_id": "US",
@@ -588,6 +679,9 @@ def inventory_datacenters(vendor):
             "state": "Ohio",
             "founding_year": 2022,
             "green_energy": False,
+            # approximation based on city
+            "lat": 39.9773124,
+            "lon": -83.0423282,
         },
         "us-south1": {
             "country_id": "US",
@@ -595,6 +689,8 @@ def inventory_datacenters(vendor):
             "state": "Texas",
             "founding_year": 2022,
             "green_energy": False,
+            "lat": 32.44317,
+            "lon": -97.062324,
         },
         "us-west1": {
             "country_id": "US",
@@ -602,6 +698,8 @@ def inventory_datacenters(vendor):
             "state": "Oregon",
             "founding_year": 2016,
             "green_energy": False,
+            "lat": 45.632511,
+            "lon": -121.202267,
         },
         "us-west2": {
             "country_id": "US",
@@ -609,6 +707,9 @@ def inventory_datacenters(vendor):
             "state": "California",
             "founding_year": 2018,
             "green_energy": False,
+            # approximation based on city
+            "lat": 34.0549694,
+            "lon": -118.3753618,
         },
         "us-west3": {
             "country_id": "US",
@@ -616,6 +717,9 @@ def inventory_datacenters(vendor):
             "state": "Utah",
             "founding_year": 2020,
             "green_energy": False,
+            # approximation based on city
+            "lat": 40.7386099,
+            "lon": -111.9609998,
         },
         "us-west4": {
             "country_id": "US",
@@ -623,8 +727,20 @@ def inventory_datacenters(vendor):
             "state": "Nevada",
             "founding_year": 2020,
             "green_energy": False,
+            "lat": 36.055625,
+            "lon": -115.010226,
         },
     }
+
+    # add API reference and display names
+    for k, v in manual_data.items():
+        v["api_reference"] = k
+        if v.get("display_name") is None:
+            v["display_name"] = v.get("city", v.get("state", ""))
+            if v.get("display_name"):
+                v["display_name"] = v["display_name"] + " (" + v["country_id"] + ")"
+            else:
+                v["display_name"] = v["country_id"]
 
     regions = _regions()
     items = []
@@ -655,6 +771,8 @@ def inventory_zones(vendor):
                 "datacenter_id": datacenters[zone.region.split("/")[-1]].datacenter_id,
                 "zone_id": str(zone.id),
                 "name": zone.name,
+                "api_reference": zone.name,
+                "display_name": zone.name,
             }
         )
     return items
@@ -674,7 +792,10 @@ def inventory_servers(vendor):
                     "vendor_id": vendor.vendor_id,
                     "server_id": str(server.id),
                     "name": server.name,
+                    "api_reference": server.name,
+                    "display_name": server.name,
                     "description": server.description,
+                    "family": server.name.split("-")[0],
                     "vcpus": server.guest_cpus,
                     "hypervisor": None,
                     "cpu_allocation": (

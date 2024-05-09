@@ -78,6 +78,8 @@ def inventory_datacenters(vendor):
     #             "city": None,
     #             "address_line": None,
     #             "zip_code": None,
+    #             "lon": None,
+    #             "lat": None,
     #             "founding_year": None,
     #             "green_energy": None,
     #         }

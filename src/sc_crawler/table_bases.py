@@ -238,6 +238,22 @@ class HasDescription(ScModel):
     description: Optional[str] = Field(description="Short description.")
 
 
+class HasApiReference(ScModel):
+    api_reference: str = Field(
+        description=(
+            "How this resource is referenced in the vendor API calls. "
+            "This is usually either the id or name of the resource, "
+            "depening on the vendor and actual API endpoint."
+        )
+    )
+
+
+class HasDisplayName(ScModel):
+    display_name: str = Field(
+        description="Human-friendly reference (usually the id or name) of the resource."
+    )
+
+
 class HasVendorPKFK(ScModel):
     vendor_id: str = Field(
         foreign_key="vendor.vendor_id",
@@ -387,7 +403,9 @@ class VendorComplianceLinkBase(MetaColumns, VendorComplianceLinkFields):
     pass
 
 
-class DatacenterFields(HasName, HasDatacenterIdPK, HasVendorPKFK):
+class DatacenterFields(
+    HasDisplayName, HasApiReference, HasName, HasDatacenterIdPK, HasVendorPKFK
+):
     aliases: List[str] = Field(
         default=[],
         sa_type=JSON,
@@ -410,6 +428,14 @@ class DatacenterFields(HasName, HasDatacenterIdPK, HasVendorPKFK):
     zip_code: Optional[str] = Field(
         default=None, description="Optional ZIP code of the Datacenter's location."
     )
+    lon: Optional[float] = Field(
+        default=None,
+        description="Longitude coordinate of the Datacenter's known or approximate location.",
+    )
+    lat: Optional[float] = Field(
+        default=None,
+        description="Latitude coordinate of the Datacenter's known or approximate location.",
+    )
 
     founding_year: Optional[int] = Field(
         default=None, description="4-digit year when the Datacenter was founded."
@@ -424,7 +450,15 @@ class DatacenterBase(MetaColumns, DatacenterFields):
     pass
 
 
-class ZoneBase(MetaColumns, HasName, HasZoneIdPK, HasDatacenterPK, HasVendorPKFK):
+class ZoneBase(
+    MetaColumns,
+    HasDisplayName,
+    HasApiReference,
+    HasName,
+    HasZoneIdPK,
+    HasDatacenterPK,
+    HasVendorPKFK,
+):
     pass
 
 
@@ -450,7 +484,18 @@ class StorageBase(MetaColumns, StorageFields):
     pass
 
 
-class ServerFields(HasDescription, HasName, HasServerIdPK, HasVendorPKFK):
+class ServerFields(
+    HasDescription,
+    HasDisplayName,
+    HasApiReference,
+    HasName,
+    HasServerIdPK,
+    HasVendorPKFK,
+):
+    family: Optional[str] = Field(
+        default=None,
+        description="Server family, e.g. General-purpose machine (GCP), or M5g (AWS).",
+    )
     vcpus: int = Field(
         default=None,
         description="Default number of virtual CPUs (vCPU) of the server.",
