@@ -44,6 +44,45 @@ def add_api_reference_and_display_name(batch_op):
 
 # need to provide the table schema for offline mode support
 meta = sa.MetaData()
+enum_status = sa.Enum("ACTIVE", "INACTIVE", name="status").with_variant(
+    sa.dialects.postgresql.ENUM("ACTIVE", "INACTIVE", name="status", create_type=False),
+    "postgresql",
+)
+enum_cpuallocation = sa.Enum(
+    "SHARED", "BURSTABLE", "DEDICATED", name="cpuallocation"
+).with_variant(
+    sa.dialects.postgresql.ENUM(
+        "SHARED", "BURSTABLE", "DEDICATED", name="cpuallocation", create_type=False
+    ),
+    "postgresql",
+)
+enum_cpuarchitecture = sa.Enum(
+    "ARM64", "ARM64_MAC", "I386", "X86_64", "X86_64_MAC", name="cpuarchitecture"
+).with_variant(
+    sa.dialects.postgresql.ENUM(
+        "ARM64",
+        "ARM64_MAC",
+        "I386",
+        "X86_64",
+        "X86_64_MAC",
+        name="cpuarchitecture",
+        create_type=False,
+    ),
+    "postgresql",
+)
+enum_storage_type = enum_storage_type = sa.Enum(
+    "HDD", "SSD", "NVME_SSD", "NETWORK", name="storagetype"
+).with_variant(
+    sa.dialects.postgresql.ENUM(
+        "HDD",
+        "SSD",
+        "NVME_SSD",
+        "NETWORK",
+        name="storagetype",
+        create_type=False,
+    ),
+    "postgresql",
+)
 datacenter_table = sa.Table(
     "datacenter_scd" if op.get_context().config.attributes.get("scd") else "datacenter",
     meta,
@@ -58,7 +97,7 @@ datacenter_table = sa.Table(
     sa.Column("zip_code", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
     sa.Column("founding_year", sa.Integer(), nullable=True),
     sa.Column("green_energy", sa.Boolean(), nullable=True),
-    sa.Column("status", sa.Enum("ACTIVE", "INACTIVE", name="status"), nullable=False),
+    sa.Column("status", enum_status, nullable=False),
     sa.Column("observed_at", sa.DateTime(), nullable=False),
     sa.ForeignKeyConstraint(["country_id"], ["country.country_id"]),
     sa.ForeignKeyConstraint(["vendor_id"], ["vendor.vendor_id"]),
@@ -73,11 +112,7 @@ zone_table = sa.Table(
     sa.Column("datacenter_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column("zone_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column("name", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-    sa.Column(
-        "status",
-        sa.Enum("ACTIVE", "INACTIVE", name="status"),
-        nullable=False,
-    ),
+    sa.Column("status", enum_status, nullable=False),
     sa.Column("observed_at", sa.DateTime(), nullable=False),
     sa.ForeignKeyConstraint(
         ["vendor_id"],
@@ -96,25 +131,10 @@ server_table = sa.Table(
     sa.Column("description", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
     sa.Column("vcpus", sa.Integer(), nullable=False),
     sa.Column("hypervisor", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-    sa.Column(
-        "cpu_allocation",
-        sa.Enum("SHARED", "BURSTABLE", "DEDICATED", name="cpuallocation"),
-        nullable=False,
-    ),
+    sa.Column("cpu_allocation", enum_cpuallocation, nullable=False),
     sa.Column("cpu_cores", sa.Integer(), nullable=True),
     sa.Column("cpu_speed", sa.Float(), nullable=True),
-    sa.Column(
-        "cpu_architecture",
-        sa.Enum(
-            "ARM64",
-            "ARM64_MAC",
-            "I386",
-            "X86_64",
-            "X86_64_MAC",
-            name="cpuarchitecture",
-        ),
-        nullable=False,
-    ),
+    sa.Column("cpu_architecture", enum_cpuarchitecture, nullable=False),
     sa.Column("cpu_manufacturer", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
     sa.Column("cpu_family", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
     sa.Column("cpu_model", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
@@ -127,16 +147,13 @@ server_table = sa.Table(
     sa.Column("gpu_model", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
     sa.Column("gpus", sa.JSON(), nullable=False),
     sa.Column("storage_size", sa.Integer(), nullable=False),
-    sa.Column(
-        "storage_type",
-        sa.Enum("HDD", "SSD", "NVME_SSD", "NETWORK", name="storagetype"),
-    ),
+    sa.Column("storage_type", enum_storage_type),
     sa.Column("storages", sa.JSON(), nullable=False),
     sa.Column("network_speed", sa.Float(), nullable=True),
     sa.Column("inbound_traffic", sa.Float(), nullable=False),
     sa.Column("outbound_traffic", sa.Float(), nullable=False),
     sa.Column("ipv4", sa.Integer(), nullable=False),
-    sa.Column("status", sa.Enum("ACTIVE", "INACTIVE", name="status"), nullable=False),
+    sa.Column("status", enum_status, nullable=False),
     sa.Column("observed_at", sa.DateTime(), nullable=False),
     sa.ForeignKeyConstraint(
         ["vendor_id"],
