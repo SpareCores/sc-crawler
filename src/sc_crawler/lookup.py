@@ -105,7 +105,7 @@ def map_compliance_frameworks_to_vendor(
 
 benchmarks: dict = {
     "bw_mem": Benchmark(
-        id="bw_mem",
+        benchmark_id="bw_mem",
         name="time memory bandwidth",
         description="bw_mem allocates twice the specified amount of memory, zeros it, and then times the copying of the first half to the second half. Results are reported in megabytes moved per second. bw_mem is provided by lmbench. For more details, see the man pages.",
         framework="bw_mem",
