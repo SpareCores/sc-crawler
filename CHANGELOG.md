@@ -1,3 +1,9 @@
+## v0.1.4 (May 31, 2024)
+
+New feature(s):
+
+- Add `benchmark` and `benchmark_score` tables.
+
 ## v0.1.3 (May 7, 2024)
 
 New feature(s):
