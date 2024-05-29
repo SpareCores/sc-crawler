@@ -1,6 +1,6 @@
 from typing import List
 
-from .tables import ComplianceFramework, Country
+from .tables import Benchmark, ComplianceFramework, Country
 
 # country codes: https://en.wikipedia.org/wiki/ISO_3166-1#Codes
 # mapping: https://github.com/manumanoj0010/countrydetails/blob/master/Countrydetails/data/continents.json  # noqa: E501
@@ -101,3 +101,18 @@ def map_compliance_frameworks_to_vendor(
             }
         )
     return items
+
+
+benchmarks: dict = {
+    "bw_mem": Benchmark(
+        id="bw_mem",
+        name="time memory bandwidth",
+        description="bw_mem allocates twice the specified amount of memory, zeros it, and then times the copying of the first half to the second half. Results are reported in megabytes moved per second. bw_mem is provided by lmbench. For more details, see the man pages.",
+        framework="bw_mem",
+        config_fields={
+            "what": "The type of measurement: 'rd' measures the time to read data into the processor, 'wr' measures the time to write data to memory, and 'rdwr' measures the time to read data into memory and then write data to the same memory location.",
+            "size": "Amount of memory to be used in MB",
+        },
+        unit="MB/sec",
+    ),
+}

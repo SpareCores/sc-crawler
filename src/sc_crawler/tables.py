@@ -12,6 +12,8 @@ from sqlmodel import Relationship, Session, SQLModel
 from .insert import insert_items
 from .logger import VendorProgressTracker, log_start_end, logger
 from .table_bases import (
+    BenchmarkBase,
+    BenchmarkScoreBase,
     ComplianceFrameworkBase,
     CountryBase,
     DatacenterBase,
@@ -92,6 +94,9 @@ class Vendor(VendorBase, table=True):
         back_populates="vendor", sa_relationship_kwargs={"viewonly": True}
     )
     storage_prices: List["StoragePrice"] = Relationship(
+        back_populates="vendor", sa_relationship_kwargs={"viewonly": True}
+    )
+    benchmark_scores: List["BenchmarkScore"] = Relationship(
         back_populates="vendor", sa_relationship_kwargs={"viewonly": True}
     )
 
@@ -348,6 +353,9 @@ class Server(ServerBase, table=True):
     prices: List["ServerPrice"] = Relationship(
         back_populates="server", sa_relationship_kwargs={"viewonly": True}
     )
+    benchmark_scores: List["BenchmarkScore"] = Relationship(
+        back_populates="server", sa_relationship_kwargs={"viewonly": True}
+    )
 
 
 class ServerPrice(ServerPriceBase, table=True):
@@ -472,6 +480,37 @@ class Ipv4Price(Ipv4PriceBase, table=True):
             )
         },
     )
+
+
+class Benchmark(BenchmarkBase, table=True):
+    """Benchmark scenario definitions."""
+
+    benchmark_scores: List["BenchmarkScore"] = Relationship(
+        back_populates="benchmark", sa_relationship_kwargs={"viewonly": True}
+    )
+
+
+class BenchmarkScore(BenchmarkScoreBase, table=True):
+    """Results of running Benchmark scenarios on Servers."""
+
+    __table_args__ = ForeignKeyConstraint(
+        ["vendor_id", "server_id"],
+        [
+            "benchmark_score.vendor_id",
+            "benchmark_score.server_id",
+        ],
+    )
+    vendor: Vendor = Relationship(back_populates="benchmark_scores")
+    server: Server = Relationship(
+        back_populates="benchmark_scores",
+        sa_relationship_kwargs={
+            "primaryjoin": (
+                "and_(Server.server_id == foreign(BenchmarkScore.server_id), "
+                "Vendor.vendor_id == foreign(BenchmarkScore.vendor_id))"
+            )
+        },
+    )
+    benchmark: Benchmark = Relationship(back_populates="benchmark_scores")
 
 
 Country.model_rebuild()

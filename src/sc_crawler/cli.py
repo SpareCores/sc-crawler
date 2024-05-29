@@ -32,7 +32,7 @@ from . import vendors as vendors_module
 from .alembic_helpers import alembic_cfg, get_revision
 from .insert import insert_items
 from .logger import ProgressPanel, ScRichHandler, VendorProgressTracker, logger
-from .lookup import compliance_frameworks, countries
+from .lookup import benchmarks, compliance_frameworks, countries
 from .table_fields import Status
 from .tables import Vendor, tables
 from .tables_scd import tables_scd
@@ -581,6 +581,9 @@ def pull(
             for country in countries.values():
                 session.merge(country)
             logger.info("%d Countries synced." % len(countries))
+            for benchmark in benchmarks.values():
+                session.merge(benchmark)
+            logger.info("%d Benchmarks synced." % len(benchmarks))
             # get data for each vendor and then add/merge to database
             # TODO each vendor should open its own session and run in parallel
             for vendor in vendors:

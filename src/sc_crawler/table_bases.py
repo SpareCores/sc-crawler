@@ -230,6 +230,12 @@ class HasServerIdPK(ScModel):
     )
 
 
+class HasBenchmarkIdPK(ScModel):
+    benchmakr_id: str = Field(
+        primary_key=True, description="Unique identifier of a specific benchmark."
+    )
+
+
 class HasName(ScModel):
     name: str = Field(description="Human-friendly name.")
 
@@ -266,6 +272,14 @@ class HasDatacenterPK(ScModel):
     datacenter_id: str = Field(
         primary_key=True,
         description="Reference to the Datacenter.",
+    )
+
+
+class HasBenchmarkPKFK(ScModel):
+    benchmark_id: str = Field(
+        foreign_key="benchmark.benchmark_id",
+        primary_key=True,
+        description="Reference to the Benchmark.",
     )
 
 
@@ -647,4 +661,40 @@ class TrafficPriceBase(HasPriceFields, TrafficPriceFields):
 
 
 class Ipv4PriceBase(HasPriceFields, HasDatacenterPK, HasVendorPKFK):
+    pass
+
+
+class BenchmarkFields(HasDescription, HasName, HasBenchmarkIdPK):
+    framework: str = Field(
+        description="The name of the benchmark framework/software/tool used.",
+    )
+    config_fields: dict = Field(
+        default={},
+        description="Description of the framework-specific config options.",
+    )
+    unit: Optional[str] = Field(
+        default=None,
+        description="Optional unit of measurement for the benchmark score.",
+    )
+    higher_is_better: bool = Field(
+        default=True,
+        description="If higher benchmark score means better performance, or vica versa.",
+    )
+
+
+class BenchmarkBase(MetaColumns, BenchmarkFields):
+    pass
+
+
+class BenchmarkScoreFields(HasBenchmarkPKFK, HasServerPK, HasVendorPKFK):
+    config: dict = Field(
+        primary_key=True,
+        description="Config parameters set in the framework for the specific benchmark.",
+    )
+    score: float = Field(
+        description="The resulting score of the benchmark.",
+    )
+
+
+class BenchmarkScoreBase(MetaColumns, BenchmarkScoreFields):
     pass
