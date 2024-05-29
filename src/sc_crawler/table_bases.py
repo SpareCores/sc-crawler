@@ -233,8 +233,8 @@ class HasServerIdPK(ScModel):
 
 
 class HasBenchmarkIdPK(ScModel):
-    benchmakr_id: str = Field(
-        primary_key=True, description="Unique identifier of a specific benchmark."
+    benchmark_id: str = Field(
+        primary_key=True, description="Unique identifier of a specific Benchmark."
     )
 
 
@@ -277,14 +277,6 @@ class HasDatacenterPK(ScModel):
     )
 
 
-class HasBenchmarkPKFK(ScModel):
-    benchmark_id: str = Field(
-        foreign_key="benchmark.benchmark_id",
-        primary_key=True,
-        description="Reference to the Benchmark.",
-    )
-
-
 class HasZonePK(ScModel):
     zone_id: str = Field(primary_key=True, description="Reference to the Zone.")
 
@@ -296,10 +288,26 @@ class HasServerPK(ScModel):
     )
 
 
+class HasServerPKFK(ScModel):
+    server_id: str = Field(
+        foreign_key="server.server_id",
+        primary_key=True,
+        description="Reference to the Server.",
+    )
+
+
 class HasStoragePK(ScModel):
     storage_id: str = Field(
         primary_key=True,
         description="Reference to the Storage.",
+    )
+
+
+class HasBenchmarkPKFK(ScModel):
+    benchmark_id: str = Field(
+        foreign_key="benchmark.benchmark_id",
+        primary_key=True,
+        description="Reference to the Benchmark.",
     )
 
 
@@ -689,7 +697,7 @@ class BenchmarkBase(MetaColumns, BenchmarkFields):
     pass
 
 
-class BenchmarkScoreFields(HasBenchmarkPKFK, HasServerPK, HasVendorPKFK):
+class BenchmarkScoreFields(HasBenchmarkPKFK, HasServerPKFK, HasVendorPKFK):
     config: List[Config] = Field(
         default=[],
         sa_type=JSON,
