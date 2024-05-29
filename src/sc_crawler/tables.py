@@ -493,12 +493,14 @@ class Benchmark(BenchmarkBase, table=True):
 class BenchmarkScore(BenchmarkScoreBase, table=True):
     """Results of running Benchmark scenarios on Servers."""
 
-    __table_args__ = ForeignKeyConstraint(
-        ["vendor_id", "server_id"],
-        [
-            "benchmark_score.vendor_id",
-            "benchmark_score.server_id",
-        ],
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["vendor_id", "server_id"],
+            [
+                "benchmark_score.vendor_id",
+                "benchmark_score.server_id",
+            ],
+        ),
     )
     vendor: Vendor = Relationship(back_populates="benchmark_scores")
     server: Server = Relationship(
