@@ -683,6 +683,10 @@ class BenchmarkFields(HasDescription, HasName, HasBenchmarkIdPK):
         sa_type=JSON,
         description="Descriptions of the framework-specific config options.",
     )
+    measurement: Optional[str] = Field(
+        default=None,
+        description="The name of measurement recoreded in the benchmark.",
+    )
     unit: Optional[str] = Field(
         default=None,
         description="Optional unit of measurement for the benchmark score.",

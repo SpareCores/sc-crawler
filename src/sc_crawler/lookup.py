@@ -106,13 +106,54 @@ def map_compliance_frameworks_to_vendor(
 benchmarks: dict = {
     "bw_mem": Benchmark(
         benchmark_id="bw_mem",
-        name="time memory bandwidth",
-        description="bw_mem allocates twice the specified amount of memory, zeros it, and then times the copying of the first half to the second half. Results are reported in megabytes moved per second. bw_mem is provided by lmbench. For more details, see the man pages.",
+        name="Time memory bandwidth",
+        description="bw_mem allocates twice the specified amount of memory, zeros it, and then times the copying of the first half to the second half. Results are reported in megabytes moved per second (MB/sec). bw_mem is provided by lmbench. For more details, see the man pages.",
         framework="bw_mem",
         config_fields={
             "what": "The type of measurement: 'rd' measures the time to read data into the processor, 'wr' measures the time to write data to memory, and 'rdwr' measures the time to read data into memory and then write data to the same memory location.",
             "size": "Amount of memory to be used in MB",
         },
         unit="MB/sec",
+    ),
+    "compression_text:ratio": Benchmark(
+        benchmark_id="compression_text:ratio",
+        name="Compression ratio",
+        description="Measures the compression ratio while compressing the dickens.txt of the Silesia corpus (10 MB uncompressed) using various algorithms, compressions levels and other extra arguments.",
+        framework="compression_text",
+        config_fields={
+            "algo": "Compression algorithm, e.g. brotli or bz2.",
+            "compression_level": "Compression level/quality/level.",
+            "threads": "Number of threads/workers.",
+            "block_size": "Block size",
+        },
+        measurement="ratio",
+    ),
+    "compression_text:compress": Benchmark(
+        benchmark_id="compression_text:compress",
+        name="Compression bandwidth",
+        description="Measures the compression bandwidth (bytes/second) on the dickens.txt of the Silesia corpus (10 MB uncompressed) using various algorithms, compressions levels and other extra arguments.",
+        framework="compression_text",
+        config_fields={
+            "algo": "Compression algorithm, e.g. brotli or bz2.",
+            "compression_level": "Compression level/quality/level.",
+            "threads": "Number of threads/workers.",
+            "block_size": "Block size",
+        },
+        measurement="compress",
+        unit="byte/s",
+    ),
+    "compression_text:decompress": Benchmark(
+        benchmark_id="compression_text:decompress",
+        name="Decompression bandwidth",
+        description="Measures the decompression bandwidth (bytes/second) on the compressed dickens.txt of the Silesia corpus (10 MB uncompressed) using various algorithms, compressions levels and other extra arguments.",
+        framework="compression_text",
+        config_fields={
+            "algo": "Compression algorithm, e.g. brotli or bz2.",
+            "compression_level": "Compression level/quality/level.",
+            "threads": "Number of threads/workers.",
+            "block_size": "Block size",
+        },
+        measurement="decompress",
+        unit="byte/s",
     ),
 }

@@ -55,6 +55,12 @@ def upgrade() -> None:
                 comment="Descriptions of the framework-specific config options.",
             ),
             sa.Column(
+                "measurement",
+                sqlmodel.sql.sqltypes.AutoString(),
+                nullable=True,
+                comment="The name of measurement recoreded in the benchmark.",
+            ),
+            sa.Column(
                 "unit",
                 sqlmodel.sql.sqltypes.AutoString(),
                 nullable=True,
@@ -178,6 +184,12 @@ def upgrade() -> None:
                 sa.JSON(),
                 nullable=False,
                 comment="Descriptions of the framework-specific config options.",
+            ),
+            sa.Column(
+                "measurement",
+                sqlmodel.sql.sqltypes.AutoString(),
+                nullable=True,
+                comment="The name of measurement recoreded in the benchmark.",
             ),
             sa.Column(
                 "unit",
