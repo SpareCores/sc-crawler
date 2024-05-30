@@ -127,6 +127,7 @@ benchmarks: List[Benchmark] = [
             "block_size": "Block size",
         },
         measurement="ratio",
+        higher_is_better=False,
     ),
     Benchmark(
         benchmark_id="compression_text:compress",
