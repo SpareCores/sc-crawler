@@ -30,27 +30,57 @@ def inspector_data_path() -> str | PathLike:
     return path.join(temp_dir, "sc-inspector-data-main", "data")
 
 
+def _server_ids(server: Server) -> dict:
+    return {"vendor_id": server.vendor_id, "server_id": server.server_id}
+
+
+def _server_path(server: Server) -> str | PathLike:
+    return path.join(inspector_data_path(), server.vendor_id, server.api_reference)
+
+
+def _server_framework_path(server: Server, framework: str) -> str | PathLike:
+    return path.join(_server_path(server), framework)
+
+
+def _server_framework_stdout_path(server: Server, framework: str) -> str | PathLike:
+    return path.join(_server_framework_path(server, framework), "stdout")
+
+
+def _server_framework_meta_path(server: Server, framework: str) -> str | PathLike:
+    return path.join(_server_framework_path(server, framework), "meta.json")
+
+
+def _observed_at(server: Server, framework: str) -> dict:
+    with open(_server_framework_meta_path(server, framework), "r") as meta_file:
+        meta = json.load(meta_file)
+    return {"observed_at": meta["end"]}
+
+
+def _benchmark_metafields(
+    server: Server, framework: str, benchmark_id: str = None
+) -> dict:
+    if benchmark_id is None:
+        benchmark_id = framework
+    return {
+        **_server_ids(server),
+        **_observed_at(server, framework),
+        "benchmark_id": benchmark_id,
+    }
+
+
 def inspect_server_benchmarks(server: Server) -> List[dict]:
     benchmarks = []
-    server_path = path.join(
-        inspector_data_path(), server.vendor_id, server.api_reference
-    )
 
     # memory bandwidth benchmarks
     try:
-        with open(path.join(server_path, "bw_mem", "meta.json"), "r") as meta_file:
-            meta = json.load(meta_file)
-        with open(path.join(server_path, "bw_mem", "stdout"), "r") as lines:
+        with open(_server_framework_stdout_path(server, "bw_mem"), "r") as lines:
             for line in lines:
                 row = line.strip().split()
                 benchmarks.append(
                     {
-                        "vendor_id": server.vendor_id,
-                        "server_id": server.server_id,
-                        "benchmark_id": "bw_mem",
+                        **_benchmark_metafields(server, "bw_mem"),
                         "config": {"what": row[0], "size": float(row[1])},
                         "score": float(row[2]),
-                        "observed_at": meta["end"],
                     }
                 )
     except Exception as e:
