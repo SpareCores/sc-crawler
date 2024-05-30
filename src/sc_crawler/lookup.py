@@ -1,3 +1,4 @@
+from re import sub
 from typing import List
 
 from .tables import Benchmark, ComplianceFramework, Country
@@ -103,6 +104,23 @@ def map_compliance_frameworks_to_vendor(
     return items
 
 
+def _geekbenchmark(name: str, description: str):
+    measurement = sub(r"\W+", "_", name.lower())
+    return Benchmark(
+        benchmark_id="geekbench:" + measurement,
+        name="Geekbench: " + name,
+        description=(
+            description
+            + "The score is calibrated against a baseline score of 2,500 (Dell Precision 3460 with a Core i7-12700 processor) as per the Geekbench 6 Benchmark Internals."
+        ),
+        framework="geekbench",
+        config_fields={
+            "geekbench_version": "The version of geekbench used to measure the score.",
+        },
+        measurement=measurement,
+    )
+
+
 benchmarks: List[Benchmark] = [
     Benchmark(
         benchmark_id="bw_mem",
@@ -157,14 +175,8 @@ benchmarks: List[Benchmark] = [
         measurement="decompress",
         unit="byte/s",
     ),
-    Benchmark(
-        benchmark_id="geekbench:single-core-score",
-        name="Geekbench: Single-Core Score",
-        description="A composite score using the weighted arithmetic mean of the subsection scores, which are computed using the geometric mean of the related scores. The score is calibrated against a baseline score of 2,500 (Dell Precision 3460 with a Core i7-12700 processor) as per the Geekbench 6 Benchmark Internals.",
-        framework="geekbench",
-        config_fields={
-            "geekbench_version": "The version of geekbench used to measure the score.",
-        },
-        measurement="single-core-score",
+    _geekbenchmark(
+        "Single-Core Score",
+        "A composite score using the weighted arithmetic mean of the subsection scores, which are computed using the geometric mean of the related scores.",
     ),
 ]
