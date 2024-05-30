@@ -116,6 +116,7 @@ def _geekbenchmark(name: str, description: str):
         framework="geekbench",
         config_fields={
             "geekbench_version": "The version of geekbench used to measure the score.",
+            "cores": "Single-Core or Multi-Core peformance tests.",
         },
         measurement=measurement,
     )
@@ -176,7 +177,7 @@ benchmarks: List[Benchmark] = [
         unit="byte/s",
     ),
     _geekbenchmark(
-        "Single-Core Score",
-        "A composite score using the weighted arithmetic mean of the subsection scores, which are computed using the geometric mean of the related scores.",
+        "Score",
+        "Composite score using the weighted arithmetic mean of the subsection scores, which are computed using the geometric mean of the related scores.",
     ),
 ]
