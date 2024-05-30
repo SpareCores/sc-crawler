@@ -46,6 +46,11 @@ def _server_framework_stdout_path(server: Server, framework: str) -> str | PathL
     return path.join(_server_framework_path(server, framework), "stdout")
 
 
+def _server_framework_stdout_from_json(server: Server, framework: str) -> dict:
+    with open(_server_framework_stdout_path(server, framework), "r") as fp:
+        return json.load(fp)
+
+
 def _server_framework_meta_path(server: Server, framework: str) -> str | PathLike:
     return path.join(_server_framework_path(server, framework), "meta.json")
 
@@ -72,7 +77,7 @@ def _benchmark_metafields(
     }
 
 
-def _log_cannot_load_benchmarks(server, benchmark_id, e):
+def _log_cannot_load_benchmarks(server, benchmark_id, e, exc_info=False):
     logger.debug(
         "%s benchmark(s) not loaded for %s/%s: %s",
         benchmark_id,
@@ -80,26 +85,53 @@ def _log_cannot_load_benchmarks(server, benchmark_id, e):
         server.api_reference,
         e,
         stacklevel=2,
+        exc_info=exc_info,
     )
 
 
 def inspect_server_benchmarks(server: Server) -> List[dict]:
     benchmarks = []
 
-    # memory bandwidth benchmarks
-    benchmark_id = "bw_mem"
+    framework = "bw_mem"
     try:
-        with open(_server_framework_stdout_path(server, benchmark_id), "r") as lines:
+        with open(_server_framework_stdout_path(server, framework), "r") as lines:
             for line in lines:
                 row = line.strip().split()
                 benchmarks.append(
                     {
-                        **_benchmark_metafields(server, benchmark_id),
+                        **_benchmark_metafields(server, framework=framework),
                         "config": {"what": row[0], "size": float(row[1])},
                         "score": float(row[2]),
                     }
                 )
     except Exception as e:
-        _log_cannot_load_benchmarks(server, benchmark_id, e)
+        _log_cannot_load_benchmarks(server, framework, e)
+
+    framework = "compression_text"
+    try:
+        algos = _server_framework_stdout_from_json(server, framework)
+        for algo, levels in algos.items():
+            for level, datas in levels.items():
+                for data in datas:
+                    config = {
+                        "algo": algo,
+                        "compression_level": None if level == "null" else int(level),
+                        "threads": data["threads"],
+                    }
+                    if data.get("extra_args", {}).get("block_size"):
+                        config["block_size"] = data["extra_args"]["block_size"]
+                    for measurement in ["ratio", "compress", "decompress"]:
+                        benchmarks.append(
+                            {
+                                **_benchmark_metafields(
+                                    server,
+                                    benchmark_id=":".join([framework, measurement]),
+                                ),
+                                "config": config,
+                                "score": data[measurement],
+                            }
+                        )
+    except Exception as e:
+        _log_cannot_load_benchmarks(server, framework, e, True)
 
     return benchmarks
