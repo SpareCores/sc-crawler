@@ -13,8 +13,6 @@ from sqlmodel import JSON, Field, Session, SQLModel, select
 from .str_utils import snake_case
 from .table_fields import (
     Allocation,
-    Config,
-    ConfigField,
     Cpu,
     CpuAllocation,
     CpuArchitecture,
@@ -678,10 +676,10 @@ class BenchmarkFields(HasDescription, HasName, HasBenchmarkIdPK):
     framework: str = Field(
         description="The name of the benchmark framework/software/tool used.",
     )
-    config_fields: List[ConfigField] = Field(
-        default=[],
+    config_fields: dict = Field(
+        default={},
         sa_type=JSON,
-        description="Descriptions of the framework-specific config options.",
+        description='A dictionary of descriptions on the framework-specific config options, e.g. {"bandwidth": "Memory amount to use for compression in MB."}.',
     )
     measurement: Optional[str] = Field(
         default=None,
@@ -702,11 +700,11 @@ class BenchmarkBase(MetaColumns, BenchmarkFields):
 
 
 class BenchmarkScoreFields(HasBenchmarkPKFK, HasServerPKFK, HasVendorPKFK):
-    config: List[Config] = Field(
-        default=[],
+    config: dict = Field(
+        default={},
         sa_type=JSON,
         primary_key=True,
-        description="Config parameters of the specific benchmark, e.g. compression level, bandwidth etc.",
+        description='Dictionary of config parameters of the specific benchmark, e.g. {"bandwidth": 4096}',
     )
     score: float = Field(
         description="The resulting score of the benchmark.",

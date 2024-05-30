@@ -165,21 +165,3 @@ class PriceTier(Json):
     """Upper bound of pricing tier, e.g. 1 TB. Unit is defined in the parent object."""
     price: float
     """Price in the pricing tier. Currency is defined in the parent object."""
-
-
-class ConfigField(Json):
-    """A Benchmark config with name and description."""
-
-    name: str
-    """Short name of the benchmark config field, e.g. compression_level or bandwidth."""
-    description: str
-    """Description of the benchmark config field, e.g. Memory amount to use for compression in MB."""
-
-
-class Config(Json):
-    """A Benchmark config."""
-
-    name: str
-    """Short name of the benchmark config field, e.g. compression_level or bandwidth."""
-    value: Any
-    """Value of the config, e.g. an integer or a string."""

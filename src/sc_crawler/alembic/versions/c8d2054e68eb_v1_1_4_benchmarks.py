@@ -51,7 +51,7 @@ def upgrade() -> None:
                 "config_fields",
                 sa.JSON(),
                 nullable=False,
-                comment="Descriptions of the framework-specific config options.",
+                comment='A dictionary of descriptions on the framework-specific config options, e.g. {"bandwidth": "Memory amount to use for compression in MB."}.',
             ),
             sa.Column(
                 "measurement",
@@ -110,7 +110,7 @@ def upgrade() -> None:
                 "config",
                 sa.JSON(),
                 nullable=False,
-                comment="Config parameters of the specific benchmark, e.g. compression level, bandwidth etc.",
+                comment='Dictionary of config parameters of the specific benchmark, e.g. {"bandwidth": 4096}',
             ),
             sa.Column(
                 "score",
@@ -188,7 +188,7 @@ def upgrade() -> None:
                 "config_fields",
                 sa.JSON(),
                 nullable=False,
-                comment="Descriptions of the framework-specific config options.",
+                comment='A dictionary of descriptions on the framework-specific config options, e.g. {"bandwidth": "Memory amount to use for compression in MB."}.',
             ),
             sa.Column(
                 "measurement",
@@ -247,7 +247,7 @@ def upgrade() -> None:
                 "config",
                 sa.JSON(),
                 nullable=False,
-                comment="Config parameters of the specific benchmark, e.g. compression level, bandwidth etc.",
+                comment='Dictionary of config parameters of the specific benchmark, e.g. {"bandwidth": 4096}',
             ),
             sa.Column(
                 "score",
