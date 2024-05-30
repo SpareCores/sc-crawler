@@ -120,6 +120,12 @@ def upgrade() -> None:
                 comment="The resulting score of the benchmark.",
             ),
             sa.Column(
+                "note",
+                sa.Float(),
+                nullable=True,
+                comment="Optional note, comment or context on the benchmark score.",
+            ),
+            sa.Column(
                 "status",
                 sa.Enum("ACTIVE", "INACTIVE", name="status"),
                 nullable=False,
@@ -249,6 +255,12 @@ def upgrade() -> None:
                 sa.Float(),
                 nullable=False,
                 comment="The resulting score of the benchmark.",
+            ),
+            sa.Column(
+                "note",
+                sa.Float(),
+                nullable=True,
+                comment="Optional note, comment or context on the benchmark score.",
             ),
             sa.Column(
                 "status",

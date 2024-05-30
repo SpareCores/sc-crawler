@@ -711,6 +711,10 @@ class BenchmarkScoreFields(HasBenchmarkPKFK, HasServerPKFK, HasVendorPKFK):
     score: float = Field(
         description="The resulting score of the benchmark.",
     )
+    note: Optional[str] = Field(
+        default=None,
+        description="Optional note, comment or context on the benchmark score.",
+    )
 
 
 class BenchmarkScoreBase(MetaColumns, BenchmarkScoreFields):
