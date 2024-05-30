@@ -22,7 +22,7 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     if op.get_context().config.attributes.get("scd"):
         op.create_table(
-            "benchmark",
+            "benchmark_scd",
             sa.Column(
                 "benchmark_id",
                 sqlmodel.sql.sqltypes.AutoString(),
@@ -87,7 +87,7 @@ def upgrade() -> None:
             comment="SCD version of .tables.Benchmark.",
         )
         op.create_table(
-            "benchmark_score",
+            "benchmark_score_scd",
             sa.Column(
                 "vendor_id",
                 sqlmodel.sql.sqltypes.AutoString(),
