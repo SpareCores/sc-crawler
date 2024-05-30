@@ -1,7 +1,7 @@
 """Enumerations, JSON nested data objects & other helper classes used in [sc_crawler.tables][]."""
 
 from enum import Enum
-from typing import Any, List, Optional, Union
+from typing import List, Optional, Union
 
 from pydantic import BaseModel
 
