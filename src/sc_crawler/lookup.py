@@ -103,8 +103,8 @@ def map_compliance_frameworks_to_vendor(
     return items
 
 
-benchmarks: dict = {
-    "bw_mem": Benchmark(
+benchmarks: List[Benchmark] = [
+    Benchmark(
         benchmark_id="bw_mem",
         name="Time memory bandwidth",
         description="bw_mem allocates twice the specified amount of memory, zeros it, and then times the copying of the first half to the second half. Results are reported in megabytes moved per second (MB/sec). bw_mem is provided by lmbench. For more details, see the man pages.",
@@ -115,7 +115,7 @@ benchmarks: dict = {
         },
         unit="MB/sec",
     ),
-    "compression_text:ratio": Benchmark(
+    Benchmark(
         benchmark_id="compression_text:ratio",
         name="Compression ratio",
         description="Measures the compression ratio while compressing the dickens.txt of the Silesia corpus (10 MB uncompressed) using various algorithms, compressions levels and other extra arguments.",
@@ -128,7 +128,7 @@ benchmarks: dict = {
         },
         measurement="ratio",
     ),
-    "compression_text:compress": Benchmark(
+    Benchmark(
         benchmark_id="compression_text:compress",
         name="Compression bandwidth",
         description="Measures the compression bandwidth (bytes/second) on the dickens.txt of the Silesia corpus (10 MB uncompressed) using various algorithms, compressions levels and other extra arguments.",
@@ -142,7 +142,7 @@ benchmarks: dict = {
         measurement="compress",
         unit="byte/s",
     ),
-    "compression_text:decompress": Benchmark(
+    Benchmark(
         benchmark_id="compression_text:decompress",
         name="Decompression bandwidth",
         description="Measures the decompression bandwidth (bytes/second) on the compressed dickens.txt of the Silesia corpus (10 MB uncompressed) using various algorithms, compressions levels and other extra arguments.",
