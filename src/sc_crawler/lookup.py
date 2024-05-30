@@ -180,4 +180,68 @@ benchmarks: List[Benchmark] = [
         "Score",
         "Composite score using the weighted arithmetic mean of the subsection scores, which are computed using the geometric mean of the related scores.",
     ),
+    _geekbenchmark(
+        "File Compression",
+        "Compresses and decompresses the Ruby 3.1.2 source archive (a 75 MB archive with 9841 files) using LZ4 and ZSTD on an in-memory encrypted file system. It also verifies the files using SHA1.",
+    ),
+    _geekbenchmark(
+        "Navigation",
+        "Generates 24 different routes between a sequence of locations on two OpenStreetMap maps (one for a small city, one for a large city) using Dijkstra's algorithm.",
+    ),
+    _geekbenchmark(
+        "HTML5 Browser",
+        "Opens and renders web pages (8 in single-core mode, 32 in multi-core mode) using a headless web browser.",
+    ),
+    _geekbenchmark(
+        "PDF Renderer",
+        "Opens complex PDF documents (4 in single-core mode, 16 in multi-core mode) of park maps from the American National Park Service (sizes from 897 KB to 1.5 MB) with large vector images, lines and text.",
+    ),
+    _geekbenchmark(
+        "Photo Library",
+        "Categorizes and tags photos (16 in single-core mode, 64 in multi-core mode) based on the objects that they contain. The workload performs JPEG decompression, thumbnail generation, image transformations, image classification (using MobileNet 1.0), and storing data in SQLite.",
+    ),
+    _geekbenchmark(
+        "Clang",
+        "Compiles files (8 in single-core mode, 96 in multi-core mode) of the Lua interpreter using Clang and the musl libc as the C standard library for the compiled files.",
+    ),
+    _geekbenchmark(
+        "Text Processing",
+        "Loads 190 markdown files, parses the contents using regular expressions, stores metadata in a SQLite database, and exports the content to a different format on an in-memory encrypted file system, using a mix of C++ and Python.",
+    ),
+    _geekbenchmark(
+        "Asset Compression",
+        "Compresses 16 texture images and geometry files using ASTC, BC7, DXTC, and Draco.",
+    ),
+    _geekbenchmark(
+        "Object Detection",
+        "Detects and classifies objects in 300x300 pixel photos (16 in single-core mode, 64 in multi-core mode) using the MobileNet v1 SSD convolutional neural network.",
+    ),
+    _geekbenchmark(
+        "Background Blur",
+        "Separates and nlurs the background of 10 frames in a 1080p video, using DeepLabV3+.",
+    ),
+    _geekbenchmark(
+        "Horizon Detection",
+        "Detects and straightens uneven or crooked horizon lines in a 48MP photo to make it look more realistic, using the Canny edge detector and the Hough transform.",
+    ),
+    _geekbenchmark(
+        "Object Remover",
+        "Removes an object (using a mask) from a 3MP photo, and fills in the gap left behind using the iterative PatchMatch Inpainting approach (Barnes et al. 2009).",
+    ),
+    _geekbenchmark(
+        "HDR",
+        "Blends six 16MP SDR photos to create a single HDR photo, using a recovery process and radiance map construction (Debevec and Malik 1997), and a tone mapping algorithm (Reinhard and Devlin 2005).",
+    ),
+    _geekbenchmark(
+        "Photo Filter",
+        "Applies colour and blur filters, level adjustments, cropping, scaling, and image compositing filters to 10 photos range in size from 3 MP to 15 MP",
+    ),
+    _geekbenchmark(
+        "Ray Tracer",
+        "Renders the Blender BMW scene using a custom ray tracer built with the Intel Embree ray tracing library.",
+    ),
+    _geekbenchmark(
+        "Structure from Motion",
+        "Generates 3D geometry by constructing the coordinates of the points that are visible in nine 2D images of the same scene.",
+    ),
 ]
