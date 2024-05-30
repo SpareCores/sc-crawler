@@ -581,7 +581,7 @@ def pull(
             for country in countries.values():
                 session.merge(country)
             logger.info("%d Countries synced." % len(countries))
-            for benchmark in benchmarks.values():
+            for benchmark in benchmarks:
                 session.merge(benchmark)
             logger.info("%d Benchmarks synced." % len(benchmarks))
             # get data for each vendor and then add/merge to database
