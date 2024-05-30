@@ -120,7 +120,7 @@ def upgrade() -> None:
             ),
             sa.Column(
                 "note",
-                sa.Float(),
+                sqlmodel.sql.sqltypes.AutoString(),
                 nullable=True,
                 comment="Optional note, comment or context on the benchmark score.",
             ),
@@ -257,7 +257,7 @@ def upgrade() -> None:
             ),
             sa.Column(
                 "note",
-                sa.Float(),
+                sqlmodel.sql.sqltypes.AutoString(),
                 nullable=True,
                 comment="Optional note, comment or context on the benchmark score.",
             ),
