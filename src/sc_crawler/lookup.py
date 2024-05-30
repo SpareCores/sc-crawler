@@ -125,7 +125,7 @@ def _geekbenchmark(name: str, description: str):
 benchmarks: List[Benchmark] = [
     Benchmark(
         benchmark_id="bw_mem",
-        name="Time memory bandwidth",
+        name="Memory bandwidth",
         description="bw_mem allocates twice the specified amount of memory, zeros it, and then times the copying of the first half to the second half. Results are reported in megabytes moved per second (MB/sec). bw_mem is provided by lmbench. For more details, see the man pages.",
         framework="bw_mem",
         config_fields={
@@ -243,5 +243,16 @@ benchmarks: List[Benchmark] = [
     _geekbenchmark(
         "Structure from Motion",
         "Generates 3D geometry by constructing the coordinates of the points that are visible in nine 2D images of the same scene.",
+    ),
+    Benchmark(
+        benchmark_id="openssl",
+        name="OpenSSL speed",
+        description="Measures the performance of OpenSSL's selected hash functions and block ciphers with different block sizes of data.",
+        framework="openssl",
+        config_fields={
+            "algo": "Hash or block cipher algorithm, e.g. sha256 or aes-256-cbc.",
+            "block_size": "Block size (byte).",
+        },
+        unit="byte/s",
     ),
 ]
