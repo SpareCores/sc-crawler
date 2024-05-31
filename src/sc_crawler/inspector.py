@@ -168,4 +168,24 @@ def inspect_server_benchmarks(server: Server) -> List[dict]:
     except Exception as e:
         _log_cannot_load_benchmarks(server, framework, e, True)
 
+    framework = "openssl"
+    try:
+        with open(_server_framework_path(server, framework, "parsed.json"), "r") as fp:
+            workloads = json.load(fp)
+        for workload in workloads:
+            benchmarks.append(
+                {
+                    **_benchmark_metafields(server, framework=framework),
+                    "config": {
+                        "algo": workload["algo"],
+                        "block_size": workload["block_size"],
+                    },
+                    "score": workload["speed"],
+                }
+            )
+    except Exception as e:
+        _log_cannot_load_benchmarks(server, framework, e, True)
+
+    # TODO stress-ng
+
     return benchmarks
