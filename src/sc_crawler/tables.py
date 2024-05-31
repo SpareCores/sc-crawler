@@ -10,6 +10,7 @@ from sqlalchemy import ForeignKeyConstraint, update
 from sqlmodel import Relationship, Session, SQLModel
 
 from .insert import insert_items
+from .inspector import inspect_server_benchmarks
 from .logger import VendorProgressTracker, log_start_end, logger
 from .table_bases import (
     BenchmarkBase,
@@ -234,6 +235,13 @@ class Vendor(VendorBase, table=True):
     def inventory_servers(self):
         """Get the vendor's all server types."""
         self._inventory(Server, self._get_methods().inventory_servers)
+        benchmarks = []
+        for server in self.servers:
+            benchmarks += inspect_server_benchmarks(server)
+        self.set_table_rows_inactive(
+            BenchmarkScore, BenchmarkScore.vendor_id == self.vendor_id
+        )
+        insert_items(BenchmarkScore, benchmarks, self)
 
     @log_start_end
     def inventory_server_prices(self):
