@@ -136,7 +136,7 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                                     benchmark_id=":".join([framework, measurement]),
                                 ),
                                 "config": config,
-                                "score": data[measurement],
+                                "score": float(data[measurement]),
                             }
                         )
     except Exception as e:
@@ -154,7 +154,7 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                         "geekbench_version": geekbench_version,
                         "cores": cores,
                     },
-                    "score": values["score"],
+                    "score": float(values["score"]),
                 }
                 if values.get("description"):
                     workload_fields["note"] = values["description"]
@@ -184,7 +184,7 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                         "algo": workload["algo"],
                         "block_size": workload["block_size"],
                     },
-                    "score": workload["speed"],
+                    "score": float(workload["speed"]),
                 }
             )
     except Exception as e:
