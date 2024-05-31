@@ -2,6 +2,7 @@ import json
 from atexit import register
 from functools import cache
 from os import PathLike, path, remove
+from re import sub
 from shutil import rmtree
 from tempfile import mkdtemp
 from typing import List
@@ -38,12 +39,16 @@ def _server_path(server: Server) -> str | PathLike:
     return path.join(inspector_data_path(), server.vendor_id, server.api_reference)
 
 
-def _server_framework_path(server: Server, framework: str) -> str | PathLike:
-    return path.join(_server_path(server), framework)
+def _server_framework_path(
+    server: Server, framework: str, relpath: str = None
+) -> str | PathLike:
+    path_parts = [_server_path(server), framework, relpath]
+    path_parts = [path_part for path_part in path_parts if path_part is not None]
+    return path.join(*path_parts)
 
 
 def _server_framework_stdout_path(server: Server, framework: str) -> str | PathLike:
-    return path.join(_server_framework_path(server, framework), "stdout")
+    return _server_framework_path(server, framework, "stdout")
 
 
 def _server_framework_stdout_from_json(server: Server, framework: str) -> dict:
@@ -51,14 +56,13 @@ def _server_framework_stdout_from_json(server: Server, framework: str) -> dict:
         return json.load(fp)
 
 
-def _server_framework_meta_path(server: Server, framework: str) -> str | PathLike:
-    return path.join(_server_framework_path(server, framework), "meta.json")
+def _server_framework_meta(server: Server, framework: str) -> dict:
+    with open(_server_framework_path(server, framework, "meta.json"), "r") as fp:
+        return json.load(fp)
 
 
 def _observed_at(server: Server, framework: str) -> dict:
-    with open(_server_framework_meta_path(server, framework), "r") as meta_file:
-        meta = json.load(meta_file)
-    return {"observed_at": meta["end"]}
+    return {"observed_at": _server_framework_meta(server, framework)["end"]}
 
 
 def _benchmark_metafields(
@@ -131,6 +135,36 @@ def inspect_server_benchmarks(server: Server) -> List[dict]:
                                 "score": data[measurement],
                             }
                         )
+    except Exception as e:
+        _log_cannot_load_benchmarks(server, framework, e, True)
+
+    framework = "geekbench"
+    try:
+        with open(_server_framework_path(server, framework, "results.json"), "r") as fp:
+            scores = json.load(fp)
+        geekbench_version = _server_framework_meta(server, framework)["version"]
+        for cores, workloads in scores.items():
+            for workload, values in workloads.items():
+                workload_fields = {
+                    "config": {
+                        "geekbench_version": geekbench_version,
+                        "cores": cores,
+                    },
+                    "score": values["score"],
+                }
+                if values.get("description"):
+                    workload_fields["note"] = values["description"]
+                benchmarks.append(
+                    {
+                        **_benchmark_metafields(
+                            server,
+                            benchmark_id=":".join(
+                                [framework, sub(r"\W+", "_", workload.lower())]
+                            ),
+                        ),
+                        **workload_fields,
+                    }
+                )
     except Exception as e:
         _log_cannot_load_benchmarks(server, framework, e, True)
 
