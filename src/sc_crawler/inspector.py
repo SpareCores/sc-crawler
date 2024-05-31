@@ -63,8 +63,10 @@ def _server_framework_meta(server: "Server", framework: str) -> dict:
         return json.load(fp)
 
 
-    return {"observed_at": _server_framework_meta(server, framework)["end"]}
 def _observed_at(server: "Server", framework: str) -> dict:
+    ts = _server_framework_meta(server, framework)["end"]
+    assert ts is not None
+    return {"observed_at": ts}
 
 
 def _benchmark_metafields(
