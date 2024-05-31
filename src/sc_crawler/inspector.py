@@ -5,7 +5,7 @@ from os import PathLike, path, remove
 from re import sub
 from shutil import rmtree
 from tempfile import mkdtemp
-from typing import List, TYPE_CHECKING
+from typing import TYPE_CHECKING, List
 from zipfile import ZipFile
 
 from requests import get
