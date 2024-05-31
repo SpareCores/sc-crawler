@@ -5,13 +5,15 @@ from os import PathLike, path, remove
 from re import sub
 from shutil import rmtree
 from tempfile import mkdtemp
-from typing import List
+from typing import List, TYPE_CHECKING
 from zipfile import ZipFile
 
 from requests import get
 
 from .logger import logger
-from .tables import Server
+
+if TYPE_CHECKING:
+    from .tables import Server
 
 
 @cache
@@ -31,42 +33,42 @@ def inspector_data_path() -> str | PathLike:
     return path.join(temp_dir, "sc-inspector-data-main", "data")
 
 
-def _server_ids(server: Server) -> dict:
+def _server_ids(server: "Server") -> dict:
     return {"vendor_id": server.vendor_id, "server_id": server.server_id}
 
 
-def _server_path(server: Server) -> str | PathLike:
+def _server_path(server: "Server") -> str | PathLike:
     return path.join(inspector_data_path(), server.vendor_id, server.api_reference)
 
 
 def _server_framework_path(
-    server: Server, framework: str, relpath: str = None
+    server: "Server", framework: str, relpath: str = None
 ) -> str | PathLike:
     path_parts = [_server_path(server), framework, relpath]
     path_parts = [path_part for path_part in path_parts if path_part is not None]
     return path.join(*path_parts)
 
 
-def _server_framework_stdout_path(server: Server, framework: str) -> str | PathLike:
+def _server_framework_stdout_path(server: "Server", framework: str) -> str | PathLike:
     return _server_framework_path(server, framework, "stdout")
 
 
-def _server_framework_stdout_from_json(server: Server, framework: str) -> dict:
+def _server_framework_stdout_from_json(server: "Server", framework: str) -> dict:
     with open(_server_framework_stdout_path(server, framework), "r") as fp:
         return json.load(fp)
 
 
-def _server_framework_meta(server: Server, framework: str) -> dict:
+def _server_framework_meta(server: "Server", framework: str) -> dict:
     with open(_server_framework_path(server, framework, "meta.json"), "r") as fp:
         return json.load(fp)
 
 
-def _observed_at(server: Server, framework: str) -> dict:
     return {"observed_at": _server_framework_meta(server, framework)["end"]}
+def _observed_at(server: "Server", framework: str) -> dict:
 
 
 def _benchmark_metafields(
-    server: Server, framework: str = None, benchmark_id: str = None
+    server: "Server", framework: str = None, benchmark_id: str = None
 ) -> dict:
     if benchmark_id is None:
         if framework is None:
@@ -93,7 +95,7 @@ def _log_cannot_load_benchmarks(server, benchmark_id, e, exc_info=False):
     )
 
 
-def inspect_server_benchmarks(server: Server) -> List[dict]:
+def inspect_server_benchmarks(server: "Server") -> List[dict]:
     benchmarks = []
 
     framework = "bw_mem"
