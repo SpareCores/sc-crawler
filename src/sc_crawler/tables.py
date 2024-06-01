@@ -236,8 +236,13 @@ class Vendor(VendorBase, table=True):
         """Get the vendor's all server types."""
         self._inventory(Server, self._get_methods().inventory_servers)
         benchmarks = []
+        self.progress_tracker.start_task(
+            name="Searching for benchmark(s)", total=len(self.servers)
+        )
         for server in self.servers:
             benchmarks += inspect_server_benchmarks(server)
+            self.progress_tracker.advance_task()
+        self.progress_tracker.hide_task()
         self.set_table_rows_inactive(
             BenchmarkScore, BenchmarkScore.vendor_id == self.vendor_id
         )
