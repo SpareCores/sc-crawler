@@ -292,9 +292,8 @@ def _standardize_manufacturer(manufacturer):
         return "AMD"
     if manufacturer == "Intel(R) Corporation":
         return "Intel"
-    if manufacturer == "NVIDIA":
+    if manufacturer in ["NVIDIA", "Tesla"]:
         return "Nvidia"
-    # TODO Tesla (Nvidia?)
     return manufacturer
 
 
@@ -326,20 +325,22 @@ def _l23_cache(lscpu: dict):
     return _listsearch(lscpu, "field", "L1i cache:")["data"].split(" ")[0]
 
 
+def _dropna(text: str) -> str:
+    if text in ["N/A"]:
+        return None
+    return text
+
+
 def _gpu_details(gpu: xmltree.Element) -> dict:
     res = {}
-    for field in [
-        "product_name",
-        "product_brand",
-        "product_architecture",
-        "vbios_version",
-        "gsp_firmware_version",
-    ]:
-        res[field] = gpu.find(field).text
-    for memory in ["fb", "bar1"]:
-        memstring = gpu.find(memory + "_memory_usage").find("total").text
-        # TODO move computer_readable from sc-inspector to here or sc-helpers?
-        res[memory + "_memory"] = int(memstring[:-4])
+    res["manufacturer"] = _standardize_manufacturer(gpu.find("product_brand").text)
+    res["family"] = gpu.find("product_architecture").text
+    res["model"] = gpu.find("product_name").text
+    memstring = gpu.find("fb_memory_usage").find("total").text
+    # TODO move computer_readable from sc-inspector to here or sc-helpers?
+    res["memory"] = int(memstring[:-4])
+    res["firmware_version"] = _dropna(gpu.find("gsp_firmware_version").text)
+    res["bios_version"] = _dropna(gpu.find("vbios_version").text)
     for clock in ["graphics_clock", "sm_clock", "mem_clock", "video_clock"]:
         clockstring = gpu.find("max_clocks").find(clock).text
         res[clock] = int(clockstring[:-4])
@@ -397,9 +398,9 @@ def inspect_update_server_dict(server: dict) -> dict:
         # convert to Mhz
         "memory_speed": lambda: int(lookups["dmidecode_memory"]["Speed"]) / 1e6,
         "gpus": lambda: _gpus_details(lookups["gpus"]),
-        "gpu_manufacturer": lambda: _gpu_most_common(server["gpus"], "product_brand"),
-        "gpu_family": lambda: _gpu_most_common(server["gpus"], "product_architecture"),
-        "gpu_model": lambda: _gpu_most_common(server["gpus"], "product_name"),
+        "gpu_manufacturer": lambda: _gpu_most_common(server["gpus"], "manufacturer"),
+        "gpu_family": lambda: _gpu_most_common(server["gpus"], "family"),
+        "gpu_model": lambda: _gpu_most_common(server["gpus"], "model"),
         "gpu_memory_min": lambda: min([gpu["fb_memory"] for gpu in server["gpus"]]),
         "gpu_memory_total": lambda: sum([gpu["fb_memory"] for gpu in server["gpus"]]),
     }
