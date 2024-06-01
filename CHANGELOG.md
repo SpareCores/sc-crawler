@@ -4,6 +4,10 @@ New feature(s):
 
 - Add `benchmark` and `benchmark_score` tables.
 
+‼ Breaking changes:
+
+- Renamed the `memory` column to `memory_amount` in the `server` table.
+
 ## v0.1.3 (May 7, 2024)
 
 New feature(s):

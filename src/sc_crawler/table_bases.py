@@ -564,7 +564,7 @@ class ServerFields(
             "L1/L2/L3 cache size; microcode version; feature flags; bugs etc."
         ),
     )
-    memory: int = Field(
+    memory_amount: int = Field(
         default=None,
         description="RAM amount (MiB).",
     )
