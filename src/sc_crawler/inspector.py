@@ -1,4 +1,5 @@
 import json
+import xml.etree.ElementTree as xmltree
 from atexit import register
 from functools import cache
 from os import PathLike, path, remove
@@ -8,7 +9,6 @@ from statistics import mode
 from tempfile import mkdtemp
 from typing import TYPE_CHECKING, List
 from zipfile import ZipFile
-import xml.etree.ElementTree as xmltree
 
 from requests import get
 
