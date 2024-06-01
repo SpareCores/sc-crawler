@@ -4,6 +4,7 @@ from functools import cache
 from os import PathLike, path, remove
 from re import compile, sub
 from shutil import rmtree
+from statistics import mode
 from tempfile import mkdtemp
 from typing import TYPE_CHECKING, List
 from zipfile import ZipFile
@@ -293,6 +294,7 @@ def _standardize_manufacturer(manufacturer):
         return "Intel"
     if manufacturer == "NVIDIA":
         return "Nvidia"
+    # TODO Tesla (Nvidia?)
     return manufacturer
 
 
@@ -324,6 +326,34 @@ def _l23_cache(lscpu: dict):
     return _listsearch(lscpu, "field", "L1i cache:")["data"].split(" ")[0]
 
 
+def _gpu_details(gpu: xmltree.Element) -> dict:
+    res = {}
+    for field in [
+        "product_name",
+        "product_brand",
+        "product_architecture",
+        "vbios_version",
+        "gsp_firmware_version",
+    ]:
+        res[field] = gpu.find(field).text
+    for memory in ["fb", "bar1"]:
+        memstring = gpu.find(memory + "_memory_usage").find("total").text
+        # TODO move computer_readable from sc-inspector to here or sc-helpers?
+        res[memory + "_memory"] = int(memstring[:-4])
+    for clock in ["graphics_clock", "sm_clock", "mem_clock", "video_clock"]:
+        clockstring = gpu.find("max_clocks").find(clock).text
+        res[clock] = int(clockstring[:-4])
+    return res
+
+
+def _gpus_details(gpus: List[xmltree.Element]) -> List[dict]:
+    return [_gpu_details(gpu) for gpu in gpus]
+
+
+def _gpu_most_common(gpus: List[dict], field: str) -> str:
+    return mode([gpu[field] for gpu in gpus])
+
+
 def inspect_update_server_dict(server: dict) -> dict:
     """Update a Server-like dict based on inspector data."""
     server_obj = ServerBase.validate(server)
@@ -338,6 +368,7 @@ def inspect_update_server_dict(server: dict) -> dict:
         "lscpu": lambda: _server_lscpu(server_obj),
         "nvidiasmi": lambda: _server_nvidiasmi(server_obj),
         "gpu": lambda: lookups["nvidiasmi"].find("gpu"),
+        "gpus": lambda: lookups["nvidiasmi"].findall("gpu"),
     }
     for k, f in lookups.items():
         try:
@@ -365,11 +396,12 @@ def inspect_update_server_dict(server: dict) -> dict:
         "memory_generation": lambda: DdrGeneration[lookups["dmidecode_memory"]["Type"]],
         # convert to Mhz
         "memory_speed": lambda: int(lookups["dmidecode_memory"]["Speed"]) / 1e6,
-        "gpu_manufacturer": lambda: _standardize_manufacturer(
-            lookups["gpu"].find("product_brand").text
-        ),
-        "gpu_family": lambda: lookups["gpu"].find("product_architecture").text,
-        "gpu_model": lambda: lookups["gpu"].find("product_name").text,
+        "gpus": lambda: _gpus_details(lookups["gpus"]),
+        "gpu_manufacturer": lambda: _gpu_most_common(server["gpus"], "product_brand"),
+        "gpu_family": lambda: _gpu_most_common(server["gpus"], "product_architecture"),
+        "gpu_model": lambda: _gpu_most_common(server["gpus"], "product_name"),
+        "gpu_memory_min": lambda: min([gpu["fb_memory"] for gpu in server["gpus"]]),
+        "gpu_memory_total": lambda: sum([gpu["fb_memory"] for gpu in server["gpus"]]),
     }
     for k, f in mappings.items():
         try:
