@@ -11,6 +11,8 @@ from zipfile import ZipFile
 from requests import get
 
 from .logger import logger
+from .table_bases import ServerBase
+from .table_fields import DdrGeneration
 
 if TYPE_CHECKING:
     from .tables import Server
@@ -69,17 +71,24 @@ def _server_framework_meta(server: "Server", framework: str) -> dict:
 
 def _server_lscpu(server: "Server") -> dict:
     with open(_server_framework_path(server, "lscpu", "stdout"), "r") as fp:
-        return json.load(fp)
+        return json.load(fp)["lscpu"]
+
+
+def _listsearch(items: List, key: str, value: str):
+    return next((item for item in items if item[key] == value))
 
 
 def _server_lscpu_field(server: "Server", field: str) -> str:
-    return next(
-        (
-            item["data"]
-            for item in _server_lscpu(server)["lscpu"]
-            if item["field"] == field
-        )
-    )
+    return _listsearch(_server_lscpu(server), "field", field)["data"]
+
+
+def _server_dmidecode(server: "Server") -> dict:
+    with open(_server_framework_path(server, "dmidecode", "parsed.json"), "r") as fp:
+        return json.load(fp)
+
+
+def _server_dmidecode_section(server: "Server", section: str) -> dict:
+    return _listsearch(_server_dmidecode(server), "name", section)["props"]
 
 
 def _observed_at(server: "Server", framework: str) -> dict:
@@ -114,10 +123,22 @@ def _extract_line_from_file(file_path: str | PathLike, pattern: str) -> str:
     return None
 
 
-def _log_cannot_load_benchmarks(server, benchmark_id, e, exc_info=False):
+def _log_cannot_load_benchmarks(server: "Server", benchmark_id, e, exc_info=False):
     logger.debug(
         "%s benchmark(s) not loaded for %s/%s: %s",
         benchmark_id,
+        server.vendor_id,
+        server.api_reference,
+        e,
+        stacklevel=2,
+        exc_info=exc_info,
+    )
+
+
+def _log_cannot_update_server(server: "Server", key, e, exc_info=False):
+    logger.debug(
+        "Cannot update %s loaded for %s/%s: %s",
+        key,
         server.vendor_id,
         server.api_reference,
         e,
@@ -258,3 +279,71 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
         _log_cannot_load_benchmarks(server, framework, e, True)
 
     return benchmarks
+
+
+def _standardize_manufacturers(manufacturer):
+    if manufacturer == "Advanced Micro Devices, Inc.":
+        return "AMD"
+    return manufacturer
+
+
+def _l123_cache(lscpu: dict, level: int):
+    if level == 1:
+        l1i = _listsearch(lscpu, "field", "L1i cache:")["data"].split(" ")[0]
+        l1d = _listsearch(lscpu, "field", "L1d cache:")["data"].split(" ")[0]
+        return int(l1i) + int(l1d)
+    elif level == 2:
+        return int(_listsearch(lscpu, "field", "L2 cache:")["data"].split(" ")[0])
+    elif level == 3:
+        return int(_listsearch(lscpu, "field", "L3 cache:")["data"].split(" ")[0])
+    else:
+        raise ValueError("Not known cache level.")
+
+
+def _l23_cache(lscpu: dict):
+    return _listsearch(lscpu, "field", "L1i cache:")["data"].split(" ")[0]
+
+
+def inspect_update_server_dict(server: dict) -> dict:
+    """Update a Server-like dict based on inspector data."""
+    server_obj = ServerBase.validate(server)
+
+    lookups = {
+        "dmidecode_cpu": lambda: _server_dmidecode_section(
+            server_obj, "Processor Information"
+        ),
+        "dmidecode_memory": lambda: _server_dmidecode_section(
+            server_obj, "Memory Device"
+        ),
+        "lscpu": lambda: _server_lscpu(server_obj),
+    }
+    for k, f in lookups.items():
+        try:
+            lookups[k] = f()
+        except Exception as e:
+            lookups[k] = Exception(str(e))
+
+    mappings = {
+        "cpu_cores": lambda: lookups["dmidecode_cpu"]["Core Count"],
+        "cpu_speed": lambda: lookups["dmidecode_cpu"]["Max Speed"] / 1e6,
+        "cpu_manufacturer": lambda: _standardize_manufacturers(
+            lookups["dmidecode_cpu"]["Manufacturer"]
+        ),
+        "cpu_family": lambda: lookups["dmidecode_cpu"]["Family"],
+        "cpu_model": lambda: lookups["dmidecode_cpu"]["Version"],
+        "cpu_l1_cache": lambda: _l123_cache(lookups["lscpu"], 1),
+        "cpu_l2_cache": lambda: _l123_cache(lookups["lscpu"], 2),
+        "cpu_l3_cache": lambda: _l123_cache(lookups["lscpu"], 3),
+        "cpu_flags": lambda: _listsearch(lookups["lscpu"], "field", "Flags:")[
+            "data"
+        ].split(" "),
+        "memory_generation": lambda: DdrGeneration[lookups["dmidecode_memory"]["Type"]],
+        "memory_speed": lambda: int(lookups["dmidecode_memory"]["Speed"]) / 1e6,
+    }
+    for k, f in mappings.items():
+        try:
+            server[k] = f()
+        except Exception as e:
+            _log_cannot_update_server(server_obj, k, e)
+
+    return server
