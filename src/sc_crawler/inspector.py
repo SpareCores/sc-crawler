@@ -72,6 +72,16 @@ def _server_lscpu(server: "Server") -> dict:
         return json.load(fp)
 
 
+def _server_lscpu_field(server: "Server", field: str) -> str:
+    return next(
+        (
+            item["data"]
+            for item in _server_lscpu(server)["lscpu"]
+            if item["field"] == field
+        )
+    )
+
+
 def _observed_at(server: "Server", framework: str) -> dict:
     ts = _server_framework_meta(server, framework)["end"]
     assert ts is not None
@@ -122,19 +132,12 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
 
     framework = "bogomips"
     try:
-        bogomips = next(
-            (
-                float(item["data"])
-                for item in _server_lscpu(server)["lscpu"]
-                if item["field"] == "BogoMIPS:"
-            )
-        )
         benchmarks.append(
             {
                 **_benchmark_metafields(
                     server, framework="lscpu", benchmark_id=framework
                 ),
-                "score": bogomips,
+                "score": float(_server_lscpu_field(server, "BogoMIPS:")),
             }
         )
     except Exception as e:
