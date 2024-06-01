@@ -7,6 +7,7 @@ from shutil import rmtree
 from tempfile import mkdtemp
 from typing import TYPE_CHECKING, List
 from zipfile import ZipFile
+import xml.etree.ElementTree as xmltree
 
 from requests import get
 
@@ -89,6 +90,10 @@ def _server_dmidecode(server: "Server") -> dict:
 
 def _server_dmidecode_section(server: "Server", section: str) -> dict:
     return _listsearch(_server_dmidecode(server), "name", section)["props"]
+
+
+def _server_nvidiasmi(server: "Server") -> dict:
+    return xmltree.parse(_server_framework_path(server, "nvidia_smi", "stdout"))
 
 
 def _observed_at(server: "Server", framework: str) -> dict:
@@ -281,11 +286,13 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
     return benchmarks
 
 
-def _standardize_manufacturers(manufacturer):
+def _standardize_manufacturer(manufacturer):
     if manufacturer == "Advanced Micro Devices, Inc.":
         return "AMD"
     if manufacturer == "Intel(R) Corporation":
         return "Intel"
+    if manufacturer == "NVIDIA":
+        return "Nvidia"
     return manufacturer
 
 
@@ -329,6 +336,8 @@ def inspect_update_server_dict(server: dict) -> dict:
             server_obj, "Memory Device"
         ),
         "lscpu": lambda: _server_lscpu(server_obj),
+        "nvidiasmi": lambda: _server_nvidiasmi(server_obj),
+        "gpu": lambda: lookups["nvidiasmi"].find("gpu"),
     }
     for k, f in lookups.items():
         try:
@@ -340,7 +349,7 @@ def inspect_update_server_dict(server: dict) -> dict:
         "cpu_cores": lambda: lookups["dmidecode_cpu"]["Core Count"],
         # convert to Ghz
         "cpu_speed": lambda: lookups["dmidecode_cpu"]["Max Speed"] / 1e9,
-        "cpu_manufacturer": lambda: _standardize_manufacturers(
+        "cpu_manufacturer": lambda: _standardize_manufacturer(
             lookups["dmidecode_cpu"]["Manufacturer"]
         ),
         "cpu_family": lambda: lookups["dmidecode_cpu"]["Family"],
@@ -354,7 +363,13 @@ def inspect_update_server_dict(server: dict) -> dict:
             "data"
         ].split(" "),
         "memory_generation": lambda: DdrGeneration[lookups["dmidecode_memory"]["Type"]],
+        # convert to Mhz
         "memory_speed": lambda: int(lookups["dmidecode_memory"]["Speed"]) / 1e6,
+        "gpu_manufacturer": lambda: _standardize_manufacturer(
+            lookups["gpu"].find("product_brand").text
+        ),
+        "gpu_family": lambda: lookups["gpu"].find("product_architecture").text,
+        "gpu_model": lambda: lookups["gpu"].find("product_name").text,
     }
     for k, f in mappings.items():
         try:
