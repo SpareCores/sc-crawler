@@ -321,10 +321,6 @@ def _l123_cache(lscpu: dict, level: int):
         raise ValueError("Not known cache level.")
 
 
-def _l23_cache(lscpu: dict):
-    return _listsearch(lscpu, "field", "L1i cache:")["data"].split(" ")[0]
-
-
 def _dropna(text: str) -> str:
     if text in ["N/A"]:
         return None
