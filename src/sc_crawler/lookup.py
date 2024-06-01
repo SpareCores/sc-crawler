@@ -115,8 +115,8 @@ def _geekbenchmark(name: str, description: str):
         ),
         framework="geekbench",
         config_fields={
-            "geekbench_version": "The version of geekbench used to measure the score.",
             "cores": "Single-Core or Multi-Core peformance tests.",
+            "framework_version": "Version number of geekbench.",
         },
         measurement=measurement,
     )
@@ -252,6 +252,7 @@ benchmarks: List[Benchmark] = [
         config_fields={
             "algo": "Hash or block cipher algorithm, e.g. sha256 or aes-256-cbc.",
             "block_size": "Block size (byte).",
+            "framework_version": "Version number of OpenSSL.",
         },
         unit="byte/s",
     ),
@@ -263,6 +264,7 @@ benchmarks: List[Benchmark] = [
         measurement="cpu_all",
         config_fields={
             "cores": "Stressing a single core or all cores.",
+            "framework_version": "Version number of stress-ng.",
         },
         unit="bogo ops/s (real time)",
     ),

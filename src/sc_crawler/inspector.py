@@ -164,10 +164,7 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
         for cores, workloads in scores.items():
             for workload, values in workloads.items():
                 workload_fields = {
-                    "config": {
-                        "geekbench_version": geekbench_version,
-                        "cores": cores,
-                    },
+                    "config": {"cores": cores, "framework_version": geekbench_version},
                     "score": float(values["score"]),
                 }
                 if values.get("description"):
@@ -190,6 +187,7 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
     try:
         with open(_server_framework_path(server, framework, "parsed.json"), "r") as fp:
             workloads = json.load(fp)
+        openssl_version = _server_framework_meta(server, framework)["version"]
         for workload in workloads:
             benchmarks.append(
                 {
@@ -197,6 +195,7 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                     "config": {
                         "algo": workload["algo"],
                         "block_size": workload["block_size"],
+                        "framework_version": openssl_version,
                     },
                     "score": float(workload["speed"]),
                 }
@@ -207,6 +206,7 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
     framework = "stress_ng"
     try:
         for cores_path in ["stressng", "stressngsinglecore"]:
+            stressng_version = _server_framework_meta(server, cores_path)["version"]
             line = _extract_line_from_file(
                 _server_framework_stderr_path(server, cores_path),
                 "bogo-ops-per-second-real-time",
@@ -220,6 +220,7 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                     ),
                     "config": {
                         "cores": 1 if cores_path == "stressng" else server.vcpus,
+                        "framework_version": stressng_version,
                     },
                     "score": float(line.split(": ")[1]),
                 }
