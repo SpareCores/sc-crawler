@@ -284,7 +284,20 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
 def _standardize_manufacturers(manufacturer):
     if manufacturer == "Advanced Micro Devices, Inc.":
         return "AMD"
+    if manufacturer == "Intel(R) Corporation":
+        return "Intel"
     return manufacturer
+
+
+def _standardize_cpu_model(model):
+    if model == "Not Specified":
+        return None
+    for prefix in ["Intel(R) Xeon(R) Platinum "]:
+        if model.startswith(prefix):
+            model = model[len(prefix) :].lstrip()
+    # drop trailing "CPU @ 2.50GHz"
+    model = sub(r" CPU @ \d+\.\d+GHz$", "", model)
+    return model
 
 
 def _l123_cache(lscpu: dict, level: int):
@@ -325,12 +338,15 @@ def inspect_update_server_dict(server: dict) -> dict:
 
     mappings = {
         "cpu_cores": lambda: lookups["dmidecode_cpu"]["Core Count"],
-        "cpu_speed": lambda: lookups["dmidecode_cpu"]["Max Speed"] / 1e6,
+        # convert to Ghz
+        "cpu_speed": lambda: lookups["dmidecode_cpu"]["Max Speed"] / 1e9,
         "cpu_manufacturer": lambda: _standardize_manufacturers(
             lookups["dmidecode_cpu"]["Manufacturer"]
         ),
         "cpu_family": lambda: lookups["dmidecode_cpu"]["Family"],
-        "cpu_model": lambda: lookups["dmidecode_cpu"]["Version"],
+        "cpu_model": lambda: _standardize_cpu_model(
+            lookups["dmidecode_cpu"]["Version"]
+        ),
         "cpu_l1_cache": lambda: _l123_cache(lookups["lscpu"], 1),
         "cpu_l2_cache": lambda: _l123_cache(lookups["lscpu"], 2),
         "cpu_l3_cache": lambda: _l123_cache(lookups["lscpu"], 3),
