@@ -2,7 +2,7 @@ import json
 from atexit import register
 from functools import cache
 from os import PathLike, path, remove
-from re import compile, search, sub
+from re import compile, sub
 from shutil import rmtree
 from tempfile import mkdtemp
 from typing import TYPE_CHECKING, List
