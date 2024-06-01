@@ -255,4 +255,15 @@ benchmarks: List[Benchmark] = [
         },
         unit="byte/s",
     ),
+    Benchmark(
+        benchmark_id="stress_ng:cpu_all",
+        name="stress-ng CPU all",
+        description="Stress the CPU with all available methods supported by stress-ng, and count the total bogo operations per second based on wall clock run time. The stress methods include bit operations, recursive calculations, integer divisions, floating point operations, matrix multiplication, stats, trigonometric, and hash functions.",
+        framework="stress_ng",
+        measurement="cpu_all",
+        config_fields={
+            "cores": "Stressing a single core or all cores.",
+        },
+        unit="bogo ops/s (real time)",
+    ),
 ]

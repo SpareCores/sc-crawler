@@ -2,7 +2,7 @@ import json
 from atexit import register
 from functools import cache
 from os import PathLike, path, remove
-from re import sub
+from re import compile, search, sub
 from shutil import rmtree
 from tempfile import mkdtemp
 from typing import TYPE_CHECKING, List
@@ -53,6 +53,10 @@ def _server_framework_stdout_path(server: "Server", framework: str) -> str | Pat
     return _server_framework_path(server, framework, "stdout")
 
 
+def _server_framework_stderr_path(server: "Server", framework: str) -> str | PathLike:
+    return _server_framework_path(server, framework, "stderr")
+
+
 def _server_framework_stdout_from_json(server: "Server", framework: str) -> dict:
     with open(_server_framework_stdout_path(server, framework), "r") as fp:
         return json.load(fp)
@@ -83,6 +87,16 @@ def _benchmark_metafields(
         **_observed_at(server, framework),
         "benchmark_id": benchmark_id,
     }
+
+
+def _extract_line_from_file(file_path: str | PathLike, pattern: str) -> str:
+    """Find the first line of a text file matching the regular expression."""
+    regex = compile(pattern)
+    with open(file_path, "r") as lines:
+        for line in lines:
+            if regex.search(line):
+                return line.strip()
+    return None
 
 
 def _log_cannot_load_benchmarks(server, benchmark_id, e, exc_info=False):
@@ -190,6 +204,27 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
     except Exception as e:
         _log_cannot_load_benchmarks(server, framework, e, True)
 
-    # TODO stress-ng
+    framework = "stress_ng"
+    try:
+        for cores_path in ["stressng", "stressngsinglecore"]:
+            line = _extract_line_from_file(
+                _server_framework_stderr_path(server, cores_path),
+                "bogo-ops-per-second-real-time",
+            )
+            benchmarks.append(
+                {
+                    **_benchmark_metafields(
+                        server,
+                        framework=cores_path,
+                        benchmark_id=":".join([framework, "cpu_all"]),
+                    ),
+                    "config": {
+                        "cores": 1 if cores_path == "stressng" else server.vcpus,
+                    },
+                    "score": float(line.split(": ")[1]),
+                }
+            )
+    except Exception as e:
+        _log_cannot_load_benchmarks(server, framework, e, True)
 
     return benchmarks
