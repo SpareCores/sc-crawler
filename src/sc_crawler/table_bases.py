@@ -16,6 +16,7 @@ from .table_fields import (
     Cpu,
     CpuAllocation,
     CpuArchitecture,
+    DdrGeneration,
     Disk,
     Gpu,
     PriceTier,
@@ -556,6 +557,18 @@ class ServerFields(
         default=None,
         description="The model number of the primary processor, e.g. 9750H.",
     )
+    cpu_l1_cache: Optional[int] = Field(
+        default=None, description="L1 cache size (MiB)."
+    )
+    cpu_l2_cache: Optional[int] = Field(
+        default=None, description="L2 cache size (MiB)."
+    )
+    cpu_l3_cache: Optional[int] = Field(
+        default=None, description="L3 cache size (MiB)."
+    )
+    cpu_flags: List[str] = Field(
+        sa_type=JSON, default=[], description="CPU features/flags."
+    )
     cpus: List[Cpu] = Field(
         default=[],
         sa_type=JSON,
@@ -567,6 +580,16 @@ class ServerFields(
     memory_amount: int = Field(
         default=None,
         description="RAM amount (MiB).",
+    )
+    memory_generation: Optional[DdrGeneration] = Field(
+        default=None, description="Generation of the DDR SDRAM, e.g. DDR4 or DDR5."
+    )
+    memory_speed: Optional[int] = Field(
+        default=None, description="DDR SDRAM clock rate (Mhz)."
+    )
+    memory_ecc: Optional[bool] = Field(
+        default=None,
+        description="If the DDR SDRAM uses error correction code to detect and correct n-bit data corruption.",
     )
     gpu_count: int = Field(
         default=0,
@@ -584,9 +607,13 @@ class ServerFields(
         default=None,
         description="The manufacturer of the primary GPU accelerator, e.g. Nvidia or AMD.",
     )
+    gpu_family: Optional[str] = Field(
+        default=None,
+        description="The product family of the primary GPU accelerator, e.g. Turing.",
+    )
     gpu_model: Optional[str] = Field(
         default=None,
-        description="The model number of the primary GPU accelerator.",
+        description="The model number of the primary GPU accelerator, e.g. Tesla T4.",
     )
     gpus: List[Gpu] = Field(
         default=[],

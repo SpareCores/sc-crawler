@@ -122,6 +122,17 @@ class CpuArchitecture(str, Enum):
     """Apple 64-bit x86 architecture."""
 
 
+class DdrGeneration(str, Enum):
+    """Generation of the DDR SDRAM."""
+
+    DDR3 = "DDR3"
+    """DDR3 SDRAM."""
+    DDR4 = "DDR4"
+    """DDR4 SDRAM."""
+    DDR5 = "DDR5"
+    """DDR5 SDRAM."""
+
+
 class Allocation(str, Enum):
     """Server allocation options."""
 

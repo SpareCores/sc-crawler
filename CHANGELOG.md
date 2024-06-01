@@ -2,7 +2,13 @@
 
 New feature(s):
 
+- Documented benchmark workloads and actual benchmark scores.
+- Many new server fields.
+
+Database migrations:
+
 - Add `benchmark` and `benchmark_score` tables.
+- Add 8 new columns to the `server` table.
 
 ‼ Breaking changes:
 
