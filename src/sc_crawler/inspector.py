@@ -67,6 +67,11 @@ def _server_framework_meta(server: "Server", framework: str) -> dict:
         return json.load(fp)
 
 
+def _server_lscpu(server: "Server") -> dict:
+    with open(_server_framework_path(server, "lscpu", "stdout"), "r") as fp:
+        return json.load(fp)
+
+
 def _observed_at(server: "Server", framework: str) -> dict:
     ts = _server_framework_meta(server, framework)["end"]
     assert ts is not None
@@ -112,7 +117,28 @@ def _log_cannot_load_benchmarks(server, benchmark_id, e, exc_info=False):
 
 
 def inspect_server_benchmarks(server: "Server") -> List[dict]:
+    """Generate a list of BenchmarkScore-like dicts for the Server."""
     benchmarks = []
+
+    framework = "bogomips"
+    try:
+        bogomips = next(
+            (
+                float(item["data"])
+                for item in _server_lscpu(server)["lscpu"]
+                if item["field"] == "BogoMIPS:"
+            )
+        )
+        benchmarks.append(
+            {
+                **_benchmark_metafields(
+                    server, framework="lscpu", benchmark_id=framework
+                ),
+                "score": bogomips,
+            }
+        )
+    except Exception as e:
+        _log_cannot_load_benchmarks(server, framework, e)
 
     framework = "bw_mem"
     try:

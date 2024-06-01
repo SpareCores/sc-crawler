@@ -124,6 +124,13 @@ def _geekbenchmark(name: str, description: str):
 
 benchmarks: List[Benchmark] = [
     Benchmark(
+        benchmark_id="bogomips",
+        name="BogoMips",
+        description='A crude measurement of CPU speed by the Linux kernel. This is NOT usable for performance comparisons among different CPUs, but might be useful to check if a processor is in the range of similar processors. As often quoted, BogoMips measures "the number of million times per second a processor can do absolutely nothing".',
+        framework="bogomips",
+        unit="MIPS",
+    ),
+    Benchmark(
         benchmark_id="bw_mem",
         name="Memory bandwidth",
         description="bw_mem allocates twice the specified amount of memory, zeros it, and then times the copying of the first half to the second half. Results are reported in megabytes moved per second (MB/sec). bw_mem is provided by lmbench. For more details, see the man pages.",
