@@ -287,14 +287,6 @@ class HasServerPK(ScModel):
     )
 
 
-class HasServerPKFK(ScModel):
-    server_id: str = Field(
-        foreign_key="server.server_id",
-        primary_key=True,
-        description="Reference to the Server.",
-    )
-
-
 class HasStoragePK(ScModel):
     storage_id: str = Field(
         primary_key=True,
@@ -726,7 +718,7 @@ class BenchmarkBase(MetaColumns, BenchmarkFields):
     pass
 
 
-class BenchmarkScoreFields(HasBenchmarkPKFK, HasServerPKFK, HasVendorPKFK):
+class BenchmarkScoreFields(HasBenchmarkPKFK, HasServerPK, HasVendorPKFK):
     config: dict = Field(
         default={},
         sa_type=JSON,

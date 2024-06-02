@@ -513,10 +513,7 @@ class BenchmarkScore(BenchmarkScoreBase, table=True):
     __table_args__ = (
         ForeignKeyConstraint(
             ["vendor_id", "server_id"],
-            [
-                "benchmark_score.vendor_id",
-                "benchmark_score.server_id",
-            ],
+            ["server.vendor_id", "server.server_id"],
         ),
     )
     vendor: Vendor = Relationship(back_populates="benchmark_scores")
