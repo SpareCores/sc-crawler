@@ -292,7 +292,7 @@ def _make_server_from_instance_type(instance_type, vendor) -> dict:
         "cpu_speed": cpu_info.get("SustainedClockSpeedInGhz", None),
         "cpu_architecture": cpu_info["SupportedArchitectures"][0],
         "cpu_manufacturer": cpu_info.get("Manufacturer", None),
-        "memory": instance_type["MemoryInfo"]["SizeInMiB"],
+        "memory_amount": instance_type["MemoryInfo"]["SizeInMiB"],
         "gpu_count": gpu_info[0],
         "gpu_memory_min": gpu_info[1],
         "gpu_memory_total": gpu_info[2],

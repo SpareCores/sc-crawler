@@ -16,6 +16,7 @@ from .table_fields import (
     Cpu,
     CpuAllocation,
     CpuArchitecture,
+    DdrGeneration,
     Disk,
     Gpu,
     PriceTier,
@@ -230,6 +231,12 @@ class HasServerIdPK(ScModel):
     )
 
 
+class HasBenchmarkIdPK(ScModel):
+    benchmark_id: str = Field(
+        primary_key=True, description="Unique identifier of a specific Benchmark."
+    )
+
+
 class HasName(ScModel):
     name: str = Field(description="Human-friendly name.")
 
@@ -280,10 +287,26 @@ class HasServerPK(ScModel):
     )
 
 
+class HasServerPKFK(ScModel):
+    server_id: str = Field(
+        foreign_key="server.server_id",
+        primary_key=True,
+        description="Reference to the Server.",
+    )
+
+
 class HasStoragePK(ScModel):
     storage_id: str = Field(
         primary_key=True,
         description="Reference to the Storage.",
+    )
+
+
+class HasBenchmarkPKFK(ScModel):
+    benchmark_id: str = Field(
+        foreign_key="benchmark.benchmark_id",
+        primary_key=True,
+        description="Reference to the Benchmark.",
     )
 
 
@@ -534,6 +557,18 @@ class ServerFields(
         default=None,
         description="The model number of the primary processor, e.g. 9750H.",
     )
+    cpu_l1_cache: Optional[int] = Field(
+        default=None, description="L1 cache size (MiB)."
+    )
+    cpu_l2_cache: Optional[int] = Field(
+        default=None, description="L2 cache size (MiB)."
+    )
+    cpu_l3_cache: Optional[int] = Field(
+        default=None, description="L3 cache size (MiB)."
+    )
+    cpu_flags: List[str] = Field(
+        sa_type=JSON, default=[], description="CPU features/flags."
+    )
     cpus: List[Cpu] = Field(
         default=[],
         sa_type=JSON,
@@ -542,9 +577,19 @@ class ServerFields(
             "L1/L2/L3 cache size; microcode version; feature flags; bugs etc."
         ),
     )
-    memory: int = Field(
+    memory_amount: int = Field(
         default=None,
         description="RAM amount (MiB).",
+    )
+    memory_generation: Optional[DdrGeneration] = Field(
+        default=None, description="Generation of the DDR SDRAM, e.g. DDR4 or DDR5."
+    )
+    memory_speed: Optional[int] = Field(
+        default=None, description="DDR SDRAM clock rate (Mhz)."
+    )
+    memory_ecc: Optional[bool] = Field(
+        default=None,
+        description="If the DDR SDRAM uses error correction code to detect and correct n-bit data corruption.",
     )
     gpu_count: int = Field(
         default=0,
@@ -562,9 +607,13 @@ class ServerFields(
         default=None,
         description="The manufacturer of the primary GPU accelerator, e.g. Nvidia or AMD.",
     )
+    gpu_family: Optional[str] = Field(
+        default=None,
+        description="The product family of the primary GPU accelerator, e.g. Turing.",
+    )
     gpu_model: Optional[str] = Field(
         default=None,
-        description="The model number of the primary GPU accelerator.",
+        description="The model number of the primary GPU accelerator, e.g. Tesla T4.",
     )
     gpus: List[Gpu] = Field(
         default=[],
@@ -647,4 +696,51 @@ class TrafficPriceBase(HasPriceFields, TrafficPriceFields):
 
 
 class Ipv4PriceBase(HasPriceFields, HasDatacenterPK, HasVendorPKFK):
+    pass
+
+
+class BenchmarkFields(HasDescription, HasName, HasBenchmarkIdPK):
+    framework: str = Field(
+        description="The name of the benchmark framework/software/tool used.",
+    )
+    config_fields: dict = Field(
+        default={},
+        sa_type=JSON,
+        description='A dictionary of descriptions on the framework-specific config options, e.g. {"bandwidth": "Memory amount to use for compression in MB."}.',
+    )
+    measurement: Optional[str] = Field(
+        default=None,
+        description="The name of measurement recoreded in the benchmark.",
+    )
+    unit: Optional[str] = Field(
+        default=None,
+        description="Optional unit of measurement for the benchmark score.",
+    )
+    higher_is_better: bool = Field(
+        default=True,
+        description="If higher benchmark score means better performance, or vica versa.",
+    )
+
+
+class BenchmarkBase(MetaColumns, BenchmarkFields):
+    pass
+
+
+class BenchmarkScoreFields(HasBenchmarkPKFK, HasServerPKFK, HasVendorPKFK):
+    config: dict = Field(
+        default={},
+        sa_type=JSON,
+        primary_key=True,
+        description='Dictionary of config parameters of the specific benchmark, e.g. {"bandwidth": 4096}',
+    )
+    score: float = Field(
+        description="The resulting score of the benchmark.",
+    )
+    note: Optional[str] = Field(
+        default=None,
+        description="Optional note, comment or context on the benchmark score.",
+    )
+
+
+class BenchmarkScoreBase(MetaColumns, BenchmarkScoreFields):
     pass

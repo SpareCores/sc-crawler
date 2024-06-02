@@ -10,8 +10,11 @@ from sqlalchemy import ForeignKeyConstraint, update
 from sqlmodel import Relationship, Session, SQLModel
 
 from .insert import insert_items
+from .inspector import inspect_server_benchmarks, inspect_update_server_dict
 from .logger import VendorProgressTracker, log_start_end, logger
 from .table_bases import (
+    BenchmarkBase,
+    BenchmarkScoreBase,
     ComplianceFrameworkBase,
     CountryBase,
     DatacenterBase,
@@ -92,6 +95,9 @@ class Vendor(VendorBase, table=True):
         back_populates="vendor", sa_relationship_kwargs={"viewonly": True}
     )
     storage_prices: List["StoragePrice"] = Relationship(
+        back_populates="vendor", sa_relationship_kwargs={"viewonly": True}
+    )
+    benchmark_scores: List["BenchmarkScore"] = Relationship(
         back_populates="vendor", sa_relationship_kwargs={"viewonly": True}
     )
 
@@ -228,7 +234,23 @@ class Vendor(VendorBase, table=True):
     @log_start_end
     def inventory_servers(self):
         """Get the vendor's all server types."""
-        self._inventory(Server, self._get_methods().inventory_servers)
+        self.set_table_rows_inactive(Server)
+        servers = self._get_methods().inventory_servers(self)
+        for server in servers:
+            server = inspect_update_server_dict(server)
+        insert_items(Server, servers, self)
+        benchmarks = []
+        self.progress_tracker.start_task(
+            name="Searching for benchmark(s)", total=len(self.servers)
+        )
+        for server in self.servers:
+            benchmarks += inspect_server_benchmarks(server)
+            self.progress_tracker.advance_task()
+        self.progress_tracker.hide_task()
+        self.set_table_rows_inactive(
+            BenchmarkScore, BenchmarkScore.vendor_id == self.vendor_id
+        )
+        insert_items(BenchmarkScore, benchmarks, self)
 
     @log_start_end
     def inventory_server_prices(self):
@@ -346,6 +368,9 @@ class Server(ServerBase, table=True):
 
     vendor: Vendor = Relationship(back_populates="servers")
     prices: List["ServerPrice"] = Relationship(
+        back_populates="server", sa_relationship_kwargs={"viewonly": True}
+    )
+    benchmark_scores: List["BenchmarkScore"] = Relationship(
         back_populates="server", sa_relationship_kwargs={"viewonly": True}
     )
 
@@ -472,6 +497,39 @@ class Ipv4Price(Ipv4PriceBase, table=True):
             )
         },
     )
+
+
+class Benchmark(BenchmarkBase, table=True):
+    """Benchmark scenario definitions."""
+
+    benchmark_scores: List["BenchmarkScore"] = Relationship(
+        back_populates="benchmark", sa_relationship_kwargs={"viewonly": True}
+    )
+
+
+class BenchmarkScore(BenchmarkScoreBase, table=True):
+    """Results of running Benchmark scenarios on Servers."""
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["vendor_id", "server_id"],
+            [
+                "benchmark_score.vendor_id",
+                "benchmark_score.server_id",
+            ],
+        ),
+    )
+    vendor: Vendor = Relationship(back_populates="benchmark_scores")
+    server: Server = Relationship(
+        back_populates="benchmark_scores",
+        sa_relationship_kwargs={
+            "primaryjoin": (
+                "and_(Server.server_id == foreign(BenchmarkScore.server_id), "
+                "Vendor.vendor_id == foreign(BenchmarkScore.vendor_id))"
+            )
+        },
+    )
+    benchmark: Benchmark = Relationship(back_populates="benchmark_scores")
 
 
 Country.model_rebuild()

@@ -1,3 +1,19 @@
+## v0.1.4 (June 2, 2024)
+
+New feature(s):
+
+- Documented `benchmark` workloads and actual `benchmark_score` records loaded from `sparecores-inspector-data`.
+- Enriched `server` details loaded from `sparecores-inspector-data`.
+
+Database migrations:
+
+- Add `benchmark` and `benchmark_score` tables.
+- Add 8 new columns to the `server` table.
+
+‼ Breaking changes:
+
+- Renamed the `memory` column to `memory_amount` in the `server` table.
+
 ## v0.1.3 (May 7, 2024)
 
 New feature(s):

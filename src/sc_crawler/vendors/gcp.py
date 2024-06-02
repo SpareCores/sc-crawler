@@ -311,7 +311,7 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
                         skus["cpu"][family][region][allocation.value.lower()][0]
                         * server.vcpus
                         + skus["ram"][family][region][allocation.value.lower()][0]
-                        * server.memory
+                        * server.memory_amount
                         / 1024
                     )
                     currency = skus["cpu"][family][region][allocation.value.lower()][1]
@@ -814,7 +814,7 @@ def inventory_servers(vendor):
                     "cpu_family": None,
                     "cpu_model": None,
                     "cpus": [],
-                    "memory": server.memory_mb,
+                    "memory_amount": server.memory_mb,
                     "gpu_count": (
                         server.accelerators[0].guest_accelerator_count
                         if server.accelerators

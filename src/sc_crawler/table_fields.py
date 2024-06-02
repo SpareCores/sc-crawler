@@ -56,13 +56,25 @@ class Gpu(Json):
     """GPU accelerator details."""
 
     manufacturer: str
-    """The manufacturer of the GPU accelerator, e.g. Nvidia or AMD."""
-    model: str
+    """The manufacturer/brand of the GPU accelerator, e.g. Nvidia or AMD."""
+    family: Optional[str] = None
+    """The model family/architecture of the GPU accelerator."""
+    model: Optional[str] = None
     """The model number of the GPU accelerator."""
     memory: int
     """Memory (MiB) allocated to the GPU accelerator."""
-    firmware: Optional[str] = None
+    firmware_version: Optional[str] = None
     """Firmware version."""
+    bios_version: Optional[str] = None
+    """Video BIOS version."""
+    graphics_clock: Optional[int] = None
+    """GPU core clock speed (Mhz)."""
+    sm_clock: Optional[int] = None
+    """Streaming Multiprocessor clock speed (Mhz)."""
+    mem_clock: Optional[int] = None
+    """Memory clock speed (Mhz)."""
+    video_clock: Optional[int] = None
+    """Video clock speed (Mhz)."""
 
 
 class StorageType(str, Enum):
@@ -120,6 +132,17 @@ class CpuArchitecture(str, Enum):
     """64-bit x86 architecture."""
     X86_64_MAC = "x86_64_mac"
     """Apple 64-bit x86 architecture."""
+
+
+class DdrGeneration(str, Enum):
+    """Generation of the DDR SDRAM."""
+
+    DDR3 = "DDR3"
+    """DDR3 SDRAM."""
+    DDR4 = "DDR4"
+    """DDR4 SDRAM."""
+    DDR5 = "DDR5"
+    """DDR5 SDRAM."""
 
 
 class Allocation(str, Enum):
