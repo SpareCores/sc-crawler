@@ -1,9 +1,9 @@
-## v0.1.4 (May 31, 2024)
+## v0.1.4 (June 2, 2024)
 
 New feature(s):
 
-- Documented benchmark workloads and actual benchmark scores.
-- Many new server fields.
+- Documented `benchmark` workloads and actual `benchmark_score` records loaded from `sparecores-inspector-data`.
+- Enriched `server` details loaded from `sparecores-inspector-data`.
 
 Database migrations:
 
