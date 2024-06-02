@@ -1,3 +1,10 @@
+## v0.2.0 (June 4, 2024)
+
+Database migrations:
+
+- Named all constraints for easier management in the future.
+
+
 ## v0.1.4 (June 2, 2024)
 
 New feature(s):
@@ -9,10 +16,15 @@ Database migrations:
 
 - Add `benchmark` and `benchmark_score` tables.
 - Add 8 new columns to the `server` table.
+- Rename `datacenter` table to `region` and `datacenter_id` column to `region_id` in the ... TODO.
 
 ‼ Breaking changes:
 
+- Renamed Datacenter to Region in all tables and across the codebase.
 - Renamed the `memory` column to `memory_amount` in the `server` table.
+
+# TODO
+- Renamed `Datacenter` to `Region` and all related entries (e.g. `datacenter_id` to `region_id`).
 
 ## v0.1.3 (May 7, 2024)
 
