@@ -598,8 +598,8 @@ def pull(
                 vendor.progress_tracker.start_vendor(total=len(records))
                 if Records.compliance_frameworks in records:
                     vendor.inventory_compliance_frameworks()
-                if Records.datacenters in records:
-                    vendor.inventory_datacenters()
+                if Records.regions in records:
+                    vendor.inventory_regions()
                 if Records.zones in records:
                     vendor.inventory_zones()
                 if Records.servers in records:

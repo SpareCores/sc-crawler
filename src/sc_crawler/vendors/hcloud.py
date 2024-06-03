@@ -65,26 +65,26 @@ def inventory_compliance_frameworks(vendor):
     return map_compliance_frameworks_to_vendor(vendor.vendor_id, ["iso27001"])
 
 
-def inventory_datacenters(vendor):
-    """List all datacenters via API call.
+def inventory_regions(vendor):
+    """List all regions via API call.
 
-    Hetzner Cloud uses integers for the datacenter id that we
-    convert into string. Best to use the unique `name`, which
-    can be also passed instead of the `id` in most `hcloud`
-    API endpoints via the `id_or_name` method.
+    Hetzner Cloud uses integers for the region (virtual datacenter) id
+    that we convert into string. Best to use the unique `name`, which
+    can be also passed instead of the `id` in most `hcloud` API
+    endpoints via the `id_or_name` method.
 
     Not taking the Hetzner unique `name` as id, as it's not
     stated to be unique for other resources, and uniqueness
     for servers might also change in the future.
 
-    All datacenters are powered by green energy as per
+    All regions are powered by green energy as per
     <https://www.hetzner.com/unternehmen/umweltschutz/>.
 
     Lon/lat coordinates were collected by searching for Hetzner
-    locations in the Datacenter's city.
+    locations in the Region's city.
 
     """
-    datacenters = {
+    regions = {
         "2": {  # Nuremberg
             "lat": 49.4498349,
             "lon": 11.0128772,
@@ -108,25 +108,25 @@ def inventory_datacenters(vendor):
     }
 
     items = []
-    for datacenter in _client().datacenters.get_all():
+    for region in _client().datacenters.get_all():
         items.append(
             {
                 "vendor_id": vendor.vendor_id,
-                "datacenter_id": str(datacenter.id),
-                "name": datacenter.name,
-                "api_reference": datacenter.name,
+                "region_id": str(region.id),
+                "name": region.name,
+                "api_reference": region.name,
                 "display_name": (
-                    datacenter.location.city + f" ({datacenter.location.country})"
+                    region.location.city + f" ({region.location.country})"
                 ),
-                # TODO add datacenter.description
-                "aliases": [datacenter.location.name],
-                "country_id": datacenter.location.country,
+                # TODO add region.description
+                "aliases": [region.location.name],
+                "country_id": region.location.country,
                 "state": None,
-                "city": datacenter.location.city,
+                "city": region.location.city,
                 "address_line": None,
                 "zip_code": None,
-                "lat": datacenters[str(datacenter.id)]["lat"],
-                "lon": datacenters[str(datacenter.id)]["lon"],
+                "lat": regions[str(region.id)]["lat"],
+                "lon": regions[str(region.id)]["lon"],
                 "founding_year": None,
                 "green_energy": True,
             }
@@ -135,22 +135,23 @@ def inventory_datacenters(vendor):
 
 
 def inventory_zones(vendor):
-    """List all datacenters as availability zones.
+    """List all regions as availability zones.
 
     There is no concept of having multiple availability zones withing
-    a datacenter at Hetzner Cloud, so creating 1-1 dummy Zones reusing
-    the Datacenter id and name.
+    a region (virtual datacenter) at Hetzner Cloud, so creating 1-1
+    dummy Zones reusing the Region id and name.
+
     """
     items = []
-    for datacenter in vendor.datacenters:
+    for region in vendor.regions:
         items.append(
             {
                 "vendor_id": vendor.vendor_id,
-                "datacenter_id": datacenter.datacenter_id,
-                "zone_id": datacenter.datacenter_id,
-                "name": datacenter.name,
-                "api_reference": datacenter.name,
-                "display_name": datacenter.name,
+                "region_id": region.region_id,
+                "zone_id": region.region_id,
+                "name": region.name,
+                "api_reference": region.name,
+                "display_name": region.name,
             }
         )
     return items
@@ -218,17 +219,17 @@ def inventory_servers(vendor):
 
 
 def inventory_server_prices(vendor):
-    datacenters = scmodels_to_dict(vendor.datacenters, keys=["name", "aliases"])
+    regions = scmodels_to_dict(vendor.regions, keys=["name", "aliases"])
     items = []
     for server in _client().server_types.get_all():
         for location in server.prices:
-            datacenter_id = datacenters[location["location"]].datacenter_id
+            region_id = regions[location["location"]].region_id
             items.append(
                 {
                     "vendor_id": vendor.vendor_id,
-                    "datacenter_id": datacenter_id,
-                    # zone_id is a dummy datacenter_id as there are no zones at Hetzner
-                    "zone_id": datacenter_id,
+                    "region_id": region_id,
+                    # zone_id is a dummy region_id as there are no zones at Hetzner
+                    "zone_id": region_id,
                     "server_id": str(server.id),
                     "operating_system": "Linux",
                     "allocation": Allocation.ONDEMAND,
@@ -278,11 +279,11 @@ def inventory_storage_prices(vendor):
     Source: <https://www.hetzner.com/cloud/>
     """
     items = []
-    for datacenter in vendor.datacenters:
+    for region in vendor.regions:
         items.append(
             {
                 "vendor_id": vendor.vendor_id,
-                "datacenter_id": datacenter.datacenter_id,
+                "region_id": region.region_id,
                 "storage_id": "block",
                 "unit": PriceUnit.GB_MONTH,
                 "price": 0.0440,
@@ -298,11 +299,11 @@ def inventory_traffic_prices(vendor):
     Source: <https://docs.hetzner.com/robot/general/traffic/>
     """
     items = []
-    for datacenter in vendor.datacenters:
+    for region in vendor.regions:
         items.append(
             {
                 "vendor_id": vendor.vendor_id,
-                "datacenter_id": datacenter.datacenter_id,
+                "region_id": region.region_id,
                 "price": 0,
                 "price_tiered": [],
                 "currency": "EUR",
@@ -313,7 +314,7 @@ def inventory_traffic_prices(vendor):
         items.append(
             {
                 "vendor_id": vendor.vendor_id,
-                "datacenter_id": datacenter.datacenter_id,
+                "region_id": region.region_id,
                 "price": round(1 / 1024, 8),
                 "price_tiered": [],
                 "currency": "EUR",
@@ -330,11 +331,11 @@ def inventory_ipv4_prices(vendor):
     Source: <https://docs.hetzner.com/general/others/ipv4-pricing/#cloud>
     """
     items = []
-    for datacenter in vendor.datacenters:
+    for region in vendor.regions:
         items.append(
             {
                 "vendor_id": vendor.vendor_id,
-                "datacenter_id": datacenter.datacenter_id,
+                "region_id": region.region_id,
                 "price": 0.50,
                 "currency": "EUR",
                 "unit": PriceUnit.MONTH,
