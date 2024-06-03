@@ -740,7 +740,9 @@ class BenchmarkScoreFields(HasBenchmarkPKFK, HasServerPK, HasVendorPKFK):
         values["config"] = HashableDict(values.get("config", {}))
         return values
 
-    config: HashableDict = Field(
+    # use HashableDict as it's a primary key that needs to be hashable, but
+    # fall back to dict to avoid PydanticInvalidForJsonSchema
+    config: HashableDict | dict = Field(
         default={},
         sa_type=HashableJSON,
         primary_key=True,
