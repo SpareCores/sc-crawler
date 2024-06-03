@@ -14,7 +14,7 @@ class HashableDict(dict):
 
     Useful for typehinting dict-type table columns that are primary
     keys (which need to be hashable for SQLAlchemy ORM). See
-    [][HashableDict] class for the related `sa_type`.
+    [sc_crawler.table_fields.HashableJSON][] class for the related `sa_type`.
     """
 
     def __hash__(self):

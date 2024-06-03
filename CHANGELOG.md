@@ -29,9 +29,6 @@ Database migrations:
 
 - Renamed the `memory` column to `memory_amount` in the `server` table.
 
-# TODO
-- Renamed `Datacenter` to `Region` and all related entries (e.g. `datacenter_id` to `region_id`).
-
 ## v0.1.3 (May 7, 2024)
 
 New feature(s):
