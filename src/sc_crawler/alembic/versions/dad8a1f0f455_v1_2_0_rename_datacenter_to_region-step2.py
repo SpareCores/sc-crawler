@@ -472,11 +472,30 @@ ipv4_price_table = sa.Table(
 
 
 def upgrade() -> None:
-    """Recreate tables referencing datacenters without PK/FK
-    constraints, then rename the datacenter table, all datacenter_id
-    columns, and add back the constraints for these tables.
-    """
-    # add back constraints
+    """Adding back the constraints for the tables recreated in step1."""
+    with op.batch_alter_table(
+        scdize_suffix("region"),
+        schema=None,
+        copy_from=region_table,
+        recreate="always",
+    ) as batch_op:
+        batch_op.create_primary_key(
+            op.f(scdize_suffix("pk_region")),
+            scdize_pk_observed_at(["vendor_id", "region_id"]),
+        )
+        batch_op.create_foreign_key(
+            op.f(scdize_suffix(f"fk_{scdize_suffix('region')}_country_id_country")),
+            "country",
+            ["country_id"],
+            ["country_id"],
+        )
+        batch_op.create_foreign_key(
+            op.f(scdize_suffix(f"fk_{scdize_suffix('region')}_vendor_id_vendor")),
+            "vendor",
+            ["vendor_id"],
+            ["vendor_id"],
+        )
+
     with op.batch_alter_table(scdize_suffix("zone"), copy_from=zone_table) as batch_op:
         batch_op.create_primary_key(
             op.f(scdize_suffix("pk_zone")),
@@ -619,5 +638,31 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # TODO
-    pass
+    """Actually downgrading step 1."""
+    with op.batch_alter_table(scdize_suffix("zone"), copy_from=zone_table) as batch_op:
+        batch_op.alter_column(new_column_name="datacenter_id", column_name="region_id")
+    with op.batch_alter_table(
+        scdize_suffix("storage_price"), copy_from=storage_price_table
+    ) as batch_op:
+        batch_op.alter_column(new_column_name="datacenter_id", column_name="region_id")
+    with op.batch_alter_table(
+        scdize_suffix("server_price"), copy_from=server_price_table
+    ) as batch_op:
+        batch_op.alter_column(new_column_name="datacenter_id", column_name="region_id")
+    with op.batch_alter_table(
+        scdize_suffix("traffic_price"), copy_from=traffic_price_table
+    ) as batch_op:
+        batch_op.alter_column(new_column_name="datacenter_id", column_name="region_id")
+    with op.batch_alter_table(
+        scdize_suffix("ipv4_price"), copy_from=ipv4_price_table
+    ) as batch_op:
+        batch_op.alter_column(new_column_name="datacenter_id", column_name="region_id")
+
+    with op.batch_alter_table(
+        scdize_suffix("region"),
+        schema=None,
+        copy_from=region_table,
+        recreate="always",
+    ) as batch_op:
+        batch_op.alter_column(new_column_name="datacenter_id", column_name="region_id")
+    op.rename_table(scdize_suffix("region"), scdize_suffix("datacenter"))
