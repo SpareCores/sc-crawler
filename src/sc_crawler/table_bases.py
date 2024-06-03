@@ -5,7 +5,7 @@ from hashlib import sha1
 from json import dumps
 from typing import List, Optional, Union
 
-from pydantic import ConfigDict, root_validator
+from pydantic import ConfigDict, model_validator
 from rich.progress import Progress
 from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import declared_attr
@@ -734,7 +734,7 @@ class BenchmarkBase(MetaColumns, BenchmarkFields):
 class BenchmarkScoreFields(HasBenchmarkPKFK, HasServerPK, HasVendorPKFK):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    @root_validator(pre=True)
+    @model_validator(mode="before")
     def update_config_to_hashable(cls, values):
         """We need a hashable column for the primary key."""
         values["config"] = HashableDict(values.get("config", {}))
