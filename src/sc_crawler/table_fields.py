@@ -1,9 +1,27 @@
 """Enumerations, JSON nested data objects & other helper classes used in [sc_crawler.tables][]."""
 
 from enum import Enum
-from typing import List, Optional, Union
+from json import dumps
+from typing import Any, List, Optional, Union
 
 from pydantic import BaseModel
+from sqlalchemy.types import TypeDecorator
+from sqlmodel import JSON
+
+
+class HashableDict(dict):
+    def __hash__(self):
+        return hash(dumps(self, sort_keys=True))
+
+
+class HashableJSON(TypeDecorator):
+    impl = JSON
+
+    def process_result_value(self, value: str, dialect: Any) -> Any:
+        if value is None:
+            return None
+        # return HashableDict(loads(value))
+        return HashableDict(value)
 
 
 class Json(BaseModel):

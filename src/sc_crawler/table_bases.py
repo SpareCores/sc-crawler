@@ -5,6 +5,7 @@ from hashlib import sha1
 from json import dumps
 from typing import List, Optional, Union
 
+from pydantic import ConfigDict, root_validator
 from rich.progress import Progress
 from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import declared_attr
@@ -19,6 +20,8 @@ from .table_fields import (
     DdrGeneration,
     Disk,
     Gpu,
+    HashableDict,
+    HashableJSON,
     PriceTier,
     PriceUnit,
     Status,
@@ -729,9 +732,17 @@ class BenchmarkBase(MetaColumns, BenchmarkFields):
 
 
 class BenchmarkScoreFields(HasBenchmarkPKFK, HasServerPK, HasVendorPKFK):
-    config: dict = Field(
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    @root_validator(pre=True)
+    def update_config_to_hashable(cls, values):
+        """We need a hashable column for the primary key."""
+        values["config"] = HashableDict(values.get("config", {}))
+        return values
+
+    config: HashableDict = Field(
         default={},
-        sa_type=JSON,
+        sa_type=HashableJSON,
         primary_key=True,
         description='Dictionary of config parameters of the specific benchmark, e.g. {"bandwidth": 4096}',
     )

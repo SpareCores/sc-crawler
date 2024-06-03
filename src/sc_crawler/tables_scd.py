@@ -8,8 +8,8 @@ from sqlmodel import Field, SQLModel
 from .table_bases import (
     ComplianceFrameworkBase,
     CountryBase,
-    RegionBase,
     Ipv4PriceBase,
+    RegionBase,
     ScModel,
     ServerBase,
     ServerPriceBase,
