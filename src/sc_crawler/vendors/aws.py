@@ -25,7 +25,7 @@ from ..table_fields import (
     TrafficDirection,
 )
 from ..tables import (
-    Datacenter,
+    Region,
     Vendor,
 )
 from ..utils import float_inf_to_str, jsoned_hash, scmodels_to_dict
@@ -380,8 +380,8 @@ def inventory_compliance_frameworks(vendor):
     )
 
 
-def inventory_datacenters(vendor):
-    """List all available AWS datacenters via `boto3` calls.
+def inventory_regions(vendor):
+    """List all available AWS regions via `boto3` calls.
 
     Some data sources are not available from APIs, and were collected manually:
 
@@ -389,9 +389,9 @@ def inventory_datacenters(vendor):
     - energy source: <https://sustainability.aboutamazon.com/products-services/the-cloud?energyType=true#renewable-energy>,
     - lon/lat coordinates: <https://gist.github.com/martinheidegger/88950cb51ee5bdeafd51bc55287b1092> and approximation based on the city when no more accurate data was available.
     """  # noqa: E501
-    datacenters = [
+    regions = [
         {
-            "datacenter_id": "af-south-1",
+            "region_id": "af-south-1",
             "name": "Africa (Cape Town)",
             "vendor_id": vendor.vendor_id,
             "country_id": "ZA",
@@ -402,7 +402,7 @@ def inventory_datacenters(vendor):
             "lon": 18.3758801,
         },
         {
-            "datacenter_id": "ap-east-1",
+            "region_id": "ap-east-1",
             "name": "Asia Pacific (Hong Kong)",
             "vendor_id": vendor.vendor_id,
             "country_id": "HK",
@@ -413,7 +413,7 @@ def inventory_datacenters(vendor):
             "lon": 114.2723379,
         },
         {
-            "datacenter_id": "ap-northeast-1",
+            "region_id": "ap-northeast-1",
             "name": "Asia Pacific (Tokyo)",
             "vendor_id": vendor.vendor_id,
             "country_id": "JP",
@@ -424,7 +424,7 @@ def inventory_datacenters(vendor):
             "lon": 139.7459176,
         },
         {
-            "datacenter_id": "ap-northeast-2",
+            "region_id": "ap-northeast-2",
             "name": "Asia Pacific (Seoul)",
             "vendor_id": vendor.vendor_id,
             "country_id": "KR",
@@ -435,7 +435,7 @@ def inventory_datacenters(vendor):
             "lon": 126.8736237,
         },
         {
-            "datacenter_id": "ap-northeast-3",
+            "region_id": "ap-northeast-3",
             "name": "Asia Pacific (Osaka)",
             "vendor_id": vendor.vendor_id,
             "country_id": "JP",
@@ -446,7 +446,7 @@ def inventory_datacenters(vendor):
             "lon": 135.502222,
         },
         {
-            "datacenter_id": "ap-south-1",
+            "region_id": "ap-south-1",
             "name": "Asia Pacific (Mumbai)",
             "vendor_id": vendor.vendor_id,
             "country_id": "IN",
@@ -457,7 +457,7 @@ def inventory_datacenters(vendor):
             "lon": 72.9667878,
         },
         {
-            "datacenter_id": "ap-south-2",
+            "region_id": "ap-south-2",
             "name": "Asia Pacific (Hyderabad)",
             "vendor_id": vendor.vendor_id,
             "country_id": "IN",
@@ -469,7 +469,7 @@ def inventory_datacenters(vendor):
             "lon": 78.243237,
         },
         {
-            "datacenter_id": "ap-southeast-1",
+            "region_id": "ap-southeast-1",
             "name": "Asia Pacific (Singapore)",
             "vendor_id": vendor.vendor_id,
             "country_id": "SG",
@@ -480,7 +480,7 @@ def inventory_datacenters(vendor):
             "lon": 103.6930643,
         },
         {
-            "datacenter_id": "ap-southeast-2",
+            "region_id": "ap-southeast-2",
             "name": "Asia Pacific (Sydney)",
             "vendor_id": vendor.vendor_id,
             "country_id": "AU",
@@ -491,7 +491,7 @@ def inventory_datacenters(vendor):
             "lon": 151.1907535,
         },
         {
-            "datacenter_id": "ap-southeast-3",
+            "region_id": "ap-southeast-3",
             "name": "Asia Pacific (Jakarta)",
             "vendor_id": vendor.vendor_id,
             "country_id": "ID",
@@ -502,7 +502,7 @@ def inventory_datacenters(vendor):
             "lon": 106.816667,
         },
         {
-            "datacenter_id": "ap-southeast-4",
+            "region_id": "ap-southeast-4",
             "name": "Asia Pacific (Melbourne)",
             "vendor_id": vendor.vendor_id,
             "country_id": "AU",
@@ -514,7 +514,7 @@ def inventory_datacenters(vendor):
             "lon": 144.7119569,
         },
         {
-            "datacenter_id": "ca-central-1",
+            "region_id": "ca-central-1",
             "name": "Canada (Central)",
             "vendor_id": vendor.vendor_id,
             "country_id": "CA",
@@ -525,7 +525,7 @@ def inventory_datacenters(vendor):
             "lon": -73.6,
         },
         {
-            "datacenter_id": "ca-west-1",
+            "region_id": "ca-west-1",
             "name": "Canada West (Calgary)",
             "vendor_id": vendor.vendor_id,
             "country_id": "CA",
@@ -537,7 +537,7 @@ def inventory_datacenters(vendor):
             "lon": 144.7119569,
         },
         {
-            "datacenter_id": "cn-north-1",
+            "region_id": "cn-north-1",
             "name": "China (Beijing)",
             "vendor_id": vendor.vendor_id,
             "country_id": "CN",
@@ -548,7 +548,7 @@ def inventory_datacenters(vendor):
             "lon": 116.5783234,
         },
         {
-            "datacenter_id": "cn-northwest-1",
+            "region_id": "cn-northwest-1",
             "name": "China (Ningxia)",
             "vendor_id": vendor.vendor_id,
             "country_id": "CN",
@@ -559,7 +559,7 @@ def inventory_datacenters(vendor):
             "lon": 105.1627193,
         },
         {
-            "datacenter_id": "eu-central-1",
+            "region_id": "eu-central-1",
             "name": "Europe (Frankfurt)",
             "aliases": ["EU (Frankfurt)"],
             "vendor_id": vendor.vendor_id,
@@ -571,7 +571,7 @@ def inventory_datacenters(vendor):
             "lon": 8.6303932,
         },
         {
-            "datacenter_id": "eu-central-2",
+            "region_id": "eu-central-2",
             "name": "Europe (Zurich)",
             "vendor_id": vendor.vendor_id,
             "country_id": "CH",
@@ -583,7 +583,7 @@ def inventory_datacenters(vendor):
             "lon": 8.4448814,
         },
         {
-            "datacenter_id": "eu-north-1",
+            "region_id": "eu-north-1",
             "name": "Europe (Stockholm)",
             "aliases": ["EU (Stockholm)"],
             "vendor_id": vendor.vendor_id,
@@ -595,7 +595,7 @@ def inventory_datacenters(vendor):
             "lon": 17.8419717,
         },
         {
-            "datacenter_id": "eu-south-1",
+            "region_id": "eu-south-1",
             "name": "Europe (Milan)",
             "aliases": ["EU (Milan)"],
             "vendor_id": vendor.vendor_id,
@@ -607,7 +607,7 @@ def inventory_datacenters(vendor):
             "lon": 9.1076927,
         },
         {
-            "datacenter_id": "eu-south-2",
+            "region_id": "eu-south-2",
             "name": "Europe (Spain)",
             "vendor_id": vendor.vendor_id,
             "country_id": "ES",
@@ -619,7 +619,7 @@ def inventory_datacenters(vendor):
             "lon": -0.8516735,
         },
         {
-            "datacenter_id": "eu-west-1",
+            "region_id": "eu-west-1",
             "name": "Europe (Ireland)",
             "aliases": ["EU (Ireland)"],
             "vendor_id": vendor.vendor_id,
@@ -631,7 +631,7 @@ def inventory_datacenters(vendor):
             "lon": -6.224503,
         },
         {
-            "datacenter_id": "eu-west-2",
+            "region_id": "eu-west-2",
             "name": "Europe (London)",
             "aliases": ["EU (London)"],
             "vendor_id": vendor.vendor_id,
@@ -643,7 +643,7 @@ def inventory_datacenters(vendor):
             "lon": -0.0609266,
         },
         {
-            "datacenter_id": "eu-west-3",
+            "region_id": "eu-west-3",
             "name": "Europe (Paris)",
             "aliases": ["EU (Paris)"],
             "vendor_id": vendor.vendor_id,
@@ -655,7 +655,7 @@ def inventory_datacenters(vendor):
             "lon": 2.2976644,
         },
         {
-            "datacenter_id": "il-central-1",
+            "region_id": "il-central-1",
             "name": "Israel (Tel Aviv)",
             "vendor_id": vendor.vendor_id,
             "country_id": "IL",
@@ -667,7 +667,7 @@ def inventory_datacenters(vendor):
             "lon": 34.7891105,
         },
         {
-            "datacenter_id": "me-central-1",
+            "region_id": "me-central-1",
             "name": "Middle East (UAE)",
             "vendor_id": vendor.vendor_id,
             "country_id": "AE",
@@ -680,7 +680,7 @@ def inventory_datacenters(vendor):
             "lon": 55.1363688,
         },
         {
-            "datacenter_id": "me-south-1",
+            "region_id": "me-south-1",
             "name": "Middle East (Bahrain)",
             "vendor_id": vendor.vendor_id,
             "country_id": "BH",
@@ -692,7 +692,7 @@ def inventory_datacenters(vendor):
             "lon": 50.3073907,
         },
         {
-            "datacenter_id": "sa-east-1",
+            "region_id": "sa-east-1",
             "name": "South America (Sao Paulo)",
             "vendor_id": vendor.vendor_id,
             "country_id": "BR",
@@ -703,7 +703,7 @@ def inventory_datacenters(vendor):
             "lon": -46.8105593,
         },
         {
-            "datacenter_id": "us-east-1",
+            "region_id": "us-east-1",
             "name": "US East (N. Virginia)",
             "vendor_id": vendor.vendor_id,
             "country_id": "US",
@@ -715,7 +715,7 @@ def inventory_datacenters(vendor):
             "lon": -77.4524237,
         },
         {
-            "datacenter_id": "us-east-2",
+            "region_id": "us-east-2",
             "name": "US East (Ohio)",
             "vendor_id": vendor.vendor_id,
             "country_id": "US",
@@ -727,7 +727,7 @@ def inventory_datacenters(vendor):
             "lon": -82.7541337,
         },
         {
-            "datacenter_id": "us-west-1",
+            "region_id": "us-west-1",
             "name": "US West (N. California)",
             "vendor_id": vendor.vendor_id,
             "country_id": "US",
@@ -739,7 +739,7 @@ def inventory_datacenters(vendor):
             "lon": -122.153664,
         },
         {
-            "datacenter_id": "us-west-2",
+            "region_id": "us-west-2",
             "name": "US West (Oregon)",
             "vendor_id": vendor.vendor_id,
             "country_id": "US",
@@ -753,52 +753,50 @@ def inventory_datacenters(vendor):
     ]
 
     # add API reference and display names
-    for datacenter in datacenters:
-        datacenter["api_reference"] = datacenter["datacenter_id"]
-        if datacenter.get("display_name") is None:
-            display_name_prefix = datacenter.get("city", datacenter.get("state", ""))
-            datacenter["display_name"] = (
-                f"{display_name_prefix} ({datacenter['country_id']})"
-            )
+    for region in regions:
+        region["api_reference"] = region["region_id"]
+        if region.get("display_name") is None:
+            display_name_prefix = region.get("city", region.get("state", ""))
+            region["display_name"] = f"{display_name_prefix} ({region['country_id']})"
 
     # look for undocumented (new) regions in AWS
-    supported_regions = [d["datacenter_id"] for d in datacenters]
-    regions = _boto_describe_regions()
-    for region in regions:
-        region_name = region["RegionName"]
+    supported_regions = [d["region_id"] for d in regions]
+    available_regions = _boto_describe_regions()
+    for available_region in available_regions:
+        region_name = available_region["RegionName"]
         if "gov" in region_name:
             next()
         if region_name not in supported_regions:
-            raise NotImplementedError(f"Unsupported AWS datacenter: {region_name}")
+            raise NotImplementedError(f"Unsupported AWS region: {region_name}")
 
     # mark inactive regions
-    active_regions = [region["RegionName"] for region in regions]
-    for datacenter in datacenters:
-        if datacenter["datacenter_id"] in active_regions:
-            datacenter["status"] = "active"
+    active_regions = [region["RegionName"] for region in available_regions]
+    for region in regions:
+        if region["region_id"] in active_regions:
+            region["status"] = "active"
         else:
-            datacenter["status"] = "inactive"
+            region["status"] = "inactive"
 
-    return datacenters
+    return regions
 
 
 def inventory_zones(vendor):
     """List all available AWS availability zones via `boto3` calls."""
     vendor.progress_tracker.start_task(
-        name="Scanning datacenter(s) for zone(s)", total=len(vendor.datacenters)
+        name="Scanning region(s) for zone(s)", total=len(vendor.regions)
     )
 
-    def get_zones(datacenter: Datacenter, vendor: Vendor) -> List[dict]:
+    def get_zones(region: Region, vendor: Vendor) -> List[dict]:
         new = []
-        if datacenter.status == "active":
-            for zone in _boto_describe_availability_zones(datacenter.datacenter_id):
+        if region.status == "active":
+            for zone in _boto_describe_availability_zones(region.region_id):
                 new.append(
                     {
                         "zone_id": zone["ZoneId"],
                         "name": zone["ZoneName"],
                         "api_reference": zone["ZoneName"],
                         "display_name": zone["ZoneName"],
-                        "datacenter_id": datacenter.datacenter_id,
+                        "region_id": region.region_id,
                         "vendor_id": vendor.vendor_id,
                     }
                 )
@@ -806,7 +804,7 @@ def inventory_zones(vendor):
         return new
 
     with ThreadPoolExecutor(max_workers=8) as executor:
-        zones = executor.map(get_zones, vendor.datacenters, repeat(vendor))
+        zones = executor.map(get_zones, vendor.regions, repeat(vendor))
     zones = list(chain.from_iterable(zones))
     vendor.progress_tracker.hide_task()
     return zones
@@ -814,30 +812,31 @@ def inventory_zones(vendor):
 
 def inventory_servers(vendor):
     """List all available AWS instance types in all regions via `boto3` calls."""
-    # TODO drop this in favor of pricing.get_products, as it has info e.g. on instanceFamily
-    #      although other fields are messier (e.g. extract memory from string)
+    # TODO consider dropping this in favor of pricing.get_products, as
+    #      it has info e.g. on instanceFamily although other fields
+    #      are messier (e.g. extract memory from string)
     vendor.progress_tracker.start_task(
-        name="Scanning datacenter(s) for server(s)", total=len(vendor.datacenters)
+        name="Scanning region(s) for server(s)", total=len(vendor.regions)
     )
 
-    def search_servers(datacenter: Datacenter, vendor: Optional[Vendor]) -> List[dict]:
+    def search_servers(region: Region, vendor: Optional[Vendor]) -> List[dict]:
         instance_types = []
-        if datacenter.status == "active":
-            instance_types = _boto_describe_instance_types(datacenter.datacenter_id)
+        if region.status == "active":
+            instance_types = _boto_describe_instance_types(region.region_id)
             if vendor:
                 vendor.log(
-                    f"{len(instance_types)} server(s) found in {datacenter.datacenter_id}."
+                    f"{len(instance_types)} server(s) found in {region.region_id}."
                 )
         if vendor:
             vendor.progress_tracker.advance_task()
         return instance_types
 
     with ThreadPoolExecutor(max_workers=8) as executor:
-        products = executor.map(search_servers, vendor.datacenters, repeat(vendor))
+        products = executor.map(search_servers, vendor.regions, repeat(vendor))
     instance_types = list(chain.from_iterable(products))
 
     vendor.log(
-        f"{len(instance_types)} server(s) found in {len(vendor.datacenters)} regions."
+        f"{len(instance_types)} server(s) found in {len(vendor.regions)} regions."
     )
     instance_types = list({p["InstanceType"]: p for p in instance_types}.values())
     vendor.log(f"{len(instance_types)} unique server(s) found.")
@@ -877,7 +876,7 @@ def inventory_server_prices(vendor):
     vendor.progress_tracker.hide_task()
 
     # lookup tables
-    datacenters = scmodels_to_dict(vendor.datacenters, keys=["name", "aliases"])
+    regions = scmodels_to_dict(vendor.regions, keys=["name", "aliases"])
     servers = scmodels_to_dict(vendor.servers, keys=["server_id"])
 
     server_prices = []
@@ -890,14 +889,14 @@ def inventory_server_prices(vendor):
             # early drop Gov regions
             if "GovCloud" in attributes["location"]:
                 continue
-            datacenter = datacenters[attributes["location"]]
+            region = regions[attributes["location"]]
             server = servers[attributes["instanceType"]]
             price = _extract_ondemand_price(product["terms"])
-            for zone in datacenter.zones:
+            for zone in region.zones:
                 server_prices.append(
                     {
                         "vendor_id": vendor.vendor_id,
-                        "datacenter_id": datacenter.datacenter_id,
+                        "region_id": region.region_id,
                         "zone_id": zone.zone_id,
                         "server_id": server.server_id,
                         # TODO ingest other OSs
@@ -922,27 +921,27 @@ def inventory_server_prices(vendor):
 def inventory_server_prices_spot(vendor):
     """List all spot instance prices in all availability zones via `boto3` calls."""
     vendor.progress_tracker.start_task(
-        name="Scanning datacenters for spot server_price(s)",
-        total=len(vendor.datacenters),
+        name="Scanning regions for spot server_price(s)",
+        total=len(vendor.regions),
     )
 
-    def get_spot_prices(datacenter: Datacenter, vendor: Vendor) -> List[dict]:
+    def get_spot_prices(region: Region, vendor: Vendor) -> List[dict]:
         new = []
-        if datacenter.status == "active":
+        if region.status == "active":
             try:
-                new = _describe_spot_price_history(datacenter.datacenter_id)
+                new = _describe_spot_price_history(region.region_id)
                 vendor.log(
-                    f"{len(new)} spot server_price(s) found in {datacenter.datacenter_id}."
+                    f"{len(new)} spot server_price(s) found in {region.region_id}."
                 )
             except ClientError as e:
                 vendor.log(
-                    f"Cannot get spot server_price in {datacenter.datacenter_id}: {str(e)}"
+                    f"Cannot get spot server_price in {region.region_id}: {str(e)}"
                 )
         vendor.progress_tracker.advance_task()
         return new
 
     with ThreadPoolExecutor(max_workers=8) as executor:
-        products = executor.map(get_spot_prices, vendor.datacenters, repeat(vendor))
+        products = executor.map(get_spot_prices, vendor.regions, repeat(vendor))
     products = list(chain.from_iterable(products))
     vendor.log(f"{len(products)} spot server_price(s) found.")
     vendor.progress_tracker.hide_task()
@@ -968,7 +967,7 @@ def inventory_server_prices_spot(vendor):
         server_prices.append(
             {
                 "vendor_id": vendor.vendor_id,
-                "datacenter_id": zone.datacenter.datacenter_id,
+                "region_id": zone.region.region_id,
                 "zone_id": zone.zone_id,
                 "server_id": server.server_id,
                 # TODO ingest other OSs
@@ -1100,7 +1099,7 @@ def inventory_storage_prices(vendor):
     vendor.log(f"Found {len(products)} storage_price(s).")
 
     # lookup tables
-    datacenters = scmodels_to_dict(vendor.datacenters, keys=["name", "aliases"])
+    regions = scmodels_to_dict(vendor.regions, keys=["name", "aliases"])
 
     vendor.progress_tracker.start_task(
         name="Preprocessing storage_price(s)", total=len(products)
@@ -1109,12 +1108,12 @@ def inventory_storage_prices(vendor):
     for product in products:
         try:
             attributes = product["product"]["attributes"]
-            datacenter = datacenters[attributes["location"]]
+            region = regions[attributes["location"]]
             price = _extract_ondemand_price(product["terms"])
             prices.append(
                 {
                     "vendor_id": vendor.vendor_id,
-                    "datacenter_id": datacenter.datacenter_id,
+                    "region_id": region.region_id,
                     "storage_id": attributes["volumeApiName"],
                     "unit": PriceUnit.GB_MONTH,
                     "price": price[0],
@@ -1132,7 +1131,7 @@ def inventory_storage_prices(vendor):
 
 def inventory_traffic_prices(vendor):
     """List all inbound and outbound traffic prices in all regions via `boto3` calls."""
-    datacenters = scmodels_to_dict(vendor.datacenters, keys=["name", "aliases"])
+    regions = scmodels_to_dict(vendor.regions, keys=["name", "aliases"])
     items = []
     for direction in list(TrafficDirection):
         loc_dir = "toLocation" if direction == TrafficDirection.IN else "fromLocation"
@@ -1152,13 +1151,13 @@ def inventory_traffic_prices(vendor):
         )
         for product in products:
             try:
-                datacenter = datacenters[product["product"]["attributes"][loc_dir]]
+                region = regions[product["product"]["attributes"][loc_dir]]
                 prices = _extract_ondemand_prices(product["terms"])
                 price = [PriceTier.model_validate(p).model_dump() for p in prices[0]]
                 items.append(
                     {
                         "vendor_id": vendor.vendor_id,
-                        "datacenter_id": datacenter.datacenter_id,
+                        "region_id": region.region_id,
                         "price": max([t["price"] for t in prices[0]]),
                         "price_tiered": price,
                         "currency": prices[1],
@@ -1189,19 +1188,19 @@ def inventory_ipv4_prices(vendor):
         description="Syncing ipv4_price(s)", total=len(products)
     )
     # lookup tables
-    datacenters = scmodels_to_dict(vendor.datacenters, keys=["name", "aliases"])
+    regions = scmodels_to_dict(vendor.regions, keys=["name", "aliases"])
     items = []
     for product in products:
         try:
-            datacenter = datacenters[product["product"]["attributes"]["location"]]
+            region = regions[product["product"]["attributes"]["location"]]
         except KeyError as e:
-            vendor.log("datacenter not found: %s" % str(e), DEBUG)
+            vendor.log("region not found: %s" % str(e), DEBUG)
             continue
         price = _extract_ondemand_price(product["terms"])
         items.append(
             {
                 "vendor_id": vendor.vendor_id,
-                "datacenter_id": datacenter.datacenter_id,
+                "region_id": region.region_id,
                 "price": price[0],
                 "currency": price[1],
                 "unit": PriceUnit.HOUR,

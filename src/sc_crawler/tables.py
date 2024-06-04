@@ -1,4 +1,4 @@
-"""Table definitions for vendors, datacenters, zones, and other cloud resources."""
+"""Table definitions for vendors, regions, zones, and other cloud resources."""
 
 import logging
 from importlib import import_module
@@ -17,8 +17,8 @@ from .table_bases import (
     BenchmarkScoreBase,
     ComplianceFrameworkBase,
     CountryBase,
-    DatacenterBase,
     Ipv4PriceBase,
+    RegionBase,
     ScModel,
     ServerBase,
     ServerPriceBase,
@@ -44,7 +44,7 @@ class Country(CountryBase, table=True):
     """Country and continent mapping."""
 
     vendors: List["Vendor"] = Relationship(back_populates="country")
-    datacenters: List["Datacenter"] = Relationship(back_populates="country")
+    regions: List["Region"] = Relationship(back_populates="country")
 
 
 class ComplianceFramework(ComplianceFrameworkBase, table=True):
@@ -73,7 +73,7 @@ class Vendor(VendorBase, table=True):
         back_populates="vendor"
     )
     country: Country = Relationship(back_populates="vendors")
-    datacenters: List["Datacenter"] = Relationship(
+    regions: List["Region"] = Relationship(
         back_populates="vendor", sa_relationship_kwargs={"viewonly": True}
     )
     zones: List["Zone"] = Relationship(
@@ -122,7 +122,7 @@ class Vendor(VendorBase, table=True):
         methods = self._get_methods().__dir__()
         for method in [
             "inventory_compliance_frameworks",
-            "inventory_datacenters",
+            "inventory_regions",
             "inventory_zones",
             "inventory_servers",
             "inventory_server_prices",
@@ -222,13 +222,13 @@ class Vendor(VendorBase, table=True):
         )
 
     @log_start_end
-    def inventory_datacenters(self):
-        """Get the vendor's all datacenters."""
-        self._inventory(Datacenter, self._get_methods().inventory_datacenters)
+    def inventory_regions(self):
+        """Get the vendor's all regions."""
+        self._inventory(Region, self._get_methods().inventory_regions)
 
     @log_start_end
     def inventory_zones(self):
-        """Get all the zones in the vendor's datacenters."""
+        """Get all the zones in the vendor's regions."""
         self._inventory(Zone, self._get_methods().inventory_zones)
 
     @log_start_end
@@ -304,44 +304,44 @@ class VendorComplianceLink(VendorComplianceLinkBase, table=True):
     )
 
 
-class Datacenter(DatacenterBase, table=True):
-    """Datacenters/regions of Vendors."""
+class Region(RegionBase, table=True):
+    """Regions of Vendors."""
 
-    vendor: Vendor = Relationship(back_populates="datacenters")
-    country: Country = Relationship(back_populates="datacenters")
+    vendor: Vendor = Relationship(back_populates="regions")
+    country: Country = Relationship(back_populates="regions")
 
     zones: List["Zone"] = Relationship(
-        back_populates="datacenter", sa_relationship_kwargs={"viewonly": True}
+        back_populates="region", sa_relationship_kwargs={"viewonly": True}
     )
     server_prices: List["ServerPrice"] = Relationship(
-        back_populates="datacenter", sa_relationship_kwargs={"viewonly": True}
+        back_populates="region", sa_relationship_kwargs={"viewonly": True}
     )
     traffic_prices: List["TrafficPrice"] = Relationship(
-        back_populates="datacenter", sa_relationship_kwargs={"viewonly": True}
+        back_populates="region", sa_relationship_kwargs={"viewonly": True}
     )
     ipv4_prices: List["Ipv4Price"] = Relationship(
-        back_populates="datacenter", sa_relationship_kwargs={"viewonly": True}
+        back_populates="region", sa_relationship_kwargs={"viewonly": True}
     )
     storage_prices: List["StoragePrice"] = Relationship(
-        back_populates="datacenter", sa_relationship_kwargs={"viewonly": True}
+        back_populates="region", sa_relationship_kwargs={"viewonly": True}
     )
 
 
 class Zone(ZoneBase, table=True):
-    """Availability zones of Datacenters."""
+    """Availability zones of Regions."""
 
     __table_args__ = (
         ForeignKeyConstraint(
-            ["vendor_id", "datacenter_id"],
-            ["datacenter.vendor_id", "datacenter.datacenter_id"],
+            ["vendor_id", "region_id"],
+            ["region.vendor_id", "region.region_id"],
         ),
     )
 
-    datacenter: Datacenter = Relationship(
+    region: Region = Relationship(
         back_populates="zones",
         sa_relationship_kwargs={
             "primaryjoin": (
-                "and_(Datacenter.datacenter_id == foreign(Zone.datacenter_id), "
+                "and_(Region.region_id == foreign(Zone.region_id), "
                 "Vendor.vendor_id == foreign(Zone.vendor_id))"
             )
         },
@@ -376,16 +376,16 @@ class Server(ServerBase, table=True):
 
 
 class ServerPrice(ServerPriceBase, table=True):
-    """Server type prices per Datacenter and Allocation method."""
+    """Server type prices per Region and Allocation method."""
 
     __table_args__ = (
         ForeignKeyConstraint(
-            ["vendor_id", "datacenter_id"],
-            ["datacenter.vendor_id", "datacenter.datacenter_id"],
+            ["vendor_id", "region_id"],
+            ["region.vendor_id", "region.region_id"],
         ),
         ForeignKeyConstraint(
-            ["vendor_id", "datacenter_id", "zone_id"],
-            ["zone.vendor_id", "zone.datacenter_id", "zone.zone_id"],
+            ["vendor_id", "region_id", "zone_id"],
+            ["zone.vendor_id", "zone.region_id", "zone.zone_id"],
         ),
         ForeignKeyConstraint(
             ["vendor_id", "server_id"],
@@ -393,11 +393,11 @@ class ServerPrice(ServerPriceBase, table=True):
         ),
     )
     vendor: Vendor = Relationship(back_populates="server_prices")
-    datacenter: Datacenter = Relationship(
+    region: Region = Relationship(
         back_populates="server_prices",
         sa_relationship_kwargs={
             "primaryjoin": (
-                "and_(Datacenter.datacenter_id == foreign(ServerPrice.datacenter_id), "
+                "and_(Region.region_id == foreign(ServerPrice.region_id), "
                 "Vendor.vendor_id == foreign(ServerPrice.vendor_id))"
             )
         },
@@ -407,7 +407,7 @@ class ServerPrice(ServerPriceBase, table=True):
         sa_relationship_kwargs={
             "primaryjoin": (
                 "and_(Zone.zone_id == foreign(ServerPrice.zone_id), "
-                "Datacenter.datacenter_id == foreign(ServerPrice.datacenter_id),"
+                "Region.region_id == foreign(ServerPrice.region_id),"
                 "Vendor.vendor_id == foreign(ServerPrice.vendor_id))"
             )
         },
@@ -424,12 +424,12 @@ class ServerPrice(ServerPriceBase, table=True):
 
 
 class StoragePrice(StoragePriceBase, table=True):
-    """Flexible Storage prices in each Datacenter."""
+    """Flexible Storage prices in each Region."""
 
     __table_args__ = (
         ForeignKeyConstraint(
-            ["vendor_id", "datacenter_id"],
-            ["datacenter.vendor_id", "datacenter.datacenter_id"],
+            ["vendor_id", "region_id"],
+            ["region.vendor_id", "region.region_id"],
         ),
         ForeignKeyConstraint(
             ["vendor_id", "storage_id"],
@@ -437,11 +437,11 @@ class StoragePrice(StoragePriceBase, table=True):
         ),
     )
     vendor: Vendor = Relationship(back_populates="storage_prices")
-    datacenter: Datacenter = Relationship(
+    region: Region = Relationship(
         back_populates="storage_prices",
         sa_relationship_kwargs={
             "primaryjoin": (
-                "and_(Datacenter.datacenter_id == foreign(StoragePrice.datacenter_id),"
+                "and_(Region.region_id == foreign(StoragePrice.region_id),"
                 "Vendor.vendor_id == foreign(StoragePrice.vendor_id))"
             )
         },
@@ -458,20 +458,20 @@ class StoragePrice(StoragePriceBase, table=True):
 
 
 class TrafficPrice(TrafficPriceBase, table=True):
-    """Extra Traffic prices in each Datacenter."""
+    """Extra Traffic prices in each Region."""
 
     __table_args__ = (
         ForeignKeyConstraint(
-            ["vendor_id", "datacenter_id"],
-            ["datacenter.vendor_id", "datacenter.datacenter_id"],
+            ["vendor_id", "region_id"],
+            ["region.vendor_id", "region.region_id"],
         ),
     )
     vendor: Vendor = Relationship(back_populates="traffic_prices")
-    datacenter: Datacenter = Relationship(
+    region: Region = Relationship(
         back_populates="traffic_prices",
         sa_relationship_kwargs={
             "primaryjoin": (
-                "and_(Datacenter.datacenter_id == foreign(TrafficPrice.datacenter_id),"
+                "and_(Region.region_id == foreign(TrafficPrice.region_id),"
                 "Vendor.vendor_id == foreign(TrafficPrice.vendor_id))"
             )
         },
@@ -479,20 +479,20 @@ class TrafficPrice(TrafficPriceBase, table=True):
 
 
 class Ipv4Price(Ipv4PriceBase, table=True):
-    """Price of an IPv4 address in each Datacenter."""
+    """Price of an IPv4 address in each Region."""
 
     __table_args__ = (
         ForeignKeyConstraint(
-            ["vendor_id", "datacenter_id"],
-            ["datacenter.vendor_id", "datacenter.datacenter_id"],
+            ["vendor_id", "region_id"],
+            ["region.vendor_id", "region.region_id"],
         ),
     )
     vendor: Vendor = Relationship(back_populates="ipv4_prices")
-    datacenter: Datacenter = Relationship(
+    region: Region = Relationship(
         back_populates="ipv4_prices",
         sa_relationship_kwargs={
             "primaryjoin": (
-                "and_(Datacenter.datacenter_id == foreign(Ipv4Price.datacenter_id),"
+                "and_(Region.region_id == foreign(Ipv4Price.region_id),"
                 "Vendor.vendor_id == foreign(Ipv4Price.vendor_id))"
             )
         },
@@ -513,10 +513,7 @@ class BenchmarkScore(BenchmarkScoreBase, table=True):
     __table_args__ = (
         ForeignKeyConstraint(
             ["vendor_id", "server_id"],
-            [
-                "benchmark_score.vendor_id",
-                "benchmark_score.server_id",
-            ],
+            ["server.vendor_id", "server.server_id"],
         ),
     )
     vendor: Vendor = Relationship(back_populates="benchmark_scores")
@@ -536,7 +533,7 @@ Country.model_rebuild()
 ComplianceFramework.model_rebuild()
 Vendor.model_rebuild()
 VendorComplianceLink.model_rebuild()
-Datacenter.model_rebuild()
+Region.model_rebuild()
 Zone.model_rebuild()
 Storage.model_rebuild()
 Server.model_rebuild()

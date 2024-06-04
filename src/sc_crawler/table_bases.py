@@ -5,6 +5,7 @@ from hashlib import sha1
 from json import dumps
 from typing import List, Optional, Union
 
+from pydantic import ConfigDict, model_validator
 from rich.progress import Progress
 from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import declared_attr
@@ -19,6 +20,8 @@ from .table_fields import (
     DdrGeneration,
     Disk,
     Gpu,
+    HashableDict,
+    HashableJSON,
     PriceTier,
     PriceUnit,
     Status,
@@ -53,6 +56,16 @@ class ScMetaModel(SQLModel.__class__):
         if subclass.model_config.get("table") is None:
             return
         satable = subclass.metadata.tables[subclass.__tablename__]
+
+        # enforce auto-naming constrains as per
+        # https://alembic.sqlalchemy.org/en/latest/naming.html
+        subclass.metadata.naming_convention = {
+            "ix": "ix_%(column_0_label)s",
+            "uq": "uq_%(table_name)s_%(column_0_name)s",
+            "ck": "ck_%(table_name)s_%(constraint_name)s",
+            "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
+            "pk": "pk_%(table_name)s",
+        }
 
         # table comment
         if subclass.__doc__ and satable.comment is None:
@@ -207,8 +220,8 @@ class HasVendorIdPK(ScModel):
     vendor_id: str = Field(primary_key=True, description="Unique identifier.")
 
 
-class HasDatacenterIdPK(ScModel):
-    datacenter_id: str = Field(
+class HasRegionIdPK(ScModel):
+    region_id: str = Field(
         primary_key=True, description="Unique identifier, as called at the Vendor."
     )
 
@@ -269,10 +282,10 @@ class HasVendorPKFK(ScModel):
     )
 
 
-class HasDatacenterPK(ScModel):
-    datacenter_id: str = Field(
+class HasRegionPK(ScModel):
+    region_id: str = Field(
         primary_key=True,
-        description="Reference to the Datacenter.",
+        description="Reference to the Region.",
     )
 
 
@@ -282,14 +295,6 @@ class HasZonePK(ScModel):
 
 class HasServerPK(ScModel):
     server_id: str = Field(
-        primary_key=True,
-        description="Reference to the Server.",
-    )
-
-
-class HasServerPKFK(ScModel):
-    server_id: str = Field(
-        foreign_key="server.server_id",
         primary_key=True,
         description="Reference to the Server.",
     )
@@ -426,50 +431,50 @@ class VendorComplianceLinkBase(MetaColumns, VendorComplianceLinkFields):
     pass
 
 
-class DatacenterFields(
-    HasDisplayName, HasApiReference, HasName, HasDatacenterIdPK, HasVendorPKFK
+class RegionFields(
+    HasDisplayName, HasApiReference, HasName, HasRegionIdPK, HasVendorPKFK
 ):
     aliases: List[str] = Field(
         default=[],
         sa_type=JSON,
-        description="List of other commonly used names for the same Datacenter.",
+        description="List of other commonly used names for the same Region.",
     )
     country_id: str = Field(
         foreign_key="country.country_id",
-        description="Reference to the Country, where the Datacenter is located.",
+        description="Reference to the Country, where the Region is located.",
     )
     state: Optional[str] = Field(
         default=None,
-        description="Optional state/administrative area of the Datacenter's location within the Country.",
+        description="Optional state/administrative area of the Region's location within the Country.",
     )
     city: Optional[str] = Field(
-        default=None, description="Optional city name of the Datacenter's location."
+        default=None, description="Optional city name of the Region's location."
     )
     address_line: Optional[str] = Field(
-        default=None, description="Optional address line of the Datacenter's location."
+        default=None, description="Optional address line of the Region's location."
     )
     zip_code: Optional[str] = Field(
-        default=None, description="Optional ZIP code of the Datacenter's location."
+        default=None, description="Optional ZIP code of the Region's location."
     )
     lon: Optional[float] = Field(
         default=None,
-        description="Longitude coordinate of the Datacenter's known or approximate location.",
+        description="Longitude coordinate of the Region's known or approximate location.",
     )
     lat: Optional[float] = Field(
         default=None,
-        description="Latitude coordinate of the Datacenter's known or approximate location.",
+        description="Latitude coordinate of the Region's known or approximate location.",
     )
 
     founding_year: Optional[int] = Field(
-        default=None, description="4-digit year when the Datacenter was founded."
+        default=None, description="4-digit year when the Region was founded."
     )
     green_energy: Optional[bool] = Field(
         default=None,
-        description="If the Datacenter is 100% powered by renewable energy.",
+        description="If the Region is 100% powered by renewable energy.",
     )
 
 
-class DatacenterBase(MetaColumns, DatacenterFields):
+class RegionBase(MetaColumns, RegionFields):
     pass
 
 
@@ -479,7 +484,7 @@ class ZoneBase(
     HasApiReference,
     HasName,
     HasZoneIdPK,
-    HasDatacenterPK,
+    HasRegionPK,
     HasVendorPKFK,
 ):
     pass
@@ -674,17 +679,17 @@ class ServerPriceBase(
     ServerPriceFields,
     HasServerPK,
     HasZonePK,
-    HasDatacenterPK,
+    HasRegionPK,
     HasVendorPKFK,
 ):
     pass
 
 
-class StoragePriceBase(HasPriceFields, HasStoragePK, HasDatacenterPK, HasVendorPKFK):
+class StoragePriceBase(HasPriceFields, HasStoragePK, HasRegionPK, HasVendorPKFK):
     pass
 
 
-class TrafficPriceFields(HasDatacenterPK, HasVendorPKFK):
+class TrafficPriceFields(HasRegionPK, HasVendorPKFK):
     direction: TrafficDirection = Field(
         description="Direction of the traffic: inbound or outbound.",
         primary_key=True,
@@ -695,7 +700,7 @@ class TrafficPriceBase(HasPriceFields, TrafficPriceFields):
     pass
 
 
-class Ipv4PriceBase(HasPriceFields, HasDatacenterPK, HasVendorPKFK):
+class Ipv4PriceBase(HasPriceFields, HasRegionPK, HasVendorPKFK):
     pass
 
 
@@ -726,10 +731,20 @@ class BenchmarkBase(MetaColumns, BenchmarkFields):
     pass
 
 
-class BenchmarkScoreFields(HasBenchmarkPKFK, HasServerPKFK, HasVendorPKFK):
-    config: dict = Field(
+class BenchmarkScoreFields(HasBenchmarkPKFK, HasServerPK, HasVendorPKFK):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    @model_validator(mode="before")
+    def update_config_to_hashable(cls, values):
+        """We need a hashable column for the primary key."""
+        values["config"] = HashableDict(values.get("config", {}))
+        return values
+
+    # use HashableDict as it's a primary key that needs to be hashable, but
+    # fall back to dict to avoid PydanticInvalidForJsonSchema
+    config: HashableDict | dict = Field(
         default={},
-        sa_type=JSON,
+        sa_type=HashableJSON,
         primary_key=True,
         description='Dictionary of config parameters of the specific benchmark, e.g. {"bandwidth": 4096}',
     )

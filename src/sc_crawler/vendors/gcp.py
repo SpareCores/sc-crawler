@@ -263,7 +263,7 @@ def _skus_dict():
 
 
 def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dict]:
-    datacenters = scmodels_to_dict(vendor.datacenters, keys=["name"])
+    regions = scmodels_to_dict(vendor.regions, keys=["name"])
     skus = _skus_dict()
     items = []
     for server in vendor.servers:
@@ -279,15 +279,15 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
             family = "m1"
 
         # price per instance or cpu/ram
-        regions = [*skus["instance"][family].keys(), *skus["cpu"][family].keys()]
-        assert len(regions) > 0
+        server_regions = [*skus["instance"][family].keys(), *skus["cpu"][family].keys()]
+        assert len(server_regions) > 0
 
-        for region in regions:
+        for server_region in server_regions:
             # skip edge regions
-            datacenter = datacenters.get(region)
-            if datacenter is None:
+            region = regions.get(server_region)
+            if region is None:
                 vendor.log(
-                    f"Skip unknown '{region}' region for {server.name}",
+                    f"Skip unknown '{server_region}' region for {server.name}",
                     DEBUG,
                 )
                 continue
@@ -295,12 +295,12 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
             # try instance-level pricing
             if skus["instance"][family]:
                 try:
-                    price, currency = skus["instance"][family][region][
+                    price, currency = skus["instance"][family][server_region][
                         allocation.value.lower()
                     ]
                 except ValueError:
                     vendor.log(
-                        f"{allocation.value} price not found for '{server.name}' in '{region}'",
+                        f"{allocation.value} price not found for '{server.name}' in '{server_region}'",
                         DEBUG,
                     )
                     continue
@@ -317,18 +317,18 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
                     currency = skus["cpu"][family][region][allocation.value.lower()][1]
                 except (ValueError, TypeError):
                     vendor.log(
-                        f"{allocation.value} price not found for '{server.name}' in '{region}'",
+                        f"{allocation.value} price not found for '{server.name}' in '{server_region}'",
                         DEBUG,
                     )
                     continue
             else:
                 raise KeyError(f"SKU not found for {server.name}")
 
-            for zone in datacenter.zones:
+            for zone in region.zones:
                 items.append(
                     {
                         "vendor_id": vendor.vendor_id,
-                        "datacenter_id": datacenter.datacenter_id,
+                        "region_id": region.region_id,
                         "zone_id": zone.zone_id,
                         "server_id": server.server_id,
                         "operating_system": "Linux",
@@ -357,7 +357,7 @@ def inventory_compliance_frameworks(vendor):
     )
 
 
-def inventory_datacenters(vendor):
+def inventory_regions(vendor):
     """List all available GCP regions via API calls.
 
     Some data sources are not available from APIs, and were collected manually:
@@ -367,7 +367,7 @@ def inventory_datacenters(vendor):
     - energy carbon data: <https://cloud.google.com/sustainability/region-carbon#data> and <https://github.com/GoogleCloudPlatform/region-carbon-info>,
     - launch dates were collected from [Wikipedia](https://en.wikipedia.org/wiki/Google_Cloud_Platform#Regions_and_zones) and GCP blog posts, such as <https://medium.com/@retomeier/an-annotated-history-of-googles-cloud-platform-90b90f948920> and <https://cloud.google.com/blog/products/infrastructure/introducing-new-google-cloud-regions>.
 
-    Note that many GCP datacenters use more than 90% green energy,
+    Note that many GCP regions use more than 90% green energy,
     but the related flag in our database is set to `False` as not being 100%.
     """
 
@@ -746,10 +746,10 @@ def inventory_datacenters(vendor):
     items = []
     for region in regions:
         if region.name not in manual_data:
-            raise KeyError(f"Unknown datacenter metadata for {region.name}")
+            raise KeyError(f"Unknown region metadata for {region.name}")
         item = {
             "vendor_id": vendor.vendor_id,
-            "datacenter_id": str(region.id),
+            "region_id": str(region.id),
             "name": region.name,
         }
         for k, v in manual_data[region.name].items():
@@ -761,14 +761,14 @@ def inventory_datacenters(vendor):
 def inventory_zones(vendor):
     """List all available GCP zones via API calls."""
     items = []
-    datacenters = scmodels_to_dict(vendor.datacenters, keys=["name"])
+    regions = scmodels_to_dict(vendor.regions, keys=["name"])
     for zone in _zones():
         items.append(
             {
                 "vendor_id": vendor.vendor_id,
                 # example `zone.region`:
                 # https://www.googleapis.com/compute/v1/projects/algebraic-pier-412621/regions/us-east4
-                "datacenter_id": datacenters[zone.region.split("/")[-1]].datacenter_id,
+                "region_id": regions[zone.region.split("/")[-1]].region_id,
                 "zone_id": str(zone.id),
                 "name": zone.name,
                 "api_reference": zone.name,
@@ -855,12 +855,12 @@ def inventory_servers(vendor):
 
 
 def inventory_server_prices(vendor):
-    """List all available GCP server ondemand prices in all datacenters."""
+    """List all available GCP server ondemand prices in all regions."""
     return _inventory_server_prices(vendor, Allocation.ONDEMAND)
 
 
 def inventory_server_prices_spot(vendor):
-    """List all available GCP server spot prices in all datacenters."""
+    """List all available GCP server spot prices in all regions."""
     return _inventory_server_prices(vendor, Allocation.SPOT)
 
 
@@ -911,28 +911,28 @@ def inventory_storages(vendor):
 
 
 def inventory_storage_prices(vendor):
-    """List all available GCP disk storage prices in all datacenters."""
-    datacenters = scmodels_to_dict(vendor.datacenters, keys=["name"])
+    """List all available GCP disk storage prices in all regions."""
+    regions = scmodels_to_dict(vendor.regions, keys=["name"])
     skus = _skus_dict()
     items = []
     for storage in vendor.storages:
-        regions = skus["storage"][storage.name].keys()
-        for region in regions:
+        storage_regions = skus["storage"][storage.name].keys()
+        for storage_region in storage_regions:
             # skip edge regions
-            datacenter = datacenters.get(region)
-            if datacenter is None:
+            region = regions.get(storage_region)
+            if region is None:
                 vendor.log(
-                    f"Skip unknown '{region}' region for {storage.name}",
+                    f"Skip unknown '{storage_region}' region for {storage.name}",
                     DEBUG,
                 )
                 continue
 
-            price, currency = skus["storage"][storage.name][region]["ondemand"]
-            for zone in datacenter.zones:
+            price, currency = skus["storage"][storage.name][storage_region]["ondemand"]
+            for zone in region.zones:
                 items.append(
                     {
                         "vendor_id": vendor.vendor_id,
-                        "datacenter_id": datacenter.datacenter_id,
+                        "region_id": region.region_id,
                         "storage_id": storage.storage_id,
                         "unit": PriceUnit.GB_MONTH,
                         "price": price,
@@ -943,8 +943,8 @@ def inventory_storage_prices(vendor):
 
 
 def inventory_traffic_prices(vendor):
-    """List inbound and outbound network traffic prices in all GCP datacenters."""
-    datacenters = scmodels_to_dict(vendor.datacenters, keys=["name"])
+    """List inbound and outbound network traffic prices in all GCP regions."""
+    regions = scmodels_to_dict(vendor.regions, keys=["name"])
     skus = _skus("Compute Engine")
     items = []
     for sku in skus:
@@ -958,7 +958,7 @@ def inventory_traffic_prices(vendor):
             continue
 
         # helper variables
-        regions = sku.service_regions
+        traffic_regions = sku.service_regions
         tiered_rates = sku.pricing_info[0].pricing_expression.tiered_rates
         price_tiers = []
         for i in range(len(tiered_rates)):
@@ -972,18 +972,18 @@ def inventory_traffic_prices(vendor):
                 }
             )
 
-        for region in regions:
-            datacenter = datacenters.get(region)
-            if datacenter is None:
+        for traffic_region in traffic_regions:
+            region = regions.get(traffic_region)
+            if region is None:
                 vendor.log(
-                    f"Skip unknown '{region}' region for {sku.description}",
+                    f"Skip unknown '{traffic_region}' region for {sku.description}",
                     DEBUG,
                 )
                 continue
             items.append(
                 {
                     "vendor_id": vendor.vendor_id,
-                    "datacenter_id": datacenter.datacenter_id,
+                    "region_id": region.region_id,
                     "price": max([t["price"] for t in price_tiers]),
                     "price_tiered": price_tiers,
                     "currency": tiered_rates[0].unit_price.currency_code,
@@ -1000,7 +1000,7 @@ def inventory_traffic_prices(vendor):
 
 
 def inventory_ipv4_prices(vendor):
-    """List the price of an attached IPv4 address in all GCP datacenters.
+    """List the price of an attached IPv4 address in all GCP regions.
 
     Note that this data was not found using the APIs (only unattached static IPs),
     so the values are recorded manually from <https://cloud.google.com/vpc/network-pricing#ipaddress>.
@@ -1012,11 +1012,11 @@ def inventory_ipv4_prices(vendor):
     #     if sku.description == "Static Ip Charge":
     #         pass
     items = []
-    for datacenter in vendor.datacenters:
+    for region in vendor.regions:
         items.append(
             {
                 "vendor_id": vendor.vendor_id,
-                "datacenter_id": datacenter.datacenter_id,
+                "region_id": region.region_id,
                 "price": 0.005,
                 "currency": "USD",
                 "unit": PriceUnit.HOUR,

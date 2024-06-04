@@ -8,8 +8,8 @@ from sqlmodel import Field, SQLModel
 from .table_bases import (
     ComplianceFrameworkBase,
     CountryBase,
-    DatacenterBase,
     Ipv4PriceBase,
+    RegionBase,
     ScModel,
     ServerBase,
     ServerPriceBase,
@@ -67,8 +67,8 @@ class VendorScd(Scd, VendorBase, table=True):
     pass
 
 
-class DatacenterScd(Scd, DatacenterBase, table=True):
-    """SCD version of .tables.DatacenterScd."""
+class RegionScd(Scd, RegionBase, table=True):
+    """SCD version of .tables.RegionScd."""
 
     pass
 

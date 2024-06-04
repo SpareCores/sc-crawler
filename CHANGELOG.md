@@ -1,3 +1,16 @@
+## v0.2.0 (June 4, 2024)
+
+Database migrations:
+
+- Name all constraints for easier management in the future.
+- Rename the `datacenter` table to `region`, and the `datacenter_id`
+  column to `region_id` in the `zone`, `server_price`,
+  `storage_price`, `traffic_price` and `ipv4_price` tables.
+
+‼ Breaking changes:
+
+- Renamed Datacenter to Region in all tables and across the codebase.
+
 ## v0.1.4 (June 2, 2024)
 
 New feature(s):

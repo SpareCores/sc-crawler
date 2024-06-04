@@ -178,7 +178,7 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                 benchmarks.append(
                     {
                         **_benchmark_metafields(server, framework=framework),
-                        "config": {"what": row[0], "size": float(row[1])},
+                        "config": {"operation": row[0], "size": float(row[1])},
                         "score": float(row[2]),
                     }
                 )
