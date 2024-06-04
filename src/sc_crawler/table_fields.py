@@ -37,7 +37,7 @@ class Json(BaseModel):
 
     def __json__(self):
         """Call `self.model_dump` to serialize into JSON."""
-        return self.model_dump()
+        return dict(sorted(self.model_dump().items()))
 
 
 class Status(str, Enum):

@@ -1,3 +1,9 @@
+## v0.2.1 (June 4, 2024)
+
+Fix(es):
+
+- Sort `dict` by its keys before passing as JSON to the database engine.
+
 ## v0.2.0 (June 4, 2024)
 
 Database migrations:
