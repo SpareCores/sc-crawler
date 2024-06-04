@@ -736,8 +736,12 @@ class BenchmarkScoreFields(HasBenchmarkPKFK, HasServerPK, HasVendorPKFK):
 
     @model_validator(mode="before")
     def update_config_to_hashable(cls, values):
-        """We need a hashable column for the primary key."""
-        values["config"] = HashableDict(values.get("config", {}))
+        """We need a hashable column for the primary key.
+
+        Note that we also sort the keys, so that the resulting JSON
+        can be compared as text as well (as some database engines do).
+        """
+        values["config"] = HashableDict(sorted(values.get("config", {}).items()))
         return values
 
     # use HashableDict as it's a primary key that needs to be hashable, but
