@@ -6,6 +6,8 @@ from typing import List
 from sqlmodel import Field, SQLModel
 
 from .table_bases import (
+    BenchmarkBase,
+    BenchmarkScoreBase,
     ComplianceFrameworkBase,
     CountryBase,
     Ipv4PriceBase,
@@ -50,67 +52,79 @@ class CountryScd(Scd, CountryBase, table=True):
 
 
 class VendorComplianceLinkScd(Scd, VendorComplianceLinkBase, table=True):
-    """SCD version of .tables.VendorComplianceLinkScd."""
+    """SCD version of .tables.VendorComplianceLink."""
 
     pass
 
 
 class ComplianceFrameworkScd(Scd, ComplianceFrameworkBase, table=True):
-    """SCD version of .tables.ComplianceFrameworkScd."""
+    """SCD version of .tables.ComplianceFramework."""
 
     pass
 
 
 class VendorScd(Scd, VendorBase, table=True):
-    """SCD version of .tables.VendorScd."""
+    """SCD version of .tables.Vendor."""
 
     pass
 
 
 class RegionScd(Scd, RegionBase, table=True):
-    """SCD version of .tables.RegionScd."""
+    """SCD version of .tables.Region."""
 
     pass
 
 
 class ZoneScd(Scd, ZoneBase, table=True):
-    """SCD version of .tables.ZoneScd."""
+    """SCD version of .tables.Zone."""
 
     pass
 
 
 class StorageScd(Scd, StorageBase, table=True):
-    """SCD version of .tables.StorageScd."""
+    """SCD version of .tables.Storage."""
 
     pass
 
 
 class ServerScd(Scd, ServerBase, table=True):
-    """SCD version of .tables.ServerScd."""
+    """SCD version of .tables.Server."""
 
     pass
 
 
 class ServerPriceScd(Scd, ServerPriceBase, table=True):
-    """SCD version of .tables.ServerPriceScd."""
+    """SCD version of .tables.ServerPrice."""
 
     pass
 
 
 class StoragePriceScd(Scd, StoragePriceBase, table=True):
-    """SCD version of .tables.StoragePriceScd."""
+    """SCD version of .tables.StoragePrice."""
 
     pass
 
 
 class TrafficPriceScd(Scd, TrafficPriceBase, table=True):
-    """SCD version of .tables.TrafficPriceScd."""
+    """SCD version of .tables.TrafficPrice."""
 
     pass
 
 
 class Ipv4PriceScd(Scd, Ipv4PriceBase, table=True):
-    """SCD version of .tables.Ipv4PriceScd."""
+    """SCD version of .tables.Ipv4Price."""
+
+    pass
+
+
+class BenchmarkScd(Scd, BenchmarkBase, table=True):
+    """SCD version of .tables.Benchmark."""
+
+    pass
+
+
+class BenchmarkScoreScd(Scd, BenchmarkScoreBase, table=True):
+    """SCD version of .tables.BenchmarkScore."""
 
     pass
 
