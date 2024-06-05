@@ -3,7 +3,7 @@ import xml.etree.ElementTree as xmltree
 from atexit import register
 from functools import cache
 from os import PathLike, path, remove
-from re import compile, sub
+from re import compile, match, sub
 from shutil import rmtree
 from statistics import mode
 from tempfile import mkdtemp
@@ -174,14 +174,16 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
     try:
         with open(_server_framework_stdout_path(server, framework), "r") as lines:
             for line in lines:
-                row = line.strip().split()
-                benchmarks.append(
-                    {
-                        **_benchmark_metafields(server, framework=framework),
-                        "config": {"operation": row[0], "size": float(row[1])},
-                        "score": float(row[2]),
-                    }
-                )
+                # filter out error messages
+                if match(r"^(rd|wr|rdwr) \d+(\.\d+) \d+(\.\d+)$", line):
+                    row = line.strip().split()
+                    benchmarks.append(
+                        {
+                            **_benchmark_metafields(server, framework=framework),
+                            "config": {"operation": row[0], "size": float(row[1])},
+                            "score": float(row[2]),
+                        }
+                    )
     except Exception as e:
         _log_cannot_load_benchmarks(server, framework, e)
 
