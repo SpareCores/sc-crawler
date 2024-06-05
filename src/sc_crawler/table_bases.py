@@ -563,13 +563,13 @@ class ServerFields(
         description="The model number of the primary processor, e.g. 9750H.",
     )
     cpu_l1_cache: Optional[int] = Field(
-        default=None, description="L1 cache size (MiB)."
+        default=None, description="L1 cache size (byte)."
     )
     cpu_l2_cache: Optional[int] = Field(
-        default=None, description="L2 cache size (MiB)."
+        default=None, description="L2 cache size (byte)."
     )
     cpu_l3_cache: Optional[int] = Field(
-        default=None, description="L3 cache size (MiB)."
+        default=None, description="L3 cache size (byte)."
     )
     cpu_flags: List[str] = Field(
         sa_type=JSON, default=[], description="CPU features/flags."
