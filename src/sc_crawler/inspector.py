@@ -263,7 +263,8 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
 
     framework = "stress_ng"
     try:
-        for cores_path in ["stressng", "stressngsinglecore"]:
+        cores_per_path = {"stressng": server.vcpus, "stressngsinglecore": 1}
+        for cores_path in cores_per_path.keys():
             stressng_version = _server_framework_meta(server, cores_path)["version"]
             line = _extract_line_from_file(
                 _server_framework_stderr_path(server, cores_path),
@@ -277,7 +278,7 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                         benchmark_id=":".join([framework, "cpu_all"]),
                     ),
                     "config": {
-                        "cores": 1 if cores_path == "stressng" else server.vcpus,
+                        "cores": cores_per_path[cores_path],
                         "framework_version": stressng_version,
                     },
                     "score": float(line.split(": ")[1]),
