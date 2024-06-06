@@ -43,7 +43,17 @@ def _server_cpu(server_name):
     """
     # not trying to rely on product line name patterns, as might change,
     # so rather providing a full list of known entities, and fail on unknown
-    if server_name.upper() in ["CX11", "CX21", "CX31", "CX41", "CX51"]:
+    if server_name.upper() in [
+        "CX11",
+        "CX21",
+        "CX31",
+        "CX41",
+        "CX51",
+        "CX22",
+        "CX32",
+        "CX42",
+        "CX52",
+    ]:
         return ("Intel", "Xeon Gold", None)
     if server_name.upper() in ["CPX11", "CPX21", "CPX31", "CPX41", "CPX51"]:
         return ("AMD", "EPYC 7002", None)
