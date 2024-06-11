@@ -266,6 +266,7 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
     regions = scmodels_to_dict(vendor.regions, keys=["name"])
     skus = _skus_dict()
     items = []
+
     for server in vendor.servers:
         try:
             family = _server_family(server.name)
@@ -308,13 +309,17 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
             elif skus["cpu"][family]:
                 try:
                     price = (
-                        skus["cpu"][family][region][allocation.value.lower()][0]
+                        skus["cpu"][family][server_region][allocation.value.lower()][0]
                         * server.vcpus
-                        + skus["ram"][family][region][allocation.value.lower()][0]
+                        + skus["ram"][family][server_region][allocation.value.lower()][
+                            0
+                        ]
                         * server.memory_amount
                         / 1024
                     )
-                    currency = skus["cpu"][family][region][allocation.value.lower()][1]
+                    currency = skus["cpu"][family][server_region][
+                        allocation.value.lower()
+                    ][1]
                 except (ValueError, TypeError):
                     vendor.log(
                         f"{allocation.value} price not found for '{server.name}' in '{server_region}'",
