@@ -93,6 +93,10 @@ def _server_dmidecode_section(server: "Server", section: str) -> dict:
     return _listsearch(_server_dmidecode(server), "name", section)["props"]
 
 
+def _server_dmidecode_sections(server: "Server", section: str) -> dict:
+    return [s["props"] for s in _server_dmidecode(server) if s["name"] == section]
+
+
 def _server_nvidiasmi(server: "Server") -> dict:
     return xmltree.parse(_server_framework_path(server, "nvidia_smi", "stdout"))
 
@@ -362,6 +366,9 @@ def inspect_update_server_dict(server: dict) -> dict:
         "dmidecode_cpu": lambda: _server_dmidecode_section(
             server_obj, "Processor Information"
         ),
+        "dmidecode_cpus": lambda: _server_dmidecode_sections(
+            server_obj, "Processor Information"
+        ),
         "dmidecode_memory": lambda: _server_dmidecode_section(
             server_obj, "Memory Device"
         ),
@@ -377,8 +384,10 @@ def inspect_update_server_dict(server: dict) -> dict:
             lookups[k] = Exception(str(e))
 
     mappings = {
-        "cpu_cores": lambda: lookups["dmidecode_cpu"]["Core Count"],
-        # convert to Ghz
+        "cpu_cores": lambda: sum(
+            [cpu["Core Count"] for cpu in lookups["dmidecode_cpus"]]
+        ),
+        # use 1st CPU's speed, convert to Ghz
         "cpu_speed": lambda: lookups["dmidecode_cpu"]["Max Speed"] / 1e9,
         "cpu_manufacturer": lambda: _standardize_manufacturer(
             lookups["dmidecode_cpu"]["Manufacturer"]
