@@ -301,17 +301,26 @@ def _standardize_manufacturer(manufacturer):
         return "Intel"
     if manufacturer in ["NVIDIA", "Tesla"]:
         return "Nvidia"
+    if manufacturer in ["(invalid)", "QEMU"]:
+        return None
     return manufacturer
 
 
 def _standardize_cpu_model(model):
-    if model == "Not Specified":
+    if model in ["Not Specified", "NotSpecified", "(invalid)"]:
         return None
-    for prefix in ["Intel(R) Xeon(R) Platinum "]:
+    for prefix in [
+        "Intel(R) Xeon(R) Platinum ",
+        "Intel(R) Xeon(R) Gold ",
+        "AMD ",
+        "AWS ",
+    ]:
         if model.startswith(prefix):
             model = model[len(prefix) :].lstrip()
     # drop trailing "CPU @ 2.50GHz"
-    model = sub(r" CPU @ \d+\.\d+GHz$", "", model)
+    model = sub(r"( CPU)? @ \d+\.\d+GHz$", "", model)
+    # drop trailing "48-Core Processor"
+    model = sub(r"( \d+-Core)? Processor$", "", model)
     return model
 
 
@@ -414,7 +423,9 @@ def inspect_update_server_dict(server: dict) -> dict:
     }
     for k, f in mappings.items():
         try:
-            server[k] = f()
+            newval = f()
+            if newval:
+                server[k] = newval
         except Exception as e:
             _log_cannot_update_server(server_obj, k, e)
 
