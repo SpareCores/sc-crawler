@@ -62,6 +62,17 @@ def _servers(zone: str) -> List[compute_v1.types.compute.MachineType]:
 
 
 @cachier(separate_files=True)
+def _servers_in_zone(zone: str) -> List[str]:
+    """Return a list of server names available in a Zone."""
+    return [server.name for server in _servers(zone)]
+
+
+def _server_in_zone(server: str, zone: str) -> bool:
+    """Checks if a server (referred by its name) is available in a Zone."""
+    return server in _servers_in_zone(zone)
+
+
+@cachier(separate_files=True)
 def _storages(zone: str) -> List[compute_v1.types.compute.DiskType]:
     return _paginate_list(compute_v1.services.disk_types.DiskTypesClient(), zone)
 
@@ -330,21 +341,23 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
                 raise KeyError(f"SKU not found for {server.name}")
 
             for zone in region.zones:
-                items.append(
-                    {
-                        "vendor_id": vendor.vendor_id,
-                        "region_id": region.region_id,
-                        "zone_id": zone.zone_id,
-                        "server_id": server.server_id,
-                        "operating_system": "Linux",
-                        "allocation": allocation,
-                        "unit": PriceUnit.HOUR,
-                        "price": round(price, 5),
-                        "price_upfront": 0,
-                        "price_tiered": [],
-                        "currency": currency,
-                    }
-                )
+                # server might not be actually available in the the region
+                if _server_in_zone(server.name, zone.name):
+                    items.append(
+                        {
+                            "vendor_id": vendor.vendor_id,
+                            "region_id": region.region_id,
+                            "zone_id": zone.zone_id,
+                            "server_id": server.server_id,
+                            "operating_system": "Linux",
+                            "allocation": allocation,
+                            "unit": PriceUnit.HOUR,
+                            "price": round(price, 5),
+                            "price_upfront": 0,
+                            "price_tiered": [],
+                            "currency": currency,
+                        }
+                    )
 
     return items
 
