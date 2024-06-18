@@ -61,7 +61,7 @@ def _servers(zone: str) -> List[compute_v1.types.compute.MachineType]:
     return _paginate_list(compute_v1.services.machine_types.MachineTypesClient(), zone)
 
 
-@cachier(separate_files=True)
+@cache
 def _servers_in_zone(zone: str) -> List[str]:
     """Return a list of server names available in a Zone."""
     return [server.name for server in _servers(zone)]
