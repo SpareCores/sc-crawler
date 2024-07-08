@@ -186,7 +186,7 @@ def inventory_servers(vendor):
                 "description": server.description,
                 "family": server.name.rstrip("0123456789"),
                 "vcpus": server.cores,
-                "hypervisor": None,
+                "hypervisor": "QEMU",
                 "cpu_allocation": (
                     CpuAllocation.SHARED
                     if server.cpu_type == "shared"
