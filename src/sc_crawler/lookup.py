@@ -241,7 +241,7 @@ benchmarks: List[Benchmark] = [
     ),
     _geekbenchmark(
         "Photo Filter",
-        "Applies colour and blur filters, level adjustments, cropping, scaling, and image compositing filters to 10 photos range in size from 3 MP to 15 MP",
+        "Applies colour and blur filters, level adjustments, cropping, scaling, and image compositing filters to 10 photos range in size from 3 MP to 15 MP.",
     ),
     _geekbenchmark(
         "Ray Tracer",
