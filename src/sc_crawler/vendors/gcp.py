@@ -397,16 +397,16 @@ def inventory_regions(vendor):
             "founding_year": 2024,
             "green_energy": False,
             # approximation based on city
-            "lat": 26.0420631,
-            "long": 28.0589808,
+            "lat": -26.0420631,
+            "lon": 28.0589808,
         },
         "asia-east1": {
             "country_id": "TW",
             "state": "Changhua County",
             "founding_year": 2013,
             "green_energy": False,
-            "lat": -33.520515,
-            "long": -70.72169,
+            "lat": 24.1385,
+            "lon": 120.425722,
         },
         "asia-east2": {
             "country_id": "HK",
@@ -415,7 +415,7 @@ def inventory_regions(vendor):
             "green_energy": False,
             # approximation based on country
             "lat": 22.2772377,
-            "long": 114.1703066,
+            "lon": 114.1703066,
             "display_name": "Hong Kong",
         },
         "asia-northeast1": {
