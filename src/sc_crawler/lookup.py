@@ -225,7 +225,7 @@ benchmarks: List[Benchmark] = [
     ),
     _geekbenchmark(
         "Background Blur",
-        "Separates and nlurs the background of 10 frames in a 1080p video, using DeepLabV3+.",
+        "Separates and blurs the background of 10 frames in a 1080p video, using DeepLabV3+.",
     ),
     _geekbenchmark(
         "Horizon Detection",
