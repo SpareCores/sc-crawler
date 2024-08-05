@@ -220,7 +220,10 @@ def inventory_servers(vendor):
                 "network_speed": None,
                 # https://docs.hetzner.com/cloud/billing/faq/#how-do-you-bill-for-traffic
                 "inbound_traffic": 0,  # free
-                "outbound_traffic": server.included_traffic / (1024**3),
+                "outbound_traffic": (
+                    max([region.get("included_traffic") for region in server.prices])
+                    / (1024**3)
+                ),
                 "ipv4": 0,
                 "status": Status.ACTIVE if not server.deprecation else Status.INACTIVE,
             }
