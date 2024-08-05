@@ -3,7 +3,7 @@ import xml.etree.ElementTree as xmltree
 from atexit import register
 from functools import cache
 from os import PathLike, path, remove
-from re import compile, match, sub
+from re import compile, match, search, sub
 from shutil import rmtree
 from statistics import mode
 from tempfile import mkdtemp
@@ -301,26 +301,49 @@ def _standardize_manufacturer(manufacturer):
         return "Intel"
     if manufacturer in ["NVIDIA", "Tesla"]:
         return "Nvidia"
-    if manufacturer in ["(invalid)", "QEMU"]:
+    if manufacturer in [
+        "(invalid)",
+        "Not Specified",
+        "QEMU",
+        "Google",
+        "AWS",
+        "Amazon EC2",
+    ]:
         return None
     return manufacturer
 
 
+def _standardize_cpu_family(family):
+    if family in ["Other", "<OUT OF SPEC>"]:
+        return None
+    return family
+
+
 def _standardize_cpu_model(model):
-    if model in ["Not Specified", "NotSpecified", "(invalid)"]:
+    model = model.strip()
+    if model in ["Not Specified", "NotSpecified", "(invalid)", "GENUINE INTEL(R) 0000"]:
         return None
     for prefix in [
         "Intel(R) Xeon(R) Platinum ",
         "Intel(R) Xeon(R) Gold ",
+        "Intel(R) Xeon(R) CPU ",
+        "Intel Xeon Processor (Skylake, IBRS)",
+        "Intel Xeon Processor (Skylake, IBRS, no TSX)",
         "AMD ",
+        "EPYC ",
+        "EPYC-Milan",
         "AWS ",
+        "Processor",
     ]:
         if model.startswith(prefix):
             model = model[len(prefix) :].lstrip()
     # drop trailing "CPU @ 2.50GHz"
-    model = sub(r"( CPU)? @ \d+\.\d+GHz$", "", model)
+    model = sub(r"( CPU)? ?@ \d+\.\d+GHz$", "", model)
     # drop trailing "48-Core Processor"
     model = sub(r"( \d+-Core)? Processor$", "", model)
+
+    if model.strip() == "":
+        return None
     return model
 
 
@@ -401,7 +424,9 @@ def inspect_update_server_dict(server: dict) -> dict:
         "cpu_manufacturer": lambda: _standardize_manufacturer(
             lookups["dmidecode_cpu"]["Manufacturer"]
         ),
-        "cpu_family": lambda: lookups["dmidecode_cpu"]["Family"],
+        "cpu_family": lambda: _standardize_cpu_family(
+            lookups["dmidecode_cpu"]["Family"]
+        ),
         "cpu_model": lambda: _standardize_cpu_model(
             lookups["dmidecode_cpu"]["Version"]
         ),
@@ -428,5 +453,23 @@ def inspect_update_server_dict(server: dict) -> dict:
                 server[k] = newval
         except Exception as e:
             _log_cannot_update_server(server_obj, k, e)
+
+    # backfill CPU model from alternative sources when not provided by DMI decode
+    if not isinstance(lookups["lscpu"], BaseException):
+        cpu_model = _listsearch(lookups["lscpu"], "field", "Model name:")["data"]
+        # CPU speed seems to be unreliable as reported by dmidecode,
+        # e.g. it's 2Ghz in GCP for all instances
+        speed = search(r" @ ([0-9\.]*)GHz$", cpu_model)
+        if speed:
+            server["cpu_speed"] = speed.group(1)
+        # manufacturer data might be more likely to present in lscpi (unstructured)
+        for manufacturer in ["Intel", "AMD"]:
+            if manufacturer in cpu_model:
+                server["cpu_manufacturer"] = manufacturer
+        for family in ["Xeon", "EPYC"]:
+            if family in cpu_model:
+                server["cpu_family"] = family
+        if server.get("cpu_model") is None:
+            server["cpu_model"] = _standardize_cpu_model(cpu_model)
 
     return server

@@ -1,3 +1,15 @@
+## v0.2.x (development version)
+
+- Count CPU cores in all physical CPUs.
+- Improve the standardization and cleanup of the CPU manufacturer, family, and model.
+- Extract speed from CPU description when available instead of unreliable `dmidecode` data.
+- Update included outbound network extractor at `hcloud` due to API change.
+- Support for new `hcloud` server types.
+- Check if a server is available in a `gcp` zone even though a related price is known.
+- Fix manually collected geolocation of 3 `gcp` regions.
+- Improved caching.
+- Fix spelling issues in benchmark and table column descriptions.
+
 ## v0.2.1 (June 4, 2024)
 
 Fix(es):
