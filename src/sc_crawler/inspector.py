@@ -301,9 +301,22 @@ def _standardize_manufacturer(manufacturer):
         return "Intel"
     if manufacturer in ["NVIDIA", "Tesla"]:
         return "Nvidia"
-    if manufacturer in ["(invalid)", "QEMU"]:
+    if manufacturer in [
+        "(invalid)",
+        "Not Specified",
+        "QEMU",
+        "Google",
+        "AWS",
+        "Amazon EC2",
+    ]:
         return None
     return manufacturer
+
+
+def _standardize_cpu_family(family):
+    if family in ["Other", "<OUT OF SPEC>"]:
+        return None
+    return family
 
 
 def _standardize_cpu_model(model):
@@ -312,6 +325,7 @@ def _standardize_cpu_model(model):
     for prefix in [
         "Intel(R) Xeon(R) Platinum ",
         "Intel(R) Xeon(R) Gold ",
+        "Intel(R) Xeon(R) CPU ",
         "AMD ",
         "AWS ",
     ]:
@@ -401,7 +415,9 @@ def inspect_update_server_dict(server: dict) -> dict:
         "cpu_manufacturer": lambda: _standardize_manufacturer(
             lookups["dmidecode_cpu"]["Manufacturer"]
         ),
-        "cpu_family": lambda: lookups["dmidecode_cpu"]["Family"],
+        "cpu_family": lambda: _standardize_cpu_family(
+            lookups["dmidecode_cpu"]["Family"]
+        ),
         "cpu_model": lambda: _standardize_cpu_model(
             lookups["dmidecode_cpu"]["Version"]
         ),
