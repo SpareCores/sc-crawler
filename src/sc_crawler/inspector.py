@@ -320,7 +320,8 @@ def _standardize_cpu_family(family):
 
 
 def _standardize_cpu_model(model):
-    if model in ["Not Specified", "NotSpecified", "(invalid)"]:
+    model = model.strip()
+    if model in ["Not Specified", "NotSpecified", "(invalid)", "GENUINE INTEL(R) 0000"]:
         return None
     for prefix in [
         "Intel(R) Xeon(R) Platinum ",
@@ -337,9 +338,12 @@ def _standardize_cpu_model(model):
         if model.startswith(prefix):
             model = model[len(prefix) :].lstrip()
     # drop trailing "CPU @ 2.50GHz"
-    model = sub(r"( CPU)? @ \d+\.\d+GHz$", "", model)
+    model = sub(r"( CPU)? ?@ \d+\.\d+GHz$", "", model)
     # drop trailing "48-Core Processor"
     model = sub(r"( \d+-Core)? Processor$", "", model)
+
+    if model.strip() == "":
+        return None
     return model
 
 
