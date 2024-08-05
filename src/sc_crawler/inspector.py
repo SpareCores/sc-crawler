@@ -462,7 +462,7 @@ def inspect_update_server_dict(server: dict) -> dict:
         speed = search(r" @ ([0-9\.]*)GHz$", cpu_model)
         if speed:
             server["cpu_speed"] = speed.group(1)
-        # manufacturer data might be more likely to present in lscpi (unstructured)
+        # manufacturer data might be more likely to present in lscpu (unstructured)
         for manufacturer in ["Intel", "AMD"]:
             if manufacturer in cpu_model:
                 server["cpu_manufacturer"] = manufacturer
