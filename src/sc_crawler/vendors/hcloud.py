@@ -115,6 +115,10 @@ def inventory_regions(vendor):
             "lat": 45.558319,
             "lon": -122.9306602,
         },
+        "7": {  # Singapore
+            "lat": 1.290270,
+            "lon": 103.851959,
+        },
     }
 
     items = []

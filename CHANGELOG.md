@@ -4,7 +4,8 @@
 - Improve the standardization and cleanup of the CPU manufacturer, family, and model.
 - Extract speed from CPU description when available instead of unreliable `dmidecode` data.
 - Update included outbound network extractor at `hcloud` due to API change.
-- Support for new `hcloud` server types.
+- Support for new `hcloud` CX server types.
+- Support for new `hcloud` region (Singapore).
 - Check if a server is available in a `gcp` zone even though a related price is known.
 - Fix manually collected geolocation of 3 `gcp` regions.
 - Improved caching.
