@@ -439,11 +439,6 @@ def inventory_regions(vendor):
     for region in _regions():
         if region["metadata"]["region_type"] == "Physical":
             manual_data = manual_datas.get(region["name"], {})
-            if not manual_data:
-                import pdb
-
-                pdb.set_trace()
-
             items.append(
                 {
                     "vendor_id": vendor.vendor_id,
