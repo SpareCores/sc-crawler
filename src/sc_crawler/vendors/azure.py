@@ -1,5 +1,5 @@
-from typing import List
 from os import environ
+from typing import List
 
 from azure.identity import DefaultAzureCredential
 from azure.mgmt.resource import ResourceManagementClient, SubscriptionClient
@@ -8,7 +8,6 @@ from azure.mgmt.resource.subscriptions.v2022_12_01.models import Location
 from cachier import cachier
 
 from ..lookup import map_compliance_frameworks_to_vendor
-
 
 credential = DefaultAzureCredential()
 subscription_client = SubscriptionClient(credential)
@@ -497,7 +496,7 @@ def inventory_zones(vendor):
 
 
 def inventory_servers(vendor):
-    # items = []
+    items = []
     # for server in []:
     #     items.append(
     #         {
