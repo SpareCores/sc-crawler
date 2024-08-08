@@ -79,6 +79,34 @@ Generate token at your Hetzner Cloud project and store it in the `HCLOUD_TOKEN` 
 
 </details>
 
+<details markdown="1">
+
+<summary>Microsoft Azure</summary>
+
+Authentication is handled via the `DefaultAzureCredential`, so you can use either secrets or certifications.
+The following environment variables are required:
+
+- `AZURE_CLIENT_ID`
+- `AZURE_TENANT_ID`
+
+To authenticate with secret:
+
+- `AZURE_CLIENT_SECRET`
+
+To authenticate with certificate:
+
+- `AZURE_CLIENT_CERTIFICATE_PATH`
+- `AZURE_CLIENT_CERTIFICATE_PASSWORD` (optional)
+
+For further options, consult the [`EnvironmentCredential` docs](https://learn.microsoft.com/en-us/python/api/azure-identity/azure.identity.environmentcredential?view=azure-python).
+
+Optionally, you can also specify the Subscription (otherwise the first one found in the account will be used):
+
+- `AZURE_SUBSCRIPTION_ID`
+
+The related Service Principal requires the "Reader" role in the account.
+
+</details>
 
 Fetch and standardize datacenter, zone, servers, traffic, storage etc data from AWS into a single SQLite file:
 
