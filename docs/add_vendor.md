@@ -64,9 +64,9 @@ def inventory_compliance_frameworks(vendor):
     ])
 
 
-def inventory_datacenters(vendor):
+def inventory_regions(vendor):
     items = []
-    # for datacenter in []:
+    # for region in []:
     #     items.append(
     #         {
     #             "vendor_id": vendor.vendor_id,
@@ -100,7 +100,7 @@ def inventory_zones(vendor):
 
 
 def inventory_servers(vendor):
-    # items = []
+    items = []
     # for server in []:
     #     items.append(
     #         {
@@ -142,11 +142,11 @@ def inventory_servers(vendor):
     #             "ipv4": 0,
     #         }
     #     )
-    # return items
+    return items
 
 
 def inventory_server_prices(vendor):
-    # items = []
+    items = []
     # for server in []:
     #     items.append({
     #         "vendor_id": ,
@@ -161,7 +161,7 @@ def inventory_server_prices(vendor):
     #         "price_tiered": [],
     #         "currency": "USD",
     #     })
-    # return items
+    return items
 
 
 def inventory_server_prices_spot(vendor):
@@ -169,7 +169,7 @@ def inventory_server_prices_spot(vendor):
 
 
 def inventory_storage(vendor):
-    # items = []
+    items = []
     # for storage in []:
     #     items.append(
     #         {
@@ -184,11 +184,11 @@ def inventory_storage(vendor):
     #             "max_size": None,
     #         }
     #     )
-    # return items
+    return items
 
 
 def inventory_storage_prices(vendor):
-    # items = []
+    items = []
     # for price in []:
     #     items.append(
     #         {
@@ -200,11 +200,11 @@ def inventory_storage_prices(vendor):
     #             "currency": "USD",
     #         }
     #     )
-    # return items
+    return items
 
 
 def inventory_traffic_prices(vendor):
-    # items = []
+    items = []
     # for price in []:
     #     items.append(
     #         {
@@ -217,11 +217,11 @@ def inventory_traffic_prices(vendor):
     #             "direction": TrafficDirection....,
     #         }
     #     )
-    # return items
+    return items
 
 
 def inventory_ipv4_prices(vendor):
-    # items = []
+    items = []
     # for price in []:
     #     items.append(
     #         {
@@ -232,5 +232,5 @@ def inventory_ipv4_prices(vendor):
     #             "unit": PriceUnit.HOUR,
     #         }
     #     )
-    # return items
+    return items
 ```
