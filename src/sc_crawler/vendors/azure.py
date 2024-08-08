@@ -1,3 +1,4 @@
+from functools import cache
 from os import environ
 from typing import List
 
@@ -10,25 +11,41 @@ from cachier import cachier
 from ..lookup import map_compliance_frameworks_to_vendor
 
 credential = DefaultAzureCredential()
-subscription_client = SubscriptionClient(credential)
-
-# use first subcription if not passed via env var
-subscription_id = environ.get(
-    "AZURE_SUBSCRIPTION_ID",
-    default=next(subscription_client.subscriptions.list()).subscription_id,
-)
-
-resource_client = ResourceManagementClient(credential, subscription_id)
 
 
 # ##############################################################################
 # Cached Azure client wrappers
 
 
+@cache
+def _subscription_client() -> SubscriptionClient:
+    return SubscriptionClient(credential)
+
+
+@cache
+def _subscription_id() -> str:
+    """Get Subscription ID.
+
+    Read from the `AZURE_SUBSCRIPTION_ID` environment variable,
+    otherwise use first subcription found in the account.
+    """
+    return environ.get(
+        "AZURE_SUBSCRIPTION_ID",
+        default=next(_subscription_client().subscriptions.list())._subscription_id(),
+    )
+
+
+@cache
+def _resource_client() -> ResourceManagementClient:
+    return ResourceManagementClient(credential, _subscription_id())
+
+
 @cachier()
 def _regions() -> List[Location]:
     locations = []
-    for location in subscription_client.subscriptions.list_locations(subscription_id):
+    for location in _subscription_client().subscriptions.list_locations(
+        _subscription_id()
+    ):
         locations.append(location.as_dict())
     return locations
 
@@ -36,7 +53,7 @@ def _regions() -> List[Location]:
 @cachier()
 def _resources(namespace: str) -> List[ProviderResourceType]:
     resources = []
-    for resource in resource_client.providers.get(namespace).resource_types:
+    for resource in _resource_client().providers.get(namespace).resource_types:
         resources.append(resource.as_dict())
     return resources
 
