@@ -2,8 +2,9 @@ from typing import List
 from os import environ
 
 from azure.identity import DefaultAzureCredential
-from azure.mgmt.resource import SubscriptionClient
-from azure.mgmt.resource.subscriptions.v2022_12_01.models._models_py3 import Location
+from azure.mgmt.resource import ResourceManagementClient, SubscriptionClient
+from azure.mgmt.resource.resources.v2022_09_01.models import ProviderResourceType
+from azure.mgmt.resource.subscriptions.v2022_12_01.models import Location
 from cachier import cachier
 
 from ..lookup import map_compliance_frameworks_to_vendor
@@ -18,6 +19,9 @@ subscription_id = environ.get(
     default=next(subscription_client.subscriptions.list()).subscription_id,
 )
 
+resource_client = ResourceManagementClient(credential, subscription_id)
+
+
 # ##############################################################################
 # Cached Azure client wrappers
 
@@ -30,6 +34,14 @@ def _regions() -> List[Location]:
     return locations
 
 
+@cachier()
+def _resources(namespace: str) -> List[ProviderResourceType]:
+    resources = []
+    for resource in resource_client.providers.get(namespace).resource_types:
+        resources.append(resource.as_dict())
+    return resources
+
+
 # ##############################################################################
 # Public methods to fetch data
 
@@ -37,7 +49,8 @@ def _regions() -> List[Location]:
 def inventory_compliance_frameworks(vendor):
     """Manual list of known compliance frameworks at Azure.
 
-    Data collected from <https://learn.microsoft.com/en-us/azure/compliance/>."""
+    Data collected from <https://learn.microsoft.com/en-us/azure/compliance/>.
+    """
     return map_compliance_frameworks_to_vendor(
         vendor.vendor_id, ["hipaa", "soc2t2", "iso27001"]
     )
@@ -456,14 +469,30 @@ def inventory_regions(vendor):
 
 
 def inventory_zones(vendor):
+    """List all availability zones.
+
+    API call to list existing availability zones ("1", "2", and "3")
+    for each region, and creating a dummy "0" zone for the regions
+    without availability zones.
+    """
     items = []
-    # for zone in []:
-    #     items.append({
-    #         "vendor_id": vendor.vendor_id,
-    #         "datacenter_id": "",
-    #         "zone_id": "",
-    #         "name": "",
-    #     })
+    resources = _resources("Microsoft.Compute")
+    locations = [i for i in resources if i["resource_type"] == "virtualMachines"][0]
+    locations = {item["location"]: item["zones"] for item in locations["zone_mappings"]}
+    for region in vendor.regions:
+        # default to zone with 0 ID if there are no real availability zones
+        region_zones = locations.get(region.name, ["0"])
+        for zone in region_zones:
+            items.append(
+                {
+                    "vendor_id": vendor.vendor_id,
+                    "region_id": region.region_id,
+                    "zone_id": zone,
+                    "name": zone,
+                    "api_reference": zone,
+                    "display_name": zone,
+                }
+            )
     return items
 
 
