@@ -202,6 +202,7 @@ def _standardize_server(server: dict, vendor) -> dict:
         "description": description,
         "api_reference": server["name"],
         "display_name": server["name"],
+        "family": family,
         "vcpus": server["number_of_cores"],
         "hypervisor": "Microsoft Hyper-V,",
         "cpu_allocation": (
