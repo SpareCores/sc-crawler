@@ -53,7 +53,7 @@ testing = ["pytest", "sparecores-crawler[mkdocs]"]
 aws = ["boto3"]
 hcloud = ["hcloud"]
 gcp = ["google-cloud", "google-cloud-compute", "google-cloud-billing"]
-azure = ["azure-identity", "azure-mgmt-resource"]
+azure = ["azure-identity", "azure-mgmt-resource", "azure-mgmt-compute"]
 vendors = [
   "sparecores-crawler[aws]",
   "sparecores-crawler[hcloud]",
