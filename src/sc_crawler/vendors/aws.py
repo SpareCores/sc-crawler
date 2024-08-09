@@ -816,23 +816,9 @@ def inventory_servers(vendor):
     # TODO consider dropping this in favor of pricing.get_products, as
     #      it has info e.g. on instanceFamily although other fields
     #      are messier (e.g. extract memory from string)
-    vendor.progress_tracker.start_task(
-        name="Scanning region(s) for server(s)", total=len(vendor.regions)
+    instance_types = parallel_fetch_servers(
+        vendor, _boto_describe_instance_types, "InstanceType"
     )
-
-    def search_servers(region: Region, vendor: Optional[Vendor]) -> List[dict]:
-        return parallel_fetch_servers(region, vendor, _boto_describe_instance_types)
-
-    with ThreadPoolExecutor(max_workers=8) as executor:
-        products = executor.map(search_servers, vendor.regions, repeat(vendor))
-    instance_types = list(chain.from_iterable(products))
-
-    vendor.log(
-        f"{len(instance_types)} server(s) found in {len(vendor.regions)} regions."
-    )
-    instance_types = list({p["InstanceType"]: p for p in instance_types}.values())
-    vendor.log(f"{len(instance_types)} unique server(s) found.")
-    vendor.progress_tracker.hide_task()
 
     vendor.progress_tracker.start_task(
         name="Preprocessing server(s)", total=len(instance_types)
