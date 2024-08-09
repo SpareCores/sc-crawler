@@ -15,7 +15,8 @@ def fetch_servers(region: Region, vendor: Vendor, fn: Callable) -> List[dict]:
         vendor: The related Vendor instance used for database connection, logging and progress bar updates.
         fn: A function that takes the region id as its first and only argument.
             The returning list must conform with the Server object, or need to
-            be in a format that [preprocess_servers][]'s `fn` can manage.
+            be in a format that [preprocess_servers][sc_crawler.vendor_helpers.preprocess_servers]'s
+            `fn` can manage.
     """
     servers = []
     if region.status == Status.ACTIVE:
