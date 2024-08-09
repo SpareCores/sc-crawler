@@ -2,9 +2,8 @@ from concurrent.futures import ThreadPoolExecutor
 from itertools import chain, repeat
 from typing import Callable, List, Optional
 
-
-from .tables import Region, Vendor
 from .table_fields import Status
+from .tables import Region, Vendor
 
 
 def fetch_servers(region: Region, vendor: Optional[Vendor], fn: Callable) -> List[dict]:

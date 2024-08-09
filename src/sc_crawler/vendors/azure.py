@@ -10,13 +10,8 @@ from azure.mgmt.resource import ResourceManagementClient, SubscriptionClient
 from cachier import cachier
 
 from ..lookup import map_compliance_frameworks_to_vendor
-from ..vendor_helpers import parallel_fetch_servers, preprocess_servers
 from ..table_fields import CpuAllocation, CpuArchitecture
-
-
-from sc_crawler.lookup import map_compliance_frameworks_to_vendor
-from sc_crawler.vendor_helpers import parallel_fetch_servers, preprocess_servers
-from sc_crawler.table_fields import CpuAllocation, CpuArchitecture
+from ..vendor_helpers import parallel_fetch_servers, preprocess_servers
 
 credential = DefaultAzureCredential()
 
