@@ -11,7 +11,7 @@ from sqlmodel import Relationship, Session, SQLModel
 
 from .insert import insert_items
 from .inspector import inspect_server_benchmarks, inspect_update_server_dict
-from .logger import VendorProgressTracker, log_start_end, logger
+from .logger import VendorProgressTracker, VoidProgressTracker, log_start_end, logger
 from .table_bases import (
     BenchmarkBase,
     BenchmarkScoreBase,
@@ -104,7 +104,9 @@ class Vendor(VendorBase, table=True):
     # private attributes
     _methods: Optional[ImportString[ModuleType]] = PrivateAttr(default=None)
     _session: Optional[Session] = PrivateAttr()
-    _progress_tracker: Optional[VendorProgressTracker] = PrivateAttr()
+    _progress_tracker: Optional[VendorProgressTracker] = PrivateAttr(
+        default=VoidProgressTracker()
+    )
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

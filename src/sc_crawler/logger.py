@@ -253,3 +253,34 @@ class VendorProgressTracker:
         """
         self.tasks.update(task_id or self.last_task(), visible=False)
         self.task_ids.pop()
+
+
+class VoidProgressTracker(VendorProgressTracker):
+    """Progress tracker reference not doing antyhing."""
+
+    def __init__(*args, **kwargs):
+        pass
+
+    def start_vendor(self, *args, **kwargs):
+        pass
+
+    def advance_vendor(self, *args, **kwargs):
+        pass
+
+    def update_vendor(self, *args, **kwargs):
+        pass
+
+    def start_task(self, *args, **kwargs):
+        pass
+
+    def last_task(self, *args, **kwargs):
+        pass
+
+    def advance_task(self, *args, **kwargs):
+        pass
+
+    def update_task(self, *args, **kwargs):
+        pass
+
+    def hide_task(self, *args, **kwargs):
+        pass
