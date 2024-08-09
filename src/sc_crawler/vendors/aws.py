@@ -29,6 +29,7 @@ from ..tables import (
     Vendor,
 )
 from ..utils import float_inf_to_str, jsoned_hash, scmodels_to_dict
+from ..vendor_helpers import parallel_fetch_servers
 
 # disable caching by default
 set_default_params(caching_enabled=False, stale_after=timedelta(days=1))
@@ -820,16 +821,7 @@ def inventory_servers(vendor):
     )
 
     def search_servers(region: Region, vendor: Optional[Vendor]) -> List[dict]:
-        instance_types = []
-        if region.status == "active":
-            instance_types = _boto_describe_instance_types(region.region_id)
-            if vendor:
-                vendor.log(
-                    f"{len(instance_types)} server(s) found in {region.region_id}."
-                )
-        if vendor:
-            vendor.progress_tracker.advance_task()
-        return instance_types
+        return parallel_fetch_servers(region, vendor, _boto_describe_instance_types)
 
     with ThreadPoolExecutor(max_workers=8) as executor:
         products = executor.map(search_servers, vendor.regions, repeat(vendor))
