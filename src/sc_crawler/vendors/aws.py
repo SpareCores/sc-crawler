@@ -29,7 +29,7 @@ from ..tables import (
     Vendor,
 )
 from ..utils import float_inf_to_str, jsoned_hash, scmodels_to_dict
-from ..vendor_helpers import parallel_fetch_servers
+from ..vendor_helpers import parallel_fetch_servers, preprocess_servers
 
 # disable caching by default
 set_default_params(caching_enabled=False, stale_after=timedelta(days=1))
@@ -816,18 +816,10 @@ def inventory_servers(vendor):
     # TODO consider dropping this in favor of pricing.get_products, as
     #      it has info e.g. on instanceFamily although other fields
     #      are messier (e.g. extract memory from string)
-    instance_types = parallel_fetch_servers(
+    servers = parallel_fetch_servers(
         vendor, _boto_describe_instance_types, "InstanceType"
     )
-
-    vendor.progress_tracker.start_task(
-        name="Preprocessing server(s)", total=len(instance_types)
-    )
-    servers = []
-    for instance_type in instance_types:
-        servers.append(_make_server_from_instance_type(instance_type, vendor))
-        vendor.progress_tracker.advance_task()
-    vendor.progress_tracker.hide_task()
+    servers = preprocess_servers(servers, vendor, _make_server_from_instance_type)
     return servers
 
 
