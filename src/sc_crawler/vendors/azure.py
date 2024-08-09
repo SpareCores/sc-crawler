@@ -193,10 +193,10 @@ def _standardize_server(server: dict, vendor) -> dict:
     return {
         "vendor_id": vendor.vendor_id,
         "server_id": server["name"],
-        "name": server["name"],
+        "name": server["name"].removeprefix("Standard_"),
         "description": description,
         "api_reference": server["name"],
-        "display_name": server["name"],
+        "display_name": server["name"].removeprefix("Standard_"),
         "family": family,
         "vcpus": server["number_of_cores"],
         "hypervisor": "Microsoft Hyper-V,",
@@ -681,6 +681,7 @@ def inventory_servers(vendor):
 
 
 def inventory_server_prices(vendor):
+    # https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices
     items = []
     # for server in []:
     #     items.append({
