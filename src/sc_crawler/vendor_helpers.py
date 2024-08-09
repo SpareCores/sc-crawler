@@ -10,7 +10,13 @@ from .table_fields import Status
 def fetch_servers(region: Region, vendor: Vendor, fn: Callable) -> List[dict]:
     """Fetch servers of a region.
 
-    TODO"""
+    Args:
+        region: A Region object with `region_id` that is passed to `fn`.
+        vendor: The related Vendor instance used for database connection, logging and progress bar updates.
+        fn: A function that takes the region id as its first and only argument.
+            The returning list must conform with the Server object, or need to
+            be in a format that [preprocess_servers][]'s `fn` can manage.
+    """
     servers = []
     if region.status == Status.ACTIVE:
         servers = fn(region.region_id)
@@ -20,9 +26,13 @@ def fetch_servers(region: Region, vendor: Vendor, fn: Callable) -> List[dict]:
 
 
 def parallel_fetch_servers(vendor: Vendor, fn: Callable, id_col: str) -> List[dict]:
-    """Fetch servers of regions in parallel on 8 threads.
+    """Fetch servers from all regions in parallel on 8 threads.
 
-    TODO"""
+    Args:
+        vendor: The related Vendor instance used for database connection, logging and progress bar updates.
+        fn: A function to be passed to [fetch_servers][sc_crawler.vendor_helpers.fetch_servers].
+        id_cols: Field name to be used to deduplicate the list of server dicts.
+    """
     vendor.progress_tracker.start_task(
         name="Scanning region(s) for server(s)", total=len(vendor.regions)
     )
@@ -44,9 +54,15 @@ def parallel_fetch_servers(vendor: Vendor, fn: Callable, id_col: str) -> List[di
 
 
 def preprocess_servers(servers: List[dict], vendor: Vendor, fn: Callable) -> List[dict]:
-    """TODO
+    """Preprocess servers before inserting into the database.
 
-    TODO
+    Takes a list of dicts and tranform to a list of dicts that
+    follows the [Server][sc_crawler.tables.Server] schema.
+
+    Args:
+        servers: To be passed to `fn`.
+        vendor: The related Vendor instance used for database connection, logging and progress bar updates.
+        fn: A function that takes `servers` one-by-one.
     """
     vendor.progress_tracker.start_task(
         name="Preprocessing server(s)", total=len(servers)
