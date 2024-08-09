@@ -85,6 +85,30 @@ def _servers(region: str) -> List[dict]:
 # ##############################################################################
 # Internal helpers
 
+SERVER_FEATURES = {
+    # a = AMD-based processor
+    # b = Block Storage performance
+    # d = diskful (that is, a local temp disk is present)
+    # i = isolated size
+    # l = low memory; a lower amount of memory than the memory intensive size
+    # m = memory intensive; the most amount of memory in a particular size
+    # p = ARM Cpu
+    # t = tiny memory; the smallest amount of memory in a particular size
+    # s = Premium Storage capable, including possible use of Ultra SSD
+    "a": "AMD processor",
+    "p": "ARM processor",
+    "b": "Block Storage performance",
+    "d": "Local Disk",
+    "i": "Isolated",
+    "l": "Low Memory",
+    "m": "Memory Intensive",
+    "t": "Tiny Memory",
+    "s": "Premium Storage capable",
+    # not part of the official docs, searched at randomg places
+    "r": "RDMA capable",
+    "e": "Memory Optimized",  # Standard_DC2es_v5
+}
+
 
 def _parse_server_name(name):
     """Extract information from the server name/size.
@@ -152,7 +176,7 @@ def _parse_server_name(name):
                 gpus = 2
             if vcpus in [48]:
                 gpus = 4
-    return (family, architecture, gpus)
+    return (family, features, architecture, gpus)
 
 
 def _standardize_server(server: dict, vendor) -> dict:
@@ -160,11 +184,24 @@ def _standardize_server(server: dict, vendor) -> dict:
     #   {'name': 'Standard_L64as_v3', 'number_of_cores': 64,
     #    'os_disk_size_in_mb': 1047552, 'resource_disk_size_in_mb': 655360,
     #    'memory_in_mb': 524288, 'max_data_disk_count': 32}
-    family, architecture, gpus = _parse_server_name(server["name"])
+    family, features, architecture, gpus = _parse_server_name(server["name"])
+    # construct a server description as Azure doesn't provide one
+    description = family + " family"
+    description_extras = [SERVER_FEATURES[f] for f in features]
+    if not set(["a", "p"]).intersection(features):
+        description_extras.append("Intel processor")
+    for description_extra in description_extras:
+        description = description + " [" + description_extra + "]"
+    description = description + " " + str(server["number_of_cores"]) + " vCPU"
+    if server["number_of_cores"] > 1:
+        description = description + "s"
     return {
         "vendor_id": vendor.vendor_id,
         "server_id": server["name"],
         "name": server["name"],
+        "description": description,
+        "api_reference": server["name"],
+        "display_name": server["name"],
         "vcpus": server["number_of_cores"],
         "hypervisor": "Microsoft Hyper-V,",
         "cpu_allocation": (
@@ -177,7 +214,7 @@ def _standardize_server(server: dict, vendor) -> dict:
         "gpu_count": gpus,
         # not including os_disk_size_in_mb, as that's not mentioned in the docs,
         # see e.g. https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/general-purpose/dsv5-series
-        "storage_size": server["resource_disk_size_in_mb"] / 1024,
+        "storage_size": int(server["resource_disk_size_in_mb"] / 1024),
         "inbound_traffic": 0,
         "outbound_traffic": 0,
         "ipv4": 0,
