@@ -1,14 +1,22 @@
 from functools import cache
 from os import environ
+from re import search
 from typing import List
 
+from azure.core.exceptions import HttpResponseError
 from azure.identity import DefaultAzureCredential
+from azure.mgmt.compute import ComputeManagementClient
 from azure.mgmt.resource import ResourceManagementClient, SubscriptionClient
-from azure.mgmt.resource.resources.v2022_09_01.models import ProviderResourceType
-from azure.mgmt.resource.subscriptions.v2022_12_01.models import Location
 from cachier import cachier
 
 from ..lookup import map_compliance_frameworks_to_vendor
+from ..vendor_helpers import parallel_fetch_servers, preprocess_servers
+from ..table_fields import CpuAllocation, CpuArchitecture
+
+
+from sc_crawler.lookup import map_compliance_frameworks_to_vendor
+from sc_crawler.vendor_helpers import parallel_fetch_servers, preprocess_servers
+from sc_crawler.table_fields import CpuAllocation, CpuArchitecture
 
 credential = DefaultAzureCredential()
 
@@ -31,7 +39,7 @@ def _subscription_id() -> str:
     """
     return environ.get(
         "AZURE_SUBSCRIPTION_ID",
-        default=next(_subscription_client().subscriptions.list())._subscription_id(),
+        default=next(_subscription_client().subscriptions.list()).subscription_id,
     )
 
 
@@ -40,8 +48,13 @@ def _resource_client() -> ResourceManagementClient:
     return ResourceManagementClient(credential, _subscription_id())
 
 
+@cache
+def _compute_client() -> ComputeManagementClient:
+    return ComputeManagementClient(credential, _subscription_id())
+
+
 @cachier()
-def _regions() -> List[Location]:
+def _regions() -> List[dict]:
     locations = []
     for location in _subscription_client().subscriptions.list_locations(
         _subscription_id()
@@ -51,11 +64,124 @@ def _regions() -> List[Location]:
 
 
 @cachier()
-def _resources(namespace: str) -> List[ProviderResourceType]:
+def _resources(namespace: str) -> List[dict]:
     resources = []
     for resource in _resource_client().providers.get(namespace).resource_types:
         resources.append(resource.as_dict())
     return resources
+
+
+@cachier()
+def _servers(region: str) -> List[dict]:
+    servers = []
+    try:
+        for server in _compute_client().virtual_machine_sizes.list(region):
+            servers.append(server.as_dict())
+    except HttpResponseError:
+        pass
+    return servers
+
+
+# ##############################################################################
+# Internal helpers
+
+
+def _parse_server_name(name):
+    """Extract information from the server name/size.
+
+    Based on <https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/overview>."""
+    # drop the constant prefix
+    name = name.removeprefix("Standard_")
+    # first ALLCAPS chars are the family name (we don't care about the subfamily for now)
+    family = search(r"^([A-Z]*)", name).group(1)
+    name = name.removeprefix(family)
+    vcpus = int(search(r"^([0-9]*)", name).group(1))
+    name = name.removeprefix(str(vcpus))
+    # drop constrained vCPU count
+    contrained_vcpus = search(r"^-([0-9])*", name)
+    if contrained_vcpus:
+        contrained_vcpus = contrained_vcpus.group(1)
+        name.removeprefix("-" + contrained_vcpus)
+    # a = AMD-based processor
+    # b = Block Storage performance
+    # d = diskful (that is, a local temp disk is present)
+    # i = isolated size
+    # l = low memory; a lower amount of memory than the memory intensive size
+    # m = memory intensive; the most amount of memory in a particular size
+    # p = ARM Cpu
+    # t = tiny memory; the smallest amount of memory in a particular size
+    # s = Premium Storage capable, including possible use of Ultra SSD
+    features = []
+    if search(r"^[a-z]*", name):
+        features = [char for char in search(r"^([a-z]*)", name).group(1)]
+    # the only way to find out if a server is x86 or ARM
+    architecture = "x86_64"
+    if "p" in features:
+        architecture = "arm64"
+    # accelerators are mentioned in the name of the newer servers
+    accelerators = search(r"((A100|H100|MI300X|V620|A10))", name)
+    if accelerators:
+        accelerators = accelerators.group(1)
+    # but accelerators are not mentioned in the old server names, so we need a manual mapping
+    gpus = 0
+    if family in ["NC", "ND", "NG", "NV"]:
+        # default to one, list all the exceptions below
+        # note that some servers come with a fraction of a GPU, but we need int
+        gpus = 1
+        if family == "NC":
+            if vcpus == 24:
+                # Standard_NC24ads_A100_v4 has only 1 GPU, but Standard_NC24(r) has 4x Tesla K80
+                if not accelerators:
+                    gpus = 4
+            if vcpus in [12, 80]:
+                gpus = 2
+            if vcpus in [64]:
+                gpus = 4
+        if family == "ND":
+            if vcpus in [12]:
+                gpus = 2
+            if vcpus in [24]:
+                gpus = 4
+            if vcpus in [40, 96]:
+                gpus = 8
+        if family == "NG":
+            # all NG servers has 1 or just a fraction of a GPU
+            pass
+        if family == "NV":
+            if vcpus in [24, 72]:
+                gpus = 2
+            if vcpus in [48]:
+                gpus = 4
+    return (family, architecture, gpus)
+
+
+def _standardize_server(server: dict, vendor) -> dict:
+    # example server dict:
+    #   {'name': 'Standard_L64as_v3', 'number_of_cores': 64,
+    #    'os_disk_size_in_mb': 1047552, 'resource_disk_size_in_mb': 655360,
+    #    'memory_in_mb': 524288, 'max_data_disk_count': 32}
+    family, architecture, gpus = _parse_server_name(server["name"])
+    return {
+        "vendor_id": vendor.vendor_id,
+        "server_id": server["name"],
+        "name": server["name"],
+        "vcpus": server["number_of_cores"],
+        "hypervisor": "Microsoft Hyper-V,",
+        "cpu_allocation": (
+            CpuAllocation.BURSTABLE if family == "B" else CpuAllocation.DEDICATED
+        ),
+        "cpu_architecture": (
+            CpuArchitecture.ARM64 if architecture == "arm64" else CpuArchitecture.X86_64
+        ),
+        "memory_amount": server["memory_in_mb"],
+        "gpu_count": gpus,
+        # not including os_disk_size_in_mb, as that's not mentioned in the docs,
+        # see e.g. https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/general-purpose/dsv5-series
+        "storage_size": server["resource_disk_size_in_mb"] / 1024,
+        "inbound_traffic": 0,
+        "outbound_traffic": 0,
+        "ipv4": 0,
+    }
 
 
 # ##############################################################################
@@ -490,6 +616,7 @@ def inventory_zones(vendor):
     resources = _resources("Microsoft.Compute")
     locations = [i for i in resources if i["resource_type"] == "virtualMachines"][0]
     locations = {item["location"]: item["zones"] for item in locations["zone_mappings"]}
+    # TODO parallelize
     for region in vendor.regions:
         # default to zone with 0 ID if there are no real availability zones
         region_zones = locations.get(region.name, ["0"])
@@ -508,49 +635,10 @@ def inventory_zones(vendor):
 
 
 def inventory_servers(vendor):
-    items = []
-    # for server in []:
-    #     items.append(
-    #         {
-    #             "vendor_id": vendor.vendor_id,
-    #             "server_id": ,
-    #             "name": ,
-    #             "description": None,
-    #             "vcpus": ,
-    #             "hypervisor": None,
-    #             "cpu_allocation": CpuAllocation....,
-    #             "cpu_cores": None,
-    #             "cpu_speed": None,
-    #             "cpu_architecture": CpuArchitecture....,
-    #             "cpu_manufacturer": None,
-    #             "cpu_family": None,
-    #             "cpu_model": None,
-    #             "cpu_l1_cache: None,
-    #             "cpu_l2_cache: None,
-    #             "cpu_l3_cache: None,
-    #             "cpu_flags: [],
-    #             "cpus": [],
-    #             "memory_amount": ,
-    #             "memory_generation": None,
-    #             "memory_speed": None,
-    #             "memory_ecc": None,
-    #             "gpu_count": 0,
-    #             "gpu_memory_min": None,
-    #             "gpu_memory_total": None,
-    #             "gpu_manufacturer": None,
-    #             "gpu_family": None,
-    #             "gpu_model": None,
-    #             "gpus": [],
-    #             "storage_size": 0,
-    #             "storage_type": None,
-    #             "storages": [],
-    #             "network_speed": None,
-    #             "inbound_traffic": 0,
-    #             "outbound_traffic": 0,
-    #             "ipv4": 0,
-    #         }
-    #     )
-    return items
+    """List all available instance types in all regions."""
+    servers = parallel_fetch_servers(vendor, _servers, "name")
+    servers = preprocess_servers(servers, vendor, _standardize_server)
+    return servers
 
 
 def inventory_server_prices(vendor):
@@ -641,3 +729,13 @@ def inventory_ipv4_prices(vendor):
     #         }
     #     )
     return items
+
+
+# names = [server.get("name") for server in servers]
+# names.sort()
+# for server in names:
+#     print(server)
+
+# for server in servers:
+#     if server.get("name") == "Standard_D8s_v5":
+#         break
