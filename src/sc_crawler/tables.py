@@ -10,7 +10,11 @@ from sqlalchemy import ForeignKeyConstraint, update
 from sqlmodel import Relationship, Session, SQLModel
 
 from .insert import insert_items
-from .inspector import inspect_server_benchmarks, inspect_update_server_dict
+from .inspector import (
+    inspect_server_benchmarks,
+    inspect_update_server_dict,
+    inspector_data_path,
+)
 from .logger import VendorProgressTracker, VoidProgressTracker, log_start_end, logger
 from .table_bases import (
     BenchmarkBase,
@@ -238,6 +242,13 @@ class Vendor(VendorBase, table=True):
         """Get the vendor's all server types."""
         self.set_table_rows_inactive(Server)
         servers = self._get_methods().inventory_servers(self)
+        # show progress bar while downloading
+        self.progress_tracker.start_task(
+            name="Downloading sc-inspector-data", total=None
+        )
+        inspector_data_path()
+        self.progress_tracker.hide_task()
+        # actual HW inspection
         for server in servers:
             server = inspect_update_server_dict(server)
         insert_items(Server, servers, self)
