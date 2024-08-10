@@ -817,7 +817,7 @@ def inventory_servers(vendor):
     #      it has info e.g. on instanceFamily although other fields
     #      are messier (e.g. extract memory from string)
     servers = parallel_fetch_servers(
-        vendor, _boto_describe_instance_types, "InstanceType"
+        vendor, _boto_describe_instance_types, "InstanceType", "regions"
     )
     servers = preprocess_servers(servers, vendor, _make_server_from_instance_type)
     return servers

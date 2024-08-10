@@ -23,6 +23,7 @@ from ..tables import (
     Zone,
 )
 from ..utils import nesteddefaultdict, scmodels_to_dict
+from ..vendor_helpers import add_vendor_id, parallel_fetch_servers, preprocess_servers
 
 # ##############################################################################
 # Cached gcp client wrappers
@@ -271,6 +272,63 @@ def _skus_dict():
                 )
 
     return lookup
+
+
+def _search_servers(zone_name: str) -> List[dict]:
+    zone_servers = []
+    for server in _servers(zone_name):
+        zone_servers.append(
+            {
+                "server_id": str(server.id),
+                "name": server.name,
+                "api_reference": server.name,
+                "display_name": server.name,
+                "description": server.description,
+                "family": server.name.split("-")[0],
+                "vcpus": server.guest_cpus,
+                "hypervisor": None,
+                "cpu_allocation": (
+                    CpuAllocation.SHARED
+                    if server.is_shared_cpu
+                    else CpuAllocation.DEDICATED
+                ),
+                "cpu_cores": None,
+                "cpu_speed": None,
+                "cpu_architecture": (
+                    CpuArchitecture.ARM64
+                    if server.name.startswith("t2a")
+                    else CpuArchitecture.X86_64
+                ),
+                "cpu_manufacturer": None,
+                "cpu_family": None,
+                "cpu_model": None,
+                "cpus": [],
+                "memory_amount": server.memory_mb,
+                "gpu_count": (
+                    server.accelerators[0].guest_accelerator_count
+                    if server.accelerators
+                    else 0
+                ),
+                "gpu_memory_min": None,
+                "gpu_memory_total": None,
+                "gpu_manufacturer": None,
+                "gpu_model": (
+                    server.accelerators[0].guest_accelerator_type
+                    if server.accelerators
+                    else None
+                ),
+                "gpus": [],
+                # TODO no API to get local disks for an instance type
+                "storage_size": 0,
+                "storage_type": None,
+                "storages": [],
+                "network_speed": None,
+                "inbound_traffic": 0,
+                "outbound_traffic": 0,
+                "ipv4": 0,
+            }
+        )
+    return zone_servers
 
 
 def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dict]:
@@ -798,77 +856,8 @@ def inventory_zones(vendor):
 
 def inventory_servers(vendor):
     """List all available GCP servers available in all zones."""
-    vendor.progress_tracker.start_task(
-        name="Scanning zone(s) for server(s)", total=len(vendor.zones)
-    )
-
-    def search_servers(zone: Zone, vendor: Vendor) -> List[dict]:
-        zone_servers = []
-        for server in _servers(zone.name):
-            zone_servers.append(
-                {
-                    "vendor_id": vendor.vendor_id,
-                    "server_id": str(server.id),
-                    "name": server.name,
-                    "api_reference": server.name,
-                    "display_name": server.name,
-                    "description": server.description,
-                    "family": server.name.split("-")[0],
-                    "vcpus": server.guest_cpus,
-                    "hypervisor": None,
-                    "cpu_allocation": (
-                        CpuAllocation.SHARED
-                        if server.is_shared_cpu
-                        else CpuAllocation.DEDICATED
-                    ),
-                    "cpu_cores": None,
-                    "cpu_speed": None,
-                    "cpu_architecture": (
-                        CpuArchitecture.ARM64
-                        if server.name.startswith("t2a")
-                        else CpuArchitecture.X86_64
-                    ),
-                    "cpu_manufacturer": None,
-                    "cpu_family": None,
-                    "cpu_model": None,
-                    "cpus": [],
-                    "memory_amount": server.memory_mb,
-                    "gpu_count": (
-                        server.accelerators[0].guest_accelerator_count
-                        if server.accelerators
-                        else 0
-                    ),
-                    "gpu_memory_min": None,
-                    "gpu_memory_total": None,
-                    "gpu_manufacturer": None,
-                    "gpu_model": (
-                        server.accelerators[0].guest_accelerator_type
-                        if server.accelerators
-                        else None
-                    ),
-                    "gpus": [],
-                    # TODO no API to get local disks for an instance type
-                    "storage_size": 0,
-                    "storage_type": None,
-                    "storages": [],
-                    "network_speed": None,
-                    "inbound_traffic": 0,
-                    "outbound_traffic": 0,
-                    "ipv4": 0,
-                }
-            )
-        vendor.log(f"{len(zone_servers)} server(s) found in {zone.name}.")
-        vendor.progress_tracker.advance_task()
-        return zone_servers
-
-    with ThreadPoolExecutor(max_workers=8) as executor:
-        servers = executor.map(search_servers, vendor.zones, repeat(vendor))
-    servers = list(chain.from_iterable(servers))
-
-    vendor.log(f"{len(servers)} server(s) found in {len(vendor.zones)} zones.")
-    servers = list({p["name"]: p for p in servers}.values())
-    vendor.log(f"{len(servers)} unique server(s) found.")
-    vendor.progress_tracker.hide_task()
+    servers = parallel_fetch_servers(vendor, _search_servers, "name", "zones")
+    servers = preprocess_servers(servers, vendor, add_vendor_id)
     return servers
 
 

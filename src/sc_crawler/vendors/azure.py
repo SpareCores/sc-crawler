@@ -669,7 +669,7 @@ def inventory_zones(vendor):
 
 def inventory_servers(vendor):
     """List all available instance types in all regions."""
-    servers = parallel_fetch_servers(vendor, _servers, "name")
+    servers = parallel_fetch_servers(vendor, _servers, "name", "regions")
     # drop Basic servers as to be deprecated by Aug 2024
     for i in range(len(servers) - 1, -1, -1):
         name = servers[i].get("name")
