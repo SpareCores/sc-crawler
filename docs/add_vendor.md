@@ -155,7 +155,7 @@ def inventory_server_prices(vendor):
     #         "server_id": ,
     #         "operating_system": ,
     #         "allocation": Allocation....,
-    #         "unit": "hourly",
+    #         "unit": PriceUnit.HOUR,
     #         "price": ,
     #         "price_upfront": 0,
     #         "price_tiered": [],

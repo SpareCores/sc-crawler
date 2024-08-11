@@ -7,7 +7,7 @@ from .tables import Vendor
 
 
 def fetch_servers(fn: Callable, where: str, vendor: Optional[Vendor]) -> List[dict]:
-    """Fetch servers of a region.
+    """Fetch servers of a region/zone.
 
     Args:
         fn: A function that takes the region or zone id as its first and only argument.
@@ -30,7 +30,7 @@ def fetch_servers(fn: Callable, where: str, vendor: Optional[Vendor]) -> List[di
 def parallel_fetch_servers(
     vendor: Vendor, fn: Callable, id_col: str, by: Literal["regions", "zones"]
 ) -> List[dict]:
-    """Fetch servers from all regions/zones in parallel on 8 threads.
+    """Fetch servers of all regions/zones in parallel on 8 threads.
 
     Args:
         vendor: Required [Vendor][sc_crawler.tables.Vendor] instance used for
