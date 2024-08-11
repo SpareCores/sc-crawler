@@ -13,9 +13,15 @@ from requests import Session
 
 from ..logger import logger
 from ..lookup import map_compliance_frameworks_to_vendor
-from ..table_fields import Allocation, CpuAllocation, CpuArchitecture, PriceUnit
+from ..table_fields import (
+    Allocation,
+    CpuAllocation,
+    CpuArchitecture,
+    PriceUnit,
+    StorageType,
+)
 from ..tables import Vendor
-from ..utils import scmodels_to_dict
+from ..utils import scmodels_to_dict, list_search
 from ..vendor_helpers import parallel_fetch_servers, preprocess_servers
 
 credential = DefaultAzureCredential()
@@ -67,6 +73,14 @@ def _regions() -> List[dict]:
 def _resources(namespace: str) -> List[dict]:
     resources = []
     for resource in _resource_client().providers.get(namespace).resource_types:
+        resources.append(resource.as_dict())
+    return resources
+
+
+@cachier()
+def _compute_resources() -> List[dict]:
+    resources = []
+    for resource in _compute_client().resource_skus.list():
         resources.append(resource.as_dict())
     return resources
 
@@ -771,31 +785,71 @@ def inventory_servers(vendor):
 def inventory_server_prices(vendor):
     """List all known server ondemand prices in all regions.
 
-    Data is looked up from the [Azure Retail Pricing API](https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices)."""
+    Data is looked up from the [Azure Retail Pricing API](https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices).
+    """
     return _inventory_server_prices(vendor, Allocation.ONDEMAND)
 
 
 def inventory_server_prices_spot(vendor):
-    """List all known server spot prices in all regions."""
+    """List all known server spot prices in all regions.
+
+    See details at [inventory_server_prices][sc_crawler.vendors.azure.inventory_server_prices].
+    """
     return _inventory_server_prices(vendor, Allocation.SPOT)
 
 
-def inventory_storage(vendor):
+def inventory_storages(vendor):
+    """
+    List all storage options.
+
+    For more information, see <https://learn.microsoft.com/en-us/azure/virtual-machines/disks-types>.
+    """
+    vendor.progress_tracker.start_task(
+        name="Fetching list of compute resources", total=None
+    )
+
+    disks = []
+    for resource in _compute_resources():
+        if resource["resource_type"] == "disks":
+            disks.append(resource)
+
+    disks = list({d["name"]: d for d in disks}.values())
+    vendor.progress_tracker.hide_task()
+
     items = []
-    # for storage in []:
-    #     items.append(
-    #         {
-    #             "storage_id": ,
-    #             "vendor_id": vendor.vendor_id,
-    #             "name": ,
-    #             "description": None,
-    #             "storage_type": StorageType....,
-    #             "max_iops": None,
-    #             "max_throughput": None,
-    #             "min_size": None,
-    #             "max_size": None,
-    #         }
-    #     )
+    for disk in disks:
+
+        def _search(values):
+            return list_search(disk["capabilities"], "name", values)["value"]
+
+        storage_type = (
+            StorageType.HDD
+            if "Standard" in disk["name"] and "SSD" not in disk["name"]
+            else StorageType.SSD
+        )
+        redundancy_type = (
+            "Locally Redundant Storage"
+            if "LRS" in disk["name"]
+            else "Zone-Redundant Storage"
+        )
+        description = f"{disk['tier']} tier {storage_type.name} ({redundancy_type})"
+
+        items.append(
+            {
+                "storage_id": disk["name"],
+                "vendor_id": vendor.vendor_id,
+                "name": disk["name"],
+                "description": description,
+                "storage_type": storage_type,
+                "max_iops": _search(["MaxIOpsReadWrite", "MaxIOps"]),
+                "max_throughput": _search(
+                    ["MaxBandwidthMBpsReadWrite", "MaxBandwidthMBps"]
+                ),
+                # NOTE this is 16TB for most drives?!
+                "min_size": _search("MinSizeGiB"),
+                "max_size": _search("MaxSizeGiB"),
+            }
+        )
     return items
 
 

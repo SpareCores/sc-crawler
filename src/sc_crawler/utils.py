@@ -165,3 +165,14 @@ def nesteddefaultdict():
         '{"bar": {"baz": 43}}'
     """
     return defaultdict(nesteddefaultdict)
+
+
+def list_search(items: List[dict], key: str, values: Union[Any, List[Any]]) -> dict:
+    """Search for a dict in a list with the given key/value pair.
+
+    When multiple values are provided, it will use the first field with a
+    matching name with either keys.
+    """
+    if not isinstance(values, list):
+        values = [values]
+    return next((item for item in items if item[key] in values), None)
