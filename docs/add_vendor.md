@@ -168,7 +168,7 @@ def inventory_server_prices_spot(vendor):
     return []
 
 
-def inventory_storage(vendor):
+def inventory_storages(vendor):
     items = []
     # for storage in []:
     #     items.append(
