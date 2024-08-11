@@ -1,8 +1,6 @@
 from functools import cache
-from logging import DEBUG
 from os import environ
 from re import search
-from requests import Session
 from time import sleep
 from typing import List, Optional
 
@@ -11,11 +9,12 @@ from azure.identity import DefaultAzureCredential
 from azure.mgmt.compute import ComputeManagementClient
 from azure.mgmt.resource import ResourceManagementClient, SubscriptionClient
 from cachier import cachier
+from requests import Session
 
 from ..logger import logger
 from ..lookup import map_compliance_frameworks_to_vendor
-from ..tables import Vendor
 from ..table_fields import Allocation, CpuAllocation, CpuArchitecture, PriceUnit
+from ..tables import Vendor
 from ..utils import scmodels_to_dict
 from ..vendor_helpers import parallel_fetch_servers, preprocess_servers
 
