@@ -14,6 +14,7 @@ from cachier import cachier
 
 from ..logger import logger
 from ..lookup import map_compliance_frameworks_to_vendor
+from ..tables import Vendor
 from ..table_fields import Allocation, CpuAllocation, CpuArchitecture, PriceUnit
 from ..utils import scmodels_to_dict
 from ..vendor_helpers import parallel_fetch_servers, preprocess_servers
@@ -245,6 +246,65 @@ def _standardize_server(server: dict, vendor) -> dict:
         "outbound_traffic": 0,
         "ipv4": 0,
     }
+
+
+def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dict]:
+    # https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices
+    vendor.progress_tracker.start_task(
+        name="Fetching server_price(s) from the Azure API", total=None
+    )
+    retail_prices = _prices(
+        "$filter=serviceName eq 'Virtual Machines' and priceType eq 'Consumption'"
+    )
+    vendor.progress_tracker.hide_task()
+
+    vendor.progress_tracker.start_task(
+        name="Preprocess ondemand server_price(s)", total=len(retail_prices)
+    )
+
+    server_ids = [n.api_reference for n in vendor.servers]
+    region_ids = [n.api_reference for n in vendor.regions]
+    regions = scmodels_to_dict(vendor.regions, keys=["api_reference"])
+
+    prices = []
+    for retail_price in retail_prices:
+        # we don't track Low Priority pricing (using Spot instead)
+        if "Low Priority" in retail_price["meterName"]:
+            continue
+        # don't track Windows pricing, or the Azure Cloud Services pricing either
+        if retail_price["productName"].endswith(("Windows", "CloudServices")):
+            continue
+        # drop records related to unknown server types and/or regions
+        if retail_price["armSkuName"] not in server_ids:
+            continue
+        if retail_price["armRegionName"] not in region_ids:
+            continue
+        # filter for ondemand or spot prict
+        is_spot = "Spot" in retail_price["skuName"]
+        if (allocation == Allocation.ONDEMAND and is_spot) or (
+            allocation == Allocation.SPOT and not is_spot
+        ):
+            continue
+        region = regions.get(retail_price["armRegionName"])
+        for zone in region.zones:
+            prices.append(
+                {
+                    "vendor_id": vendor.vendor_id,
+                    "region_id": region.region_id,
+                    "zone_id": zone.zone_id,
+                    "server_id": retail_price["armSkuName"],
+                    "operating_system": "Linux",
+                    "allocation": allocation,
+                    "unit": PriceUnit.HOUR,
+                    "price": retail_price["retailPrice"],
+                    "price_upfront": 0,
+                    "price_tiered": [],
+                    "currency": retail_price["currencyCode"],
+                }
+            )
+        vendor.progress_tracker.advance_task()
+    vendor.progress_tracker.hide_task()
+    return prices
 
 
 # ##############################################################################
@@ -710,64 +770,15 @@ def inventory_servers(vendor):
 
 
 def inventory_server_prices(vendor):
-    # https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices
-    vendor.progress_tracker.start_task(
-        name="Fetching server_price(s) from the Azure API", total=None
-    )
-    retail_prices = _prices(
-        "$filter=serviceName eq 'Virtual Machines' and priceType eq 'Consumption'"
-    )
-    vendor.progress_tracker.hide_task()
+    """List all known server ondemand prices in all regions.
 
-    vendor.progress_tracker.start_task(
-        name="Preprocess ondemand server_price(s)", total=len(retail_prices)
-    )
-
-    server_ids = [n.api_reference for n in vendor.servers]
-    region_ids = [n.api_reference for n in vendor.regions]
-    regions = scmodels_to_dict(vendor.regions, keys=["api_reference"])
-
-    prices = []
-    for retail_price in retail_prices:
-        # we don't track Low Priority pricing (using Spot instead)
-        if "Low Priority" in retail_price["meterName"]:
-            continue
-        # don't track Windows pricing, or the Azure Cloud Services pricing either
-        if retail_price["productName"].endswith(("Windows", "CloudServices")):
-            continue
-        # drop records related to unknown server types and/or regions
-        if retail_price["armSkuName"] not in server_ids:
-            continue
-        if retail_price["armRegionName"] not in region_ids:
-            continue
-        region = regions.get(retail_price["armRegionName"])
-        for zone in region.zones:
-            prices.append(
-                {
-                    "vendor_id": vendor.vendor_id,
-                    "region_id": region.region_id,
-                    "zone_id": zone.zone_id,
-                    "server_id": retail_price["armSkuName"],
-                    "operating_system": "Linux",
-                    "allocation": (
-                        Allocation.SPOT
-                        if "Spot" in retail_price["skuName"]
-                        else Allocation.ONDEMAND
-                    ),
-                    "unit": PriceUnit.HOUR,
-                    "price": retail_price["retailPrice"],
-                    "price_upfront": 0,
-                    "price_tiered": [],
-                    "currency": retail_price["currencyCode"],
-                }
-            )
-        vendor.progress_tracker.advance_task()
-    vendor.progress_tracker.hide_task()
-    return prices
+    Data is looked up from the [Azure Retail Pricing API](https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices)."""
+    return _inventory_server_prices(vendor, Allocation.ONDEMAND)
 
 
 def inventory_server_prices_spot(vendor):
-    return []
+    """List all known server spot prices in all regions."""
+    return _inventory_server_prices(vendor, Allocation.SPOT)
 
 
 def inventory_storage(vendor):
