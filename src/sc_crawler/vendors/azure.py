@@ -124,6 +124,7 @@ def _prices(url_params: Optional[str] = None) -> List[dict]:
 # ##############################################################################
 # Internal helpers
 
+
 SERVER_FEATURES = {
     # a = AMD-based processor
     # b = Block Storage performance
@@ -147,6 +148,18 @@ SERVER_FEATURES = {
     "r": "RDMA capable",
     "e": "Memory Optimized",  # Standard_DC2es_v5
 }
+"""Map lowercase chars from the server name to features."""
+
+STORAGE_METER_MAPPING = {
+    "P2 LRS Disk Mount": ("PremiumV2_LRS", 1),
+    "P1 LRS Disk": ("Premium_LRS", 4),
+    "P1 ZRS Disk": ("Premium_ZRS", 4),
+    "E1 LRS Disk": ("StandardSSD_LRS", 4),
+    "E1 ZRS Disk": ("StandardSSD_ZRS", 4),
+    "S4 LRS Disk": ("Standard_LRS", 32),
+    "Ultra LRS Provisioned Capacity": ("UltraSSD_LRS", 1),
+}
+"""Map Storage price meter names to the Storage name and the related disk's size."""
 
 
 def _parse_server_name(name):
@@ -783,15 +796,15 @@ def inventory_servers(vendor):
 
 
 def inventory_server_prices(vendor):
-    """List all known server ondemand prices in all regions.
+    """List all known server ondemand prices in all regions using the Azure Retail Pricing API.
 
-    Data is looked up from the [Azure Retail Pricing API](https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices).
+    More information: <https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices>.
     """
     return _inventory_server_prices(vendor, Allocation.ONDEMAND)
 
 
 def inventory_server_prices_spot(vendor):
-    """List all known server spot prices in all regions.
+    """List all known server spot prices in all regions using the Azure Retail Pricing API.
 
     See details at [inventory_server_prices][sc_crawler.vendors.azure.inventory_server_prices].
     """
@@ -799,8 +812,7 @@ def inventory_server_prices_spot(vendor):
 
 
 def inventory_storages(vendor):
-    """
-    List all storage options.
+    """List all storage options via the Compute resource manager client.
 
     For more information, see <https://learn.microsoft.com/en-us/azure/virtual-machines/disks-types>.
     """
@@ -854,18 +866,30 @@ def inventory_storages(vendor):
 
 
 def inventory_storage_prices(vendor):
+    """Look up Storage prices via the Azure Retail Prices API.
+
+    For more information, see <https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices>.
+    """
+    vendor.progress_tracker.start_task(
+        name="Fetching list of storage resources", total=None
+    )
+    retail_prices = _prices("$filter=serviceName eq 'Storage'")
+    vendor.progress_tracker.hide_task()
+
     items = []
-    # for price in []:
-    #     items.append(
-    #         {
-    #             "vendor_id": vendor.vendor_id,
-    #             "datacenter_id": ,
-    #             "storage_id": ,
-    #             "unit": PriceUnit.GB_MONTH,
-    #             "price": ,
-    #             "currency": "USD",
-    #         }
-    #     )
+    for p in retail_prices:
+        mapping = STORAGE_METER_MAPPING.get(p["meterName"])
+        if mapping:
+            items.append(
+                {
+                    "vendor_id": vendor.vendor_id,
+                    "region_id": p["armRegionName"],
+                    "storage_id": mapping[0],
+                    "unit": PriceUnit.GB_MONTH,
+                    "price": p["retailPrice"] / mapping[1],
+                    "currency": p["currencyCode"],
+                }
+            )
     return items
 
 
