@@ -9,7 +9,7 @@ from azure.identity import DefaultAzureCredential
 from azure.mgmt.compute import ComputeManagementClient
 from azure.mgmt.resource import ResourceManagementClient, SubscriptionClient
 from cachier import cachier
-from requests import Session
+from requests import Session as request_session
 
 from ..logger import logger
 from ..lookup import map_compliance_frameworks_to_vendor
@@ -98,7 +98,7 @@ def _servers(region: str) -> List[dict]:
 
 @cache
 def _prices(url_params: Optional[str] = None) -> List[dict]:
-    session = Session()
+    session = request_session()
     data = []
     next_url = "https://prices.azure.com/api/retail/prices"
     if url_params:
