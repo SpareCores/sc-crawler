@@ -21,7 +21,7 @@ from ..table_fields import (
     StorageType,
 )
 from ..tables import Vendor
-from ..utils import scmodels_to_dict, list_search
+from ..utils import list_search, scmodels_to_dict
 from ..vendor_helpers import parallel_fetch_servers, preprocess_servers
 
 credential = DefaultAzureCredential()
