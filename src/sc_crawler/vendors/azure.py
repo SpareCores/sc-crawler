@@ -958,15 +958,33 @@ def inventory_traffic_prices(vendor):
 
 
 def inventory_ipv4_prices(vendor):
+    """Look up Internet Egress/Ingress prices via the Azure Retail Prices API.
+
+    For more information, see <https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices>.
+    """
+
+    vendor.progress_tracker.start_task(
+        name="Fetching list of traffic prices", total=None
+    )
+    prices = _prices(
+        "$filter=serviceFamily eq 'Networking' and "
+        "meterName eq 'Basic IPv4 Dynamic Public IP' and "
+        "type eq 'Consumption'"
+    )
+    vendor.progress_tracker.hide_task()
+
     items = []
-    # for price in []:
-    #     items.append(
-    #         {
-    #             "vendor_id": vendor.vendor_id,
-    #             "datacenter_id": ,
-    #             "price": ,
-    #             "currency": "USD",
-    #             "unit": PriceUnit.HOUR,
-    #         }
-    #     )
+    regions = scmodels_to_dict(vendor.regions, keys=["api_reference"])
+    for region in regions.values():
+        price = list_search(prices, "armRegionName", region.api_reference)
+        if price:
+            items.append(
+                {
+                    "vendor_id": vendor.vendor_id,
+                    "region_id": region.region_id,
+                    "price": price["retailPrice"],
+                    "currency": price.get("currencyCode", "USD"),
+                    "unit": PriceUnit.HOUR,
+                }
+            )
     return items
