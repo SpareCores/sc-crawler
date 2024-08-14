@@ -913,7 +913,7 @@ def inventory_traffic_prices(vendor):
             if i == len(tiers) - 1:
                 tiers[i]["upper"] = "Inifinty"
             else:
-                tiers[i]["upper"] = tiers[i - 1]["lower"]
+                tiers[i]["upper"] = tiers[i + 1]["lower"]
         return tiers
 
     def by_region(prices: List[dict], region: str) -> List[dict]:
