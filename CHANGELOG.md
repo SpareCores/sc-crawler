@@ -1,14 +1,27 @@
 ## v0.2.x (development version)
 
+...
+
+## v0.2.2 (Aug 14, 2024)
+
+New vendor(s):
+
+- Microsoft Azure
+
+New feature(s):
+
+- Support for new `hcloud` CX server types.
+- Support for new `hcloud` region (Singapore).
+- Improved caching.
+
+Fix(es):
+
 - Count CPU cores in all physical CPUs.
 - Improve the standardization and cleanup of the CPU manufacturer, family, and model.
 - Extract speed from CPU description when available instead of unreliable `dmidecode` data.
 - Update included outbound network extractor at `hcloud` due to API change.
-- Support for new `hcloud` CX server types.
-- Support for new `hcloud` region (Singapore).
 - Check if a server is available in a `gcp` zone even though a related price is known.
 - Fix manually collected geolocation of 3 `gcp` regions.
-- Improved caching.
 - Fix spelling issues in benchmark and table column descriptions.
 
 ## v0.2.1 (June 4, 2024)
