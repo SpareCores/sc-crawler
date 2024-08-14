@@ -280,6 +280,11 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
     vendor.progress_tracker.start_task(
         name="Fetching server_price(s) from the Azure API", total=None
     )
+    # need to fetch ~200k items as filtering doesn't allow a combination of
+    # not() and contains()/endswith(), so filtering on the client side below
+    #   - not(contains(meterName, 'Low Priority'))
+    #   - not(endswith(productName, 'Windows'))
+    #   - not(endswith(productName, 'CloudServices'))
     retail_prices = _prices(
         "$filter=serviceName eq 'Virtual Machines' and priceType eq 'Consumption'"
     )
