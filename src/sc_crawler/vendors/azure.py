@@ -19,6 +19,7 @@ from ..table_fields import (
     CpuArchitecture,
     PriceUnit,
     StorageType,
+    TrafficDirection,
 )
 from ..tables import Vendor
 from ..utils import list_search, scmodels_to_dict
@@ -894,19 +895,65 @@ def inventory_storage_prices(vendor):
 
 
 def inventory_traffic_prices(vendor):
+    """Look up Internet Egress/Ingress prices via the Azure Retail Prices API.
+
+    For more information, see <https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices>.
+    """
+
+    def get_tiers(prices: List[dict]) -> List[dict]:
+        def prep_tiers(d: dict) -> dict:
+            return {
+                "lower": d.get("tierMinimumUnits", 0),
+                "price": d["retailPrice"],
+            }
+
+        tiers = [prep_tiers(p) for p in prices]
+        tiers.sort(key=lambda x: x.get("lower"))
+        for i in range(len(tiers)):
+            if i == len(tiers) - 1:
+                tiers[i]["upper"] = "Inifinty"
+            else:
+                tiers[i]["upper"] = tiers[i - 1]["lower"]
+        return tiers
+
+    def by_region(prices: List[dict], region: str) -> List[dict]:
+        return [p for p in prices if p["armRegionName"] == region]
+
+    vendor.progress_tracker.start_task(
+        name="Fetching list of traffic prices", total=None
+    )
+    inbound_prices = _prices(
+        "$filter=serviceFamily eq 'Networking' and meterName eq 'Standard Data Transfer In'"
+    )
+    outbound_prices = _prices(
+        "$filter=serviceFamily eq 'Networking' and "
+        "meterName eq 'Standard Data Transfer Out' and "
+        "productName eq 'Bandwidth - Routing Preference: Internet'"
+    )
+    vendor.progress_tracker.hide_task()
+
     items = []
-    # for price in []:
-    #     items.append(
-    #         {
-    #             "vendor_id": vendor.vendor_id,
-    #             "datacenter_id": ,
-    #             "price": ,
-    #             "price_tiered": [],
-    #             "currency": "USD",
-    #             "unit": PriceUnit.GB_MONTH,
-    #             "direction": TrafficDirection....,
-    #         }
-    #     )
+    regions = scmodels_to_dict(vendor.regions, keys=["api_reference"])
+    for region in regions.values():
+        for direction in ["inbound", "outbound"]:
+            prices = inbound_prices if direction == "inbound" else outbound_prices
+            tiers = get_tiers(by_region(prices, region.api_reference))
+            if tiers:
+                items.append(
+                    {
+                        "vendor_id": vendor.vendor_id,
+                        "region_id": region.region_id,
+                        "price": max([t["price"] for t in tiers]),
+                        "price_tiered": tiers,
+                        "currency": prices[0].get("currencyCode", "USD"),
+                        "unit": PriceUnit.GB_MONTH,
+                        "direction": (
+                            TrafficDirection.IN
+                            if direction == "inbound"
+                            else TrafficDirection.OUT
+                        ),
+                    }
+                )
     return items
 
 
@@ -923,13 +970,3 @@ def inventory_ipv4_prices(vendor):
     #         }
     #     )
     return items
-
-
-# names = [server.get("name") for server in servers]
-# names.sort()
-# for server in names:
-#     print(server)
-
-# for server in servers:
-#     if server.get("name") == "Standard_D8s_v5":
-#         break
