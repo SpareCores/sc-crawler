@@ -180,7 +180,7 @@ def _parse_server_name(name):
         # spacers are odd .. not only accelerators, but e.g. `Standard_M416s_8_v2`
         r"(_(?P<spacers>[_A-Za-z0-9]*?))?"
         r"(?:v(?P<version>\d+))?"
-        r"(_(?P<promo>(Promo)))?$"
+        r"(_(?P<suffix>([A-Za-z0-9]*)))?$"
     )
     name_match = name_pattern.match(name)
     if not name_match:
