@@ -83,7 +83,9 @@ Generate token at your Hetzner Cloud project and store it in the `HCLOUD_TOKEN` 
 
 <summary>Microsoft Azure</summary>
 
-Authentication is handled via the `DefaultAzureCredential`, so you can use either secrets or certifications.
+Authentication is handled via the `DefaultAzureCredential`,
+so you can use either secrets or certifications.
+
 The following environment variables are required:
 
 - `AZURE_CLIENT_ID`
@@ -100,11 +102,19 @@ To authenticate with certificate:
 
 For further options, consult the [`EnvironmentCredential` docs](https://learn.microsoft.com/en-us/python/api/azure-identity/azure.identity.environmentcredential?view=azure-python).
 
-Optionally, you can also specify the Subscription (otherwise the first one found in the account will be used):
+Optionally, you can also specify the Subscription
+(otherwise the first one found in the account will be used):
 
 - `AZURE_SUBSCRIPTION_ID`
 
-The related Service Principal requires the "Reader" role in the account.
+The related Service Principal requires either the global "Reader"
+role, or if the following list of (more restrictive) permissions:
+
+- `Microsoft.Resources/subscriptions/locations/read`
+
+To create the Service Principal, go to [App
+registrations](https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade),
+and then assign the role at the Subscription's Access control page.
 
 </details>
 
