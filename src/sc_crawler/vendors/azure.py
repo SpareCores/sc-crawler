@@ -171,7 +171,7 @@ def _parse_server_name(name):
     name_pattern = recompile(
         # there is a constant prefix (Standard_), and there used to be Basic_
         # servers as well, but the latter were deprecated in Aug 2024
-        r"(?P<prefix>[A-Za-z]+_)"
+        r"((?P<prefix>[A-Za-z]+)_)"
         # first ALLCAPS chars are the family name (we don't care about the subfamily for now)
         r"(?P<family>[A-Z]+)"
         r"(?P<vcpus>[0-9]+)"
