@@ -1,6 +1,6 @@
 from functools import cache
 from os import environ
-from re import search
+from re import compile as recompile, search
 from time import sleep
 from typing import List, Optional
 
@@ -167,18 +167,27 @@ def _parse_server_name(name):
     """Extract information from the server name/size.
 
     Based on <https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/overview>."""
-    # drop the constant prefix
-    name = name.removeprefix("Standard_")
-    # first ALLCAPS chars are the family name (we don't care about the subfamily for now)
-    family = search(r"^([A-Z]*)", name).group(1)
-    name = name.removeprefix(family)
-    vcpus = int(search(r"^([0-9]*)", name).group(1))
-    name = name.removeprefix(str(vcpus))
-    # drop constrained vCPU count
-    contrained_vcpus = search(r"^-([0-9])*", name)
-    if contrained_vcpus:
-        contrained_vcpus = contrained_vcpus.group(1)
-        name.removeprefix("-" + contrained_vcpus)
+
+    name_pattern = recompile(
+        # there is a constant prefix (Standard_) and there used to be Basic_
+        # servers as well, but deprecated in Aug 2024
+        r"(?P<prefix>[A-Za-z]+_)"
+        # first ALLCAPS chars are the family name (we don't care about the subfamily for now)
+        r"(?P<family>[A-Z]+)"
+        r"(?P<vcpus>[0-9]+)"
+        r"(-(?P<constrained_vcpus>\d+))?"
+        r"(?P<features>[a-z]*)"
+        r"(_(?P<accelerator>[A-Z][0-9]+))?"
+        r"(_v(?P<version>\d+))?$"
+    )
+    name_match = name_pattern.match(name)
+    if not name_match:
+        raise ValueError(f"Server name '{name}' does not match the expected format.")
+    data = name_match.groupdict()
+    family, features, vcpus, accelerator = [
+        data[v] for v in ["family", "features", "vcpus", "accelerator"]
+    ]
+
     # a = AMD-based processor
     # b = Block Storage performance
     # d = diskful (that is, a local temp disk is present)
@@ -188,18 +197,14 @@ def _parse_server_name(name):
     # p = ARM Cpu
     # t = tiny memory; the smallest amount of memory in a particular size
     # s = Premium Storage capable, including possible use of Ultra SSD
-    features = []
-    if search(r"^[a-z]*", name):
-        features = [char for char in search(r"^([a-z]*)", name).group(1)]
+    features = [char for char in features] if features else []
+
     # the only way to find out if a server is x86 or ARM
     architecture = "x86_64"
-    if "p" in features:
+    if "p" in data["features"]:
         architecture = "arm64"
-    # accelerators are mentioned in the name of the newer servers
-    accelerators = search(r"((A100|H100|MI300X|V620|A10))", name)
-    if accelerators:
-        accelerators = accelerators.group(1)
-    # but accelerators are not mentioned in the old server names, so we need a manual mapping
+
+    # accelerators are not always mentioned in the old server names, so we need a manual mapping
     gpus = 0
     if family in ["NC", "ND", "NG", "NV"]:
         # default to one, list all the exceptions below
@@ -229,6 +234,7 @@ def _parse_server_name(name):
                 gpus = 2
             if vcpus in [48]:
                 gpus = 4
+
     return (family, features, architecture, gpus)
 
 
