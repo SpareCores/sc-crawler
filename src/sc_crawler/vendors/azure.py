@@ -169,24 +169,31 @@ def _parse_server_name(name):
     Based on <https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/overview>."""
 
     name_pattern = recompile(
-        # there is a constant prefix (Standard_) and there used to be Basic_
-        # servers as well, but deprecated in Aug 2024
+        # there is a constant prefix (Standard_), and there used to be Basic_
+        # servers as well, but the latter were deprecated in Aug 2024
         r"(?P<prefix>[A-Za-z]+_)"
         # first ALLCAPS chars are the family name (we don't care about the subfamily for now)
         r"(?P<family>[A-Z]+)"
         r"(?P<vcpus>[0-9]+)"
         r"(-(?P<constrained_vcpus>\d+))?"
         r"(?P<features>[a-z]*)"
-        r"(_(?P<accelerator>[A-Z][0-9]+))?"
-        r"(_v(?P<version>\d+))?$"
+        # spacers are odd .. not only accelerators, but e.g. `Standard_M416s_8_v2`
+        r"(_(?P<spacers>[_A-Za-z0-9]*?))?"
+        r"(?:v(?P<version>\d+))?"
+        r"(_(?P<promo>(Promo)))?$"
     )
     name_match = name_pattern.match(name)
     if not name_match:
         raise ValueError(f"Server name '{name}' does not match the expected format.")
     data = name_match.groupdict()
-    family, features, vcpus, accelerator = [
-        data[v] for v in ["family", "features", "vcpus", "accelerator"]
-    ]
+    family, features, vcpus = [data[v] for v in ["family", "features", "vcpus"]]
+    vcpus = int(vcpus)
+    accelerators = any(
+        [
+            s in ["A100", "H100", "MI300X", "V620", "A10"]
+            for s in (data.get("spacers") or "").split("_")
+        ]
+    )
 
     # a = AMD-based processor
     # b = Block Storage performance
