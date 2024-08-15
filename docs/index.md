@@ -84,7 +84,7 @@ Generate token at your Hetzner Cloud project and store it in the `HCLOUD_TOKEN` 
 <summary>Microsoft Azure</summary>
 
 Authentication is handled via the `DefaultAzureCredential`,
-so you can use either secrets or certifications.
+so you can use either secrets or certificates.
 
 The following environment variables are required:
 

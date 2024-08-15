@@ -145,7 +145,7 @@ SERVER_FEATURES = {
     "m": "Memory Intensive",
     "t": "Tiny Memory",
     "s": "Premium Storage capable",
-    # not part of the official docs, searched at randomg places
+    # not part of the official docs, searched at random places
     "r": "RDMA capable",
     "e": "Memory Optimized",  # Standard_DC2es_v5
 }
