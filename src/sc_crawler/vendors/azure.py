@@ -186,14 +186,6 @@ def _parse_server_name(name):
     if not name_match:
         raise ValueError(f"Server name '{name}' does not match the expected format.")
     data = name_match.groupdict()
-    family, features, vcpus = [data[v] for v in ["family", "features", "vcpus"]]
-    vcpus = int(vcpus)
-    accelerators = any(
-        [
-            s in ["A100", "H100", "MI300X", "V620", "A10"]
-            for s in (data.get("spacers") or "").split("_")
-        ]
-    )
 
     # a = AMD-based processor
     # b = Block Storage performance
@@ -204,13 +196,22 @@ def _parse_server_name(name):
     # p = ARM Cpu
     # t = tiny memory; the smallest amount of memory in a particular size
     # s = Premium Storage capable, including possible use of Ultra SSD
-    features = [char for char in features] if features else []
+    features = [char for char in data["features"]] if data["features"] else []
 
     # the only way to find out if a server is x86 or ARM
     architecture = "x86_64"
-    if "p" in data["features"]:
+    if "p" in features:
         architecture = "arm64"
 
+    accelerators = any(
+        [
+            s in ["A100", "H100", "MI300X", "V620", "A10"]
+            for s in (data.get("spacers") or "").split("_")
+        ]
+    )
+
+    family = data["family"]
+    vcpus = int(data["vcpus"])
     # accelerators are not always mentioned in the old server names, so we need a manual mapping
     gpus = 0
     if family in ["NC", "ND", "NG", "NV"]:
