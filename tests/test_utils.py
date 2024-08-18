@@ -1,4 +1,5 @@
 import pytest
+
 from sc_crawler.lookup import compliance_frameworks
 from sc_crawler.utils import chunk_list, float_inf_to_str, scmodels_to_dict
 
