@@ -343,7 +343,8 @@ class Zone(ZoneBase, table=True):
             "primaryjoin": (
                 "and_(Region.region_id == foreign(Zone.region_id), "
                 "Region.vendor_id == foreign(Zone.vendor_id))"
-            )
+            ),
+            "overlaps": "vendor",
         },
     )
     vendor: Vendor = Relationship(back_populates="zones")
@@ -399,7 +400,8 @@ class ServerPrice(ServerPriceBase, table=True):
             "primaryjoin": (
                 "and_(Region.region_id == foreign(ServerPrice.region_id), "
                 "Region.vendor_id == foreign(ServerPrice.vendor_id))"
-            )
+            ),
+            "overlaps": "vendor,zone,server",
         },
     )
     zone: Zone = Relationship(
@@ -409,7 +411,8 @@ class ServerPrice(ServerPriceBase, table=True):
                 "and_(Zone.zone_id == foreign(ServerPrice.zone_id), "
                 "Zone.region_id == foreign(ServerPrice.region_id),"
                 "Zone.vendor_id == foreign(ServerPrice.vendor_id))"
-            )
+            ),
+            "overlaps": "vendor,region,server",
         },
     )
     server: Server = Relationship(
@@ -418,7 +421,8 @@ class ServerPrice(ServerPriceBase, table=True):
             "primaryjoin": (
                 "and_(Server.server_id == foreign(ServerPrice.server_id), "
                 "Server.vendor_id == foreign(ServerPrice.vendor_id))"
-            )
+            ),
+            "overlaps": "vendor,region,zone",
         },
     )
 
@@ -443,7 +447,8 @@ class StoragePrice(StoragePriceBase, table=True):
             "primaryjoin": (
                 "and_(Region.region_id == foreign(StoragePrice.region_id),"
                 "Region.vendor_id == foreign(StoragePrice.vendor_id))"
-            )
+            ),
+            "overlaps": "vendor,storage",
         },
     )
     storage: Storage = Relationship(
@@ -452,7 +457,8 @@ class StoragePrice(StoragePriceBase, table=True):
             "primaryjoin": (
                 "and_(Storage.storage_id == foreign(StoragePrice.storage_id), "
                 "Storage.vendor_id == foreign(StoragePrice.vendor_id))"
-            )
+            ),
+            "overlaps": "vendor,region",
         },
     )
 
@@ -473,7 +479,8 @@ class TrafficPrice(TrafficPriceBase, table=True):
             "primaryjoin": (
                 "and_(Region.region_id == foreign(TrafficPrice.region_id),"
                 "Region.vendor_id == foreign(TrafficPrice.vendor_id))"
-            )
+            ),
+            "overlaps": "vendor",
         },
     )
 
@@ -494,7 +501,8 @@ class Ipv4Price(Ipv4PriceBase, table=True):
             "primaryjoin": (
                 "and_(Region.region_id == foreign(Ipv4Price.region_id),"
                 "Region.vendor_id == foreign(Ipv4Price.vendor_id))"
-            )
+            ),
+            "overlaps": "vendor",
         },
     )
 
@@ -523,7 +531,8 @@ class BenchmarkScore(BenchmarkScoreBase, table=True):
             "primaryjoin": (
                 "and_(Server.server_id == foreign(BenchmarkScore.server_id), "
                 "Server.vendor_id == foreign(BenchmarkScore.vendor_id))"
-            )
+            ),
+            "overlaps": "vendor",
         },
     )
     benchmark: Benchmark = Relationship(back_populates="benchmark_scores")
