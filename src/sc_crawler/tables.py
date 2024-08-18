@@ -342,7 +342,7 @@ class Zone(ZoneBase, table=True):
         sa_relationship_kwargs={
             "primaryjoin": (
                 "and_(Region.region_id == foreign(Zone.region_id), "
-                "Vendor.vendor_id == foreign(Zone.vendor_id))"
+                "Region.vendor_id == foreign(Zone.vendor_id))"
             )
         },
     )
@@ -398,7 +398,7 @@ class ServerPrice(ServerPriceBase, table=True):
         sa_relationship_kwargs={
             "primaryjoin": (
                 "and_(Region.region_id == foreign(ServerPrice.region_id), "
-                "Vendor.vendor_id == foreign(ServerPrice.vendor_id))"
+                "Region.vendor_id == foreign(ServerPrice.vendor_id))"
             )
         },
     )
@@ -407,8 +407,8 @@ class ServerPrice(ServerPriceBase, table=True):
         sa_relationship_kwargs={
             "primaryjoin": (
                 "and_(Zone.zone_id == foreign(ServerPrice.zone_id), "
-                "Region.region_id == foreign(ServerPrice.region_id),"
-                "Vendor.vendor_id == foreign(ServerPrice.vendor_id))"
+                "Zone.region_id == foreign(ServerPrice.region_id),"
+                "Zone.vendor_id == foreign(ServerPrice.vendor_id))"
             )
         },
     )
@@ -417,7 +417,7 @@ class ServerPrice(ServerPriceBase, table=True):
         sa_relationship_kwargs={
             "primaryjoin": (
                 "and_(Server.server_id == foreign(ServerPrice.server_id), "
-                "Vendor.vendor_id == foreign(ServerPrice.vendor_id))"
+                "Server.vendor_id == foreign(ServerPrice.vendor_id))"
             )
         },
     )
@@ -442,7 +442,7 @@ class StoragePrice(StoragePriceBase, table=True):
         sa_relationship_kwargs={
             "primaryjoin": (
                 "and_(Region.region_id == foreign(StoragePrice.region_id),"
-                "Vendor.vendor_id == foreign(StoragePrice.vendor_id))"
+                "Region.vendor_id == foreign(StoragePrice.vendor_id))"
             )
         },
     )
@@ -451,7 +451,7 @@ class StoragePrice(StoragePriceBase, table=True):
         sa_relationship_kwargs={
             "primaryjoin": (
                 "and_(Storage.storage_id == foreign(StoragePrice.storage_id), "
-                "Vendor.vendor_id == foreign(StoragePrice.vendor_id))"
+                "Storage.vendor_id == foreign(StoragePrice.vendor_id))"
             )
         },
     )
@@ -472,7 +472,7 @@ class TrafficPrice(TrafficPriceBase, table=True):
         sa_relationship_kwargs={
             "primaryjoin": (
                 "and_(Region.region_id == foreign(TrafficPrice.region_id),"
-                "Vendor.vendor_id == foreign(TrafficPrice.vendor_id))"
+                "Region.vendor_id == foreign(TrafficPrice.vendor_id))"
             )
         },
     )
@@ -493,7 +493,7 @@ class Ipv4Price(Ipv4PriceBase, table=True):
         sa_relationship_kwargs={
             "primaryjoin": (
                 "and_(Region.region_id == foreign(Ipv4Price.region_id),"
-                "Vendor.vendor_id == foreign(Ipv4Price.vendor_id))"
+                "Region.vendor_id == foreign(Ipv4Price.vendor_id))"
             )
         },
     )
@@ -522,7 +522,7 @@ class BenchmarkScore(BenchmarkScoreBase, table=True):
         sa_relationship_kwargs={
             "primaryjoin": (
                 "and_(Server.server_id == foreign(BenchmarkScore.server_id), "
-                "Vendor.vendor_id == foreign(BenchmarkScore.vendor_id))"
+                "Server.vendor_id == foreign(BenchmarkScore.vendor_id))"
             )
         },
     )
