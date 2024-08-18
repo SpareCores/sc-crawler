@@ -1,4 +1,5 @@
 import pytest
+
 from sc_crawler.tables import Country, Vendor, tables
 from sc_crawler.tables_scd import tables_scd
 
