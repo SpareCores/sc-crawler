@@ -1,6 +1,6 @@
 from functools import cache
 from os import environ
-from re import compile as recompile, search
+from re import compile as recompile
 from time import sleep
 from typing import List, Optional
 
