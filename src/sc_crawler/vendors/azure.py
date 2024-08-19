@@ -811,6 +811,9 @@ def inventory_servers(vendor):
         if name.startswith("Basic"):
             vendor.log(f"Excluding deprecated {name}")
             servers.pop(i)
+        if name.endswith("Promo"):
+            vendor.log(f"Excluding nonsense pricing {name}")
+            servers.pop(i)
     servers = preprocess_servers(servers, vendor, _standardize_server)
     return servers
 
