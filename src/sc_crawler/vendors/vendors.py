@@ -51,3 +51,18 @@ hcloud = Vendor(
     status_page="https://status.hetzner.com/",
 )
 """Hetzner Cloud."""
+
+azure = Vendor(
+    vendor_id="azure",
+    name="Microsoft Azure",
+    logo="https://sc-data-public-40e9d310.s3.amazonaws.com/cdn/logos/azure.svg",
+    homepage="https://azure.microsoft.com",
+    country=countries["US"],
+    state="Washington",
+    city="Redmond",
+    address_line="One Microsoft Way",
+    zip_code="98052",
+    founding_year=2008,
+    status_page="https://azure.status.microsoft.com",
+)
+"""Microsoft Azure."""

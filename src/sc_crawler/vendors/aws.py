@@ -29,6 +29,7 @@ from ..tables import (
     Vendor,
 )
 from ..utils import float_inf_to_str, jsoned_hash, scmodels_to_dict
+from ..vendor_helpers import parallel_fetch_servers, preprocess_servers
 
 # disable caching by default
 set_default_params(caching_enabled=False, stale_after=timedelta(days=1))
@@ -815,41 +816,10 @@ def inventory_servers(vendor):
     # TODO consider dropping this in favor of pricing.get_products, as
     #      it has info e.g. on instanceFamily although other fields
     #      are messier (e.g. extract memory from string)
-    vendor.progress_tracker.start_task(
-        name="Scanning region(s) for server(s)", total=len(vendor.regions)
+    servers = parallel_fetch_servers(
+        vendor, _boto_describe_instance_types, "InstanceType", "regions"
     )
-
-    def search_servers(region: Region, vendor: Optional[Vendor]) -> List[dict]:
-        instance_types = []
-        if region.status == "active":
-            instance_types = _boto_describe_instance_types(region.region_id)
-            if vendor:
-                vendor.log(
-                    f"{len(instance_types)} server(s) found in {region.region_id}."
-                )
-        if vendor:
-            vendor.progress_tracker.advance_task()
-        return instance_types
-
-    with ThreadPoolExecutor(max_workers=8) as executor:
-        products = executor.map(search_servers, vendor.regions, repeat(vendor))
-    instance_types = list(chain.from_iterable(products))
-
-    vendor.log(
-        f"{len(instance_types)} server(s) found in {len(vendor.regions)} regions."
-    )
-    instance_types = list({p["InstanceType"]: p for p in instance_types}.values())
-    vendor.log(f"{len(instance_types)} unique server(s) found.")
-    vendor.progress_tracker.hide_task()
-
-    vendor.progress_tracker.start_task(
-        name="Preprocessing server(s)", total=len(instance_types)
-    )
-    servers = []
-    for instance_type in instance_types:
-        servers.append(_make_server_from_instance_type(instance_type, vendor))
-        vendor.progress_tracker.advance_task()
-    vendor.progress_tracker.hide_task()
+    servers = preprocess_servers(servers, vendor, _make_server_from_instance_type)
     return servers
 
 

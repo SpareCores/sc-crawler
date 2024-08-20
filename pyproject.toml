@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sparecores-crawler"
-version = "0.2.1"
-requires-python = ">= 3.7"
+version = "0.3.0"
+requires-python = ">= 3.9"
 dependencies = [
   "alembic",
   "cachier",
@@ -53,7 +53,13 @@ testing = ["pytest", "sparecores-crawler[mkdocs]"]
 aws = ["boto3"]
 hcloud = ["hcloud"]
 gcp = ["google-cloud", "google-cloud-compute", "google-cloud-billing"]
-vendors = ["sparecores-crawler[aws]", "sparecores-crawler[hcloud]", "sparecores-crawler[gcp]"]
+azure = ["azure-identity", "azure-mgmt-resource", "azure-mgmt-compute"]
+vendors = [
+  "sparecores-crawler[aws]",
+  "sparecores-crawler[hcloud]",
+  "sparecores-crawler[gcp]",
+  "sparecores-crawler[azure]",
+]
 all = ["sparecores-crawler[testing]", "sparecores-crawler[vendors]"]
 
 [project.scripts]
