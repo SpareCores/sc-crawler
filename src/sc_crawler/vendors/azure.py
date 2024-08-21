@@ -796,7 +796,7 @@ def inventory_zones(vendor):
                     "zone_id": zone,
                     "name": zone,
                     "api_reference": zone,
-                    "display_name": zone,
+                    "display_name": region.region_id + "-" + zone,
                 }
             )
     return items
