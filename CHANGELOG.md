@@ -1,6 +1,6 @@
 ## v0.3.x (development version)
 
-...
+- New benchmark: static HTTP server.
 
 ## v0.3.0 (Aug 20, 2024)
 

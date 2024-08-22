@@ -276,4 +276,17 @@ benchmarks: List[Benchmark] = [
         },
         unit="bogo ops/s (real time)",
     ),
+    Benchmark(
+        benchmark_id="app:static_web",
+        name="Static web server",
+        description="Serving smaller (1-65 kb) and larger (256-512 kb) files using a static HTTP server (binserve), and benchmarking each workload (wrk) using variable number of threads and connections on the same server.",
+        framework="app",
+        measurement="static_web",
+        config_fields={
+            "threads": "Total number of threads used by wrk.",
+            "connections": "Total number of HTTP connections kept open by wrk.",
+            "framework_version": "Version number of both binserve and wrk.",
+        },
+        unit="rps",
+    ),
 ]

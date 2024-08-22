@@ -291,6 +291,35 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
     except Exception as e:
         _log_cannot_load_benchmarks(server, framework, e, True)
 
+    measurement = "static_web"
+    try:
+        with open(
+            _server_framework_path(server, measurement, "parsed.json"), "r"
+        ) as fp:
+            workloads = json.load(fp)
+        versions = _server_framework_meta(server, measurement)["version"]
+        for size in workloads.keys():
+            for workload in workloads.get(size):
+                benchmarks.append(
+                    {
+                        **_benchmark_metafields(
+                            server,
+                            framework=measurement,
+                            benchmark_id=":".join(["app", measurement]),
+                        ),
+                        "config": {
+                            "size": size,
+                            "threads": workload["threads"],
+                            "threads_per_cpu": int(workload["threads"] / server.vcpus),
+                            "connections": workload["connections"],
+                            "framework_version": versions,
+                        },
+                        "score": workload["rps"],
+                    }
+                )
+    except Exception as e:
+        _log_cannot_load_benchmarks(server, framework, e, True)
+
     return benchmarks
 
 
