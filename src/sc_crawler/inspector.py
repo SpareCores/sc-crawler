@@ -205,16 +205,17 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                     if data.get("extra_args", {}).get("block_size"):
                         config["block_size"] = data["extra_args"]["block_size"]
                     for measurement in ["ratio", "compress", "decompress"]:
-                        benchmarks.append(
-                            {
-                                **_benchmark_metafields(
-                                    server,
-                                    benchmark_id=":".join([framework, measurement]),
-                                ),
-                                "config": config,
-                                "score": float(data[measurement]),
-                            }
-                        )
+                        if data[measurement]:
+                            benchmarks.append(
+                                {
+                                    **_benchmark_metafields(
+                                        server,
+                                        benchmark_id=":".join([framework, measurement]),
+                                    ),
+                                    "config": config,
+                                    "score": float(data[measurement]),
+                                }
+                            )
     except Exception as e:
         _log_cannot_load_benchmarks(server, framework, e, True)
 
