@@ -168,7 +168,7 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                 **_benchmark_metafields(
                     server, framework="lscpu", benchmark_id=framework
                 ),
-                "score": float(_server_lscpu_field(server, "BogoMIPS:")),
+                "score": round(float(_server_lscpu_field(server, "BogoMIPS:"))),
             }
         )
     except Exception as e:
