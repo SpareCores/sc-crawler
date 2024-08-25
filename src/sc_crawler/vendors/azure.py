@@ -454,6 +454,11 @@ def inventory_regions(vendor):
             "founding_year": 2008,
             "green_energy": True,
         },
+        "southcentralusstg": {
+            "country_id": "US",
+            "state": "Texas",
+            "city": "San Antonio",
+        },
         "westcentralus": {
             "country_id": "US",
             "state": "Wyoming",
@@ -750,27 +755,31 @@ def inventory_regions(vendor):
     items = []
     for region in _regions():
         if region["metadata"]["region_type"] == "Physical":
-            manual_data = manual_datas.get(region["name"], {})
-            items.append(
-                {
-                    "vendor_id": vendor.vendor_id,
-                    "region_id": region["name"],
-                    "name": region["display_name"],
-                    "api_reference": region["name"],
-                    "display_name": (
-                        region["display_name"] + " (" + manual_data["country_id"] + ")"
-                    ),
-                    "country_id": manual_data["country_id"],
-                    "state": manual_data.get("state"),
-                    "city": manual_data.get("city"),
-                    "address_line": None,
-                    "zip_code": None,
-                    "lat": region["metadata"]["latitude"],
-                    "lon": region["metadata"]["longitude"],
-                    "founding_year": manual_data.get("founding_year"),
-                    "green_energy": manual_data.get("green_energy"),
-                }
-            )
+            manual_data = manual_datas.get(region["name"])
+            if manual_data:
+                items.append(
+                    {
+                        "vendor_id": vendor.vendor_id,
+                        "region_id": region["name"],
+                        "name": region["display_name"],
+                        "api_reference": region["name"],
+                        "display_name": (
+                            region["display_name"]
+                            + " ("
+                            + manual_data["country_id"]
+                            + ")"
+                        ),
+                        "country_id": manual_data["country_id"],
+                        "state": manual_data.get("state"),
+                        "city": manual_data.get("city"),
+                        "address_line": None,
+                        "zip_code": None,
+                        "lat": region["metadata"]["latitude"],
+                        "lon": region["metadata"]["longitude"],
+                        "founding_year": manual_data.get("founding_year"),
+                        "green_energy": manual_data.get("green_energy"),
+                    }
+                )
     return items
 
 
