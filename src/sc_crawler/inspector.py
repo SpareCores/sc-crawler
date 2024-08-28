@@ -295,47 +295,54 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
     except Exception as e:
         _log_cannot_load_benchmarks(server, framework, e, True)
 
-    framework = "static_web"
-    try:
-        versions = _server_framework_meta(server, framework)["version"]
-        records = []
-        with open(_server_framework_stdout_path(server, framework), newline="") as f:
-            rows = csv.DictReader(f, quoting=csv.QUOTE_NONNUMERIC)
-            for row in rows:
-                records.append(row)
+    for framework in ["static_web", "redis"]:
+        try:
+            versions = _server_framework_meta(server, framework)["version"]
+            records = []
+            with open(
+                _server_framework_stdout_path(server, framework), newline=""
+            ) as f:
+                rows = csv.DictReader(f, quoting=csv.QUOTE_NONNUMERIC)
+                for row in rows:
+                    records.append(row)
 
-        # don't care about threads, keep the records with the highest rps
-        records = sorted(
-            records, key=lambda x: (x["size"], x["connections"], -x["rps"])
-        )
-        records = groupby(records, key=itemgetter("size", "connections"))
-        records = [next(group) for _, group in records]
+            match framework:
+                case "static_web":
+                    keys = ["size", "connections"]
+                case "redis":
+                    keys = ["operation", "pipeline"]
 
-        for record in records:
-            for measurement in ["rps", "rps-extrapolated", "latency"]:
-                score = record[measurement.split("-")[0]]
-                server_usrsys = record["server_usr"] + record["server_sys"]
-                client_usrsys = record["client_usr"] + record["client_sys"]
-                if measurement == "rps-extrapolated":
-                    score = score / server_usrsys * (server_usrsys + client_usrsys)
-                benchmarks.append(
-                    {
-                        **_benchmark_metafields(
-                            server,
-                            framework=framework,
-                            benchmark_id=":".join([framework, measurement]),
-                        ),
-                        "config": {
-                            "size": record["size"],
-                            "connections": record["connections"],
-                            "framework_version": versions,
-                        },
-                        "score": score,
-                        "note": f"CPU usage (server/client usr+sys): {server_usrsys}/{client_usrsys}",
-                    }
-                )
-    except Exception as e:
-        _log_cannot_load_benchmarks(server, framework, e, True)
+            # don't care about threads, keep the records with the highest rps
+            records = sorted(records, key=lambda x: (*[x[k] for k in keys], -x["rps"]))
+            records = groupby(records, key=itemgetter(*keys))
+            records = [next(group) for _, group in records]
+
+            for record in records:
+                for measurement in ["rps", "rps-extrapolated", "latency"]:
+                    score = record[measurement.split("-")[0]]
+                    server_usrsys = record["server_usr"] + record["server_sys"]
+                    client_usrsys = record["client_usr"] + record["client_sys"]
+                    note = f"CPU usage (server/client usr+sys): {server_usrsys}/{client_usrsys}."
+                    if measurement == "rps-extrapolated":
+                        note += f" Original RPS: {score}."
+                        score = score / server_usrsys * (server_usrsys + client_usrsys)
+                    benchmarks.append(
+                        {
+                            **_benchmark_metafields(
+                                server,
+                                framework=framework,
+                                benchmark_id=":".join([framework, measurement]),
+                            ),
+                            "config": {
+                                **{k: record[k] for k in keys},
+                                "framework_version": versions,
+                            },
+                            "score": score,
+                            "note": note,
+                        }
+                    )
+        except Exception as e:
+            _log_cannot_load_benchmarks(server, framework, e, True)
 
     framework = "redis"
     try:
