@@ -1,7 +1,10 @@
+import csv
 import json
 import xml.etree.ElementTree as xmltree
 from atexit import register
 from functools import cache
+from itertools import groupby
+from operator import itemgetter
 from os import PathLike, path, remove
 from re import compile, match, search, sub
 from shutil import rmtree
@@ -18,6 +21,11 @@ from .table_fields import DdrGeneration
 
 if TYPE_CHECKING:
     from .tables import Server
+
+SERVER_CLIENT_FRAMEWORK_MAPS = {
+    "static_web": {"keys": ["size", "connections"]},
+    "redis": {"keys": ["operation", "pipeline"]},
+}
 
 
 @cache
@@ -292,34 +300,55 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
     except Exception as e:
         _log_cannot_load_benchmarks(server, framework, e, True)
 
-    measurement = "static_web"
-    try:
-        with open(
-            _server_framework_path(server, measurement, "parsed.json"), "r"
-        ) as fp:
-            workloads = json.load(fp)
-        versions = _server_framework_meta(server, measurement)["version"]
-        for size in workloads.keys():
-            for workload in workloads.get(size):
-                benchmarks.append(
-                    {
-                        **_benchmark_metafields(
-                            server,
-                            framework=measurement,
-                            benchmark_id=":".join(["app", measurement]),
-                        ),
-                        "config": {
-                            "size": size,
-                            "threads": workload["threads"],
-                            "threads_per_cpu": int(workload["threads"] / server.vcpus),
-                            "connections": workload["connections"],
-                            "framework_version": versions,
-                        },
-                        "score": workload["rps"],
-                    }
-                )
-    except Exception as e:
-        _log_cannot_load_benchmarks(server, framework, e, True)
+    for framework in SERVER_CLIENT_FRAMEWORK_MAPS.keys():
+        try:
+            versions = _server_framework_meta(server, framework)["version"]
+            records = []
+            with open(
+                _server_framework_stdout_path(server, framework), newline=""
+            ) as f:
+                rows = csv.DictReader(f, quoting=csv.QUOTE_NONNUMERIC)
+                for row in rows:
+                    records.append(row)
+
+            keys = SERVER_CLIENT_FRAMEWORK_MAPS[framework]["keys"]
+
+            # don't care about threads, keep the records with the highest rps
+            records = sorted(records, key=lambda x: (*[x[k] for k in keys], -x["rps"]))
+            records = groupby(records, key=itemgetter(*keys))
+            records = [next(group) for _, group in records]
+
+            for record in records:
+                for measurement in ["rps", "rps-extrapolated", "latency"]:
+                    score = record[measurement.split("-")[0]]
+                    server_usrsys = record["server_usr"] + record["server_sys"]
+                    client_usrsys = record["client_usr"] + record["client_sys"]
+                    note = (
+                        "CPU usage (server/client usr+sys): "
+                        f"{round(server_usrsys, 4)}/{round(client_usrsys, 4)}."
+                    )
+                    if measurement == "rps-extrapolated":
+                        note += f" Original RPS: {score}."
+                        score = round(
+                            score / server_usrsys * (server_usrsys + client_usrsys), 2
+                        )
+                    benchmarks.append(
+                        {
+                            **_benchmark_metafields(
+                                server,
+                                framework=framework,
+                                benchmark_id=":".join([framework, measurement]),
+                            ),
+                            "config": {
+                                **{k: record[k] for k in keys},
+                                "framework_version": versions,
+                            },
+                            "score": score,
+                            "note": note,
+                        }
+                    )
+        except Exception as e:
+            _log_cannot_load_benchmarks(server, framework, e, True)
 
     return benchmarks
 
