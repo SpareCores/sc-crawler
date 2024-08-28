@@ -6,7 +6,7 @@ from functools import cache
 from itertools import groupby
 from operator import itemgetter
 from os import PathLike, path, remove
-from re import compile, match, search, split as resplit, sub
+from re import compile, match, search, sub
 from shutil import rmtree
 from statistics import mode
 from tempfile import mkdtemp
@@ -348,49 +348,6 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                     )
         except Exception as e:
             _log_cannot_load_benchmarks(server, framework, e, True)
-
-    framework = "redis"
-    try:
-        version = _server_framework_meta(server, framework)["version"]
-        text = open(_server_framework_stdout_path(server, framework), "r").read()
-        runs = resplit("#### threads=\\d*,pipeline=\\d*,port=\\d*\\n", text)
-        results = {}
-        for run in runs.pop(0):
-            data = json.loads(run)
-            threads, pipeline = [
-                data["configuration"][v] for v in ["threads", "pipeline"]
-            ]
-            key = (threads, pipeline)
-            results[key] = results.get(key, []) + [
-                {
-                    "threads": threads,
-                    "pipeline": pipeline,
-                    "ops/sec": data["ALL STATS"]["Sets"]["Ops/sec"],
-                    "latency": data["ALL STATS"]["Sets"]["Latency"],
-                }
-            ]
-
-        for size in workloads.keys():
-            for workload in workloads.get(size):
-                benchmarks.append(
-                    {
-                        **_benchmark_metafields(
-                            server,
-                            framework=measurement,
-                            benchmark_id=":".join(["app", measurement]),
-                        ),
-                        "config": {
-                            "size": size,
-                            "threads": workload["threads"],
-                            "threads_per_cpu": int(workload["threads"] / server.vcpus),
-                            "connections": workload["connections"],
-                            "framework_version": versions,
-                        },
-                        "score": workload["rps"],
-                    }
-                )
-    except Exception as e:
-        _log_cannot_load_benchmarks(server, framework, e, True)
 
     return benchmarks
 
