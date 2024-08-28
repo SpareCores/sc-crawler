@@ -300,40 +300,40 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
         versions = _server_framework_meta(server, framework)["version"]
         records = []
         with open(_server_framework_stdout_path(server, framework), newline="") as f:
-            headers = next(csv.reader(f))
-            rows = csv.DictReader(f, fieldnames=headers, quoting=csv.QUOTE_NONNUMERIC)
+            rows = csv.DictReader(f, quoting=csv.QUOTE_NONNUMERIC)
             for row in rows:
                 records.append(row)
 
+        # don't care about threads, keep the records with the highest rps
         records = sorted(
             records, key=lambda x: (x["size"], x["connections"], -x["rps"])
         )
         records = groupby(records, key=itemgetter("size", "connections"))
         records = [next(group) for _, group in records]
 
-        for measurement in ["rps", "latency"]:
-            benchmarks.append(
-                {
-                    **_benchmark_metafields(
-                        server,
-                        framework=framework,
-                        benchmark_id=":".join([framework, measurement]),
-                    ),
-                    "config": {
-                        "size": row["size"],
-                        "connections": row["connections"],
-                        "framework_version": versions,
-                    },
-                    "score": row[measurement],
-                    "note": (
-                        "CPU usage (server/client usr+sys): "
-                        + str(float(row["server_usr"]) + float(row["server_sys"]))
-                        + "/"
-                        + str(float(row["client_usr"]) + float(row["client_sys"]))
-                    ),
-                }
-            )
-        # TODO extrapolate
+        for record in records:
+            for measurement in ["rps", "rps-extrapolated", "latency"]:
+                score = record[measurement.split("-")[0]]
+                server_usrsys = record["server_usr"] + record["server_sys"]
+                client_usrsys = record["client_usr"] + record["client_sys"]
+                if measurement == "rps-extrapolated":
+                    score = score / server_usrsys * (server_usrsys + client_usrsys)
+                benchmarks.append(
+                    {
+                        **_benchmark_metafields(
+                            server,
+                            framework=framework,
+                            benchmark_id=":".join([framework, measurement]),
+                        ),
+                        "config": {
+                            "size": record["size"],
+                            "connections": record["connections"],
+                            "framework_version": versions,
+                        },
+                        "score": score,
+                        "note": f"CPU usage (server/client usr+sys): {server_usrsys}/{client_usrsys}",
+                    }
+                )
     except Exception as e:
         _log_cannot_load_benchmarks(server, framework, e, True)
 
