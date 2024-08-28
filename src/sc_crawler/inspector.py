@@ -322,10 +322,15 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                     score = record[measurement.split("-")[0]]
                     server_usrsys = record["server_usr"] + record["server_sys"]
                     client_usrsys = record["client_usr"] + record["client_sys"]
-                    note = f"CPU usage (server/client usr+sys): {server_usrsys}/{client_usrsys}."
+                    note = (
+                        "CPU usage (server/client usr+sys): "
+                        f"{round(server_usrsys, 4)}/{round(client_usrsys, 4)}."
+                    )
                     if measurement == "rps-extrapolated":
                         note += f" Original RPS: {score}."
-                        score = score / server_usrsys * (server_usrsys + client_usrsys)
+                        score = round(
+                            score / server_usrsys * (server_usrsys + client_usrsys), 2
+                        )
                     benchmarks.append(
                         {
                             **_benchmark_metafields(
