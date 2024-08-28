@@ -1,7 +1,10 @@
+import csv
 import json
 import xml.etree.ElementTree as xmltree
 from atexit import register
 from functools import cache
+from itertools import groupby
+from operator import itemgetter
 from os import PathLike, path, remove
 from re import compile, match, search, split as resplit, sub
 from shutil import rmtree
@@ -292,32 +295,45 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
     except Exception as e:
         _log_cannot_load_benchmarks(server, framework, e, True)
 
-    measurement = "static_web"
+    framework = "static_web"
     try:
-        with open(
-            _server_framework_path(server, measurement, "parsed.json"), "r"
-        ) as fp:
-            workloads = json.load(fp)
-        versions = _server_framework_meta(server, measurement)["version"]
-        for size in workloads.keys():
-            for workload in workloads.get(size):
-                benchmarks.append(
-                    {
-                        **_benchmark_metafields(
-                            server,
-                            framework=measurement,
-                            benchmark_id=":".join(["app", measurement]),
-                        ),
-                        "config": {
-                            "size": size,
-                            "threads": workload["threads"],
-                            "threads_per_cpu": int(workload["threads"] / server.vcpus),
-                            "connections": workload["connections"],
-                            "framework_version": versions,
-                        },
-                        "score": workload["rps"],
-                    }
-                )
+        versions = _server_framework_meta(server, framework)["version"]
+        records = []
+        with open(_server_framework_stdout_path(server, framework), newline="") as f:
+            headers = next(csv.reader(f))
+            rows = csv.DictReader(f, fieldnames=headers, quoting=csv.QUOTE_NONNUMERIC)
+            for row in rows:
+                records.append(row)
+
+        records = sorted(
+            records, key=lambda x: (x["size"], x["connections"], -x["rps"])
+        )
+        records = groupby(records, key=itemgetter("size", "connections"))
+        records = [next(group) for _, group in records]
+
+        for measurement in ["rps", "latency"]:
+            benchmarks.append(
+                {
+                    **_benchmark_metafields(
+                        server,
+                        framework=framework,
+                        benchmark_id=":".join([framework, measurement]),
+                    ),
+                    "config": {
+                        "size": row["size"],
+                        "connections": row["connections"],
+                        "framework_version": versions,
+                    },
+                    "score": row[measurement],
+                    "note": (
+                        "CPU usage (server/client usr+sys): "
+                        + str(float(row["server_usr"]) + float(row["server_sys"]))
+                        + "/"
+                        + str(float(row["client_usr"]) + float(row["client_sys"]))
+                    ),
+                }
+            )
+        # TODO extrapolate
     except Exception as e:
         _log_cannot_load_benchmarks(server, framework, e, True)
 
