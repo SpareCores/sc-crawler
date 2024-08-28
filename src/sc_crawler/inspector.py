@@ -22,6 +22,11 @@ from .table_fields import DdrGeneration
 if TYPE_CHECKING:
     from .tables import Server
 
+SERVER_CLIENT_FRAMEWORK_MAPS = {
+    "static_web": {"keys": ["size", "connections"]},
+    "redis": {"keys": ["operation", "pipeline"]},
+}
+
 
 @cache
 def inspector_data_path() -> str | PathLike:
@@ -295,7 +300,7 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
     except Exception as e:
         _log_cannot_load_benchmarks(server, framework, e, True)
 
-    for framework in ["static_web", "redis"]:
+    for framework in SERVER_CLIENT_FRAMEWORK_MAPS.keys():
         try:
             versions = _server_framework_meta(server, framework)["version"]
             records = []
@@ -306,11 +311,7 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                 for row in rows:
                     records.append(row)
 
-            match framework:
-                case "static_web":
-                    keys = ["size", "connections"]
-                case "redis":
-                    keys = ["operation", "pipeline"]
+            keys = SERVER_CLIENT_FRAMEWORK_MAPS[framework]["keys"]
 
             # don't care about threads, keep the records with the highest rps
             records = sorted(records, key=lambda x: (*[x[k] for k in keys], -x["rps"]))
