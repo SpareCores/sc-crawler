@@ -314,6 +314,7 @@ benchmarks: List[Benchmark] = [
             "framework_version": "Version number of both binserve and wrk.",
         },
         unit="sec",
+        higher_is_better=False,
     ),
     Benchmark(
         benchmark_id="redis:rps",
@@ -353,5 +354,6 @@ benchmarks: List[Benchmark] = [
             "framework_version": "Redis server version number and build information.",
         },
         unit="sec",
+        higher_is_better=False,
     ),
 ]
