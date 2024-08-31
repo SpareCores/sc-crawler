@@ -315,6 +315,10 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
     for framework in SERVER_CLIENT_FRAMEWORK_MAPS.keys():
         try:
             versions = _server_framework_meta(server, framework)["version"]
+            # drop the build number at the end of the redis server version
+            if framework == "redis":
+                versions = sub(r" build=[a-zA-Z0-9]+", "", versions)
+
             records = []
             with open(
                 _server_framework_stdout_path(server, framework), newline=""
