@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 
 SERVER_CLIENT_FRAMEWORK_MAPS = {
     "static_web": {
-        "keys": ["size", "connections"],
+        "keys": ["size", "connections_per_vcpus"],
         "measurements": [
             "rps",
             "rps-extrapolated",
@@ -321,6 +321,8 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
             ) as f:
                 rows = csv.DictReader(f, quoting=csv.QUOTE_NONNUMERIC)
                 for row in rows:
+                    if "connections" in row.keys():
+                        row["connections_per_vcpus"] = row["connections"] / server.vcpus
                     records.append(row)
 
             framework_config = SERVER_CLIENT_FRAMEWORK_MAPS[framework]

@@ -284,7 +284,7 @@ benchmarks: List[Benchmark] = [
         measurement="rps",
         config_fields={
             "size": "Served file size (kb).",
-            "connections": "Total number of HTTP connections kept open by wrk.",
+            "connections_per_vcpus": "Total number of HTTP connections kept open by wrk, divided by the number of vCPUs to make it comparable with servers with different vCPU count.",
             "framework_version": "Version number of both binserve and wrk.",
         },
         unit="rps",
@@ -297,7 +297,7 @@ benchmarks: List[Benchmark] = [
         measurement="rps-extrapolated",
         config_fields={
             "size": "Served file size (kb).",
-            "connections": "Total number of HTTP connections kept open by wrk.",
+            "connections_per_vcpus": "Total number of HTTP connections kept open by wrk, divided by the number of vCPUs to make it comparable with servers with different vCPU count.",
             "framework_version": "Version number of both binserve and wrk.",
         },
         unit="rps",
@@ -310,7 +310,7 @@ benchmarks: List[Benchmark] = [
         measurement="throughput",
         config_fields={
             "size": "Served file size (kb).",
-            "connections": "Total number of HTTP connections kept open by wrk.",
+            "connections_per_vcpus": "Total number of HTTP connections kept open by wrk, divided by the number of vCPUs to make it comparable with servers with different vCPU count.",
             "framework_version": "Version number of both binserve and wrk.",
         },
         unit="bps",
@@ -323,7 +323,7 @@ benchmarks: List[Benchmark] = [
         measurement="throughput-extrapolated",
         config_fields={
             "size": "Served file size (kb).",
-            "connections": "Total number of HTTP connections kept open by wrk.",
+            "connections_per_vcpus": "Total number of HTTP connections kept open by wrk, divided by the number of vCPUs to make it comparable with servers with different vCPU count.",
             "framework_version": "Version number of both binserve and wrk.",
         },
         unit="bps",  # not bit, but byte?
@@ -336,7 +336,7 @@ benchmarks: List[Benchmark] = [
         measurement="latency",
         config_fields={
             "size": "Served file size (kb).",
-            "connections": "Total number of HTTP connections kept open by wrk.",
+            "connections_per_vcpus": "Total number of HTTP connections kept open by wrk, divided by the number of vCPUs to make it comparable with servers with different vCPU count.",
             "framework_version": "Version number of both binserve and wrk.",
         },
         unit="sec",
