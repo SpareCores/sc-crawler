@@ -313,7 +313,7 @@ benchmarks: List[Benchmark] = [
             "connections_per_vcpus": "Total number of HTTP connections kept open by wrk, divided by the number of vCPUs to make it comparable with servers with different vCPU count.",
             "framework_version": "Version number of both binserve and wrk.",
         },
-        unit="bps",
+        unit="Bps",
     ),
     Benchmark(
         benchmark_id="static_web:throughput-extrapolated",
@@ -326,7 +326,7 @@ benchmarks: List[Benchmark] = [
             "connections_per_vcpus": "Total number of HTTP connections kept open by wrk, divided by the number of vCPUs to make it comparable with servers with different vCPU count.",
             "framework_version": "Version number of both binserve and wrk.",
         },
-        unit="bps",  # not bit, but byte?
+        unit="Bps",
     ),
     Benchmark(
         benchmark_id="static_web:latency",
