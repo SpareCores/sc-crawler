@@ -303,6 +303,32 @@ benchmarks: List[Benchmark] = [
         unit="rps",
     ),
     Benchmark(
+        benchmark_id="static_web:throughput",
+        name="Static web server+client throughput",
+        description="Serving smaller (1-65 kb) and larger (256-512 kb) files using a static HTTP server (binserve), and benchmarking each workload (wrk) using variable number of threads and connections on the same server. Throughput is calculated by multiplying the RPS with the served file size. The measured RPS is not the maximum expected server speed, as the server shared CPU with the client.",
+        framework="static_web",
+        measurement="throughput",
+        config_fields={
+            "size": "Served file size (kb).",
+            "connections": "Total number of HTTP connections kept open by wrk.",
+            "framework_version": "Version number of both binserve and wrk.",
+        },
+        unit="bps",
+    ),
+    Benchmark(
+        benchmark_id="static_web:throughput-extrapolated",
+        name="Static web server (extrapolated) throughput",
+        description="Serving smaller (1-65 kb) and larger (256-512 kb) files using a static HTTP server (binserve), and benchmarking each workload (wrk) using variable number of threads and connections on the same server. Exrapolated throughput is calculated by multiplying the exrapolated RPS with the served file size. The extrapolated RPS is based on the measured RPS adjusted by the server's and client's time spent executing in user/system mode, so trying to control for the client resource usage.",
+        framework="static_web",
+        measurement="throughput-extrapolated",
+        config_fields={
+            "size": "Served file size (kb).",
+            "connections": "Total number of HTTP connections kept open by wrk.",
+            "framework_version": "Version number of both binserve and wrk.",
+        },
+        unit="bps",  # not bit, but byte?
+    ),
+    Benchmark(
         benchmark_id="static_web:latency",
         name="Static web server latency",
         description="Serving smaller (1-65 kb) and larger (256-512 kb) files using a static HTTP server (binserve), and benchmarking each workload (wrk) using variable number of threads and connections on the same server. The average latency reported by wrk.",

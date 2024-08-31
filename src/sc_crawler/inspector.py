@@ -23,8 +23,20 @@ if TYPE_CHECKING:
     from .tables import Server
 
 SERVER_CLIENT_FRAMEWORK_MAPS = {
-    "static_web": {"keys": ["size", "connections"]},
-    "redis": {"keys": ["operation", "pipeline"]},
+    "static_web": {
+        "keys": ["size", "connections"],
+        "measurements": [
+            "rps",
+            "rps-extrapolated",
+            "throughput",
+            "throughput-extrapolated",
+            "latency",
+        ],
+    },
+    "redis": {
+        "keys": ["operation", "pipeline"],
+        "measurements": ["rps", "rps-extrapolated", "latency"],
+    },
 }
 
 
@@ -311,7 +323,9 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                 for row in rows:
                     records.append(row)
 
-            keys = SERVER_CLIENT_FRAMEWORK_MAPS[framework]["keys"]
+            framework_config = SERVER_CLIENT_FRAMEWORK_MAPS[framework]
+            keys = framework_config["keys"]
+            measurements = framework_config["measurements"]
 
             # don't care about threads, keep the records with the highest rps
             records = sorted(records, key=lambda x: (*[x[k] for k in keys], -x["rps"]))
@@ -319,19 +333,26 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
             records = [next(group) for _, group in records]
 
             for record in records:
-                for measurement in ["rps", "rps-extrapolated", "latency"]:
-                    score = record[measurement.split("-")[0]]
+                for measurement in measurements:
+                    score_field = measurement.split("-")[0]
+                    if score_field == "throughput":
+                        score_field = "rps"
+                    score = record[score_field]
                     server_usrsys = record["server_usr"] + record["server_sys"]
                     client_usrsys = record["client_usr"] + record["client_sys"]
                     note = (
                         "CPU usage (server/client usr+sys): "
                         f"{round(server_usrsys, 4)}/{round(client_usrsys, 4)}."
                     )
-                    if measurement == "rps-extrapolated":
+                    if measurement.endswith("-extrapolated"):
                         note += f" Original RPS: {score}."
                         score = round(
                             score / server_usrsys * (server_usrsys + client_usrsys), 2
                         )
+                    if measurement.startswidth("throughput"):
+                        # drop "k" suffix and multuple by 1024
+                        size = int(record["size"][:-1]) * 1024
+                        score = score * size
                     benchmarks.append(
                         {
                             **_benchmark_metafields(
