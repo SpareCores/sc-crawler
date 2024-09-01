@@ -109,8 +109,8 @@ def _prices(url_params: Optional[str] = None) -> List[dict]:
         # handle rate limiting
         headers = response.headers
         remaining = headers.get("x-ms-ratelimit-remaining-retailPrices-requests", 0)
-        if int(remaining) == 0:
-            logger.debug("Retail Prices API rate limit reached, sleep for 60 seconds.")
+        if response.status_code == 429 or int(remaining) == 0:
+            logger.info("Retail Prices API rate limit reached, sleep for 60 seconds.")
             sleep(60)
         # next page
         if response.status_code == 200:
