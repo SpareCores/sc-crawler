@@ -379,7 +379,7 @@ benchmarks: List[Benchmark] = [
             "pipeline": "The number of concurrent pipelined requests.",
             "framework_version": "Redis server version number and build information.",
         },
-        unit="sec",
+        unit="ms",
         higher_is_better=False,
     ),
 ]
