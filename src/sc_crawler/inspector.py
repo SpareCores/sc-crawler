@@ -356,7 +356,7 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                             score / server_usrsys * (server_usrsys + client_usrsys), 2
                         )
                     if measurement.startswith("throughput"):
-                        # drop "k" suffix and multuple by 1024
+                        # drop the "k" suffix and multiply by 1024
                         size = int(record["size"][:-1]) * 1024
                         score = score * size
                     benchmarks.append(
