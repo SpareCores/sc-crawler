@@ -23,8 +23,20 @@ if TYPE_CHECKING:
     from .tables import Server
 
 SERVER_CLIENT_FRAMEWORK_MAPS = {
-    "static_web": {"keys": ["size", "connections"]},
-    "redis": {"keys": ["operation", "pipeline"]},
+    "static_web": {
+        "keys": ["size", "connections_per_vcpus"],
+        "measurements": [
+            "rps",
+            "rps-extrapolated",
+            "throughput",
+            "throughput-extrapolated",
+            "latency",
+        ],
+    },
+    "redis": {
+        "keys": ["operation", "pipeline"],
+        "measurements": ["rps", "rps-extrapolated", "latency"],
+    },
 }
 
 
@@ -303,15 +315,23 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
     for framework in SERVER_CLIENT_FRAMEWORK_MAPS.keys():
         try:
             versions = _server_framework_meta(server, framework)["version"]
+            # drop the build number at the end of the redis server version
+            if framework == "redis":
+                versions = sub(r" build=[a-zA-Z0-9]+", "", versions)
+
             records = []
             with open(
                 _server_framework_stdout_path(server, framework), newline=""
             ) as f:
                 rows = csv.DictReader(f, quoting=csv.QUOTE_NONNUMERIC)
                 for row in rows:
+                    if "connections" in row.keys():
+                        row["connections_per_vcpus"] = row["connections"] / server.vcpus
                     records.append(row)
 
-            keys = SERVER_CLIENT_FRAMEWORK_MAPS[framework]["keys"]
+            framework_config = SERVER_CLIENT_FRAMEWORK_MAPS[framework]
+            keys = framework_config["keys"]
+            measurements = framework_config["measurements"]
 
             # don't care about threads, keep the records with the highest rps
             records = sorted(records, key=lambda x: (*[x[k] for k in keys], -x["rps"]))
@@ -319,19 +339,26 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
             records = [next(group) for _, group in records]
 
             for record in records:
-                for measurement in ["rps", "rps-extrapolated", "latency"]:
-                    score = record[measurement.split("-")[0]]
+                for measurement in measurements:
+                    score_field = measurement.split("-")[0]
+                    if score_field == "throughput":
+                        score_field = "rps"
+                    score = record[score_field]
                     server_usrsys = record["server_usr"] + record["server_sys"]
                     client_usrsys = record["client_usr"] + record["client_sys"]
                     note = (
                         "CPU usage (server/client usr+sys): "
                         f"{round(server_usrsys, 4)}/{round(client_usrsys, 4)}."
                     )
-                    if measurement == "rps-extrapolated":
+                    if measurement.endswith("-extrapolated"):
                         note += f" Original RPS: {score}."
                         score = round(
                             score / server_usrsys * (server_usrsys + client_usrsys), 2
                         )
+                    if measurement.startswith("throughput"):
+                        # drop the "k" suffix and multiply by 1024
+                        size = int(record["size"][:-1]) * 1024
+                        score = score * size
                     benchmarks.append(
                         {
                             **_benchmark_metafields(
