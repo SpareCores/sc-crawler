@@ -99,6 +99,7 @@ def _servers(region: str) -> List[dict]:
 
 @cache
 def _prices(url_params: Optional[str] = None) -> List[dict]:
+    ratelimit_reached = 0
     session = request_session()
     data = []
     next_url = "https://prices.azure.com/api/retail/prices"
@@ -110,6 +111,11 @@ def _prices(url_params: Optional[str] = None) -> List[dict]:
         headers = response.headers
         remaining = headers.get("x-ms-ratelimit-remaining-retailPrices-requests", 0)
         if response.status_code == 429 or int(remaining) == 0:
+            ratelimit_reached += 1
+            if ratelimit_reached > 5:
+                raise HttpResponseError(
+                    "Retail Prices API rate limit reached 5 times, giving up."
+                )
             logger.info("Retail Prices API rate limit reached, sleep for 60 seconds.")
             sleep(60)
         # next page
