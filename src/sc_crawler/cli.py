@@ -316,7 +316,7 @@ def sync(
     """
 
     source_engine = create_engine(source)
-    target_engine = create_engine(target)
+    target_engine = create_engine(target, pool_pre_ping=True)
 
     # compare source and target database revisions, halt if not matching
     with source_engine.connect() as connection:
