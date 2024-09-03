@@ -411,10 +411,10 @@ def sync(
                 for key, _ in items.items():
                     if key not in source_hash[table_name]:
                         # check if the row was already set to INACTIVE
-                        obj = get_row_by_pk(session, model, loads(key))
-                        if obj.status != Status.INACTIVE:
-                            obj.status = Status.INACTIVE
-                            obj.observed_at = datetime.utcnow()
+                        obj = get_row_by_pk(session, model, loads(key)).model_dump()
+                        if obj["status"] != Status.INACTIVE:
+                            obj["status"] = Status.INACTIVE
+                            obj["observed_at"] = datetime.utcnow()
                             actions["deleted"][table_name].append(obj)
                     pt.update(table_task_id, advance=1)
                 pt.update(tables_task_id, advance=1)
