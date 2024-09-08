@@ -118,8 +118,8 @@ def _prices(url_params: Optional[str] = None) -> List[dict]:
                 )
             logger.info("Retail Prices API rate limit reached, sleep for 60 seconds.")
             sleep(60)
-        # next page
-        if response.status_code == 200:
+        # go to next page
+        elif response.status_code == 200:
             json = response.json()
             next_url = json.get("NextPageLink")
             data += json["Items"]
