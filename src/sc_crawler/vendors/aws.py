@@ -331,17 +331,28 @@ def _extract_ondemand_price(terms) -> Tuple[float, str]:
     return (float(list(ondemand_pricing.values())[0]), list(ondemand_pricing)[0])
 
 
-def _extract_ondemand_prices(terms) -> Tuple[List[dict], str]:
+def _extract_ondemand_prices(
+    terms: dict, fix_1024: bool = False
+) -> Tuple[List[dict], str]:
     """Extract ondemand tiered pricing and the currency from AWS Terms object.
+
+    Args:
+        terms: dictionary with `priceDimensions` in `Ondemand` prices
+        fix_1024: AWS shows traffic prices in GB on the homepage, but returns GiB in the API?
 
     Returns:
         Tuple of a ordered list of tiered prices and currency."""
     ondemand_terms = list(terms["OnDemand"].values())[0]
     ondemand_terms = list(ondemand_terms["priceDimensions"].values())
+
+    def float1024(num):
+        num = float(num)
+        return num / 1024 * 1000 if fix_1024 else num
+
     tiers = [
         {
-            "lower": float(term.get("beginRange")),
-            "upper": float_inf_to_str(float(term.get("endRange"))),
+            "lower": float1024(term.get("beginRange")),
+            "upper": float_inf_to_str(float1024(term.get("endRange"))),
             "price": float(list(term.get("pricePerUnit").values())[0]),
         }
         for term in ondemand_terms
@@ -1122,7 +1133,7 @@ def inventory_traffic_prices(vendor):
         for product in products:
             try:
                 region = regions[product["product"]["attributes"][loc_dir]]
-                prices = _extract_ondemand_prices(product["terms"])
+                prices = _extract_ondemand_prices(product["terms"], fix_1024=True)
                 price = [PriceTier.model_validate(p).model_dump() for p in prices[0]]
                 items.append(
                     {
