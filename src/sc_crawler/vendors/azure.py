@@ -954,7 +954,7 @@ def inventory_traffic_prices(vendor):
         tiers.sort(key=lambda x: x.get("lower"))
         for i in range(len(tiers)):
             if i == len(tiers) - 1:
-                tiers[i]["upper"] = "Inifinty"
+                tiers[i]["upper"] = "Infinity"
             else:
                 tiers[i]["upper"] = tiers[i + 1]["lower"]
         return tiers
