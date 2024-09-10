@@ -765,6 +765,10 @@ def inventory_regions(vendor):
         # no idea what are these
         if region["name"].endswith("stg"):
             continue
+        # not production region?
+        # https://github.com/Azure/azure-dev/issues/2165#issuecomment-1542948509
+        if region["name"] == "brazilus":
+            continue
         manual_data = manual_datas.get(region["name"])
         if not manual_data:
             raise KeyError(f"No manual data found for {region['name']}.")
