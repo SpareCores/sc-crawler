@@ -699,14 +699,14 @@ def inventory_regions(vendor):
             "green_energy": False,
         },
         "uksouth": {
-            "country_id": "UK",
+            "country_id": "GB",
             "city": "London",
             "founding_year": 2016,
             # unknown as no sustainability fact sheet found
             "green_energy": False,
         },
         "ukwest": {
-            "country_id": "UK",
+            "country_id": "GB",
             "city": "Cardiff",
             "founding_year": 2017,
             # unknown as no sustainability fact sheet found
