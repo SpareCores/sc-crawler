@@ -921,10 +921,17 @@ def inventory_storage_prices(vendor):
     retail_prices = _prices("$filter=serviceName eq 'Storage'")
     vendor.progress_tracker.hide_task()
 
+    regions = scmodels_to_dict(vendor.regions, keys=["region_id"])
+    storages = scmodels_to_dict(vendor.storages, keys=["storage_id"])
+
     items = []
     for p in retail_prices:
         mapping = STORAGE_METER_MAPPING.get(p["meterName"])
-        if mapping:
+        if (
+            mapping
+            and mapping[0] in storages.keys()
+            and p["armRegionName"] in regions.keys()
+        ):
             items.append(
                 {
                     "vendor_id": vendor.vendor_id,
