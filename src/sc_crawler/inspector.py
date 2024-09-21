@@ -433,6 +433,36 @@ def _standardize_cpu_model(model):
     return model
 
 
+def _standardize_gpu_model(model, server=None):
+    model = model.strip()
+    for prefix in ["NVIDIA ", "Tesla ", "Radeon Pro ", "Gaudi "]:
+        if model.startswith(prefix):
+            model = model[len(prefix) :].lstrip()
+    if model == "nvidia-a100-80gb":
+        model = "A100-SXM4-80GB"
+    if server and server["vendor_id"] and server["server_id"] == "p4de.24xlarge":
+        model = "A100-SXM4-40GB"
+    # drop too specific parts
+    model = sub(r"-SXM[0-9]-[0-9]*GB$", "", model)
+    model = sub(r" [0-9]*GB (HBM3|PCIe)$", "", model)
+    return model
+
+
+def _standardize_gpu_family(server):
+    family = server.get("gpu_family")
+    if "A100" in server.get("gpu_model"):
+        family = "Ampere"
+    if "K80" in server.get("gpu_model"):
+        family = "Kepler"
+    if "H100" in server.get("gpu_model") or "H200" in server.get("gpu_model"):
+        family = "Hopper"
+    if "V520" in server.get("gpu_model"):
+        family = "Radeon Pro Navi"
+    if "HL-205" in server.get("gpu_model"):
+        family = "Gaudi"
+    return family
+
+
 def _l123_cache(lscpu: dict, level: int):
     if level == 1:
         l1i = _listsearch(lscpu, "field", "L1i cache:")["data"].split(" ")[0]
@@ -557,5 +587,12 @@ def inspect_update_server_dict(server: dict) -> dict:
                 server["cpu_family"] = family
         if server.get("cpu_model") is None:
             server["cpu_model"] = _standardize_cpu_model(cpu_model)
+
+    # standardize GPU model
+    if server.get("gpu_model"):
+        server["gpu_model"] = _standardize_gpu_model(server["gpu_model"], server)
+        server["gpu_family"] = _standardize_gpu_family(server)
+        if not server.get("gpu_manufacturer") and server["gpu_model"] == "A100":
+            server["gpu_manufacturer"] = "NVIDIA"
 
     return server
