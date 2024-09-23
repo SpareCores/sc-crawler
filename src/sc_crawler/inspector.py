@@ -404,6 +404,9 @@ def _standardize_manufacturer(manufacturer):
 def _standardize_cpu_family(family):
     if family in ["Other", "<OUT OF SPEC>"]:
         return None
+    for prefix in ["Ampere "]:
+        if family.startswith(prefix):
+            family = family[len(prefix) :].lstrip()
     return family
 
 
