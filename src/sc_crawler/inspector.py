@@ -396,7 +396,9 @@ def _standardize_manufacturer(manufacturer):
         "Amazon EC2",
     ]:
         return None
-    return manufacturer
+    # drop the copyright symbol
+    manufacturer = sub(r"(\([rRcC]\)|®|©)", "", manufacturer)
+    return manufacturer.strip()
 
 
 def _standardize_cpu_family(family):
