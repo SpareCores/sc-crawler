@@ -120,6 +120,7 @@ SERVER_FAMILIES = {
     "c2d",
     "c3",
     "c3d",
+    "c4",
     "e2",
     "f1",  # micro instance running on N1
     "g1",  # micro instance running on N1
