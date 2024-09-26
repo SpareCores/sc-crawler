@@ -267,11 +267,45 @@ benchmarks: List[Benchmark] = [
     Benchmark(
         benchmark_id="stress_ng:cpu_all",
         name="stress-ng CPU all",
-        description="Stress the CPU with all available methods supported by stress-ng, and count the total bogo operations per second based on wall clock run time. The stress methods include bit operations, recursive calculations, integer divisions, floating point operations, matrix multiplication, stats, trigonometric, and hash functions.",
+        description="Stress the CPU with all available methods supported by stress-ng, and count the total bogo operations per second based on wall clock run time. The stress methods include bit operations, recursive calculations, integer divisions, floating point operations, matrix multiplication, stats, trigonometric, and hash functions. Note that this is to be deprecated in favor of stress_ng:div16.",
         framework="stress_ng",
         measurement="cpu_all",
         config_fields={
             "cores": "Stressing a single core or all cores.",
+            "framework_version": "Version number of stress-ng.",
+        },
+        unit="bogo ops/s (real time)",
+    ),
+    Benchmark(
+        benchmark_id="stress_ng:div16",
+        name="stress-ng div16",
+        description="Stress the CPU with the div16 method of stress-ng using a varying number of vCPU cores, and count the measured maximum total bogo operations per second based on wall clock run time.",
+        framework="stress_ng",
+        measurement="div16",
+        config_fields={
+            "cores": "Number of CPU cores stressed.",
+            "framework_version": "Version number of stress-ng.",
+        },
+        unit="bogo ops/s (real time)",
+    ),
+    Benchmark(
+        benchmark_id="stress_ng:best1",
+        name="stress-ng div16 single-core",
+        description="Stress a single vCPU core with the div16 method of stress-ng, and count the total bogo operations per second based on wall clock run time.",
+        framework="stress_ng",
+        measurement="best1",
+        config_fields={
+            "framework_version": "Version number of stress-ng.",
+        },
+        unit="bogo ops/s (real time)",
+    ),
+    Benchmark(
+        benchmark_id="stress_ng:bestn",
+        name="stress-ng div16 multi-core",
+        description="Stress the CPU with the div16 method of stress-ng using a varying number of vCPU cores, and count the measured maximum total bogo operations per second based on wall clock run time.",
+        framework="stress_ng",
+        measurement="bestn",
+        config_fields={
             "framework_version": "Version number of stress-ng.",
         },
         unit="bogo ops/s (real time)",

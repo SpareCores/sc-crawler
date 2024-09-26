@@ -287,6 +287,7 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
         _log_cannot_load_benchmarks(server, framework, e, True)
 
     framework = "stress_ng"
+    # TODO deprecate
     try:
         cores_per_path = {"stressng": server.vcpus, "stressngsinglecore": 1}
         for cores_path in cores_per_path.keys():
@@ -307,6 +308,78 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                         "framework_version": stressng_version,
                     },
                     "score": float(line.split(": ")[1]),
+                }
+            )
+    except Exception:
+        # backfill with newer method - can be dropped once we deprecate stress_ng:cpu_all
+        try:
+            records = []
+            with open(
+                _server_framework_stdout_path(server, "stressngfull"), newline=""
+            ) as f:
+                rows = csv.reader(f, quoting=csv.QUOTE_NONNUMERIC)
+                for row in rows:
+                    records.append(row)
+            for i in [0, len(records) - 1]:
+                stressng_version = _server_framework_meta(server, "stressngfull")[
+                    "version"
+                ]
+                benchmarks.append(
+                    {
+                        **_benchmark_metafields(
+                            server,
+                            framework="stressngfull",
+                            benchmark_id=":".join([framework, "cpu_all"]),
+                        ),
+                        "config": {
+                            "cores": records[i][0],
+                            "framework_version": stressng_version,
+                        },
+                        "score": records[i][1],
+                    }
+                )
+        except Exception as e:
+            _log_cannot_load_benchmarks(server, framework, e, True)
+
+    workload = "div16"
+    try:
+        records = []
+        with open(
+            _server_framework_stdout_path(server, "stressngfull"), newline=""
+        ) as f:
+            rows = csv.reader(f, quoting=csv.QUOTE_NONNUMERIC)
+            for row in rows:
+                records.append(row)
+        for record in records:
+            stressng_version = _server_framework_meta(server, "stressngfull")["version"]
+            benchmarks.append(
+                {
+                    **_benchmark_metafields(
+                        server,
+                        framework="stressngfull",
+                        benchmark_id=":".join([framework, workload]),
+                    ),
+                    "config": {
+                        "cores": record[0],
+                        "framework_version": stressng_version,
+                    },
+                    "score": record[1],
+                }
+            )
+        # best single and multi core performance
+        bests = {"best1": records[0][1], "bestn": max([r[1] for r in records])}
+        for k, v in bests.items():
+            benchmarks.append(
+                {
+                    **_benchmark_metafields(
+                        server,
+                        framework="stressngfull",
+                        benchmark_id=":".join([framework, k]),
+                    ),
+                    "config": {
+                        "framework_version": stressng_version,
+                    },
+                    "score": v,
                 }
             )
     except Exception as e:
