@@ -310,7 +310,7 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                     "score": float(line.split(": ")[1]),
                 }
             )
-    except Exception as e:
+    except Exception:
         # backfill with newer method - can be dropped once we deprecate stress_ng:cpu_all
         try:
             records = []
