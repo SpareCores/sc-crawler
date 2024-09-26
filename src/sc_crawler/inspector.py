@@ -312,6 +312,34 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
     except Exception as e:
         _log_cannot_load_benchmarks(server, framework, e, True)
 
+    workload = "div16"
+    try:
+        records = []
+        with open(
+            _server_framework_stdout_path(server, "stressngfull"), newline=""
+        ) as f:
+            rows = csv.reader(f)
+            for row in rows:
+                records.append(row)
+        for record in records:
+            stressng_version = _server_framework_meta(server, "stressngfull")["version"]
+            benchmarks.append(
+                {
+                    **_benchmark_metafields(
+                        server,
+                        framework="stressngfull",
+                        benchmark_id=":".join([framework, workload]),
+                    ),
+                    "config": {
+                        "cores": record[0],
+                        "framework_version": stressng_version,
+                    },
+                    "score": record[1],
+                }
+            )
+    except Exception as e:
+        _log_cannot_load_benchmarks(server, framework, e, True)
+
     for framework in SERVER_CLIENT_FRAMEWORK_MAPS.keys():
         try:
             versions = _server_framework_meta(server, framework)["version"]
