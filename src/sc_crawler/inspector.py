@@ -318,7 +318,7 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
         with open(
             _server_framework_stdout_path(server, "stressngfull"), newline=""
         ) as f:
-            rows = csv.reader(f)
+            rows = csv.reader(f, quoting=csv.QUOTE_NONNUMERIC)
             for row in rows:
                 records.append(row)
         for record in records:
