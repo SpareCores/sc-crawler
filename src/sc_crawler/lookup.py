@@ -277,6 +277,28 @@ benchmarks: List[Benchmark] = [
         unit="bogo ops/s (real time)",
     ),
     Benchmark(
+        benchmark_id="stress_ng:best1",
+        name="stress-ng div16 single-core",
+        description="Stress a single vCPU core with the div16 method of stress-ng, and count the total bogo operations per second based on wall clock run time.",
+        framework="stress_ng",
+        measurement="best1",
+        config_fields={
+            "framework_version": "Version number of stress-ng.",
+        },
+        unit="bogo ops/s (real time)",
+    ),
+    Benchmark(
+        benchmark_id="stress_ng:bestn",
+        name="stress-ng div16 multi-core",
+        description="Stress the CPU with the div16 method of stress-ng using a varying number of vCPU cores, and count the measured maximum total bogo operations per second based on wall clock run time.",
+        framework="stress_ng",
+        measurement="bestn",
+        config_fields={
+            "framework_version": "Version number of stress-ng.",
+        },
+        unit="bogo ops/s (real time)",
+    ),
+    Benchmark(
         benchmark_id="static_web:rps",
         name="Static web server+client speed",
         description="Serving smaller (1-65 kb) and larger (256-512 kb) files using a static HTTP server (binserve), and benchmarking each workload (wrk) using variable number of threads and connections on the same server. The measured RPS is not the maximum expected server speed, as the server shared CPU with the client.",

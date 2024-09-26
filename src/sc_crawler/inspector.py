@@ -337,6 +337,22 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                     "score": record[1],
                 }
             )
+        # best single and multi core performance
+        bests = {"best1": records[0][1], "bestn": max([r[1] for r in records])}
+        for k, v in bests.items():
+            benchmarks.append(
+                {
+                    **_benchmark_metafields(
+                        server,
+                        framework="stressngfull",
+                        benchmark_id=":".join([framework, k]),
+                    ),
+                    "config": {
+                        "framework_version": stressng_version,
+                    },
+                    "score": v,
+                }
+            )
     except Exception as e:
         _log_cannot_load_benchmarks(server, framework, e, True)
 
