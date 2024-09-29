@@ -38,7 +38,7 @@ def hash_database(
     level: HashLevels = HashLevels.DATABASE,
     ignored: List[str] = ["observed_at"],
     progress: Optional[Progress] = None,
-    exclude_tables: Optional[List[ScModel]] = None,
+    exclude_tables: List[ScModel] = [],
 ) -> Union[str, dict]:
     """Hash the content of a database.
 
