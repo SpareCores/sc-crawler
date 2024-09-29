@@ -38,6 +38,7 @@ def hash_database(
     level: HashLevels = HashLevels.DATABASE,
     ignored: List[str] = ["observed_at"],
     progress: Optional[Progress] = None,
+    exclude_tables: Optional[List[ScModel]] = None,
 ) -> Union[str, dict]:
     """Hash the content of a database.
 
@@ -46,20 +47,23 @@ def hash_database(
         level: The level at which to apply hashing. Possible values are 'DATABASE' (default), 'TABLE', or 'ROW'.
         ignored: List of column names to be ignored during hashing.
         progress: Optional progress bar to track the status of the hashing.
+        exclude_tables: Optional list of tables not to be hashed.
 
     Returns:
         A single SHA1 hash or dict of hashes, depending on the level.
     """
-    from .tables import tables
+    from .tables import tables as alltables
+
+    tables_to_sync = [t for t in alltables if t not in exclude_tables]
 
     if progress:
-        tables_task_id = progress.add_task("Hashing tables", total=len(tables))
+        tables_task_id = progress.add_task("Hashing tables", total=len(tables_to_sync))
 
     engine = create_engine(connection_string)
 
     with Session(engine) as session:
         hashes = {}
-        for table in tables:
+        for table in tables_to_sync:
             table_name = table.get_table_name()
             hashes[table_name] = table.hash(session, ignored=ignored, progress=progress)
             if progress:

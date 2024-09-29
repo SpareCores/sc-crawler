@@ -285,6 +285,10 @@ def sync(
         bool,
         typer.Option(help="Sync the changes to the SCD tables."),
     ] = False,
+    sync_tables: Annotated[
+        List[Tables],
+        typer.Option(help="Tables to be synced. Can be specified multiple times."),
+    ] = table_names,
     log_changes_path: Annotated[
         Path,
         typer.Option(
@@ -348,9 +352,16 @@ def sync(
         Panel(pt, title="Hashing target database"),
     )
 
+    exclude_tables = [
+        t for t in tables if t.get_table_name() not in [t.value for t in sync_tables]
+    ]
     with Live(g):
-        source_hash = hash_database(source, level=HashLevels.ROW, progress=ps)
-        target_hash = hash_database(target, level=HashLevels.ROW, progress=pt)
+        source_hash = hash_database(
+            source, level=HashLevels.ROW, progress=ps, exclude_tables=exclude_tables
+        )
+        target_hash = hash_database(
+            target, level=HashLevels.ROW, progress=pt, exclude_tables=exclude_tables
+        )
     actions = {
         k: {table: [] for table in source_hash.keys()}
         for k in ["update", "new", "deleted"]
