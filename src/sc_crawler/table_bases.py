@@ -173,14 +173,15 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
         """
         pks = sorted(cls.get_columns()["primary_keys"])
         rows = session.exec(statement=select(cls))
+        row_count = session.query(cls).count()
         if progress:
             table_task_id = progress.add_task(
                 cls.get_table_name(),
-                total=session.query(cls).count(),
+                total=row_count,
             )
         # no use of a generator as will need to serialize to JSON anyway
         hashes = {}
-        for row in rows:
+        for i, row in enumerate(rows):
             # NOTE Pydantic is warning when read Gpu/Storage as dict
             # https://github.com/tiangolo/sqlmodel/issues/63#issuecomment-1081555082
             rowdict = row.model_dump(warnings=False)
@@ -191,7 +192,14 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
             rowhash = sha1(dumps(rowdict, sort_keys=True).encode()).hexdigest()
             hashes[keys_id] = rowhash
             if progress:
-                progress.update(table_task_id, advance=1)
+                # updating the progress bar is expensive, so limit with manu iterations
+                if row_count > 1e3:
+                    if (i + 1) % 1000 == 0:
+                        progress.update(table_task_id, advance=1000)
+                    if i == row_count - 1:
+                        progress.update(table_task_id, advance=row_count % 1000)
+                else:
+                    progress.update(table_task_id, advance=1)
 
         return hashes
 
