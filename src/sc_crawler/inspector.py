@@ -666,6 +666,10 @@ def inspect_update_server_dict(server: dict) -> dict:
         if server.get("cpu_model") is None:
             server["cpu_model"] = _standardize_cpu_model(cpu_model)
 
+    # 2 Ghz CPU speed at Google is a lie
+    if server["vendor_id"] == "gcp" and server.get("cpu_speed") == 2:
+        server["cpu_speed"] = None
+
     # standardize GPU model
     if server.get("gpu_model"):
         server["gpu_model"] = _standardize_gpu_model(server["gpu_model"], server)
