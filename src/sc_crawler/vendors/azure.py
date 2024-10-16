@@ -278,7 +278,7 @@ def _standardize_server(server: dict, vendor) -> dict:
         "display_name": server["name"].removeprefix("Standard_"),
         "family": family,
         "vcpus": server["number_of_cores"],
-        "hypervisor": "Microsoft Hyper-V,",
+        "hypervisor": "Microsoft Hyper-V",
         "cpu_allocation": (
             CpuAllocation.BURSTABLE if family == "B" else CpuAllocation.DEDICATED
         ),
