@@ -460,6 +460,8 @@ def _standardize_manufacturer(manufacturer):
         return "Intel"
     if manufacturer in ["Nvidia", "NVIDIA", "Tesla"]:
         return "NVIDIA"
+    if manufacturer == "MICROSOFT CORPORATION":
+        return "Microsoft"
     if manufacturer in [
         "(invalid)",
         "Not Specified",
