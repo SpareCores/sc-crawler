@@ -23,7 +23,7 @@ from ..table_fields import (
 )
 from ..tables import Vendor
 from ..utils import list_search, scmodels_to_dict
-from ..vendor_helpers import parallel_fetch_servers, preprocess_servers
+from ..vendor_helpers import preprocess_servers
 
 credential = DefaultAzureCredential()
 
@@ -87,13 +87,13 @@ def _compute_resources() -> List[dict]:
 
 
 @cachier()
-def _servers(region: str) -> List[dict]:
-    servers = []
-    try:
-        for server in _compute_client().virtual_machine_sizes.list(region):
-            servers.append(server.as_dict())
-    except HttpResponseError:
-        pass
+def _servers() -> List[dict]:
+    servers = [
+        s for s in _compute_resources() if s["resource_type"] == "virtualMachines"
+    ]
+    # dedupe same servers in different regions
+    servers = {s["name"]: s for s in servers}
+    servers = list(servers.values())
     return servers
 
 
@@ -159,6 +159,11 @@ SERVER_FEATURES = {
 }
 """Map lowercase chars from the server name to features."""
 
+ARCHITECTURE_MAPPING = {
+    "x64": CpuArchitecture.X86_64,
+    "Arm64": CpuArchitecture.ARM64,
+}
+
 STORAGE_METER_MAPPING = {
     "P2 LRS Disk Mount": ("PremiumV2_LRS", 1),
     "P1 LRS Disk": ("Premium_LRS", 4),
@@ -206,11 +211,6 @@ def _parse_server_name(name):
     # s = Premium Storage capable, including possible use of Ultra SSD
     features = [char for char in data["features"]] if data["features"] else []
 
-    # the only way to find out if a server is x86 or ARM
-    architecture = "x86_64"
-    if "p" in features:
-        architecture = "arm64"
-
     accelerators = any(
         [
             s in ["A100", "H100", "MI300X", "V620", "A10"]
@@ -251,15 +251,64 @@ def _parse_server_name(name):
             if vcpus in [48]:
                 gpus = 4
 
-    return (family, features, architecture, gpus)
+    return (family, features, gpus)
 
 
 def _standardize_server(server: dict, vendor) -> dict:
     # example server dict:
-    #   {'name': 'Standard_L64as_v3', 'number_of_cores': 64,
-    #    'os_disk_size_in_mb': 1047552, 'resource_disk_size_in_mb': 655360,
-    #    'memory_in_mb': 524288, 'max_data_disk_count': 32}
-    family, features, architecture, gpus = _parse_server_name(server["name"])
+    # {
+    #     'resource_type': 'virtualMachines',
+    #     'name': 'Standard_L80as_v3',
+    #     'tier': 'Standard',
+    #     'size': 'L80as_v3',
+    #     'family': 'standardLASv3Family',
+    #     'locations': ['WestUS3'],
+    #     'location_info': [{'location': 'WestUS3', 'zones': ['1', '3', '2'], 'zone_details': [{'capabilities': [{'name': 'UltraSSDAvailable', 'value': 'True'}]}]}],
+    #     'capabilities': [
+    #         {'name': 'MaxResourceVolumeMB', 'value': '819200'},
+    #         {'name': 'OSVhdSizeMB', 'value': '1047552'},
+    #         {'name': 'vCPUs', 'value': '80'},
+    #         {'name': 'MemoryPreservingMaintenanceSupported', 'value': 'True'},
+    #         {'name': 'HyperVGenerations', 'value': 'V1,V2'},
+    #         {'name': 'SupportedEphemeralOSDiskPlacements', 'value': 'ResourceDisk'},
+    #         {'name': 'MemoryGB', 'value': '640'},
+    #         {'name': 'MaxDataDiskCount', 'value': '32'},
+    #         {'name': 'CpuArchitectureType', 'value': 'x64'},
+    #         {'name': 'LowPriorityCapable', 'value': 'True'},
+    #         {'name': 'PremiumIO', 'value': 'True'},
+    #         {'name': 'VMDeploymentTypes', 'value': 'IaaS'},
+    #         {'name': 'vCPUsAvailable', 'value': '80'},
+    #         {'name': 'vCPUsPerCore', 'value': '2'},
+    #         {'name': 'CombinedTempDiskAndCachedIOPS', 'value': '40000'},
+    #         {'name': 'CombinedTempDiskAndCachedReadBytesPerSecond', 'value': '800000000'},
+    #         {'name': 'CombinedTempDiskAndCachedWriteBytesPerSecond', 'value': '800000000'},
+    #         {'name': 'UncachedDiskIOPS', 'value': '80000'},
+    #         {'name': 'UncachedDiskBytesPerSecond', 'value': '1400000000'},
+    #         {'name': 'NvmeDiskSizeInMiB', 'value': '18310546'},
+    #         {'name': 'NvmeSizePerDiskInMiB', 'value': '1831054'},
+    #         {'name': 'EphemeralOSDiskSupported', 'value': 'True'},
+    #         {'name': 'EncryptionAtHostSupported', 'value': 'True'},
+    #         {'name': 'CapacityReservationSupported', 'value': 'False'},
+    #         {'name': 'AcceleratedNetworkingEnabled', 'value': 'True'},
+    #         {'name': 'RdmaEnabled', 'value': 'False'},
+    #         {'name': 'MaxNetworkInterfaces', 'value': '8'}
+    #     ],
+    #     'restrictions': [
+    #         {'type': 'Location', 'values': ['WestUS3'], 'restriction_info': {'locations': ['WestUS3']}, 'reason_code': 'NotAvailableForSubscription'},
+    #         {'type': 'Zone', 'values': ['WestUS3'], 'restriction_info': {'locations': ['WestUS3'], 'zones': ['1', '2', '3']}, 'reason_code': 'NotAvailableForSubscription'}
+    #     ]
+    # }
+    family, features, gpus = _parse_server_name(server["name"])
+    # override family from SKU listing
+    family = server["family"].removeprefix("standard").removesuffix("Family")
+
+    def capability(name: str, default=None) -> str:
+        try:
+            return list_search(server["capabilities"], "name", name)["value"]
+        except Exception:
+            return default
+
+    architecture = ARCHITECTURE_MAPPING[capability("CpuArchitectureType")]
     # construct a server description as Azure doesn't provide one
     description = family + " family"
     description_extras = [SERVER_FEATURES[f] for f in features]
@@ -267,8 +316,8 @@ def _standardize_server(server: dict, vendor) -> dict:
         description_extras.append("Intel processor")
     for description_extra in description_extras:
         description = description + " [" + description_extra + "]"
-    description = description + " " + str(server["number_of_cores"]) + " vCPU"
-    if server["number_of_cores"] > 1:
+    description = description + " " + capability("vCPUs") + " vCPU"
+    if int(capability("vCPUs")) > 1:
         description = description + "s"
     return {
         "vendor_id": vendor.vendor_id,
@@ -278,7 +327,7 @@ def _standardize_server(server: dict, vendor) -> dict:
         "api_reference": server["name"],
         "display_name": server["name"].removeprefix("Standard_"),
         "family": family,
-        "vcpus": server["number_of_cores"],
+        "vcpus": int(capability("vCPUs")),
         "hypervisor": "Microsoft Hyper-V",
         "cpu_allocation": (
             CpuAllocation.BURSTABLE if family == "B" else CpuAllocation.DEDICATED
@@ -286,11 +335,11 @@ def _standardize_server(server: dict, vendor) -> dict:
         "cpu_architecture": (
             CpuArchitecture.ARM64 if architecture == "arm64" else CpuArchitecture.X86_64
         ),
-        "memory_amount": server["memory_in_mb"],
+        "memory_amount": float(capability("MemoryGB")) * 1024,  # MiB
         "gpu_count": gpus,
-        # not including os_disk_size_in_mb, as that's not mentioned in the docs,
-        # see e.g. https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/general-purpose/dsv5-series
-        "storage_size": int(server["resource_disk_size_in_mb"] / 1024),
+        "storage_size": round(
+            float(capability("NvmeDiskSizeInMiB", 0)) * 1024**2 / 1e9
+        ),  # int GB
         "inbound_traffic": 0,
         "outbound_traffic": 0,
         "ipv4": 0,
@@ -827,7 +876,7 @@ def inventory_zones(vendor):
 
 def inventory_servers(vendor):
     """List all available instance types in all regions."""
-    servers = parallel_fetch_servers(vendor, _servers, "name", "regions")
+    servers = _servers()
     # drop Basic servers as to be deprecated by Aug 2024
     for i in range(len(servers) - 1, -1, -1):
         name = servers[i].get("name")
