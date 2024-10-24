@@ -491,8 +491,10 @@ def _standardize_cpu_model(model):
         return None
     for prefix in [
         "Intel(R) Xeon(R) Platinum ",
+        "INTEL(R) XEON(R) PLATINUM ",
         "Intel(R) Xeon(R) Gold ",
         "Intel(R) Xeon(R) CPU ",
+        "Intel(R) Xeon(R) ",
         "Intel Xeon Processor (Skylake, IBRS)",
         "Intel Xeon Processor (Skylake, IBRS, no TSX)",
         "AMD ",
