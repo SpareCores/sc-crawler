@@ -338,7 +338,10 @@ def _standardize_server(server: dict, vendor) -> dict:
         "memory_amount": float(capability("MemoryGB")) * 1024,  # MiB
         "gpu_count": gpus,
         "storage_size": round(
-            float(capability("NvmeDiskSizeInMiB", 0)) * 1024**2 / 1e9
+            # temp disk, values might be off, see e.g. DC1s_v2 reporting 51200 MB and showing 50 GiB in docs
+            float(capability("MaxResourceVolumeMB", 0)) / 1e3
+            # NVMe disks are explicitely reported in base 2 unit
+            + float(capability("NvmeDiskSizeInMiB", 0)) * 1024**2 / 1e9
         ),  # int GB
         "inbound_traffic": 0,
         "outbound_traffic": 0,
