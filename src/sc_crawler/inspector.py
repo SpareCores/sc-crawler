@@ -611,9 +611,12 @@ def inspect_update_server_dict(server: dict) -> dict:
         except Exception as e:
             lookups[k] = Exception(str(e))
 
+    def lscpu_lookup(field: str):
+        return _listsearch(lookups["lscpu"], "field", field)["data"]
+
     mappings = {
-        "cpu_cores": lambda: sum(
-            [cpu["Core Count"] for cpu in lookups["dmidecode_cpus"]]
+        "cpu_cores": lambda: (
+            int(lscpu_lookup("Core(s) per socket:")) * int(lscpu_lookup("Socket(s):"))
         ),
         # use 1st CPU's speed, convert to Ghz
         "cpu_speed": lambda: lookups["dmidecode_cpu"]["Max Speed"] / 1e9,
@@ -629,9 +632,7 @@ def inspect_update_server_dict(server: dict) -> dict:
         "cpu_l1_cache": lambda: _l123_cache(lookups["lscpu"], 1),
         "cpu_l2_cache": lambda: _l123_cache(lookups["lscpu"], 2),
         "cpu_l3_cache": lambda: _l123_cache(lookups["lscpu"], 3),
-        "cpu_flags": lambda: _listsearch(lookups["lscpu"], "field", "Flags:")[
-            "data"
-        ].split(" "),
+        "cpu_flags": lambda: lscpu_lookup("Flags:").split(" "),
         "memory_generation": lambda: DdrGeneration[lookups["dmidecode_memory"]["Type"]],
         # convert to Mhz
         "memory_speed": lambda: int(lookups["dmidecode_memory"]["Speed"]) / 1e6,
@@ -652,7 +653,7 @@ def inspect_update_server_dict(server: dict) -> dict:
 
     # backfill CPU model from alternative sources when not provided by DMI decode
     if not isinstance(lookups["lscpu"], BaseException):
-        cpu_model = _listsearch(lookups["lscpu"], "field", "Model name:")["data"]
+        cpu_model = lscpu_lookup("Model name:")
         # CPU speed seems to be unreliable as reported by dmidecode,
         # e.g. it's 2Ghz in GCP for all instances
         speed = search(r" @ ([0-9\.]*)GHz$", cpu_model)
