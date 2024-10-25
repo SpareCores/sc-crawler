@@ -328,6 +328,7 @@ def _standardize_server(server: dict, vendor) -> dict:
             Disk(
                 size=round(float(capability("MaxResourceVolumeMB")) / 1e3),
                 storage_type="ssd",
+                description="temp disk",
             )
         )
     # NVMe disks are explicitely reported in base 2 unit

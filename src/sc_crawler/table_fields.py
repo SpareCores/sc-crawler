@@ -123,6 +123,8 @@ class Disk(Json):
     """Storage size in GiB."""
     storage_type: StorageType
     """[Type][sc_crawler.table_fields.StorageType] of the storage."""
+    description: Optional[str] = None
+    """Optional description of the storage, e.g. temp disk."""
 
 
 class TrafficDirection(str, Enum):
