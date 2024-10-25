@@ -17,6 +17,7 @@ from ..table_fields import (
     Allocation,
     CpuAllocation,
     CpuArchitecture,
+    Disk,
     PriceUnit,
     StorageType,
     TrafficDirection,
@@ -319,6 +320,24 @@ def _standardize_server(server: dict, vendor) -> dict:
     description = description + " " + capability("vCPUs") + " vCPU"
     if int(capability("vCPUs")) > 1:
         description = description + "s"
+    # no info on actual drives, but at least split for temp and NVMe disks
+    storages = []
+    # temp disk, values might be off, see e.g. DC1s_v2 reporting 51200 MB and showing 50 GiB in docs
+    if capability("MaxResourceVolumeMB"):
+        storages.append(
+            Disk(
+                size=round(float(capability("MaxResourceVolumeMB")) / 1e3),
+                storage_type="ssd",
+            )
+        )
+    # NVMe disks are explicitely reported in base 2 unit
+    if capability("NvmeDiskSizeInMiB"):
+        storages.append(
+            Disk(
+                size=round(float(capability("NvmeDiskSizeInMiB")) * 1024**2 / 1e9),
+                storage_type="nvme ssd",
+            )
+        )
     return {
         "vendor_id": vendor.vendor_id,
         "server_id": server["name"],
@@ -337,12 +356,8 @@ def _standardize_server(server: dict, vendor) -> dict:
         ),
         "memory_amount": float(capability("MemoryGB")) * 1024,  # MiB
         "gpu_count": gpus,
-        "storage_size": round(
-            # temp disk, values might be off, see e.g. DC1s_v2 reporting 51200 MB and showing 50 GiB in docs
-            float(capability("MaxResourceVolumeMB", 0)) / 1e3
-            # NVMe disks are explicitely reported in base 2 unit
-            + float(capability("NvmeDiskSizeInMiB", 0)) * 1024**2 / 1e9
-        ),  # int GB
+        "storage_size": round(sum([s.size for s in storages])),  # int GB
+        "storages": storages,
         "inbound_traffic": 0,
         "outbound_traffic": 0,
         "ipv4": 0,
