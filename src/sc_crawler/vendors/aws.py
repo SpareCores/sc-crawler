@@ -9,7 +9,7 @@ from typing import List, Optional, Tuple
 
 import boto3
 from botocore.exceptions import ClientError
-from cachier import cachier, set_default_params
+from cachier import cachier, set_global_params
 
 from ..logger import logger
 from ..lookup import map_compliance_frameworks_to_vendor
@@ -32,7 +32,7 @@ from ..utils import float_inf_to_str, jsoned_hash, scmodels_to_dict
 from ..vendor_helpers import parallel_fetch_servers, preprocess_servers
 
 # disable caching by default
-set_default_params(caching_enabled=False, stale_after=timedelta(days=1))
+set_global_params(caching_enabled=False, stale_after=timedelta(days=1))
 
 # ##############################################################################
 # Cached boto3 wrappers

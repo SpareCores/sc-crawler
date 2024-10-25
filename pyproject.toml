@@ -8,7 +8,7 @@ version = "0.3.0"
 requires-python = ">= 3.9"
 dependencies = [
   "alembic",
-  "cachier==3.0.0", # https://github.com/python-cachier/cachier/issues/241
+  "cachier>=3.1.1",
   "pydantic",
   "pydantic_extra_types",
   "requests",

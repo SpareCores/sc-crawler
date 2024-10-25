@@ -12,7 +12,7 @@ from typing import List, Optional
 
 import typer
 from alembic import command
-from cachier import set_default_params
+from cachier import set_global_params
 from rich.console import Console
 from rich.live import Live
 from rich.panel import Panel
@@ -537,7 +537,7 @@ def pull(
 
     # enable caching
     if cache:
-        set_default_params(
+        set_global_params(
             caching_enabled=True,
             stale_after=timedelta(minutes=cache_ttl),
         )
