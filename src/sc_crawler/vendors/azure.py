@@ -671,6 +671,12 @@ def inventory_regions(vendor):
             # unknown as no sustainability fact sheet found
             "green_energy": False,
         },
+        "newzealandnorth": {
+            "country_id": "NZ",
+            "city": "Auckland",
+            "founding_year": 2024,
+            "green_energy": False,
+        },
         # Europe
         "francecentral": {
             "country_id": "FR",
