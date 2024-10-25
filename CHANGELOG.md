@@ -1,9 +1,28 @@
 ## v0.3.x (development version)
 
+## v0.3.1 (Oct 25, 2024)
+
 New benchmark(s):
 
 - Static HTTP server.
 - Redis.
+- stress-ng's div16 run on all vCPUs.
+
+New feature(s):
+
+- Optional list of tables to be synced in the CLI tool.
+- Standardized CPU and GPU manufacturer, family, and model name.
+- Optional description for Disks.
+
+Fix(es):
+
+- Better support for long-running DB syncs.
+- Exlude dummy "2 Ghz" CPU speed reported by GCP.
+- Improved physical CPU cores lookup.
+- Improved performance for interactive bulk inserts.
+- Review how vendors reports on storage size using base 2 or 10.
+- Update from Azure's deprecated API endpoint, fix ingesting NVMe drives.
+- Better support for Azure API rate limits.
 
 ## v0.3.0 (Aug 20, 2024)
 
