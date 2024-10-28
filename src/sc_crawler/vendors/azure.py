@@ -845,6 +845,10 @@ def inventory_regions(vendor):
         # https://github.com/Azure/azure-dev/issues/2165#issuecomment-1542948509
         if region["name"] == "brazilus":
             continue
+        # exclude for now as this new region is popping up and being removed
+        # from their API response randomly, so messing with git history
+        if region["name"] == "newzealandnorth":
+            continue
         manual_data = manual_datas.get(region["name"])
         if not manual_data:
             raise KeyError(f"No manual data found for {region['name']}.")
