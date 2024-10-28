@@ -545,8 +545,8 @@ def inventory_regions(vendor):
             "founding_year": 2023,
             "green_energy": False,
             # approximation based on city location
-            "lat": -37.8038607,
-            "lon": 144.7119569,
+            "lat": 51.046574,
+            "lon": -114.129024,
         },
         {
             "region_id": "cn-north-1",
