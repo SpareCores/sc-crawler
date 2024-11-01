@@ -906,14 +906,20 @@ def inventory_zones(vendor):
 def inventory_servers(vendor):
     """List all available instance types in all regions."""
     servers = _servers()
-    # drop Basic servers as to be deprecated by Aug 2024
     for i in range(len(servers) - 1, -1, -1):
         name = servers[i].get("name")
+        # drop Basic servers as to be deprecated by Aug 2024
         if name.startswith("Basic"):
-            vendor.log(f"Excluding deprecated {name}")
+            vendor.log(f"Excluding deprecated: {name}")
             servers.pop(i)
+        # servers that are likely to be not available, with zero pricing
         if name.endswith("Promo"):
-            vendor.log(f"Excluding nonsense pricing {name}")
+            vendor.log(f"Excluding nonsense pricing: {name}")
+            servers.pop(i)
+        # servers randomly switching between active/inactive status
+        # TODO review from time to time
+        if name == "Standard_M896ixds_32_v3":
+            vendor.log(f"Excluding server with questionable availability: {name}")
             servers.pop(i)
     servers = preprocess_servers(servers, vendor, _standardize_server)
     return servers
