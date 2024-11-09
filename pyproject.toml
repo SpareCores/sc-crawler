@@ -11,6 +11,7 @@ dependencies = [
   "cachier>=3.1.1",
   "pydantic",
   "pydantic_extra_types",
+  "PyYAML",
   "requests",
   "rich",
   "sqlmodel",
