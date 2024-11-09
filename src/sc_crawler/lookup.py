@@ -124,6 +124,21 @@ def _geekbenchmark(name: str, description: str):
     )
 
 
+def _passmark(name: str, description: str, unit: str):
+    measurement = sub(r"\W+", "_", name.lower())
+    return Benchmark(
+        benchmark_id="passmark:" + measurement,
+        framework="passmark",
+        measurement=measurement,
+        name="PassMark: " + name,
+        description=description,
+        config_fields={
+            "framework_version": "Version number of geekbench.",
+        },
+        unit=unit,
+    )
+
+
 benchmarks: List[Benchmark] = [
     Benchmark(
         benchmark_id="bogomips",
@@ -416,5 +431,89 @@ benchmarks: List[Benchmark] = [
         },
         unit="Milliseconds (ms)",
         higher_is_better=False,
+    ),
+    # https://www.cpubenchmark.net/cpu_test_info.html
+    _passmark(
+        name="CPU Mark",
+        description="A composite average of the Integer, Floating point, Prime and String Sorting test scores, which can be used to compare CPUs from different platforms (even e.g. desktop vs mobile).",
+        unit=None,
+    ),
+    _passmark(
+        name="CPU Integer Maths Test",
+        description="Testing how fast the CPU can perform mathematical integer operations, using large sets of an equal number of random 32-bit and 64-bit integers for addition, subtraction, multiplication and division, with integer buffers totaling about 240kb per core.",
+        unit="Millions of operations per second (Mops/s)",
+    ),
+    _passmark(
+        name="CPU Floating Point Maths Test",
+        description="Testing how fast the CPU can perform mathematical floating point operations, using large sets of an equal number of random 32-bit and 64-bit floating point numbers for addition (30% of the time), subtraction (30% of the time), multiplication (30% of the time) and division (10% of the time), with floating point buffers totaling about 240kb per core.",
+        unit="Millions of operations per second (Mops/s)",
+    ),
+    _passmark(
+        name="CPU Prime Numbers Test",
+        description="Finding prime numbers using the Sieve of Atkin formula (with a limit of 32 million) on 64-bit integers with 4MB of memory per thread.",
+        unit="Million prime numbers per second (Mnums/s)",
+    ),
+    _passmark(
+        name="CPU String Sorting Test",
+        description="Sorting strings using the Quicksort algorithm with memory buffers totaling about 25MB per core.",
+        unit="Thousands of strings per second (Kstrings/s)",
+    ),
+    _passmark(
+        name="CPU Encryption Test",
+        description="Encrypting blocks of random data using AES, SHA256 and ECDSA with any available specialized CPU instruction sets and memory buffers totaling about 1MB per core.",
+        unit="Megabytes per second (MB/s)",
+    ),
+    _passmark(
+        name="CPU Compression Test",
+        description="Using Gzip (Crypto++ 8.6) to compress blocks of data with a 4MB memory buffer size per core.",
+        unit="Kilobytes per second (kB/s)",
+    ),
+    _passmark(
+        name="CPU Single Threaded Test",
+        description="Using a single logical core for a mixture of floating point, string sorting and data compression tests.",
+        unit="Millions of operations per second (Mops/s)",
+    ),
+    _passmark(
+        name="CPU Physics Test",
+        description="Simulating the same physics interactions as many times as possible within a timeframe, using the Bullet Physics Engine (version 2.88 for x86, 3.07 for ARM).",
+        unit="Frames per second (fps)",
+    ),
+    _passmark(
+        name="CPU Extended Instructions Test",
+        description="Testing how fast the CPU can perform mathematical operations using extended instructions, such as SSE, FMA, AVX, AVX512 and NEON.",
+        unit="Millions of matrices per second (Mmat/s)",
+    ),
+    # https://forums.passmark.com/performancetest/4599-formula-cpu-mark-memory-mark-and-disk-mark?p=54964#post54964
+    _passmark(
+        name="Memory Mark",
+        description="A composite score of PassMark's Database and Memory test cases",
+        unit=None,
+    ),
+    _passmark(
+        name="Database Operations",
+        # https://www.databasebenchmarks.net/chart-notes.html
+        description="Single threaded and multi-threaded CRUD operations, such as INSERT (40%), SELECT (26%), UPDATE (24%), and DELETE (10%) on a relational database with 4 tables and 1k rows per table.",
+        unit="Thousands of operations per second (Kops/s)",
+    ),
+    # https://www.memorybenchmark.net/graph_notes.html
+    _passmark(
+        name="Memory Read Cached",
+        description="Read a combination of 32-bit and 64-bit data from memory.",
+        unit="Megabytes per second (MB/s)",
+    ),
+    _passmark(
+        name="Memory Read Uncached",
+        description="Read a combination of 32-bit and 64-bit data from memory using a 512 MB block size.",
+        unit="Megabytes per second (MB/s)",
+    ),
+    _passmark(
+        name="Memory Write",
+        description="Write a combination of 32-bit and 64-bit data to the memory using a 512 MB block size.",
+        unit="Megabytes per second (MB/s)",
+    ),
+    _passmark(
+        name="Memory Latency",
+        description="Measuring the time it takes for a single byte of memory to be transferred to the CPU for processing. A 512 MB buffer is allocated and then filled with pointers to other locations in the buffer, looping through a linked list.",
+        unit="Nanoseconds (ns)",
     ),
 ]

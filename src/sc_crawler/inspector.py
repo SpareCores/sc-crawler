@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, List
 from zipfile import ZipFile
 
 from requests import get
+from yaml import safe_load as yaml_safe_load
 
 from .logger import logger
 from .table_bases import ServerBase
@@ -37,6 +38,25 @@ SERVER_CLIENT_FRAMEWORK_MAPS = {
         "keys": ["operation", "pipeline"],
         "measurements": ["rps", "rps-extrapolated", "latency"],
     },
+}
+
+PASSMARK_MAPS = {
+    "SUMM_CPU": "CPU Mark",
+    "CPU_INTEGER_MATH": "CPU Integer Maths Test",
+    "CPU_FLOATINGPOINT_MATH": "CPU Floating Point Maths Test",
+    "CPU_PRIME": "CPU Prime Numbers Test",
+    "CPU_SORTING": "CPU String Sorting Test",
+    "CPU_ENCRYPTION": "CPU Encryption Test",
+    "CPU_COMPRESSION": "CPU Compression Test",
+    "CPU_SINGLETHREAD": "CPU Single Threaded Test",
+    "CPU_PHYSICS": "CPU Physics Test",
+    "CPU_MATRIX_MULT_SSE": "CPU Extended Instructions Test",
+    "SUMM_ME": "Memory Mark",
+    "ME_ALLOC_S": "Database Operations",
+    "ME_READ_S": "Memory Read Cached",
+    "ME_READ_L": "Memory Read Uncached",
+    "ME_WRITE": "Memory Write",
+    "ME_LATENCY": "Memory Latency",
 }
 
 
@@ -263,6 +283,29 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                         **workload_fields,
                     }
                 )
+    except Exception as e:
+        _log_cannot_load_benchmarks(server, framework, e, True)
+
+    framework = "passmark"
+    try:
+        with open(_server_framework_stdout_path(server, framework), "r") as fp:
+            scores = yaml_safe_load(fp)
+        passmark_version = ".".join(
+            [str(scores["Version"][i]) for i in ["Major", "Minor", "Build"]]
+        )
+        for key, name in PASSMARK_MAPS.items():
+            benchmarks.append(
+                {
+                    **_benchmark_metafields(
+                        server,
+                        benchmark_id=":".join(
+                            [framework, sub(r"\W+", "_", name.lower())]
+                        ),
+                    ),
+                    "config": {"framework_version": passmark_version},
+                    "score": float(scores["Results"][key]),
+                }
+            )
     except Exception as e:
         _log_cannot_load_benchmarks(server, framework, e, True)
 
