@@ -133,7 +133,7 @@ def _passmark(name: str, description: str, unit: str):
         name="PassMark: " + name,
         description=description,
         config_fields={
-            "framework_version": "Version number of geekbench.",
+            "framework_version": "Version and build number of PassMark.",
         },
         unit=unit,
     )
