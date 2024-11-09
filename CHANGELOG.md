@@ -1,5 +1,9 @@
 ## v0.3.x (development version)
 
+New benchmark(s):
+
+- PassMark.
+
 ## v0.3.1 (Oct 25, 2024)
 
 New benchmark(s):
