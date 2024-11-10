@@ -28,6 +28,7 @@ country_continent_mapping = {
     "IN": "Asia",
     "JP": "Asia",
     "KR": "Asia",
+    "MX": "North America",
     "NL": "Europe",
     "NO": "Europe",
     "NZ": "Oceania",

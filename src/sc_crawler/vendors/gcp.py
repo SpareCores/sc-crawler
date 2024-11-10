@@ -723,6 +723,17 @@ def inventory_regions(vendor):
             "lat": -33.520515,
             "lon": -70.721695,
         },
+        # NOTE this is not announced yet, but showing up in API from time to time
+        "northamerica-south1": {
+            # https://mexicobusiness.news/cloudanddata/news/google-cloud-announces-first-mexican-data-region-queretaro
+            "country_id": "MX",
+            "city": "Queretaro",
+            "founding_year": 2025,
+            "green_energy": False,
+            # approximation based on city
+            "lat": 20.5896,
+            "lon": -100.3897,
+        },
         "us-central1": {
             "country_id": "US",
             "city": "Council Bluffs",
