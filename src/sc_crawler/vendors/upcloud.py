@@ -202,14 +202,24 @@ def inventory_regions(vendor):
 
 
 def inventory_zones(vendor):
+    """List all regions as availability zones.
+
+    There is no concept of having multiple availability zones withing
+    a region (virtual datacenter) at UpCloud, so creating 1-1
+    dummy Zones reusing the Region id and name.
+    """
     items = []
-    # for zone in []:
-    #     items.append({
-    #         "vendor_id": vendor.vendor_id,
-    #         "region_id": "",
-    #         "zone_id": "",
-    #         "name": "",
-    #     })
+    for region in vendor.regions:
+        items.append(
+            {
+                "vendor_id": vendor.vendor_id,
+                "region_id": region.region_id,
+                "zone_id": region.region_id,
+                "name": region.name,
+                "api_reference": region.region_id,
+                "display_name": region.name,
+            }
+        )
     return items
 
 
