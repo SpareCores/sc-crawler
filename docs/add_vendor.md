@@ -72,6 +72,8 @@ def inventory_regions(vendor):
     #             "vendor_id": vendor.vendor_id,
     #             "region_id": "",
     #             "name": "",
+    #             "api_reference": "",
+    #             "display_name": "",
     #             "aliases": [],
     #             "country_id": "",
     #             "state": None,
@@ -95,6 +97,8 @@ def inventory_zones(vendor):
     #         "region_id": "",
     #         "zone_id": "",
     #         "name": "",
+    #         "api_reference": "",
+    #         "display_name": "",
     #     })
     return items
 
@@ -107,6 +111,8 @@ def inventory_servers(vendor):
     #             "vendor_id": vendor.vendor_id,
     #             "server_id": ,
     #             "name": ,
+    #             "api_reference": ,
+    #             "display_name": ,
     #             "description": None,
     #             "vcpus": ,
     #             "hypervisor": None,
