@@ -1,25 +1,57 @@
-import os
 from functools import cache
+from os import environ
+from re import compile as recompile
 
 from upcloud_api import CloudManager
 
 from ..lookup import map_compliance_frameworks_to_vendor
+from ..table_fields import CpuAllocation, CpuArchitecture, StorageType
+
+# ##############################################################################
+# Cached client wrappers
 
 
 @cache
 def _client() -> CloudManager:
     """Authorized Hetzner Cloud client using the HCLOUD_TOKEN env var."""
     try:
-        username = os.environ["UPCLOUD_USERNAME"]
+        username = environ["UPCLOUD_USERNAME"]
     except KeyError:
         raise KeyError("Missing environment variable: UPCLOUD_USERNAME")
     try:
-        password = os.environ["UPCLOUD_PASSWORD"]
+        password = environ["UPCLOUD_PASSWORD"]
     except KeyError:
         raise KeyError("Missing environment variable: UPCLOUD_PASSWORD")
     manager = CloudManager(username, password)
     manager.authenticate()
     return manager
+
+
+# ##############################################################################
+# Internal helpers
+
+
+def _parse_server_name(name):
+    """Extract server family and description from the server id."""
+    name_pattern = recompile(
+        # optional leading ALLCAPS chars are the family name
+        r"((?P<family>[A-Z]*)-)?" r"(?P<vcpus>[0-9]+)xCPU-" r"(?P<memory>[0-9]+)GB"
+    )
+    name_match = name_pattern.match(name)
+    if not name_match:
+        raise ValueError(f"Server name '{name}' does not match the expected format.")
+    data = name_match.groupdict()
+    family_mapping = {
+        None: "General Purpose",
+        "DEV": "Developer",
+        "HICPU": "High CPU",
+        "HIMEM": "High Memory",
+    }
+    data["family"] = family_mapping.get(data["family"], data["family"])
+    data["description"] = (
+        f"{data['family']} {data['vcpus']} vCPUs, {data['memory']} GB RAM"
+    )
+    return data
 
 
 # _client().get_prices()
@@ -29,10 +61,11 @@ def _client() -> CloudManager:
 # templates = _client().get_templates()
 # templates[1]
 
-# _client().get_server_plans()
-
 # prices = _client().get_prices()
 # prices["prices"]["zone"][1]["server_plan_HIMEM-24xCPU-512GB"]  # EUR cent!
+
+# ##############################################################################
+# Public methods to fetch data
 
 
 def inventory_compliance_frameworks(vendor):
@@ -224,48 +257,57 @@ def inventory_zones(vendor):
 
 
 def inventory_servers(vendor):
+    servers = _client().get_server_plans()["plans"]["plan"]
     items = []
-    # for server in []:
-    #     items.append(
-    #         {
-    #             "vendor_id": vendor.vendor_id,
-    #             "server_id": ,
-    #             "name": ,
-    #             "description": None,
-    #             "vcpus": ,
-    #             "hypervisor": None,
-    #             "cpu_allocation": CpuAllocation....,
-    #             "cpu_cores": None,
-    #             "cpu_speed": None,
-    #             "cpu_architecture": CpuArchitecture....,
-    #             "cpu_manufacturer": None,
-    #             "cpu_family": None,
-    #             "cpu_model": None,
-    #             "cpu_l1_cache: None,
-    #             "cpu_l2_cache: None,
-    #             "cpu_l3_cache: None,
-    #             "cpu_flags: [],
-    #             "cpus": [],
-    #             "memory_amount": ,
-    #             "memory_generation": None,
-    #             "memory_speed": None,
-    #             "memory_ecc": None,
-    #             "gpu_count": 0,
-    #             "gpu_memory_min": None,
-    #             "gpu_memory_total": None,
-    #             "gpu_manufacturer": None,
-    #             "gpu_family": None,
-    #             "gpu_model": None,
-    #             "gpus": [],
-    #             "storage_size": 0,
-    #             "storage_type": None,
-    #             "storages": [],
-    #             "network_speed": None,
-    #             "inbound_traffic": 0,
-    #             "outbound_traffic": 0,
-    #             "ipv4": 0,
-    #         }
-    #     )
+    for server in servers:
+        server_data = _parse_server_name(server["name"])
+        items.append(
+            {
+                "vendor_id": vendor.vendor_id,
+                "server_id": server["name"],
+                "name": server["name"],
+                "api_reference": server["name"],
+                "display_name": server["name"],
+                "description": server_data["description"],
+                "family": server_data["family"],
+                "vcpus": server["core_number"],
+                # https://upcloud.com/docs/products/cloud-servers/features/cloud-server-system/#virtualisation
+                "hypervisor": "KVM",
+                # all servers comes with dedicated vCPU
+                "cpu_allocation": CpuAllocation.DEDICATED,
+                "cpu_cores": None,
+                "cpu_speed": None,
+                # no known ARM options
+                "cpu_architecture": CpuArchitecture.X86_64,
+                "cpu_manufacturer": None,
+                "cpu_family": None,
+                "cpu_model": None,
+                "cpu_l1_cache": None,
+                "cpu_l2_cache": None,
+                "cpu_l3_cache": None,
+                "cpu_flags": [],
+                "cpus": [],
+                "memory_amount": server["memory_amount"],
+                "memory_generation": None,
+                "memory_speed": None,
+                "memory_ecc": None,
+                # no GPU options
+                "gpu_count": 0,
+                "gpu_memory_min": None,
+                "gpu_memory_total": None,
+                "gpu_manufacturer": None,
+                "gpu_family": None,
+                "gpu_model": None,
+                "gpus": [],
+                "storage_size": server["storage_size"],
+                "storage_type": (StorageType.SSD if server["storage_tier"] else None),
+                "storages": [],
+                "network_speed": None,
+                "inbound_traffic": 0,
+                "outbound_traffic": server["public_traffic_out"],
+                "ipv4": 1,
+            }
+        )
     return items
 
 
