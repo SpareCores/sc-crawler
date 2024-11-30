@@ -114,6 +114,7 @@ def inventory_servers(vendor):
     #             "api_reference": ,
     #             "display_name": ,
     #             "description": None,
+    #             "family": None,
     #             "vcpus": ,
     #             "hypervisor": None,
     #             "cpu_allocation": CpuAllocation....,
