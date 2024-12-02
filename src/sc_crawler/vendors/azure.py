@@ -916,6 +916,10 @@ def inventory_servers(vendor):
         if name.endswith("Promo"):
             vendor.log(f"Excluding nonsense pricing: {name}")
             servers.pop(i)
+        # servers probably not intended for our eyes
+        if "Internal" in name:
+            vendor.log(f"Excluding internal server: {name}")
+            servers.pop(i)
         # servers randomly switching between active/inactive status
         # TODO review from time to time
         if name == "Standard_M896ixds_32_v3":
