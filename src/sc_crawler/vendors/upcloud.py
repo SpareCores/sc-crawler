@@ -5,7 +5,13 @@ from re import compile as recompile
 from upcloud_api import CloudManager
 
 from ..lookup import map_compliance_frameworks_to_vendor
-from ..table_fields import CpuAllocation, CpuArchitecture, StorageType
+from ..table_fields import (
+    Allocation,
+    CpuAllocation,
+    CpuArchitecture,
+    PriceUnit,
+    StorageType,
+)
 
 # ##############################################################################
 # Cached client wrappers
@@ -13,7 +19,7 @@ from ..table_fields import CpuAllocation, CpuArchitecture, StorageType
 
 @cache
 def _client() -> CloudManager:
-    """Authorized Hetzner Cloud client using the HCLOUD_TOKEN env var."""
+    """Authorized UpCloud client using the UPCLOUD_USERNAME and UPCLOUD_PASSWORD env vars."""
     try:
         username = environ["UPCLOUD_USERNAME"]
     except KeyError:
@@ -26,6 +32,36 @@ def _client() -> CloudManager:
     manager.authenticate()
     return manager
 
+
+UPCLOUD_STORAGES = [
+    {
+        "id": "hdd",
+        "name": "Archive",
+        "description": "High-capacity data storage",
+        "storage_type": StorageType.HDD,
+        "min_size": 1,
+        "max_size": 4096,
+        "max_iops": 600,
+    },
+    {
+        "id": "standard",
+        "name": "Standard",
+        "description": "General purpose data storage",
+        "storage_type": StorageType.SSD,
+        "min_size": 1,
+        "max_size": 4096,
+        "max_iops": 10000,
+    },
+    {
+        "id": "maxiops",
+        "name": "MaxIOPS",
+        "description": "High-performance web servers and applications",
+        "storage_type": StorageType.SSD,
+        "min_size": 1,
+        "max_size": 4096,
+        "max_iops": 100000,
+    },
+]
 
 # ##############################################################################
 # Internal helpers
@@ -53,16 +89,6 @@ def _parse_server_name(name):
     )
     return data
 
-
-# _client().get_prices()
-# servers = _client().get_server_sizes()
-# servers[1]
-
-# templates = _client().get_templates()
-# templates[1]
-
-# prices = _client().get_prices()
-# prices["prices"]["zone"][1]["server_plan_HIMEM-24xCPU-512GB"]  # EUR cent!
 
 # ##############################################################################
 # Public methods to fetch data
@@ -344,36 +370,40 @@ def inventory_server_prices_spot(vendor):
 
 def inventory_storages(vendor):
     items = []
-    # for storage in []:
-    #     items.append(
-    #         {
-    #             "storage_id": ,
-    #             "vendor_id": vendor.vendor_id,
-    #             "name": ,
-    #             "description": None,
-    #             "storage_type": StorageType....,
-    #             "max_iops": None,
-    #             "max_throughput": None,
-    #             "min_size": None,
-    #             "max_size": None,
-    #         }
-    #     )
+    for storage in UPCLOUD_STORAGES:
+        items.append(
+            {
+                "storage_id": storage["id"],
+                "vendor_id": vendor.vendor_id,
+                "name": storage["name"],
+                "description": storage["description"],
+                "storage_type": storage["storage_type"],
+                "max_iops": storage["max_iops"],
+                "max_throughput": None,
+                "min_size": storage["min_size"],
+                "max_size": storage["max_size"],
+            }
+        )
     return items
 
 
 def inventory_storage_prices(vendor):
     items = []
-    # for price in []:
-    #     items.append(
-    #         {
-    #             "vendor_id": vendor.vendor_id,
-    #             "region_id": ,
-    #             "storage_id": ,
-    #             "unit": PriceUnit.GB_MONTH,
-    #             "price": ,
-    #             "currency": "USD",
-    #         }
-    #     )
+    prices = _client().get_prices()
+    for zone_prices in prices["prices"]["zone"]:
+        zone_id = zone_prices["name"]
+        for k, v in zone_prices.items():
+            if k in ["storage_" + s["id"] for s in UPCLOUD_STORAGES]:
+                items.append(
+                    {
+                        "vendor_id": vendor.vendor_id,
+                        "region_id": zone_id,
+                        "storage_id": k[len("storage_") :],
+                        "unit": PriceUnit.GB_MONTH,
+                        "price": v["price"],
+                        "currency": "EUR",
+                    }
+                )
     return items
 
 
