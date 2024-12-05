@@ -11,6 +11,7 @@ from ..table_fields import (
     CpuArchitecture,
     PriceUnit,
     StorageType,
+    TrafficDirection,
 )
 
 # ##############################################################################
@@ -341,7 +342,6 @@ def inventory_server_prices(vendor):
     items = []
     prices = _client().get_prices()
     for zone_prices in prices["prices"]["zone"]:
-        zone_id = zone_prices["name"]
         for k, v in zone_prices.items():
             if not k.startswith("server_plan"):
                 continue
@@ -349,13 +349,13 @@ def inventory_server_prices(vendor):
             items.append(
                 {
                     "vendor_id": vendor.vendor_id,
-                    "region_id": zone_id,
-                    "zone_id": zone_id,
+                    "region_id": zone_prices["name"],
+                    "zone_id": zone_prices["name"],
                     "server_id": server_plan,
                     "operating_system": "Linux",
                     "allocation": Allocation.ONDEMAND,
                     "unit": PriceUnit.HOUR,
-                    "price": v["price"],
+                    "price": v["price"] / 100,
                     "price_upfront": 0,
                     "price_tiered": [],
                     "currency": "EUR",
@@ -391,16 +391,15 @@ def inventory_storage_prices(vendor):
     items = []
     prices = _client().get_prices()
     for zone_prices in prices["prices"]["zone"]:
-        zone_id = zone_prices["name"]
         for k, v in zone_prices.items():
             if k in ["storage_" + s["id"] for s in UPCLOUD_STORAGES]:
                 items.append(
                     {
                         "vendor_id": vendor.vendor_id,
-                        "region_id": zone_id,
+                        "region_id": zone_prices["name"],
                         "storage_id": k[len("storage_") :],
                         "unit": PriceUnit.GB_MONTH,
-                        "price": v["price"],
+                        "price": v["price"] / 100,
                         "currency": "EUR",
                     }
                 )
@@ -409,22 +408,31 @@ def inventory_storage_prices(vendor):
 
 def inventory_traffic_prices(vendor):
     items = []
-    # for price in []:
-    #     items.append(
-    #         {
-    #             "vendor_id": vendor.vendor_id,
-    #             "region_id": ,
-    #             "price": ,
-    #             "price_tiered": [],
-    #             "currency": "USD",
-    #             "unit": PriceUnit.GB_MONTH,
-    #             "direction": TrafficDirection....,
-    #         }
-    #     )
+    prices = _client().get_prices()
+    for zone_prices in prices["prices"]["zone"]:
+        for k, v in zone_prices.items():
+            if k == "public_ipv4_bandwidth_out":
+                for direction in [d for d in TrafficDirection]:
+                    items.append(
+                        {
+                            "vendor_id": vendor.vendor_id,
+                            "region_id": zone_prices["name"],
+                            "price": (
+                                v["price"] / 100
+                                if direction == TrafficDirection.OUT
+                                else 0
+                            ),
+                            "price_tiered": [],
+                            "currency": "EUR",
+                            "unit": PriceUnit.GB_MONTH,
+                            "direction": direction,
+                        }
+                    )
     return items
 
 
 def inventory_ipv4_prices(vendor):
+    # ipv4_address
     items = []
     # for price in []:
     #     items.append(
