@@ -72,6 +72,8 @@ def inventory_regions(vendor):
     #             "vendor_id": vendor.vendor_id,
     #             "region_id": "",
     #             "name": "",
+    #             "api_reference": "",
+    #             "display_name": "",
     #             "aliases": [],
     #             "country_id": "",
     #             "state": None,
@@ -95,6 +97,8 @@ def inventory_zones(vendor):
     #         "region_id": "",
     #         "zone_id": "",
     #         "name": "",
+    #         "api_reference": "",
+    #         "display_name": "",
     #     })
     return items
 
@@ -107,7 +111,10 @@ def inventory_servers(vendor):
     #             "vendor_id": vendor.vendor_id,
     #             "server_id": ,
     #             "name": ,
+    #             "api_reference": ,
+    #             "display_name": ,
     #             "description": None,
+    #             "family": None,
     #             "vcpus": ,
     #             "hypervisor": None,
     #             "cpu_allocation": CpuAllocation....,
@@ -117,10 +124,10 @@ def inventory_servers(vendor):
     #             "cpu_manufacturer": None,
     #             "cpu_family": None,
     #             "cpu_model": None,
-    #             "cpu_l1_cache: None,
-    #             "cpu_l2_cache: None,
-    #             "cpu_l3_cache: None,
-    #             "cpu_flags: [],
+    #             "cpu_l1_cache": None,
+    #             "cpu_l2_cache": None,
+    #             "cpu_l3_cache": None,
+    #             "cpu_flags": [],
     #             "cpus": [],
     #             "memory_amount": ,
     #             "memory_generation": None,
@@ -229,7 +236,7 @@ def inventory_ipv4_prices(vendor):
     #             "region_id": ,
     #             "price": ,
     #             "currency": "USD",
-    #             "unit": PriceUnit.HOUR,
+    #             "unit": PriceUnit.MONTH,
     #         }
     #     )
     return items
