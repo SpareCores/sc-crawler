@@ -236,7 +236,7 @@ def inventory_ipv4_prices(vendor):
     #             "region_id": ,
     #             "price": ,
     #             "currency": "USD",
-    #             "unit": PriceUnit.HOUR,
+    #             "unit": PriceUnit.MONTH,
     #         }
     #     )
     return items

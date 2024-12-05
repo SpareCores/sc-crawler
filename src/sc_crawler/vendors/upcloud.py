@@ -432,16 +432,18 @@ def inventory_traffic_prices(vendor):
 
 
 def inventory_ipv4_prices(vendor):
-    # ipv4_address
     items = []
-    # for price in []:
-    #     items.append(
-    #         {
-    #             "vendor_id": vendor.vendor_id,
-    #             "region_id": ,
-    #             "price": ,
-    #             "currency": "USD",
-    #             "unit": PriceUnit.HOUR,
-    #         }
-    #     )
+    prices = _client().get_prices()
+    for zone_prices in prices["prices"]["zone"]:
+        for k, v in zone_prices.items():
+            if k == "ipv4_address":
+                items.append(
+                    {
+                        "vendor_id": vendor.vendor_id,
+                        "region_id": zone_prices["name"],
+                        "price": v["price"] / 100,
+                        "currency": "EUR",
+                        "unit": PriceUnit.MONTH,
+                    }
+                )
     return items
