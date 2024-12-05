@@ -443,7 +443,7 @@ def inventory_ipv4_prices(vendor):
                         "region_id": zone_prices["name"],
                         "price": v["price"] / 100,
                         "currency": "EUR",
-                        "unit": PriceUnit.MONTH,
+                        "unit": PriceUnit.HOUR,
                     }
                 )
     return items
