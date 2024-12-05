@@ -313,20 +313,28 @@ def inventory_servers(vendor):
 
 def inventory_server_prices(vendor):
     items = []
-    # for server in []:
-    #     items.append({
-    #         "vendor_id": ,
-    #         "region_id": ,
-    #         "zone_id": ,
-    #         "server_id": ,
-    #         "operating_system": ,
-    #         "allocation": Allocation....,
-    #         "unit": PriceUnit.HOUR,
-    #         "price": ,
-    #         "price_upfront": 0,
-    #         "price_tiered": [],
-    #         "currency": "USD",
-    #     })
+    prices = _client().get_prices()
+    for zone_prices in prices["prices"]["zone"]:
+        zone_id = zone_prices["name"]
+        for k, v in zone_prices.items():
+            if not k.startswith("server_plan"):
+                continue
+            server_plan = k[len("server_plan_") :]
+            items.append(
+                {
+                    "vendor_id": vendor.vendor_id,
+                    "region_id": zone_id,
+                    "zone_id": zone_id,
+                    "server_id": server_plan,
+                    "operating_system": "Linux",
+                    "allocation": Allocation.ONDEMAND,
+                    "unit": PriceUnit.HOUR,
+                    "price": v["price"],
+                    "price_upfront": 0,
+                    "price_tiered": [],
+                    "currency": "EUR",
+                }
+            )
     return items
 
 
