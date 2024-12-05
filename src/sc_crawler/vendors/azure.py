@@ -922,7 +922,7 @@ def inventory_servers(vendor):
             servers.pop(i)
         # servers randomly switching between active/inactive status
         # TODO review from time to time
-        if name == "Standard_M896ixds_32_v3":
+        if name in ["Standard_M896ixds_32_v3", "Standard_M64-32bds_1_v3"]:
             vendor.log(f"Excluding server with questionable availability: {name}")
             servers.pop(i)
     servers = preprocess_servers(servers, vendor, _standardize_server)
