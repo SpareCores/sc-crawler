@@ -66,3 +66,18 @@ azure = Vendor(
     status_page="https://azure.status.microsoft.com",
 )
 """Microsoft Azure."""
+
+upcloud = Vendor(
+    vendor_id="upcloud",
+    name="UpCloud",
+    logo="https://sparecores.com/assets/images/vendors/upcloud.svg",
+    homepage="https://upcloud.com",
+    country=countries["FI"],
+    state="Uusimaa",
+    city="Helsinki",
+    address_line="Aleksanterinkatu 15 B, 7th floor",
+    zip_code="00100",
+    founding_year=2012,
+    status_page="https://status.upcloud.com",
+)
+"""UpCloud."""
