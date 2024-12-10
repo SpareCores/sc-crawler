@@ -1,5 +1,9 @@
 ## v0.3.x (development version)
 
+New vendor(s):
+
+- UpCloud
+
 New benchmark(s):
 
 - PassMark.
