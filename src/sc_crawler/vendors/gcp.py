@@ -15,6 +15,7 @@ from ..table_fields import (
     CpuAllocation,
     CpuArchitecture,
     PriceUnit,
+    Status,
     StorageType,
     TrafficDirection,
 )
@@ -327,6 +328,9 @@ def _search_servers(zone_name: str) -> List[dict]:
                 "inbound_traffic": 0,
                 "outbound_traffic": 0,
                 "ipv4": 0,
+                "status": (
+                    Status.ACTIVE if server.deprecated.state == "" else Status.INACTIVE
+                ),
             }
         )
     return zone_servers

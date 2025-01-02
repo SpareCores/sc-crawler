@@ -54,6 +54,8 @@ def parallel_fetch_servers(
     vendor.log(f"{len(servers)} server(s) found in {len(locations)} {by}.")
     servers = list({s[id_col]: s for s in servers}.values())
     vendor.log(f"{len(servers)} unique server(s) found.")
+    active_servers = [s for s in servers if s["status"] == Status.ACTIVE]
+    vendor.log(f"{len(active_servers)} ACTIVE server(s) found.")
     vendor.progress_tracker.hide_task()
     return servers
 
