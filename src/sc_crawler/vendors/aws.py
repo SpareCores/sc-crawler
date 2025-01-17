@@ -1,5 +1,6 @@
 import json
 import re
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from itertools import chain, repeat
@@ -21,6 +22,7 @@ from ..table_fields import (
     Gpu,
     PriceTier,
     PriceUnit,
+    Status,
     StorageType,
     TrafficDirection,
 )
@@ -61,6 +63,33 @@ def _boto_describe_availability_zones(region):
         ],
         AllAvailabilityZones=True,
     )["AvailabilityZones"]
+    return zones
+
+
+@cachier()
+def _describe_instance_type_offerings_per_zone(region: str):
+    """Lookup all instance types available in a region per zone.
+
+    Args:
+        region: AWS region id
+
+    Returns:
+        Dict of instance types as keys and list of zone ids as values.
+    """
+    client = boto3.client("ec2", region_name=region)
+    paginator = client.get_paginator("describe_instance_type_offerings")
+    instances = defaultdict(list)
+    for page in paginator.paginate(LocationType="availability-zone-id"):
+        for instance in page["InstanceTypeOfferings"]:
+            instances[instance["InstanceType"]].append(instance["Location"])
+    return instances
+
+
+def _describe_instance_type_offerings_per_zone_with_progress(
+    region: str, vendor: Vendor
+) -> dict:
+    zones = _describe_instance_type_offerings_per_zone(region)
+    vendor.progress_tracker.advance_task()
     return zones
 
 
@@ -860,6 +889,23 @@ def inventory_server_prices(vendor):
     regions = scmodels_to_dict(vendor.regions, keys=["name", "aliases"])
     servers = scmodels_to_dict(vendor.servers, keys=["server_id"])
 
+    # check all regions for instance types per zone
+    active_region_ids = [
+        r.api_reference for r in regions.values() if r.status == Status.ACTIVE
+    ]
+    vendor.progress_tracker.start_task(
+        name="Look up supported server types in all ACTIVE regions/zones",
+        total=len(active_region_ids),
+    )
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        regions_servers = executor.map(
+            _describe_instance_type_offerings_per_zone_with_progress,
+            active_region_ids,
+            repeat(vendor),
+        )
+    regions_servers = dict(zip(active_region_ids, regions_servers))
+    vendor.progress_tracker.hide_task()
+
     server_prices = []
     vendor.progress_tracker.start_task(
         name="Preprocess ondemand server_price(s)", total=len(products)
@@ -870,15 +916,18 @@ def inventory_server_prices(vendor):
             # early drop Gov regions
             if "GovCloud" in attributes["location"]:
                 continue
-            region = regions[attributes["location"]]
             server = servers[attributes["instanceType"]]
+            region = regions[attributes["location"]]
+            zones = regions_servers.get(region.api_reference, {}).get(
+                server.server_id, []
+            )
             price = _extract_ondemand_price(product["terms"])
-            for zone in region.zones:
+            for zone in zones:
                 server_prices.append(
                     {
                         "vendor_id": vendor.vendor_id,
                         "region_id": region.region_id,
-                        "zone_id": zone.zone_id,
+                        "zone_id": zone,
                         "server_id": server.server_id,
                         # TODO ingest other OSs
                         "operating_system": "Linux",

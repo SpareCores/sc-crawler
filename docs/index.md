@@ -43,7 +43,8 @@ The related user or role requires the below minimum IAM policy:
                 "ec2:DescribeRegions",
                 "ec2:DescribeAvailabilityZones",
                 "ec2:DescribeInstanceTypes",
-                "ec2:DescribeSpotPriceHistory"
+                "ec2:DescribeSpotPriceHistory",
+                "ec2:DescribeInstanceTypeOfferings"
             ],
             "Resource": "*"
         }
