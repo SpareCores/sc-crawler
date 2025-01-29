@@ -229,12 +229,15 @@ def _parse_server_name(name):
         gpus = 1
         if family == "NC":
             if vcpus == 24:
-                # Standard_NC24ads_A100_v4 has only 1 GPU, but Standard_NC24(r) has 4x Tesla K80
+                # Standard_NC24ads_A100_v4 has only 1 GPU,
+                # but Standard_NC24(r) has 4x Tesla K80
                 if not accelerators:
                     gpus = 4
             if vcpus in [12, 80]:
+                # Standard_NC48ads_A100_v4
                 gpus = 2
-            if vcpus in [64]:
+            if vcpus in [64, 96]:
+                # Standard_NC96ads_A100_v4
                 gpus = 4
         if family == "ND":
             if vcpus in [12]:

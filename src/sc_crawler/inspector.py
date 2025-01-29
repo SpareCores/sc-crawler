@@ -685,8 +685,10 @@ def inspect_update_server_dict(server: dict) -> dict:
         "gpu_manufacturer": lambda: _gpu_most_common(server["gpus"], "manufacturer"),
         "gpu_family": lambda: _gpu_most_common(server["gpus"], "family"),
         "gpu_model": lambda: _gpu_most_common(server["gpus"], "model"),
-        "gpu_memory_min": lambda: min([gpu["fb_memory"] for gpu in server["gpus"]]),
-        "gpu_memory_total": lambda: sum([gpu["fb_memory"] for gpu in server["gpus"]]),
+        # skip update if there is no HW-inspected GPU info
+        "gpu_count": lambda: len(server["gpus"]) if len(server["gpus"]) else None,
+        "gpu_memory_min": lambda: min([gpu["memory"] for gpu in server["gpus"]]),
+        "gpu_memory_total": lambda: sum([gpu["memory"] for gpu in server["gpus"]]),
     }
     for k, f in mappings.items():
         try:
