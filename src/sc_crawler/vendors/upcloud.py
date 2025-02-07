@@ -332,7 +332,7 @@ def inventory_servers(vendor):
                 "network_speed": None,
                 "inbound_traffic": 0,
                 "outbound_traffic": server["public_traffic_out"],
-                "ipv4": 1,
+                "ipv4": 0 if server_data["family"] == "CLOUDNATIVE" else 1,
             }
         )
     return items
