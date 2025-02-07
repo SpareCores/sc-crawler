@@ -222,6 +222,7 @@ def _parse_server_name(name):
     family = data["family"]
     vcpus = int(data["vcpus"])
     # accelerators are not always mentioned in the old server names, so we need a manual mapping
+    # which will be overwritten by the GPU count from HW inspection if we can start the node
     gpus = 0
     if family in ["NC", "ND", "NG", "NV"]:
         # default to one, list all the exceptions below

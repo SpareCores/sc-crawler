@@ -698,7 +698,7 @@ def inspect_update_server_dict(server: dict) -> dict:
         except Exception as e:
             _log_cannot_update_server(server_obj, k, e)
 
-    # backfill CPU model from alternative sources when not provided by DMI decode
+    # lscpu is a more reliable data source than dmidecode
     if not isinstance(lookups["lscpu"], BaseException):
         cpu_model = lscpu_lookup("Model name:")
         # CPU speed seems to be unreliable as reported by dmidecode,
@@ -713,8 +713,9 @@ def inspect_update_server_dict(server: dict) -> dict:
         for family in ["Xeon", "EPYC"]:
             if family in cpu_model:
                 server["cpu_family"] = family
-        if server.get("cpu_model") is None:
-            server["cpu_model"] = _standardize_cpu_model(cpu_model)
+        model = _standardize_cpu_model(cpu_model)
+        if model:
+            server["cpu_model"] = model
 
     # 2 Ghz CPU speed at Google is a lie
     if server["vendor_id"] == "gcp" and server.get("cpu_speed") == 2:
