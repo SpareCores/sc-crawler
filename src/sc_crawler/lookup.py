@@ -125,7 +125,7 @@ def _geekbenchmark(name: str, description: str):
     )
 
 
-def _passmark(name: str, description: str, unit: str):
+def _passmark(name: str, description: str, unit: str, higher_is_better: bool = True):
     measurement = sub(r"\W+", "_", name.lower())
     return Benchmark(
         benchmark_id="passmark:" + measurement,
@@ -137,6 +137,7 @@ def _passmark(name: str, description: str, unit: str):
             "framework_version": "Version and build number of PassMark.",
         },
         unit=unit,
+        higher_is_better=higher_is_better,
     )
 
 
@@ -516,5 +517,6 @@ benchmarks: List[Benchmark] = [
         name="Memory Latency",
         description="Measuring the time it takes for a single byte of memory to be transferred to the CPU for processing. A 512 MB buffer is allocated and then filled with pointers to other locations in the buffer, looping through a linked list.",
         unit="Nanoseconds (ns)",
+        higher_is_better=False,
     ),
 ]
