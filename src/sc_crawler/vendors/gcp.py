@@ -579,6 +579,15 @@ def inventory_regions(vendor):
             "lat": 60.536578,
             "lon": 27.117003,
         },
+        "europe-north2": {
+            "country_id": "NO",
+            "city": "Stockholm",
+            "founding_year": 2025,
+            "green_energy": False,
+            # approximation based on city
+            "lat": 59.334591,
+            "lon": 18.06324,
+        },
         "europe-southwest1": {
             "country_id": "ES",
             "city": "Madrid",
