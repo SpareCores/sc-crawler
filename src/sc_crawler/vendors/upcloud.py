@@ -300,8 +300,8 @@ def inventory_servers(vendor):
                 "vcpus": server["core_number"],
                 # https://upcloud.com/docs/products/cloud-servers/features/cloud-server-system/#virtualisation
                 "hypervisor": "KVM",
-                # all servers comes with dedicated vCPU
-                "cpu_allocation": CpuAllocation.DEDICATED,
+                # no dedicated vCPUs in the public cloud offerings
+                "cpu_allocation": CpuAllocation.SHARED,
                 "cpu_cores": None,
                 "cpu_speed": None,
                 # no known ARM options
