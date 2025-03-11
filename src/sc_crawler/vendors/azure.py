@@ -697,6 +697,14 @@ def inventory_regions(vendor):
             "founding_year": 2024,
             "green_energy": False,
         },
+        "indonesiacentral": {
+            "country_id": "ID",
+            "city": "Jakarta",
+            # coming soon
+            "founding_year": 2025,
+            # unknown as no sustainability fact sheet found
+            "green_energy": False,
+        },
         # Europe
         "francecentral": {
             "country_id": "FR",
