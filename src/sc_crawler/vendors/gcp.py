@@ -580,7 +580,7 @@ def inventory_regions(vendor):
             "lon": 27.117003,
         },
         "europe-north2": {
-            "country_id": "NO",
+            "country_id": "SE",
             "city": "Stockholm",
             "founding_year": 2025,
             "green_energy": False,
