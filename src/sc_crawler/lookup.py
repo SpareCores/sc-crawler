@@ -519,4 +519,30 @@ benchmarks: List[Benchmark] = [
         unit="Nanoseconds (ns)",
         higher_is_better=False,
     ),
+    Benchmark(
+        benchmark_id="llm_speed:text_generation",
+        name="LLM inference speed for text generation",
+        description="Running llama-bench from llama.cpp using various quantized model files to measure the speed of generating 16 to 4k tokens.",
+        framework="llm_speed",
+        measurement="text_generation",
+        config_fields={
+            "model": "Name of the model file used.",
+            "tokens": "Number of tokens processed in one run.",
+            "framework_version": "Git commit hash of llama.cpp",
+        },
+        unit="tokens/second (t/s)",
+    ),
+    Benchmark(
+        benchmark_id="llm_speed:prompt_processing",
+        name="LLM inference speed for prompt processing",
+        description="Running llama-bench from llama.cpp using various quantized model files to measure the speed of processing 16 to 16k tokens.",
+        framework="llm_speed",
+        measurement="prompt_processing",
+        config_fields={
+            "model": "Name of the model file used.",
+            "tokens": "Number of tokens processed in one run.",
+            "framework_version": "Git commit hash of llama.cpp",
+        },
+        unit="tokens/second (t/s)",
+    ),
 ]

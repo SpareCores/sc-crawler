@@ -493,6 +493,36 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
         except Exception as e:
             _log_cannot_load_benchmarks(server, framework, e, True)
 
+    framework = "llm_speed"
+    try:
+        llm_speed_version = _server_framework_meta(server, "llm")["version"]
+        with open(_server_framework_stdout_path(server, "llm"), "r") as fp:
+            for line in fp:
+                record = json.loads(line)
+                model_name = path.basename(record.get("model_filename", "unknown"))
+                measurement = "text_generation"
+                if record.get("n_prompt") != 0:
+                    measurement = "prompt_processing"
+                tokens = record.get("n_prompt") + record.get("n_gen")
+                config = {
+                    "model": model_name,
+                    "tokens": tokens,
+                    "framework_version": llm_speed_version,
+                }
+                benchmarks.append(
+                    {
+                        **_benchmark_metafields(
+                            server,
+                            framework="llm",
+                            benchmark_id=":".join([framework, measurement]),
+                        ),
+                        "config": config,
+                        "score": float(record["avg_ts"]),
+                    }
+                )
+    except Exception as e:
+        _log_cannot_load_benchmarks(server, framework, e, True)
+
     return benchmarks
 
 
