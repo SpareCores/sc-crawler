@@ -495,6 +495,7 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
 
     framework = "llm_speed"
     try:
+        assert _server_framework_meta(server, "llm")["exit_code"] == 0
         llm_speed_version = _server_framework_meta(server, "llm")["version"]
         with open(_server_framework_stdout_path(server, "llm"), "r") as fp:
             for line in fp:
