@@ -596,9 +596,12 @@ def _standardize_gpu_model(model, server=None):
             model = model[len(prefix) :].lstrip()
     if model == "nvidia-a100-80gb":
         model = "A100-SXM4-80GB"
+    if model == "nvidia-h200-141gb":
+        model = "H200"
     if server and server["vendor_id"] and server["server_id"] == "p4de.24xlarge":
         model = "A100-SXM4-40GB"
     # drop too specific parts
+    model = sub(r" NVL$", "", model)
     model = sub(r"-SXM[0-9]-[0-9]*GB$", "", model)
     model = sub(r" [0-9]*GB (HBM3|PCIe)$", "", model)
     return model
