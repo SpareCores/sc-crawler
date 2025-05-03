@@ -705,6 +705,14 @@ def inventory_regions(vendor):
             # unknown as no sustainability fact sheet found
             "green_energy": False,
         },
+        "malaysiawest": {
+            "country_id": "MY",
+            "city": "Kuala Lumpur",
+            # coming soon
+            "founding_year": 2025,
+            # unknown as no sustainability fact sheet found
+            "green_energy": False,
+        },
         # Europe
         "francecentral": {
             "country_id": "FR",
