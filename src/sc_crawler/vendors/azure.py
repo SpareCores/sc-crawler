@@ -587,6 +587,14 @@ def inventory_regions(vendor):
             # unknown as no sustainability fact sheet found
             "green_energy": False,
         },
+        "chilecentral": {
+            "country_id": "CL",
+            "city": "Santiago",
+            # coming soon
+            "founding_year": 2025,
+            # unknown as no sustainability fact sheet found
+            "green_energy": False,
+        },
         # not production region?
         # https://github.com/Azure/azure-dev/issues/2165#issuecomment-1542948509
         "brazilus": {
