@@ -157,6 +157,7 @@ SERVER_FEATURES = {
     "r": "RDMA capable",
     "e": "Memory Optimized",  # Standard_DC2es_v5
     "x": "Unmatched Memory Capacity",  # TODO confirm
+    "o": "o",  # TODO no information on this flag, e.g. Standard_L12aos_v4
 }
 """Map lowercase chars from the server name to features."""
 
