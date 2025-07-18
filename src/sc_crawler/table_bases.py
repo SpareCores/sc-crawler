@@ -532,6 +532,10 @@ class ServerFields(
         default=None,
         description="Server family, e.g. General-purpose machine (GCP), or M5g (AWS).",
     )
+    # inspector_status: str = Field(
+    #     default=None,
+    #     description="Server family, e.g. General-purpose machine (GCP), or M5g (AWS).",
+    # )
     vcpus: int = Field(
         default=None,
         description="Default number of virtual CPUs (vCPU) of the server.",
