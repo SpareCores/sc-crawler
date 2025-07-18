@@ -846,6 +846,13 @@ def inventory_regions(vendor):
             # unknown as no sustainability fact sheet found
             "green_energy": False,
         },
+        "austriaeast": {
+            "country_id": "AT",
+            "city": "Vienna",
+            "founding_year": 2025,
+            # unknown as no sustainability fact sheet found
+            "green_energy": False,
+        },
         # Africa
         "southafricanorth": {
             "country_id": "ZA",
