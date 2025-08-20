@@ -89,12 +89,12 @@ so you can use either secrets or certificates.
 
 The following environment variables are required:
 
-- `AZURE_CLIENT_ID`
+- `AZURE_CLIENT_ID` (application client ID)
 - `AZURE_TENANT_ID`
 
 To authenticate with secret:
 
-- `AZURE_CLIENT_SECRET`
+- `AZURE_CLIENT_SECRET` (secret value)
 
 To authenticate with certificate:
 
@@ -109,7 +109,7 @@ Optionally, you can also specify the Subscription
 - `AZURE_SUBSCRIPTION_ID`
 
 The related Service Principal requires either the global "Reader"
-role, or if the following list of (more restrictive) permissions:
+role, or the following list of (more restrictive) permissions:
 
 - `Microsoft.Resources/subscriptions/locations/read`
 
