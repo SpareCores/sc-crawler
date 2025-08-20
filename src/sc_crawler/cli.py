@@ -235,8 +235,8 @@ def copy(
 ):
     """Copy the standard SC Crawler tables of a database into a blank database."""
 
-    source_engine = create_engine(source)
-    target_engine = create_engine(target)
+    source_engine = create_engine(source, pool_pre_ping=True)
+    target_engine = create_engine(target, pool_pre_ping=True)
 
     for table in tables:
         table.__table__.create(target_engine)
@@ -319,7 +319,7 @@ def sync(
     most recent records of the SCD tables.
     """
 
-    source_engine = create_engine(source)
+    source_engine = create_engine(source, pool_pre_ping=True)
     target_engine = create_engine(target, pool_pre_ping=True)
 
     # compare source and target database revisions, halt if not matching
@@ -580,7 +580,11 @@ def pull(
         pbars.metadata.append(Text(str(datetime.now())))
 
         # alembic upgrade to ensure using the most recent version of the schemas
-        engine = create_engine(connection_string, json_serializer=custom_serializer)
+        engine = create_engine(
+            connection_string,
+            json_serializer=custom_serializer,
+            pool_pre_ping=True,
+        )
         with engine.begin() as connection:
             command.upgrade(alembic_cfg(connection, force_logging=False), "heads")
 
