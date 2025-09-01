@@ -185,7 +185,7 @@ def stamp(
     sql: options.sql = False,
 ):
     """
-    Set the migration revision mark in he database to a specified revision. Set to "heads" if the database schema is up-to-date.
+    Set the migration revision mark in the database to a specified revision. Set to "heads" if the database schema is up-to-date.
     """
     engine = create_engine(connection_string)
     with engine.begin() as connection:
@@ -249,16 +249,14 @@ def copy(
     )
     panel = Panel(progress, title="Copying tables", expand=False)
 
-    with (
-        Live(panel),
-        Session(source_engine) as source_session,
-        Session(target_engine) as target_session,
-    ):
+    with Live(panel):
         for table in tables:
-            rows = source_session.exec(statement=select(table))
-            items = [row.model_dump() for row in rows]
-            insert_items(table, items, session=target_session, progress=progress)
-        target_session.commit()
+            with Session(source_engine) as source_session:
+                rows = source_session.exec(statement=select(table))
+                items = [row.model_dump() for row in rows]
+            with Session(target_engine) as target_session:
+                insert_items(table, items, session=target_session, progress=progress)
+                target_session.commit()
     with target_engine.begin() as connection:
         command.stamp(alembic_cfg(connection), "heads")
 
