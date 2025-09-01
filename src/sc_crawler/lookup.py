@@ -7,6 +7,7 @@ from .tables import Benchmark, ComplianceFramework, Country
 # mapping: https://github.com/manumanoj0010/countrydetails/blob/master/Countrydetails/data/continents.json  # noqa: E501
 country_continent_mapping = {
     "AE": "Asia",
+    "AT": "Europe",
     "AU": "Oceania",
     "BE": "Europe",
     "BH": "Asia",
