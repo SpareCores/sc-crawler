@@ -412,6 +412,9 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
             allocation == Allocation.SPOT and not is_spot
         ):
             continue
+        # sometimes Azure reports zero price for a server, skip it
+        if retail_price["retailPrice"] == 0:
+            continue
         region = regions.get(retail_price["armRegionName"])
         for zone in region.zones:
             prices.append(
