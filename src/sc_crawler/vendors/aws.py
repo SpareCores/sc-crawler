@@ -208,8 +208,10 @@ def _annotate_instance_type(instance_type_id):
     if "-" in kind:
         logger.warning(f"Truncating instance type after the dash: {kind}")
         kind = kind.split("-")[0]
-    family, extras = re.split(r"[0-9]", kind)
-    generation = re.findall(r"[0-9]", kind)[0]
+    family_extras = re.split(r"[0-9]", kind)
+    family = family_extras[0]
+    extras = family_extras[1] if len(family_extras) > 1 else ""
+    generation = re.findall(r"[0-9]", kind)[0] if re.findall(r"[0-9]", kind) else ""
     size = instance_type_id.split(".")[1]
 
     try:
@@ -221,7 +223,8 @@ def _annotate_instance_type(instance_type_id):
     for k, v in _instance_suffixes.items():
         if k in extras:
             text += " [" + v + "]"
-    text += " Gen" + generation
+    if generation:
+        text += " Gen" + generation
     text += " " + size
 
     return text
