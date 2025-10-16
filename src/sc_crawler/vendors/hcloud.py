@@ -55,6 +55,9 @@ def _server_cpu(server_name):
         "CX52",
     ]:
         return ("Intel", "Xeon Gold", None)
+    if server_name.upper() in ["CX23", "CX33", "CX43", "CX53"]:
+        # could be either Intel or AMD
+        return (None, None, None)
     if server_name.upper() in ["CPX11", "CPX21", "CPX31", "CPX41", "CPX51"]:
         return ("AMD", "EPYC 7002", None)
     if server_name.upper() in ["CPX12", "CPX22", "CPX32", "CPX42", "CPX52", "CPX62"]:
