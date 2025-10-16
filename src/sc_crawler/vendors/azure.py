@@ -399,7 +399,9 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
         if "Low Priority" in retail_price["meterName"]:
             continue
         # don't track Windows pricing, or the Azure Cloud Services pricing either
-        if retail_price["productName"].endswith(("Windows", "CloudServices")):
+        if retail_price["productName"].endswith(
+            ("Windows", "CloudServices", "Cloud Services")
+        ):
             continue
         # drop records related to unknown server types and/or regions
         if retail_price["armSkuName"] not in server_ids:
