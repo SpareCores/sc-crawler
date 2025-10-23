@@ -826,6 +826,12 @@ def inventory_regions(vendor):
             "founding_year": 2010,
             "green_energy": False,
         },
+        "belgiumcentral": {
+            "country_id": "BE",
+            "founding_year": 2025,
+            # unknown as no sustainability fact sheet found
+            "green_energy": False,
+        },
         # Middle East
         "israelcentral": {
             "country_id": "IL",
