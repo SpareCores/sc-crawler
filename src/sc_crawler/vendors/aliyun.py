@@ -6,7 +6,7 @@ from aliyunsdkcore.client import AcsClient
 from aliyunsdkcore.acs_exception.exceptions import ClientException
 from aliyunsdkcore.acs_exception.exceptions import ServerException
 from aliyunsdkecs.request.v20140526 import DescribeInstancesRequest
-from aliyunsdkecs.request.v20140526 import DescribeRegionsRequest, DescribeZonesRequest, DescribeInstanceTypesRequest
+from aliyunsdkecs.request.v20140526 import DescribeRegionsRequest, DescribeZonesRequest, DescribeInstanceTypesRequest, DescribePriceRequest
 
 from ..table_fields import (
     Allocation,
@@ -81,12 +81,11 @@ def get_regions():
     region_info_in_list = json.loads(response.decode("utf-8")) 
     return region_info_in_list
 
-def get_zones():
-    # -- TODO: DescribeZonesRequest only gets current region. might have to create alternative client objects to get all zone info. 
-    client = get_client()
+def get_zones(tempcl):
+    #client = get_client()
     region_list = get_regions()
     request = DescribeZonesRequest.DescribeZonesRequest()
-    response = client.do_action_with_exception(request)
+    response = tempcl.do_action_with_exception(request)
     zone_info_in_list = json.loads(response.decode("utf-8")) 
     return zone_info_in_list
 
@@ -109,7 +108,7 @@ def inventory_regions(vendor):
     items = []
     region_info_in_list = get_regions()
     for region in region_info_in_list.get("Regions").get("Region"):   
-        print("REGION: {}".format(str(region)))
+        #print("REGION: {}".format(str(region)))
         items.append(
             {
                 "vendor_id": vendor.vendor_id,
@@ -134,18 +133,46 @@ def inventory_regions(vendor):
 
 def inventory_zones(vendor):
     items =[]
-    zone_info_in_list = get_zones()
-    for zone in zone_info_in_list.get("Zones").get("Zone"):  
-        items.append({
-            "vendor_id": vendor.vendor_id,
-            "region_id": zone.get("ZoneId")[:-1],
-            "zone_id": zone.get("ZoneId"),
-            "name": zone.get("ZoneId"),
-            "api_reference": zone.get("ZoneId"),
-            "display_name": zone.get("ZoneId"),
-        })
+
+    region_info_in_list = get_regions()
+    for region in region_info_in_list.get("Regions").get("Region"):
+        # a try block with a specific exception for timeout would be probably better, but why should we wait for the timeout
+        if "cn-" in region.get("RegionId"):
+            continue # chinese regions are not accessible from here
+        else:
+            tempclient = AcsClient(
+                os.environ["ALIYUN_ACCESS_KEY"],
+                os.environ["ALIYUN_SECRET"],
+                region.get("RegionId")
+            )
+            
+            zone_info_in_list = get_zones(tempcl=tempclient)
+            for zone in zone_info_in_list.get("Zones").get("Zone"):  
+                print("Getting zone {} in region {}...".format(region.get("RegionId"), zone.get("ZoneId")))
+                items.append({
+                    "vendor_id": vendor.vendor_id,
+                    "region_id": region.get("RegionId"),
+                    "zone_id": zone.get("ZoneId"),
+                    "name": zone.get("ZoneId"),
+                    "api_reference": zone.get("ZoneId"),
+                    "display_name": zone.get("ZoneId"),
+                })
+
     return items
 
+# def inventory_zones_old(vendor):
+#     items =[]
+#     zone_info_in_list = get_zones()
+#     for zone in zone_info_in_list.get("Zones").get("Zone"):  
+#         items.append({
+#             "vendor_id": vendor.vendor_id,
+#             "region_id": zone.get("ZoneId")[:-1],
+#             "zone_id": zone.get("ZoneId"),
+#             "name": zone.get("ZoneId"),
+#             "api_reference": zone.get("ZoneId"),
+#             "display_name": zone.get("ZoneId"),
+#         })
+#     return items
 
 def inventory_servers(vendor):
     items = []
@@ -177,7 +204,7 @@ def inventory_servers(vendor):
                 "cpu_family": None,
                 "cpu_model": instancetype.get("PhysicalProcessorModel"),
                 "cpu_l1_cache": None,
-                "cpu_l2_cache": None,
+                "cpu_l2_cache": None, 
                 "cpu_l3_cache": None,
                 "cpu_flags": [],
                 "cpus": [],
@@ -203,7 +230,8 @@ def inventory_servers(vendor):
         )
     return items
 
-
+# describeinstance region id paraméter, méásik régióból lekérdezni -- todo
+# pr-nál todo comment, kitölteni amit lehet
 
 def inventory_server_prices(vendor):
     # --- NOTE: DescribePriceRequest deals with active instances...
@@ -232,6 +260,93 @@ def inventory_server_prices_spot(vendor):
 
 def inventory_storages(vendor):
     items = []
+    # todo: cycle through regions.
+    # tempclient = get_client()
+
+    # DEFAULT_INSTANCE_TYPE = "ecs.c6.large" # common instance, available in most regions. required for query.
+    # options_system_disk_category = ["cloud", "cloud_efficiency", "cloud_ssd", "ephemeral_ssd", "cloud_essd", "cloud_auto"]
+    # options_essd_disk_performance_level = ['PL0', 'PL1', 'PL2', 'PL3']
+    # #disk_price_list = []
+    # for disk in options_system_disk_category:
+    #     request = DescribePriceRequest.DescribePriceRequest()
+    #     #request.set_RegionId("cn-hangzhou")
+    #     request.set_PriceUnit("Hour")
+    #     request.set_InstanceType(DEFAULT_INSTANCE_TYPE)
+    #     request.set_DataDisk1Size(500)
+    #     request.set_DataDisk1Category(disk)
+    #     if disk == "cloud_essd":
+    #         for pl in options_essd_disk_performance_level:
+    #             request.set_DataDisk1PerformanceLevel(pl)
+    #             try:
+    #                 response = tempclient.do_action_with_exception(request)
+    #                 respone_dict = (json.loads(response.decode("utf-8"))) 
+
+    #                 items.append(
+    #                     {
+    #                         "storage_id": disk+"-"+pl,
+    #                         "vendor_id": vendor.vendor_id,
+    #                         "name": disk+" ("+pl+")",
+    #                         "description": None,
+    #                         "storage_type": StorageType.SSD,
+    #                         "max_iops": None,
+    #                         "max_throughput": None,
+    #                         "min_size": 20,
+    #                         "max_size": 32768,
+    #                     }
+    #                 )
+    #             except ServerException as se:
+    #                 print(se)
+    #                 print("tempclient: {tcl}, disk: {disk}, size: {size}, pl: {pl}".format(tcl=tempclient.get_region_id(), disk=disk, size=500, pl=pl))
+    #     else:
+    #         try:
+    #             response = tempclient.do_action_with_exception(request)
+    #             respone_dict = (json.loads(response.decode("utf-8"))) 
+    #             if disk == "cloud":
+    #                 items.append(
+    #                     {
+    #                         "storage_id": disk,
+    #                         "vendor_id": vendor.vendor_id,
+    #                         "name": disk,
+    #                         "description": None,
+    #                         "storage_type": StorageType.HDD,
+    #                         "max_iops": None,
+    #                         "max_throughput": None,
+    #                         "min_size": 5,
+    #                         "max_size": 2000,
+    #                     }
+    #                 )
+    #             elif disk == "cloud_efficiency":
+    #                 items.append(
+    #                     {
+    #                         "storage_id": disk,
+    #                         "vendor_id": vendor.vendor_id,
+    #                         "name": disk,
+    #                         "description": None,
+    #                         "storage_type": StorageType.HDD,
+    #                         "max_iops": None,
+    #                         "max_throughput": None,
+    #                         "min_size": 20,
+    #                         "max_size": 32768,
+    #                     }
+    #                 )
+    #             else:
+    #                 items.append(
+    #                     {
+    #                         "storage_id": disk+"-"+pl,
+    #                         "vendor_id": vendor.vendor_id,
+    #                         "name": disk+" ("+pl+")",
+    #                         "description": None,
+    #                         "storage_type": StorageType.SSD,
+    #                         "max_iops": None,
+    #                         "max_throughput": None,
+    #                         "min_size": 20,
+    #                         "max_size": 32768,
+    #                     }
+    #                 )
+    #         except ServerException as se:
+    #             print(se)
+    #             print("tempclient: {tcl}, disk: {disk}, size: {size}".format(tcl=tempclient.get_region_id(), disk=disk, size=500))
+
     # for storage in []:
     #     items.append(
     #         {
@@ -252,17 +367,74 @@ def inventory_storages(vendor):
 def inventory_storage_prices(vendor):
     # --- NOTE: DescribePriceRequest deals with active instances...
     items = []
-    # for price in []:
-    #     items.append(
-    #         {
-    #             "vendor_id": vendor.vendor_id,
-    #             "region_id": ,
-    #             "storage_id": ,
-    #             "unit": PriceUnit.GB_MONTH,
-    #             "price": ,
-    #             "currency": "USD",
-    #         }
-    #     )
+    tempclient = get_client()
+
+    DEFAULT_INSTANCE_TYPE = "ecs.c6.large" # common instance, available in most regions. required for query.
+    options_system_disk_category = ["cloud", "cloud_efficiency", "cloud_ssd", "ephemeral_ssd", "cloud_essd", "cloud_auto"]
+    options_essd_disk_performance_level = ['PL0', 'PL1', 'PL2', 'PL3']
+
+    # cycling through regions, so we can get region-based data
+    region_info_in_list = get_regions()
+    for region in region_info_in_list.get("Regions").get("Region"):
+        # a try block with a specific exception for timeout would be probably better, but why should we wait for the timeout
+        if "cn-" in region.get("RegionId"):
+            continue # chinese regions are not accessible from here
+        else:
+            tempclient = AcsClient(
+                os.environ["ALIYUN_ACCESS_KEY"],
+                os.environ["ALIYUN_SECRET"],
+                region.get("RegionId")
+            )
+
+        for disk in options_system_disk_category:
+            request = DescribePriceRequest.DescribePriceRequest()
+            #request.set_RegionId("cn-hangzhou")
+            request.set_PriceUnit("Hour")
+            request.set_InstanceType(DEFAULT_INSTANCE_TYPE)
+            request.set_DataDisk1Size(500)
+            request.set_DataDisk1Category(disk)
+            if disk == "cloud_essd":
+                for pl in options_essd_disk_performance_level:
+                    request.set_DataDisk1PerformanceLevel(pl)
+                    try:
+                        response = tempclient.do_action_with_exception(request)
+                        respone_dict = (json.loads(response.decode("utf-8"))) 
+
+                        for dti in respone_dict.get("PriceInfo").get("Price").get("DetailInfos").get("DetailInfo"):
+                            if dti.get("Resource") == "systemDisk" or dti.get("Resource") == "dataDisk":
+                                items.append(
+                                    {
+                                        "vendor_id": vendor.vendor_id,
+                                        "region_id": tempclient.get_region_id() ,
+                                        "storage_id": disk+"-"+pl,
+                                        "unit": PriceUnit.GB_MONTH,
+                                        "price": dti.get("TradePrice"),
+                                        "currency": respone_dict.get("PriceInfo").get("Price").get("Currency"),
+                                    }
+                                )
+                    except ServerException as se:
+                        print(se)
+                        print("tempclient: {tcl}, disk: {disk}, size: {size}, pl: {pl}".format(tcl=tempclient.get_region_id(), disk=disk, size=500, pl=pl))
+            else:
+                try:
+                    response = tempclient.do_action_with_exception(request)
+                    respone_dict = (json.loads(response.decode("utf-8"))) 
+                    for dti in respone_dict.get("PriceInfo").get("Price").get("DetailInfos").get("DetailInfo"):
+                        if dti.get("Resource") == "systemDisk" or dti.get("Resource") == "dataDisk":
+                            items.append(
+                                {
+                                    "vendor_id": vendor.vendor_id,
+                                    "region_id": tempclient.get_region_id() ,
+                                    "storage_id": disk,
+                                    "unit": PriceUnit.GB_MONTH,
+                                    "price": dti.get("TradePrice"),
+                                    "currency": respone_dict.get("PriceInfo").get("Price").get("Currency"),
+                                }
+                            )
+                except ServerException as se:
+                    print(se)
+                    print("tempclient: {tcl}, disk: {disk}, size: {size}".format(tcl=tempclient.get_region_id(), disk=disk, size=500))
+
     return items
 
 
