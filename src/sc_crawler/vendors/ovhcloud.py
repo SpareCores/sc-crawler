@@ -160,46 +160,42 @@ def _get_base_region_and_city(region):
 
 
 def _get_cpu_info(flavor_name):
-    """Map flavor name to CPU manufacturer and model based on VPSBenchmarks and OVHcloud documentation.
+    """Map flavor name to CPU manufacturer and model based on OVHcloud documentation.
 
     Sources:
-    - VPSBenchmarks: https://www.vpsbenchmarks.com/hosters/ovhcloud/cpus (retrieved 2025-11-17)
-    - OVHcloud GPU page: https://www.ovhcloud.com/en/public-cloud/gpu/ (retrieved 2025-11-17)
-    - OVHcloud Metal Instances: https://www.ovhcloud.com/en/public-cloud/metal-instances/ (retrieved 2025-11-17)
+    - OVHcloud Cloud Manager: Direct verification (retrieved 2025-11-19)
+    - lscpu verification on B3-8 instance (2025-11-17)
     """
     name_lower = flavor_name.lower()
 
-    # 3rd generation instances (b3, c3, r3) - AMD EPYC Milan or Genoa
-    # Verified from OVHcloud cloud manager (retrieved 2025-11-17): 2.3 GHz for B3, C3, and R3 series
     # CPU model verified from lscpu on B3-8 instance (2025-11-17): AMD EPYC-Milan Processor (Family 25, Model 1)
-    if name_lower.startswith(('b3-', 'c3-', 'r3-')):
-        # Both Milan and Genoa may be used for 3rd gen, but Milan is confirmed for B3 series
+    if name_lower.startswith('b3-'):
         return 'AMD', 'EPYC Milan', 2.3
+    if name_lower.startswith('c3-'):
+        return None, None, 2.3
+    if name_lower.startswith('r3-'):
+        return None, None, 2.3
 
-    # 2nd generation instances (b2, c2, r2) - Intel Haswell
-    # Verified from OVHcloud cloud manager (retrieved 2025-11-17):
+    # 2nd generation instances (b2, c2, r2)
     # - B2 series: 2.0 GHz (balanced)
     # - C2 series: 3.0 GHz (compute-optimized)
     # - R2 series: 2.2 GHz (RAM-optimized)
     if name_lower.startswith('c2-'):
-        return 'Intel', 'Xeon (Haswell)', 3.0
+        return None, None, 3.0
     if name_lower.startswith('r2-'):
-        return 'Intel', 'Xeon (Haswell)', 2.2
+        return None, None, 2.2
     if name_lower.startswith('b2-'):
-        return 'Intel', 'Xeon (Haswell)', 2.0
+        return None, None, 2.0
 
-    # Discovery instances (d2) - typically older Intel
-    # Verified from OVHcloud cloud manager (retrieved 2025-11-17): 2.0 GHz
+    # Discovery instances (d2) - 2.0 GHz
     if name_lower.startswith('d2-'):
-        return 'Intel', 'Xeon (Haswell)', 2.0
+        return None, None, 2.0
 
-    # Storage optimized (i1) - Intel-based storage instances
-    # Verified from OVHcloud cloud manager (retrieved 2025-11-17): 2.2 GHz
+    # Storage optimized instances (i1) - 2.2 GHz
     if name_lower.startswith('i1-'):
-        return 'Intel', None, 2.2
+        return None, None, 2.2
 
-    # Bare Metal instances - physical dedicated servers with varying CPUs
-    # Verified from OVHcloud cloud manager (retrieved 2025-11-17):
+    # Bare Metal instances
     # - bm-s1 (Small): 4 cores @ 4.0 GHz
     # - bm-m1 (Medium): 8 cores @ 3.7 GHz
     # - bm-l1 (Large): 16 cores @ 3.1 GHz
@@ -212,12 +208,11 @@ def _get_cpu_info(flavor_name):
     if name_lower.startswith('bm-'):
         return None, None, None  # Unknown BM type
 
-    # GPU instances with verified CPU speeds from OVHcloud Cloud Manager (retrieved 2025-11-17)
     # H100 series - 3.0 GHz
     if name_lower.startswith('h100-'):
         return None, None, 3.0
 
-    # A100 series - CPU speed not available
+    # A100 series - No CPU info available
     if name_lower.startswith('a100-'):
         return None, None, None
 
@@ -253,136 +248,152 @@ def _get_cpu_info(flavor_name):
 def _get_gpu_info(flavor_name):
     """Map GPU flavor name to GPU specs based on verified data.
 
-    Sources:
-    - VPSBenchmarks: https://www.vpsbenchmarks.com/gpu_plans/ovhcloud (retrieved 2025-11-17)
-      Provides exact GPU counts and memory specifications for most OVHcloud GPU instances.
-    - OVHcloud Cloud Manager: Direct verification of RTX 5000 instances (retrieved 2025-11-17)
+    GPU Memory Specifications (retrieved 2025-11-19):
+    OVHcloud Prices Page: https://www.ovhcloud.com/en/public-cloud/prices/
+    OVHcloud Product Page: https://www.ovhcloud.com/en/public-cloud/gpu/
+    - A10: 24GB GDDR6
+    - Quadro RTX 5000: 16GB GDDR6
+    - Tesla V100: 16GB HBM2
+    - Tesla V100S: 32GB HBM2
+    - L4: 24GB GDDR6
+    - L40S: 48GB GDDR6
+    - H100: 80GB HBM3
+    - A100: 80GB HBM2e
+
+    GPU Architecture Information (retrieved 2025-11-19):
+    Source: NVIDIA Official Product Pages and Architecture Whitepapers
+    - H100: Hopper Architecture - https://www.nvidia.com/en-us/data-center/h100/
+    - A100: Ampere Architecture - https://www.nvidia.com/en-us/data-center/a100/
+    - A10: Ampere Architecture - https://www.nvidia.com/en-us/data-center/products/a10-gpu/
+    - L40S: Ada Lovelace Architecture - https://www.nvidia.com/en-us/data-center/l40s/
+    - L4: Ada Lovelace Architecture - https://www.nvidia.com/en-us/data-center/l4/
+    - Tesla V100/V100S: Volta Architecture - https://www.nvidia.com/en-us/data-center/v100/
+    - Quadro RTX 5000: Turing Architecture - https://www.nvidia.com/en-us/design-visualization/quadro/rtx-5000/
+
+    Instance Specifications (from OVHcloud Cloud Manager, retrieved 2025-11-19):
+    GPU counts per instance type and system configurations (vCores, RAM, storage)
+    are documented in individual GPU mapping comments below.
 
     Returns:
         tuple: (gpu_count, gpu_memory_total_gb, gpu_manufacturer, gpu_family, gpu_model)
                or (0, None, None, None, None) if not a GPU instance
-
-    Note: GPU counts and memory specifications are verified from actual instance data,
-          not inferred from naming patterns.
     """
     name_lower = flavor_name.lower()
 
     # Parse GPU instance naming pattern: <gpu_model>-<instance_size>
-    # Source: VPSBenchmarks shows exact specifications for each instance
 
-    # NVIDIA H100 (80 GB per GPU)
-    # Verified from OVHcloud cloud manager (retrieved 2025-11-17):
-    # - h100-380: 1x H100, 380 GB RAM, 200 GB + 3.84 TB NVMe Passthrough, 8,000 Mbit/s
-    # - h100-760: 2x H100, 760 GB RAM, 200 GB + 2x 3.84 TB NVMe Passthrough, 16,000 Mbit/s
-    # - h100-1520: 4x H100 (specs not provided, inferred from pattern)
+    # NVIDIA H100 (80GB HBM3 per GPU) - Hopper Architecture
+    # OVHcloud instances (source: OVHcloud Cloud Manager, 2025-11-19):
+    # - h100-380: 1x H100, 380 GB RAM, 30 vCores (3 GHz), 200 GB + 3.84 TB NVMe Passthrough, 8,000 Mbit/s
+    # - h100-760: 2x H100, 760 GB RAM, 60 vCores (3 GHz), 200 GB + 2x 3.84 TB NVMe Passthrough, 16,000 Mbit/s
+    # - h100-1520: 4x H100, 1,520 GB RAM, 120 vCores (3 GHz), 200 GB + 4x 3.84 TB NVMe Passthrough, 25,000 Mbit/s
     if name_lower.startswith('h100-'):
         try:
             size = int(name_lower.split('-')[1])
             gpu_count = size // 380
-            return gpu_count, gpu_count * 80, 'NVIDIA', 'H100', 'H100 80GB HBM2e'
+            return gpu_count, gpu_count * 80, 'NVIDIA', 'Hopper', 'H100 80GB HBM3'
         except (IndexError, ValueError):
             return 0, None, None, None, None
 
-    # NVIDIA A100 (80 GB per GPU)
-    # Verified: a100-180 (1x A100), a100-360 (2x A100), a100-720 (4x A100)
-    # Note: Detailed specs not provided in cloud manager data
+    # NVIDIA A100 (80GB HBM2e per GPU) - Ampere Architecture
+    # - a100-180: 1x A100, 180 GB RAM, 15 vCores, 300 GB NVMe, 8,000 Mbit/s
+    # - a100-360: 2x A100, 360 GB RAM, 30 vCores, 500 GB NVMe, 16,000 Mbit/s
+    # - a100-720: 4x A100, 720 GB RAM, 60 vCores, 500 GB NVMe, 25,000 Mbit/s
     if name_lower.startswith('a100-'):
         try:
             size = int(name_lower.split('-')[1])
             gpu_count = size // 180
-            return gpu_count, gpu_count * 80, 'NVIDIA', 'A100', 'A100 80GB HBM2e'
+            return gpu_count, gpu_count * 80, 'NVIDIA', 'Ampere', 'A100 80GB HBM2e'
         except (IndexError, ValueError):
             return 0, None, None, None, None
 
-    # NVIDIA A10 (24 GB per GPU)
-    # Verified from OVHcloud cloud manager (retrieved 2025-11-17):
-    # - a10-45: 1x A10, 45 GB RAM, 400 GB SSD, 8,000 Mbit/s
-    # - a10-90: 2x A10, 90 GB RAM, 400 GB SSD, 16,000 Mbit/s
-    # - a10-180: 4x A10, 180 GB RAM, 400 GB SSD, 25,000 Mbit/s
+    # NVIDIA A10 Tensor Core GPU (24GB GDDR6 per GPU) - Ampere Architecture
+    # OVHcloud instances:
+    # - a10-45: 1x A10, 45 GB RAM, 30 vCores (3.3 GHz), 400 GB SSD, 8,000 Mbit/s
+    # - a10-90: 2x A10, 90 GB RAM, 60 vCores (3.3 GHz), 400 GB SSD, 16,000 Mbit/s
+    # - a10-180: 4x A10, 180 GB RAM, 120 vCores (3.3 GHz), 400 GB SSD, 25,000 Mbit/s
     if name_lower.startswith('a10-'):
         try:
             size = int(name_lower.split('-')[1])
             gpu_count = size // 45
-            return gpu_count, gpu_count * 24, 'NVIDIA', 'A10', 'A10 24GB GDDR6'
+            return gpu_count, gpu_count * 24, 'NVIDIA', 'Ampere', 'A10 24GB GDDR6'
         except (IndexError, ValueError):
             return 0, None, None, None, None
 
-    # NVIDIA L40S (48 GB per GPU)
-    # Verified from OVHcloud cloud manager (retrieved 2025-11-17):
-    # - l40s-90: 1x L40S, 90 GB RAM, 400 GB NVMe, 8,000 Mbit/s
-    # - l40s-180: 2x L40S, 180 GB RAM, 400 GB NVMe, 16,000 Mbit/s
-    # - l40s-360: 4x L40S, 360 GB RAM, 400 GB NVMe, 25,000 Mbit/s
+    # NVIDIA L40S (48GB GDDR6 per GPU) - Ada Lovelace Architecture
+    # OVHcloud instances:
+    # - l40s-90: 1x L40S, 90 GB RAM, 15 vCores (2.75 GHz), 400 GB NVMe, 8,000 Mbit/s
+    # - l40s-180: 2x L40S, 180 GB RAM, 30 vCores (2.75 GHz), 400 GB NVMe, 16,000 Mbit/s
+    # - l40s-360: 4x L40S, 360 GB RAM, 60 vCores (2.75 GHz), 400 GB NVMe, 25,000 Mbit/s
     if name_lower.startswith('l40s-'):
         try:
             size = int(name_lower.split('-')[1])
             gpu_count = size // 90
-            return gpu_count, gpu_count * 48, 'NVIDIA', 'L40S', 'L40S 48GB GDDR6'
+            return gpu_count, gpu_count * 48, 'NVIDIA', 'Ada Lovelace', 'L40S 48GB GDDR6'
         except (IndexError, ValueError):
             return 0, None, None, None, None
 
-    # NVIDIA L4 (24 GB per GPU)
-    # Verified from OVHcloud cloud manager (retrieved 2025-11-17):
-    # - l4-90: 1x L4, 90 GB RAM, 400 GB NVMe, 8,000 Mbit/s
-    # - l4-180: 2x L4, 180 GB RAM, 400 GB NVMe, 16,000 Mbit/s
-    # - l4-360: 4x L4, 360 GB RAM, 400 GB NVMe, 25,000 Mbit/s
+    # NVIDIA L4 Tensor Core GPU (24GB GDDR6 per GPU) - Ada Lovelace Architecture
+    # OVHcloud instances:
+    # - l4-90: 1x L4, 90 GB RAM, 22 vCores (2.75 GHz), 400 GB NVMe, 8,000 Mbit/s
+    # - l4-180: 2x L4, 180 GB RAM, 45 vCores (2.75 GHz), 400 GB NVMe, 16,000 Mbit/s
+    # - l4-360: 4x L4, 360 GB RAM, 90 vCores (2.75 GHz), 400 GB NVMe, 25,000 Mbit/s
     if name_lower.startswith('l4-'):
         try:
             size = int(name_lower.split('-')[1])
             gpu_count = size // 90
-            return gpu_count, gpu_count * 24, 'NVIDIA', 'L4', 'L4 24GB GDDR6'
+            return gpu_count, gpu_count * 24, 'NVIDIA', 'Ada Lovelace', 'L4 24GB GDDR6'
         except (IndexError, ValueError):
             return 0, None, None, None, None
 
-    # NVIDIA Tesla V100S (32 GB per GPU)
-    # Verified from OVHcloud cloud manager (retrieved 2025-11-17):
-    # Standard series:
-    # - t2-45: 1x V100S, 45 GB RAM, 400 GB NVMe, 2,000 Mbit/s
-    # - t2-90: 2x V100S, 90 GB RAM, 800 GB NVMe, 4,000 Mbit/s
-    # - t2-180: 4x V100S, 180 GB RAM, 50 GB + 2x 2 TB NVMe Passthrough, 10,000 Mbit/s
-    # Limited Edition (LE) series:
-    # - t2-le-45: 1x V100S, 45 GB RAM, 300 GB NVMe, 2,000 Mbit/s
-    # - t2-le-90: 2x V100S, 90 GB RAM, 500 GB NVMe, 4,000 Mbit/s
-    # - t2-le-180: Missing from cloud manager data (likely discontinued)
+    # NVIDIA Tesla V100S (32GB HBM2 per GPU) - Volta Architecture
+    # OVHcloud instances - Standard series:
+    # - t2-45: 1x V100S, 45 GB RAM, 15 vCores (2.9 GHz), 400 GB NVMe, 2,000 Mbit/s
+    # - t2-90: 2x V100S, 90 GB RAM, 30 vCores (2.9 GHz), 800 GB NVMe, 4,000 Mbit/s
+    # - t2-180: 4x V100S, 180 GB RAM, 60 vCores (2.9 GHz), 50 GB + 2x 2 TB NVMe Passthrough, 10,000 Mbit/s
+    # OVHcloud instances - Limited Edition (LE) series:
+    # - t2-le-45: 1x V100S, 45 GB RAM, 15 vCores (2.9 GHz), 300 GB NVMe, 2,000 Mbit/s
+    # - t2-le-90: 2x V100S, 90 GB RAM, 30 vCores (2.9 GHz), 500 GB NVMe, 4,000 Mbit/s
+    # - t2-le-180: 4x V100S, 180 GB RAM, 60 vCores (2.9 GHz), 500 GB NVMe, 10,000 Mbit/s
     if name_lower.startswith('t2-') or name_lower.startswith('t2-le-'):
         try:
             # Extract size: 't2-45' -> 45, 't2-le-45' -> 45
             parts = name_lower.split('-')
             size = int(parts[-1])
             gpu_count = size // 45
-            return gpu_count, gpu_count * 32, 'NVIDIA', 'Tesla V100S', 'Tesla V100S 32GB HBM2'
+            return gpu_count, gpu_count * 32, 'NVIDIA', 'Volta', 'Tesla V100S 32GB HBM2'
         except (IndexError, ValueError):
             return 0, None, None, None, None
 
-    # NVIDIA Tesla V100 (16 GB per GPU)
-    # Verified from OVHcloud cloud manager (retrieved 2025-11-17):
-    # Standard series:
-    # - t1-45: 1x V100, 45 GB RAM, 400 GB NVMe, 2,000 Mbit/s
-    # - t1-90: 2x V100, 90 GB RAM, 800 GB NVMe, 4,000 Mbit/s
-    # - t1-180: 4x V100, 180 GB RAM, 50 GB + 2x 2 TB NVMe Passthrough, 10,000 Mbit/s
-    # Limited Edition (LE) series:
-    # - t1-le-45: 1x V100, 45 GB RAM, 300 GB NVMe, 2,000 Mbit/s
-    # - t1-le-90: 2x V100, 90 GB RAM, 400 GB NVMe, 4,000 Mbit/s
-    # - t1-le-180: 4x V100, 180 GB RAM, 400 GB NVMe, 10,000 Mbit/s
+    # NVIDIA Tesla V100 (16GB HBM2 per GPU) - Volta Architecture
+    # OVHcloud instances - Standard series:
+    # - t1-45: 1x V100, 45 GB RAM, 8 vCores (3 GHz), 400 GB NVMe, 2,000 Mbit/s
+    # - t1-90: 2x V100, 90 GB RAM, 18 vCores (3 GHz), 800 GB NVMe, 4,000 Mbit/s
+    # - t1-180: 4x V100, 180 GB RAM, 36 vCores (3 GHz), 50 GB + 2x 2 TB NVMe Passthrough, 10,000 Mbit/s
+    # OVHcloud instances - Limited Edition (LE) series:
+    # - t1-le-45: 1x V100, 45 GB RAM, 8 vCores (3 GHz), 300 GB NVMe, 2,000 Mbit/s
+    # - t1-le-90: 2x V100, 90 GB RAM, 16 vCores (3 GHz), 400 GB NVMe, 4,000 Mbit/s
+    # - t1-le-180: 4x V100, 180 GB RAM, 32 vCores (3 GHz), 400 GB NVMe, 10,000 Mbit/s
     if name_lower.startswith('t1-') or name_lower.startswith('t1-le-'):
         try:
             # Extract size: 't1-45' -> 45, 't1-le-45' -> 45
             parts = name_lower.split('-')
             size = int(parts[-1])
             gpu_count = size // 45
-            return gpu_count, gpu_count * 16, 'NVIDIA', 'Tesla V100', 'Tesla V100 16GB HBM2'
+            return gpu_count, gpu_count * 16, 'NVIDIA', 'Volta', 'Tesla V100 16GB HBM2'
         except (IndexError, ValueError):
             return 0, None, None, None, None
 
-    # NVIDIA Quadro RTX 5000 (16 GB per GPU)
-    # Verified from OVHcloud cloud manager (retrieved 2025-11-17):
-    # - rtx5000-28: 1x Quadro RTX 5000, 28 GB RAM, 400 GB, 2,000 Mbit/s
-    # - rtx5000-56: 2x Quadro RTX 5000, 56 GB RAM, 400 GB, 4,000 Mbit/s
-    # Note: Quadro RTX 5000 has 16 GB GDDR6 per GPU (standard spec)
+    # NVIDIA Quadro RTX 5000 (16GB GDDR6 per GPU) - Turing Architecture
+    # OVHcloud instances:
+    # - rtx5000-28: 1x Quadro RTX 5000, 28 GB RAM, 4 vCores (3.3 GHz), 400 GB SSD, 2,000 Mbit/s
+    # - rtx5000-56: 2x Quadro RTX 5000, 56 GB RAM, 8 vCores (3.3 GHz), 400 GB SSD, 4,000 Mbit/s
+    # - rtx5000-84: 3x Quadro RTX 5000, 84 GB RAM, 16 vCores (3.3 GHz), 400 GB SSD, 10,000 Mbit/s
     if name_lower.startswith('rtx5000-'):
         try:
             size = int(name_lower.split('-')[1])
             gpu_count = size // 28
-            return gpu_count, gpu_count * 16, 'NVIDIA', 'Quadro RTX 5000', 'Quadro RTX 5000 16GB GDDR6'
+            return gpu_count, gpu_count * 16, 'NVIDIA', 'Turing', 'Quadro RTX 5000 16GB GDDR6'
         except (IndexError, ValueError):
             return 0, None, None, None, None
 
@@ -679,6 +690,52 @@ def inventory_zones(vendor):
     return items
 
 
+def _get_server_family(flavor_name):
+    """Map OVHcloud flavor name to server family.
+
+    Server families are displayed on the pricing page:
+    https://www.ovhcloud.com/en/public-cloud/prices/ (retrieved 2025-11-19)
+
+    Returns:
+        str: Server family name (e.g., 'General Purpose', 'Compute Optimized')
+    """
+    name_lower = flavor_name.lower()
+
+    # Extract prefix (e.g., 'b2-7' -> 'b2', 't1-45' -> 't1')
+    prefix = name_lower.split('-')[0]
+
+    # GPU instances
+    if prefix in ['t1', 't2', 'a10', 'a100', 'l4', 'l40s', 'h100', 'rtx5000']:
+        return 'Cloud GPU'
+
+    # Metal instances
+    if prefix == 'bm':
+        return 'Metal'
+
+    # General Purpose: b2, b3 families
+    if prefix in ['b2', 'b3']:
+        return 'General Purpose'
+
+    # Compute Optimized: c2, c3 families
+    if prefix in ['c2', 'c3']:
+        return 'Compute Optimized'
+
+    # Memory Optimized: r2, r3 families
+    if prefix in ['r2', 'r3']:
+        return 'Memory Optimized'
+
+    # Discovery: d2 family
+    if prefix == 'd2':
+        return 'Discovery'
+
+    # Storage Optimized: i1 family
+    if prefix == 'i1':
+        return 'Storage Optimized'
+
+    # Default fallback
+    return None
+
+
 def inventory_servers(vendor):
     """Fetch available OVHcloud Public Cloud flavors (server types).
 
@@ -704,22 +761,19 @@ def inventory_servers(vendor):
         - planCodes: Object with hourly/monthly/license plan codes
 
     CPU Information:
-        CPU models are not provided by the API but have been mapped from real-world testing.
+        CPU models are not provided by the API but have been mapped from OVHcloud Cloud Manager
+        and real-world testing.
         Sources:
-        - VPSBenchmarks: https://www.vpsbenchmarks.com/hosters/ovhcloud/cpus (retrieved 2025-11-17)
+        - OVHcloud Cloud Manager: Direct verification (retrieved 2025-11-19)
         - lscpu verification on B3-8 instance (2025-11-17):
           * Model: AMD EPYC-Milan Processor (CPU Family 25, Model 1)
           * Hypervisor: KVM
           * Topology: B3-8 has 2 vCPUs = 2 sockets × 1 core/socket × 1 thread/core
-        CPU Models:
-        - Intel Core Processor (Haswell, no TSX): b2-*, c2-*, VPS series
-        - AMD EPYC-Milan Processor: b3-*, c3-*, VLE-* series (3rd gen instances) - confirmed for B3
-        - AMD EPYC-Genoa Processor: b3-*, c3-* series (newer 3rd gen instances)
 
     GPU Information:
-        GPU specifications verified from multiple sources:
-        - VPSBenchmarks: https://www.vpsbenchmarks.com/gpu_plans/ovhcloud (retrieved 2025-11-17)
-        - OVHcloud Cloud Manager: Direct verification (retrieved 2025-11-17)
+        Sources:
+        - OVHcloud Prices Page: https://www.ovhcloud.com/en/public-cloud/prices/
+        - OVHcloud Product Page: https://www.ovhcloud.com/en/public-cloud/gpu/
         Available GPU models: H100 (80GB), A100 (80GB), L40S (48GB), L4 (24GB), A10 (24GB),
                              Tesla V100S (32GB), Tesla V100 (16GB), Quadro RTX 5000 (16GB)
 
@@ -746,8 +800,8 @@ def inventory_servers(vendor):
     flavors = list(seen_flavors.values())
 
     for flavor in flavors:
-        # Extract flavor family from name (e.g., 'd2-2' -> 'd2', 'b2-7' -> 'b2')
-        flavor_family = flavor.get('type') or flavor['name'].rsplit('-', 1)[0]
+        # Get server family from flavor name
+        server_family = _get_server_family(flavor['name'])
 
         # Determine CPU allocation based on flavor type
         # Source: https://www.ovhcloud.com/en/public-cloud/metal-instances/ (retrieved 2025-11-17)
@@ -799,7 +853,7 @@ def inventory_servers(vendor):
             "api_reference": flavor['name'],
             "display_name": flavor['name'],
             "description": None,  # TODO: add capabilities info?
-            "family": flavor_family,
+            "family": server_family,
             "vcpus": flavor['vcpus'],
             "hypervisor": "KVM",  # Verified from lscpu on B3-8 instance (2025-11-17)
             "cpu_allocation": cpu_allocation,
