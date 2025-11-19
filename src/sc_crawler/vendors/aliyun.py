@@ -5,8 +5,9 @@ from ..lookup import map_compliance_frameworks_to_vendor
 from aliyunsdkcore.client import AcsClient
 from aliyunsdkcore.acs_exception.exceptions import ClientException
 from aliyunsdkcore.acs_exception.exceptions import ServerException
-from aliyunsdkecs.request.v20140526 import DescribeInstancesRequest
+#from aliyunsdkecs.request.v20140526 import DescribeInstancesRequest
 from aliyunsdkecs.request.v20140526 import DescribeRegionsRequest, DescribeZonesRequest, DescribeInstanceTypesRequest, DescribePriceRequest
+from aliyunsdkbssopenapi.request.v20171214 import DescribePricingModuleRequest
 
 from ..table_fields import (
     Allocation,
@@ -96,12 +97,78 @@ def get_instance_types():
     instance_type_info_in_list = json.loads(response.decode("utf-8")) 
     return instance_type_info_in_list
 
+def get_disk_capabilities(tempclient):
+    req = DescribePricingModuleRequest.DescribePricingModuleRequest()
+    req.set_ProductCode("ecs")
+    req.set_SubscriptionType("PayAsYouGo")
+    response = tempclient.do_action_with_exception(req)
+    return json.loads(response.decode("utf-8"))
+
+def get_instance_price(tempclient, instance_type):
+
+    request = DescribePriceRequest.DescribePriceRequest()
+    request.set_InstanceType(instance_type)
+    #request.set_RegionId(region)
+    #request.set_PriceUnit("Hour")  # required
+    #request.set_SystemDiskCategory("cloud")
+
+    response = tempclient.do_action_with_exception(request)
+    return json.loads(response.decode("utf-8"))
+
 def inventory_compliance_frameworks(vendor):
-    return map_compliance_frameworks_to_vendor(vendor.vendor_id, [
-        "hipaa"
-    #    "soc2t2",
-    #    "iso27001",
-    ])
+    # source: https://www.alibabacloud.com/en/trust-center/compliance
+    return map_compliance_frameworks_to_vendor(vendor.vendor_id, 
+        [
+            # global
+            "csa-star", # CSA STAR certification
+            "iso27001", # ISMS standard
+            "iso20000", # IT SMS standard
+            "iso22301", # BCMS standard
+            "iso9001", # QMS standard
+            "iso27017", # IT security techniques, code practice for cloud services
+            "iso27018", # IT security techniques, code practice for cloud services
+            "iso27701", # IT security techniques, code practice for PII
+            "iso29151", # security techniques extrnsion
+            "iso29151", # IT security techniques
+            "iso27799", # health information security management guideline
+            "iso27040", # storage security guidance
+            "pci_3ds", # PCI 3DS
+            "soc1", # SOC 1 report
+            "soc2", # SOC 2 report
+            "soc3", # SOC 3 report
+            # regional 
+            "dptm", # DPTM (Singapore) - data protection trustmark
+            "aic4", # AIC4 (Germany) - AI cloud service compliance creiteria catalog
+            "gdpr", # GDPR - European Union General Data Protection Regulation
+            "nist", # NIST SP 800-53 / NIST CSF - U.S. National Institute of Standards and Technology frameworks
+            "mlps_2", # MLPS 2.0 (China) - classified protection of cybersecurity
+            "itss", # ITSS (China) - ITSS cloud computing service capability assessment
+            "c5", # C5 (Germany) - Cloud Computing Compliance Controls Catalog
+            "mtcs", # MTCS (Singapore) - Multi-Tier Cloud Security Standard
+            "trucs", # TRUCS (China) - Certification for Cloud Computing Services
+            "nisc", # NISC (Japan) - National center of Incident readiness and Strategy for Cybersecurity
+            "ctm", # CTM (Singapore) - Cyber Trust Mark certification
+            "k-isms", # K-ISMS (Korea) - Korea Information Security Management System certification
+            # industry
+            "gxp", # GxP (USA) - Good Clinical, Laboratory and Manufacturing Practices
+            "tisax", # TISAX (Germany) - Trusted Information Secrurity Assessment Exchange
+            "hipaa", # HIPAA (USA) - Health Insurace Portability and Accountibility Act
+            "mpa", # MPA (USA) - The Motion Picture Association
+            "sec_rule_17a", # SEC Rule 17a (USA) - Secrutites and Exchange Commission, Rule 17a
+            "ospar", #OSPAR (Singapore) - Outsourced Service Provider Audit Report
+            "ferpa" # FERPA (USA) - The Family Education Rights and Privacy Act
+            "coppa", # COPPA (USA) - The Children's Online Privacy Protection Act
+            "dpp" # DPP - Prduction and Broadcast - Digital Production Partnership (DPP) Committed to Security programme
+            "fisc" # FISC (Japan) - The Center for Financial Industry Information Systems
+            # data protection
+            "gdpr", # GDPR (EU) - The European Union General Data Protection Regulation
+            "eu-cloud-coc", # EU Cloud CoC (EU) - The Eurpoean Union Cloud Code of Conduct
+            "pdpa", # PDPA (Singapore and Malaysia) - Personal Data Protection Act 
+            "pdpo", # PDPO (Hong Kong) - Personal Data (Privacy) Ordinance
+            "cbpr", # APEC CBPR (Singapore) - The APEC Cross Border Privacy Rules
+            "prp" # APEC PRP (Singapore) - The APEC Privacy Recognition for Processors            
+        ]
+    )
 
 
 def inventory_regions(vendor):
@@ -148,7 +215,7 @@ def inventory_zones(vendor):
             
             zone_info_in_list = get_zones(tempcl=tempclient)
             for zone in zone_info_in_list.get("Zones").get("Zone"):  
-                print("Getting zone {} in region {}...".format(region.get("RegionId"), zone.get("ZoneId")))
+                #print("Getting zone {} in region {}...".format(region.get("RegionId"), zone.get("ZoneId")))
                 items.append({
                     "vendor_id": vendor.vendor_id,
                     "region_id": region.get("RegionId"),
@@ -159,20 +226,6 @@ def inventory_zones(vendor):
                 })
 
     return items
-
-# def inventory_zones_old(vendor):
-#     items =[]
-#     zone_info_in_list = get_zones()
-#     for zone in zone_info_in_list.get("Zones").get("Zone"):  
-#         items.append({
-#             "vendor_id": vendor.vendor_id,
-#             "region_id": zone.get("ZoneId")[:-1],
-#             "zone_id": zone.get("ZoneId"),
-#             "name": zone.get("ZoneId"),
-#             "api_reference": zone.get("ZoneId"),
-#             "display_name": zone.get("ZoneId"),
-#         })
-#     return items
 
 def inventory_servers(vendor):
     items = []
@@ -234,8 +287,37 @@ def inventory_servers(vendor):
 # pr-nál todo comment, kitölteni amit lehet
 
 def inventory_server_prices(vendor):
-    # --- NOTE: DescribePriceRequest deals with active instances...
+    # since the system treats pricing as a whole for the instance with every accessory, 
+    # cloud disk type (cheapest HDD) is assumed for every instance type.
     items = []
+    client = get_client()
+    instance_info_in_list = get_instance_types()
+    for instancetype in instance_info_in_list.get("InstanceTypes").get("InstanceType"):
+        try:
+            instance_info = get_instance_price(client, instancetype.get("InstanceTypeId"))
+            print("Adding instance info - Region: {tcl}, instance type: {itype}".format(tcl=client.get_region_id(), itype=instancetype.get("InstanceTypeId")))
+
+            items.append({
+                "vendor_id": vendor.vendor_id,
+                "region_id": client.get_region_id(),
+                "zone_id": client.get_region_id()+"a",
+                "server_id": instancetype.get("InstanceTypeId") ,
+                "operating_system": "Linux",
+                "allocation": Allocation.ONDEMAND,
+                "unit": PriceUnit.HOUR,
+                "price": instance_info.get("PriceInfo").get("Price").get("TradePrice"),
+                "price_upfront": 0,
+                "price_tiered": [],
+                "currency": instance_info.get("PriceInfo").get("Price").get("Currency"),
+            })  
+        except ServerException as se:
+            print(se)
+            print("Failed to add instance info - Region: {tcl}, instance type: {itype}".format(tcl=client.get_region_id(), itype=instancetype.get("InstanceTypeId")))
+
+
+
+
+
     # for server in []:
     #     items.append({
     #         "vendor_id": ,
@@ -254,118 +336,46 @@ def inventory_server_prices(vendor):
 
 
 def inventory_server_prices_spot(vendor):
-    # --- NOTE: DescribePriceRequest deals with active instances...
+
     return []
 
 
 def inventory_storages(vendor):
     items = []
-    # todo: cycle through regions.
-    # tempclient = get_client()
 
-    # DEFAULT_INSTANCE_TYPE = "ecs.c6.large" # common instance, available in most regions. required for query.
-    # options_system_disk_category = ["cloud", "cloud_efficiency", "cloud_ssd", "ephemeral_ssd", "cloud_essd", "cloud_auto"]
-    # options_essd_disk_performance_level = ['PL0', 'PL1', 'PL2', 'PL3']
-    # #disk_price_list = []
-    # for disk in options_system_disk_category:
-    #     request = DescribePriceRequest.DescribePriceRequest()
-    #     #request.set_RegionId("cn-hangzhou")
-    #     request.set_PriceUnit("Hour")
-    #     request.set_InstanceType(DEFAULT_INSTANCE_TYPE)
-    #     request.set_DataDisk1Size(500)
-    #     request.set_DataDisk1Category(disk)
-    #     if disk == "cloud_essd":
-    #         for pl in options_essd_disk_performance_level:
-    #             request.set_DataDisk1PerformanceLevel(pl)
-    #             try:
-    #                 response = tempclient.do_action_with_exception(request)
-    #                 respone_dict = (json.loads(response.decode("utf-8"))) 
+    # hardcoded, because API does not give back this information. MB/s converted to Mb/s
+    # source: https://www.alibabacloud.com/help/en/ecs/user-guide/essds
 
-    #                 items.append(
-    #                     {
-    #                         "storage_id": disk+"-"+pl,
-    #                         "vendor_id": vendor.vendor_id,
-    #                         "name": disk+" ("+pl+")",
-    #                         "description": None,
-    #                         "storage_type": StorageType.SSD,
-    #                         "max_iops": None,
-    #                         "max_throughput": None,
-    #                         "min_size": 20,
-    #                         "max_size": 32768,
-    #                     }
-    #                 )
-    #             except ServerException as se:
-    #                 print(se)
-    #                 print("tempclient: {tcl}, disk: {disk}, size: {size}, pl: {pl}".format(tcl=tempclient.get_region_id(), disk=disk, size=500, pl=pl))
-    #     else:
-    #         try:
-    #             response = tempclient.do_action_with_exception(request)
-    #             respone_dict = (json.loads(response.decode("utf-8"))) 
-    #             if disk == "cloud":
-    #                 items.append(
-    #                     {
-    #                         "storage_id": disk,
-    #                         "vendor_id": vendor.vendor_id,
-    #                         "name": disk,
-    #                         "description": None,
-    #                         "storage_type": StorageType.HDD,
-    #                         "max_iops": None,
-    #                         "max_throughput": None,
-    #                         "min_size": 5,
-    #                         "max_size": 2000,
-    #                     }
-    #                 )
-    #             elif disk == "cloud_efficiency":
-    #                 items.append(
-    #                     {
-    #                         "storage_id": disk,
-    #                         "vendor_id": vendor.vendor_id,
-    #                         "name": disk,
-    #                         "description": None,
-    #                         "storage_type": StorageType.HDD,
-    #                         "max_iops": None,
-    #                         "max_throughput": None,
-    #                         "min_size": 20,
-    #                         "max_size": 32768,
-    #                     }
-    #                 )
-    #             else:
-    #                 items.append(
-    #                     {
-    #                         "storage_id": disk+"-"+pl,
-    #                         "vendor_id": vendor.vendor_id,
-    #                         "name": disk+" ("+pl+")",
-    #                         "description": None,
-    #                         "storage_type": StorageType.SSD,
-    #                         "max_iops": None,
-    #                         "max_throughput": None,
-    #                         "min_size": 20,
-    #                         "max_size": 32768,
-    #                     }
-    #                 )
-    #         except ServerException as se:
-    #             print(se)
-    #             print("tempclient: {tcl}, disk: {disk}, size: {size}".format(tcl=tempclient.get_region_id(), disk=disk, size=500))
+    disk_info = [
+        { "name": "cloud_essd-pl0",     "min_size": 1,    "max_size": 65536, "max_iop": 10000,    "max_tp":1440  , "info": "Enterprise SSD with Performance level 0."},
+        { "name": "cloud_essd-pl1",     "min_size": 20,   "max_size": 65536, "max_iop": 50000,    "max_tp":2800  , "info": "Enterprise SSD with Performance level 1."},
+        { "name": "cloud_essd-pl2",     "min_size": 461,  "max_size": 65536, "max_iop": 100000,   "max_tp":6000  , "info": "Enterprise SSD with Performance level 2."},
+        { "name": "cloud_essd-pl3",     "min_size": 1261, "max_size": 65536, "max_iop": 1000000,  "max_tp":32000 , "info": "Enterprise SSD with Performance level 3."},
+        { "name": "cloud_ssd",          "min_size": 20,   "max_size": 32768, "max_iop": 20000,    "max_tp":256   , "info": "Standard SSD."},
+        { "name": "cloud_efficiency",   "min_size": 20,   "max_size": 32768, "max_iop": 3000,     "max_tp":80    , "info": "Ultra Disk, older generation."},
+        { "name": "cloud",              "min_size": 5,    "max_size": 2000,  "max_iop": 300,      "max_tp":40    , "info": "Lowest cost HDD."}
+    ]
 
-    # for storage in []:
-    #     items.append(
-    #         {
-    #             "storage_id": ,
-    #             "vendor_id": vendor.vendor_id,
-    #             "name": ,
-    #             "description": None,
-    #             "storage_type": StorageType....,
-    #             "max_iops": None,
-    #             "max_throughput": None,
-    #             "min_size": None,
-    #             "max_size": None,
-    #         }
-    #     )
+    for disk in disk_info:
+        items.append(
+            {
+                "storage_id": disk.get("name"),
+                "vendor_id": vendor.vendor_id,
+                "name": disk.get("name"),
+                "description": disk.get("info"),
+                "storage_type": StorageType.HDD if  disk.get("name") == 'cloud' else StorageType.SSD,
+                "max_iops": disk.get("max_iop"),
+                "max_throughput": disk.get("max_tp"),
+                "min_size": disk.get("min_size"),
+                "max_size": disk.get("max_size"),
+            }
+        )
     return items
 
 
 def inventory_storage_prices(vendor):
-    # --- NOTE: DescribePriceRequest deals with active instances...
+    # --- NOTE: currently hardcoded all options, cycling through the possibilites, and catching exceptions for 
+    #  unavailable disk-region combinations. a nicer implementation would be to get data from the bss service api.
     items = []
     tempclient = get_client()
 
@@ -388,7 +398,6 @@ def inventory_storage_prices(vendor):
 
         for disk in options_system_disk_category:
             request = DescribePriceRequest.DescribePriceRequest()
-            #request.set_RegionId("cn-hangzhou")
             request.set_PriceUnit("Hour")
             request.set_InstanceType(DEFAULT_INSTANCE_TYPE)
             request.set_DataDisk1Size(500)
@@ -439,7 +448,7 @@ def inventory_storage_prices(vendor):
 
 
 def inventory_traffic_prices(vendor):
-    # --- NOTE: DescribePriceRequest deals with active instances...
+    
     items = []
     # for price in []:
     #     items.append(
@@ -457,7 +466,7 @@ def inventory_traffic_prices(vendor):
 
 
 def inventory_ipv4_prices(vendor):
-    # --- NOTE: DescribePriceRequest deals with active instances...
+    
     items = []
     # for price in []:
     #     items.append(
