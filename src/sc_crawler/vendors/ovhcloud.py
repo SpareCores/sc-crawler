@@ -5,6 +5,7 @@ from ..lookup import map_compliance_frameworks_to_vendor
 from ..table_fields import CpuAllocation, CpuArchitecture, Status, StorageType, Allocation, PriceUnit
 from ..utils import scmodels_to_dict
 
+
 @cache
 def _client() -> ovh.Client:
     """Create OVHcloud API client using the classic authentication method.
@@ -74,6 +75,7 @@ def _client() -> ovh.Client:
         consumer_key=consumer_key,
     )
 
+
 @cache
 def _get_project_id(client) -> str | None:
     """Get project ID from environment or first available project.
@@ -91,6 +93,7 @@ def _get_project_id(client) -> str | None:
     return projects[0] if projects else None
 
 
+@cache
 def _get_regions(client, project_id=None) -> list[str]:
     """Fetch available regions."""
     if not project_id:
@@ -98,6 +101,7 @@ def _get_regions(client, project_id=None) -> list[str]:
     return client.get(f'/cloud/project/{project_id}/region')
 
 
+@cache
 def _get_flavors(client, project_id=None) -> list[dict]:
     """Fetch available flavors for a project."""
     if not project_id:
@@ -106,6 +110,13 @@ def _get_flavors(client, project_id=None) -> list[dict]:
     flavors = client.get(f'/cloud/project/{project_id}/flavor')
     # Filter out Windows servers
     return [f for f in flavors if f.get('osType') != 'windows']
+
+
+@cache
+def _get_catalog(client) -> dict:
+    """Fetch service catalog.
+    Using OVH Subsidiary "WE" (Western Europe) for consistent catalog data."""
+    return client.get("/order/catalog/public/cloud?ovhSubsidiary=WE")
 
 
 def _get_base_region_and_city(region):
@@ -157,6 +168,52 @@ def _get_base_region_and_city(region):
         base_region = ''.join([c for c in region if not c.isdigit()])
 
     return base_region, region_city_mapping.get(base_region)
+
+
+def _get_server_family(flavor_name):
+    """Map OVHcloud flavor name to server family.
+
+    Server families are displayed on the pricing page:
+    https://www.ovhcloud.com/en/public-cloud/prices/ (retrieved 2025-11-19)
+
+    Returns:
+        str: Server family name (e.g., 'General Purpose', 'Compute Optimized')
+    """
+    name_lower = flavor_name.lower()
+
+    # Extract prefix (e.g., 'b2-7' -> 'b2', 't1-45' -> 't1')
+    prefix = name_lower.split('-')[0]
+
+    # GPU instances
+    if prefix in ['t1', 't2', 'a10', 'a100', 'l4', 'l40s', 'h100', 'rtx5000']:
+        return 'Cloud GPU'
+
+    # Metal instances
+    if prefix == 'bm':
+        return 'Metal'
+
+    # General Purpose: b2, b3 families
+    if prefix in ['b2', 'b3']:
+        return 'General Purpose'
+
+    # Compute Optimized: c2, c3 families
+    if prefix in ['c2', 'c3']:
+        return 'Compute Optimized'
+
+    # Memory Optimized: r2, r3 families
+    if prefix in ['r2', 'r3']:
+        return 'Memory Optimized'
+
+    # Discovery: d2 family
+    if prefix == 'd2':
+        return 'Discovery'
+
+    # Storage Optimized: i1 family
+    if prefix == 'i1':
+        return 'Storage Optimized'
+
+    # Default fallback
+    return None
 
 
 def _get_cpu_info(flavor_name):
@@ -239,7 +296,6 @@ def _get_cpu_info(flavor_name):
     # Quadro RTX 5000 series - 3.3 GHz
     if name_lower.startswith('rtx5000-'):
         return None, None, 3.3
-
 
     # Default: unknown
     return None, None, None
@@ -690,52 +746,6 @@ def inventory_zones(vendor):
     return items
 
 
-def _get_server_family(flavor_name):
-    """Map OVHcloud flavor name to server family.
-
-    Server families are displayed on the pricing page:
-    https://www.ovhcloud.com/en/public-cloud/prices/ (retrieved 2025-11-19)
-
-    Returns:
-        str: Server family name (e.g., 'General Purpose', 'Compute Optimized')
-    """
-    name_lower = flavor_name.lower()
-
-    # Extract prefix (e.g., 'b2-7' -> 'b2', 't1-45' -> 't1')
-    prefix = name_lower.split('-')[0]
-
-    # GPU instances
-    if prefix in ['t1', 't2', 'a10', 'a100', 'l4', 'l40s', 'h100', 'rtx5000']:
-        return 'Cloud GPU'
-
-    # Metal instances
-    if prefix == 'bm':
-        return 'Metal'
-
-    # General Purpose: b2, b3 families
-    if prefix in ['b2', 'b3']:
-        return 'General Purpose'
-
-    # Compute Optimized: c2, c3 families
-    if prefix in ['c2', 'c3']:
-        return 'Compute Optimized'
-
-    # Memory Optimized: r2, r3 families
-    if prefix in ['r2', 'r3']:
-        return 'Memory Optimized'
-
-    # Discovery: d2 family
-    if prefix == 'd2':
-        return 'Discovery'
-
-    # Storage Optimized: i1 family
-    if prefix == 'i1':
-        return 'Storage Optimized'
-
-    # Default fallback
-    return None
-
-
 def inventory_servers(vendor):
     """Fetch available OVHcloud Public Cloud flavors (server types).
 
@@ -794,68 +804,91 @@ def inventory_servers(vendor):
     # Keep the first available occurrence of each flavor name
     seen_flavors = {}
     for flavor in flavors:
-        if flavor['name'] not in seen_flavors and bool(flavor.get('available')):
-            seen_flavors[flavor['name']] = flavor
+        if flavor.get('name') not in seen_flavors and bool(flavor.get('available')):
+            seen_flavors[flavor.get('name')] = flavor
 
     flavors = list(seen_flavors.values())
+    # Get catalog for technical infos
+    addons = _get_catalog(client).get('addons', [])
 
     for flavor in flavors:
+        flavor_name = flavor.get('name')
+        # Every flavor has an associated plan code for hourly consumption
+        # This can be used to get tech infos from catalog/addons blob
+        consumption_plancode = flavor.get('planCodes').get('hourly')
+        blobs = next((a.get('blobs') for a in addons if a.get('planCode') == consumption_plancode), None)
+        technical = blobs.get('technical') if isinstance(blobs, dict) else None
+
         # Get server family from flavor name
-        server_family = _get_server_family(flavor['name'])
-
-        # Determine CPU allocation based on flavor type
-        # Source: https://www.ovhcloud.com/en/public-cloud/metal-instances/ (retrieved 2025-11-17)
-        # Official FAQ states: "Metal Instances are physical servers. All other instances in the
-        # Public Cloud range are virtual servers created from the KVM hypervisor. Metal Instances
-        # do not have virtualization layers."
-        #
-        # Metal Instances (bm-*): Physical dedicated servers with no virtualization layer
-        #   - DEDICATED CPU allocation (physical cores directly accessible)
-        #   - Examples: bm-s1, bm-m1, bm-l1
-        #
-        # All other instances: Virtual machines using KVM hypervisor
-        #   - SHARED CPU allocation (vCPUs on shared physical hardware)
-        #   - Examples: b2, b3, c2, c3, r2, r3, d2, i1, and all GPU instances
-        #   - Verified with lscpu on B3-8 instance: KVM hypervisor with vCPU topology
-        #
-        # Note: Even though other instance types have "dedicated resources" (guaranteed CPU/RAM),
-        # they still use virtualization and share physical hardware, hence SHARED allocation.
-        flavor_name_lower = flavor['name'].lower()
-        if flavor_name_lower.startswith('bm-'):
-            cpu_allocation = CpuAllocation.DEDICATED
-        else:
-            cpu_allocation = CpuAllocation.SHARED
-
-        # Get CPU information based on flavor name
-        cpu_manufacturer, cpu_model, cpu_speed = _get_cpu_info(flavor['name'])
-
+        server_family = _get_server_family(flavor_name)
         # Get GPU information based on flavor name
-        gpu_count, gpu_memory_total_gb, gpu_manufacturer, gpu_family, gpu_model = _get_gpu_info(flavor['name'])
-
-        # Get storage type based on flavor name
-        storage_type = _get_storage_type(flavor['name'])
-
-        # Convert GPU memory from GB to MB if present
-        gpu_memory_total = gpu_memory_total_gb * 1024 if gpu_memory_total_gb else None
-        gpu_memory_min = gpu_memory_total  # For GPU instances, min = total
-
+        gpu_count, gpu_memory_total_gb, gpu_manufacturer, gpu_family, gpu_model = _get_gpu_info(flavor_name)
         # Convert RAM from GiB to MiB
-        memory_amount = flavor['ram'] * 1024
-
+        memory_amount = flavor.get('ram') * 1024 if flavor.get('ram') else 0
         # Network bandwidth in Mbit/s
         inbound_bandwidth = flavor.get('inboundBandwidth')
         outbound_bandwidth = flavor.get('outboundBandwidth')
 
+        if technical:
+            cpu_manufacturer = technical.get('cpu').get('brand')
+            cpu_model = technical.get('cpu').get('model')
+            cpu_speed = technical.get('cpu').get('frequency')
+            cpu_allocation = CpuAllocation.DEDICATED if technical.get('cpu').get(
+                'type') == 'core' else CpuAllocation.SHARED
+            gpu_count = technical.get('gpu').get('number') if technical.get('gpu') else 0
+            gpu_memory_total = technical.get('gpu').get('memory').get('size') * gpu_count if technical.get(
+                'gpu') else None
+            gpu_memory_min = gpu_memory_total  # For GPU instances, min = total?
+            gpu_model = f"{technical.get('gpu').get('model')} {technical.get('gpu').get('memory').get('interface')}"
+            has_nvme = any(
+                'nvme' in disk.get('technology').lower() for disk in technical.get('storage', {}).get('disks', []))
+            storage_type = StorageType.NVME_SSD if has_nvme else StorageType.SSD
+            storage_size = sum([disk.get('number', 1) * disk.get('capacity', 0) for disk in
+                                technical.get('storage', {}).get('disks', [])])
+        else:
+            # Determine CPU allocation based on flavor type
+            # Source: https://www.ovhcloud.com/en/public-cloud/metal-instances/ (retrieved 2025-11-17)
+            # Official FAQ states: "Metal Instances are physical servers. All other instances in the
+            # Public Cloud range are virtual servers created from the KVM hypervisor. Metal Instances
+            # do not have virtualization layers."
+            #
+            # Metal Instances (bm-*): Physical dedicated servers with no virtualization layer
+            #   - DEDICATED CPU allocation (physical cores directly accessible)
+            #   - Examples: bm-s1, bm-m1, bm-l1
+            #
+            # All other instances: Virtual machines using KVM hypervisor
+            #   - SHARED CPU allocation (vCPUs on shared physical hardware)
+            #   - Examples: b2, b3, c2, c3, r2, r3, d2, i1, and all GPU instances
+            #   - Verified with lscpu on B3-8 instance: KVM hypervisor with vCPU topology
+            #
+            # Note: Even though other instance types have "dedicated resources" (guaranteed CPU/RAM),
+            # they still use virtualization and share physical hardware, hence SHARED allocation.
+            cpu_allocation = CpuAllocation.DEDICATED if flavor_name.startswith('bm-') else CpuAllocation.SHARED
+
+            # Get CPU information based on flavor name
+            cpu_manufacturer, cpu_model, cpu_speed = _get_cpu_info(flavor_name)
+
+            # Get storage type based on flavor name
+            storage_type = _get_storage_type(flavor_name)
+
+            # Convert GPU memory from GB to MB if present
+            gpu_memory_total = gpu_memory_total_gb * 1024 if gpu_memory_total_gb else None
+            gpu_memory_min = gpu_memory_total  # For GPU instances, min = total?
+
+            # Storage size
+            storage_size = flavor.get('disk')
+
         items.append({
             "vendor_id": vendor.vendor_id,
-            "server_id": flavor['id'],
-            "name": flavor['name'],
-            "api_reference": flavor['name'],
-            "display_name": flavor['name'],
+            "server_id": flavor.get('id'),
+            "name": flavor_name,
+            "api_reference": flavor_name,
+            "display_name": flavor_name,
             "description": None,  # TODO: add capabilities info?
             "family": server_family,
-            "vcpus": flavor['vcpus'],
-            "hypervisor": "KVM",  # Verified from lscpu on B3-8 instance (2025-11-17)
+            "vcpus": flavor.get('vcpus'),
+            # Verified from lscpu on B3-8 instance (2025-11-17)
+            "hypervisor": "KVM" if cpu_allocation == CpuAllocation.SHARED else None,
             "cpu_allocation": cpu_allocation,
             "cpu_cores": None,
             "cpu_speed": cpu_speed,
@@ -879,14 +912,14 @@ def inventory_servers(vendor):
             "gpu_family": gpu_family,
             "gpu_model": gpu_model,
             "gpus": [],
-            "storage_size": flavor['disk'],  # Local disk in GB
+            "storage_size": storage_size,  # Local disk in GB
             "storage_type": storage_type,  # Determined from flavor specifications
             "storages": [],
             "network_speed": outbound_bandwidth,  # In Mbit/s
             "inbound_traffic": 0,  # TODO
             "outbound_traffic": 0,  # TODO
             "ipv4": 1,  # Each instance gets at least one IPv4
-            "status": Status.ACTIVE, # After filtering for available flavors only
+            "status": Status.ACTIVE,  # After filtering for available flavors only
         })
 
     return items
