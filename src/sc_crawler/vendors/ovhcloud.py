@@ -953,6 +953,9 @@ def inventory_server_prices(vendor):
         return items
 
     flavors = _get_flavors(client, project_id)
+    catalog = _get_catalog(client)
+    currency = catalog.get('locale', {}).get('currencyCode', 'USD')
+    addons = catalog.get('addons', [])
 
     # Create lookup dictionaries for servers and regions
     servers = scmodels_to_dict(vendor.servers, keys=["api_reference"])
@@ -975,25 +978,33 @@ def inventory_server_prices(vendor):
         if not flavor.get('available'):
             continue
 
-        # TODO: Fetch actual pricing from planCodes
         # The planCodes object contains: {hourly: str, monthly: str}
-        # These are plan codes that would need separate API calls to get actual prices
-        #
-        # Example API call to get pricing:
-        # prices = client.get(f'/cloud/project/{project_id}/flavor/{flavor["id"]}/price')
-        items.append({
-            "vendor_id": vendor.vendor_id,
-            "region_id": region.region_id,
-            "zone_id": region.region_id,
-            "server_id": server.server_id,
-            "operating_system": "Linux",
-            "allocation": Allocation.ONDEMAND,
-            "unit": PriceUnit.HOUR,
-            "price": 0,  # TODO: Implement actual pricing lookup via planCodes
-            "price_upfront": 0,
-            "price_tiered": [],
-            "currency": "USD",
-        })
+        for plancode_type, plan_code in flavor.get('planCodes', {}).items():
+            if not plancode_type:
+                continue
+            # Find corresponding addon in catalog to get pricing details
+            addon = next((a for a in addons if a.get('planCode') == plan_code), None)
+            if not addon:
+                continue
+            interval_unit = PriceUnit.MONTH if plancode_type == 'monthly' else PriceUnit.HOUR
+            interval_unit_str = 'month' if plancode_type == 'monthly' else 'hour'
+            pricings = addon.get('pricings', [])
+            price_dict = next((p for p in pricings if p.get('intervalUnit') == interval_unit_str), {})
+            price = price_dict.get('price', 0) / 100_000_000  # Convert from micro-cents to standard currency unit
+            items.append({
+                "vendor_id": vendor.vendor_id,
+                "region_id": region.region_id,
+                "zone_id": region.region_id,
+                "server_id": server.server_id,
+                "operating_system": "Linux",
+                "allocation": Allocation.ONDEMAND,
+                "unit": interval_unit,
+                "price": price,
+                "price_upfront": 0,
+                "price_tiered": [],
+                "currency": currency,
+                "status": Status.ACTIVE, # Not active flavors are filtered out earlier
+            })
 
     return items
 
