@@ -380,9 +380,6 @@ compliance_frameworks: dict = {
 
     # TODO add more e.g.
     # soc2t1
-    # iso27701
-    # gdpr
-    # pci
     # ccpa
     # csa
 }
