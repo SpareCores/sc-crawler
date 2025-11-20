@@ -168,8 +168,8 @@ compliance_frameworks: dict = {
     ),
     "soc2": ComplianceFramework(
         compliance_framework_id="soc2",
-        name="SHORTNAME",
-        abbreviation="SHORTNAME",
+        name="SOC 2",
+        abbreviation="SOC 2",
         description="SOC 2 Type 2 Report: This report describes Alibaba Cloud’s internal controls based on the specific criteria outlined in DC section 200 entitled, Description Criteria for a Description of a Service Organization’s System in a SOC 2® Report with an opinion from the independent auditor to assure that the controls have been designed and operated effectively to achieve the AICPA Trust Services Criteria relevant to security, availability, and confidentiality outlined in TSP section 100 entitled, Trust Services Criteria for Security, Availability, Processing Integrity, Confidentiality, and Privacy.",  
         homepage="https://www.aicpa-cima.com/resources/landing/system-and-organization-controls-soc-suite-of-services?spm=a3c0i.29252073.5536742710.2.4d4063a28vfsFA",  
     ),
