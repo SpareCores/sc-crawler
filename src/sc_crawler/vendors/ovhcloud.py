@@ -5,6 +5,9 @@ from ..lookup import map_compliance_frameworks_to_vendor
 from ..table_fields import CpuAllocation, CpuArchitecture, Status, StorageType, Allocation, PriceUnit
 from ..utils import scmodels_to_dict
 
+HOURS_PER_MONTH = 730
+MICROCENTS_PER_CURRENCY_UNIT = 100_000_000
+
 
 @cache
 def _client() -> ovh.Client:
@@ -117,6 +120,29 @@ def _get_catalog(client) -> dict:
     """Fetch service catalog.
     Using OVH Subsidiary "WE" (Western Europe) for consistent catalog data."""
     return client.get("/order/catalog/public/cloud?ovhSubsidiary=WE")
+
+
+def _get_storages_from_catalog() -> list[dict]:
+    """Extract storage offerings from catalog data."""
+    client = _client()
+    catalog = _get_catalog(client)
+
+    plans = catalog.get('plans', [])
+    addons = catalog.get('addons', [])
+    project_plan = next((p for p in plans if p.get('planCode', '') == 'project'), {})
+    storage_addon_names = next((a for a in project_plan.get('addonFamilies', []) if a.get('name', '') == 'storage'),
+                               {}).get(
+        'addons', [])
+    storage_addons = [a for a in addons if
+                      a.get('planCode', '') in storage_addon_names and a.get("configurations", []) and
+                      a.get("configurations", [])[0].get("values", [])]
+    volume_addon_names = next((a for a in project_plan.get('addonFamilies', []) if a.get('name', '') == 'volume'),
+                              {}).get(
+        'addons', [])
+    volume_addons = [a for a in addons if
+                     a.get('planCode', '') in volume_addon_names and a.get("configurations", []) and
+                     a.get("configurations", [])[0].get("values", [])]
+    return storage_addons + volume_addons
 
 
 def _get_base_region_and_city(region):
@@ -735,7 +761,7 @@ def inventory_zones(vendor):
         _, city = _get_base_region_and_city(region)
         items.append(
             {
-                "vendor_id": vendor.id,
+                "vendor_id": vendor.vendor_id,
                 "region_id": region,
                 "zone_id": region,
                 "name": city,
@@ -804,7 +830,7 @@ def inventory_servers(vendor):
     # Keep the first available occurrence of each flavor name
     seen_flavors = {}
     for flavor in flavors:
-        if flavor.get('name') not in seen_flavors and bool(flavor.get('available')):
+        if flavor.get('name') not in seen_flavors:
             seen_flavors[flavor.get('name')] = flavor
 
     flavors = list(seen_flavors.values())
@@ -830,18 +856,19 @@ def inventory_servers(vendor):
         outbound_bandwidth = flavor.get('outboundBandwidth')
 
         if technical:
-            cpu_manufacturer = technical.get('cpu').get('brand')
-            cpu_model = technical.get('cpu').get('model')
-            cpu_speed = technical.get('cpu').get('frequency')
-            cpu_allocation = CpuAllocation.DEDICATED if technical.get('cpu').get(
-                'type') == 'core' else CpuAllocation.SHARED
-            gpu_count = technical.get('gpu').get('number') if technical.get('gpu') else 0
-            gpu_memory_total = technical.get('gpu').get('memory').get('size') * gpu_count if technical.get(
-                'gpu') else None
+            cpu = technical.get('cpu', {})
+            gpu = technical.get('gpu', {})
+            cpu_manufacturer = cpu.get('brand', None)
+            cpu_model = cpu.get('model', None)
+            cpu_speed = cpu.get('frequency', None)
+            cpu_allocation = CpuAllocation.DEDICATED if cpu.get('type', None) == 'core' else CpuAllocation.SHARED
+            gpu_count = gpu.get('number', 0)
+            gpu_memory_per_gpu = gpu.get('memory').get('size', 0) if gpu.get('memory') else None
+            gpu_memory_total = gpu_memory_per_gpu * gpu_count if gpu_memory_per_gpu and gpu_count else None
             gpu_memory_min = gpu_memory_total  # For GPU instances, min = total?
-            gpu_model = f"{technical.get('gpu').get('model')} {technical.get('gpu').get('memory').get('interface')}"
+            gpu_model = f"{gpu.get('model')} {gpu.get('memory').get('interface')}" if gpu else None
             has_nvme = any(
-                'nvme' in disk.get('technology').lower() for disk in technical.get('storage', {}).get('disks', []))
+                'nvme' in disk.get('technology', '').lower() for disk in technical.get('storage', {}).get('disks', []))
             storage_type = StorageType.NVME_SSD if has_nvme else StorageType.SSD
             storage_size = sum([disk.get('number', 1) * disk.get('capacity', 0) for disk in
                                 technical.get('storage', {}).get('disks', [])])
@@ -990,7 +1017,8 @@ def inventory_server_prices(vendor):
             interval_unit_str = 'month' if plancode_type == 'monthly' else 'hour'
             pricings = addon.get('pricings', [])
             price_dict = next((p for p in pricings if p.get('intervalUnit') == interval_unit_str), {})
-            price = price_dict.get('price', 0) / 100_000_000  # Convert from micro-cents to standard currency unit
+            price = price_dict.get('price', 0) / MICROCENTS_PER_CURRENCY_UNIT
+            available = flavor.get('available')
             items.append({
                 "vendor_id": vendor.vendor_id,
                 "region_id": region.region_id,
@@ -1003,48 +1031,102 @@ def inventory_server_prices(vendor):
                 "price_upfront": 0,
                 "price_tiered": [],
                 "currency": currency,
-                "status": Status.ACTIVE, # Not active flavors are filtered out earlier
+                "status": Status.ACTIVE if available else Status.INACTIVE,
             })
 
     return items
 
 
 def inventory_server_prices_spot(vendor):
+    """There are no spot instances in OVHcloud Public Cloud."""
     return []
 
 
 def inventory_storages(vendor):
+    """Inventory OVHCloud storage types dynamically from catalog."""
     items = []
-    # for storage in []:
-    #     items.append(
-    #         {
-    #             "storage_id": ,
-    #             "vendor_id": vendor.vendor_id,
-    #             "name": ,
-    #             "description": None,
-    #             "storage_type": StorageType....,
-    #             "max_iops": None,
-    #             "max_throughput": None,
-    #             "min_size": None,
-    #             "max_size": None,
-    #         }
-    #     )
+    items_dict = {}
+    storages = _get_storages_from_catalog()
+
+    for storage in storages:
+        if not storage.get('invoiceName', '') in items_dict:
+            items_dict[storage.get('invoiceName', '')] = storage
+
+    for storage_id, storage in items_dict.items():
+        blobs = storage.get('blobs', {})
+        commercial = blobs.get('commercial', {})
+        technical = blobs.get('technical', {})
+
+        # Determine storage type based on brick and name
+        brick = commercial.get('brick', '')
+        brick_subtype = commercial.get('brickSubtype', '')
+        name = commercial.get('name', storage_id)
+
+        # Initialize specs
+        max_iops = None
+        max_size = None
+
+        # Extract volume specifications
+        if brick == 'volume':
+            volume_specs = technical.get('volume', {})
+
+            # Capacity limits (in GiB)
+            capacity = volume_specs.get('capacity', {})
+            max_size = capacity.get('max')
+
+            # IOPS specifications
+            iops_specs = volume_specs.get('iops', {})
+            if iops_specs:
+                max_iops = iops_specs.get('level')
+                # 'guaranteed' field indicates if IOPS is guaranteed (True) or best-effort (False)
+
+        # Display name from brick subtype or name
+        display_name = brick_subtype if brick_subtype else name
+
+        items.append({
+            "storage_id": storage_id.replace(' ', '_'),  # fix "bandwidth_storage in" invoiceName
+            "vendor_id": vendor.vendor_id,
+            "name": display_name,
+            "description": None,
+            "storage_type": StorageType.NETWORK,
+            "max_iops": max_iops,
+            "max_throughput": None,
+            "min_size": None,
+            "max_size": max_size,
+        })
+
     return items
 
 
 def inventory_storage_prices(vendor):
+    """Extract storage prices from OVHCloud catalog."""
     items = []
-    # for price in []:
-    #     items.append(
-    #         {
-    #             "vendor_id": vendor.vendor_id,
-    #             "region_id": ,
-    #             "storage_id": ,
-    #             "unit": PriceUnit.GB_MONTH,
-    #             "price": ,
-    #             "currency": "USD",
-    #         }
-    #     )
+    catalog = _get_catalog(_client())
+    storages = _get_storages_from_catalog()
+    currency = catalog.get('locale', {}).get('currencyCode', 'USD')
+    for storage in storages:
+        plancode = storage.get('planCode', '')
+        if plancode.endswith('.LZ') or plancode.endswith('.3AZ') or plancode.endswith('.LZ.EU') or plancode.endswith(
+                '.LZ.AF'):
+            continue  # TODO: skip variants for now
+        regions = storage.get('configurations', [])[0].get('values', []) if storage.get('configurations') else []
+        price = storage.get('pricings', [])[0].get('price', None) if storage.get('pricings') else None
+        if price:
+            description = storage.get('pricings', [])[0].get('description', '') if storage.get('pricings') else ''
+            is_hourly = 'hourly' in description
+            price = price * HOURS_PER_MONTH if is_hourly else price
+            price = price / MICROCENTS_PER_CURRENCY_UNIT
+        for region in regions:
+            items.append({
+                "vendor_id": vendor.vendor_id,
+                "region_id": region,
+                # fix "bandwidth_storage in" invoiceName
+                "storage_id": storage.get('invoiceName', '').replace(' ', '_'),
+                "unit": PriceUnit.GB_MONTH,
+                "price": price,
+                "currency": currency,
+            })
+
     return items
 
 
