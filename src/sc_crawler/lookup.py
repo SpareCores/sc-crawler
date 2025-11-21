@@ -138,8 +138,8 @@ compliance_frameworks: dict = {
         description="ISO 27799:2016 gives guidelines for organizational information security standards and information security management practices including the selection, implementation and management of controls taking into consideration the organization's information security risk environment(s). ISO 27799:2016 provides implementation guidance for the controls described in ISO/IEC 27002 and supplements them where necessary, so that they can be effectively used for managing health information security.",  
         homepage="https://www.iso.org/standard/62777.html?spm=a3c0i.29781758.5536742710.2.397c4c3e4czUX8",  
     ),
-    "xxxxx": ComplianceFramework(
-        compliance_framework_id="xxxx",
+    "iso27040": ComplianceFramework(
+        compliance_framework_id="iso27040",
         name="ISO/IEC 27040",
         abbreviation="ISO/IEC 27040",
         description="ISO/IEC 27040:2024 provides detailed technical requirements and guidance on how organizations can achieve an appropriate level of risk mitigation by employing a well-proven and consistent approach to the planning, design, documentation, and implementation of data storage security. Storage security applies to the protection of data both while stored in information and communications technology (ICT) systems and while in transit across the communication links associated with storage. Storage security includes the security of devices and media, management activities related to the devices and media, applications and services, and controlling or monitoring user activities during the lifetime of devices and media, and after end of use or end of life.",  
