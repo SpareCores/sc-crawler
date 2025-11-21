@@ -7,6 +7,7 @@ from ..utils import scmodels_to_dict
 
 HOURS_PER_MONTH = 730
 MICROCENTS_PER_CURRENCY_UNIT = 100_000_000
+MIB_PER_GIB = 1024
 
 
 @cache
@@ -122,6 +123,38 @@ def _get_catalog(client) -> dict:
     return client.get("/order/catalog/public/cloud?ovhSubsidiary=WE")
 
 
+@cache
+def _get_servers_from_catalog() -> list[dict]:
+    """Extract server offerings from catalog data."""
+    client = _client()
+    catalog = _get_catalog(client)
+
+    plans = catalog.get('plans', [])
+    addons = catalog.get('addons', [])
+    project_plan = next((p for p in plans if p.get('planCode', '') == 'project'), {})
+    server_addon_names = next((a for a in project_plan.get('addonFamilies', []) if a.get('name', '') == 'instance'),
+                              {}).get('addons', [])
+    server_addon_names = [a for a in server_addon_names if not a.startswith('win')]  # Exclude Windows instances
+    server_addons = [a for a in addons if a.get('planCode', '') in server_addon_names]
+    return server_addons
+
+
+@cache
+def _get_regions_from_catalog() -> list[str]:
+    """Extract available regions from catalog data."""
+    servers = _get_servers_from_catalog()
+    regions = set()
+    for server in servers:
+        configurations = server.get("configurations", [])
+        if configurations and len(configurations) > 0:
+            server_regions = configurations[0].get("values", [])
+            if server_regions:
+                for region in server_regions:
+                    regions.add(region)
+    return list(regions)
+
+
+@cache
 def _get_storages_from_catalog() -> list[dict]:
     """Extract storage offerings from catalog data."""
     client = _client()
@@ -133,14 +166,18 @@ def _get_storages_from_catalog() -> list[dict]:
     storage_addon_names = next((a for a in project_plan.get('addonFamilies', []) if a.get('name', '') == 'storage'),
                                {}).get(
         'addons', [])
+    # Filter out addons without region configurations
     storage_addons = [a for a in addons if
-                      a.get('planCode', '') in storage_addon_names and a.get("configurations", []) and
+                      a.get('planCode', '') in storage_addon_names and
+                      len(a.get("configurations", [])) > 0 and
                       a.get("configurations", [])[0].get("values", [])]
     volume_addon_names = next((a for a in project_plan.get('addonFamilies', []) if a.get('name', '') == 'volume'),
                               {}).get(
         'addons', [])
+    # Filter out addons without region configurations
     volume_addons = [a for a in addons if
-                     a.get('planCode', '') in volume_addon_names and a.get("configurations", []) and
+                     a.get('planCode', '') in volume_addon_names and
+                     len(a.get("configurations", [])) > 0 and
                      a.get("configurations", [])[0].get("values", [])]
     return storage_addons + volume_addons
 
@@ -598,14 +635,6 @@ def inventory_regions(vendor):
     Source: https://www.ovhcloud.com/en/public-cloud/regions-availability/
             Section: "OpenStack regions and geographical sites"
 
-    Project Requirement:
-        In OVHcloud Public Cloud, regions are tied to a project. This function requires:
-        - OVH_PROJECT_ID environment variable, OR
-        - At least one existing project in the account (uses first available)
-        - If no projects exist, returns empty list
-
-    API Endpoint: GET /cloud/project/{projectId}/region
-
     Official Documentation:
         Region codes mapped from OVHcloud's official regions page:
         - EMEA: SBG (Strasbourg), GRA (Gravelines), RBX (Roubaix), WAW (Warsaw),
@@ -614,17 +643,8 @@ def inventory_regions(vendor):
                         VIN (Vint Hill/Washington DC), TOR (Toronto)
         - Asia Pacific: SGP (Singapore), SYD (Sydney), MUM (Mumbai)
     """
-    client = _client()
     items = []
-
-    # Get project ID from environment or first available project
-    project_id = _get_project_id(client)
-    if not project_id:
-        # No projects available, return empty list
-        return items
-
-    # Fetch all available regions for the project
-    regions = _get_regions(client, project_id)
+    regions = _get_regions_from_catalog()
 
     # Map OVHcloud region codes to country codes
     # Source: https://www.ovhcloud.com/en/public-cloud/regions-availability/
@@ -755,9 +775,9 @@ def inventory_zones(vendor):
     Use city names from region mapping for better display names.
     """
 
-    client = _client()
     items = []
-    for region in _get_regions(client):
+    regions = _get_regions_from_catalog()
+    for region in regions:
         _, city = _get_base_region_and_city(region)
         items.append(
             {
@@ -773,151 +793,80 @@ def inventory_zones(vendor):
 
 
 def inventory_servers(vendor):
-    """Fetch available OVHcloud Public Cloud flavors (server types).
-
-    API Endpoint: GET /cloud/project/{projectId}/flavor
-
-    Project Requirement:
-        - OVH_PROJECT_ID environment variable, OR
-        - At least one existing project in the account (uses first available)
-
-    Flavor Properties (from API):
-        - id: Flavor identifier
-        - name: Flavor name (e.g., 'd2-2', 'b2-7', 't1-45', 'h100-380')
-        - type: Flavor family/type
-        - osType: OS compatibility
-        - available: Stock availability (boolean)
-        - vcpus: Number of virtual CPUs (integer)
-        - ram: RAM in GiB (integer)
-        - disk: Local disk in GB (integer)
-        - inboundBandwidth: Max inbound traffic in Mbit/s (integer or null)
-        - outboundBandwidth: Max outbound traffic in Mbit/s (integer or null)
-        - region: Region code
-        - capabilities: Array of capability objects (failoverip, resize, snapshot, volume)
-        - planCodes: Object with hourly/monthly/license plan codes
-
-    CPU Information:
-        CPU models are not provided by the API but have been mapped from OVHcloud Cloud Manager
-        and real-world testing.
-        Sources:
-        - OVHcloud Cloud Manager: Direct verification (retrieved 2025-11-19)
-        - lscpu verification on B3-8 instance (2025-11-17):
-          * Model: AMD EPYC-Milan Processor (CPU Family 25, Model 1)
-          * Hypervisor: KVM
-          * Topology: B3-8 has 2 vCPUs = 2 sockets × 1 core/socket × 1 thread/core
-
-    GPU Information:
-        Sources:
-        - OVHcloud Prices Page: https://www.ovhcloud.com/en/public-cloud/prices/
-        - OVHcloud Product Page: https://www.ovhcloud.com/en/public-cloud/gpu/
-        Available GPU models: H100 (80GB), A100 (80GB), L40S (48GB), L4 (24GB), A10 (24GB),
-                             Tesla V100S (32GB), Tesla V100 (16GB), Quadro RTX 5000 (16GB)
-
-    API Documentation: https://ca.api.ovh.com/console/#/cloud/project/%7BserviceName%7D/flavor#GET
-    """
-
-    client = _client()
+    """Fetch available OVHcloud Public Cloud flavors (server types)."""
     items = []
+    servers = _get_servers_from_catalog()
+    flavors = {}
+    for server in servers:
+        flavor_name = server.get('invoiceName', None)
+        if flavor_name and flavor_name not in flavors:
+            flavors[flavor_name] = server
 
-    # Get project ID
-    project_id = _get_project_id(client)
-    if not project_id:
-        return items
-
-    flavors = _get_flavors(client, project_id)
-
-    # Deduplicate flavors by name (since API returns flavor-region combinations)
-    # Keep the first available occurrence of each flavor name
-    seen_flavors = {}
-    for flavor in flavors:
-        if flavor.get('name') not in seen_flavors:
-            seen_flavors[flavor.get('name')] = flavor
-
-    flavors = list(seen_flavors.values())
-    # Get catalog for technical infos
-    addons = _get_catalog(client).get('addons', [])
-
-    for flavor in flavors:
-        flavor_name = flavor.get('name')
-        # Every flavor has an associated plan code for hourly consumption
-        # This can be used to get tech infos from catalog/addons blob
-        consumption_plancode = flavor.get('planCodes').get('hourly')
-        blobs = next((a.get('blobs') for a in addons if a.get('planCode') == consumption_plancode), None)
-        technical = blobs.get('technical') if isinstance(blobs, dict) else None
-
-        # Get server family from flavor name
-        server_family = _get_server_family(flavor_name)
-        # Get GPU information based on flavor name
-        gpu_count, gpu_memory_total_gb, gpu_manufacturer, gpu_family, gpu_model = _get_gpu_info(flavor_name)
-        # Convert RAM from GiB to MiB
-        memory_amount = flavor.get('ram') * 1024 if flavor.get('ram') else 0
-        # Network bandwidth in Mbit/s
-        inbound_bandwidth = flavor.get('inboundBandwidth')
-        outbound_bandwidth = flavor.get('outboundBandwidth')
-
-        if technical:
-            cpu = technical.get('cpu', {})
-            gpu = technical.get('gpu', {})
-            cpu_manufacturer = cpu.get('brand', None)
-            cpu_model = cpu.get('model', None)
-            cpu_speed = cpu.get('frequency', None)
-            cpu_allocation = CpuAllocation.DEDICATED if cpu.get('type', None) == 'core' else CpuAllocation.SHARED
-            gpu_count = gpu.get('number', 0)
-            gpu_memory_per_gpu = gpu.get('memory').get('size', 0) if gpu.get('memory') else None
-            gpu_memory_total = gpu_memory_per_gpu * gpu_count if gpu_memory_per_gpu and gpu_count else None
-            gpu_memory_min = gpu_memory_total  # For GPU instances, min = total?
-            gpu_model = f"{gpu.get('model')} {gpu.get('memory').get('interface')}" if gpu else None
-            has_nvme = any(
-                'nvme' in disk.get('technology', '').lower() for disk in technical.get('storage', {}).get('disks', []))
-            storage_type = StorageType.NVME_SSD if has_nvme else StorageType.SSD
-            storage_size = sum([disk.get('number', 1) * disk.get('capacity', 0) for disk in
-                                technical.get('storage', {}).get('disks', [])])
-        else:
-            # Determine CPU allocation based on flavor type
-            # Source: https://www.ovhcloud.com/en/public-cloud/metal-instances/ (retrieved 2025-11-17)
-            # Official FAQ states: "Metal Instances are physical servers. All other instances in the
-            # Public Cloud range are virtual servers created from the KVM hypervisor. Metal Instances
-            # do not have virtualization layers."
-            #
-            # Metal Instances (bm-*): Physical dedicated servers with no virtualization layer
-            #   - DEDICATED CPU allocation (physical cores directly accessible)
-            #   - Examples: bm-s1, bm-m1, bm-l1
-            #
-            # All other instances: Virtual machines using KVM hypervisor
-            #   - SHARED CPU allocation (vCPUs on shared physical hardware)
-            #   - Examples: b2, b3, c2, c3, r2, r3, d2, i1, and all GPU instances
-            #   - Verified with lscpu on B3-8 instance: KVM hypervisor with vCPU topology
-            #
-            # Note: Even though other instance types have "dedicated resources" (guaranteed CPU/RAM),
-            # they still use virtualization and share physical hardware, hence SHARED allocation.
-            cpu_allocation = CpuAllocation.DEDICATED if flavor_name.startswith('bm-') else CpuAllocation.SHARED
-
-            # Get CPU information based on flavor name
-            cpu_manufacturer, cpu_model, cpu_speed = _get_cpu_info(flavor_name)
-
-            # Get storage type based on flavor name
-            storage_type = _get_storage_type(flavor_name)
-
-            # Convert GPU memory from GB to MB if present
-            gpu_memory_total = gpu_memory_total_gb * 1024 if gpu_memory_total_gb else None
-            gpu_memory_min = gpu_memory_total  # For GPU instances, min = total?
-
-            # Storage size
-            storage_size = flavor.get('disk')
+    for server_id, server in flavors.items():
+        blobs = server.get('blobs', {})
+        if not blobs:
+            continue  # Skip if no blob data available
+        commercial = blobs.get('commercial', {})
+        technical = blobs.get('technical', {})
+        brick_subtype = commercial.get('brickSubtype', '')
+        name = commercial.get('name', server_id)
+        display_name = brick_subtype if brick_subtype else name
+        server_family = _get_server_family(server_id)
+        cpu = technical.get('cpu', {})
+        gpu = technical.get('gpu', {})
+        bandwidth = technical.get('bandwidth', {})
+        bandwidth_level = bandwidth.get('level', None)
+        memory = technical.get('memory', {})
+        memory_size_gb = memory.get('size', None)
+        memory_size = memory_size_gb * MIB_PER_GIB if memory_size_gb else None
+        cpu_manufacturer = cpu.get('brand', None)
+        cpu_model = cpu.get('model', None)
+        cpu_speed = cpu.get('frequency', None)
+        _cpu_manufacturer, _cpu_model, _cpu_speed = _get_cpu_info(server_id)
+        if not cpu_manufacturer and _cpu_manufacturer:
+            cpu_manufacturer = _cpu_manufacturer
+        if not cpu_model and _cpu_model:
+            cpu_model = _cpu_model
+        if not cpu_speed and _cpu_speed:
+            cpu_speed = _cpu_speed
+        cpu_allocation = CpuAllocation.DEDICATED if cpu.get('type', None) == 'core' else CpuAllocation.SHARED
+        vcpus = cpu.get('cores', 0) if cpu_allocation == CpuAllocation.SHARED else cpu.get('threads',
+                                                                                           cpu.get('cores', 0))
+        cpu_cores = cpu.get('cores', None) if cpu_allocation == CpuAllocation.DEDICATED else None
+        gpu_count = gpu.get('number', 0)
+        gpu_memory_per_gpu = gpu.get('memory').get('size', 0) if gpu.get('memory') else None
+        gpu_memory_total_gb = gpu_memory_per_gpu * gpu_count if gpu_memory_per_gpu and gpu_count else None
+        gpu_model = f"{gpu.get('model')} {gpu.get('memory').get('interface')}" if gpu else None
+        _gpu_count, _gpu_memory_total_gb, gpu_manufacturer, gpu_family, _gpu_model = _get_gpu_info(server_id)
+        if not gpu_count and _gpu_count:
+            gpu_count = _gpu_count
+        if not gpu_memory_total_gb and _gpu_memory_total_gb:
+            gpu_memory_total_gb = _gpu_memory_total_gb
+        if not gpu_model and _gpu_model:
+            gpu_model = _gpu_model
+        gpu_memory_total = gpu_memory_total_gb * MIB_PER_GIB if gpu_memory_total_gb else None
+        has_nvme = any(
+            'nvme' in disk.get('technology', '').lower() for disk in technical.get('storage', {}).get('disks', []))
+        storage_type = StorageType.NVME_SSD if has_nvme else StorageType.SSD
+        _storage_type = _get_storage_type(server_id)
+        if storage_type == StorageType.SSD and _storage_type == StorageType.NVME_SSD:
+            storage_type = _storage_type
+        storage_size = sum([disk.get('number', 1) * disk.get('capacity', 0) for disk in
+                            technical.get('storage', {}).get('disks', [])])
 
         items.append({
             "vendor_id": vendor.vendor_id,
-            "server_id": flavor.get('id'),
-            "name": flavor_name,
-            "api_reference": flavor_name,
-            "display_name": flavor_name,
+            "server_id": server_id,
+            "name": display_name,
+            "api_reference": server_id,
+            "display_name": display_name,
             "description": None,  # TODO: add capabilities info?
             "family": server_family,
-            "vcpus": flavor.get('vcpus'),
+            "vcpus": vcpus,
             # Verified from lscpu on B3-8 instance (2025-11-17)
             "hypervisor": "KVM" if cpu_allocation == CpuAllocation.SHARED else None,
             "cpu_allocation": cpu_allocation,
-            "cpu_cores": None,
+            "cpu_cores": cpu_cores,
             "cpu_speed": cpu_speed,
             "cpu_architecture": CpuArchitecture.X86_64,  # All OVHcloud instances use x86_64
             "cpu_manufacturer": cpu_manufacturer,
@@ -928,12 +877,12 @@ def inventory_servers(vendor):
             "cpu_l3_cache": None,
             "cpu_flags": [],
             "cpus": [],
-            "memory_amount": memory_amount,
+            "memory_amount": memory_size,
             "memory_generation": None,
             "memory_speed": None,
             "memory_ecc": None,
             "gpu_count": gpu_count,
-            "gpu_memory_min": gpu_memory_min,
+            "gpu_memory_min": gpu_memory_total,  # For GPU instances, min = total?
             "gpu_memory_total": gpu_memory_total,
             "gpu_manufacturer": gpu_manufacturer,
             "gpu_family": gpu_family,
@@ -942,7 +891,7 @@ def inventory_servers(vendor):
             "storage_size": storage_size,  # Local disk in GB
             "storage_type": storage_type,  # Determined from flavor specifications
             "storages": [],
-            "network_speed": outbound_bandwidth,  # In Mbit/s
+            "network_speed": bandwidth_level,
             "inbound_traffic": 0,  # TODO
             "outbound_traffic": 0,  # TODO
             "ipv4": 1,  # Each instance gets at least one IPv4
@@ -953,87 +902,45 @@ def inventory_servers(vendor):
 
 
 def inventory_server_prices(vendor):
-    """Fetch server pricing and regional availability.
-
-    The OVHcloud API returns flavors with region information, meaning each flavor
-    is tied to a specific region. This function handles the many-to-many relationship
-    between servers and regions by creating a price record for each server-region combination.
-
-    API Response includes:
-        - region: Region code where the flavor is available
-        - available: Boolean indicating if the flavor is currently available in that region
-        - planCodes: Object with hourly/monthly pricing plan codes (pricing details need separate API calls)
-
-    Note: The /cloud/project/{projectId}/flavor endpoint returns one record per
-          flavor-region combination, so a flavor like 'b3-8' will appear multiple
-          times in the response (once per region where it's available).
-
-    API Documentation: https://ca.api.ovh.com/console/#/cloud/project/%7BserviceName%7D/flavor#GET
-    """
-
-    client = _client()
+    """Fetch server pricing and regional availability."""
     items = []
-
-    # Get project ID
-    project_id = _get_project_id(client)
-    if not project_id:
-        return items
-
-    flavors = _get_flavors(client, project_id)
+    client = _client()
     catalog = _get_catalog(client)
     currency = catalog.get('locale', {}).get('currencyCode', 'USD')
-    addons = catalog.get('addons', [])
-
-    # Create lookup dictionaries for servers and regions
-    servers = scmodels_to_dict(vendor.servers, keys=["api_reference"])
-    regions = scmodels_to_dict(vendor.regions, keys=["api_reference"])
-
-    for flavor in flavors:
-        flavor_name = flavor['name']
-        region_code = flavor.get('region')
-
-        # Skip if server or region not found in our data
-        if flavor_name not in servers:
-            continue
-        if region_code not in regions:
-            continue
-
-        server = servers[flavor_name]
-        region = regions[region_code]
-
-        # Only add price record if flavor is available in this region
-        if not flavor.get('available'):
-            continue
-
-        # The planCodes object contains: {hourly: str, monthly: str}
-        for plancode_type, plan_code in flavor.get('planCodes', {}).items():
-            if not plancode_type:
-                continue
-            # Find corresponding addon in catalog to get pricing details
-            addon = next((a for a in addons if a.get('planCode') == plan_code), None)
-            if not addon:
-                continue
-            interval_unit = PriceUnit.MONTH if plancode_type == 'monthly' else PriceUnit.HOUR
-            interval_unit_str = 'month' if plancode_type == 'monthly' else 'hour'
-            pricings = addon.get('pricings', [])
-            price_dict = next((p for p in pricings if p.get('intervalUnit') == interval_unit_str), {})
-            price = price_dict.get('price', 0) / MICROCENTS_PER_CURRENCY_UNIT
-            available = flavor.get('available')
+    servers = _get_servers_from_catalog()
+    for server in servers:
+        plancode = server.get('planCode', '')
+        server_id = server.get('invoiceName', '')
+        blobs = server.get('blobs', {})
+        if not blobs:
+            continue  # Skip if no blob data available
+        if plancode.endswith('.LZ.AF') or plancode.endswith('.LZ.EU') or plancode.endswith('.3AZ') or plancode.endswith(
+                '.LZ.EUROZONE'):
+            continue  # TODO: skip variants for now
+        regions = server.get('configurations', [])[0].get('values', []) if server.get('configurations') else []
+        price = server.get('pricings', [])[0].get('price', None) if server.get('pricings') else None
+        interval_unit_str = server.get('pricings', [])[0].get('intervalUnit', '') if server.get('pricings') else ''
+        interval_unit = PriceUnit.MONTH if interval_unit_str == 'month' else PriceUnit.HOUR
+        status = Status.ACTIVE if "active" in blobs.get('tags', []) else Status.INACTIVE
+        technical = blobs.get('technical', {})
+        os = technical.get('os', {}).get('family', 'linux')
+        if price:
+            price = price / MICROCENTS_PER_CURRENCY_UNIT
+        for region in regions:
             items.append({
                 "vendor_id": vendor.vendor_id,
-                "region_id": region.region_id,
-                "zone_id": region.region_id,
-                "server_id": server.server_id,
-                "operating_system": "Linux",
+                "region_id": region,
+                "zone_id": region,
+                "server_id": server_id,
+                "operating_system": os,
                 "allocation": Allocation.ONDEMAND,
                 "unit": interval_unit,
                 "price": price,
                 "price_upfront": 0,
                 "price_tiered": [],
                 "currency": currency,
-                "status": Status.ACTIVE if available else Status.INACTIVE,
+                "status": status,
             })
-
     return items
 
 
