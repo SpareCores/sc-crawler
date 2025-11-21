@@ -423,7 +423,7 @@ def inventory_storages(vendor):
     ]
 
     for disk in disk_info:
-        logger.debug("Adding information to database on disk type {dt}...".format(disk.get("name")))
+        logger.debug("Adding information to database on disk type {}...".format(disk.get("name")))
         items.append(
             {
                 "storage_id": disk.get("name"),
