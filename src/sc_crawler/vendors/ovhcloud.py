@@ -2,12 +2,21 @@ import os
 from functools import cache
 import ovh
 from ..lookup import map_compliance_frameworks_to_vendor
-from ..table_fields import CpuAllocation, CpuArchitecture, Status, StorageType, Allocation, PriceUnit
-from ..utils import scmodels_to_dict
+from ..table_fields import (
+    CpuAllocation,
+    CpuArchitecture,
+    Status,
+    StorageType,
+    Allocation,
+    PriceUnit,
+    TrafficDirection
+)
 
 HOURS_PER_MONTH = 730
 MICROCENTS_PER_CURRENCY_UNIT = 100_000_000
 MIB_PER_GIB = 1024
+# Default currency for OVHcloud prices in WE subsidiary
+CURRENCY = "USD"
 
 
 @cache
@@ -15,7 +24,7 @@ def _client() -> ovh.Client:
     """Create OVHcloud API client using the classic authentication method.
 
     It uses OVHcloud's classic API authentication with application key/secret and consumer key.
-
+    TODO: Consider migrating to OAuth2 authentication in the future.
     Environment Variables Required:
         OVH_ENDPOINT: API endpoint (ovh-eu, ovh-ca, ovh-us, etc.)
         OVH_APP_KEY: Application key from createApp (https://eu.api.ovh.com/createApp/ in EU for example)
@@ -180,6 +189,21 @@ def _get_storages_from_catalog() -> list[dict]:
                      len(a.get("configurations", [])) > 0 and
                      a.get("configurations", [])[0].get("values", [])]
     return storage_addons + volume_addons
+
+
+@cache
+def _get_ipv4_prices_from_catalog() -> list[dict]:
+    """Extract IPv4 pricing offerings from catalog data."""
+    client = _client()
+    catalog = _get_catalog(client)
+
+    plans = catalog.get('plans', [])
+    addons = catalog.get('addons', [])
+    project_plan = next((p for p in plans if p.get('planCode', '') == 'project'), {})
+    ipv4_addon_names = next((a for a in project_plan.get('addonFamilies', []) if a.get('name', '') == 'publicip'),
+                            {}).get('addons', [])
+    ipv4_addons = [a for a in addons if a.get('planCode', '') in ipv4_addon_names]
+    return ipv4_addons
 
 
 def _get_base_region_and_city(region):
@@ -904,9 +928,6 @@ def inventory_servers(vendor):
 def inventory_server_prices(vendor):
     """Fetch server pricing and regional availability."""
     items = []
-    client = _client()
-    catalog = _get_catalog(client)
-    currency = catalog.get('locale', {}).get('currencyCode', 'USD')
     servers = _get_servers_from_catalog()
     for server in servers:
         plancode = server.get('planCode', '')
@@ -917,6 +938,11 @@ def inventory_server_prices(vendor):
         if plancode.endswith('.LZ.AF') or plancode.endswith('.LZ.EU') or plancode.endswith('.3AZ') or plancode.endswith(
                 '.LZ.EUROZONE'):
             continue  # TODO: skip variants for now
+            # .LZ = Local Zone pricing (local datacenters)
+            # .LZ.EU = Local Zone in European Union
+            # .LZ.AF = Local Zone in Africa
+            # .LZ.EUROZONE = Local Zone in Eurozone countries
+            # .3AZ = 3 Availability Zones (multi-AZ regions like Paris)
         regions = server.get('configurations', [])[0].get('values', []) if server.get('configurations') else []
         price = server.get('pricings', [])[0].get('price', None) if server.get('pricings') else None
         interval_unit_str = server.get('pricings', [])[0].get('intervalUnit', '') if server.get('pricings') else ''
@@ -938,7 +964,7 @@ def inventory_server_prices(vendor):
                 "price": price,
                 "price_upfront": 0,
                 "price_tiered": [],
-                "currency": currency,
+                "currency": CURRENCY,
                 "status": status,
             })
     return items
@@ -1008,14 +1034,17 @@ def inventory_storages(vendor):
 def inventory_storage_prices(vendor):
     """Extract storage prices from OVHCloud catalog."""
     items = []
-    catalog = _get_catalog(_client())
     storages = _get_storages_from_catalog()
-    currency = catalog.get('locale', {}).get('currencyCode', 'USD')
     for storage in storages:
         plancode = storage.get('planCode', '')
         if plancode.endswith('.LZ') or plancode.endswith('.3AZ') or plancode.endswith('.LZ.EU') or plancode.endswith(
                 '.LZ.AF'):
             continue  # TODO: skip variants for now
+            # .LZ = Local Zone pricing (local datacenters)
+            # .LZ.EU = Local Zone in European Union
+            # .LZ.AF = Local Zone in Africa
+            # .LZ.EUROZONE = Local Zone in Eurozone countries
+            # .3AZ = 3 Availability Zones (multi-AZ regions like Paris)
         regions = storage.get('configurations', [])[0].get('values', []) if storage.get('configurations') else []
         price = storage.get('pricings', [])[0].get('price', None) if storage.get('pricings') else None
         if price:
@@ -1031,39 +1060,90 @@ def inventory_storage_prices(vendor):
                 "storage_id": storage.get('invoiceName', '').replace(' ', '_'),
                 "unit": PriceUnit.GB_MONTH,
                 "price": price,
-                "currency": currency,
+                "currency": CURRENCY,
             })
 
     return items
 
 
 def inventory_traffic_prices(vendor):
+    """OVHcloud Public Cloud bandwidth pricing.
+    "Outbound public network traffic is included in the price of instances on all locations,
+    except the Asia-Pacific region (Singapore, Sydney and Mumbai). In the tree regions,
+    1 TB/month of outbound public traffic is included for each Public Cloud project.
+    Beyond this quota, each additional GB of traffic is charged.
+    Inbound network traffic from the public network is included in all cases and in all regions."
+    Source: https://www.ovhcloud.com/en/public-cloud/prices
+    For outbound traffic in SYD, SGP, MUM regions, the pricing tiers are copied from the OVHcloud catalog.
+    """
+    # Outbound traffic pricing for Asia-Pacific regions (Singapore, Sydney, Mumbai)
+    # Tier 1: 1-1024 GiB = Free (included in project quota)
+    # Tier 2: 1025+ GiB = $0.0109/GB
+    outbound_SYD_SGP_MUM_tiers = [
+        {
+            "lower": 1,
+            "upper": 1024,
+            "price": 0  # Included in quota
+        },
+        {
+            "lower": 1025,
+            "upper": "Infinity",
+            "price": 0.0109  # Converted from 1090000 microcents
+        }
+    ]
+
     items = []
-    # for price in []:
-    #     items.append(
-    #         {
-    #             "vendor_id": vendor.vendor_id,
-    #             "region_id": ,
-    #             "price": ,
-    #             "price_tiered": [],
-    #             "currency": "USD",
-    #             "unit": PriceUnit.GB_MONTH,
-    #             "direction": TrafficDirection....,
-    #         }
-    #     )
+    for region in vendor.regions:
+        # Inbound traffic (free everywhere)
+        items.append(
+            {
+                "vendor_id": vendor.vendor_id,
+                "region_id": region.region_id,
+                "price": 0,
+                "price_tiered": [],
+                "currency": CURRENCY,
+                "unit": PriceUnit.GB_MONTH,
+                "direction": TrafficDirection.IN,
+            }
+        )
+        # Outbound traffic
+        is_apac = region.region_id.startswith(('SGP', 'SYD', 'MUM'))
+        items.append(
+            {
+                "vendor_id": vendor.vendor_id,
+                "region_id": region.region_id,
+                "price": 0.0109 if is_apac else 0,  # Set to max tier price
+                "price_tiered": outbound_SYD_SGP_MUM_tiers if is_apac else [],
+                "currency": CURRENCY,
+                "unit": PriceUnit.GB_MONTH,
+                "direction": TrafficDirection.OUT,
+            }
+        )
     return items
 
 
 def inventory_ipv4_prices(vendor):
+    """OVHcloud Public Cloud IPv4 pricing.
+
+    Source: https://www.ovhcloud.com/en/public-cloud/prices (retrieved 2025-11-23)
+
+    IPv4 Pricing Model:
+    - Regular Compute Instances (B2/B3, C2/C3, R2/R3, D2, I1, BM-*): IPv4 included by default (FREE)
+    - Local Zone Instances: IPv4 NOT included, pricing only shown in Control Panel during order
+    - Floating IP: $0.0027/hour ($~2/month) per IPv4 (/32) address
+
+    Currently returning 0 as IPv4 is included by default for standard regions.
+    """
     items = []
-    # for price in []:
-    #     items.append(
-    #         {
-    #             "vendor_id": vendor.vendor_id,
-    #             "region_id": ,
-    #             "price": ,
-    #             "currency": "USD",
-    #             "unit": PriceUnit.MONTH,
-    #         }
-    #     )
+    for region in vendor.regions:
+        # TODO: .LZ, .LZ.EU, .LZ.AF variants are not free, but these are skipped for now
+        items.append(
+            {
+                "vendor_id": vendor.vendor_id,
+                "region_id": region.region_id,
+                "price": 0,
+                "currency": CURRENCY,
+                "unit": PriceUnit.MONTH,
+            }
+        )
     return items
