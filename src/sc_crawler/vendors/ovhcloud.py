@@ -1,6 +1,9 @@
 import os
 from functools import cache
 import ovh
+from rich.console import Console
+from rich.panel import Panel
+from rich.prompt import Prompt
 from ..lookup import map_compliance_frameworks_to_vendor
 from ..table_fields import (
     CpuAllocation,
@@ -17,6 +20,12 @@ MICROCENTS_PER_CURRENCY_UNIT = 100_000_000
 MIB_PER_GIB = 1024
 # Default currency for OVHcloud prices in WE subsidiary
 CURRENCY = "USD"
+
+# Local Zone and Multi-AZ plan code suffixes (currently skipped)
+LOCAL_ZONE_SUFFIXES = ('.LZ', '.LZ.AF', '.LZ.EU', '.LZ.EUROZONE', '.3AZ')
+
+# Windows instance prefix (filtered out)
+WINDOWS_PREFIX = 'win-'
 
 
 @cache
@@ -51,7 +60,9 @@ def _client() -> ovh.Client:
 
     if not consumer_key or not consumer_key.strip():
         # Consumer key not set - generate it interactively
-        print("OVH_CONSUMER_KEY not found. Generating a new consumer key...")
+        console = Console()
+
+        console.print("\n[yellow]⚠️  OVH_CONSUMER_KEY not found. Generating a new consumer key...[/yellow]\n")
 
         # Create client WITHOUT consumer key to request one
         temp_client = ovh.Client(
@@ -67,15 +78,23 @@ def _client() -> ovh.Client:
         # Request token
         validation = ck.request()
 
-        print("\n" + "=" * 70)
-        print("IMPORTANT: Please visit the following URL to authenticate:")
-        print(validation['validationUrl'])
-        print("=" * 70)
-        print("\nAfter authentication, set this environment variable:")
-        print(f"export OVH_CONSUMER_KEY='{validation['consumerKey']}'")
-        print("=" * 70 + "\n")
+        # Display authentication instructions in a rich panel
+        auth_message = (
+            f"[bold cyan]Authentication Required[/bold cyan]\n\n"
+            f"Please visit the following URL to authenticate:\n"
+            f"[link={validation['validationUrl']}]{validation['validationUrl']}[/link]\n\n"
+            f"[bold]After authentication, set this environment variable:[/bold]\n"
+            f"[green]export OVH_CONSUMER_KEY='{validation['consumerKey']}'[/green]"
+        )
 
-        input("Press Enter after you have completed authentication...")
+        console.print(Panel(
+            auth_message,
+            title="[bold red]⚡ OVHcloud Authentication[/bold red]",
+            border_style="bold blue",
+            padding=(1, 2)
+        ))
+
+        Prompt.ask("\n[bold yellow]Press Enter after you have completed authentication[/bold yellow]", default="")
 
         consumer_key = validation['consumerKey']
     else:
@@ -90,7 +109,7 @@ def _client() -> ovh.Client:
 
 
 @cache
-def _get_project_id(client) -> str | None:
+def _get_project_id(client: ovh.Client) -> str | None:
     """Get project ID from environment or first available project.
 
     Returns:
@@ -102,34 +121,79 @@ def _get_project_id(client) -> str | None:
         return project_id.strip()
 
     # No env var set, fetch from API
-    projects = client.get('/cloud/project')
-    return projects[0] if projects else None
+    try:
+        projects = client.get('/cloud/project')
+        return projects[0] if projects else None
+    except Exception as e:
+        raise Exception(f"Failed to fetch project list from OVHcloud API: {e}") from e
 
 
 @cache
-def _get_regions(client, project_id=None) -> list[str]:
-    """Fetch available regions."""
+def _get_regions(client: ovh.Client, project_id: str | None = None) -> list[str]:
+    """Fetch available regions.
+
+    Args:
+        client: OVHcloud API client instance
+        project_id: Optional project ID, fetched from env/API if not provided
+
+    Returns:
+        List of region codes
+
+    Raises:
+        Exception: If API call fails
+    """
     if not project_id:
         project_id = _get_project_id(client)
-    return client.get(f'/cloud/project/{project_id}/region')
+    try:
+        return client.get(f'/cloud/project/{project_id}/region')
+    except Exception as e:
+        raise Exception(f"Failed to fetch regions for project {project_id}: {e}") from e
 
 
 @cache
-def _get_flavors(client, project_id=None) -> list[dict]:
-    """Fetch available flavors for a project."""
+def _get_flavors(client: ovh.Client, project_id: str | None = None) -> list[dict]:
+    """Fetch available flavors for a project.
+
+    Args:
+        client: OVHcloud API client instance
+        project_id: Optional project ID, fetched from env/API if not provided
+
+    Returns:
+        List of flavor dictionaries (excluding Windows instances)
+
+    Raises:
+        Exception: If API call fails
+    """
     if not project_id:
         project_id = _get_project_id(client)
-    # Fetch all available flavors for the project
-    flavors = client.get(f'/cloud/project/{project_id}/flavor')
-    # Filter out Windows servers
-    return [f for f in flavors if f.get('osType') != 'windows']
+    try:
+        # Fetch all available flavors for the project
+        flavors = client.get(f'/cloud/project/{project_id}/flavor')
+        # Filter out Windows servers
+        return [f for f in flavors if f.get('osType') != 'windows']
+    except Exception as e:
+        raise Exception(f"Failed to fetch flavors for project {project_id}: {e}") from e
 
 
 @cache
-def _get_catalog(client) -> dict:
+def _get_catalog(client: ovh.Client) -> dict:
     """Fetch service catalog.
-    Using OVH Subsidiary "WE" (Western Europe) for consistent catalog data."""
-    return client.get("/order/catalog/public/cloud?ovhSubsidiary=WE")
+
+    Using OVH Subsidiary "WE" (Western Europe) for consistent catalog data.
+
+    Args:
+        client: OVHcloud API client instance
+
+    Returns:
+        Catalog dictionary with plans and addons
+
+    Raises:
+        Exception: If API call fails
+    """
+    try:
+        return client.get("/order/catalog/public/cloud?ovhSubsidiary=WE")
+    except Exception as e:
+        raise Exception(f"Failed to fetch OVHcloud catalog: {e}") from e
 
 
 @cache
@@ -143,7 +207,8 @@ def _get_servers_from_catalog() -> list[dict]:
     project_plan = next((p for p in plans if p.get('planCode', '') == 'project'), {})
     server_addon_names = next((a for a in project_plan.get('addonFamilies', []) if a.get('name', '') == 'instance'),
                               {}).get('addons', [])
-    server_addon_names = [a for a in server_addon_names if not a.startswith('win')]  # Exclude Windows instances
+    # Exclude Windows instances
+    server_addon_names = [a for a in server_addon_names if not a.startswith(WINDOWS_PREFIX)]
     server_addons = [a for a in addons if a.get('planCode', '') in server_addon_names]
     return server_addons
 
@@ -206,7 +271,7 @@ def _get_ipv4_prices_from_catalog() -> list[dict]:
     return ipv4_addons
 
 
-def _get_base_region_and_city(region):
+def _get_base_region_and_city(region: str) -> tuple[str, str | None]:
     """Extract base region code from various formats and map to city name."""
 
     # Map region codes to city names
@@ -257,7 +322,7 @@ def _get_base_region_and_city(region):
     return base_region, region_city_mapping.get(base_region)
 
 
-def _get_server_family(flavor_name):
+def _get_server_family(flavor_name: str) -> str | None:
     """Map OVHcloud flavor name to server family.
 
     Server families are displayed on the pricing page:
@@ -303,7 +368,7 @@ def _get_server_family(flavor_name):
     return None
 
 
-def _get_cpu_info(flavor_name):
+def _get_cpu_info(flavor_name: str) -> tuple[str | None, str | None, float | None]:
     """Map flavor name to CPU manufacturer and model based on OVHcloud documentation.
 
     Sources:
@@ -388,7 +453,7 @@ def _get_cpu_info(flavor_name):
     return None, None, None
 
 
-def _get_gpu_info(flavor_name):
+def _get_gpu_info(flavor_name: str) -> tuple[int, int | None, str | None, str | None, str | None]:
     """Map GPU flavor name to GPU specs based on verified data.
 
     GPU Memory Specifications (retrieved 2025-11-19):
@@ -544,7 +609,7 @@ def _get_gpu_info(flavor_name):
     return 0, None, None, None, None
 
 
-def _get_storage_type(flavor_name):
+def _get_storage_type(flavor_name: str) -> StorageType:
     """Determine storage type based on flavor name.
 
     Storage specifications verified from OVHcloud Cloud Manager (retrieved 2025-11-17).
@@ -653,7 +718,7 @@ def inventory_compliance_frameworks(vendor):
     )
 
 
-def inventory_regions(vendor):
+def inventory_regions(vendor) -> list[dict]:
     """Fetch available OVHcloud Public Cloud regions.
 
     Source: https://www.ovhcloud.com/en/public-cloud/regions-availability/
@@ -789,7 +854,7 @@ def inventory_regions(vendor):
     return items
 
 
-def inventory_zones(vendor):
+def inventory_zones(vendor) -> list[dict]:
     """List all regions as availability zones.
 
     OVHcloud API doesn't expose zones as a separate entity.
@@ -816,7 +881,7 @@ def inventory_zones(vendor):
     return items
 
 
-def inventory_servers(vendor):
+def inventory_servers(vendor) -> list[dict]:
     """Fetch available OVHcloud Public Cloud flavors (server types)."""
     items = []
     servers = _get_servers_from_catalog()
@@ -925,7 +990,7 @@ def inventory_servers(vendor):
     return items
 
 
-def inventory_server_prices(vendor):
+def inventory_server_prices(vendor) -> list[dict]:
     """Fetch server pricing and regional availability."""
     items = []
     servers = _get_servers_from_catalog()
@@ -935,14 +1000,9 @@ def inventory_server_prices(vendor):
         blobs = server.get('blobs', {})
         if not blobs:
             continue  # Skip if no blob data available
-        if plancode.endswith('.LZ.AF') or plancode.endswith('.LZ.EU') or plancode.endswith('.3AZ') or plancode.endswith(
-                '.LZ.EUROZONE'):
-            continue  # TODO: skip variants for now
-            # .LZ = Local Zone pricing (local datacenters)
-            # .LZ.EU = Local Zone in European Union
-            # .LZ.AF = Local Zone in Africa
-            # .LZ.EUROZONE = Local Zone in Eurozone countries
-            # .3AZ = 3 Availability Zones (multi-AZ regions like Paris)
+        # Skip Local Zone and Multi-AZ variants (TODO: add support later)
+        if any(plancode.endswith(suffix) for suffix in LOCAL_ZONE_SUFFIXES):
+            continue
         regions = server.get('configurations', [])[0].get('values', []) if server.get('configurations') else []
         price = server.get('pricings', [])[0].get('price', None) if server.get('pricings') else None
         interval_unit_str = server.get('pricings', [])[0].get('intervalUnit', '') if server.get('pricings') else ''
@@ -970,12 +1030,12 @@ def inventory_server_prices(vendor):
     return items
 
 
-def inventory_server_prices_spot(vendor):
+def inventory_server_prices_spot(vendor) -> list[dict]:
     """There are no spot instances in OVHcloud Public Cloud."""
     return []
 
 
-def inventory_storages(vendor):
+def inventory_storages(vendor) -> list[dict]:
     """Inventory OVHCloud storage types dynamically from catalog."""
     items = []
     items_dict = {}
@@ -1031,20 +1091,15 @@ def inventory_storages(vendor):
     return items
 
 
-def inventory_storage_prices(vendor):
+def inventory_storage_prices(vendor) -> list[dict]:
     """Extract storage prices from OVHCloud catalog."""
     items = []
     storages = _get_storages_from_catalog()
     for storage in storages:
         plancode = storage.get('planCode', '')
-        if plancode.endswith('.LZ') or plancode.endswith('.3AZ') or plancode.endswith('.LZ.EU') or plancode.endswith(
-                '.LZ.AF'):
-            continue  # TODO: skip variants for now
-            # .LZ = Local Zone pricing (local datacenters)
-            # .LZ.EU = Local Zone in European Union
-            # .LZ.AF = Local Zone in Africa
-            # .LZ.EUROZONE = Local Zone in Eurozone countries
-            # .3AZ = 3 Availability Zones (multi-AZ regions like Paris)
+        # Skip Local Zone and Multi-AZ variants (TODO: add support later)
+        if any(plancode.endswith(suffix) for suffix in LOCAL_ZONE_SUFFIXES):
+            continue
         regions = storage.get('configurations', [])[0].get('values', []) if storage.get('configurations') else []
         price = storage.get('pricings', [])[0].get('price', None) if storage.get('pricings') else None
         if price:
@@ -1066,7 +1121,7 @@ def inventory_storage_prices(vendor):
     return items
 
 
-def inventory_traffic_prices(vendor):
+def inventory_traffic_prices(vendor) -> list[dict]:
     """OVHcloud Public Cloud bandwidth pricing.
     "Outbound public network traffic is included in the price of instances on all locations,
     except the Asia-Pacific region (Singapore, Sydney and Mumbai). In the tree regions,
@@ -1122,7 +1177,7 @@ def inventory_traffic_prices(vendor):
     return items
 
 
-def inventory_ipv4_prices(vendor):
+def inventory_ipv4_prices(vendor) -> list[dict]:
     """OVHcloud Public Cloud IPv4 pricing.
 
     Source: https://www.ovhcloud.com/en/public-cloud/prices (retrieved 2025-11-23)
