@@ -215,17 +215,46 @@ def _get_servers_from_catalog() -> list[dict]:
 
 @cache
 def _get_regions_from_catalog() -> list[str]:
-    """Extract available regions from catalog data."""
+    """Extract available regions from catalog data.
+
+    Merges region configurations from ALL pricing variants (hourly, monthly, etc.)
+    of each flavor to get the most complete regional availability list.
+
+    Note: The 'configurations' field in the catalog represents orderable regions
+    (configuration options for purchasing), not real-time availability. Some pricing
+    variants (e.g., hourly) may have empty configurations while monthly variants have
+    region lists. This function merges all regions from all variants to provide the
+    most complete picture of where a flavor can potentially be ordered.
+
+    Source: /order/catalog/public/cloud API endpoint
+    Retrieved: 2025-11-24
+    """
     servers = _get_servers_from_catalog()
     regions = set()
+
+    # Group servers by flavor name to merge regions across pricing variants
+    flavor_regions = {}
     for server in servers:
+        flavor_name = server.get("invoiceName", "")
+        if not flavor_name:
+            continue
+
         configurations = server.get("configurations", [])
-        if configurations and len(configurations) > 0:
-            server_regions = configurations[0].get("values", [])
-            if server_regions:
-                for region in server_regions:
-                    regions.add(region)
-    return list(regions)
+        if configurations:
+            # Extract regions from all configuration entries (usually just one with 'region' name)
+            for config in configurations:
+                if config.get("name") == "region":
+                    server_regions = config.get("values", [])
+                    if server_regions:
+                        if flavor_name not in flavor_regions:
+                            flavor_regions[flavor_name] = set()
+                        flavor_regions[flavor_name].update(server_regions)
+
+    # Merge all regions from all flavors
+    for flavor_region_set in flavor_regions.values():
+        regions.update(flavor_region_set)
+
+    return sorted(list(regions))
 
 
 @cache
@@ -946,7 +975,7 @@ def inventory_servers(vendor) -> list[dict]:
         items.append({
             "vendor_id": vendor.vendor_id,
             "server_id": server_id,
-            "name": display_name,
+            "name": server_id,
             "api_reference": server_id,
             "display_name": display_name,
             "description": None,  # TODO: add capabilities info?
@@ -991,27 +1020,87 @@ def inventory_servers(vendor) -> list[dict]:
 
 
 def inventory_server_prices(vendor) -> list[dict]:
-    """Fetch server pricing and regional availability."""
+    """Fetch server pricing and regional availability.
+
+    Only processes hourly consumption plans (.consumption), not monthly plans (.monthly.postpaid),
+    because the database schema does not support multiple price units for the same server
+    (unit field is not part of the primary key).
+
+    Region availability information varies across pricing types. Some pricing variants
+    (e.g., hourly) may have empty configurations while others (e.g., monthly) contain region lists.
+    We merge regions from ALL pricing variants of each flavor to get complete availability,
+    then apply those merged regions to hourly pricing entries only.
+
+    The 'configurations' field represents orderable regions (configuration options for purchasing),
+    not real-time availability.
+
+    Source: /order/catalog/public/cloud API endpoint
+    Retrieved: 2025-11-24
+    """
     items = []
+    server_region: dict[str, set[str]] = {}
     servers = _get_servers_from_catalog()
+    client = _client()
+    flavors = _get_flavors(client)
+
+    # First pass: collect and merge regions from ALL pricing variants of each flavor
+    for server in servers:
+        server_id = server.get('invoiceName', '')
+        if not server_id:
+            continue
+
+        configurations = server.get('configurations', [])
+        if configurations:
+            for config in configurations:
+                if config.get("name") == "region":
+                    regions = config.get('values', [])
+                    if regions:
+                        if server_id not in server_region:
+                            server_region[server_id] = set()
+                        server_region[server_id].update(regions)
+    # Second pass: create pricing entries using collected/merged regions
+    # Note: Only process hourly consumption plans (.consumption) because the database schema
+    # does not support multiple price units (unit is not part of primary key). Monthly plans
+    # would overwrite hourly plans if both are inserted.
     for server in servers:
         plancode = server.get('planCode', '')
         server_id = server.get('invoiceName', '')
+        if not server_id:
+            continue
+
+        # Skip monthly plans - only process hourly consumption plans
+        if 'monthly' in plancode.lower():
+            continue
+
         blobs = server.get('blobs', {})
         if not blobs:
             continue  # Skip if no blob data available
-        # Skip Local Zone and Multi-AZ variants (TODO: add support later)
+
+        # Skip Local Zone and Multi-AZ variants
+        # TODO: add support later
         if any(plancode.endswith(suffix) for suffix in LOCAL_ZONE_SUFFIXES):
             continue
-        regions = server.get('configurations', [])[0].get('values', []) if server.get('configurations') else []
+
         price = server.get('pricings', [])[0].get('price', None) if server.get('pricings') else None
         interval_unit_str = server.get('pricings', [])[0].get('intervalUnit', '') if server.get('pricings') else ''
-        interval_unit = PriceUnit.MONTH if interval_unit_str == 'month' else PriceUnit.HOUR
+        interval_unit = PriceUnit.HOUR if interval_unit_str == 'hour' else PriceUnit.MONTH
         status = Status.ACTIVE if "active" in blobs.get('tags', []) else Status.INACTIVE
         technical = blobs.get('technical', {})
         os = technical.get('os', {}).get('family', 'linux')
+
         if price:
             price = price / MICROCENTS_PER_CURRENCY_UNIT
+
+        # Use merged regions from all variants of this flavor
+        regions = list(server_region.get(server_id, set()))
+
+        # If no regions found at all for this flavor in catalog, try to get from flavors data
+        if not regions:
+            regions = [f.get('region') for f in flavors if
+                       f.get('planCodes', {}).get('hourly') == plancode and f.get('region')]
+            if not regions:
+                continue
+
         for region in regions:
             items.append({
                 "vendor_id": vendor.vendor_id,
@@ -1092,27 +1181,67 @@ def inventory_storages(vendor) -> list[dict]:
 
 
 def inventory_storage_prices(vendor) -> list[dict]:
-    """Extract storage prices from OVHCloud catalog."""
+    """Extract storage prices from OVHCloud catalog.
+
+    Note: Region availability information varies across pricing types. Some pricing variants
+    (e.g., hourly) may have empty configurations while others (e.g., monthly) contain region lists.
+    We merge regions from ALL pricing variants of each storage type to get complete availability.
+
+    Source: /order/catalog/public/cloud API endpoint
+    Retrieved: 2025-11-24
+    """
     items = []
     storages = _get_storages_from_catalog()
+
+    # First pass: collect and merge regions from all pricing variants of each storage type
+    storage_regions: dict[str, set[str]] = {}
+    for storage in storages:
+        storage_id = storage.get('invoiceName', '')
+        if not storage_id:
+            continue
+
+        configurations = storage.get('configurations', [])
+        if configurations:
+            for config in configurations:
+                if config.get("name") == "region":
+                    regions = config.get('values', [])
+                    if regions:
+                        if storage_id not in storage_regions:
+                            storage_regions[storage_id] = set()
+                        storage_regions[storage_id].update(regions)
+
+    # Second pass: create pricing entries using merged regions
     for storage in storages:
         plancode = storage.get('planCode', '')
-        # Skip Local Zone and Multi-AZ variants (TODO: add support later)
+        storage_id = storage.get('invoiceName', '')
+        if not storage_id:
+            continue
+
+        # Skip Local Zone and Multi-AZ variants
+        # TODO: add support later
         if any(plancode.endswith(suffix) for suffix in LOCAL_ZONE_SUFFIXES):
             continue
-        regions = storage.get('configurations', [])[0].get('values', []) if storage.get('configurations') else []
+
         price = storage.get('pricings', [])[0].get('price', None) if storage.get('pricings') else None
         if price:
             description = storage.get('pricings', [])[0].get('description', '') if storage.get('pricings') else ''
             is_hourly = 'hourly' in description
             price = price * HOURS_PER_MONTH if is_hourly else price
             price = price / MICROCENTS_PER_CURRENCY_UNIT
+
+        # Use merged regions from all variants of this storage type
+        regions = list(storage_regions.get(storage_id, set()))
+
+        # If no regions found at all for this storage type, skip it
+        if not regions:
+            continue
+
         for region in regions:
             items.append({
                 "vendor_id": vendor.vendor_id,
                 "region_id": region,
                 # fix "bandwidth_storage in" invoiceName
-                "storage_id": storage.get('invoiceName', '').replace(' ', '_'),
+                "storage_id": storage_id.replace(' ', '_'),
                 "unit": PriceUnit.GB_MONTH,
                 "price": price,
                 "currency": CURRENCY,

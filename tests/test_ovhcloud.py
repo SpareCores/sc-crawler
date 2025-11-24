@@ -615,18 +615,46 @@ class TestInventoryServers:
 class TestInventoryServerPrices:
     """Tests for inventory_server_prices function."""
 
+    @patch('sc_crawler.vendors.ovhcloud._get_flavors')
+    @patch('sc_crawler.vendors.ovhcloud._client')
     @patch('sc_crawler.vendors.ovhcloud._get_servers_from_catalog')
-    def test_basic_pricing_structure(self, mock_get_servers):
-        """Test basic server pricing data structure."""
+    def test_basic_pricing_structure(self, mock_get_servers, mock_client, mock_get_flavors):
+        """Test basic server pricing data structure.
+
+        Note: We need both hourly and monthly plans in the mock data because
+        regions are only available in monthly plans. Regions are merged from
+        all pricing variants but only hourly plans are actually processed
+        (monthly plans are skipped to avoid primary key conflicts).
+        """
+        mock_get_flavors.return_value = []  # Fallback not needed in this test
         mock_get_servers.return_value = [
+            # Monthly plan (has regions)
             {
-                'planCode': 'b3-8.consumption',
+                'planCode': 'b3-8.monthly.postpaid',
                 'invoiceName': 'b3-8',
                 'configurations': [
                     {
+                        'name': 'region',
                         'values': ['GRA9', 'BHS5']
                     }
                 ],
+                'pricings': [
+                    {
+                        'price': 36500000000,  # microcents per month
+                        'intervalUnit': 'month'
+                    }
+                ],
+                'blobs': {
+                    'commercial': {'name': 'b3-8'},
+                    'technical': {'os': {'family': 'linux'}},
+                    'tags': ['active']
+                }
+            },
+            # Hourly plan (no regions, will use regions from monthly plan)
+            {
+                'planCode': 'b3-8.consumption',
+                'invoiceName': 'b3-8',
+                'configurations': [],  # Hourly plans don't have region info
                 'pricings': [
                     {
                         'price': 5080000,  # microcents
@@ -645,7 +673,12 @@ class TestInventoryServerPrices:
 
         result = inventory_server_prices(vendor)
 
-        assert len(result) == 2  # 2 regions
+        # Only hourly plans are processed (monthly plans are skipped to avoid primary key conflicts)
+        assert len(result) == 2  # 2 regions × 1 pricing plan (hourly only)
+
+        # All entries should be hourly pricing
+        assert all(p['unit'] == PriceUnit.HOUR for p in result)
+
         price = result[0]
         assert price['vendor_id'] == 'ovhcloud'
         assert price['server_id'] == 'b3-8'
@@ -656,14 +689,17 @@ class TestInventoryServerPrices:
         assert price['allocation'] == Allocation.ONDEMAND
         assert price['status'] == Status.ACTIVE
 
+    @patch('sc_crawler.vendors.ovhcloud._get_flavors')
+    @patch('sc_crawler.vendors.ovhcloud._client')
     @patch('sc_crawler.vendors.ovhcloud._get_servers_from_catalog')
-    def test_monthly_pricing(self, mock_get_servers):
-        """Test monthly pricing conversion."""
+    def test_monthly_pricing_skipped(self, mock_get_servers, mock_client, mock_get_flavors):
+        """Test that monthly pricing plans are skipped (only hourly plans processed)."""
+        mock_get_flavors.return_value = []  # Fallback not needed in this test
         mock_get_servers.return_value = [
             {
-                'planCode': 'b3-8.monthly',
+                'planCode': 'b3-8.monthly.postpaid',
                 'invoiceName': 'b3-8',
-                'configurations': [{'values': ['GRA9']}],
+                'configurations': [{'name': 'region', 'values': ['GRA9']}],
                 'pricings': [
                     {
                         'price': 36500000000,  # microcents per month
@@ -682,16 +718,20 @@ class TestInventoryServerPrices:
 
         result = inventory_server_prices(vendor)
 
-        assert result[0]['unit'] == PriceUnit.MONTH
+        # Monthly plans should be skipped
+        assert len(result) == 0
 
+    @patch('sc_crawler.vendors.ovhcloud._get_flavors')
+    @patch('sc_crawler.vendors.ovhcloud._client')
     @patch('sc_crawler.vendors.ovhcloud._get_servers_from_catalog')
-    def test_skip_local_zone_variants(self, mock_get_servers):
+    def test_skip_local_zone_variants(self, mock_get_servers, mock_client, mock_get_flavors):
         """Test that Local Zone variants are skipped."""
+        mock_get_flavors.return_value = []  # Fallback not needed in this test
         mock_get_servers.return_value = [
             {
                 'planCode': 'b3-8.consumption.LZ.EU',
                 'invoiceName': 'b3-8',
-                'configurations': [{'values': ['GRA9']}],
+                'configurations': [{'name': 'region', 'values': ['GRA9']}],
                 'pricings': [{'price': 5080000, 'intervalUnit': 'hour'}],
                 'blobs': {
                     'commercial': {'name': 'b3-8'},
@@ -702,7 +742,7 @@ class TestInventoryServerPrices:
             {
                 'planCode': 'b3-8.consumption.3AZ',
                 'invoiceName': 'b3-8',
-                'configurations': [{'values': ['PAR']}],
+                'configurations': [{'name': 'region', 'values': ['PAR']}],
                 'pricings': [{'price': 5080000, 'intervalUnit': 'hour'}],
                 'blobs': {
                     'commercial': {'name': 'b3-8'},
@@ -717,6 +757,79 @@ class TestInventoryServerPrices:
         result = inventory_server_prices(vendor)
 
         assert len(result) == 0  # All skipped
+
+    @patch('sc_crawler.vendors.ovhcloud._get_flavors')
+    @patch('sc_crawler.vendors.ovhcloud._client')
+    @patch('sc_crawler.vendors.ovhcloud._get_servers_from_catalog')
+    def test_fallback_to_flavors_api(self, mock_get_servers, mock_client, mock_get_flavors):
+        """Test fallback to flavors API when catalog has no regions."""
+        mock_get_servers.return_value = [
+            {
+                'planCode': 'b3-8.consumption',
+                'invoiceName': 'b3-8',
+                'configurations': [],  # No regions in catalog
+                'pricings': [{'price': 5080000, 'intervalUnit': 'hour'}],
+                'blobs': {
+                    'commercial': {'name': 'b3-8'},
+                    'technical': {'os': {'family': 'linux'}},
+                    'tags': ['active']
+                }
+            }
+        ]
+        # Mock flavors API to return regions
+        mock_get_flavors.return_value = [
+            {
+                'region': 'GRA9',
+                'planCodes': {'hourly': 'b3-8.consumption'}
+            },
+            {
+                'region': 'BHS5',
+                'planCodes': {'hourly': 'b3-8.consumption'}
+            }
+        ]
+        vendor = Mock()
+        vendor.vendor_id = 'ovhcloud'
+
+        result = inventory_server_prices(vendor)
+
+        # Should have 2 entries from flavors API fallback
+        assert len(result) == 2
+        assert all(p['unit'] == PriceUnit.HOUR for p in result)
+        regions = {p['region_id'] for p in result}
+        assert regions == {'GRA9', 'BHS5'}
+
+    @patch('sc_crawler.vendors.ovhcloud._get_flavors')
+    @patch('sc_crawler.vendors.ovhcloud._client')
+    @patch('sc_crawler.vendors.ovhcloud._get_servers_from_catalog')
+    def test_skip_when_no_regions_anywhere(self, mock_get_servers, mock_client, mock_get_flavors):
+        """Test that servers with no regions in catalog or flavors API are skipped."""
+        mock_get_servers.return_value = [
+            {
+                'planCode': 'b3-8.consumption',
+                'invoiceName': 'b3-8',
+                'configurations': [],  # No regions in catalog
+                'pricings': [{'price': 5080000, 'intervalUnit': 'hour'}],
+                'blobs': {
+                    'commercial': {'name': 'b3-8'},
+                    'technical': {'os': {'family': 'linux'}},
+                    'tags': ['active']
+                }
+            }
+        ]
+        # Mock flavors API to return no matching regions
+        mock_get_flavors.return_value = [
+            {
+                'region': 'GRA9',
+                'planCodes': {'hourly': 'different-server.consumption'}  # Different server
+            }
+        ]
+        vendor = Mock()
+        vendor.vendor_id = 'ovhcloud'
+
+        result = inventory_server_prices(vendor)
+
+        # Should have 0 entries - server skipped due to no regions
+        assert len(result) == 0
 
 
 class TestInventoryServerPricesSpot:
@@ -832,7 +945,7 @@ class TestInventoryStoragePrices:
             {
                 'planCode': 'volume.high-speed.consumption',
                 'invoiceName': 'volume.high-speed',
-                'configurations': [{'values': ['GRA9', 'BHS5']}],
+                'configurations': [{'name': 'region', 'values': ['GRA9', 'BHS5']}],
                 'pricings': [
                     {
                         'price': 13200,  # microcents per hour
@@ -863,7 +976,7 @@ class TestInventoryStoragePrices:
             {
                 'planCode': 'volume.classic.monthly.postpaid',
                 'invoiceName': 'volume.classic',
-                'configurations': [{'values': ['GRA9']}],
+                'configurations': [{'name': 'region', 'values': ['GRA9']}],
                 'pricings': [
                     {
                         'price': 4800000,  # microcents per month
@@ -1038,19 +1151,30 @@ class TestCatalogHelpers:
 
     @patch('sc_crawler.vendors.ovhcloud._get_servers_from_catalog')
     def test_get_regions_from_catalog(self, mock_get_servers):
-        """Test region extraction from catalog."""
+        """Test region extraction from catalog with merged pricing variants."""
         mock_get_servers.return_value = [
             {
+                'invoiceName': 'b3-8',
+                'planCode': 'b3-8.consumption',
+                'configurations': []  # Hourly plan with no regions
+            },
+            {
+                'invoiceName': 'b3-8',
+                'planCode': 'b3-8.monthly.postpaid',
                 'configurations': [
                     {
+                        'name': 'region',
                         'values': ['GRA9', 'BHS5', 'SGP1']
                     }
                 ]
             },
             {
+                'invoiceName': 'c2-7',
+                'planCode': 'c2-7.monthly.postpaid',
                 'configurations': [
                     {
-                        'values': ['GRA9', 'DE1']  # GRA9 duplicate
+                        'name': 'region',
+                        'values': ['GRA9', 'DE1']  # GRA9 duplicate across flavors
                     }
                 ]
             }
@@ -1058,12 +1182,14 @@ class TestCatalogHelpers:
 
         result = _get_regions_from_catalog()
 
-        # Should deduplicate
+        # Should merge regions from all pricing variants and deduplicate
         assert len(result) == 4
         assert 'GRA9' in result
         assert 'BHS5' in result
         assert 'SGP1' in result
         assert 'DE1' in result
+        # Result should be sorted
+        assert result == sorted(result)
 
     @patch('sc_crawler.vendors.ovhcloud._get_catalog')
     @patch('sc_crawler.vendors.ovhcloud._client')
