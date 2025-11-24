@@ -141,6 +141,9 @@ def _get_regions(client: ovh.Client, project_id: str | None = None) -> list[str]
 
     Raises:
         Exception: If API call fails
+
+    Note: This function fetches regions via the /cloud/project/{project_id}/region endpoint,
+    currently not used in favor of catalog-based region extraction.
     """
     if not project_id:
         project_id = _get_project_id(client)
@@ -227,7 +230,6 @@ def _get_regions_from_catalog() -> list[str]:
     most complete picture of where a flavor can potentially be ordered.
 
     Source: /order/catalog/public/cloud API endpoint
-    Retrieved: 2025-11-24
     """
     servers = _get_servers_from_catalog()
     regions = set()
@@ -269,7 +271,7 @@ def _get_storages_from_catalog() -> list[dict]:
     storage_addon_names = next((a for a in project_plan.get('addonFamilies', []) if a.get('name', '') == 'storage'),
                                {}).get(
         'addons', [])
-    # Filter out addons without region configurations
+    # Filter out storage addons without region configurations
     storage_addons = [a for a in addons if
                       a.get('planCode', '') in storage_addon_names and
                       len(a.get("configurations", [])) > 0 and
@@ -277,7 +279,7 @@ def _get_storages_from_catalog() -> list[dict]:
     volume_addon_names = next((a for a in project_plan.get('addonFamilies', []) if a.get('name', '') == 'volume'),
                               {}).get(
         'addons', [])
-    # Filter out addons without region configurations
+    # Filter out volume addons without region configurations
     volume_addons = [a for a in addons if
                      a.get('planCode', '') in volume_addon_names and
                      len(a.get("configurations", [])) > 0 and
@@ -971,6 +973,7 @@ def inventory_servers(vendor) -> list[dict]:
             storage_type = _storage_type
         storage_size = sum([disk.get('number', 1) * disk.get('capacity', 0) for disk in
                             technical.get('storage', {}).get('disks', [])])
+        status = Status.ACTIVE if "active" in blobs.get('tags', []) else Status.INACTIVE
 
         items.append({
             "vendor_id": vendor.vendor_id,
@@ -1013,7 +1016,7 @@ def inventory_servers(vendor) -> list[dict]:
             "inbound_traffic": 0,  # TODO
             "outbound_traffic": 0,  # TODO
             "ipv4": 1,  # Each instance gets at least one IPv4
-            "status": Status.ACTIVE,  # After filtering for available flavors only
+            "status": status,
         })
 
     return items
@@ -1022,20 +1025,15 @@ def inventory_servers(vendor) -> list[dict]:
 def inventory_server_prices(vendor) -> list[dict]:
     """Fetch server pricing and regional availability.
 
-    Only processes hourly consumption plans (.consumption), not monthly plans (.monthly.postpaid),
-    because the database schema does not support multiple price units for the same server
-    (unit field is not part of the primary key).
-
     Region availability information varies across pricing types. Some pricing variants
     (e.g., hourly) may have empty configurations while others (e.g., monthly) contain region lists.
     We merge regions from ALL pricing variants of each flavor to get complete availability,
     then apply those merged regions to hourly pricing entries only.
 
     The 'configurations' field represents orderable regions (configuration options for purchasing),
-    not real-time availability.
+    not real-time availability, but it's the best available data from the catalog.
 
     Source: /order/catalog/public/cloud API endpoint
-    Retrieved: 2025-11-24
     """
     items = []
     server_region: dict[str, set[str]] = {}
@@ -1062,6 +1060,7 @@ def inventory_server_prices(vendor) -> list[dict]:
     # Note: Only process hourly consumption plans (.consumption) because the database schema
     # does not support multiple price units (unit is not part of primary key). Monthly plans
     # would overwrite hourly plans if both are inserted.
+    # TODO: add support for monthly plans later if needed.
     for server in servers:
         plancode = server.get('planCode', '')
         server_id = server.get('invoiceName', '')
@@ -1094,7 +1093,8 @@ def inventory_server_prices(vendor) -> list[dict]:
         # Use merged regions from all variants of this flavor
         regions = list(server_region.get(server_id, set()))
 
-        # If no regions found at all for this flavor in catalog, try to get from flavors data
+        # If no regions found at all for this flavor in catalog, try to get from flavors API
+        # Note: This fallback requires project_id, which may not always be available
         if not regions:
             regions = [f.get('region') for f in flavors if
                        f.get('planCodes', {}).get('hourly') == plancode and f.get('region')]
@@ -1188,7 +1188,6 @@ def inventory_storage_prices(vendor) -> list[dict]:
     We merge regions from ALL pricing variants of each storage type to get complete availability.
 
     Source: /order/catalog/public/cloud API endpoint
-    Retrieved: 2025-11-24
     """
     items = []
     storages = _get_storages_from_catalog()
