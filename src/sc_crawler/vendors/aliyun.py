@@ -12,6 +12,7 @@ from aliyunsdkcore.acs_exception.exceptions import ServerException
 #from aliyunsdkecs.request.v20140526 import DescribeInstancesRequest
 from aliyunsdkecs.request.v20140526 import DescribeRegionsRequest, DescribeZonesRequest, DescribeInstanceTypesRequest, DescribePriceRequest
 from aliyunsdkbssopenapi.request.v20171214 import DescribePricingModuleRequest
+from aliyunsdkcore.request import CommonRequest
 
 from ..table_fields import (
     Allocation,
@@ -23,7 +24,8 @@ from ..table_fields import (
     TrafficDirection,
 )
 
-ONE_REGION_QUERY = True
+ONE_REGION_QUERY = False
+SKIP_CHINA = False
 DEFAULT_REGION = "eu-central-1"
 
 aliyun_region_coords = {
@@ -144,15 +146,43 @@ def get_disk_capabilities(tempclient):
 
 def get_instance_price(tempclient, instance_type):
     """
-    Gathers information on pricing data of ECS instances. Returns a dictionary with price info.
+    Gathers information on pricing data of ECS instances. Returns a dictionary with price info. (Deprecated)
     """
     request = DescribePriceRequest.DescribePriceRequest()
     request.set_InstanceType(instance_type)
     request.set_SystemDiskCategory("cloud_ssd")
     request.set_SystemDiskSize(50)   # above minimum system disk size
-
     response = tempclient.do_action_with_exception(request)
     return json.loads(response.decode("utf-8"))
+
+def get_instance_price_with_sku_price_list(tempclient, next_token=None):
+    """
+    Gathers information on pricing data of ECS instances by using CommonRequest, targeting the QuerySkuPriceList endpoint. Returns a dictionary with price info of 50 instances, and the query gets called again until the next_token is not present in the previous query. 
+    """
+    request = CommonRequest()
+    request.set_accept_format('json')
+    request.set_domain('business.ap-southeast-1.aliyuncs.com')
+    request.set_version('2017-12-14')
+    request.set_action_name('QuerySkuPriceList')
+    request.set_method('GET')
+
+    request.add_query_param('CommodityCode', 'ecs_intl')
+    request.add_query_param('PriceEntityCode', 'instance_type')
+    request.add_query_param('PageSize', '50')
+    request.add_query_param('Lang', 'en')
+
+    if next_token:
+        request.add_query_param('NextPageToken', next_token)
+    try:
+        response = tempclient.do_action_with_exception(request)
+    except ServerException as se:
+        logger.error("unexpected error while getting sku price.")
+        logger.debug(se)
+        return {}
+    
+    return json.loads(response.decode("utf-8"))
+
+
 
 def inventory_compliance_frameworks(vendor):
     """
@@ -242,7 +272,7 @@ def inventory_regions(vendor):
     return items
 
 
-def inventory_zones(vendor):
+def inventory_zones(vendor, skip_china=SKIP_CHINA):
     """
     Puts together the list containing information about the available zones for each region in the Alibaba Cloud service. Mainland Chinese regions were inaccessible due to the existence of the Great Firewall, so regions with a 'cn' region code are ignored while creating the list. 
     """
@@ -250,27 +280,35 @@ def inventory_zones(vendor):
     region_info_in_list = get_regions(one_region_query=ONE_REGION_QUERY)
     for region in region_info_in_list.get("Regions").get("Region"):
         # a try block with a specific exception for timeout would be probably better, but why should we wait for the timeout
-        if "cn-" in region.get("RegionId"):
-            logger.info("Region {rid} is inaccessible, skipping zones...".format(rid=region.get("RegionId")))
-            continue # chinese regions are not accessible from here
+        if skip_china:
+            if "cn-" in region.get("RegionId"):
+                logger.info("Region {rid} is inaccessible, skipping zones...".format(rid=region.get("RegionId")))
+                continue # chinese regions are not accessible from here
         else:
-            tempclient = AcsClient(
-                os.environ["ALIYUN_ACCESS_KEY"],
-                os.environ["ALIYUN_SECRET"],
-                region.get("RegionId")
-            )
+            try:
+                tempclient = AcsClient(
+                    os.environ["ALIYUN_ACCESS_KEY"],
+                    os.environ["ALIYUN_SECRET"],
+                    region.get("RegionId")
+                )
             
-            zone_info_in_list = get_zones(tempcl=tempclient)
-            for zone in zone_info_in_list.get("Zones").get("Zone"):  
-                logger.debug("Getting zone {} in region {}...".format(region.get("RegionId"), zone.get("ZoneId")))
-                items.append({
-                    "vendor_id": vendor.vendor_id,
-                    "region_id": region.get("RegionId"),
-                    "zone_id": zone.get("ZoneId"),
-                    "name": zone.get("ZoneId"),
-                    "api_reference": zone.get("ZoneId"),
-                    "display_name": zone.get("ZoneId"),
-                })
+                zone_info_in_list = get_zones(tempcl=tempclient)
+            
+                for zone in zone_info_in_list.get("Zones").get("Zone"):  
+                    logger.debug("Getting zone {} in region {}...".format(region.get("RegionId"), zone.get("ZoneId")))
+                    items.append({
+                        "vendor_id": vendor.vendor_id,
+                        "region_id": region.get("RegionId"),
+                        "zone_id": zone.get("ZoneId"),
+                        "name": zone.get("ZoneId"),
+                        "api_reference": zone.get("ZoneId"),
+                        "display_name": zone.get("ZoneId"),
+                    })
+            except ClientException as ce:
+                logger.debug("Failed to query region {rid}".format(rid=region.get("RegionId")))
+                logger.debug(ce)
+            
+
 
     return items
 
@@ -340,9 +378,6 @@ def inventory_servers(vendor):
         )
     return items
 
-# describeinstance region id paraméter, méásik régióból lekérdezni -- todo
-# pr-nál todo comment, kitölteni amit lehet
-
 def inventory_server_prices(vendor):
     """
     Puts together the list containing information about the hardware capabilities of each ECS type in the Alibaba Cloud service. These are hourly, pay-as-you-go prices. 
@@ -350,47 +385,58 @@ def inventory_server_prices(vendor):
     """
     items = []
 
-    region_info_in_list = get_regions(one_region_query=ONE_REGION_QUERY)
-    for region in region_info_in_list.get("Regions").get("Region"):
-        # a try block with a specific exception for timeout would be probably better, but why should we wait for the timeout
-        if "cn-" in region.get("RegionId"):
-            continue # chinese regions are not accessible from here
-        else:
-            tempclient = AcsClient(
-                os.environ["ALIYUN_ACCESS_KEY"],
-                os.environ["ALIYUN_SECRET"],
-                region.get("RegionId")
-            )
-            
-            zone_info_in_list = get_zones(tempcl=tempclient)
-            for zone in zone_info_in_list.get("Zones").get("Zone"):
+    tempclient = get_client()
 
-                instance_info_in_list = get_instance_types(tempclient)
-                for instancetype in instance_info_in_list.get("InstanceTypes").get("InstanceType"):
-                    try:
-                        instance_info = get_instance_price(tempclient, instancetype.get("InstanceTypeId"))
-                        for di in instance_info.get("PriceInfo").get("Price").get("DetailInfos").get("DetailInfo"):
-                            # getting trade price information on the instance only with no disks and other price modules attached
-                            if di.get("Resource") == "instanceType":
-                                logger.debug("Adding instance info - ZoneID: {zid}, instance type: {itype}, price: {price} {curr}".format(zid=zone.get("ZoneId"), itype=instancetype.get("InstanceTypeId"), price=di.get("TradePrice"), curr=instance_info.get("PriceInfo").get("Price").get("Currency")))
-                                items.append({
-                                    "vendor_id": vendor.vendor_id,
-                                    "region_id": tempclient.get_region_id(),
-                                    "zone_id": zone.get("ZoneId"),
-                                    "server_id": instancetype.get("InstanceTypeId") ,
-                                    "operating_system": "Linux",
-                                    "allocation": Allocation.ONDEMAND,
-                                    "unit": PriceUnit.HOUR,
-                                    "price": di.get("TradePrice"),
-                                    "price_upfront": 0, 
-                                    "price_tiered": [],
-                                    "currency": instance_info.get("PriceInfo").get("Price").get("Currency"),
-                                })  
+    next_token = None
+    page = 1
+    while True:
+        sku_price_data = get_instance_price_with_sku_price_list(tempclient, next_token=next_token)
+        logger.debug("Getting page {pagenum} of QuerySkuPriceList ...".format(pagenum=page))
+        for sku in sku_price_data.get("Data").get("SkuPricePage").get("SkuPriceList"):
+            try:
+                logger.debug(
+                    "Adding instance info - region_id: {region_id}, instance type: {itype}, price: {price} {curr}".format(
+                        region_id=sku["SkuFactorMap"]["vm_region_no"],
+                        itype=sku["SkuFactorMap"]["instance_type"],
+                        price=sku["CskuPriceList"][0]["Price"],
+                        curr=sku["CskuPriceList"][0]["Currency"]
+                    )
+                )
+                items.append({
+                    "vendor_id": vendor.vendor_id,
+                    "region_id": sku.get("SkuFactorMap").get("vm_region_no"),
+                    "zone_id": "all zones",
+                    "server_id": sku.get("SkuFactorMap").get("instance_type") ,
+                    "operating_system": sku.get("SkuFactorMap").get("vm_os_kind"),
+                    "allocation": Allocation.ONDEMAND,
+                    "unit": PriceUnit.HOUR,
+                    "price": sku.get("CskuPriceList")[0].get("Price"),
+                    "price_upfront": 0, 
+                    "price_tiered": [],
+                    "currency": sku.get("CskuPriceList")[0].get("Currency") ,
+                })  
+            except ServerException as se:
+                logger.debug(
+                    "Failed to add instance info - region_id: {region_id}, instance type: {itype}, price: {price} {curr}".format(
+                        region_id=sku["SkuFactorMap"]["vm_region_no"],
+                        itype=sku["SkuFactorMap"]["instance_type"],
+                        price=sku["CskuPriceList"][0]["Price"],
+                        curr=sku["CskuPriceList"][0]["Currency"]
+                    )
+                )     
+                logger.debug(se)       
+        # Safely extract next token if present
+        next_token = (
+            sku_price_data.get("Data", {})
+                .get("SkuPricePage", {})
+                .get("NextPageToken")
+        )
 
-                    except ServerException as se:
-                        # using debug level here to avoid spam. let the code run queitly in logging.info mode.
-                        logger.debug(se)
-                        logger.debug("Failed to add instance info - ZoneID: {zid}, instance type: {itype}".format(zid=zone.get("ZoneId"), itype=instancetype.get("InstanceTypeId")))
+        if not next_token:
+            logger.debug("No more QuerySkuPriceList pages or response json is missing Data — stopping query.")
+            break
+
+        page += 1
 
     return items
 
@@ -440,7 +486,7 @@ def inventory_storages(vendor):
     return items
 
 
-def inventory_storage_prices(vendor):
+def inventory_storage_prices(vendor, skip_china=SKIP_CHINA):
     """
     Puts together a list of storage prices. As storage is treated as a separate pricing package, the implementation assumes an instance type which is common, and can be found in any data center. Then it cycles through the hardcoded storage types.
 
@@ -462,72 +508,79 @@ def inventory_storage_prices(vendor):
     region_info_in_list = get_regions(one_region_query=ONE_REGION_QUERY)
     for region in region_info_in_list.get("Regions").get("Region"):
         # a try block with a specific exception for timeout would be probably better, but why should we wait for the timeout
-        if "cn-" in region.get("RegionId"):
-            continue # chinese regions are not accessible from here
+        
+        if skip_china:
+            if "cn-" in region.get("RegionId"):
+                continue # chinese regions are not accessible from here
         else:
             tempclient = AcsClient(
                 os.environ["ALIYUN_ACCESS_KEY"],
                 os.environ["ALIYUN_SECRET"],
                 region.get("RegionId")
             )
+            for disk in options_system_disk_category:
+                request = DescribePriceRequest.DescribePriceRequest()
+                request.set_PriceUnit("Hour")
+                request.set_InstanceType(DEFAULT_INSTANCE_TYPE)
+                request.set_DataDisk1Size(2000) # PL3 disks require a minimum of 1,261 GiB
+                request.set_DataDisk1Category(disk)
+                if disk == "cloud_essd":
+                    for pl in options_essd_disk_performance_level:
+                        request.set_DataDisk1PerformanceLevel(pl)
+                        try:
+                            response = tempclient.do_action_with_exception(request)
+                            respone_dict = (json.loads(response.decode("utf-8"))) 
 
-        for disk in options_system_disk_category:
-            request = DescribePriceRequest.DescribePriceRequest()
-            request.set_PriceUnit("Hour")
-            request.set_InstanceType(DEFAULT_INSTANCE_TYPE)
-            request.set_DataDisk1Size(2000) # PL3 disks require a minimum of 1,261 GiB
-            request.set_DataDisk1Category(disk)
-            if disk == "cloud_essd":
-                for pl in options_essd_disk_performance_level:
-                    request.set_DataDisk1PerformanceLevel(pl)
+                            for dti in respone_dict.get("PriceInfo").get("Price").get("DetailInfos").get("DetailInfo"):
+                                if dti.get("Resource") == "systemDisk" or dti.get("Resource") == "dataDisk":
+                                    items.append(
+                                        {
+                                            "vendor_id": vendor.vendor_id,
+                                            "region_id": tempclient.get_region_id() ,
+                                            "storage_id": disk+"-"+pl,
+                                            "unit": PriceUnit.GB_MONTH,
+                                            "price": dti.get("TradePrice"),
+                                            "currency": respone_dict.get("PriceInfo").get("Price").get("Currency"),
+                                        }
+                                    )
+                                    logger.debug("Successfully added disk info - Region: {tcl}, disk: {disk}, size: {size}, pl: {pl}".format(tcl=tempclient.get_region_id(), disk=disk, size=2000, pl=pl))
+                        except ServerException as se:
+                            logger.debug(se)
+                            logger.debug("Failed to add disk info - Region: {tcl}, disk: {disk}, size: {size}, pl: {pl}".format(tcl=tempclient.get_region_id(), disk=disk, size=2000, pl=pl))
+                            try:
+                                if "OperationDenied.PerformanceLevelNotMatch" in str(se.get_error_code()):
+                                    logger.debug("Error indicates that this zone is likely not supporting this disk type.")
+                                elif "InvalidDataDiskCategory.ValueNotSupported" in str(se.get_error_code()):
+                                    logger.debug("Error indicates likely invalid region / disk combination.")
+                            except ServerException as se:
+                                logger.debug("Second error within the same cycle. This should not be here. {se}".format(se))
+                        except ClientException as ce:
+                            logger.debug("Failed to query region {rid}".format(rid=region.get("RegionId")))
+                            logger.debug(ce)
+                        
+                else:
                     try:
                         response = tempclient.do_action_with_exception(request)
                         respone_dict = (json.loads(response.decode("utf-8"))) 
-
                         for dti in respone_dict.get("PriceInfo").get("Price").get("DetailInfos").get("DetailInfo"):
                             if dti.get("Resource") == "systemDisk" or dti.get("Resource") == "dataDisk":
                                 items.append(
                                     {
                                         "vendor_id": vendor.vendor_id,
                                         "region_id": tempclient.get_region_id() ,
-                                        "storage_id": disk+"-"+pl,
+                                        "storage_id": disk,
                                         "unit": PriceUnit.GB_MONTH,
                                         "price": dti.get("TradePrice"),
                                         "currency": respone_dict.get("PriceInfo").get("Price").get("Currency"),
                                     }
                                 )
-                                logger.debug("Successfully added disk info - Region: {tcl}, disk: {disk}, size: {size}, pl: {pl}".format(tcl=tempclient.get_region_id(), disk=disk, size=2000, pl=pl))
+                                logger.debug("Successfully added disk info - Region: {tcl}, disk: {disk}, size: {size}".format(tcl=tempclient.get_region_id(), disk=disk, size=2000))
                     except ServerException as se:
                         logger.debug(se)
-                        logger.debug("Failed to add disk info - Region: {tcl}, disk: {disk}, size: {size}, pl: {pl}".format(tcl=tempclient.get_region_id(), disk=disk, size=2000, pl=pl))
-                        try:
-                            if "OperationDenied.PerformanceLevelNotMatch" in str(se.get_error_code()):
-                                logger.debug("Error indicates that this zone is likely not supporting this disk type.")
-                            elif "InvalidDataDiskCategory.ValueNotSupported" in str(se.get_error_code()):
-                                logger.debug("Error indicates likely invalid region / disk combination.")
-                        except ServerException as se:
-                            logger.debug("Second error within the same cycle. This should not be here. {se}".format(se))
-                    
-            else:
-                try:
-                    response = tempclient.do_action_with_exception(request)
-                    respone_dict = (json.loads(response.decode("utf-8"))) 
-                    for dti in respone_dict.get("PriceInfo").get("Price").get("DetailInfos").get("DetailInfo"):
-                        if dti.get("Resource") == "systemDisk" or dti.get("Resource") == "dataDisk":
-                            items.append(
-                                {
-                                    "vendor_id": vendor.vendor_id,
-                                    "region_id": tempclient.get_region_id() ,
-                                    "storage_id": disk,
-                                    "unit": PriceUnit.GB_MONTH,
-                                    "price": dti.get("TradePrice"),
-                                    "currency": respone_dict.get("PriceInfo").get("Price").get("Currency"),
-                                }
-                            )
-                            logger.debug("Successfully added disk info - Region: {tcl}, disk: {disk}, size: {size}".format(tcl=tempclient.get_region_id(), disk=disk, size=2000))
-                except ServerException as se:
-                    logger.debug(se)
-                    logger.debug("Failed to add disk info - Region: {tcl}, disk: {disk}, size: {size}".format(tcl=tempclient.get_region_id(), disk=disk, size=2000))
+                        logger.debug("Failed to add disk info - Region: {tcl}, disk: {disk}, size: {size}".format(tcl=tempclient.get_region_id(), disk=disk, size=2000))
+                    except ClientException as ce:
+                        logger.debug("Failed to query region {rid}".format(rid=region.get("RegionId")))
+                        logger.debug(ce)
 
     return items
 
