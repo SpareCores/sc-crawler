@@ -57,12 +57,14 @@ hcloud = ["hcloud"]
 gcp = ["google-cloud", "google-cloud-compute", "google-cloud-billing"]
 azure = ["azure-identity", "azure-mgmt-resource", "azure-mgmt-compute"]
 upcloud = ["upcloud-api"]
+ovh = ["ovh"]
 vendors = [
   "sparecores-crawler[aws]",
   "sparecores-crawler[hcloud]",
   "sparecores-crawler[gcp]",
   "sparecores-crawler[azure]",
   "sparecores-crawler[upcloud]",
+  "sparecores-crawler[ovh]",
 ]
 all = ["sparecores-crawler[testing]", "sparecores-crawler[vendors]"]
 
