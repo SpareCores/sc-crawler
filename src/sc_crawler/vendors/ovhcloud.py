@@ -1,18 +1,20 @@
 import os
 from functools import cache
+
 import ovh
 from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Prompt
+
 from ..lookup import map_compliance_frameworks_to_vendor
 from ..table_fields import (
+    Allocation,
     CpuAllocation,
     CpuArchitecture,
+    PriceUnit,
     Status,
     StorageType,
-    Allocation,
-    PriceUnit,
-    TrafficDirection
+    TrafficDirection,
 )
 
 HOURS_PER_MONTH = 730
@@ -22,10 +24,10 @@ MIB_PER_GIB = 1024
 CURRENCY = "USD"
 
 # Local Zone and Multi-AZ plan code suffixes (currently skipped)
-LOCAL_ZONE_SUFFIXES = ('.LZ', '.LZ.AF', '.LZ.EU', '.LZ.EUROZONE', '.3AZ')
+LOCAL_ZONE_SUFFIXES = (".LZ", ".LZ.AF", ".LZ.EU", ".LZ.EUROZONE", ".3AZ")
 
 # Windows instance prefix (filtered out)
-WINDOWS_PREFIX = 'win-'
+WINDOWS_PREFIX = "win-"
 
 
 @cache
@@ -41,28 +43,32 @@ def _client() -> ovh.Client:
         OVH_CONSUMER_KEY: Consumer key (auto-generated on first run if missing)
     """
     try:
-        endpoint = os.getenv('OVH_ENDPOINT').strip()
+        endpoint = os.getenv("OVH_ENDPOINT").strip()
     except (KeyError, AttributeError):
         raise KeyError("Missing environment variable: OVH_ENDPOINT")
     if endpoint not in ovh.client.ENDPOINTS.keys():
-        raise KeyError(f"Invalid OVH_ENDPOINT. Must be one of: {', '.join(ovh.client.ENDPOINTS.keys())}")
+        raise KeyError(
+            f"Invalid OVH_ENDPOINT. Must be one of: {', '.join(ovh.client.ENDPOINTS.keys())}"
+        )
     try:
-        application_key = os.getenv('OVH_APP_KEY').strip()
+        application_key = os.getenv("OVH_APP_KEY").strip()
     except (KeyError, AttributeError):
         raise KeyError("Missing environment variable: OVH_APP_KEY")
     try:
-        application_secret = os.getenv('OVH_APP_SECRET').strip()
+        application_secret = os.getenv("OVH_APP_SECRET").strip()
     except (KeyError, AttributeError):
         raise KeyError("Missing environment variable: OVH_APP_SECRET")
 
     # Check if consumer key exists
-    consumer_key = os.getenv('OVH_CONSUMER_KEY')
+    consumer_key = os.getenv("OVH_CONSUMER_KEY")
 
     if not consumer_key or not consumer_key.strip():
         # Consumer key not set - generate it interactively
         console = Console()
 
-        console.print("\n[yellow]⚠️  OVH_CONSUMER_KEY not found. Generating a new consumer key...[/yellow]\n")
+        console.print(
+            "\n[yellow]⚠️  OVH_CONSUMER_KEY not found. Generating a new consumer key...[/yellow]\n"
+        )
 
         # Create client WITHOUT consumer key to request one
         temp_client = ovh.Client(
@@ -73,7 +79,7 @@ def _client() -> ovh.Client:
 
         # Request consumer key with required permissions
         ck = temp_client.new_consumer_key_request()
-        ck.add_recursive_rules(ovh.API_READ_ONLY, '/')
+        ck.add_recursive_rules(ovh.API_READ_ONLY, "/")
 
         # Request token
         validation = ck.request()
@@ -87,16 +93,21 @@ def _client() -> ovh.Client:
             f"[green]export OVH_CONSUMER_KEY='{validation['consumerKey']}'[/green]"
         )
 
-        console.print(Panel(
-            auth_message,
-            title="[bold red]⚡ OVHcloud Authentication[/bold red]",
-            border_style="bold blue",
-            padding=(1, 2)
-        ))
+        console.print(
+            Panel(
+                auth_message,
+                title="[bold red]⚡ OVHcloud Authentication[/bold red]",
+                border_style="bold blue",
+                padding=(1, 2),
+            )
+        )
 
-        Prompt.ask("\n[bold yellow]Press Enter after you have completed authentication[/bold yellow]", default="")
+        Prompt.ask(
+            "\n[bold yellow]Press Enter after you have completed authentication[/bold yellow]",
+            default="",
+        )
 
-        consumer_key = validation['consumerKey']
+        consumer_key = validation["consumerKey"]
     else:
         consumer_key = consumer_key.strip()
 
@@ -116,13 +127,13 @@ def _get_project_id(client: ovh.Client) -> str | None:
         str: Project ID from OVH_PROJECT_ID env var or first project in account
         None: If no OVH_PROJECT_ID set and no projects available
     """
-    project_id = os.getenv('OVH_PROJECT_ID')
+    project_id = os.getenv("OVH_PROJECT_ID")
     if project_id:
         return project_id.strip()
 
     # No env var set, fetch from API
     try:
-        projects = client.get('/cloud/project')
+        projects = client.get("/cloud/project")
         return projects[0] if projects else None
     except Exception as e:
         raise Exception(f"Failed to fetch project list from OVHcloud API: {e}") from e
@@ -148,7 +159,7 @@ def _get_regions(client: ovh.Client, project_id: str | None = None) -> list[str]
     if not project_id:
         project_id = _get_project_id(client)
     try:
-        return client.get(f'/cloud/project/{project_id}/region')
+        return client.get(f"/cloud/project/{project_id}/region")
     except Exception as e:
         raise Exception(f"Failed to fetch regions for project {project_id}: {e}") from e
 
@@ -171,9 +182,9 @@ def _get_flavors(client: ovh.Client, project_id: str | None = None) -> list[dict
         project_id = _get_project_id(client)
     try:
         # Fetch all available flavors for the project
-        flavors = client.get(f'/cloud/project/{project_id}/flavor')
+        flavors = client.get(f"/cloud/project/{project_id}/flavor")
         # Filter out Windows servers
-        return [f for f in flavors if f.get('osType') != 'windows']
+        return [f for f in flavors if f.get("osType") != "windows"]
     except Exception as e:
         raise Exception(f"Failed to fetch flavors for project {project_id}: {e}") from e
 
@@ -205,14 +216,22 @@ def _get_servers_from_catalog() -> list[dict]:
     client = _client()
     catalog = _get_catalog(client)
 
-    plans = catalog.get('plans', [])
-    addons = catalog.get('addons', [])
-    project_plan = next((p for p in plans if p.get('planCode', '') == 'project'), {})
-    server_addon_names = next((a for a in project_plan.get('addonFamilies', []) if a.get('name', '') == 'instance'),
-                              {}).get('addons', [])
+    plans = catalog.get("plans", [])
+    addons = catalog.get("addons", [])
+    project_plan = next((p for p in plans if p.get("planCode", "") == "project"), {})
+    server_addon_names = next(
+        (
+            a
+            for a in project_plan.get("addonFamilies", [])
+            if a.get("name", "") == "instance"
+        ),
+        {},
+    ).get("addons", [])
     # Exclude Windows instances
-    server_addon_names = [a for a in server_addon_names if not a.startswith(WINDOWS_PREFIX)]
-    server_addons = [a for a in addons if a.get('planCode', '') in server_addon_names]
+    server_addon_names = [
+        a for a in server_addon_names if not a.startswith(WINDOWS_PREFIX)
+    ]
+    server_addons = [a for a in addons if a.get("planCode", "") in server_addon_names]
     return server_addons
 
 
@@ -265,25 +284,41 @@ def _get_storages_from_catalog() -> list[dict]:
     client = _client()
     catalog = _get_catalog(client)
 
-    plans = catalog.get('plans', [])
-    addons = catalog.get('addons', [])
-    project_plan = next((p for p in plans if p.get('planCode', '') == 'project'), {})
-    storage_addon_names = next((a for a in project_plan.get('addonFamilies', []) if a.get('name', '') == 'storage'),
-                               {}).get(
-        'addons', [])
+    plans = catalog.get("plans", [])
+    addons = catalog.get("addons", [])
+    project_plan = next((p for p in plans if p.get("planCode", "") == "project"), {})
+    storage_addon_names = next(
+        (
+            a
+            for a in project_plan.get("addonFamilies", [])
+            if a.get("name", "") == "storage"
+        ),
+        {},
+    ).get("addons", [])
     # Filter out storage addons without region configurations
-    storage_addons = [a for a in addons if
-                      a.get('planCode', '') in storage_addon_names and
-                      len(a.get("configurations", [])) > 0 and
-                      a.get("configurations", [])[0].get("values", [])]
-    volume_addon_names = next((a for a in project_plan.get('addonFamilies', []) if a.get('name', '') == 'volume'),
-                              {}).get(
-        'addons', [])
+    storage_addons = [
+        a
+        for a in addons
+        if a.get("planCode", "") in storage_addon_names
+        and len(a.get("configurations", [])) > 0
+        and a.get("configurations", [])[0].get("values", [])
+    ]
+    volume_addon_names = next(
+        (
+            a
+            for a in project_plan.get("addonFamilies", [])
+            if a.get("name", "") == "volume"
+        ),
+        {},
+    ).get("addons", [])
     # Filter out volume addons without region configurations
-    volume_addons = [a for a in addons if
-                     a.get('planCode', '') in volume_addon_names and
-                     len(a.get("configurations", [])) > 0 and
-                     a.get("configurations", [])[0].get("values", [])]
+    volume_addons = [
+        a
+        for a in addons
+        if a.get("planCode", "") in volume_addon_names
+        and len(a.get("configurations", [])) > 0
+        and a.get("configurations", [])[0].get("values", [])
+    ]
     return storage_addons + volume_addons
 
 
@@ -293,12 +328,18 @@ def _get_ipv4_prices_from_catalog() -> list[dict]:
     client = _client()
     catalog = _get_catalog(client)
 
-    plans = catalog.get('plans', [])
-    addons = catalog.get('addons', [])
-    project_plan = next((p for p in plans if p.get('planCode', '') == 'project'), {})
-    ipv4_addon_names = next((a for a in project_plan.get('addonFamilies', []) if a.get('name', '') == 'publicip'),
-                            {}).get('addons', [])
-    ipv4_addons = [a for a in addons if a.get('planCode', '') in ipv4_addon_names]
+    plans = catalog.get("plans", [])
+    addons = catalog.get("addons", [])
+    project_plan = next((p for p in plans if p.get("planCode", "") == "project"), {})
+    ipv4_addon_names = next(
+        (
+            a
+            for a in project_plan.get("addonFamilies", [])
+            if a.get("name", "") == "publicip"
+        ),
+        {},
+    ).get("addons", [])
+    ipv4_addons = [a for a in addons if a.get("planCode", "") in ipv4_addon_names]
     return ipv4_addons
 
 
@@ -309,24 +350,24 @@ def _get_base_region_and_city(region: str) -> tuple[str, str | None]:
     # Source: https://www.ovhcloud.com/en/public-cloud/regions-availability/
     region_city_mapping = {
         # Europe (EMEA)
-        'SBG': 'Strasbourg',
-        'GRA': 'Gravelines',
-        'RBX': 'Roubaix',
-        'PAR': 'Paris',
-        'ERI': 'London',
-        'LIM': 'Frankfurt',
-        'WAW': 'Warsaw',
-        'DE': 'Frankfurt',
-        'UK': 'London',
+        "SBG": "Strasbourg",
+        "GRA": "Gravelines",
+        "RBX": "Roubaix",
+        "PAR": "Paris",
+        "ERI": "London",
+        "LIM": "Frankfurt",
+        "WAW": "Warsaw",
+        "DE": "Frankfurt",
+        "UK": "London",
         # North America
-        'BHS': 'Montreal',
-        'TOR': 'Toronto',
-        'HIL': 'Seattle',
-        'VIN': 'Washington DC',
+        "BHS": "Montreal",
+        "TOR": "Toronto",
+        "HIL": "Seattle",
+        "VIN": "Washington DC",
         # Asia-Pacific
-        'SGP': 'Singapore',
-        'SYD': 'Sydney',
-        'MUM': 'Mumbai',
+        "SGP": "Singapore",
+        "SYD": "Sydney",
+        "MUM": "Mumbai",
     }
 
     # Extract base region code from various formats:
@@ -334,12 +375,12 @@ def _get_base_region_and_city(region: str) -> tuple[str, str | None]:
     # - With number: 'GRA9', 'BHS5', 'DE1' -> 'GRA', 'BHS', 'DE'
     # - Descriptive: 'CA-EAST-TOR', 'EU-WEST-PAR' -> 'TOR', 'PAR'
     # - Special: 'RBX-A', 'RBX-ARCHIVE' -> 'RBX', 'RBX'
-    if '-' in region:
-        parts = region.split('-')
+    if "-" in region:
+        parts = region.split("-")
         # Try first part (for RBX-ARCHIVE, RBX-A)
-        first_part = ''.join([c for c in parts[0] if not c.isdigit()])
+        first_part = "".join([c for c in parts[0] if not c.isdigit()])
         # Try last part (for CA-EAST-TOR, EU-WEST-PAR)
-        last_part = ''.join([c for c in parts[-1] if not c.isdigit()])
+        last_part = "".join([c for c in parts[-1] if not c.isdigit()])
 
         # Prefer the part that exists in our mappings
         if last_part in region_city_mapping:
@@ -348,7 +389,7 @@ def _get_base_region_and_city(region: str) -> tuple[str, str | None]:
             base_region = first_part
     else:
         # Handle simple format with or without numbers (e.g., 'GRA11' -> 'GRA')
-        base_region = ''.join([c for c in region if not c.isdigit()])
+        base_region = "".join([c for c in region if not c.isdigit()])
 
     return base_region, region_city_mapping.get(base_region)
 
@@ -365,35 +406,35 @@ def _get_server_family(flavor_name: str) -> str | None:
     name_lower = flavor_name.lower()
 
     # Extract prefix (e.g., 'b2-7' -> 'b2', 't1-45' -> 't1')
-    prefix = name_lower.split('-')[0]
+    prefix = name_lower.split("-")[0]
 
     # GPU instances
-    if prefix in ['t1', 't2', 'a10', 'a100', 'l4', 'l40s', 'h100', 'rtx5000']:
-        return 'Cloud GPU'
+    if prefix in ["t1", "t2", "a10", "a100", "l4", "l40s", "h100", "rtx5000"]:
+        return "Cloud GPU"
 
     # Metal instances
-    if prefix == 'bm':
-        return 'Metal'
+    if prefix == "bm":
+        return "Metal"
 
     # General Purpose: b2, b3 families
-    if prefix in ['b2', 'b3']:
-        return 'General Purpose'
+    if prefix in ["b2", "b3"]:
+        return "General Purpose"
 
     # Compute Optimized: c2, c3 families
-    if prefix in ['c2', 'c3']:
-        return 'Compute Optimized'
+    if prefix in ["c2", "c3"]:
+        return "Compute Optimized"
 
     # Memory Optimized: r2, r3 families
-    if prefix in ['r2', 'r3']:
-        return 'Memory Optimized'
+    if prefix in ["r2", "r3"]:
+        return "Memory Optimized"
 
     # Discovery: d2 family
-    if prefix == 'd2':
-        return 'Discovery'
+    if prefix == "d2":
+        return "Discovery"
 
     # Storage Optimized: i1 family
-    if prefix == 'i1':
-        return 'Storage Optimized'
+    if prefix == "i1":
+        return "Storage Optimized"
 
     # Default fallback
     return None
@@ -409,82 +450,84 @@ def _get_cpu_info(flavor_name: str) -> tuple[str | None, str | None, float | Non
     name_lower = flavor_name.lower()
 
     # CPU model verified from lscpu on B3-8 instance (2025-11-17): AMD EPYC-Milan Processor (Family 25, Model 1)
-    if name_lower.startswith('b3-'):
-        return 'AMD', 'EPYC Milan', 2.3
-    if name_lower.startswith('c3-'):
+    if name_lower.startswith("b3-"):
+        return "AMD", "EPYC Milan", 2.3
+    if name_lower.startswith("c3-"):
         return None, None, 2.3
-    if name_lower.startswith('r3-'):
+    if name_lower.startswith("r3-"):
         return None, None, 2.3
 
     # 2nd generation instances (b2, c2, r2)
     # - B2 series: 2.0 GHz (balanced)
     # - C2 series: 3.0 GHz (compute-optimized)
     # - R2 series: 2.2 GHz (RAM-optimized)
-    if name_lower.startswith('c2-'):
+    if name_lower.startswith("c2-"):
         return None, None, 3.0
-    if name_lower.startswith('r2-'):
+    if name_lower.startswith("r2-"):
         return None, None, 2.2
-    if name_lower.startswith('b2-'):
+    if name_lower.startswith("b2-"):
         return None, None, 2.0
 
     # Discovery instances (d2) - 2.0 GHz
-    if name_lower.startswith('d2-'):
+    if name_lower.startswith("d2-"):
         return None, None, 2.0
 
     # Storage optimized instances (i1) - 2.2 GHz
-    if name_lower.startswith('i1-'):
+    if name_lower.startswith("i1-"):
         return None, None, 2.2
 
     # Bare Metal instances
     # - bm-s1 (Small): 4 cores @ 4.0 GHz
     # - bm-m1 (Medium): 8 cores @ 3.7 GHz
     # - bm-l1 (Large): 16 cores @ 3.1 GHz
-    if name_lower == 'bm-s1':
+    if name_lower == "bm-s1":
         return None, None, 4.0
-    if name_lower == 'bm-m1':
+    if name_lower == "bm-m1":
         return None, None, 3.7
-    if name_lower == 'bm-l1':
+    if name_lower == "bm-l1":
         return None, None, 3.1
-    if name_lower.startswith('bm-'):
+    if name_lower.startswith("bm-"):
         return None, None, None  # Unknown BM type
 
     # H100 series - 3.0 GHz
-    if name_lower.startswith('h100-'):
+    if name_lower.startswith("h100-"):
         return None, None, 3.0
 
     # A100 series - No CPU info available
-    if name_lower.startswith('a100-'):
+    if name_lower.startswith("a100-"):
         return None, None, None
 
     # A10 series - 3.3 GHz
-    if name_lower.startswith('a10-'):
+    if name_lower.startswith("a10-"):
         return None, None, 3.3
 
     # L40S series - 2.75 GHz
-    if name_lower.startswith('l40s-'):
+    if name_lower.startswith("l40s-"):
         return None, None, 2.75
 
     # L4 series - 2.75 GHz
-    if name_lower.startswith('l4-'):
+    if name_lower.startswith("l4-"):
         return None, None, 2.75
 
     # Tesla V100S (t2) series - 2.9 GHz
-    if name_lower.startswith('t2-') or name_lower.startswith('t2-le-'):
+    if name_lower.startswith("t2-") or name_lower.startswith("t2-le-"):
         return None, None, 2.9
 
     # Tesla V100 (t1) series - 3.0 GHz
-    if name_lower.startswith('t1-') or name_lower.startswith('t1-le-'):
+    if name_lower.startswith("t1-") or name_lower.startswith("t1-le-"):
         return None, None, 3.0
 
     # Quadro RTX 5000 series - 3.3 GHz
-    if name_lower.startswith('rtx5000-'):
+    if name_lower.startswith("rtx5000-"):
         return None, None, 3.3
 
     # Default: unknown
     return None, None, None
 
 
-def _get_gpu_info(flavor_name: str) -> tuple[int, int | None, str | None, str | None, str | None]:
+def _get_gpu_info(
+    flavor_name: str,
+) -> tuple[int, int | None, str | None, str | None, str | None]:
     """Map GPU flavor name to GPU specs based on verified data.
 
     GPU Memory Specifications (retrieved 2025-11-19):
@@ -526,11 +569,11 @@ def _get_gpu_info(flavor_name: str) -> tuple[int, int | None, str | None, str | 
     # - h100-380: 1x H100, 380 GB RAM, 30 vCores (3 GHz), 200 GB + 3.84 TB NVMe Passthrough, 8,000 Mbit/s
     # - h100-760: 2x H100, 760 GB RAM, 60 vCores (3 GHz), 200 GB + 2x 3.84 TB NVMe Passthrough, 16,000 Mbit/s
     # - h100-1520: 4x H100, 1,520 GB RAM, 120 vCores (3 GHz), 200 GB + 4x 3.84 TB NVMe Passthrough, 25,000 Mbit/s
-    if name_lower.startswith('h100-'):
+    if name_lower.startswith("h100-"):
         try:
-            size = int(name_lower.split('-')[1])
+            size = int(name_lower.split("-")[1])
             gpu_count = size // 380
-            return gpu_count, gpu_count * 80, 'NVIDIA', 'Hopper', 'H100 80GB HBM3'
+            return gpu_count, gpu_count * 80, "NVIDIA", "Hopper", "H100 80GB HBM3"
         except (IndexError, ValueError):
             return 0, None, None, None, None
 
@@ -538,11 +581,11 @@ def _get_gpu_info(flavor_name: str) -> tuple[int, int | None, str | None, str | 
     # - a100-180: 1x A100, 180 GB RAM, 15 vCores, 300 GB NVMe, 8,000 Mbit/s
     # - a100-360: 2x A100, 360 GB RAM, 30 vCores, 500 GB NVMe, 16,000 Mbit/s
     # - a100-720: 4x A100, 720 GB RAM, 60 vCores, 500 GB NVMe, 25,000 Mbit/s
-    if name_lower.startswith('a100-'):
+    if name_lower.startswith("a100-"):
         try:
-            size = int(name_lower.split('-')[1])
+            size = int(name_lower.split("-")[1])
             gpu_count = size // 180
-            return gpu_count, gpu_count * 80, 'NVIDIA', 'Ampere', 'A100 80GB HBM2e'
+            return gpu_count, gpu_count * 80, "NVIDIA", "Ampere", "A100 80GB HBM2e"
         except (IndexError, ValueError):
             return 0, None, None, None, None
 
@@ -551,11 +594,11 @@ def _get_gpu_info(flavor_name: str) -> tuple[int, int | None, str | None, str | 
     # - a10-45: 1x A10, 45 GB RAM, 30 vCores (3.3 GHz), 400 GB SSD, 8,000 Mbit/s
     # - a10-90: 2x A10, 90 GB RAM, 60 vCores (3.3 GHz), 400 GB SSD, 16,000 Mbit/s
     # - a10-180: 4x A10, 180 GB RAM, 120 vCores (3.3 GHz), 400 GB SSD, 25,000 Mbit/s
-    if name_lower.startswith('a10-'):
+    if name_lower.startswith("a10-"):
         try:
-            size = int(name_lower.split('-')[1])
+            size = int(name_lower.split("-")[1])
             gpu_count = size // 45
-            return gpu_count, gpu_count * 24, 'NVIDIA', 'Ampere', 'A10 24GB GDDR6'
+            return gpu_count, gpu_count * 24, "NVIDIA", "Ampere", "A10 24GB GDDR6"
         except (IndexError, ValueError):
             return 0, None, None, None, None
 
@@ -564,11 +607,17 @@ def _get_gpu_info(flavor_name: str) -> tuple[int, int | None, str | None, str | 
     # - l40s-90: 1x L40S, 90 GB RAM, 15 vCores (2.75 GHz), 400 GB NVMe, 8,000 Mbit/s
     # - l40s-180: 2x L40S, 180 GB RAM, 30 vCores (2.75 GHz), 400 GB NVMe, 16,000 Mbit/s
     # - l40s-360: 4x L40S, 360 GB RAM, 60 vCores (2.75 GHz), 400 GB NVMe, 25,000 Mbit/s
-    if name_lower.startswith('l40s-'):
+    if name_lower.startswith("l40s-"):
         try:
-            size = int(name_lower.split('-')[1])
+            size = int(name_lower.split("-")[1])
             gpu_count = size // 90
-            return gpu_count, gpu_count * 48, 'NVIDIA', 'Ada Lovelace', 'L40S 48GB GDDR6'
+            return (
+                gpu_count,
+                gpu_count * 48,
+                "NVIDIA",
+                "Ada Lovelace",
+                "L40S 48GB GDDR6",
+            )
         except (IndexError, ValueError):
             return 0, None, None, None, None
 
@@ -577,11 +626,11 @@ def _get_gpu_info(flavor_name: str) -> tuple[int, int | None, str | None, str | 
     # - l4-90: 1x L4, 90 GB RAM, 22 vCores (2.75 GHz), 400 GB NVMe, 8,000 Mbit/s
     # - l4-180: 2x L4, 180 GB RAM, 45 vCores (2.75 GHz), 400 GB NVMe, 16,000 Mbit/s
     # - l4-360: 4x L4, 360 GB RAM, 90 vCores (2.75 GHz), 400 GB NVMe, 25,000 Mbit/s
-    if name_lower.startswith('l4-'):
+    if name_lower.startswith("l4-"):
         try:
-            size = int(name_lower.split('-')[1])
+            size = int(name_lower.split("-")[1])
             gpu_count = size // 90
-            return gpu_count, gpu_count * 24, 'NVIDIA', 'Ada Lovelace', 'L4 24GB GDDR6'
+            return gpu_count, gpu_count * 24, "NVIDIA", "Ada Lovelace", "L4 24GB GDDR6"
         except (IndexError, ValueError):
             return 0, None, None, None, None
 
@@ -594,13 +643,13 @@ def _get_gpu_info(flavor_name: str) -> tuple[int, int | None, str | None, str | 
     # - t2-le-45: 1x V100S, 45 GB RAM, 15 vCores (2.9 GHz), 300 GB NVMe, 2,000 Mbit/s
     # - t2-le-90: 2x V100S, 90 GB RAM, 30 vCores (2.9 GHz), 500 GB NVMe, 4,000 Mbit/s
     # - t2-le-180: 4x V100S, 180 GB RAM, 60 vCores (2.9 GHz), 500 GB NVMe, 10,000 Mbit/s
-    if name_lower.startswith('t2-') or name_lower.startswith('t2-le-'):
+    if name_lower.startswith("t2-") or name_lower.startswith("t2-le-"):
         try:
             # Extract size: 't2-45' -> 45, 't2-le-45' -> 45
-            parts = name_lower.split('-')
+            parts = name_lower.split("-")
             size = int(parts[-1])
             gpu_count = size // 45
-            return gpu_count, gpu_count * 32, 'NVIDIA', 'Volta', 'Tesla V100S 32GB HBM2'
+            return gpu_count, gpu_count * 32, "NVIDIA", "Volta", "Tesla V100S 32GB HBM2"
         except (IndexError, ValueError):
             return 0, None, None, None, None
 
@@ -613,13 +662,13 @@ def _get_gpu_info(flavor_name: str) -> tuple[int, int | None, str | None, str | 
     # - t1-le-45: 1x V100, 45 GB RAM, 8 vCores (3 GHz), 300 GB NVMe, 2,000 Mbit/s
     # - t1-le-90: 2x V100, 90 GB RAM, 16 vCores (3 GHz), 400 GB NVMe, 4,000 Mbit/s
     # - t1-le-180: 4x V100, 180 GB RAM, 32 vCores (3 GHz), 400 GB NVMe, 10,000 Mbit/s
-    if name_lower.startswith('t1-') or name_lower.startswith('t1-le-'):
+    if name_lower.startswith("t1-") or name_lower.startswith("t1-le-"):
         try:
             # Extract size: 't1-45' -> 45, 't1-le-45' -> 45
-            parts = name_lower.split('-')
+            parts = name_lower.split("-")
             size = int(parts[-1])
             gpu_count = size // 45
-            return gpu_count, gpu_count * 16, 'NVIDIA', 'Volta', 'Tesla V100 16GB HBM2'
+            return gpu_count, gpu_count * 16, "NVIDIA", "Volta", "Tesla V100 16GB HBM2"
         except (IndexError, ValueError):
             return 0, None, None, None, None
 
@@ -628,11 +677,17 @@ def _get_gpu_info(flavor_name: str) -> tuple[int, int | None, str | None, str | 
     # - rtx5000-28: 1x Quadro RTX 5000, 28 GB RAM, 4 vCores (3.3 GHz), 400 GB SSD, 2,000 Mbit/s
     # - rtx5000-56: 2x Quadro RTX 5000, 56 GB RAM, 8 vCores (3.3 GHz), 400 GB SSD, 4,000 Mbit/s
     # - rtx5000-84: 3x Quadro RTX 5000, 84 GB RAM, 16 vCores (3.3 GHz), 400 GB SSD, 10,000 Mbit/s
-    if name_lower.startswith('rtx5000-'):
+    if name_lower.startswith("rtx5000-"):
         try:
-            size = int(name_lower.split('-')[1])
+            size = int(name_lower.split("-")[1])
             gpu_count = size // 28
-            return gpu_count, gpu_count * 16, 'NVIDIA', 'Turing', 'Quadro RTX 5000 16GB GDDR6'
+            return (
+                gpu_count,
+                gpu_count * 16,
+                "NVIDIA",
+                "Turing",
+                "Quadro RTX 5000 16GB GDDR6",
+            )
         except (IndexError, ValueError):
             return 0, None, None, None, None
 
@@ -666,40 +721,40 @@ def _get_storage_type(flavor_name: str) -> StorageType:
     name_lower = flavor_name.lower()
 
     # 3rd generation instances (B3, C3, R3) - NVMe storage
-    if name_lower.startswith(('b3-', 'c3-', 'r3-')):
+    if name_lower.startswith(("b3-", "c3-", "r3-")):
         return StorageType.NVME_SSD
 
     # Discovery instances (D2) - NVMe storage
-    if name_lower.startswith('d2-'):
+    if name_lower.startswith("d2-"):
         return StorageType.NVME_SSD
 
     # Storage optimized (I1) - Mixed SSD + NVMe
     # API reports combined, using SSD as it's the boot disk type
-    if name_lower.startswith('i1-'):
+    if name_lower.startswith("i1-"):
         return StorageType.SSD
 
     # 2nd generation instances (B2, C2, R2) - SATA SSD storage
-    if name_lower.startswith(('b2-', 'c2-', 'r2-')):
+    if name_lower.startswith(("b2-", "c2-", "r2-")):
         return StorageType.SSD
 
     # Bare Metal instances - SATA SSD (2x 960 GB SSD)
-    if name_lower.startswith('bm-'):
+    if name_lower.startswith("bm-"):
         return StorageType.SSD
 
     # Tesla V100/V100S (T1/T2 series) - NVMe
-    if name_lower.startswith(('t1-', 't1-le-', 't2-', 't2-le-')):
+    if name_lower.startswith(("t1-", "t1-le-", "t2-", "t2-le-")):
         return StorageType.NVME_SSD
 
     # L4, L40S, A10 series - NVMe
-    if name_lower.startswith(('l4-', 'l40s-', 'a10-')):
+    if name_lower.startswith(("l4-", "l40s-", "a10-")):
         return StorageType.NVME_SSD
 
     # H100 series - NVMe with Passthrough
-    if name_lower.startswith('h100-'):
+    if name_lower.startswith("h100-"):
         return StorageType.NVME_SSD
 
     # RTX 5000 series - SATA SSD
-    if name_lower.startswith('rtx5000-'):
+    if name_lower.startswith("rtx5000-"):
         return StorageType.SSD
 
     # A100 series - Storage type not specified
@@ -770,24 +825,24 @@ def inventory_regions(vendor) -> list[dict]:
     # Source: https://www.ovhcloud.com/en/public-cloud/regions-availability/
     region_country_mapping = {
         # Europe (EMEA)
-        'SBG': 'FR',  # Strasbourg, France
-        'GRA': 'FR',  # Gravelines, France
-        'RBX': 'FR',  # Roubaix, France
-        'PAR': 'FR',  # Paris, France (3-AZ)
-        'ERI': 'GB',  # London (Erith), United Kingdom
-        'LIM': 'DE',  # Frankfurt (Limburg), Germany
-        'WAW': 'PL',  # Warsaw, Poland
-        'DE': 'DE',  # Frankfurt, Germany
-        'UK': 'GB',  # London, United Kingdom
+        "SBG": "FR",  # Strasbourg, France
+        "GRA": "FR",  # Gravelines, France
+        "RBX": "FR",  # Roubaix, France
+        "PAR": "FR",  # Paris, France (3-AZ)
+        "ERI": "GB",  # London (Erith), United Kingdom
+        "LIM": "DE",  # Frankfurt (Limburg), Germany
+        "WAW": "PL",  # Warsaw, Poland
+        "DE": "DE",  # Frankfurt, Germany
+        "UK": "GB",  # London, United Kingdom
         # North America
-        'BHS': 'CA',  # Beauharnois (Montreal), Quebec, Canada
-        'TOR': 'CA',  # Toronto, Canada
-        'HIL': 'US',  # Hillsboro (Seattle/Portland), Oregon, USA
-        'VIN': 'US',  # Vint Hill (Washington DC), Virginia, USA
+        "BHS": "CA",  # Beauharnois (Montreal), Quebec, Canada
+        "TOR": "CA",  # Toronto, Canada
+        "HIL": "US",  # Hillsboro (Seattle/Portland), Oregon, USA
+        "VIN": "US",  # Vint Hill (Washington DC), Virginia, USA
         # Asia-Pacific
-        'SGP': 'SG',  # Singapore
-        'SYD': 'AU',  # Sydney, Australia
-        'MUM': 'IN',  # Mumbai, India
+        "SGP": "SG",  # Singapore
+        "SYD": "AU",  # Sydney, Australia
+        "MUM": "IN",  # Mumbai, India
     }
 
     # Coordinates for OVHcloud datacenter locations
@@ -797,61 +852,91 @@ def inventory_regions(vendor) -> list[dict]:
     #       as specific datacenter locations opened in 2016
     region_coordinates = {
         # Exact datacenter locations from Google Maps (address-level precision)
-        'SBG': (48.5854388, 7.7974307),  # Strasbourg - 9 Rue du Bass. de l'Industrie, 67000
-        'GRA': (51.0166852, 2.1551437),  # Gravelines - 1 Rte de la Frm Masson, 59820 Gravelines
-        'RBX': (50.691834, 3.2003148),  # Roubaix - 2 Rue Kellermann, 59100 (HQ)
-        'PAR': (48.8885363, 2.3755977),  # Paris - 12 Rue Riquet, 75019
-        'ERI': (51.4915264, 0.1668186),  # London (Erith) - 8 Viking Way, Erith DA8 1EW, UK
-        'WAW': (52.2077264, 20.8080621),  # Warsaw (Ożarów) - Kazimierza Kamińskiego 6, 05-850 Ożarów Mazowiecki
-        'BHS': (45.3093037, -73.8965535),  # Beauharnois - 50 Rue de l'Aluminerie, QC J6N 0C2
-        'SGP': (1.3177101, 103.893902),  # Singapore - 1 Paya Lebar Link, PLQ 1, #11-02, 408533
-        'TOR': (43.4273216, -80.3726843),  # Toronto (Cambridge) - 17 Vondrau Dr, Cambridge, ON N3E 1B8
-        'VIN': (38.7474561, -77.6744531),  # Vint Hill (Warrenton) - 6872 Watson Ct, Warrenton, VA 20187, USA
+        "SBG": (
+            48.5854388,
+            7.7974307,
+        ),  # Strasbourg - 9 Rue du Bass. de l'Industrie, 67000
+        "GRA": (
+            51.0166852,
+            2.1551437,
+        ),  # Gravelines - 1 Rte de la Frm Masson, 59820 Gravelines
+        "RBX": (50.691834, 3.2003148),  # Roubaix - 2 Rue Kellermann, 59100 (HQ)
+        "PAR": (48.8885363, 2.3755977),  # Paris - 12 Rue Riquet, 75019
+        "ERI": (
+            51.4915264,
+            0.1668186,
+        ),  # London (Erith) - 8 Viking Way, Erith DA8 1EW, UK
+        "WAW": (
+            52.2077264,
+            20.8080621,
+        ),  # Warsaw (Ożarów) - Kazimierza Kamińskiego 6, 05-850 Ożarów Mazowiecki
+        "BHS": (
+            45.3093037,
+            -73.8965535,
+        ),  # Beauharnois - 50 Rue de l'Aluminerie, QC J6N 0C2
+        "SGP": (
+            1.3177101,
+            103.893902,
+        ),  # Singapore - 1 Paya Lebar Link, PLQ 1, #11-02, 408533
+        "TOR": (
+            43.4273216,
+            -80.3726843,
+        ),  # Toronto (Cambridge) - 17 Vondrau Dr, Cambridge, ON N3E 1B8
+        "VIN": (
+            38.7474561,
+            -77.6744531,
+        ),  # Vint Hill (Warrenton) - 6872 Watson Ct, Warrenton, VA 20187, USA
         # City-level coordinates from Google Maps Geocoding API (approximate - no exact DC address found)
-        'LIM': (50.1109221, 8.6821267),  # Frankfurt (Limburg), Germany - city-level
-        'UK': (51.4915264, 0.1668186),  # London, United Kingdom - using Erith coordinates as proxy
-        'DE': (50.1109221, 8.6821267),  # Frankfurt, Germany - city-level
-        'HIL': (45.520137, -122.9898308),  # Hillsboro, Oregon, USA - city-level
-        'SYD': (-33.8727409, 151.2057136),  # Sydney, Australia - city-level
-        'MUM': (12.9062205, 77.6062467),  # Bengaluru office as proxy for Mumbai - city-level
+        "LIM": (50.1109221, 8.6821267),  # Frankfurt (Limburg), Germany - city-level
+        "UK": (
+            51.4915264,
+            0.1668186,
+        ),  # London, United Kingdom - using Erith coordinates as proxy
+        "DE": (50.1109221, 8.6821267),  # Frankfurt, Germany - city-level
+        "HIL": (45.520137, -122.9898308),  # Hillsboro, Oregon, USA - city-level
+        "SYD": (-33.8727409, 151.2057136),  # Sydney, Australia - city-level
+        "MUM": (
+            12.9062205,
+            77.6062467,
+        ),  # Bengaluru office as proxy for Mumbai - city-level
     }
 
     # Exact addresses for datacenters where known
     # Source: Google Maps search (retrieved 2025-11-17)
     # Format: street + city (and state/province where relevant); zip/postal codes are stored separately in region_zip_codes
     region_addresses = {
-        'SBG': '9 Rue du Bass. de l\'Industrie, Strasbourg',
-        'GRA': '1 Rte de la Frm Masson, Gravelines',
-        'RBX': '2 Rue Kellermann, Roubaix',
-        'PAR': '12 Rue Riquet, Paris',
-        'BHS': '50 Rue de l\'Aluminerie, Beauharnois, QC',
-        'WAW': 'Kazimierza Kamińskiego 6, Ożarów Mazowiecki',
-        'SGP': '1 Paya Lebar Link, PLQ 1, Paya Lebar Quarter, #11-02, Singapore',
-        'TOR': '17 Vondrau Dr, Cambridge, ON',
-        'ERI': '8 Viking Way, Erith',
-        'VIN': '6872 Watson Ct, Warrenton, VA',
+        "SBG": "9 Rue du Bass. de l'Industrie, Strasbourg",
+        "GRA": "1 Rte de la Frm Masson, Gravelines",
+        "RBX": "2 Rue Kellermann, Roubaix",
+        "PAR": "12 Rue Riquet, Paris",
+        "BHS": "50 Rue de l'Aluminerie, Beauharnois, QC",
+        "WAW": "Kazimierza Kamińskiego 6, Ożarów Mazowiecki",
+        "SGP": "1 Paya Lebar Link, PLQ 1, Paya Lebar Quarter, #11-02, Singapore",
+        "TOR": "17 Vondrau Dr, Cambridge, ON",
+        "ERI": "8 Viking Way, Erith",
+        "VIN": "6872 Watson Ct, Warrenton, VA",
     }
 
     # Zip/postal codes for datacenters where known
     region_zip_codes = {
-        'SBG': '67000',
-        'GRA': '59820',
-        'RBX': '59100',
-        'PAR': '75019',
-        'BHS': 'J6N 0C2',
-        'WAW': '05-850',
-        'SGP': '408533',
-        'TOR': 'N3E 1B8',
-        'ERI': 'DA8 1EW',
-        'VIN': '20187',
+        "SBG": "67000",
+        "GRA": "59820",
+        "RBX": "59100",
+        "PAR": "75019",
+        "BHS": "J6N 0C2",
+        "WAW": "05-850",
+        "SGP": "408533",
+        "TOR": "N3E 1B8",
+        "ERI": "DA8 1EW",
+        "VIN": "20187",
     }
 
     # State/province mapping
     region_state_mapping = {
-        'BHS': 'Quebec',
-        'TOR': 'Ontario',
-        'VIN': 'Virginia',
-        'HIL': 'Oregon',
+        "BHS": "Quebec",
+        "TOR": "Ontario",
+        "VIN": "Virginia",
+        "HIL": "Oregon",
     }
 
     for region_code in regions:
@@ -864,23 +949,25 @@ def inventory_regions(vendor) -> list[dict]:
         address = region_addresses.get(base_code)
         zip_code = region_zip_codes.get(base_code)
 
-        items.append({
-            "vendor_id": vendor.vendor_id,
-            "region_id": region_code,
-            "name": region_code,
-            "api_reference": region_code,
-            "display_name": f"{city} ({region_code})" if city else region_code,
-            "aliases": [base_code],
-            "country_id": country_id,
-            "state": state,
-            "city": city,
-            "address_line": address,
-            "zip_code": zip_code,
-            "lon": lon,
-            "lat": lat,
-            "founding_year": None,
-            "green_energy": None,
-        })
+        items.append(
+            {
+                "vendor_id": vendor.vendor_id,
+                "region_id": region_code,
+                "name": region_code,
+                "api_reference": region_code,
+                "display_name": f"{city} ({region_code})" if city else region_code,
+                "aliases": [base_code],
+                "country_id": country_id,
+                "state": state,
+                "city": city,
+                "address_line": address,
+                "zip_code": zip_code,
+                "lon": lon,
+                "lat": lat,
+                "founding_year": None,
+                "green_energy": None,
+            }
+        )
 
     return items
 
@@ -918,30 +1005,30 @@ def inventory_servers(vendor) -> list[dict]:
     servers = _get_servers_from_catalog()
     flavors = {}
     for server in servers:
-        flavor_name = server.get('invoiceName', None)
+        flavor_name = server.get("invoiceName", None)
         if flavor_name and flavor_name not in flavors:
             flavors[flavor_name] = server
 
     for server_id, server in flavors.items():
-        blobs = server.get('blobs', {})
+        blobs = server.get("blobs", {})
         if not blobs:
             continue  # Skip if no blob data available
-        commercial = blobs.get('commercial', {})
-        technical = blobs.get('technical', {})
-        brick_subtype = commercial.get('brickSubtype', '')
-        name = commercial.get('name', server_id)
+        commercial = blobs.get("commercial", {})
+        technical = blobs.get("technical", {})
+        brick_subtype = commercial.get("brickSubtype", "")
+        name = commercial.get("name", server_id)
         display_name = brick_subtype if brick_subtype else name
         server_family = _get_server_family(server_id)
-        cpu = technical.get('cpu', {})
-        gpu = technical.get('gpu', {})
-        bandwidth = technical.get('bandwidth', {})
-        bandwidth_level = bandwidth.get('level', None)
-        memory = technical.get('memory', {})
-        memory_size_gb = memory.get('size', None)
+        cpu = technical.get("cpu", {})
+        gpu = technical.get("gpu", {})
+        bandwidth = technical.get("bandwidth", {})
+        bandwidth_level = bandwidth.get("level", None)
+        memory = technical.get("memory", {})
+        memory_size_gb = memory.get("size", None)
         memory_size = memory_size_gb * MIB_PER_GIB if memory_size_gb else None
-        cpu_manufacturer = cpu.get('brand', None)
-        cpu_model = cpu.get('model', None)
-        cpu_speed = cpu.get('frequency', None)
+        cpu_manufacturer = cpu.get("brand", None)
+        cpu_model = cpu.get("model", None)
+        cpu_speed = cpu.get("frequency", None)
         _cpu_manufacturer, _cpu_model, _cpu_speed = _get_cpu_info(server_id)
         if not cpu_manufacturer and _cpu_manufacturer:
             cpu_manufacturer = _cpu_manufacturer
@@ -949,75 +1036,104 @@ def inventory_servers(vendor) -> list[dict]:
             cpu_model = _cpu_model
         if not cpu_speed and _cpu_speed:
             cpu_speed = _cpu_speed
-        cpu_allocation = CpuAllocation.DEDICATED if cpu.get('type', None) == 'core' else CpuAllocation.SHARED
-        vcpus = cpu.get('cores', 0) if cpu_allocation == CpuAllocation.SHARED else cpu.get('threads',
-                                                                                           cpu.get('cores', 0))
-        cpu_cores = cpu.get('cores', None) if cpu_allocation == CpuAllocation.DEDICATED else None
-        gpu_count = gpu.get('number', 0)
-        gpu_memory_per_gpu = gpu.get('memory').get('size', 0) if gpu.get('memory') else None
-        gpu_memory_total_gb = gpu_memory_per_gpu * gpu_count if gpu_memory_per_gpu and gpu_count else None
-        gpu_model = f"{gpu.get('model')} {gpu.get('memory').get('interface')}" if gpu else None
-        _gpu_count, _gpu_memory_total_gb, gpu_manufacturer, gpu_family, _gpu_model = _get_gpu_info(server_id)
+        cpu_allocation = (
+            CpuAllocation.DEDICATED
+            if cpu.get("type", None) == "core"
+            else CpuAllocation.SHARED
+        )
+        vcpus = (
+            cpu.get("cores", 0)
+            if cpu_allocation == CpuAllocation.SHARED
+            else cpu.get("threads", cpu.get("cores", 0))
+        )
+        cpu_cores = (
+            cpu.get("cores", None)
+            if cpu_allocation == CpuAllocation.DEDICATED
+            else None
+        )
+        gpu_count = gpu.get("number", 0)
+        gpu_memory_per_gpu = (
+            gpu.get("memory").get("size", 0) if gpu.get("memory") else None
+        )
+        gpu_memory_total_gb = (
+            gpu_memory_per_gpu * gpu_count if gpu_memory_per_gpu and gpu_count else None
+        )
+        gpu_model = (
+            f"{gpu.get('model')} {gpu.get('memory').get('interface')}" if gpu else None
+        )
+        _gpu_count, _gpu_memory_total_gb, gpu_manufacturer, gpu_family, _gpu_model = (
+            _get_gpu_info(server_id)
+        )
         if not gpu_count and _gpu_count:
             gpu_count = _gpu_count
         if not gpu_memory_total_gb and _gpu_memory_total_gb:
             gpu_memory_total_gb = _gpu_memory_total_gb
         if not gpu_model and _gpu_model:
             gpu_model = _gpu_model
-        gpu_memory_total = gpu_memory_total_gb * MIB_PER_GIB if gpu_memory_total_gb else None
+        gpu_memory_total = (
+            gpu_memory_total_gb * MIB_PER_GIB if gpu_memory_total_gb else None
+        )
         has_nvme = any(
-            'nvme' in disk.get('technology', '').lower() for disk in technical.get('storage', {}).get('disks', []))
+            "nvme" in disk.get("technology", "").lower()
+            for disk in technical.get("storage", {}).get("disks", [])
+        )
         storage_type = StorageType.NVME_SSD if has_nvme else StorageType.SSD
         _storage_type = _get_storage_type(server_id)
         if storage_type == StorageType.SSD and _storage_type == StorageType.NVME_SSD:
             storage_type = _storage_type
-        storage_size = sum([disk.get('number', 1) * disk.get('capacity', 0) for disk in
-                            technical.get('storage', {}).get('disks', [])])
-        status = Status.ACTIVE if "active" in blobs.get('tags', []) else Status.INACTIVE
+        storage_size = sum(
+            [
+                disk.get("number", 1) * disk.get("capacity", 0)
+                for disk in technical.get("storage", {}).get("disks", [])
+            ]
+        )
+        status = Status.ACTIVE if "active" in blobs.get("tags", []) else Status.INACTIVE
 
-        items.append({
-            "vendor_id": vendor.vendor_id,
-            "server_id": server_id,
-            "name": server_id,
-            "api_reference": server_id,
-            "display_name": display_name,
-            "description": None,  # TODO: add capabilities info?
-            "family": server_family,
-            "vcpus": vcpus,
-            # Verified from lscpu on B3-8 instance (2025-11-17)
-            "hypervisor": "KVM" if cpu_allocation == CpuAllocation.SHARED else None,
-            "cpu_allocation": cpu_allocation,
-            "cpu_cores": cpu_cores,
-            "cpu_speed": cpu_speed,
-            "cpu_architecture": CpuArchitecture.X86_64,  # All OVHcloud instances use x86_64
-            "cpu_manufacturer": cpu_manufacturer,
-            "cpu_family": None,
-            "cpu_model": cpu_model,
-            "cpu_l1_cache": None,
-            "cpu_l2_cache": None,
-            "cpu_l3_cache": None,
-            "cpu_flags": [],
-            "cpus": [],
-            "memory_amount": memory_size,
-            "memory_generation": None,
-            "memory_speed": None,
-            "memory_ecc": None,
-            "gpu_count": gpu_count,
-            "gpu_memory_min": gpu_memory_total,  # For GPU instances, min = total?
-            "gpu_memory_total": gpu_memory_total,
-            "gpu_manufacturer": gpu_manufacturer,
-            "gpu_family": gpu_family,
-            "gpu_model": gpu_model,
-            "gpus": [],
-            "storage_size": storage_size,  # Local disk in GB
-            "storage_type": storage_type,  # Determined from flavor specifications
-            "storages": [],
-            "network_speed": bandwidth_level,
-            "inbound_traffic": 0,  # TODO
-            "outbound_traffic": 0,  # TODO
-            "ipv4": 1,  # Each instance gets at least one IPv4
-            "status": status,
-        })
+        items.append(
+            {
+                "vendor_id": vendor.vendor_id,
+                "server_id": server_id,
+                "name": server_id,
+                "api_reference": server_id,
+                "display_name": display_name,
+                "description": None,  # TODO: add capabilities info?
+                "family": server_family,
+                "vcpus": vcpus,
+                # Verified from lscpu on B3-8 instance (2025-11-17)
+                "hypervisor": "KVM" if cpu_allocation == CpuAllocation.SHARED else None,
+                "cpu_allocation": cpu_allocation,
+                "cpu_cores": cpu_cores,
+                "cpu_speed": cpu_speed,
+                "cpu_architecture": CpuArchitecture.X86_64,  # All OVHcloud instances use x86_64
+                "cpu_manufacturer": cpu_manufacturer,
+                "cpu_family": None,
+                "cpu_model": cpu_model,
+                "cpu_l1_cache": None,
+                "cpu_l2_cache": None,
+                "cpu_l3_cache": None,
+                "cpu_flags": [],
+                "cpus": [],
+                "memory_amount": memory_size,
+                "memory_generation": None,
+                "memory_speed": None,
+                "memory_ecc": None,
+                "gpu_count": gpu_count,
+                "gpu_memory_min": gpu_memory_total,  # For GPU instances, min = total?
+                "gpu_memory_total": gpu_memory_total,
+                "gpu_manufacturer": gpu_manufacturer,
+                "gpu_family": gpu_family,
+                "gpu_model": gpu_model,
+                "gpus": [],
+                "storage_size": storage_size,  # Local disk in GB
+                "storage_type": storage_type,  # Determined from flavor specifications
+                "storages": [],
+                "network_speed": bandwidth_level,
+                "inbound_traffic": 0,  # TODO
+                "outbound_traffic": 0,  # TODO
+                "ipv4": 1,  # Each instance gets at least one IPv4
+                "status": status,
+            }
+        )
 
     return items
 
@@ -1043,15 +1159,15 @@ def inventory_server_prices(vendor) -> list[dict]:
 
     # First pass: collect and merge regions from ALL pricing variants of each flavor
     for server in servers:
-        server_id = server.get('invoiceName', '')
+        server_id = server.get("invoiceName", "")
         if not server_id:
             continue
 
-        configurations = server.get('configurations', [])
+        configurations = server.get("configurations", [])
         if configurations:
             for config in configurations:
                 if config.get("name") == "region":
-                    regions = config.get('values', [])
+                    regions = config.get("values", [])
                     if regions:
                         if server_id not in server_region:
                             server_region[server_id] = set()
@@ -1062,16 +1178,16 @@ def inventory_server_prices(vendor) -> list[dict]:
     # would overwrite hourly plans if both are inserted.
     # TODO: add support for monthly plans later if needed.
     for server in servers:
-        plancode = server.get('planCode', '')
-        server_id = server.get('invoiceName', '')
+        plancode = server.get("planCode", "")
+        server_id = server.get("invoiceName", "")
         if not server_id:
             continue
 
         # Skip monthly plans - only process hourly consumption plans
-        if 'monthly' in plancode.lower():
+        if "monthly" in plancode.lower():
             continue
 
-        blobs = server.get('blobs', {})
+        blobs = server.get("blobs", {})
         if not blobs:
             continue  # Skip if no blob data available
 
@@ -1080,12 +1196,22 @@ def inventory_server_prices(vendor) -> list[dict]:
         if any(plancode.endswith(suffix) for suffix in LOCAL_ZONE_SUFFIXES):
             continue
 
-        price = server.get('pricings', [])[0].get('price', None) if server.get('pricings') else None
-        interval_unit_str = server.get('pricings', [])[0].get('intervalUnit', '') if server.get('pricings') else ''
-        interval_unit = PriceUnit.HOUR if interval_unit_str == 'hour' else PriceUnit.MONTH
-        status = Status.ACTIVE if "active" in blobs.get('tags', []) else Status.INACTIVE
-        technical = blobs.get('technical', {})
-        os = technical.get('os', {}).get('family', 'linux')
+        price = (
+            server.get("pricings", [])[0].get("price", None)
+            if server.get("pricings")
+            else None
+        )
+        interval_unit_str = (
+            server.get("pricings", [])[0].get("intervalUnit", "")
+            if server.get("pricings")
+            else ""
+        )
+        interval_unit = (
+            PriceUnit.HOUR if interval_unit_str == "hour" else PriceUnit.MONTH
+        )
+        status = Status.ACTIVE if "active" in blobs.get("tags", []) else Status.INACTIVE
+        technical = blobs.get("technical", {})
+        os = technical.get("os", {}).get("family", "linux")
 
         if price:
             price = price / MICROCENTS_PER_CURRENCY_UNIT
@@ -1096,26 +1222,31 @@ def inventory_server_prices(vendor) -> list[dict]:
         # If no regions found at all for this flavor in catalog, try to get from flavors API
         # Note: This fallback requires project_id, which may not always be available
         if not regions:
-            regions = [f.get('region') for f in flavors if
-                       f.get('planCodes', {}).get('hourly') == plancode and f.get('region')]
+            regions = [
+                f.get("region")
+                for f in flavors
+                if f.get("planCodes", {}).get("hourly") == plancode and f.get("region")
+            ]
             if not regions:
                 continue
 
         for region in regions:
-            items.append({
-                "vendor_id": vendor.vendor_id,
-                "region_id": region,
-                "zone_id": region,
-                "server_id": server_id,
-                "operating_system": os,
-                "allocation": Allocation.ONDEMAND,
-                "unit": interval_unit,
-                "price": price,
-                "price_upfront": 0,
-                "price_tiered": [],
-                "currency": CURRENCY,
-                "status": status,
-            })
+            items.append(
+                {
+                    "vendor_id": vendor.vendor_id,
+                    "region_id": region,
+                    "zone_id": region,
+                    "server_id": server_id,
+                    "operating_system": os,
+                    "allocation": Allocation.ONDEMAND,
+                    "unit": interval_unit,
+                    "price": price,
+                    "price_upfront": 0,
+                    "price_tiered": [],
+                    "currency": CURRENCY,
+                    "status": status,
+                }
+            )
     return items
 
 
@@ -1131,51 +1262,55 @@ def inventory_storages(vendor) -> list[dict]:
     storages = _get_storages_from_catalog()
 
     for storage in storages:
-        if not storage.get('invoiceName', '') in items_dict:
-            items_dict[storage.get('invoiceName', '')] = storage
+        if storage.get("invoiceName", "") not in items_dict:
+            items_dict[storage.get("invoiceName", "")] = storage
 
     for storage_id, storage in items_dict.items():
-        blobs = storage.get('blobs', {})
-        commercial = blobs.get('commercial', {})
-        technical = blobs.get('technical', {})
+        blobs = storage.get("blobs", {})
+        commercial = blobs.get("commercial", {})
+        technical = blobs.get("technical", {})
 
         # Determine storage type based on brick and name
-        brick = commercial.get('brick', '')
-        brick_subtype = commercial.get('brickSubtype', '')
-        name = commercial.get('name', storage_id)
+        brick = commercial.get("brick", "")
+        brick_subtype = commercial.get("brickSubtype", "")
+        name = commercial.get("name", storage_id)
 
         # Initialize specs
         max_iops = None
         max_size = None
 
         # Extract volume specifications
-        if brick == 'volume':
-            volume_specs = technical.get('volume', {})
+        if brick == "volume":
+            volume_specs = technical.get("volume", {})
 
             # Capacity limits (in GiB)
-            capacity = volume_specs.get('capacity', {})
-            max_size = capacity.get('max')
+            capacity = volume_specs.get("capacity", {})
+            max_size = capacity.get("max")
 
             # IOPS specifications
-            iops_specs = volume_specs.get('iops', {})
+            iops_specs = volume_specs.get("iops", {})
             if iops_specs:
-                max_iops = iops_specs.get('level')
+                max_iops = iops_specs.get("level")
                 # 'guaranteed' field indicates if IOPS is guaranteed (True) or best-effort (False)
 
         # Display name from brick subtype or name
         display_name = brick_subtype if brick_subtype else name
 
-        items.append({
-            "storage_id": storage_id.replace(' ', '_'),  # fix "bandwidth_storage in" invoiceName
-            "vendor_id": vendor.vendor_id,
-            "name": display_name,
-            "description": None,
-            "storage_type": StorageType.NETWORK,
-            "max_iops": max_iops,
-            "max_throughput": None,
-            "min_size": None,
-            "max_size": max_size,
-        })
+        items.append(
+            {
+                "storage_id": storage_id.replace(
+                    " ", "_"
+                ),  # fix "bandwidth_storage in" invoiceName
+                "vendor_id": vendor.vendor_id,
+                "name": display_name,
+                "description": None,
+                "storage_type": StorageType.NETWORK,
+                "max_iops": max_iops,
+                "max_throughput": None,
+                "min_size": None,
+                "max_size": max_size,
+            }
+        )
 
     return items
 
@@ -1195,15 +1330,15 @@ def inventory_storage_prices(vendor) -> list[dict]:
     # First pass: collect and merge regions from all pricing variants of each storage type
     storage_regions: dict[str, set[str]] = {}
     for storage in storages:
-        storage_id = storage.get('invoiceName', '')
+        storage_id = storage.get("invoiceName", "")
         if not storage_id:
             continue
 
-        configurations = storage.get('configurations', [])
+        configurations = storage.get("configurations", [])
         if configurations:
             for config in configurations:
                 if config.get("name") == "region":
-                    regions = config.get('values', [])
+                    regions = config.get("values", [])
                     if regions:
                         if storage_id not in storage_regions:
                             storage_regions[storage_id] = set()
@@ -1211,8 +1346,8 @@ def inventory_storage_prices(vendor) -> list[dict]:
 
     # Second pass: create pricing entries using merged regions
     for storage in storages:
-        plancode = storage.get('planCode', '')
-        storage_id = storage.get('invoiceName', '')
+        plancode = storage.get("planCode", "")
+        storage_id = storage.get("invoiceName", "")
         if not storage_id:
             continue
 
@@ -1221,10 +1356,18 @@ def inventory_storage_prices(vendor) -> list[dict]:
         if any(plancode.endswith(suffix) for suffix in LOCAL_ZONE_SUFFIXES):
             continue
 
-        price = storage.get('pricings', [])[0].get('price', None) if storage.get('pricings') else None
+        price = (
+            storage.get("pricings", [])[0].get("price", None)
+            if storage.get("pricings")
+            else None
+        )
         if price:
-            description = storage.get('pricings', [])[0].get('description', '') if storage.get('pricings') else ''
-            is_hourly = 'hourly' in description
+            description = (
+                storage.get("pricings", [])[0].get("description", "")
+                if storage.get("pricings")
+                else ""
+            )
+            is_hourly = "hourly" in description
             price = price * HOURS_PER_MONTH if is_hourly else price
             price = price / MICROCENTS_PER_CURRENCY_UNIT
 
@@ -1236,15 +1379,17 @@ def inventory_storage_prices(vendor) -> list[dict]:
             continue
 
         for region in regions:
-            items.append({
-                "vendor_id": vendor.vendor_id,
-                "region_id": region,
-                # fix "bandwidth_storage in" invoiceName
-                "storage_id": storage_id.replace(' ', '_'),
-                "unit": PriceUnit.GB_MONTH,
-                "price": price,
-                "currency": CURRENCY,
-            })
+            items.append(
+                {
+                    "vendor_id": vendor.vendor_id,
+                    "region_id": region,
+                    # fix "bandwidth_storage in" invoiceName
+                    "storage_id": storage_id.replace(" ", "_"),
+                    "unit": PriceUnit.GB_MONTH,
+                    "price": price,
+                    "currency": CURRENCY,
+                }
+            )
 
     return items
 
@@ -1266,13 +1411,13 @@ def inventory_traffic_prices(vendor) -> list[dict]:
         {
             "lower": 1,
             "upper": 1024,
-            "price": 0  # Included in quota
+            "price": 0,  # Included in quota
         },
         {
             "lower": 1025,
             "upper": "Infinity",
-            "price": 0.0109  # Converted from 1090000 microcents
-        }
+            "price": 0.0109,  # Converted from 1090000 microcents
+        },
     ]
 
     items = []
@@ -1290,7 +1435,7 @@ def inventory_traffic_prices(vendor) -> list[dict]:
             }
         )
         # Outbound traffic
-        is_apac = region.region_id.startswith(('SGP', 'SYD', 'MUM'))
+        is_apac = region.region_id.startswith(("SGP", "SYD", "MUM"))
         items.append(
             {
                 "vendor_id": vendor.vendor_id,

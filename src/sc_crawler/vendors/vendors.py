@@ -96,4 +96,3 @@ ovhcloud = Vendor(
     status_page="https://www.status-ovhcloud.com",
 )
 """OVHcloud."""
-
