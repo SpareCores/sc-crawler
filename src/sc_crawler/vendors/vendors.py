@@ -82,10 +82,10 @@ upcloud = Vendor(
 )
 """UpCloud."""
 
-ovhcloud = Vendor(
-    vendor_id="ovhcloud",
+ovh = Vendor(
+    vendor_id="ovh",
     name="OVHcloud",
-    logo="https://sparecores.com/assets/images/vendors/ovhcloud.svg",
+    logo="https://sparecores.com/assets/images/vendors/ovh.svg",
     homepage="https://www.ovhcloud.com",
     country=countries["FR"],
     state="Hauts-de-France",

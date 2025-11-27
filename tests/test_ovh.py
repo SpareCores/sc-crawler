@@ -12,7 +12,7 @@ from sc_crawler.table_fields import (
     StorageType,
     TrafficDirection,
 )
-from sc_crawler.vendors.ovhcloud import (
+from sc_crawler.vendors.ovh import (
     CURRENCY,
     HOURS_PER_MONTH,
     MIB_PER_GIB,
@@ -370,47 +370,47 @@ class TestInventoryComplianceFrameworks:
     def test_returns_list(self):
         """Test that function returns a list."""
         vendor = Mock()
-        vendor.vendor_id = "ovhcloud"
+        vendor.vendor_id = "ovh"
         result = inventory_compliance_frameworks(vendor)
         assert isinstance(result, list)
 
-    @patch("sc_crawler.vendors.ovhcloud.map_compliance_frameworks_to_vendor")
+    @patch("sc_crawler.vendors.ovh.map_compliance_frameworks_to_vendor")
     def test_calls_mapping_function(self, mock_map):
         """Test that the function calls map_compliance_frameworks_to_vendor."""
         vendor = Mock()
-        vendor.vendor_id = "ovhcloud"
+        vendor.vendor_id = "ovh"
         mock_map.return_value = []
 
         inventory_compliance_frameworks(vendor)
 
-        mock_map.assert_called_once_with("ovhcloud", ["iso27001", "soc2t2"])
+        mock_map.assert_called_once_with("ovh", ["iso27001", "soc2t2"])
 
 
 class TestInventoryRegions:
     """Tests for inventory_regions function."""
 
-    @patch("sc_crawler.vendors.ovhcloud._get_regions_from_catalog")
+    @patch("sc_crawler.vendors.ovh._get_regions_from_catalog")
     def test_basic_region_structure(self, mock_get_regions):
         """Test basic region data structure."""
         mock_get_regions.return_value = ["GRA9", "BHS5"]
         vendor = Mock()
-        vendor.vendor_id = "ovhcloud"
+        vendor.vendor_id = "ovh"
 
         result = inventory_regions(vendor)
 
         assert len(result) == 2
-        assert result[0]["vendor_id"] == "ovhcloud"
+        assert result[0]["vendor_id"] == "ovh"
         assert result[0]["region_id"] == "GRA9"
         assert result[0]["name"] == "GRA9"
         assert result[0]["city"] == "Gravelines"
         assert result[0]["country_id"] == "FR"
 
-    @patch("sc_crawler.vendors.ovhcloud._get_regions_from_catalog")
+    @patch("sc_crawler.vendors.ovh._get_regions_from_catalog")
     def test_region_with_coordinates(self, mock_get_regions):
         """Test region includes coordinates."""
         mock_get_regions.return_value = ["SBG"]
         vendor = Mock()
-        vendor.vendor_id = "ovhcloud"
+        vendor.vendor_id = "ovh"
 
         result = inventory_regions(vendor)
 
@@ -419,12 +419,12 @@ class TestInventoryRegions:
         assert isinstance(result[0]["lon"], float)
         assert isinstance(result[0]["lat"], float)
 
-    @patch("sc_crawler.vendors.ovhcloud._get_regions_from_catalog")
+    @patch("sc_crawler.vendors.ovh._get_regions_from_catalog")
     def test_region_with_address(self, mock_get_regions):
         """Test region includes address information."""
         mock_get_regions.return_value = ["SBG"]
         vendor = Mock()
-        vendor.vendor_id = "ovhcloud"
+        vendor.vendor_id = "ovh"
 
         result = inventory_regions(vendor)
 
@@ -432,12 +432,12 @@ class TestInventoryRegions:
         assert "Strasbourg" in result[0]["address_line"]
         assert result[0]["zip_code"] == "67000"
 
-    @patch("sc_crawler.vendors.ovhcloud._get_regions_from_catalog")
+    @patch("sc_crawler.vendors.ovh._get_regions_from_catalog")
     def test_north_america_region_has_state(self, mock_get_regions):
         """Test North American regions include state/province."""
         mock_get_regions.return_value = ["BHS"]
         vendor = Mock()
-        vendor.vendor_id = "ovhcloud"
+        vendor.vendor_id = "ovh"
 
         result = inventory_regions(vendor)
 
@@ -448,12 +448,12 @@ class TestInventoryRegions:
 class TestInventoryZones:
     """Tests for inventory_zones function."""
 
-    @patch("sc_crawler.vendors.ovhcloud._get_regions_from_catalog")
+    @patch("sc_crawler.vendors.ovh._get_regions_from_catalog")
     def test_zones_match_regions(self, mock_get_regions):
         """Test that zones are created 1:1 with regions."""
         mock_get_regions.return_value = ["GRA9", "BHS5"]
         vendor = Mock()
-        vendor.vendor_id = "ovhcloud"
+        vendor.vendor_id = "ovh"
 
         result = inventory_zones(vendor)
 
@@ -466,7 +466,7 @@ class TestInventoryZones:
 class TestInventoryServers:
     """Tests for inventory_servers function."""
 
-    @patch("sc_crawler.vendors.ovhcloud._get_servers_from_catalog")
+    @patch("sc_crawler.vendors.ovh._get_servers_from_catalog")
     def test_basic_server_structure(self, mock_get_servers):
         """Test basic server data structure."""
         mock_get_servers.return_value = [
@@ -489,21 +489,21 @@ class TestInventoryServers:
             }
         ]
         vendor = Mock()
-        vendor.vendor_id = "ovhcloud"
+        vendor.vendor_id = "ovh"
 
         result = inventory_servers(vendor)
 
         assert len(result) == 1
         server = result[0]
         assert server["server_id"] == "b3-8"
-        assert server["vendor_id"] == "ovhcloud"
+        assert server["vendor_id"] == "ovh"
         assert server["vcpus"] == 2
         assert server["memory_amount"] == 8 * 1024  # Convert to MiB
         assert server["storage_size"] == 50
         assert server["cpu_allocation"] == CpuAllocation.SHARED
         assert server["status"] == Status.ACTIVE
 
-    @patch("sc_crawler.vendors.ovhcloud._get_servers_from_catalog")
+    @patch("sc_crawler.vendors.ovh._get_servers_from_catalog")
     def test_server_with_gpu(self, mock_get_servers):
         """Test server with GPU information."""
         mock_get_servers.return_value = [
@@ -531,7 +531,7 @@ class TestInventoryServers:
             }
         ]
         vendor = Mock()
-        vendor.vendor_id = "ovhcloud"
+        vendor.vendor_id = "ovh"
 
         result = inventory_servers(vendor)
 
@@ -542,7 +542,7 @@ class TestInventoryServers:
         assert server["gpu_manufacturer"] == "NVIDIA"
         assert server["gpu_family"] == "Hopper"
 
-    @patch("sc_crawler.vendors.ovhcloud._get_servers_from_catalog")
+    @patch("sc_crawler.vendors.ovh._get_servers_from_catalog")
     def test_server_deduplication(self, mock_get_servers):
         """Test that duplicate server names are deduplicated."""
         mock_get_servers.return_value = [
@@ -574,7 +574,7 @@ class TestInventoryServers:
             },
         ]
         vendor = Mock()
-        vendor.vendor_id = "ovhcloud"
+        vendor.vendor_id = "ovh"
 
         result = inventory_servers(vendor)
 
@@ -584,9 +584,9 @@ class TestInventoryServers:
 class TestInventoryServerPrices:
     """Tests for inventory_server_prices function."""
 
-    @patch("sc_crawler.vendors.ovhcloud._get_flavors")
-    @patch("sc_crawler.vendors.ovhcloud._client")
-    @patch("sc_crawler.vendors.ovhcloud._get_servers_from_catalog")
+    @patch("sc_crawler.vendors.ovh._get_flavors")
+    @patch("sc_crawler.vendors.ovh._client")
+    @patch("sc_crawler.vendors.ovh._get_servers_from_catalog")
     def test_basic_pricing_structure(
         self, mock_get_servers, mock_client, mock_get_flavors
     ):
@@ -635,7 +635,7 @@ class TestInventoryServerPrices:
             },
         ]
         vendor = Mock()
-        vendor.vendor_id = "ovhcloud"
+        vendor.vendor_id = "ovh"
 
         result = inventory_server_prices(vendor)
 
@@ -646,7 +646,7 @@ class TestInventoryServerPrices:
         assert all(p["unit"] == PriceUnit.HOUR for p in result)
 
         price = result[0]
-        assert price["vendor_id"] == "ovhcloud"
+        assert price["vendor_id"] == "ovh"
         assert price["server_id"] == "b3-8"
         assert price["region_id"] in ["GRA9", "BHS5"]
         assert price["unit"] == PriceUnit.HOUR
@@ -655,9 +655,9 @@ class TestInventoryServerPrices:
         assert price["allocation"] == Allocation.ONDEMAND
         assert price["status"] == Status.ACTIVE
 
-    @patch("sc_crawler.vendors.ovhcloud._get_flavors")
-    @patch("sc_crawler.vendors.ovhcloud._client")
-    @patch("sc_crawler.vendors.ovhcloud._get_servers_from_catalog")
+    @patch("sc_crawler.vendors.ovh._get_flavors")
+    @patch("sc_crawler.vendors.ovh._client")
+    @patch("sc_crawler.vendors.ovh._get_servers_from_catalog")
     def test_monthly_pricing_skipped(
         self, mock_get_servers, mock_client, mock_get_flavors
     ):
@@ -682,16 +682,16 @@ class TestInventoryServerPrices:
             }
         ]
         vendor = Mock()
-        vendor.vendor_id = "ovhcloud"
+        vendor.vendor_id = "ovh"
 
         result = inventory_server_prices(vendor)
 
         # Monthly plans should be skipped
         assert len(result) == 0
 
-    @patch("sc_crawler.vendors.ovhcloud._get_flavors")
-    @patch("sc_crawler.vendors.ovhcloud._client")
-    @patch("sc_crawler.vendors.ovhcloud._get_servers_from_catalog")
+    @patch("sc_crawler.vendors.ovh._get_flavors")
+    @patch("sc_crawler.vendors.ovh._client")
+    @patch("sc_crawler.vendors.ovh._get_servers_from_catalog")
     def test_skip_local_zone_variants(
         self, mock_get_servers, mock_client, mock_get_flavors
     ):
@@ -722,15 +722,15 @@ class TestInventoryServerPrices:
             },
         ]
         vendor = Mock()
-        vendor.vendor_id = "ovhcloud"
+        vendor.vendor_id = "ovh"
 
         result = inventory_server_prices(vendor)
 
         assert len(result) == 0  # All skipped
 
-    @patch("sc_crawler.vendors.ovhcloud._get_flavors")
-    @patch("sc_crawler.vendors.ovhcloud._client")
-    @patch("sc_crawler.vendors.ovhcloud._get_servers_from_catalog")
+    @patch("sc_crawler.vendors.ovh._get_flavors")
+    @patch("sc_crawler.vendors.ovh._client")
+    @patch("sc_crawler.vendors.ovh._get_servers_from_catalog")
     def test_fallback_to_flavors_api(
         self, mock_get_servers, mock_client, mock_get_flavors
     ):
@@ -754,7 +754,7 @@ class TestInventoryServerPrices:
             {"region": "BHS5", "planCodes": {"hourly": "b3-8.consumption"}},
         ]
         vendor = Mock()
-        vendor.vendor_id = "ovhcloud"
+        vendor.vendor_id = "ovh"
 
         result = inventory_server_prices(vendor)
 
@@ -764,9 +764,9 @@ class TestInventoryServerPrices:
         regions = {p["region_id"] for p in result}
         assert regions == {"GRA9", "BHS5"}
 
-    @patch("sc_crawler.vendors.ovhcloud._get_flavors")
-    @patch("sc_crawler.vendors.ovhcloud._client")
-    @patch("sc_crawler.vendors.ovhcloud._get_servers_from_catalog")
+    @patch("sc_crawler.vendors.ovh._get_flavors")
+    @patch("sc_crawler.vendors.ovh._client")
+    @patch("sc_crawler.vendors.ovh._get_servers_from_catalog")
     def test_skip_when_no_regions_anywhere(
         self, mock_get_servers, mock_client, mock_get_flavors
     ):
@@ -794,7 +794,7 @@ class TestInventoryServerPrices:
             }
         ]
         vendor = Mock()
-        vendor.vendor_id = "ovhcloud"
+        vendor.vendor_id = "ovh"
 
         result = inventory_server_prices(vendor)
 
@@ -815,7 +815,7 @@ class TestInventoryServerPricesSpot:
 class TestInventoryStorages:
     """Tests for inventory_storages function."""
 
-    @patch("sc_crawler.vendors.ovhcloud._get_storages_from_catalog")
+    @patch("sc_crawler.vendors.ovh._get_storages_from_catalog")
     def test_block_storage(self, mock_get_storages):
         """Test block storage (volume) extraction."""
         mock_get_storages.return_value = [
@@ -837,20 +837,20 @@ class TestInventoryStorages:
             }
         ]
         vendor = Mock()
-        vendor.vendor_id = "ovhcloud"
+        vendor.vendor_id = "ovh"
 
         result = inventory_storages(vendor)
 
         assert len(result) == 1
         storage = result[0]
         assert storage["storage_id"] == "volume.high-speed"
-        assert storage["vendor_id"] == "ovhcloud"
+        assert storage["vendor_id"] == "ovh"
         assert storage["name"] == "block storage"
         assert storage["storage_type"] == StorageType.NETWORK
         assert storage["max_iops"] == 3000
         assert storage["max_size"] == 12000
 
-    @patch("sc_crawler.vendors.ovhcloud._get_storages_from_catalog")
+    @patch("sc_crawler.vendors.ovh._get_storages_from_catalog")
     def test_object_storage(self, mock_get_storages):
         """Test object storage extraction."""
         mock_get_storages.return_value = [
@@ -867,7 +867,7 @@ class TestInventoryStorages:
             }
         ]
         vendor = Mock()
-        vendor.vendor_id = "ovhcloud"
+        vendor.vendor_id = "ovh"
 
         result = inventory_storages(vendor)
 
@@ -876,7 +876,7 @@ class TestInventoryStorages:
         assert storage["name"] == "Object Storage"
         assert storage["max_iops"] is None
 
-    @patch("sc_crawler.vendors.ovhcloud._get_storages_from_catalog")
+    @patch("sc_crawler.vendors.ovh._get_storages_from_catalog")
     def test_storage_name_with_spaces(self, mock_get_storages):
         """Test storage name with spaces gets replaced."""
         mock_get_storages.return_value = [
@@ -893,7 +893,7 @@ class TestInventoryStorages:
             }
         ]
         vendor = Mock()
-        vendor.vendor_id = "ovhcloud"
+        vendor.vendor_id = "ovh"
 
         result = inventory_storages(vendor)
 
@@ -903,7 +903,7 @@ class TestInventoryStorages:
 class TestInventoryStoragePrices:
     """Tests for inventory_storage_prices function."""
 
-    @patch("sc_crawler.vendors.ovhcloud._get_storages_from_catalog")
+    @patch("sc_crawler.vendors.ovh._get_storages_from_catalog")
     def test_hourly_pricing_conversion(self, mock_get_storages):
         """Test hourly pricing gets converted to monthly."""
         mock_get_storages.return_value = [
@@ -924,7 +924,7 @@ class TestInventoryStoragePrices:
             }
         ]
         vendor = Mock()
-        vendor.vendor_id = "ovhcloud"
+        vendor.vendor_id = "ovh"
 
         result = inventory_storage_prices(vendor)
 
@@ -936,7 +936,7 @@ class TestInventoryStoragePrices:
         assert price_entry["price"] == pytest.approx(expected_monthly_price)
         assert price_entry["unit"] == PriceUnit.GB_MONTH
 
-    @patch("sc_crawler.vendors.ovhcloud._get_storages_from_catalog")
+    @patch("sc_crawler.vendors.ovh._get_storages_from_catalog")
     def test_monthly_pricing_no_conversion(self, mock_get_storages):
         """Test monthly pricing doesn't get multiplied again."""
         mock_get_storages.return_value = [
@@ -957,7 +957,7 @@ class TestInventoryStoragePrices:
             }
         ]
         vendor = Mock()
-        vendor.vendor_id = "ovhcloud"
+        vendor.vendor_id = "ovh"
 
         result = inventory_storage_prices(vendor)
 
@@ -971,7 +971,7 @@ class TestInventoryTrafficPrices:
     def test_inbound_traffic_free(self):
         """Test inbound traffic is free everywhere."""
         vendor = Mock()
-        vendor.vendor_id = "ovhcloud"
+        vendor.vendor_id = "ovh"
         vendor.regions = [Mock(region_id="GRA9"), Mock(region_id="SGP1")]
 
         result = inventory_traffic_prices(vendor)
@@ -985,7 +985,7 @@ class TestInventoryTrafficPrices:
     def test_outbound_traffic_free_non_apac(self):
         """Test outbound traffic is free in non-APAC regions."""
         vendor = Mock()
-        vendor.vendor_id = "ovhcloud"
+        vendor.vendor_id = "ovh"
         vendor.regions = [Mock(region_id="GRA9")]
 
         result = inventory_traffic_prices(vendor)
@@ -997,7 +997,7 @@ class TestInventoryTrafficPrices:
     def test_outbound_traffic_tiered_apac(self):
         """Test outbound traffic has tiered pricing in APAC regions."""
         vendor = Mock()
-        vendor.vendor_id = "ovhcloud"
+        vendor.vendor_id = "ovh"
         vendor.regions = [
             Mock(region_id="SGP1"),
             Mock(region_id="SYD1"),
@@ -1022,7 +1022,7 @@ class TestInventoryTrafficPrices:
     def test_traffic_price_structure(self):
         """Test traffic price data structure."""
         vendor = Mock()
-        vendor.vendor_id = "ovhcloud"
+        vendor.vendor_id = "ovh"
         vendor.regions = [Mock(region_id="GRA9")]
 
         result = inventory_traffic_prices(vendor)
@@ -1045,7 +1045,7 @@ class TestInventoryIpv4Prices:
     def test_ipv4_included_by_default(self):
         """Test IPv4 is included (free) by default."""
         vendor = Mock()
-        vendor.vendor_id = "ovhcloud"
+        vendor.vendor_id = "ovh"
         vendor.regions = [Mock(region_id="GRA9"), Mock(region_id="BHS5")]
 
         result = inventory_ipv4_prices(vendor)
@@ -1059,7 +1059,7 @@ class TestInventoryIpv4Prices:
     def test_ipv4_price_structure(self):
         """Test IPv4 price data structure."""
         vendor = Mock()
-        vendor.vendor_id = "ovhcloud"
+        vendor.vendor_id = "ovh"
         vendor.regions = [Mock(region_id="GRA9")]
 
         result = inventory_ipv4_prices(vendor)
@@ -1074,8 +1074,8 @@ class TestInventoryIpv4Prices:
 class TestCatalogHelpers:
     """Tests for catalog helper functions."""
 
-    @patch("sc_crawler.vendors.ovhcloud._get_catalog")
-    @patch("sc_crawler.vendors.ovhcloud._client")
+    @patch("sc_crawler.vendors.ovh._get_catalog")
+    @patch("sc_crawler.vendors.ovh._client")
     def test_get_servers_from_catalog(self, mock_client, mock_get_catalog):
         """Test server extraction from catalog."""
         mock_get_catalog.return_value = {
@@ -1110,7 +1110,7 @@ class TestCatalogHelpers:
         assert len(result) == 1
         assert result[0]["planCode"] == "b3-8.consumption"
 
-    @patch("sc_crawler.vendors.ovhcloud._get_servers_from_catalog")
+    @patch("sc_crawler.vendors.ovh._get_servers_from_catalog")
     def test_get_regions_from_catalog(self, mock_get_servers):
         """Test region extraction from catalog with merged pricing variants."""
         mock_get_servers.return_value = [
@@ -1149,8 +1149,8 @@ class TestCatalogHelpers:
         # Result should be sorted
         assert result == sorted(result)
 
-    @patch("sc_crawler.vendors.ovhcloud._get_catalog")
-    @patch("sc_crawler.vendors.ovhcloud._client")
+    @patch("sc_crawler.vendors.ovh._get_catalog")
+    @patch("sc_crawler.vendors.ovh._client")
     def test_get_storages_from_catalog(self, mock_client, mock_get_catalog):
         """Test storage extraction from catalog."""
         mock_get_catalog.return_value = {
