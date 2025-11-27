@@ -7,6 +7,11 @@ New vendor(s):
 New benchmark(s):
 
 - PassMark.
+- LLM inference speed.
+
+Fix(es):
+
+- Minor region and server detail overrides.
 
 ## v0.3.1 (Oct 25, 2024)
 
