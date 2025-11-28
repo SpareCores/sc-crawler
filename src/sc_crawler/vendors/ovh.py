@@ -1,7 +1,8 @@
-import os
 from functools import cache
+from os import environ, getenv
+from typing import Callable
 
-import ovh
+from ovh import Client
 
 from ..lookup import map_compliance_frameworks_to_vendor
 from ..table_fields import (
