@@ -604,7 +604,6 @@ def inventory_compliance_frameworks(vendor):
     Verified on ovhcloud.com:
     - ISO/IEC 27001/27017/27018 (page: /en/compliance/iso-27001-27017-27018/)
     - SOC 1, SOC 2, SOC 3 with SOC 2 Type 2 details (page: /en/compliance/soc-1-2-3/)
-    Our lookup currently defines: "iso27001" and "soc2t2".
     """
     # Additional OVHcloud compliance frameworks you may want to support later
     # (not yet present in lookup.py — listed here for reference only):
@@ -685,57 +684,39 @@ def inventory_regions(vendor) -> list[dict]:
     # Coordinates for OVHcloud datacenter locations
     # Source: Mixed - Exact datacenter addresses from Google Maps search (retrieved 2025-11-17)
     #         and city-level coordinates from Google Maps Geocoding API
-    # Note: OVHcloud region page confirms Frankfurt (Limburg), Warsaw (Ożarów), London (Erith)
-    #       as specific datacenter locations opened in 2016
     region_coordinates = {
-        # Exact datacenter locations from Google Maps (address-level precision)
-        "SBG": (
-            48.5854388,
-            7.7974307,
-        ),  # Strasbourg - 9 Rue du Bass. de l'Industrie, 67000
-        "GRA": (
-            51.0166852,
-            2.1551437,
-        ),  # Gravelines - 1 Rte de la Frm Masson, 59820 Gravelines
-        "RBX": (50.691834, 3.2003148),  # Roubaix - 2 Rue Kellermann, 59100 (HQ)
-        "PAR": (48.8885363, 2.3755977),  # Paris - 12 Rue Riquet, 75019
-        "ERI": (
-            51.4915264,
-            0.1668186,
-        ),  # London (Erith) - 8 Viking Way, Erith DA8 1EW, UK
-        "WAW": (
-            52.2077264,
-            20.8080621,
-        ),  # Warsaw (Ożarów) - Kazimierza Kamińskiego 6, 05-850 Ożarów Mazowiecki
-        "BHS": (
-            45.3093037,
-            -73.8965535,
-        ),  # Beauharnois - 50 Rue de l'Aluminerie, QC J6N 0C2
-        "SGP": (
-            1.3177101,
-            103.893902,
-        ),  # Singapore - 1 Paya Lebar Link, PLQ 1, #11-02, 408533
-        "TOR": (
-            43.4273216,
-            -80.3726843,
-        ),  # Toronto (Cambridge) - 17 Vondrau Dr, Cambridge, ON N3E 1B8
-        "VIN": (
-            38.7474561,
-            -77.6744531,
-        ),  # Vint Hill (Warrenton) - 6872 Watson Ct, Warrenton, VA 20187, USA
-        # City-level coordinates from Google Maps Geocoding API (approximate - no exact DC address found)
-        "LIM": (50.1109221, 8.6821267),  # Frankfurt (Limburg), Germany - city-level
-        "UK": (
-            51.4915264,
-            0.1668186,
-        ),  # London, United Kingdom - using Erith coordinates as proxy
-        "DE": (50.1109221, 8.6821267),  # Frankfurt, Germany - city-level
-        "HIL": (45.520137, -122.9898308),  # Hillsboro, Oregon, USA - city-level
-        "SYD": (-33.8727409, 151.2057136),  # Sydney, Australia - city-level
-        "MUM": (
-            12.9062205,
-            77.6062467,
-        ),  # Bengaluru office as proxy for Mumbai - city-level
+        # Strasbourg - 9 Rue du Bass. de l'Industrie, 67000
+        "SBG": (48.5854388, 7.7974307),
+        # Gravelines - 1 Rte de la Frm Masson, 59820 Gravelines
+        "GRA": (51.0166852, 2.1551437),
+        # Roubaix - 2 Rue Kellermann, 59100 (HQ)
+        "RBX": (50.691834, 3.2003148),
+        # Paris - 12 Rue Riquet, 75019
+        "PAR": (48.8885363, 2.3755977),
+        # London (Erith) - 8 Viking Way, Erith DA8 1EW, UK
+        "ERI": (51.4915264, 0.1668186),
+        # Warsaw (Ożarów) - Kazimierza Kamińskiego 6, 05-850 Ożarów Mazowiecki
+        "WAW": (52.2077264, 20.8080621),
+        # Beauharnois - 50 Rue de l'Aluminerie, QC J6N 0C2
+        "BHS": (45.3093037, -73.8965535),
+        # Singapore - 1 Paya Lebar Link, PLQ 1, #11-02, 408533
+        "SGP": (1.3177101, 103.893902),
+        # Toronto (Cambridge) - 17 Vondrau Dr, Cambridge, ON N3E 1B8
+        "TOR": (43.4273216, -80.3726843),
+        # Vint Hill (Warrenton) - 6872 Watson Ct, Warrenton, VA 20187, USA
+        "VIN": (38.7474561, -77.6744531),
+        # Frankfurt (Limburg), Germany (city-level)
+        "LIM": (50.1109221, 8.6821267),
+        # London, United Kingdom (using Erith coordinates as proxy)
+        "UK": (51.4915264, 0.1668186),
+        # Frankfurt, Germany (city-level)
+        "DE": (50.1109221, 8.6821267),
+        # Hillsboro, Oregon, USA (city-level)
+        "HIL": (45.520137, -122.9898308),
+        # Sydney, Australia (city-level)
+        "SYD": (-33.8727409, 151.2057136),
+        # Mumbai, India (city-level)
+        "MUM": (19.0824822, 72.7141328),
     }
 
     # Exact addresses for datacenters where known
@@ -801,7 +782,9 @@ def inventory_regions(vendor) -> list[dict]:
                 "zip_code": zip_code,
                 "lon": lon,
                 "lat": lat,
-                "founding_year": None,
+                # OVHcloud region page confirms Frankfurt (Limburg), Warsaw (Ożarów), London (Erith)
+                # as specific datacenter locations opened in 2016
+                "founding_year": 2016 if region_code in ["LIM", "WAW", "UK"] else None,
                 "green_energy": None,
             }
         )
