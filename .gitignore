@@ -24,3 +24,9 @@ docs/_build/
 
 # Temp linters
 flycheck_*
+
+# Dev notes, scripts
+.venv/
+notes.txt
+aliyun_env_variables.sh
+sc-data-all.db
