@@ -422,7 +422,7 @@ def _get_gpu_info(
         try:
             size = int(name_lower.split("-")[1])
             gpu_count = size // 180
-            return gpu_count, gpu_count * 80, "NVIDIA", "Ampere", "A100 80GB HBM2e"
+            return gpu_count, gpu_count * 80, "NVIDIA", "Ampere", "A100"
         except (IndexError, ValueError):
             return 0, None, None, None, None
 
@@ -435,7 +435,7 @@ def _get_gpu_info(
         try:
             size = int(name_lower.split("-")[1])
             gpu_count = size // 45
-            return gpu_count, gpu_count * 24, "NVIDIA", "Ampere", "A10 24GB GDDR6"
+            return gpu_count, gpu_count * 24, "NVIDIA", "Ampere", "A10"
         except (IndexError, ValueError):
             return 0, None, None, None, None
 
@@ -453,7 +453,7 @@ def _get_gpu_info(
                 gpu_count * 48,
                 "NVIDIA",
                 "Ada Lovelace",
-                "L40S 48GB GDDR6",
+                "L40S",
             )
         except (IndexError, ValueError):
             return 0, None, None, None, None
@@ -467,7 +467,7 @@ def _get_gpu_info(
         try:
             size = int(name_lower.split("-")[1])
             gpu_count = size // 90
-            return gpu_count, gpu_count * 24, "NVIDIA", "Ada Lovelace", "L4 24GB GDDR6"
+            return gpu_count, gpu_count * 24, "NVIDIA", "Ada Lovelace", "L4"
         except (IndexError, ValueError):
             return 0, None, None, None, None
 
@@ -486,7 +486,7 @@ def _get_gpu_info(
             parts = name_lower.split("-")
             size = int(parts[-1])
             gpu_count = size // 45
-            return gpu_count, gpu_count * 32, "NVIDIA", "Volta", "Tesla V100S 32GB HBM2"
+            return gpu_count, gpu_count * 32, "NVIDIA", "Volta", "Tesla V100S"
         except (IndexError, ValueError):
             return 0, None, None, None, None
 
@@ -505,7 +505,7 @@ def _get_gpu_info(
             parts = name_lower.split("-")
             size = int(parts[-1])
             gpu_count = size // 45
-            return gpu_count, gpu_count * 16, "NVIDIA", "Volta", "Tesla V100 16GB HBM2"
+            return gpu_count, gpu_count * 16, "NVIDIA", "Volta", "Tesla V100"
         except (IndexError, ValueError):
             return 0, None, None, None, None
 
@@ -523,7 +523,7 @@ def _get_gpu_info(
                 gpu_count * 16,
                 "NVIDIA",
                 "Turing",
-                "Quadro RTX 5000 16GB GDDR6",
+                "Quadro RTX 5000",
             )
         except (IndexError, ValueError):
             return 0, None, None, None, None
