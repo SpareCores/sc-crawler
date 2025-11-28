@@ -2,9 +2,6 @@ import os
 from functools import cache
 
 import ovh
-from rich.console import Console
-from rich.panel import Panel
-from rich.prompt import Prompt
 
 from ..lookup import map_compliance_frameworks_to_vendor
 from ..table_fields import (
@@ -30,113 +27,25 @@ LOCAL_ZONE_SUFFIXES = (".LZ", ".LZ.AF", ".LZ.EU", ".LZ.EUROZONE", ".3AZ")
 WINDOWS_PREFIX = "win-"
 
 
-@cache
-def _client() -> ovh.Client:
-    """Create OVHcloud API client using the classic authentication method.
-
-    It uses OVHcloud's classic API authentication with application key/secret and consumer key.
-    TODO: Consider migrating to OAuth2 authentication in the future.
-    Environment Variables Required:
-        OVH_ENDPOINT: API endpoint (ovh-eu, ovh-ca, ovh-us, etc.)
-        OVH_APP_KEY: Application key from createApp (https://eu.api.ovh.com/createApp/ in EU for example)
-        OVH_APP_SECRET: Application secret from createApp
-        OVH_CONSUMER_KEY: Consumer key (auto-generated on first run if missing)
-    """
-    try:
-        endpoint = os.getenv("OVH_ENDPOINT").strip()
-    except (KeyError, AttributeError):
-        raise KeyError("Missing environment variable: OVH_ENDPOINT")
-    if endpoint not in ovh.client.ENDPOINTS.keys():
-        raise KeyError(
-            f"Invalid OVH_ENDPOINT. Must be one of: {', '.join(ovh.client.ENDPOINTS.keys())}"
-        )
-    try:
-        application_key = os.getenv("OVH_APP_KEY").strip()
-    except (KeyError, AttributeError):
-        raise KeyError("Missing environment variable: OVH_APP_KEY")
-    try:
-        application_secret = os.getenv("OVH_APP_SECRET").strip()
-    except (KeyError, AttributeError):
-        raise KeyError("Missing environment variable: OVH_APP_SECRET")
-
-    # Check if consumer key exists
-    consumer_key = os.getenv("OVH_CONSUMER_KEY")
-
-    if not consumer_key or not consumer_key.strip():
-        # Consumer key not set - generate it interactively
-        console = Console()
-
-        console.print(
-            "\n[yellow]⚠️  OVH_CONSUMER_KEY not found. Generating a new consumer key...[/yellow]\n"
-        )
-
-        # Create client WITHOUT consumer key to request one
-        temp_client = ovh.Client(
-            endpoint=endpoint,
-            application_key=application_key,
-            application_secret=application_secret,
-        )
-
-        # Request consumer key with required permissions
-        ck = temp_client.new_consumer_key_request()
-        ck.add_recursive_rules(ovh.API_READ_ONLY, "/")
-
-        # Request token
-        validation = ck.request()
-
-        # Display authentication instructions in a rich panel
-        auth_message = (
-            f"[bold cyan]Authentication Required[/bold cyan]\n\n"
-            f"Please visit the following URL to authenticate:\n"
-            f"[link={validation['validationUrl']}]{validation['validationUrl']}[/link]\n\n"
-            f"[bold]After authentication, set this environment variable:[/bold]\n"
-            f"[green]export OVH_CONSUMER_KEY='{validation['consumerKey']}'[/green]"
-        )
-
-        console.print(
-            Panel(
-                auth_message,
-                title="[bold red]⚡ OVHcloud Authentication[/bold red]",
-                border_style="bold blue",
-                padding=(1, 2),
-            )
-        )
-
-        Prompt.ask(
-            "\n[bold yellow]Press Enter after you have completed authentication[/bold yellow]",
-            default="",
-        )
-
-        consumer_key = validation["consumerKey"]
-    else:
-        consumer_key = consumer_key.strip()
-
-    return ovh.Client(
-        endpoint=endpoint,
-        application_key=application_key,
-        application_secret=application_secret,
-        consumer_key=consumer_key,
-    )
 
 
 @cache
-def _get_project_id(client: ovh.Client) -> str | None:
-    """Get project ID from environment or first available project.
+def _client() -> Client:
+    """Create an OVHcloud API client using a service account via OAuth2.
 
-    Returns:
-        str: Project ID from OVH_PROJECT_ID env var or first project in account
-        None: If no OVH_PROJECT_ID set and no projects available
+    Note that the classic API authentication flow with user approval is not
+    supported due to its short token expiration and the need for user
+    interaction.
+
+    Environment variables required:
+    - `OVH_ENDPOINT`: API endpoint (e.g. ovh-eu)
+    - `OVH_CLIENT_ID`
+    - `OVH_CLIENT_SECRET`
     """
-    project_id = os.getenv("OVH_PROJECT_ID")
-    if project_id:
-        return project_id.strip()
-
-    # No env var set, fetch from API
-    try:
-        projects = client.get("/cloud/project")
-        return projects[0] if projects else None
-    except Exception as e:
-        raise Exception(f"Failed to fetch project list from OVHcloud API: {e}") from e
+    for ev in ["OVH_ENDPOINT", "OVH_CLIENT_ID", "OVH_CLIENT_SECRET"]:
+        if ev not in environ:
+            raise KeyError(f"Missing environment variable: {ev}")
+    return Client()
 
 
 @cache

@@ -119,6 +119,59 @@ and then assign the role at the Subscription's Access control page.
 
 </details>
 
+
+<details markdown="1">
+
+<summary>OVHcloud</summary>
+
+You need to create a cloud project, optionally enable all regions, then create and configure a service account as described in the [Managing OVHcloud service accounts via the API](https://help.ovhcloud.com/csm/en-ie-manage-service-account?id=kb_article_view&sysparm_article=KB0059346) document. In short:
+
+1. Create a service account via a `POST` API query to `/me/api/oauth2/client`.
+2. Get its `arn` via a `GET` to `/me/api/oauth2/client/{client_id}` (using the `client_id` from above).
+3. Set minimum permissions for the `arn` via a `POST` to `/iam/policy`, e.g.:
+
+```json
+{
+  "description": "Minimum permissions for sc-data",
+  "identities": ["{your_urn}"],
+  "name": "sc-data",
+  "permissions": {
+    "allow": [
+      {
+        "action": "account:apiovh:me/get"
+      },
+      {
+        "action": "publicCloudProject:apiovh:get"
+      },
+      {
+        "action": "publicCloudProject:apiovh:region/get"
+      }
+    ]
+  },
+  "resources": [
+    {
+        "urn": "urn:v1:eu:resource:account:{your_account_id}-ovh"
+    }
+  ]
+}
+```
+
+Then configure the following environment variables:
+
+- `OVH_ENDPOINT` (e.g. "ovh-eu")
+- `OVH_CLIENT_ID`
+- `OVH_CLIENT_SECRET`
+
+By default, the first project found in the account will be used.
+Optionally, you can also specify the project ID to override that behavior
+via the `OVH_PROJECT_ID` environment variable.
+
+For the price catalog, we default to using the `IE` (Ireland) OVH subsidiary,
+which can be overridden via the `OVH_SUBSIDIARY` environment variable.
+This choice affects the currency used for prices.
+
+</details>
+
 Fetch and standardize datacenter, zone, servers, traffic, storage etc data from AWS into a single SQLite file:
 
 ```shell
