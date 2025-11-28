@@ -70,6 +70,55 @@ def _get_project_id() -> str | None:
 
 
 @cache
+def _get_regions(project_id: str = _get_project_id()) -> list[str]:
+    """Fetch available regions enabled for a project.
+
+    The catalogue-based region extraction is preferred over this function
+    in general, as it's more complete: not all regions might be enabled for a projects.
+
+    Args:
+        project_id: Project ID to use for listing regions.
+
+    Returns:
+        List of region codes
+    """
+    try:
+        return _client().get(f"/cloud/project/{project_id}/region")
+    except Exception as e:
+        raise Exception(f"Failed to fetch regions for project {project_id}: {e}") from e
+
+
+@cache
+def _get_region(region_name: str, project_id: str = _get_project_id()) -> dict:
+    """Fetch region details.
+
+    Args:
+        region_name: Name of the region to fetch details for.
+        project_id: Project ID to use for listing regions.
+
+    Returns:
+        Region dictionary.
+    """
+    return _client().get(f"/cloud/project/{project_id}/region/{region_name}")
+
+
+@cache
+def _get_zones(region_name: str, project_id: str = _get_project_id()) -> list[str]:
+    """Fetch available zones for a region.
+
+    Args:
+        region_name: Name of the region to fetch zones for.
+        project_id: Project ID to use for listing zones.
+
+    Returns:
+        List of zone codes. If there's only one zone in the region,
+        return a "dummy" zone with the same name as the region in lowercase.
+    """
+    zones = _get_region(region_name, project_id)["availabilityZones"]
+    return zones if zones else [region_name.lower()]
+
+
+@cache
 def _get_catalog(subsidiary: str = getenv("OVH_SUBSIDIARY", "IE")) -> dict:
     """Fetch service catalog.
 
