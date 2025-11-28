@@ -67,75 +67,61 @@ def _get_catalog(
         raise Exception(f"Failed to fetch OVHcloud catalog: {e}") from e
 
 
-@cache
-def _get_flavors(client: ovh.Client, project_id: str | None = None) -> list[dict]:
-    """Fetch available flavors for a project.
+def _get_addons_from_catalog(
+    addon_family_names: list[str],
+    addon_name_filter: Callable[[str], bool] | None = None,
+    addon_filter: Callable[[dict], bool] | None = None,
+) -> list[dict]:
+    """Extract addons from catalog data for given addon family names.
 
     Args:
-        client: OVHcloud API client instance
-        project_id: Optional project ID, fetched from env/API if not provided
+        addon_family_names: List of addon family names to extract (e.g., ["instance"], ["storage", "volume"])
+        addon_name_filter: Optional function to filter addon names before matching (e.g., exclude Windows instances)
+        addon_filter: Optional function to filter addons after matching by planCode (e.g., filter out addons without region configurations)
 
     Returns:
-        List of flavor dictionaries (excluding Windows instances)
-
-    Raises:
-        Exception: If API call fails
+        List of matching addons from the catalog
     """
-    if not project_id:
-        project_id = _get_project_id(client)
-    try:
-        # Fetch all available flavors for the project
-        flavors = client.get(f"/cloud/project/{project_id}/flavor")
-        # Filter out Windows servers
-        return [f for f in flavors if f.get("osType") != "windows"]
-    except Exception as e:
-        raise Exception(f"Failed to fetch flavors for project {project_id}: {e}") from e
+    catalog = _get_catalog()
+    plans = catalog.get("plans", [])
+    addons = catalog.get("addons", [])
+    project_plan = next((p for p in plans if p.get("planCode", "") == "project"), {})
 
+    # Collect addon names from all specified families
+    addon_names = []
+    for family_name in addon_family_names:
+        family = next(
+            (
+                a
+                for a in project_plan.get("addonFamilies", [])
+                if a.get("name", "") == family_name
+            ),
+            {},
+        )
+        family_addon_names = family.get("addons", [])
+        addon_names.extend(family_addon_names)
 
-@cache
-def _get_catalog(client: ovh.Client) -> dict:
-    """Fetch service catalog.
+    # Apply optional filter to addon names
+    if addon_name_filter:
+        addon_names = [name for name in addon_names if addon_name_filter(name)]
 
-    Using OVH Subsidiary "WE" (Western Europe) for consistent catalog data.
+    # Match addons by planCode
+    matched_addons = [a for a in addons if a.get("planCode", "") in addon_names]
 
-    Args:
-        client: OVHcloud API client instance
+    # Apply optional filter to matched addons
+    if addon_filter:
+        matched_addons = [a for a in matched_addons if addon_filter(a)]
 
-    Returns:
-        Catalog dictionary with plans and addons
-
-    Raises:
-        Exception: If API call fails
-    """
-    try:
-        return client.get("/order/catalog/public/cloud?ovhSubsidiary=WE")
-    except Exception as e:
-        raise Exception(f"Failed to fetch OVHcloud catalog: {e}") from e
+    return matched_addons
 
 
 @cache
 def _get_servers_from_catalog() -> list[dict]:
     """Extract server offerings from catalog data."""
-    client = _client()
-    catalog = _get_catalog(client)
-
-    plans = catalog.get("plans", [])
-    addons = catalog.get("addons", [])
-    project_plan = next((p for p in plans if p.get("planCode", "") == "project"), {})
-    server_addon_names = next(
-        (
-            a
-            for a in project_plan.get("addonFamilies", [])
-            if a.get("name", "") == "instance"
-        ),
-        {},
-    ).get("addons", [])
-    # Exclude Windows instances
-    server_addon_names = [
-        a for a in server_addon_names if not a.startswith(WINDOWS_PREFIX)
-    ]
-    server_addons = [a for a in addons if a.get("planCode", "") in server_addon_names]
-    return server_addons
+    return _get_addons_from_catalog(
+        addon_family_names=["instance"],
+        addon_name_filter=lambda name: not name.startswith(WINDOWS_PREFIX),
+    )
 
 
 @cache
@@ -143,40 +129,31 @@ def _get_regions_from_catalog() -> list[str]:
     """Extract available regions from catalog data.
 
     Merges region configurations from ALL pricing variants (hourly, monthly, etc.)
-    of each flavor to get the most complete regional availability list.
+    of each instance type to get the most complete regional availability list.
 
     Note: The 'configurations' field in the catalog represents orderable regions
     (configuration options for purchasing), not real-time availability. Some pricing
     variants (e.g., hourly) may have empty configurations while monthly variants have
     region lists. This function merges all regions from all variants to provide the
-    most complete picture of where a flavor can potentially be ordered.
+    most complete picture of where an instance type can potentially be ordered.
 
-    Source: /order/catalog/public/cloud API endpoint
+    Source: `/order/catalog/public/cloud` API endpoint
     """
     servers = _get_servers_from_catalog()
     regions = set()
 
-    # Group servers by flavor name to merge regions across pricing variants
-    flavor_regions = {}
+    # iterate over all configs of all server types to list all available regions
     for server in servers:
-        flavor_name = server.get("invoiceName", "")
+        flavor_name = server.get("invoiceName")
         if not flavor_name:
             continue
-
-        configurations = server.get("configurations", [])
+        configurations = server.get("configurations")
+        # e.g. [{'name': 'region', 'isCustom': False, 'isMandatory': False, 'values': ['BHS1', 'BHS3', 'BHS5', 'DE1', 'GRA1', 'GRA3', 'GRA5', 'SBG1', 'SBG3', 'SBG5', 'SGP1', 'SYD1', 'UK1', 'WAW1', 'GRA7']}]
         if configurations:
-            # Extract regions from all configuration entries (usually just one with 'region' name)
             for config in configurations:
                 if config.get("name") == "region":
-                    server_regions = config.get("values", [])
-                    if server_regions:
-                        if flavor_name not in flavor_regions:
-                            flavor_regions[flavor_name] = set()
-                        flavor_regions[flavor_name].update(server_regions)
-
-    # Merge all regions from all flavors
-    for flavor_region_set in flavor_regions.values():
-        regions.update(flavor_region_set)
+                    for region in config.get("values", []):
+                        regions.add(region)
 
     return sorted(list(regions))
 
@@ -184,66 +161,23 @@ def _get_regions_from_catalog() -> list[str]:
 @cache
 def _get_storages_from_catalog() -> list[dict]:
     """Extract storage offerings from catalog data."""
-    client = _client()
-    catalog = _get_catalog(client)
 
-    plans = catalog.get("plans", [])
-    addons = catalog.get("addons", [])
-    project_plan = next((p for p in plans if p.get("planCode", "") == "project"), {})
-    storage_addon_names = next(
-        (
-            a
-            for a in project_plan.get("addonFamilies", [])
-            if a.get("name", "") == "storage"
-        ),
-        {},
-    ).get("addons", [])
-    # Filter out storage addons without region configurations
-    storage_addons = [
-        a
-        for a in addons
-        if a.get("planCode", "") in storage_addon_names
-        and len(a.get("configurations", [])) > 0
-        and a.get("configurations", [])[0].get("values", [])
-    ]
-    volume_addon_names = next(
-        (
-            a
-            for a in project_plan.get("addonFamilies", [])
-            if a.get("name", "") == "volume"
-        ),
-        {},
-    ).get("addons", [])
-    # Filter out volume addons without region configurations
-    volume_addons = [
-        a
-        for a in addons
-        if a.get("planCode", "") in volume_addon_names
-        and len(a.get("configurations", [])) > 0
-        and a.get("configurations", [])[0].get("values", [])
-    ]
-    return storage_addons + volume_addons
+    # Filter out addons without region configurations
+    def has_region_config(addon: dict) -> bool:
+        configs = addon.get("configurations", [])
+        return len(configs) > 0 and bool(configs[0].get("values", []))
+
+    return _get_addons_from_catalog(
+        # NOTE don't request volumes as we are only interested in block storage offerings
+        addon_family_names=["storage"],
+        addon_filter=has_region_config,
+    )
 
 
 @cache
 def _get_ipv4_prices_from_catalog() -> list[dict]:
     """Extract IPv4 pricing offerings from catalog data."""
-    client = _client()
-    catalog = _get_catalog(client)
-
-    plans = catalog.get("plans", [])
-    addons = catalog.get("addons", [])
-    project_plan = next((p for p in plans if p.get("planCode", "") == "project"), {})
-    ipv4_addon_names = next(
-        (
-            a
-            for a in project_plan.get("addonFamilies", [])
-            if a.get("name", "") == "publicip"
-        ),
-        {},
-    ).get("addons", [])
-    ipv4_addons = [a for a in addons if a.get("planCode", "") in ipv4_addon_names]
-    return ipv4_addons
+    return _get_addons_from_catalog(addon_family_names=["publicip"])
 
 
 def _get_base_region_and_city(region: str) -> tuple[str, str | None]:
@@ -297,16 +231,16 @@ def _get_base_region_and_city(region: str) -> tuple[str, str | None]:
     return base_region, region_city_mapping.get(base_region)
 
 
-def _get_server_family(flavor_name: str) -> str | None:
-    """Map OVHcloud flavor name to server family.
+def _get_server_family(instance_type_name: str) -> str | None:
+    """Map OVHcloud instance type name to server family.
 
     Server families are displayed on the pricing page:
     https://www.ovhcloud.com/en/public-cloud/prices/ (retrieved 2025-11-19)
 
     Returns:
-        str: Server family name (e.g., 'General Purpose', 'Compute Optimized')
+        str: Server family name (e.g., "General Purpose", "Compute Optimized")
     """
-    name_lower = flavor_name.lower()
+    name_lower = instance_type_name.lower()
 
     # Extract prefix (e.g., 'b2-7' -> 'b2', 't1-45' -> 't1')
     prefix = name_lower.split("-")[0]
