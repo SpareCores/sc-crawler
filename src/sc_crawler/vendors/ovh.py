@@ -50,20 +50,37 @@ def _client() -> Client:
 
 
 @cache
-def _get_catalog(
-    client: Client = _client(), subsidiary: str = getenv("OVH_SUBSIDIARY", "IE")
-) -> dict:
+def _get_project_id() -> str | None:
+    """Get project ID from environment or first available project.
+
+    Returns:
+        str: Project ID from OVH_PROJECT_ID env var or first project in account
+        None: If no OVH_PROJECT_ID set and no projects available
+    """
+    project_id = getenv("OVH_PROJECT_ID")
+    if project_id:
+        return project_id.strip()
+
+    # fall back to first project in account (if any)
+    try:
+        projects = _client().get("/cloud/project")
+        return projects[0] if projects else None
+    except Exception as e:
+        raise Exception(f"Failed to fetch project list from OVHcloud API: {e}") from e
+
+
+@cache
+def _get_catalog(subsidiary: str = getenv("OVH_SUBSIDIARY", "IE")) -> dict:
     """Fetch service catalog.
 
     Args:
-        client: OVHcloud API client instance
-        subsidiary: Optionally override which OVH subsidiary to use for fetching the public catalog.
+        subsidiary: OVH subsidiary to use for fetching the public catalog.
 
     Returns:
         Catalog dictionary with plans and addons.
     """
     try:
-        return client.get("/order/catalog/public/cloud", ovhSubsidiary=subsidiary)
+        return _client().get("/order/catalog/public/cloud", ovhSubsidiary=subsidiary)
     except Exception as e:
         raise Exception(f"Failed to fetch OVHcloud catalog: {e}") from e
 
