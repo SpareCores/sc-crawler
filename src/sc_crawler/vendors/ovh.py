@@ -49,28 +49,22 @@ def _client() -> Client:
 
 
 @cache
-def _get_regions(client: ovh.Client, project_id: str | None = None) -> list[str]:
-    """Fetch available regions.
+def _get_catalog(
+    client: Client = _client(), subsidiary: str = getenv("OVH_SUBSIDIARY", "IE")
+) -> dict:
+    """Fetch service catalog.
 
     Args:
         client: OVHcloud API client instance
-        project_id: Optional project ID, fetched from env/API if not provided
+        subsidiary: Optionally override which OVH subsidiary to use for fetching the public catalog.
 
     Returns:
-        List of region codes
-
-    Raises:
-        Exception: If API call fails
-
-    Note: This function fetches regions via the /cloud/project/{project_id}/region endpoint,
-    currently not used in favor of catalog-based region extraction.
+        Catalog dictionary with plans and addons.
     """
-    if not project_id:
-        project_id = _get_project_id(client)
     try:
-        return client.get(f"/cloud/project/{project_id}/region")
+        return client.get("/order/catalog/public/cloud", ovhSubsidiary=subsidiary)
     except Exception as e:
-        raise Exception(f"Failed to fetch regions for project {project_id}: {e}") from e
+        raise Exception(f"Failed to fetch OVHcloud catalog: {e}") from e
 
 
 @cache
