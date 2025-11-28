@@ -532,8 +532,8 @@ def _get_gpu_info(
     return 0, None, None, None, None
 
 
-def _get_storage_type(flavor_name: str) -> StorageType:
-    """Determine storage type based on flavor name.
+def _get_storage_type(instance_type_name: str) -> StorageType:
+    """Determine storage type based on instance type name.
 
     Storage specifications verified from OVHcloud Cloud Manager (retrieved 2025-11-17).
 
@@ -555,7 +555,7 @@ def _get_storage_type(flavor_name: str) -> StorageType:
         - GPU RTX5000 series: SATA SSD (400 GB)
         - GPU A100 series: Storage type not specified
     """
-    name_lower = flavor_name.lower()
+    name_lower = instance_type_name.lower()
 
     # 3rd generation instances (B3, C3, R3) - NVMe storage
     if name_lower.startswith(("b3-", "c3-", "r3-")):
