@@ -247,12 +247,12 @@ def _get_ipv4_prices_from_catalog() -> list[dict]:
     return _get_addons_from_catalog(addon_family_names=["publicip"])
 
 
-def _get_base_region_and_city(region: str) -> tuple[str, str | None]:
-    """Extract base region code from various formats and map to city name."""
+def _get_datacenter_and_city(region: str) -> tuple[str, str | None]:
+    """Extract datacenter code from region identifier and map to city name."""
 
     # Map region codes to city names
     # Source: https://www.ovhcloud.com/en/public-cloud/regions-availability/
-    region_city_mapping = {
+    datacenter_city_mapping = {
         # Europe (EMEA)
         "SBG": "Strasbourg",
         "GRA": "Gravelines",
@@ -274,28 +274,8 @@ def _get_base_region_and_city(region: str) -> tuple[str, str | None]:
         "MUM": "Mumbai",
     }
 
-    # Extract base region code from various formats:
-    # - Simple: 'GRA', 'BHS', 'DE' -> 'GRA', 'BHS', 'DE'
-    # - With number: 'GRA9', 'BHS5', 'DE1' -> 'GRA', 'BHS', 'DE'
-    # - Descriptive: 'CA-EAST-TOR', 'EU-WEST-PAR' -> 'TOR', 'PAR'
-    # - Special: 'RBX-A', 'RBX-ARCHIVE' -> 'RBX', 'RBX'
-    if "-" in region:
-        parts = region.split("-")
-        # Try first part (for RBX-ARCHIVE, RBX-A)
-        first_part = "".join([c for c in parts[0] if not c.isdigit()])
-        # Try last part (for CA-EAST-TOR, EU-WEST-PAR)
-        last_part = "".join([c for c in parts[-1] if not c.isdigit()])
-
-        # Prefer the part that exists in our mappings
-        if last_part in region_city_mapping:
-            base_region = last_part
-        else:
-            base_region = first_part
-    else:
-        # Handle simple format with or without numbers (e.g., 'GRA11' -> 'GRA')
-        base_region = "".join([c for c in region if not c.isdigit()])
-
-    return base_region, region_city_mapping.get(base_region)
+    datacenter = _get_region(region)["datacenter"]
+    return datacenter, datacenter_city_mapping.get(datacenter)
 
 
 def _get_server_family(instance_type_name: str) -> str | None:
@@ -825,14 +805,14 @@ def inventory_regions(vendor) -> list[dict]:
     }
 
     for region_code in regions:
-        base_code, city = _get_base_region_and_city(region_code)
-        country_id = region_country_mapping.get(base_code)
-        state = region_state_mapping.get(base_code)
-        coords = region_coordinates.get(base_code)
+        datacenter, city = _get_datacenter_and_city(region_code)
+        country_id = region_country_mapping.get(datacenter)
+        state = region_state_mapping.get(datacenter)
+        coords = region_coordinates.get(datacenter)
         lon = coords[1] if coords else None
         lat = coords[0] if coords else None
-        address = region_addresses.get(base_code)
-        zip_code = region_zip_codes.get(base_code)
+        address = region_addresses.get(datacenter)
+        zip_code = region_zip_codes.get(datacenter)
 
         items.append(
             {
@@ -841,7 +821,7 @@ def inventory_regions(vendor) -> list[dict]:
                 "name": region_code,
                 "api_reference": region_code,
                 "display_name": f"{city} ({region_code})" if city else region_code,
-                "aliases": [base_code],
+                "aliases": [],
                 "country_id": country_id,
                 "state": state,
                 "city": city,
@@ -872,7 +852,7 @@ def inventory_zones(vendor) -> list[dict]:
     items = []
     regions = _get_regions_from_catalog()
     for region in regions:
-        _, city = _get_base_region_and_city(region)
+        _, city = _get_datacenter_and_city(region)
         items.append(
             {
                 "vendor_id": vendor.vendor_id,
