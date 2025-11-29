@@ -19,14 +19,6 @@ from ..utils import scmodels_to_dict
 HOURS_PER_MONTH = 730
 MICROCENTS_PER_CURRENCY_UNIT = 100_000_000
 MIB_PER_GIB = 1024
-# Default currency for OVHcloud prices in WE subsidiary
-CURRENCY = "USD"
-
-# Local Zone and Multi-AZ plan code suffixes (currently skipped)
-LOCAL_ZONE_SUFFIXES = (".LZ", ".LZ.AF", ".LZ.EU", ".LZ.EUROZONE", ".3AZ")
-
-# Windows instance prefix (filtered out)
-WINDOWS_PREFIX = "win-"
 
 
 
@@ -165,49 +157,6 @@ def _get_addons_from_catalog(
         matched_addons = [a for a in matched_addons if addon_filter(a)]
 
     return matched_addons
-
-
-@cache
-def _get_servers_from_catalog() -> list[dict]:
-    """Extract server offerings from catalog data."""
-    return _get_addons_from_catalog(
-        addon_family_names=["instance"],
-        addon_name_filter=lambda name: not name.startswith(WINDOWS_PREFIX),
-    )
-
-
-@cache
-def _get_regions_from_catalog() -> list[str]:
-    """Extract available regions from catalog data.
-
-    Merges region configurations from ALL pricing variants (hourly, monthly, etc.)
-    of each instance type to get the most complete regional availability list.
-
-    Note: The 'configurations' field in the catalog represents orderable regions
-    (configuration options for purchasing), not real-time availability. Some pricing
-    variants (e.g., hourly) may have empty configurations while monthly variants have
-    region lists. This function merges all regions from all variants to provide the
-    most complete picture of where an instance type can potentially be ordered.
-
-    Source: `/order/catalog/public/cloud` API endpoint
-    """
-    servers = _get_servers_from_catalog()
-    regions = set()
-
-    # iterate over all configs of all server types to list all available regions
-    for server in servers:
-        flavor_name = server.get("invoiceName")
-        if not flavor_name:
-            continue
-        configurations = server.get("configurations")
-        # e.g. [{'name': 'region', 'isCustom': False, 'isMandatory': False, 'values': ['BHS1', 'BHS3', 'BHS5', 'DE1', 'GRA1', 'GRA3', 'GRA5', 'SBG1', 'SBG3', 'SBG5', 'SGP1', 'SYD1', 'UK1', 'WAW1', 'GRA7']}]
-        if configurations:
-            for config in configurations:
-                if config.get("name") == "region":
-                    for region in config.get("values", []):
-                        regions.add(region)
-
-    return sorted(list(regions))
 
 
 @cache
@@ -690,7 +639,6 @@ def inventory_zones(vendor) -> list[dict]:
 def inventory_servers(vendor) -> list[dict]:
     """List all server types (called "flavors" at OVHcloud)."""
     items = []
-    servers = _get_servers_from_catalog()
 
     server_plans = [
         s
