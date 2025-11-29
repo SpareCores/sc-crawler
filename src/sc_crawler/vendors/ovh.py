@@ -526,31 +526,18 @@ def inventory_compliance_frameworks(vendor):
     #   - ISO 14001 (environmental management systems — non-security but published by OVHcloud)
     #       URL: https://www.ovhcloud.com/en/compliance/iso-14001/
     #       Suggested ID: "iso14001"
-    return map_compliance_frameworks_to_vendor(
-        vendor.vendor_id,
-        [
-            "iso27001",  # ISO/IEC 27001
-            "soc2t2",  # SOC 2 Type 2
-        ],
-    )
+    return map_compliance_frameworks_to_vendor(vendor.vendor_id, ["iso27001", "soc2t2"])
 
 
 def inventory_regions(vendor) -> list[dict]:
-    """Fetch available OVHcloud Public Cloud regions.
+    """List all available OVHcloud Public Cloud regions.
 
-    Source: https://www.ovhcloud.com/en/public-cloud/regions-availability/
-            Section: "OpenStack regions and geographical sites"
-
-    Official Documentation:
-        Region codes mapped from OVHcloud's official regions page:
-        - EMEA: SBG (Strasbourg), GRA (Gravelines), RBX (Roubaix), WAW (Warsaw),
-                DE/LIM (Frankfurt), UK/ERI (London), PAR (Paris)
-        - North America: BHS (Beauharnois/Montreal), HIL (Hillsboro/Seattle),
-                        VIN (Vint Hill/Washington DC), TOR (Toronto)
-        - Asia Pacific: SGP (Singapore), SYD (Sydney), MUM (Mumbai)
+    Further information: https://www.ovhcloud.com/en/public-cloud/regions-availability/
     """
     items = []
-    regions = _get_regions_from_catalog()
+    regions = _get_regions()
+
+    # TODO create a joint mapping of countries/zip etc for easier maintenance?
 
     # Map OVHcloud region codes to country codes
     # Source: https://www.ovhcloud.com/en/public-cloud/regions-availability/
@@ -575,6 +562,8 @@ def inventory_regions(vendor) -> list[dict]:
         "SYD": "AU",  # Sydney, Australia
         "MUM": "IN",  # Mumbai, India
     }
+    # NOTE this could be fetched via the following API endpoint as well:
+    # _get_region("UK")["countryCode"]
 
     # Coordinates for OVHcloud datacenter locations
     # Source: Mixed - Exact datacenter addresses from Google Maps search (retrieved 2025-11-17)
@@ -688,29 +677,29 @@ def inventory_regions(vendor) -> list[dict]:
 
 
 def inventory_zones(vendor) -> list[dict]:
-    """List all regions as availability zones.
+    """List all availability zones.
 
-    OVHcloud API doesn't expose zones as a separate entity.
-    Most regions are single-zone. Multi-AZ regions (like Paris with 3-AZ)
-    handle zone distribution automatically at the instance level, so creating 1-1
-    dummy zones reusing the region id and name, like in Hetzner Cloud.
-    Use city names from region mapping for better display names.
+    Most regions are single-zone without a named availability zone, for which we
+    create a dummy zone with the same name as the region in lowercase. Multi-AZ
+    regions (like Paris with 3-AZ) have named availability zones made available
+    via the project API.
     """
 
     items = []
-    regions = _get_regions_from_catalog()
+    regions = _get_regions()
     for region in regions:
-        _, city = _get_datacenter_and_city(region)
-        items.append(
-            {
-                "vendor_id": vendor.vendor_id,
-                "region_id": region,
-                "zone_id": region,
-                "name": city,
-                "api_reference": city,
-                "display_name": city,
-            }
-        )
+        zones = _get_zones(region)
+        for zone in zones:
+            items.append(
+                {
+                    "vendor_id": vendor.vendor_id,
+                    "region_id": region,
+                    "zone_id": zone,
+                    "name": zone,
+                    "api_reference": zone,
+                    "display_name": zone,
+                }
+            )
     return items
 
 
