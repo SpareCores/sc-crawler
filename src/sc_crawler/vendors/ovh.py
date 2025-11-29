@@ -111,11 +111,12 @@ def _get_zones(region_name: str, project_id: str = _get_project_id()) -> list[st
         project_id: Project ID to use for listing zones.
 
     Returns:
-        List of zone codes. If there's only one zone in the region,
-        return a "dummy" zone with the same name as the region in lowercase.
+        List of zone codes.
     """
     zones = _get_region(region_name, project_id)["availabilityZones"]
-    return zones if zones else [region_name.lower()]
+    # single zone regions have a standard "a" suffix
+    # https://www.ovhcloud.com/en/about-us/global-infrastructure/expansion-regions-az/
+    return zones if zones else [region_name.lower() + "-a"]
 
 
 @cache
@@ -672,10 +673,7 @@ def inventory_regions(vendor) -> list[dict]:
 def inventory_zones(vendor) -> list[dict]:
     """List all availability zones.
 
-    Most regions are single-zone without a named availability zone, for which we
-    create a dummy zone with the same name as the region in lowercase. Multi-AZ
-    regions (like Paris with 3-AZ) have named availability zones made available
-    via the project API.
+    Data source: <https://www.ovhcloud.com/en/about-us/global-infrastructure/expansion-regions-az/>
     """
 
     items = []
