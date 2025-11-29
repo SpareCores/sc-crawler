@@ -372,7 +372,7 @@ def _get_gpu_info(
         try:
             size = int(name_lower.split("-")[1])
             gpu_count = size // 380
-            return gpu_count, gpu_count * 80, "NVIDIA", "Hopper", "H100 80GB HBM3"
+            return gpu_count, gpu_count * 80, "NVIDIA", "Hopper", "H100"
         except (IndexError, ValueError):
             return 0, None, None, None, None
 
@@ -448,7 +448,7 @@ def _get_gpu_info(
             parts = name_lower.split("-")
             size = int(parts[-1])
             gpu_count = size // 45
-            return gpu_count, gpu_count * 32, "NVIDIA", "Volta", "Tesla V100S"
+            return gpu_count, gpu_count * 32, "NVIDIA", "Volta", "V100S"
         except (IndexError, ValueError):
             return 0, None, None, None, None
 
@@ -467,7 +467,7 @@ def _get_gpu_info(
             parts = name_lower.split("-")
             size = int(parts[-1])
             gpu_count = size // 45
-            return gpu_count, gpu_count * 16, "NVIDIA", "Volta", "Tesla V100"
+            return gpu_count, gpu_count * 16, "NVIDIA", "Volta", "V100"
         except (IndexError, ValueError):
             return 0, None, None, None, None
 
