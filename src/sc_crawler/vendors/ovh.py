@@ -103,23 +103,6 @@ def _get_region(region_name: str, project_id: str = _get_project_id()) -> dict:
 
 
 @cache
-def _get_zones(region_name: str, project_id: str = _get_project_id()) -> list[str]:
-    """Fetch available zones for a region.
-
-    Args:
-        region_name: Name of the region to fetch zones for.
-        project_id: Project ID to use for listing zones.
-
-    Returns:
-        List of zone codes.
-    """
-    zones = _get_region(region_name, project_id)["availabilityZones"]
-    # single zone regions have a standard "a" suffix
-    # https://www.ovhcloud.com/en/about-us/global-infrastructure/expansion-regions-az/
-    return zones if zones else [region_name.lower() + "-a"]
-
-
-@cache
 def _get_catalog(subsidiary: str = getenv("OVH_SUBSIDIARY", "IE")) -> dict:
     """Fetch service catalog.
 
@@ -679,7 +662,10 @@ def inventory_zones(vendor) -> list[dict]:
     items = []
     regions = _get_regions()
     for region in regions:
-        zones = _get_zones(region)
+        zones = _get_region(region, _get_project_id())["availabilityZones"]
+        if not zones:
+            # single zone regions have a standard "a" suffix
+            zones = [region.lower() + "-a"]
         for zone in zones:
             items.append(
                 {
