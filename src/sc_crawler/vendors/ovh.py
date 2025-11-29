@@ -579,73 +579,6 @@ def _get_gpu_info(
     return 0, None, None, None, None
 
 
-def _get_storage_type(instance_type_name: str) -> StorageType:
-    """Determine storage type based on instance type name.
-
-    Storage specifications verified from OVHcloud Cloud Manager (retrieved 2025-11-17).
-
-    Returns:
-        StorageType: NVME_SSD for NVMe-based instances, SSD for SATA SSD instances
-
-    Storage Type Mapping:
-        - B3 series: NVMe SSD (50-400 GB NVMe)
-        - C3 series: NVMe SSD (50-400 GB NVMe)
-        - R3 series: NVMe SSD (50-400 GB NVMe)
-        - D2 series: NVMe SSD (25-50 GB NVMe)
-        - I1 series: Mixed - SSD boot + NVMe data drives
-        - B2 series: SATA SSD (50-400 GB SSD)
-        - C2 series: SATA SSD (50-400 GB SSD)
-        - R2 series: SATA SSD (50-400 GB SSD)
-        - BM series: SATA SSD (2x 960 GB SSD)
-        - GPU T1/T2 series: NVMe SSD (300-800 GB NVMe, some with NVMe Passthrough)
-        - GPU L4/L40S/A10/H100 series: NVMe SSD (400 GB NVMe, some with NVMe Passthrough)
-        - GPU RTX5000 series: SATA SSD (400 GB)
-        - GPU A100 series: Storage type not specified
-    """
-    name_lower = instance_type_name.lower()
-
-    # 3rd generation instances (B3, C3, R3) - NVMe storage
-    if name_lower.startswith(("b3-", "c3-", "r3-")):
-        return StorageType.NVME_SSD
-
-    # Discovery instances (D2) - NVMe storage
-    if name_lower.startswith("d2-"):
-        return StorageType.NVME_SSD
-
-    # Storage optimized (I1) - Mixed SSD + NVMe
-    # API reports combined, using SSD as it's the boot disk type
-    if name_lower.startswith("i1-"):
-        return StorageType.SSD
-
-    # 2nd generation instances (B2, C2, R2) - SATA SSD storage
-    if name_lower.startswith(("b2-", "c2-", "r2-")):
-        return StorageType.SSD
-
-    # Bare Metal instances - SATA SSD (2x 960 GB SSD)
-    if name_lower.startswith("bm-"):
-        return StorageType.SSD
-
-    # Tesla V100/V100S (T1/T2 series) - NVMe
-    if name_lower.startswith(("t1-", "t1-le-", "t2-", "t2-le-")):
-        return StorageType.NVME_SSD
-
-    # L4, L40S, A10 series - NVMe
-    if name_lower.startswith(("l4-", "l40s-", "a10-")):
-        return StorageType.NVME_SSD
-
-    # H100 series - NVMe with Passthrough
-    if name_lower.startswith("h100-"):
-        return StorageType.NVME_SSD
-
-    # RTX 5000 series - SATA SSD
-    if name_lower.startswith("rtx5000-"):
-        return StorageType.SSD
-
-    # A100 series - Storage type not specified
-    # Default to SSD for safety
-    return StorageType.SSD
-
-
 def inventory_compliance_frameworks(vendor):
     """Manual list of known compliance frameworks on OVHcloud.
     Verified on ovhcloud.com:
@@ -941,13 +874,11 @@ def inventory_servers(vendor) -> list[dict]:
             gpu_memory_total_gb * MIB_PER_GIB if gpu_memory_total_gb else None
         )
         has_nvme = any(
-            "nvme" in disk.get("technology", "").lower()
+            "nvme"
+            in [disk.get("technology", "").lower(), disk.get("interface", "").lower()]
             for disk in technical.get("storage", {}).get("disks", [])
         )
         storage_type = StorageType.NVME_SSD if has_nvme else StorageType.SSD
-        _storage_type = _get_storage_type(server_id)
-        if storage_type == StorageType.SSD and _storage_type == StorageType.NVME_SSD:
-            storage_type = _storage_type
         storage_size = sum(
             [
                 disk.get("number", 1) * disk.get("capacity", 0)
