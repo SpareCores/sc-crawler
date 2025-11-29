@@ -145,6 +145,9 @@ You need to create a cloud project, optionally enable all regions, then create a
       },
       {
         "action": "publicCloudProject:apiovh:region/get"
+      },
+      {
+        "action": "publicCloudProject:apiovh:flavor/get"
       }
     ]
   },
