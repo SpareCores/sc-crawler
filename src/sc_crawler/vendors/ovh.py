@@ -704,16 +704,28 @@ def inventory_zones(vendor) -> list[dict]:
 
 
 def inventory_servers(vendor) -> list[dict]:
-    """Fetch available OVHcloud Public Cloud flavors (server types)."""
+    """List all server types (called "flavors" at OVHcloud)."""
     items = []
     servers = _get_servers_from_catalog()
-    flavors = {}
-    for server in servers:
-        flavor_name = server.get("invoiceName", None)
-        if flavor_name and flavor_name not in flavors:
-            flavors[flavor_name] = server
 
-    for server_id, server in flavors.items():
+    server_plans = [
+        s
+        for s in _get_catalog()["addons"]
+        if (
+            s.get("product") == "publiccloud-instance"
+            and s.get("blobs")
+            and s["blobs"].get("technical")
+            # TODO list Windows machines later
+            and s["blobs"].get("technical").get("os", {}).get("family") == "linux"
+            # filter for hourly rates for now
+            and s.get("planCode", "").endswith(".consumption")
+        )
+    ]
+    # dedupe just in case
+    servers = {}
+    for server_plan in server_plans:
+        servers[server_plan["invoiceName"]] = server_plan
+
         blobs = server.get("blobs", {})
         if not blobs:
             continue  # Skip if no blob data available
@@ -802,19 +814,21 @@ def inventory_servers(vendor) -> list[dict]:
                 "memory_speed": None,
                 "memory_ecc": None,
                 "gpu_count": gpu_count,
-                "gpu_memory_min": gpu_memory_total,  # For GPU instances, min = total?
+                "gpu_memory_min": gpu_memory_per_gpu,
                 "gpu_memory_total": gpu_memory_total,
                 "gpu_manufacturer": gpu_manufacturer,
                 "gpu_family": gpu_family,
                 "gpu_model": gpu_model,
-                "gpus": [],
-                "storage_size": storage_size,  # Local disk in GB
-                "storage_type": storage_type,  # Determined from flavor specifications
+                "gpus": [],  # TODO fill this array
+                "storage_size": storage_size,
+                "storage_type": storage_type,
                 "storages": [],
-                "network_speed": bandwidth_level,
-                "inbound_traffic": 0,  # TODO
-                "outbound_traffic": 0,  # TODO
-                "ipv4": 1,  # Each instance gets at least one IPv4
+                "network_speed": technical.get("bandwidth", {}).get("level", None),
+                # no bundled free traffic as all traffic is unmetered
+                # https://www.ovhcloud.com/en-ie/public-cloud/prices/
+                "inbound_traffic": 0,
+                "outbound_traffic": 0,
+                "ipv4": 1,  # each instance gets one IPv4
                 "status": status,
             }
         )
