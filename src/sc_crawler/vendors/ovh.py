@@ -324,91 +324,6 @@ def _get_server_family(instance_type_name: str) -> str | None:
     return None
 
 
-def _get_cpu_info(flavor_name: str) -> tuple[str | None, str | None, float | None]:
-    """Map flavor name to CPU manufacturer and model based on OVHcloud documentation.
-
-    Sources:
-    - OVHcloud Cloud Manager: Direct verification (retrieved 2025-11-19)
-    - lscpu verification on B3-8 instance (2025-11-17)
-    """
-    name_lower = flavor_name.lower()
-
-    # CPU model verified from lscpu on B3-8 instance (2025-11-17): AMD EPYC-Milan Processor (Family 25, Model 1)
-    if name_lower.startswith("b3-"):
-        return "AMD", "EPYC Milan", 2.3
-    if name_lower.startswith("c3-"):
-        return None, None, 2.3
-    if name_lower.startswith("r3-"):
-        return None, None, 2.3
-
-    # 2nd generation instances (b2, c2, r2)
-    # - B2 series: 2.0 GHz (balanced)
-    # - C2 series: 3.0 GHz (compute-optimized)
-    # - R2 series: 2.2 GHz (RAM-optimized)
-    if name_lower.startswith("c2-"):
-        return None, None, 3.0
-    if name_lower.startswith("r2-"):
-        return None, None, 2.2
-    if name_lower.startswith("b2-"):
-        return None, None, 2.0
-
-    # Discovery instances (d2) - 2.0 GHz
-    if name_lower.startswith("d2-"):
-        return None, None, 2.0
-
-    # Storage optimized instances (i1) - 2.2 GHz
-    if name_lower.startswith("i1-"):
-        return None, None, 2.2
-
-    # Bare Metal instances
-    # - bm-s1 (Small): 4 cores @ 4.0 GHz
-    # - bm-m1 (Medium): 8 cores @ 3.7 GHz
-    # - bm-l1 (Large): 16 cores @ 3.1 GHz
-    if name_lower == "bm-s1":
-        return None, None, 4.0
-    if name_lower == "bm-m1":
-        return None, None, 3.7
-    if name_lower == "bm-l1":
-        return None, None, 3.1
-    if name_lower.startswith("bm-"):
-        return None, None, None  # Unknown BM type
-
-    # H100 series - 3.0 GHz
-    if name_lower.startswith("h100-"):
-        return None, None, 3.0
-
-    # A100 series - No CPU info available
-    if name_lower.startswith("a100-"):
-        return None, None, None
-
-    # A10 series - 3.3 GHz
-    if name_lower.startswith("a10-"):
-        return None, None, 3.3
-
-    # L40S series - 2.75 GHz
-    if name_lower.startswith("l40s-"):
-        return None, None, 2.75
-
-    # L4 series - 2.75 GHz
-    if name_lower.startswith("l4-"):
-        return None, None, 2.75
-
-    # Tesla V100S (t2) series - 2.9 GHz
-    if name_lower.startswith("t2-") or name_lower.startswith("t2-le-"):
-        return None, None, 2.9
-
-    # Tesla V100 (t1) series - 3.0 GHz
-    if name_lower.startswith("t1-") or name_lower.startswith("t1-le-"):
-        return None, None, 3.0
-
-    # Quadro RTX 5000 series - 3.3 GHz
-    if name_lower.startswith("rtx5000-"):
-        return None, None, 3.3
-
-    # Default: unknown
-    return None, None, None
-
-
 def _get_gpu_info(
     flavor_name: str,
 ) -> tuple[int, int | None, str | None, str | None, str | None]:
@@ -823,33 +738,15 @@ def inventory_servers(vendor) -> list[dict]:
         gpu = technical.get("gpu", {})
         bandwidth = technical.get("bandwidth", {})
         bandwidth_level = bandwidth.get("level", None)
+        # all resources are dedicated expect for the Discovery series
+        cpu_allocation = (
+            CpuAllocation.SHARED
+            if commercial.get("brickSubtype") == "discovery"
+            else CpuAllocation.DEDICATED
+        )
         memory = technical.get("memory", {})
         memory_size_gb = memory.get("size", None)
         memory_size = memory_size_gb * MIB_PER_GIB if memory_size_gb else None
-        cpu_manufacturer = cpu.get("brand", None)
-        cpu_model = cpu.get("model", None)
-        cpu_speed = cpu.get("frequency", None)
-        _cpu_manufacturer, _cpu_model, _cpu_speed = _get_cpu_info(server_id)
-        if not cpu_manufacturer and _cpu_manufacturer:
-            cpu_manufacturer = _cpu_manufacturer
-        if not cpu_model and _cpu_model:
-            cpu_model = _cpu_model
-        if not cpu_speed and _cpu_speed:
-            cpu_speed = _cpu_speed
-        cpu_allocation = (
-            CpuAllocation.DEDICATED
-            if cpu.get("type", None) == "core"
-            else CpuAllocation.SHARED
-        )
-        vcpus = (
-            cpu.get("cores", 0)
-            if cpu_allocation == CpuAllocation.SHARED
-            else cpu.get("threads", cpu.get("cores", 0))
-        )
-        cpu_cores = (
-            cpu.get("cores", None)
-            if cpu_allocation == CpuAllocation.DEDICATED
-            else None
         )
         gpu_count = gpu.get("number", 0)
         gpu_memory_per_gpu = (
@@ -900,12 +797,12 @@ def inventory_servers(vendor) -> list[dict]:
                 # Verified from lscpu on B3-8 instance (2025-11-17)
                 "hypervisor": "KVM" if cpu_allocation == CpuAllocation.SHARED else None,
                 "cpu_allocation": cpu_allocation,
-                "cpu_cores": cpu_cores,
-                "cpu_speed": cpu_speed,
+                "cpu_cores": None,
+                "cpu_speed": technical.get("cpu", {}).get("frequency"),
                 "cpu_architecture": CpuArchitecture.X86_64,  # All OVHcloud instances use x86_64
-                "cpu_manufacturer": cpu_manufacturer,
+                "cpu_manufacturer": None,
                 "cpu_family": None,
-                "cpu_model": cpu_model,
+                "cpu_model": None,
                 "cpu_l1_cache": None,
                 "cpu_l2_cache": None,
                 "cpu_l3_cache": None,
