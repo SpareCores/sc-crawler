@@ -356,7 +356,7 @@ def _get_gpu_info(
     are documented in individual GPU mapping comments below.
 
     Returns:
-        tuple: (gpu_count, gpu_memory_total_gb, gpu_manufacturer, gpu_family, gpu_model)
+        tuple: (gpu_count, gpu_memory_total, gpu_manufacturer, gpu_family, gpu_model)
                or (0, None, None, None, None) if not a GPU instance
     """
     name_lower = flavor_name.lower()
@@ -372,7 +372,7 @@ def _get_gpu_info(
         try:
             size = int(name_lower.split("-")[1])
             gpu_count = size // 380
-            return gpu_count, gpu_count * 80, "NVIDIA", "Hopper", "H100"
+            return gpu_count, gpu_count * 80 * MIB_PER_GIB, "NVIDIA", "Hopper", "H100"
         except (IndexError, ValueError):
             return 0, None, None, None, None
 
@@ -384,7 +384,7 @@ def _get_gpu_info(
         try:
             size = int(name_lower.split("-")[1])
             gpu_count = size // 180
-            return gpu_count, gpu_count * 80, "NVIDIA", "Ampere", "A100"
+            return gpu_count, gpu_count * 80 * MIB_PER_GIB, "NVIDIA", "Ampere", "A100"
         except (IndexError, ValueError):
             return 0, None, None, None, None
 
@@ -397,7 +397,7 @@ def _get_gpu_info(
         try:
             size = int(name_lower.split("-")[1])
             gpu_count = size // 45
-            return gpu_count, gpu_count * 24, "NVIDIA", "Ampere", "A10"
+            return gpu_count, gpu_count * 24 * MIB_PER_GIB, "NVIDIA", "Ampere", "A10"
         except (IndexError, ValueError):
             return 0, None, None, None, None
 
@@ -412,7 +412,7 @@ def _get_gpu_info(
             gpu_count = size // 90
             return (
                 gpu_count,
-                gpu_count * 48,
+                gpu_count * 48 * MIB_PER_GIB,
                 "NVIDIA",
                 "Ada Lovelace",
                 "L40S",
@@ -429,7 +429,13 @@ def _get_gpu_info(
         try:
             size = int(name_lower.split("-")[1])
             gpu_count = size // 90
-            return gpu_count, gpu_count * 24, "NVIDIA", "Ada Lovelace", "L4"
+            return (
+                gpu_count,
+                gpu_count * 24 * MIB_PER_GIB,
+                "NVIDIA",
+                "Ada Lovelace",
+                "L4",
+            )
         except (IndexError, ValueError):
             return 0, None, None, None, None
 
@@ -448,7 +454,7 @@ def _get_gpu_info(
             parts = name_lower.split("-")
             size = int(parts[-1])
             gpu_count = size // 45
-            return gpu_count, gpu_count * 32, "NVIDIA", "Volta", "V100S"
+            return gpu_count, gpu_count * 32 * MIB_PER_GIB, "NVIDIA", "Volta", "V100S"
         except (IndexError, ValueError):
             return 0, None, None, None, None
 
@@ -467,7 +473,7 @@ def _get_gpu_info(
             parts = name_lower.split("-")
             size = int(parts[-1])
             gpu_count = size // 45
-            return gpu_count, gpu_count * 16, "NVIDIA", "Volta", "V100"
+            return gpu_count, gpu_count * 16 * MIB_PER_GIB, "NVIDIA", "Volta", "V100"
         except (IndexError, ValueError):
             return 0, None, None, None, None
 
@@ -482,7 +488,7 @@ def _get_gpu_info(
             gpu_count = size // 28
             return (
                 gpu_count,
-                gpu_count * 16,
+                gpu_count * 16 * MIB_PER_GIB,
                 "NVIDIA",
                 "Turing",
                 "Quadro RTX 5000",
@@ -746,19 +752,18 @@ def inventory_servers(vendor) -> list[dict]:
         memory_size_gb = memory.get("size", None)
         memory_size = memory_size_gb * MIB_PER_GIB if memory_size_gb else None
 
-        _gpu_count, _gpu_memory_total_gb, gpu_manufacturer, gpu_family, _gpu_model = (
+        _gpu_count, _gpu_memory_total, gpu_manufacturer, gpu_family, _gpu_model = (
             _get_gpu_info(server_id)
         )
         gpu = technical.get("gpu", {})
         gpu_count = _gpu_count or gpu.get("number", 0)
         gpu_memory_per_gpu = (
-            gpu.get("memory").get("size", 0) if gpu.get("memory") else None
+            gpu.get("memory").get("size", 0) * MIB_PER_GIB
+            if gpu.get("memory")
+            else None
         )
-        gpu_memory_total_gb = _gpu_memory_total_gb or (
+        gpu_memory_total = _gpu_memory_total or (
             gpu_memory_per_gpu * gpu_count if gpu_memory_per_gpu and gpu_count else None
-        )
-        gpu_memory_total = (
-            gpu_memory_total_gb * MIB_PER_GIB if gpu_memory_total_gb else None
         )
         gpu_model = _gpu_model or gpu.get("model", None)
 
