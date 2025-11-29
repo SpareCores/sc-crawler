@@ -814,112 +814,52 @@ def inventory_servers(vendor) -> list[dict]:
 def inventory_server_prices(vendor) -> list[dict]:
     """Fetch server pricing and regional availability.
 
-    Region availability information varies across pricing types. Some pricing variants
-    (e.g., hourly) may have empty configurations while others (e.g., monthly) contain region lists.
-    We merge regions from ALL pricing variants of each flavor to get complete availability,
-    then apply those merged regions to hourly pricing entries only.
-
-    The 'configurations' field represents orderable regions (configuration options for purchasing),
-    not real-time availability, but it's the best available data from the catalog.
-
-    Source: /order/catalog/public/cloud API endpoint
+    Region availability information is fetched from the
+    `/cloud/project/{serviceName}/flavor` API endpoint, then the related prices
+    are fetched from the `/order/catalog/public/cloud` API endpoint.
     """
+    regions = scmodels_to_dict(vendor.regions, keys=["api_reference"])
+    # list all addon prices and convert to a lookup dict
+    catalog = _get_catalog()
+    addons = catalog["addons"]
+    addons = {addon["planCode"]: addon for addon in addons}
+    # list all server <> region offers with a link to the price list
+    offers = _client().get(f"/cloud/project/{_get_project_id()}/flavor")
+    offers = [o for o in offers if o["osType"] == "linux"]
     items = []
-    server_region: dict[str, set[str]] = {}
-    servers = _get_servers_from_catalog()
-    client = _client()
-    flavors = _get_flavors(client)
-
-    # First pass: collect and merge regions from ALL pricing variants of each flavor
-    for server in servers:
-        server_id = server.get("invoiceName", "")
-        if not server_id:
+    vendor.progress_tracker.start_task(name="Fetching server offers", total=len(offers))
+    for offer in offers:
+        region = regions.get(offer["region"])
+        addon = addons[offer["planCodes"]["hourly"]]
+        if region is None:
+            vendor.log(
+                f"Excluding offer for {addon['invoiceName']} from unknown region: {offer['region']}"
+            )
             continue
-
-        configurations = server.get("configurations", [])
-        if configurations:
-            for config in configurations:
-                if config.get("name") == "region":
-                    regions = config.get("values", [])
-                    if regions:
-                        if server_id not in server_region:
-                            server_region[server_id] = set()
-                        server_region[server_id].update(regions)
-    # Second pass: create pricing entries using collected/merged regions
-    # Note: Only process hourly consumption plans (.consumption) because the database schema
-    # does not support multiple price units (unit is not part of primary key). Monthly plans
-    # would overwrite hourly plans if both are inserted.
-    # TODO: add support for monthly plans later if needed.
-    for server in servers:
-        plancode = server.get("planCode", "")
-        server_id = server.get("invoiceName", "")
-        if not server_id:
-            continue
-
-        # Skip monthly plans - only process hourly consumption plans
-        if "monthly" in plancode.lower():
-            continue
-
-        blobs = server.get("blobs", {})
-        if not blobs:
-            continue  # Skip if no blob data available
-
-        # Skip Local Zone and Multi-AZ variants
-        # TODO: add support later
-        if any(plancode.endswith(suffix) for suffix in LOCAL_ZONE_SUFFIXES):
-            continue
-
-        price = (
-            server.get("pricings", [])[0].get("price", None)
-            if server.get("pricings")
-            else None
-        )
-        interval_unit_str = (
-            server.get("pricings", [])[0].get("intervalUnit", "")
-            if server.get("pricings")
-            else ""
-        )
-        interval_unit = (
-            PriceUnit.HOUR if interval_unit_str == "hour" else PriceUnit.MONTH
-        )
-        status = Status.ACTIVE if "active" in blobs.get("tags", []) else Status.INACTIVE
-        technical = blobs.get("technical", {})
-        os = technical.get("os", {}).get("family", "linux")
-
-        if price:
-            price = price / MICROCENTS_PER_CURRENCY_UNIT
-
-        # Use merged regions from all variants of this flavor
-        regions = list(server_region.get(server_id, set()))
-
-        # If no regions found at all for this flavor in catalog, try to get from flavors API
-        # Note: This fallback requires project_id, which may not always be available
-        if not regions:
-            regions = [
-                f.get("region")
-                for f in flavors
-                if f.get("planCodes", {}).get("hourly") == plancode and f.get("region")
-            ]
-            if not regions:
+        for zone in region.zones:
+            if zone.status != Status.ACTIVE:
                 continue
-
-        for region in regions:
             items.append(
                 {
                     "vendor_id": vendor.vendor_id,
-                    "region_id": region,
-                    "zone_id": region,
-                    "server_id": server_id,
-                    "operating_system": os,
+                    "region_id": region.region_id,
+                    "zone_id": zone.zone_id,
+                    "server_id": addon["invoiceName"],
+                    "operating_system": addon["blobs"]["technical"]["os"]["family"],
                     "allocation": Allocation.ONDEMAND,
-                    "unit": interval_unit,
-                    "price": price,
+                    # we already filtered for hourly plan
+                    "unit": PriceUnit.HOUR,
+                    "price": (
+                        addon["pricings"][0]["price"] / MICROCENTS_PER_CURRENCY_UNIT
+                    ),
                     "price_upfront": 0,
                     "price_tiered": [],
-                    "currency": CURRENCY,
-                    "status": status,
+                    "currency": catalog["locale"]["currencyCode"],
+                    "status": Status.ACTIVE,
                 }
             )
+        vendor.progress_tracker.advance_task()
+    vendor.progress_tracker.hide_task()
     return items
 
 
