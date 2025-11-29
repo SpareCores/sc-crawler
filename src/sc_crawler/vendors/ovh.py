@@ -726,51 +726,42 @@ def inventory_servers(vendor) -> list[dict]:
     for server_plan in server_plans:
         servers[server_plan["invoiceName"]] = server_plan
 
+    for server_id, server in servers.items():
         blobs = server.get("blobs", {})
         if not blobs:
-            continue  # Skip if no blob data available
+            continue
+
         commercial = blobs.get("commercial", {})
         technical = blobs.get("technical", {})
-        brick_subtype = commercial.get("brickSubtype", "")
         name = commercial.get("name", server_id)
-        display_name = brick_subtype if brick_subtype else name
-        server_family = _get_server_family(server_id)
-        cpu = technical.get("cpu", {})
-        gpu = technical.get("gpu", {})
-        bandwidth = technical.get("bandwidth", {})
-        bandwidth_level = bandwidth.get("level", None)
+
         # all resources are dedicated expect for the Discovery series
         cpu_allocation = (
             CpuAllocation.SHARED
             if commercial.get("brickSubtype") == "discovery"
             else CpuAllocation.DEDICATED
         )
+
         memory = technical.get("memory", {})
         memory_size_gb = memory.get("size", None)
         memory_size = memory_size_gb * MIB_PER_GIB if memory_size_gb else None
-        )
-        gpu_count = gpu.get("number", 0)
-        gpu_memory_per_gpu = (
-            gpu.get("memory").get("size", 0) if gpu.get("memory") else None
-        )
-        gpu_memory_total_gb = (
-            gpu_memory_per_gpu * gpu_count if gpu_memory_per_gpu and gpu_count else None
-        )
-        gpu_model = (
-            f"{gpu.get('model')} {gpu.get('memory').get('interface')}" if gpu else None
-        )
+
         _gpu_count, _gpu_memory_total_gb, gpu_manufacturer, gpu_family, _gpu_model = (
             _get_gpu_info(server_id)
         )
-        if not gpu_count and _gpu_count:
-            gpu_count = _gpu_count
-        if not gpu_memory_total_gb and _gpu_memory_total_gb:
-            gpu_memory_total_gb = _gpu_memory_total_gb
-        if not gpu_model and _gpu_model:
-            gpu_model = _gpu_model
+        gpu = technical.get("gpu", {})
+        gpu_count = _gpu_count or gpu.get("number", 0)
+        gpu_memory_per_gpu = (
+            gpu.get("memory").get("size", 0) if gpu.get("memory") else None
+        )
+        gpu_memory_total_gb = _gpu_memory_total_gb or (
+            gpu_memory_per_gpu * gpu_count if gpu_memory_per_gpu and gpu_count else None
+        )
         gpu_memory_total = (
             gpu_memory_total_gb * MIB_PER_GIB if gpu_memory_total_gb else None
         )
+        gpu_model = _gpu_model or gpu.get("model", None)
+
         has_nvme = any(
             "nvme"
             in [disk.get("technology", "").lower(), disk.get("interface", "").lower()]
@@ -791,12 +782,13 @@ def inventory_servers(vendor) -> list[dict]:
                 "server_id": server_id,
                 "name": server_id,
                 "api_reference": server_id,
-                "display_name": display_name,
+                "display_name": name,
                 "description": None,  # TODO: add capabilities info?
-                "family": server_family,
-                "vcpus": vcpus,
-                # Verified from lscpu on B3-8 instance (2025-11-17)
-                "hypervisor": "KVM" if cpu_allocation == CpuAllocation.SHARED else None,
+                "family": _get_server_family(server_id),
+                "vcpus": technical.get("cpu", {}).get("cores", 0),
+                # as per OVH FAQ: https://www.ovhcloud.com/en/public-cloud/virtual-instances/
+                # alsoverified from lscpu on B3-8 instance (2025-11-17)
+                "hypervisor": "KVM",
                 "cpu_allocation": cpu_allocation,
                 "cpu_cores": None,
                 "cpu_speed": technical.get("cpu", {}).get("frequency"),
