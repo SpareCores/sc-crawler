@@ -247,37 +247,6 @@ def _get_ipv4_prices_from_catalog() -> list[dict]:
     return _get_addons_from_catalog(addon_family_names=["publicip"])
 
 
-def _get_datacenter_and_city(region: str) -> tuple[str, str | None]:
-    """Extract datacenter code from region identifier and map to city name."""
-
-    # Map region codes to city names
-    # Source: https://www.ovhcloud.com/en/public-cloud/regions-availability/
-    datacenter_city_mapping = {
-        # Europe (EMEA)
-        "SBG": "Strasbourg",
-        "GRA": "Gravelines",
-        "RBX": "Roubaix",
-        "PAR": "Paris",
-        "ERI": "London",
-        "LIM": "Frankfurt",
-        "WAW": "Warsaw",
-        "DE": "Frankfurt",
-        "UK": "London",
-        # North America
-        "BHS": "Montreal",
-        "TOR": "Toronto",
-        "HIL": "Seattle",
-        "VIN": "Washington DC",
-        # Asia-Pacific
-        "SGP": "Singapore",
-        "SYD": "Sydney",
-        "MUM": "Mumbai",
-    }
-
-    datacenter = _get_region(region)["datacenter"]
-    return datacenter, datacenter_city_mapping.get(datacenter)
-
-
 def _get_server_family(instance_type_name: str) -> str | None:
     """Map OVHcloud instance type name to server family.
 
@@ -538,143 +507,161 @@ def inventory_compliance_frameworks(vendor):
 def inventory_regions(vendor) -> list[dict]:
     """List all available OVHcloud Public Cloud regions.
 
-    Further information: https://www.ovhcloud.com/en/public-cloud/regions-availability/
+    Data sources:
+
+    - <https://www.ovhcloud.com/en/public-cloud/regions-availability/>
+    - <https://www.ovhcloud.com/en/about-us/global-infrastructure/expansion-regions-az/>
+    - <https://vms.status-ovhcloud.com/>
+    - Google Maps search for the datacenter location or city-level coordinates
     """
     items = []
     regions = _get_regions()
-
-    # TODO create a joint mapping of countries/zip etc for easier maintenance?
-
-    # Map OVHcloud region codes to country codes
-    # Source: https://www.ovhcloud.com/en/public-cloud/regions-availability/
-    region_country_mapping = {
+    datacenters = {
         # Europe (EMEA)
-        "SBG": "FR",  # Strasbourg, France
-        "GRA": "FR",  # Gravelines, France
-        "RBX": "FR",  # Roubaix, France
-        "PAR": "FR",  # Paris, France (3-AZ)
-        "ERI": "GB",  # London (Erith), United Kingdom
-        "LIM": "DE",  # Frankfurt (Limburg), Germany
-        "WAW": "PL",  # Warsaw, Poland
-        "DE": "DE",  # Frankfurt, Germany
-        "UK": "GB",  # London, United Kingdom
+        "SBG": {
+            "country_id": "FR",
+            "city": "Strasbourg",
+            "address_line": "9 Rue du Bass. de l'Industrie",
+            "zip_code": "67000",
+            "lat": 48.5854388,
+            "lon": 7.7974307,
+        },
+        "GRA": {
+            "country_id": "FR",
+            "city": "Gravelines",
+            "address_line": "1 Rte de la Frm Masson",
+            "zip_code": "59820",
+            "lat": 51.0166852,
+            "lon": 2.1551437,
+        },
+        "RBX": {
+            "country_id": "FR",
+            "city": "Roubaix",
+            "address_line": "2 Rue Kellermann",
+            "zip_code": "59100",
+            "lat": 50.691834,
+            "lon": 3.2003148,
+        },
+        "PAR": {
+            "country_id": "FR",
+            "city": "Paris",
+            "address_line": "12 Rue Riquet",
+            "zip_code": "75019",
+            "lat": 48.8885363,
+            "lon": 2.3755977,
+        },
+        "UK": {
+            "country_id": "GB",
+            "city": "London",
+            "address_line": "8 Viking Way",
+            "zip_code": "DA8 1EW",
+            "lat": 51.4915264,
+            "lon": 0.1668186,
+        },
+        "DE": {
+            "country_id": "DE",
+            "city": "Frankfurt",
+            # city-level coordinates from Google Maps
+            "lat": 50.1109221,
+            "lon": 8.6821267,
+        },
+        "WAW": {
+            "country_id": "PL",
+            "city": "Warsaw",
+            "address_line": "Kazimierza Kamińskiego 6",
+            "zip_code": "05-850",
+            "lat": 52.2077264,
+            "lon": 20.8080621,
+        },
+        "MIL": {
+            "country_id": "IT",
+            "city": "Milan",
+            # OVH office in Milan, Italy
+            "lat": 45.4992183,
+            "lon": 9.1832528,
+        },
         # North America
-        "BHS": "CA",  # Beauharnois (Montreal), Quebec, Canada
-        "TOR": "CA",  # Toronto, Canada
-        "HIL": "US",  # Hillsboro (Seattle/Portland), Oregon, USA
-        "VIN": "US",  # Vint Hill (Washington DC), Virginia, USA
+        "BHS": {
+            "country_id": "CA",
+            "city": "Beauharnois",
+            "address_line": "50 Rue de l'Aluminerie",
+            "state": "Quebec",
+            "zip_code": "J6N 0C2",
+            "lat": 45.3093037,
+            "lon": -73.8965535,
+        },
+        "TOR": {
+            "country_id": "CA",
+            "city": "Toronto",
+            "address_line": "17 Vondrau Dr",
+            "state": "Ontario",
+            "zip_code": "N3E 1B8",
+            "lat": 43.4273216,
+            "lon": -80.3726843,
+        },
+        "HIL": {
+            "country_id": "US",
+            "city": "Hillsboro",
+            "state": "Oregon",
+            # city-level coordinates from Google Maps
+            "lat": 45.520137,
+            "lon": -122.9898308,
+        },
+        "VIN": {
+            "country_id": "US",
+            "city": "Vint Hill",
+            "address_line": "6872 Watson Ct",
+            "state": "North Virginia",
+            "zip_code": "20187",
+            "lat": 38.7474561,
+            "lon": -77.6744531,
+        },
         # Asia-Pacific
-        "SGP": "SG",  # Singapore
-        "SYD": "AU",  # Sydney, Australia
-        "MUM": "IN",  # Mumbai, India
-    }
-    # NOTE this could be fetched via the following API endpoint as well:
-    # _get_region("UK")["countryCode"]
-
-    # Coordinates for OVHcloud datacenter locations
-    # Source: Mixed - Exact datacenter addresses from Google Maps search (retrieved 2025-11-17)
-    #         and city-level coordinates from Google Maps Geocoding API
-    region_coordinates = {
-        # Strasbourg - 9 Rue du Bass. de l'Industrie, 67000
-        "SBG": (48.5854388, 7.7974307),
-        # Gravelines - 1 Rte de la Frm Masson, 59820 Gravelines
-        "GRA": (51.0166852, 2.1551437),
-        # Roubaix - 2 Rue Kellermann, 59100 (HQ)
-        "RBX": (50.691834, 3.2003148),
-        # Paris - 12 Rue Riquet, 75019
-        "PAR": (48.8885363, 2.3755977),
-        # London (Erith) - 8 Viking Way, Erith DA8 1EW, UK
-        "ERI": (51.4915264, 0.1668186),
-        # Warsaw (Ożarów) - Kazimierza Kamińskiego 6, 05-850 Ożarów Mazowiecki
-        "WAW": (52.2077264, 20.8080621),
-        # Beauharnois - 50 Rue de l'Aluminerie, QC J6N 0C2
-        "BHS": (45.3093037, -73.8965535),
-        # Singapore - 1 Paya Lebar Link, PLQ 1, #11-02, 408533
-        "SGP": (1.3177101, 103.893902),
-        # Toronto (Cambridge) - 17 Vondrau Dr, Cambridge, ON N3E 1B8
-        "TOR": (43.4273216, -80.3726843),
-        # Vint Hill (Warrenton) - 6872 Watson Ct, Warrenton, VA 20187, USA
-        "VIN": (38.7474561, -77.6744531),
-        # Frankfurt (Limburg), Germany (city-level)
-        "LIM": (50.1109221, 8.6821267),
-        # London, United Kingdom (using Erith coordinates as proxy)
-        "UK": (51.4915264, 0.1668186),
-        # Frankfurt, Germany (city-level)
-        "DE": (50.1109221, 8.6821267),
-        # Hillsboro, Oregon, USA (city-level)
-        "HIL": (45.520137, -122.9898308),
-        # Sydney, Australia (city-level)
-        "SYD": (-33.8727409, 151.2057136),
-        # Mumbai, India (city-level)
-        "MUM": (19.0824822, 72.7141328),
+        "SGP": {
+            "country_id": "SG",
+            "city": "Singapore",
+            "address_line": "1 Paya Lebar Link",
+            "zip_code": "408533",
+            "lat": 1.3177101,
+            "lon": 103.893902,
+        },
+        "SYD": {
+            "country_id": "AU",
+            "city": "Sydney",
+            # city-level coordinates from Google Maps
+            "lat": -33.8727409,
+            "lon": 151.2057136,
+        },
+        "YNM": {
+            "country_id": "IN",
+            "city": "Mumbai",
+            # city-level coordinates from Google Maps
+            "lat": 19.0824822,
+            "lon": 72.7141328,
+        },
     }
 
-    # Exact addresses for datacenters where known
-    # Source: Google Maps search (retrieved 2025-11-17)
-    # Format: street + city (and state/province where relevant); zip/postal codes are stored separately in region_zip_codes
-    region_addresses = {
-        "SBG": "9 Rue du Bass. de l'Industrie, Strasbourg",
-        "GRA": "1 Rte de la Frm Masson, Gravelines",
-        "RBX": "2 Rue Kellermann, Roubaix",
-        "PAR": "12 Rue Riquet, Paris",
-        "BHS": "50 Rue de l'Aluminerie, Beauharnois, QC",
-        "WAW": "Kazimierza Kamińskiego 6, Ożarów Mazowiecki",
-        "SGP": "1 Paya Lebar Link, PLQ 1, Paya Lebar Quarter, #11-02, Singapore",
-        "TOR": "17 Vondrau Dr, Cambridge, ON",
-        "ERI": "8 Viking Way, Erith",
-        "VIN": "6872 Watson Ct, Warrenton, VA",
-    }
-
-    # Zip/postal codes for datacenters where known
-    region_zip_codes = {
-        "SBG": "67000",
-        "GRA": "59820",
-        "RBX": "59100",
-        "PAR": "75019",
-        "BHS": "J6N 0C2",
-        "WAW": "05-850",
-        "SGP": "408533",
-        "TOR": "N3E 1B8",
-        "ERI": "DA8 1EW",
-        "VIN": "20187",
-    }
-
-    # State/province mapping
-    region_state_mapping = {
-        "BHS": "Quebec",
-        "TOR": "Ontario",
-        "VIN": "Virginia",
-        "HIL": "Oregon",
-    }
-
-    for region_code in regions:
-        datacenter, city = _get_datacenter_and_city(region_code)
-        country_id = region_country_mapping.get(datacenter)
-        state = region_state_mapping.get(datacenter)
-        coords = region_coordinates.get(datacenter)
-        lon = coords[1] if coords else None
-        lat = coords[0] if coords else None
-        address = region_addresses.get(datacenter)
-        zip_code = region_zip_codes.get(datacenter)
-
+    for region in regions:
+        datacenter = _get_region(region)["datacenterLocation"]
+        lookup = datacenters[datacenter]
         items.append(
             {
                 "vendor_id": vendor.vendor_id,
-                "region_id": region_code,
-                "name": region_code,
-                "api_reference": region_code,
-                "display_name": f"{city} ({region_code})" if city else region_code,
+                "region_id": region,
+                "name": region,
+                "api_reference": region,
+                "display_name": f"{region} ({lookup['country_id']})",
                 "aliases": [],
-                "country_id": country_id,
-                "state": state,
-                "city": city,
-                "address_line": address,
-                "zip_code": zip_code,
-                "lon": lon,
-                "lat": lat,
+                "country_id": lookup["country_id"],
+                "state": lookup.get("state"),
+                "city": lookup.get("city"),
+                "address_line": lookup.get("address_line"),
+                "zip_code": lookup.get("zip_code"),
+                "lon": lookup.get("lon"),
+                "lat": lookup.get("lat"),
                 # OVHcloud region page confirms Frankfurt (Limburg), Warsaw (Ożarów), London (Erith)
                 # as specific datacenter locations opened in 2016
-                "founding_year": 2016 if region_code in ["LIM", "WAW", "UK"] else None,
+                "founding_year": 2016 if datacenter in ["DE", "WAW", "UK"] else None,
                 "green_energy": None,
             }
         )
