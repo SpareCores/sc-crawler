@@ -14,6 +14,7 @@ from ..table_fields import (
     StorageType,
     TrafficDirection,
 )
+from ..utils import scmodels_to_dict
 
 HOURS_PER_MONTH = 730
 MICROCENTS_PER_CURRENCY_UNIT = 100_000_000
@@ -625,6 +626,7 @@ def inventory_regions(vendor) -> list[dict]:
         },
     }
 
+    vendor.progress_tracker.start_task(name="Fetching regions", total=len(regions))
     for region in regions:
         datacenter = _get_region(region)["datacenterLocation"]
         lookup = datacenters[datacenter]
@@ -649,6 +651,8 @@ def inventory_regions(vendor) -> list[dict]:
                 "green_energy": None,
             }
         )
+        vendor.progress_tracker.advance_task()
+    vendor.progress_tracker.hide_task()
 
     return items
 
@@ -661,6 +665,7 @@ def inventory_zones(vendor) -> list[dict]:
 
     items = []
     regions = _get_regions()
+    vendor.progress_tracker.start_task(name="Fetching zones", total=len(regions))
     for region in regions:
         zones = _get_region(region, _get_project_id())["availabilityZones"]
         if not zones:
@@ -677,6 +682,8 @@ def inventory_zones(vendor) -> list[dict]:
                     "display_name": zone,
                 }
             )
+        vendor.progress_tracker.advance_task()
+    vendor.progress_tracker.hide_task()
     return items
 
 
