@@ -898,13 +898,18 @@ def inventory_storage_prices(vendor) -> list[dict]:
 
 def inventory_traffic_prices(vendor) -> list[dict]:
     """OVHcloud Public Cloud bandwidth pricing.
-    "Outbound public network traffic is included in the price of instances on all locations,
-    except the Asia-Pacific region (Singapore, Sydney and Mumbai). In the tree regions,
-    1 TB/month of outbound public traffic is included for each Public Cloud project.
-    Beyond this quota, each additional GB of traffic is charged.
-    Inbound network traffic from the public network is included in all cases and in all regions."
-    Source: https://www.ovhcloud.com/en/public-cloud/prices
-    For outbound traffic in SYD, SGP, MUM regions, the pricing tiers are copied from the OVHcloud catalog.
+
+    As per <https://www.ovhcloud.com/en/public-cloud/prices>:
+
+    > Outbound public network traffic is included in the price of instances on
+    > all locations, except the Asia-Pacific region (Singapore, Sydney and
+    > Mumbai). In the tree regions, 1 TB/month of outbound public traffic is
+    > included for each Public Cloud project. Beyond this quota, each additional
+    > GB of traffic is charged. Inbound network traffic from the public network
+    > is included in all cases and in all regions.
+
+    The overage traffic priced at €0.01 ex. VAT/GB (see on the homepage after
+    selecting one of the Asia-Pacific regions).
     """
     # Outbound traffic pricing for Asia-Pacific regions (Singapore, Sydney, Mumbai)
     # Tier 1: 1-1024 GiB = Free (included in project quota)
@@ -913,38 +918,40 @@ def inventory_traffic_prices(vendor) -> list[dict]:
         {
             "lower": 1,
             "upper": 1024,
-            "price": 0,  # Included in quota
+            "price": 0,
         },
         {
             "lower": 1025,
             "upper": "Infinity",
-            "price": 0.0109,  # Converted from 1090000 microcents
+            "price": 0.01,
         },
     ]
 
     items = []
     for region in vendor.regions:
-        # Inbound traffic (free everywhere)
+        # Incoming public traffic
         items.append(
             {
                 "vendor_id": vendor.vendor_id,
                 "region_id": region.region_id,
                 "price": 0,
                 "price_tiered": [],
-                "currency": CURRENCY,
+                "currency": "EUR",
                 "unit": PriceUnit.GB_MONTH,
                 "direction": TrafficDirection.IN,
             }
         )
-        # Outbound traffic
-        is_apac = region.region_id.startswith(("SGP", "SYD", "MUM"))
+        # Outgoing public traffic
+        datacenter = _get_region(region.region_id)["datacenterLocation"]
+        # Asia-Pacific region (Singapore, Sydney and Mumbai)
+        is_apac = datacenter in ["SGP", "SYD", "YNM"]
         items.append(
             {
                 "vendor_id": vendor.vendor_id,
                 "region_id": region.region_id,
-                "price": 0.0109 if is_apac else 0,  # Set to max tier price
+                "price": 0.01 if is_apac else 0,  # max tier price
                 "price_tiered": outbound_SYD_SGP_MUM_tiers if is_apac else [],
-                "currency": CURRENCY,
+                "currency": "EUR",
                 "unit": PriceUnit.GB_MONTH,
                 "direction": TrafficDirection.OUT,
             }
