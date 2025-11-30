@@ -784,6 +784,7 @@ def inventory_server_prices(vendor) -> list[dict]:
                 f"Excluding offer for {addon['invoiceName']} from unknown region: {offer['region']}"
             )
             continue
+        # TODO check if server id is known for this vendor?
         for zone in region.zones:
             if zone.status != Status.ACTIVE:
                 continue
@@ -817,62 +818,51 @@ def inventory_server_prices_spot(vendor) -> list[dict]:
 
 
 def inventory_storages(vendor) -> list[dict]:
-    """Inventory OVHCloud storage types dynamically from catalog."""
-    items = []
-    items_dict = {}
-    storages = _get_storages_from_catalog()
+    """List all block storage offerings.
 
-    for storage in storages:
-        if storage.get("invoiceName", "") not in items_dict:
-            items_dict[storage.get("invoiceName", "")] = storage
+    Data sources:
 
-    for storage_id, storage in items_dict.items():
-        blobs = storage.get("blobs", {})
-        commercial = blobs.get("commercial", {})
-        technical = blobs.get("technical", {})
-
-        # Determine storage type based on brick and name
-        brick = commercial.get("brick", "")
-        brick_subtype = commercial.get("brickSubtype", "")
-        name = commercial.get("name", storage_id)
-
-        # Initialize specs
-        max_iops = None
-        max_size = None
-
-        # Extract volume specifications
-        if brick == "volume":
-            volume_specs = technical.get("volume", {})
-
-            # Capacity limits (in GiB)
-            capacity = volume_specs.get("capacity", {})
-            max_size = capacity.get("max")
-
-            # IOPS specifications
-            iops_specs = volume_specs.get("iops", {})
-            if iops_specs:
-                max_iops = iops_specs.get("level")
-                # 'guaranteed' field indicates if IOPS is guaranteed (True) or best-effort (False)
-
-        # Display name from brick subtype or name
-        display_name = brick_subtype if brick_subtype else name
-
-        items.append(
-            {
-                "storage_id": storage_id.replace(
-                    " ", "_"
-                ),  # fix "bandwidth_storage in" invoiceName
-                "vendor_id": vendor.vendor_id,
-                "name": display_name,
-                "description": None,
-                "storage_type": StorageType.NETWORK,
-                "max_iops": max_iops,
-                "max_throughput": None,
-                "min_size": None,
-                "max_size": max_size,
-            }
-        )
-
+    - <https://www.ovhcloud.com/en-ie/public-cloud/block-storage/>
+    - API endpoint: `/order/catalog/public/cloud` with `publiccloud-volume-classic` product name
+    """
+    items = [
+        {
+            "storage_id": "classic",
+            "vendor_id": vendor.vendor_id,
+            "name": "Classic Volume",
+            # quote from homepage
+            "description": "Perfect for the daily application needs of databases, virtual machines, and backups.",
+            "storage_type": StorageType.NETWORK,
+            "max_iops": 500,
+            "max_throughput": 64,
+            "min_size": 10,
+            "max_size": 12_288,
+        },
+        {
+            "storage_id": "high-speed",
+            "vendor_id": vendor.vendor_id,
+            "name": "High Speed Volume Gen 1",
+            # quote from homepage
+            "description": "Offers optimised and scalable performance, and is recommended for intensive workloads.",
+            "storage_type": StorageType.NETWORK,
+            "max_iops": 3_000,
+            "max_throughput": 128,
+            "min_size": 10,
+            "max_size": 12_288,
+        },
+        {
+            "storage_id": "high-speed-gen2",
+            "vendor_id": vendor.vendor_id,
+            "name": "High Speed Volume Gen 2",
+            # quote from homepage
+            "description": "Offers optimised and scalable performance, and is recommended for intensive workloads.",
+            "storage_type": StorageType.NETWORK,
+            "max_iops": 20_000,
+            "max_throughput": 320,
+            "min_size": 10,
+            "max_size": 12_288,
+        },
+    ]
     return items
 
 
