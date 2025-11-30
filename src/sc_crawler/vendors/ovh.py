@@ -769,8 +769,7 @@ def inventory_server_prices(vendor) -> list[dict]:
     regions = scmodels_to_dict(vendor.regions, keys=["api_reference"])
     # list all addon prices and convert to a lookup dict
     catalog = _get_catalog()
-    addons = catalog["addons"]
-    addons = {addon["planCode"]: addon for addon in addons}
+    addons = {addon["planCode"]: addon for addon in catalog["addons"]}
     # list all server <> region offers with a link to the price list
     offers = _client().get(f"/cloud/project/{_get_project_id()}/flavor")
     offers = [o for o in offers if o["osType"] == "linux"]
@@ -869,79 +868,31 @@ def inventory_storages(vendor) -> list[dict]:
 def inventory_storage_prices(vendor) -> list[dict]:
     """Extract storage prices from OVHCloud catalog.
 
-    Note: Region availability information varies across pricing types. Some pricing variants
-    (e.g., hourly) may have empty configurations while others (e.g., monthly) contain region lists.
-    We merge regions from ALL pricing variants of each storage type to get complete availability.
-
-    Source: /order/catalog/public/cloud API endpoint
+    The catalog does not provide a detailed price list, only differentiates the
+    prices of the known 3 storage types between regions with a single or three
+    zones, so we assume all storage types are available in all regions.
     """
+    catalog = _get_catalog()
+    addons = {addon["planCode"]: addon for addon in catalog["addons"]}
+
     items = []
-    storages = _get_storages_from_catalog()
-
-    # First pass: collect and merge regions from all pricing variants of each storage type
-    storage_regions: dict[str, set[str]] = {}
-    for storage in storages:
-        storage_id = storage.get("invoiceName", "")
-        if not storage_id:
-            continue
-
-        configurations = storage.get("configurations", [])
-        if configurations:
-            for config in configurations:
-                if config.get("name") == "region":
-                    regions = config.get("values", [])
-                    if regions:
-                        if storage_id not in storage_regions:
-                            storage_regions[storage_id] = set()
-                        storage_regions[storage_id].update(regions)
-
-    # Second pass: create pricing entries using merged regions
-    for storage in storages:
-        plancode = storage.get("planCode", "")
-        storage_id = storage.get("invoiceName", "")
-        if not storage_id:
-            continue
-
-        # Skip Local Zone and Multi-AZ variants
-        # TODO: add support later
-        if any(plancode.endswith(suffix) for suffix in LOCAL_ZONE_SUFFIXES):
-            continue
-
-        price = (
-            storage.get("pricings", [])[0].get("price", None)
-            if storage.get("pricings")
-            else None
-        )
-        if price:
-            description = (
-                storage.get("pricings", [])[0].get("description", "")
-                if storage.get("pricings")
-                else ""
-            )
-            is_hourly = "hourly" in description
-            price = price * HOURS_PER_MONTH if is_hourly else price
-            price = price / MICROCENTS_PER_CURRENCY_UNIT
-
-        # Use merged regions from all variants of this storage type
-        regions = list(storage_regions.get(storage_id, set()))
-
-        # If no regions found at all for this storage type, skip it
-        if not regions:
-            continue
-
-        for region in regions:
+    for storage in vendor.storages:
+        for region in vendor.regions:
+            addon_name = f"volume.{storage.storage_id}.consumption"
+            if len(region.zones) > 1:
+                addon_name += ".3AZ"
+            addon = addons[addon_name]
+            price = addon["pricings"][0]["price"] / MICROCENTS_PER_CURRENCY_UNIT
             items.append(
                 {
                     "vendor_id": vendor.vendor_id,
-                    "region_id": region,
-                    # fix "bandwidth_storage in" invoiceName
-                    "storage_id": storage_id.replace(" ", "_"),
+                    "region_id": region.region_id,
+                    "storage_id": storage.storage_id,
                     "unit": PriceUnit.GB_MONTH,
-                    "price": price,
-                    "currency": CURRENCY,
+                    "price": price * HOURS_PER_MONTH,
+                    "currency": catalog["locale"]["currencyCode"],
                 }
             )
-
     return items
 
 
