@@ -86,7 +86,7 @@ def _parse_server_name(name):
     }
     data["family"] = family_mapping.get(data["family"], data["family"])
     data["description"] = (
-        f"{data['family']} {data['vcpus']} vCPUs, {data['memory']} GB RAM"
+        f"{data['family']} ({data['vcpus']} vCPUs, {data['memory']} GiB RAM)"
     )
     return data
 

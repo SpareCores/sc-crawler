@@ -601,8 +601,10 @@ def inventory_servers(vendor) -> list[dict]:
         commercial = blobs.get("commercial", {})
         technical = blobs.get("technical", {})
         name = commercial.get("name", server_id)
+        family = _get_server_family(server_id)
 
         # all resources are dedicated expect for the Discovery series
+        vcpus = technical.get("cpu", {}).get("cores", 0)
         cpu_allocation = (
             CpuAllocation.SHARED
             if commercial.get("brickSubtype") == "discovery"
@@ -643,6 +645,18 @@ def inventory_servers(vendor) -> list[dict]:
 
         status = Status.ACTIVE if "active" in blobs.get("tags", []) else Status.INACTIVE
 
+        description_parts = [
+            f"{vcpus} vCPUs",
+            f"{memory_size_gb} GiB RAM",
+            f"{storage_size} GB {('NVMe' if has_nvme else 'SSD')} storage",
+            (
+                f"{gpu_count}x{gpu_model} {int(gpu_memory_per_gpu/MIB_PER_GIB)} GiB VRAM"
+                if gpu_count and gpu_model
+                else None
+            ),
+        ]
+        description = f"{family} ({", ".join(filter(None, description_parts))})"
+
         items.append(
             {
                 "vendor_id": vendor.vendor_id,
@@ -650,9 +664,9 @@ def inventory_servers(vendor) -> list[dict]:
                 "name": server_id,
                 "api_reference": server_id,
                 "display_name": name,
-                "description": None,  # TODO: add capabilities info?
-                "family": _get_server_family(server_id),
-                "vcpus": technical.get("cpu", {}).get("cores", 0),
+                "description": description,
+                "family": family,
+                "vcpus": vcpus,
                 # as per OVH FAQ: https://www.ovhcloud.com/en/public-cloud/virtual-instances/
                 # alsoverified from lscpu on B3-8 instance (2025-11-17)
                 "hypervisor": "KVM",
