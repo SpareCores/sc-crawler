@@ -119,6 +119,17 @@ and then assign the role at the Subscription's Access control page.
 
 </details>
 
+<details markdown="1">
+
+<summary>UpCloud</summary>
+
+Create a user (subaccount) in the UpCloud control panel with "API connections" permission enabled.
+Then configure the following environment variables:
+
+- `UPCLOUD_USERNAME`
+- `UPCLOUD_PASSWORD`
+
+</details>
 
 <details markdown="1">
 
