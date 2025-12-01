@@ -5,7 +5,7 @@ from atexit import register
 from functools import cache
 from itertools import groupby
 from operator import itemgetter
-from os import PathLike, getenv, path
+from os import PathLike, getenv, makedirs, path
 from re import compile, match, search, sub
 from shutil import rmtree
 from statistics import mode
@@ -69,6 +69,7 @@ def inspector_data_path() -> str | PathLike:
     """
     if getenv("SC_CRAWLER_INSPECTOR_DATA_PATH"):
         temp_dir = getenv("SC_CRAWLER_INSPECTOR_DATA_PATH")
+        makedirs(temp_dir, exist_ok=True)
     else:
         temp_dir = mkdtemp()
         register(rmtree, temp_dir)
