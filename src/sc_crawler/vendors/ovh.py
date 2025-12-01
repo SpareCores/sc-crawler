@@ -542,7 +542,10 @@ def inventory_regions(vendor) -> list[dict]:
 def inventory_zones(vendor) -> list[dict]:
     """List all availability zones.
 
-    Data source: <https://www.ovhcloud.com/en/about-us/global-infrastructure/expansion-regions-az/>
+    Data sources:
+
+    - `/cloud/project/{serviceName}/region/{regionName}` API endpoint provides AZs for 3AZ regions
+    - 1AZ zones have a standard "a" suffix as per <https://www.ovhcloud.com/en/about-us/global-infrastructure/expansion-regions-az/>
     """
 
     items = []
