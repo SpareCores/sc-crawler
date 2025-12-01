@@ -650,7 +650,7 @@ def inventory_servers(vendor) -> list[dict]:
             f"{memory_size_gb} GiB RAM",
             f"{storage_size} GB {('NVMe' if has_nvme else 'SSD')} storage",
             (
-                f"{gpu_count}x{gpu_model} {int(gpu_memory_per_gpu/MIB_PER_GIB)} GiB VRAM"
+                f"{gpu_count}x{gpu_model} {int(gpu_memory_per_gpu / MIB_PER_GIB)} GiB VRAM"
                 if gpu_count and gpu_model
                 else None
             ),
