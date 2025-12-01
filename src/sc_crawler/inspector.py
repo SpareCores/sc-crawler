@@ -79,8 +79,6 @@ def inspector_data_path() -> str | PathLike:
         )
         with open(zip_path, "wb") as f:
             f.write(response.content)
-        with open(zip_path, "wb") as f:
-            f.write(response.content)
         with ZipFile(zip_path, "r") as zip_ref:
             zip_ref.extractall(temp_dir)
     return path.join(temp_dir, "sc-inspector-data-main", "data")
