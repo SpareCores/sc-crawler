@@ -655,7 +655,7 @@ def inventory_servers(vendor) -> list[dict]:
                 else None
             ),
         ]
-        description = f"{family} ({", ".join(filter(None, description_parts))})"
+        description = f"{family} ({', '.join(filter(None, description_parts))})"
 
         items.append(
             {
