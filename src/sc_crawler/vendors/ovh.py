@@ -107,10 +107,7 @@ def _get_catalog(subsidiary: str = getenv("OVH_SUBSIDIARY", "IE")) -> dict:
     Returns:
         Catalog dictionary with plans and addons.
     """
-    try:
-        return _client().get("/order/catalog/public/cloud", ovhSubsidiary=subsidiary)
-    except Exception as e:
-        raise Exception(f"Failed to fetch OVHcloud catalog: {e}") from e
+    return _client().get("/order/catalog/public/cloud", ovhSubsidiary=subsidiary)
 
 
 def _get_server_family(instance_type_name: str) -> str | None:
