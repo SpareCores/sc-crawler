@@ -631,7 +631,7 @@ def inventory_servers(vendor) -> list[dict]:
 
         has_nvme = any(
             "nvme"
-            in [disk.get("technology", "").lower(), disk.get("interface", "").lower()]
+            in disk.get("technology", "").lower() + disk.get("interface", "").lower()
             for disk in technical.get("storage", {}).get("disks", [])
         )
         storage_type = StorageType.NVME_SSD if has_nvme else StorageType.SSD
