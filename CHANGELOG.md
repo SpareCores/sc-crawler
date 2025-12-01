@@ -3,11 +3,12 @@
 New vendor(s):
 
 - UpCloud
+- OVHcloud
 
 New benchmark(s):
 
-- PassMark.
-- LLM inference speed.
+- PassMark
+- LLM inference speed
 
 Fix(es):
 
@@ -17,9 +18,9 @@ Fix(es):
 
 New benchmark(s):
 
-- Static HTTP server.
-- Redis.
-- stress-ng's div16 run on all vCPUs.
+- Static HTTP server
+- Redis
+- stress-ng's div16 run on all vCPUs
 
 New feature(s):
 
