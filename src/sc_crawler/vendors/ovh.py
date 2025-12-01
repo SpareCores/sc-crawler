@@ -1,6 +1,6 @@
 from functools import cache
 from os import environ, getenv
-from typing import Callable
+from typing import Callable, Optional
 
 from ovh import Client
 
@@ -63,18 +63,20 @@ def _get_project_id() -> str | None:
 
 
 @cache
-def _get_regions(project_id: str = _get_project_id()) -> list[str]:
+def _get_regions(project_id: Optional[str] = None) -> list[str]:
     """Fetch available regions enabled for a project.
 
-    The catalogue-based region extraction is preferred over this function
-    in general, as it's more complete: not all regions might be enabled for a projects.
+    The catalogue-based region extraction is preferred over this function in
+    general, as it's more complete: not all regions might be enabled for a
+    project.
 
     Args:
-        project_id: Project ID to use for listing regions.
+        project_id: Project ID to use for listing regions. Defaults to the first project in the account if not provided.
 
     Returns:
         List of region codes
     """
+    project_id = project_id or _get_project_id()
     try:
         return _client().get(f"/cloud/project/{project_id}/region")
     except Exception as e:
@@ -82,16 +84,17 @@ def _get_regions(project_id: str = _get_project_id()) -> list[str]:
 
 
 @cache
-def _get_region(region_name: str, project_id: str = _get_project_id()) -> dict:
+def _get_region(region_name: str, project_id: Optional[str] = None) -> dict:
     """Fetch region details.
 
     Args:
         region_name: Name of the region to fetch details for.
-        project_id: Project ID to use for listing regions.
+        project_id: Project ID to use for listing regions. Defaults to the first project in the account if not provided.
 
     Returns:
         Region dictionary.
     """
+    project_id = project_id or _get_project_id()
     return _client().get(f"/cloud/project/{project_id}/region/{region_name}")
 
 
