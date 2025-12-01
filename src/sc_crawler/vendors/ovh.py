@@ -41,23 +41,24 @@ def _client() -> Client:
 
 
 @cache
-def _get_project_id() -> str | None:
+def _get_project_id() -> str:
     """Get project ID from environment or first available project.
 
     Returns:
-        str: Project ID from OVH_PROJECT_ID env var or first project in account
-        None: If no OVH_PROJECT_ID set and no projects available
+        str: Project ID from OVH_PROJECT_ID env var or first project in account.
+
+    Raises:
+        RuntimeError: If no projects defined as environment variable or found in OVHcloud account.
     """
     project_id = getenv("OVH_PROJECT_ID")
     if project_id:
         return project_id.strip()
 
     # fall back to first project in account (if any)
-    try:
-        projects = _client().get("/cloud/project")
-        return projects[0] if projects else None
-    except Exception as e:
-        raise Exception(f"Failed to fetch project list from OVHcloud API: {e}") from e
+    projects = _client().get("/cloud/project")
+    if not projects:
+        raise RuntimeError("No projects defined/found in OVHcloud account")
+    return projects[0]
 
 
 @cache
