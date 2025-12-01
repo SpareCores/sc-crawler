@@ -21,8 +21,6 @@ MICROCENTS_PER_CURRENCY_UNIT = 100_000_000
 MIB_PER_GIB = 1024
 
 
-
-
 @cache
 def _client() -> Client:
     """Create an OVHcloud API client using a service account via OAuth2.
@@ -408,7 +406,9 @@ def _get_gpu_info(
 
 def inventory_compliance_frameworks(vendor):
     """Manual list of known compliance frameworks on OVHcloud.
+
     Verified on ovhcloud.com:
+
     - ISO/IEC 27001/27017/27018 (page: /en/compliance/iso-27001-27017-27018/)
     - SOC 1, SOC 2, SOC 3 with SOC 2 Type 2 details (page: /en/compliance/soc-1-2-3/)
     """
@@ -708,6 +708,7 @@ def inventory_servers(vendor) -> list[dict]:
                 for disk in technical.get("storage", {}).get("disks", [])
             ]
         )
+
         status = Status.ACTIVE if "active" in blobs.get("tags", []) else Status.INACTIVE
 
         items.append(
