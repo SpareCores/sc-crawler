@@ -1,6 +1,6 @@
 from functools import cache
 from os import environ, getenv
-from typing import Callable, Optional
+from typing import Optional
 
 from ovh import Client
 
@@ -110,76 +110,6 @@ def _get_catalog(subsidiary: str = getenv("OVH_SUBSIDIARY", "IE")) -> dict:
         return _client().get("/order/catalog/public/cloud", ovhSubsidiary=subsidiary)
     except Exception as e:
         raise Exception(f"Failed to fetch OVHcloud catalog: {e}") from e
-
-
-def _get_addons_from_catalog(
-    addon_family_names: list[str],
-    addon_name_filter: Callable[[str], bool] | None = None,
-    addon_filter: Callable[[dict], bool] | None = None,
-) -> list[dict]:
-    """Extract addons from catalog data for given addon family names.
-
-    Args:
-        addon_family_names: List of addon family names to extract (e.g., ["instance"], ["storage", "volume"])
-        addon_name_filter: Optional function to filter addon names before matching (e.g., exclude Windows instances)
-        addon_filter: Optional function to filter addons after matching by planCode (e.g., filter out addons without region configurations)
-
-    Returns:
-        List of matching addons from the catalog
-    """
-    catalog = _get_catalog()
-    plans = catalog.get("plans", [])
-    addons = catalog.get("addons", [])
-    project_plan = next((p for p in plans if p.get("planCode", "") == "project"), {})
-
-    # Collect addon names from all specified families
-    addon_names = []
-    for family_name in addon_family_names:
-        family = next(
-            (
-                a
-                for a in project_plan.get("addonFamilies", [])
-                if a.get("name", "") == family_name
-            ),
-            {},
-        )
-        family_addon_names = family.get("addons", [])
-        addon_names.extend(family_addon_names)
-
-    # Apply optional filter to addon names
-    if addon_name_filter:
-        addon_names = [name for name in addon_names if addon_name_filter(name)]
-
-    # Match addons by planCode
-    matched_addons = [a for a in addons if a.get("planCode", "") in addon_names]
-
-    # Apply optional filter to matched addons
-    if addon_filter:
-        matched_addons = [a for a in matched_addons if addon_filter(a)]
-
-    return matched_addons
-
-
-@cache
-def _get_storages_from_catalog() -> list[dict]:
-    """Extract storage offerings from catalog data."""
-
-    # Filter out addons without region configurations
-    def has_region_config(addon: dict) -> bool:
-        configs = addon.get("configurations", [])
-        return len(configs) > 0 and bool(configs[0].get("values", []))
-
-    return _get_addons_from_catalog(
-        # NOTE don't request volumes as we are only interested in block storage offerings
-        addon_family_names=["storage"],
-        addon_filter=has_region_config,
-    )
-
-
-@cache
-def _get_ipv4_prices_from_catalog() -> list[dict]:
-    """Extract IPv4 pricing offerings from catalog data."""
-    return _get_addons_from_catalog(addon_family_names=["publicip"])
 
 
 def _get_server_family(instance_type_name: str) -> str | None:
