@@ -965,24 +965,25 @@ def inventory_traffic_prices(vendor) -> list[dict]:
 def inventory_ipv4_prices(vendor) -> list[dict]:
     """OVHcloud Public Cloud IPv4 pricing.
 
-    Source: https://www.ovhcloud.com/en/public-cloud/prices (retrieved 2025-11-23)
+    Note that the API catalog endpoint states the "publiccloud-publicip-ip"
+    product to be free on the single-AZ and 3AZ regions, but it's listed at 1.5
+    EUR/month in the control panel for any additional public IPv4 address, so we
+    use that value for now.
 
-    IPv4 Pricing Model:
-    - Regular Compute Instances (B2/B3, C2/C3, R2/R3, D2, I1, BM-*): IPv4 included by default (FREE)
-    - Local Zone Instances: IPv4 NOT included, pricing only shown in Control Panel during order
-    - Floating IP: $0.0027/hour ($~2/month) per IPv4 (/32) address
+    Data sources:
 
-    Currently returning 0 as IPv4 is included by default for standard regions.
+    - <https://www.ovhcloud.com/en/public-cloud/prices>
+    - OVH Control Manager
     """
     items = []
     for region in vendor.regions:
-        # TODO: .LZ, .LZ.EU, .LZ.AF variants are not free, but these are skipped for now
+        # NOTE local zone prices are different, but these are skipped for now
         items.append(
             {
                 "vendor_id": vendor.vendor_id,
                 "region_id": region.region_id,
-                "price": 0,
-                "currency": CURRENCY,
+                "price": 1.5,
+                "currency": "EUR",
                 "unit": PriceUnit.MONTH,
             }
         )
