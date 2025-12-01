@@ -335,10 +335,11 @@ def _get_gpu_info(
 def inventory_compliance_frameworks(vendor):
     """Manual list of known compliance frameworks on OVHcloud.
 
-    Verified on ovhcloud.com:
+    Data sources:
 
-    - ISO/IEC 27001/27017/27018 (page: /en/compliance/iso-27001-27017-27018/)
-    - SOC 1, SOC 2, SOC 3 with SOC 2 Type 2 details (page: /en/compliance/soc-1-2-3/)
+    - General information and list of supported compliance programs: <https://www.ovhcloud.com/en/compliance/>
+    - ISO/IEC 27001/27017/27018: <https://www.ovhcloud.com/en/compliance/iso-27001-27017-27018/>
+    - SOC 1, SOC 2, SOC 3 with SOC 2 Type 2 details: <https://www.ovhcloud.com/en/compliance/soc-1-2-3/>
     """
     # Additional OVHcloud compliance frameworks you may want to support later
     # (not yet present in lookup.py — listed here for reference only):
