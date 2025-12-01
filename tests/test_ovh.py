@@ -9,19 +9,68 @@ from sc_crawler.vendors.ovh import (
     MIB_PER_GIB,
     MICROCENTS_PER_CURRENCY_UNIT,
     _get_gpu_info,
+    _get_project_id,
+    _get_region,
+    _get_regions,
     _get_server_family,
     inventory_compliance_frameworks,
+    inventory_regions,
 )
 
 
-class TestConstants:
-    """Test module-level constants."""
+@pytest.fixture(autouse=True)
+def mock_ovh_client():
+    """Mock OVH client and most common API endpoints for all tests."""
+    with patch("sc_crawler.vendors.ovh._client") as mock_client_factory:
+        mock = Mock()
+        mock_client_factory.return_value = mock
 
-    def test_constants_values(self):
-        """Test that constants have expected values."""
-        assert HOURS_PER_MONTH == 730
-        assert MICROCENTS_PER_CURRENCY_UNIT == 100_000_000
-        assert MIB_PER_GIB == 1024
+        def default_fake_get(path, *args, **kwargs):
+            if path == "/cloud/project":
+                return ["test-project"]
+            # mock 2 regions: 3AZ in EU + 1AZ in AP
+            if path == "/cloud/project/test-project/region":
+                return ["EU-WEST-PAR", "AP-SOUTH-MUM"]
+            if path == "/cloud/project/test-project/region/EU-WEST-PAR":
+                return {
+                    "datacenterLocation": "PAR",
+                    "availabilityZones": [
+                        "eu-west-par-a",
+                        "eu-west-par-b",
+                        "eu-west-par-c",
+                    ],
+                }
+            if path == "/cloud/project/test-project/region/AP-SOUTH-MUM":
+                return {
+                    "datacenterLocation": "YNM",
+                    "availabilityZones": ["ap-south-mum-a"],
+                }
+            raise RuntimeError(f"Unmocked OVH API call: {path}")
+
+        mock.get.side_effect = default_fake_get
+        yield mock
+
+
+def test_mock_ovh_client():
+    """Test mock OVH client API endpoints."""
+    # direct API call
+    from sc_crawler.vendors.ovh import _client
+
+    assert _client().get("/cloud/project") == ["test-project"]
+    # helpers
+    assert _get_project_id() == "test-project"
+    assert len(_get_regions()) == 2
+    assert _get_regions()[0] == "EU-WEST-PAR"
+    assert len(_get_region("EU-WEST-PAR")["availabilityZones"]) == 3
+    assert _get_regions()[1] == "AP-SOUTH-MUM"
+    assert len(_get_region("AP-SOUTH-MUM")["availabilityZones"]) == 1
+
+
+def test_constants_values():
+    """Test that constants have expected values."""
+    assert HOURS_PER_MONTH == 730
+    assert MICROCENTS_PER_CURRENCY_UNIT == 100_000_000
+    assert MIB_PER_GIB == 1024
 
 
 class TestGetServerFamily:
@@ -202,6 +251,16 @@ class TestInventoryComplianceFrameworks:
         inventory_compliance_frameworks(vendor)
 
         mock_map.assert_called_once_with("ovh", ["iso27001", "soc2t2"])
+
+
+def test_inventory_regions():
+    vendor = Mock()
+    vendor.vendor_id = "ovh"
+    result = inventory_regions(vendor)
+    assert isinstance(result, list)
+    assert len(result) == 2
+    assert result[0]["region_id"] == "EU-WEST-PAR"
+    assert result[0]["city"] == "Paris"
 
 
 if __name__ == "__main__":
