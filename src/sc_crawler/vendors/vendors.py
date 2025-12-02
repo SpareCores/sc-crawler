@@ -81,3 +81,18 @@ upcloud = Vendor(
     status_page="https://status.upcloud.com",
 )
 """UpCloud."""
+
+aliyun = Vendor(
+    vendor_id="aliyun",
+    name="Alibaba Cloud",
+    logo="https://sparecores.com/assets/images/vendors/aliyun.svg",
+    homepage="https://www.alibabacloud.com/",
+    country=countries["CN"],
+    state="Zhejiang",
+    city="Hangzhou",
+    address_line="5F, Builing D, the West Lake International Plaza of S&T No.391 Wen'er Road",
+    zip_code="310099",
+    founding_year=2009,
+    status_page="https://status.alibabacloud.com/",
+)
+"""Alibaba Cloud / Aliyun."""
