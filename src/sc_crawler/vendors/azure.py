@@ -355,7 +355,9 @@ def _standardize_server(server: dict, vendor) -> dict:
         "vcpus": int(capability("vCPUs")),
         "hypervisor": "Microsoft Hyper-V",
         "cpu_allocation": (
-            CpuAllocation.BURSTABLE if family == "B" else CpuAllocation.DEDICATED
+            CpuAllocation.BURSTABLE
+            if family.startswith("B")
+            else CpuAllocation.DEDICATED
         ),
         "cpu_architecture": (
             CpuArchitecture.ARM64 if architecture == "arm64" else CpuArchitecture.X86_64
