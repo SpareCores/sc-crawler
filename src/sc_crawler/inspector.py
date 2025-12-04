@@ -5,7 +5,7 @@ from atexit import register
 from functools import cache
 from itertools import groupby
 from operator import itemgetter
-from os import PathLike, path, remove
+from os import PathLike, getenv, makedirs, path
 from re import compile, match, search, sub
 from shutil import rmtree
 from statistics import mode
@@ -62,18 +62,26 @@ PASSMARK_MAPS = {
 
 @cache
 def inspector_data_path() -> str | PathLike:
-    """Download current inspector data into a temp folder."""
-    temp_dir = mkdtemp()
-    register(rmtree, temp_dir)
-    response = get(
-        "https://github.com/SpareCores/sc-inspector-data/archive/refs/heads/main.zip"
-    )
+    """Download current inspector data into a temp folder.
+
+    Setting the `SC_CRAWLER_INSPECTOR_DATA_PATH` environment variable will
+    override the default path for persistent/cached inspector data access.
+    """
+    if getenv("SC_CRAWLER_INSPECTOR_DATA_PATH"):
+        temp_dir = getenv("SC_CRAWLER_INSPECTOR_DATA_PATH")
+        makedirs(temp_dir, exist_ok=True)
+    else:
+        temp_dir = mkdtemp()
+        register(rmtree, temp_dir)
     zip_path = path.join(temp_dir, "downloaded.zip")
-    with open(zip_path, "wb") as f:
-        f.write(response.content)
-    with ZipFile(zip_path, "r") as zip_ref:
-        zip_ref.extractall(temp_dir)
-    remove(zip_path)
+    if not path.exists(zip_path):
+        response = get(
+            "https://github.com/SpareCores/sc-inspector-data/archive/refs/heads/main.zip"
+        )
+        with open(zip_path, "wb") as f:
+            f.write(response.content)
+        with ZipFile(zip_path, "r") as zip_ref:
+            zip_ref.extractall(temp_dir)
     return path.join(temp_dir, "sc-inspector-data-main", "data")
 
 

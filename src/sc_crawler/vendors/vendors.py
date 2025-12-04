@@ -81,3 +81,18 @@ upcloud = Vendor(
     status_page="https://status.upcloud.com",
 )
 """UpCloud."""
+
+ovh = Vendor(
+    vendor_id="ovh",
+    name="OVHcloud",
+    logo="https://sparecores.com/assets/images/vendors/ovh.svg",
+    homepage="https://www.ovhcloud.com",
+    country=countries["FR"],
+    state="Hauts-de-France",
+    city="Roubaix",
+    address_line="2 rue Kellermann",
+    zip_code="59100",
+    founding_year=1999,
+    status_page="https://www.status-ovhcloud.com",
+)
+"""OVHcloud."""

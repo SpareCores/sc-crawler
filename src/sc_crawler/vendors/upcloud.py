@@ -20,7 +20,7 @@ from ..table_fields import (
 
 @cache
 def _client() -> CloudManager:
-    """Authorized UpCloud client using the UPCLOUD_USERNAME and UPCLOUD_PASSWORD env vars."""
+    """Authorized UpCloud client using the `UPCLOUD_USERNAME` and `UPCLOUD_PASSWORD` env vars."""
     try:
         username = environ["UPCLOUD_USERNAME"]
     except KeyError:
@@ -86,7 +86,7 @@ def _parse_server_name(name):
     }
     data["family"] = family_mapping.get(data["family"], data["family"])
     data["description"] = (
-        f"{data['family']} {data['vcpus']} vCPUs, {data['memory']} GB RAM"
+        f"{data['family']} ({data['vcpus']} vCPUs, {data['memory']} GiB RAM)"
     )
     return data
 
@@ -109,7 +109,7 @@ def inventory_compliance_frameworks(vendor):
 def inventory_regions(vendor):
     """List all regions via API call.
 
-    Data manually enriched from https://upcloud.com/data-centres."""
+    Data manually enriched from <https://upcloud.com/data-centres>."""
     manual_data = {
         "au-syd1": {
             "country_id": "AU",
