@@ -1,5 +1,9 @@
 ## v0.3.x (development version)
 
+...
+
+## v0.3.2 (Dec 04, 2025)
+
 New vendor(s):
 
 - UpCloud
