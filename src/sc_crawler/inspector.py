@@ -569,7 +569,13 @@ def _standardize_cpu_family(family):
 
 def _standardize_cpu_model(model):
     model = model.strip()
-    if model in ["Not Specified", "NotSpecified", "(invalid)", "GENUINE INTEL(R) 0000"]:
+    if model in [
+        "Not Specified",
+        "NotSpecified",
+        "(invalid)",
+        "GENUINE INTEL(R) 0000",
+        "pc-i440fx-9.2",
+    ]:
         return None
     for prefix in [
         "Intel(R) Xeon(R) Platinum ",
