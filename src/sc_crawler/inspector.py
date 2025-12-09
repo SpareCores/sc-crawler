@@ -577,13 +577,6 @@ def _standardize_cpu_model(model):
         "pc-i440fx-9.2",
     ]:
         return None
-    # at least product family is known
-    if model == "Intel Core Processor (Haswell, no TSX)":
-        return "Haswell"
-    if model == "EPYC-Genoa":
-        return "Genoa"
-    if model == "EPYC-Milan":
-        return "Milan"
     for prefix in [
         "Intel(R) Xeon(R) Platinum ",
         "INTEL(R) XEON(R) PLATINUM ",
@@ -603,6 +596,13 @@ def _standardize_cpu_model(model):
     model = sub(r"( CPU)? ?@ \d+\.\d+GHz$", "", model)
     # drop trailing "48-Core Processor"
     model = sub(r"( \d+-Core)? Processor$", "", model)
+    # at least product family is known
+    if model == "Intel Core Processor (Haswell, no TSX)":
+        return "Haswell"
+    if model == "EPYC-Genoa":
+        return "Genoa"
+    if model == "EPYC-Milan":
+        return "Milan"
 
     if model.strip() == "":
         return None
