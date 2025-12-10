@@ -611,13 +611,24 @@ def _standardize_cpu_model(model):
 
 def _standardize_gpu_model(model, server=None):
     model = model.strip()
-    for prefix in ["NVIDIA ", "Tesla ", "Radeon Pro ", "Gaudi "]:
+    for prefix in [
+        "NVIDIA ",
+        "Tesla ",
+        "Radeon Pro ",
+        "Gaudi ",
+        "Quadro ",
+        "GeeForce ",
+    ]:
         if model.startswith(prefix):
             model = model[len(prefix) :].lstrip()
     if model == "nvidia-a100-80gb":
         model = "A100-SXM4-80GB"
+    if model == "nvidia-b200":
+        model = "B200"
     if model == "nvidia-h200-141gb":
         model = "H200"
+    if model == "nvidia-rtx-pro-6000":
+        model = "RTX Pro 6000"
     if server and server["vendor_id"] and server["server_id"] == "p4de.24xlarge":
         model = "A100-SXM4-40GB"
     # drop too specific parts
