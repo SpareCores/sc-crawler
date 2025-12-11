@@ -129,6 +129,15 @@ def inventory_regions(vendor):
             "lon": 8.735120,
             "lat": 50.119190,
         },
+        "dk-cph1": {
+            "country_id": "DK",
+            "city": "Copenhagen",
+            "founding_year": 2026,
+            "green_energy": True,
+            # approximation based on city as the datacenter is not listed on homepage yet
+            "lon": 12.57,
+            "lat": 55.68,
+        },
         "fi-hel1": {
             "country_id": "FI",
             "state": "Uusimaa",
