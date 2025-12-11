@@ -257,7 +257,7 @@ def inventory_regions(vendor):
                     ),
                     "aliases": [],
                     "country_id": region_data["country_id"],
-                    "state": region_data["state"],
+                    "state": region_data.get("state"),
                     "city": region_data["city"],
                     "address_line": None,
                     "zip_code": None,
