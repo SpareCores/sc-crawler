@@ -657,11 +657,20 @@ def _l123_cache(lscpu: dict, level: int):
     if level == 1:
         l1i = _listsearch(lscpu, "field", "L1i cache:")["data"].split(" ")[0]
         l1d = _listsearch(lscpu, "field", "L1d cache:")["data"].split(" ")[0]
-        return int(l1i) + int(l1d)
+        cache = int(l1i) + int(l1d)
+        if cache > 32 * 1024 * 1024:  # 32 MiB+ is potentially corrupted data
+            return None
+        return cache
     elif level == 2:
-        return int(_listsearch(lscpu, "field", "L2 cache:")["data"].split(" ")[0])
+        cache = int(_listsearch(lscpu, "field", "L2 cache:")["data"].split(" ")[0])
+        if cache > 512 * 1024 * 1024:  # 512 MiB+ is potentially corrupted data
+            return None
+        return cache
     elif level == 3:
-        return int(_listsearch(lscpu, "field", "L3 cache:")["data"].split(" ")[0])
+        cache = int(_listsearch(lscpu, "field", "L3 cache:")["data"].split(" ")[0])
+        if cache > 1024 * 1024 * 1024:  # 1 GiB+ is potentially corrupted data
+            return None
+        return cache
     else:
         raise ValueError("Not known cache level.")
 
