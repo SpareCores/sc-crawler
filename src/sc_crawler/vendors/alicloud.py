@@ -19,6 +19,7 @@ from ..table_fields import (
     PriceUnit,
     StorageType,
 )
+from ..tables import Vendor
 
 # ##############################################################################
 # Internal helpers
@@ -40,6 +41,26 @@ def _client(
     cred = CredClient()
     config = Config(credential=cred, region_id=region_id)
     return Client(config)
+
+
+def _clients(vendor: Vendor) -> dict[str, Client]:
+    """Create a dictionary of clients for all regions in the vendor.
+
+    This needs to be called in the main thread before threading,
+    as the client sets up signal handlers during client initialization,
+    and throws the "signal only works in main thread of the main interpreter"
+    `RuntimeError` if called in a thread.
+
+    Args:
+        vendor: The vendor to create clients for.
+
+    Returns:
+        A dictionary of clients for all regions in the vendor.
+    """
+    return {
+        region.region_id: _client(region_id=region.region_id)
+        for region in vendor.regions
+    }
 
 
 region_locations = {
@@ -270,17 +291,10 @@ def inventory_regions(vendor):
 
 def inventory_zones(vendor):
     """List all availability zones."""
-    items = []
     vendor.progress_tracker.start_task(
         name="Scanning region(s) for zone(s)", total=len(vendor.regions)
     )
-
-    # create all clients in the main thread before threading,
-    # as the client sets up signal handlers during client initialization,
-    # which needs to run in the main thread
-    clients = {}
-    for region in vendor.regions:
-        clients[region.region_id] = _client(region_id=region.region_id)
+    clients = _clients(vendor)
 
     def fetch_zones_for_region(region):
         """Worker function to fetch zones for a single region."""
