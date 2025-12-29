@@ -82,10 +82,10 @@ upcloud = Vendor(
 )
 """UpCloud."""
 
-aliyun = Vendor(
-    vendor_id="aliyun",
+alicloud = Vendor(
+    vendor_id="alicloud",
     name="Alibaba Cloud",
-    logo="https://sparecores.com/assets/images/vendors/aliyun.svg",
+    logo="https://sparecores.com/assets/images/vendors/alicloud.svg",
     homepage="https://www.alibabacloud.com/",
     country=countries["CN"],
     state="Zhejiang",
@@ -95,7 +95,7 @@ aliyun = Vendor(
     founding_year=2009,
     status_page="https://status.alibabacloud.com/",
 )
-"""Alibaba Cloud / Aliyun."""
+"""Alibaba Cloud."""
 
 ovh = Vendor(
     vendor_id="ovh",
