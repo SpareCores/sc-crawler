@@ -223,61 +223,12 @@ region_locations = {
 
 
 def inventory_compliance_frameworks(vendor):
-    """
-    Lists out the compliance frameworks implemented by Alibaba cloud. All the information gathered below were taken from the official site dedicated for this topic. <https://www.alibabacloud.com/en/trust-center/compliance>
+    """Manual list of compliance frameworks known for Alibaba Cloud.
+
+    Resources: <https://www.alibabacloud.com/en/trust-center/compliance>
     """
     return map_compliance_frameworks_to_vendor(
-        vendor.vendor_id,
-        [
-            # global
-            "csa-star",  # CSA STAR certification
-            "iso27001",  # ISMS standard
-            "iso20000",  # IT SMS standard
-            "iso22301",  # BCMS standard
-            "iso9001",  # QMS standard
-            "iso27017",  # IT security techniques, code practice for cloud services
-            "iso27018",  # IT security techniques, code practice for cloud services
-            "iso27701",  # IT security techniques, code practice for PII
-            "iso29151",  # security techniques extrnsion
-            "iso29151",  # IT security techniques
-            "iso27799",  # health information security management guideline
-            "iso27040",  # storage security guidance
-            "pci_3ds",  # PCI 3DS
-            "soc1",  # SOC 1 report
-            "soc2",  # SOC 2 report
-            "soc3",  # SOC 3 report
-            # regional
-            "dptm",  # DPTM (Singapore) - data protection trustmark
-            "aic4",  # AIC4 (Germany) - AI cloud service compliance creiteria catalog
-            "gdpr",  # GDPR - European Union General Data Protection Regulation
-            "nist",  # NIST SP 800-53 / NIST CSF - U.S. National Institute of Standards and Technology frameworks
-            "mlps_2",  # MLPS 2.0 (China) - classified protection of cybersecurity
-            "itss",  # ITSS (China) - ITSS cloud computing service capability assessment
-            "c5",  # C5 (Germany) - Cloud Computing Compliance Controls Catalog
-            "mtcs",  # MTCS (Singapore) - Multi-Tier Cloud Security Standard
-            "trucs",  # TRUCS (China) - Certification for Cloud Computing Services
-            "nisc",  # NISC (Japan) - National center of Incident readiness and Strategy for Cybersecurity
-            "ctm",  # CTM (Singapore) - Cyber Trust Mark certification
-            "k-isms",  # K-ISMS (Korea) - Korea Information Security Management System certification
-            # industry
-            "gxp",  # GxP (USA) - Good Clinical, Laboratory and Manufacturing Practices
-            "tisax",  # TISAX (Germany) - Trusted Information Secrurity Assessment Exchange
-            "hipaa",  # HIPAA (USA) - Health Insurace Portability and Accountibility Act
-            "mpa",  # MPA (USA) - The Motion Picture Association
-            "sec_rule_17a",  # SEC Rule 17a (USA) - Secrutites and Exchange Commission, Rule 17a
-            "ospar",  # OSPAR (Singapore) - Outsourced Service Provider Audit Report
-            "ferpa"  # FERPA (USA) - The Family Education Rights and Privacy Act
-            "coppa",  # COPPA (USA) - The Children's Online Privacy Protection Act
-            "dpp"  # DPP - Prduction and Broadcast - Digital Production Partnership (DPP) Committed to Security programme
-            "fisc"  # FISC (Japan) - The Center for Financial Industry Information Systems
-            # data protection
-            "gdpr",  # GDPR (EU) - The European Union General Data Protection Regulation
-            "eu-cloud-coc",  # EU Cloud CoC (EU) - The Eurpoean Union Cloud Code of Conduct
-            "pdpa",  # PDPA (Singapore and Malaysia) - Personal Data Protection Act
-            "pdpo",  # PDPO (Hong Kong) - Personal Data (Privacy) Ordinance
-            "cbpr",  # APEC CBPR (Singapore) - The APEC Cross Border Privacy Rules
-            "prp",  # APEC PRP (Singapore) - The APEC Privacy Recognition for Processors
-        ],
+        vendor.vendor_id, ["hipaa", "soc2t2", "iso27001"]
     )
 
 
