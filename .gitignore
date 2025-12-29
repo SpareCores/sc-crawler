@@ -7,6 +7,7 @@ bin/
 build/
 dist/
 *.egg-info/
+.python-version
 
 # Installer logs
 pip-log.txt
@@ -25,8 +26,10 @@ docs/_build/
 # Temp linters
 flycheck_*
 
-# Dev notes, scripts
+# dev
 .venv/
-notes.txt
-aliyun_env_variables.sh
 sc-data-all.db
+
+# IDE
+.vscode/
+.idea/

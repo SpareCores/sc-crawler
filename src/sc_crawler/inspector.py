@@ -5,7 +5,7 @@ from atexit import register
 from functools import cache
 from itertools import groupby
 from operator import itemgetter
-from os import PathLike, path, remove
+from os import PathLike, getenv, makedirs, path
 from re import compile, match, search, sub
 from shutil import rmtree
 from statistics import mode
@@ -62,18 +62,26 @@ PASSMARK_MAPS = {
 
 @cache
 def inspector_data_path() -> str | PathLike:
-    """Download current inspector data into a temp folder."""
-    temp_dir = mkdtemp()
-    register(rmtree, temp_dir)
-    response = get(
-        "https://github.com/SpareCores/sc-inspector-data/archive/refs/heads/main.zip"
-    )
+    """Download current inspector data into a temp folder.
+
+    Setting the `SC_CRAWLER_INSPECTOR_DATA_PATH` environment variable will
+    override the default path for persistent/cached inspector data access.
+    """
+    if getenv("SC_CRAWLER_INSPECTOR_DATA_PATH"):
+        temp_dir = getenv("SC_CRAWLER_INSPECTOR_DATA_PATH")
+        makedirs(temp_dir, exist_ok=True)
+    else:
+        temp_dir = mkdtemp()
+        register(rmtree, temp_dir)
     zip_path = path.join(temp_dir, "downloaded.zip")
-    with open(zip_path, "wb") as f:
-        f.write(response.content)
-    with ZipFile(zip_path, "r") as zip_ref:
-        zip_ref.extractall(temp_dir)
-    remove(zip_path)
+    if not path.exists(zip_path):
+        response = get(
+            "https://github.com/SpareCores/sc-inspector-data/archive/refs/heads/main.zip"
+        )
+        with open(zip_path, "wb") as f:
+            f.write(response.content)
+        with ZipFile(zip_path, "r") as zip_ref:
+            zip_ref.extractall(temp_dir)
     return path.join(temp_dir, "sc-inspector-data-main", "data")
 
 
@@ -561,7 +569,13 @@ def _standardize_cpu_family(family):
 
 def _standardize_cpu_model(model):
     model = model.strip()
-    if model in ["Not Specified", "NotSpecified", "(invalid)", "GENUINE INTEL(R) 0000"]:
+    if model in [
+        "Not Specified",
+        "NotSpecified",
+        "(invalid)",
+        "GENUINE INTEL(R) 0000",
+        "pc-i440fx-9.2",
+    ]:
         return None
     for prefix in [
         "Intel(R) Xeon(R) Platinum ",
@@ -573,7 +587,6 @@ def _standardize_cpu_model(model):
         "Intel Xeon Processor (Skylake, IBRS, no TSX)",
         "AMD ",
         "EPYC ",
-        "EPYC-Milan",
         "AWS ",
         "Processor",
     ]:
@@ -583,6 +596,13 @@ def _standardize_cpu_model(model):
     model = sub(r"( CPU)? ?@ \d+\.\d+GHz$", "", model)
     # drop trailing "48-Core Processor"
     model = sub(r"( \d+-Core)? Processor$", "", model)
+    # at least product family is known
+    if model == "Intel Core Processor (Haswell, no TSX)":
+        return "Haswell"
+    if model == "EPYC-Genoa":
+        return "Genoa"
+    if model == "EPYC-Milan":
+        return "Milan"
 
     if model.strip() == "":
         return None
@@ -591,13 +611,24 @@ def _standardize_cpu_model(model):
 
 def _standardize_gpu_model(model, server=None):
     model = model.strip()
-    for prefix in ["NVIDIA ", "Tesla ", "Radeon Pro ", "Gaudi "]:
+    for prefix in [
+        "NVIDIA ",
+        "Tesla ",
+        "Radeon Pro ",
+        "Gaudi ",
+        "Quadro ",
+        "GeeForce ",
+    ]:
         if model.startswith(prefix):
             model = model[len(prefix) :].lstrip()
     if model == "nvidia-a100-80gb":
         model = "A100-SXM4-80GB"
+    if model == "nvidia-b200":
+        model = "B200"
     if model == "nvidia-h200-141gb":
         model = "H200"
+    if model == "nvidia-rtx-pro-6000":
+        model = "RTX Pro 6000"
     if server and server["vendor_id"] and server["server_id"] == "p4de.24xlarge":
         model = "A100-SXM4-40GB"
     # drop too specific parts
@@ -626,11 +657,20 @@ def _l123_cache(lscpu: dict, level: int):
     if level == 1:
         l1i = _listsearch(lscpu, "field", "L1i cache:")["data"].split(" ")[0]
         l1d = _listsearch(lscpu, "field", "L1d cache:")["data"].split(" ")[0]
-        return int(l1i) + int(l1d)
+        cache = int(l1i) + int(l1d)
+        if cache > 32 * 1024 * 1024:  # 32 MiB+ is potentially corrupted data
+            return None
+        return cache
     elif level == 2:
-        return int(_listsearch(lscpu, "field", "L2 cache:")["data"].split(" ")[0])
+        cache = int(_listsearch(lscpu, "field", "L2 cache:")["data"].split(" ")[0])
+        if cache > 512 * 1024 * 1024:  # 512 MiB+ is potentially corrupted data
+            return None
+        return cache
     elif level == 3:
-        return int(_listsearch(lscpu, "field", "L3 cache:")["data"].split(" ")[0])
+        cache = int(_listsearch(lscpu, "field", "L3 cache:")["data"].split(" ")[0])
+        if cache > 1024 * 1024 * 1024:  # 1 GiB+ is potentially corrupted data
+            return None
+        return cache
     else:
         raise ValueError("Not known cache level.")
 

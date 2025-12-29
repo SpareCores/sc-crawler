@@ -119,11 +119,82 @@ and then assign the role at the Subscription's Access control page.
 
 </details>
 
+<details markdown="1">
+
+<summary>UpCloud</summary>
+
+Create a user (subaccount) in the UpCloud control panel with "API connections" permission enabled.
+Then configure the following environment variables:
+
+- `UPCLOUD_USERNAME`
+- `UPCLOUD_PASSWORD`
+
+</details>
+
+<details markdown="1">
+
+<summary>OVHcloud</summary>
+
+You need to create a cloud project, optionally enable all regions, then create and configure a service account as described in the [Managing OVHcloud service accounts via the API](https://help.ovhcloud.com/csm/en-ie-manage-service-account?id=kb_article_view&sysparm_article=KB0059346) document. In short:
+
+1. Create a service account via a `POST` API query to `/me/api/oauth2/client`.
+2. Get its `arn` via a `GET` to `/me/api/oauth2/client/{client_id}` (using the `client_id` from above).
+3. Set minimum permissions for the `arn` via a `POST` to `/iam/policy`, e.g.:
+
+```json
+{
+  "description": "Minimum permissions for sc-data",
+  "identities": ["{your_urn}"],
+  "name": "sc-data",
+  "permissions": {
+    "allow": [
+      {
+        "action": "account:apiovh:me/get"
+      },
+      {
+        "action": "publicCloudProject:apiovh:get"
+      },
+      {
+        "action": "publicCloudProject:apiovh:region/get"
+      },
+      {
+        "action": "publicCloudProject:apiovh:flavor/get"
+      }
+    ]
+  },
+  "resources": [
+    {
+        "urn": "urn:v1:eu:resource:account:{your_account_id}-ovh"
+    }
+  ]
+}
+```
+
+Then configure the following environment variables:
+
+- `OVH_ENDPOINT` (e.g. "ovh-eu")
+- `OVH_CLIENT_ID`
+- `OVH_CLIENT_SECRET`
+
+By default, the first project found in the account will be used.
+Optionally, you can also specify the project ID to override that behavior
+via the `OVH_PROJECT_ID` environment variable.
+
+For the price catalog, we default to using the `IE` (Ireland) OVH subsidiary,
+which can be overridden via the `OVH_SUBSIDIARY` environment variable.
+This choice affects the currency used for prices.
+
+</details>
+
 Fetch and standardize datacenter, zone, servers, traffic, storage etc data from AWS into a single SQLite file:
 
 ```shell
 sc-crawler pull --connection-string sqlite:///sc-data-all.db --include-vendor aws
 ```
+
+If you need to run this many times, set the `SC_CRAWLER_INSPECTOR_DATA_PATH`
+environment variable to a directory for caching the inspector data, so that it
+won't be downloaded multiple times.
 
 Such an up-to-date SQLite database is managed by the Spare Cores team in the
 [SC Data](https://github.com/SpareCores/sc-data) repository, or you can also

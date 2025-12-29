@@ -1,20 +1,26 @@
-## v0.3.x (development version)
+## v0.3.2 (Dec 04, 2025)
 
 New vendor(s):
 
 - UpCloud
+- OVHcloud
 
 New benchmark(s):
 
-- PassMark.
+- PassMark
+- LLM inference speed
+
+Fix(es):
+
+- Minor region and server detail overrides.
 
 ## v0.3.1 (Oct 25, 2024)
 
 New benchmark(s):
 
-- Static HTTP server.
-- Redis.
-- stress-ng's div16 run on all vCPUs.
+- Static HTTP server
+- Redis
+- stress-ng's div16 run on all vCPUs
 
 New feature(s):
 
