@@ -7,7 +7,11 @@ from os import environ
 
 from alibabacloud_credentials.client import Client as CredClient
 from alibabacloud_ecs20140526.client import Client
-from alibabacloud_ecs20140526.models import DescribeRegionsRequest, DescribeZonesRequest
+from alibabacloud_ecs20140526.models import (
+    DescribeInstanceTypesRequest,
+    DescribeRegionsRequest,
+    DescribeZonesRequest,
+)
 from alibabacloud_tea_openapi.models import Config
 
 from ..logger import logger
@@ -62,6 +66,9 @@ def _clients(vendor: Vendor) -> dict[str, Client]:
         for region in vendor.regions
     }
 
+
+# ##############################################################################
+# Manual data/mapping
 
 region_locations = {
     # -------- Mainland China --------
@@ -324,7 +331,6 @@ def inventory_zones(vendor):
 
     with ThreadPoolExecutor(max_workers=8) as executor:
         items = executor.map(fetch_zones_for_region, vendor.regions)
-
     items = list(chain.from_iterable(items))
     vendor.progress_tracker.hide_task()
     return items
@@ -335,67 +341,115 @@ def inventory_servers(vendor):
     Puts together the list containing information about the hardware capabilities of each ECS type in the Alibaba Cloud service.
     """
     items = []
-    tempclient = AcsClient(
-        os.environ["ALIYUN_ACCESS_KEY"],
-        os.environ["ALIYUN_SECRET"],
-        os.environ["ALIYUN_REGION"],
-    )
-    instance_info_in_list = get_instance_types(tempclient)
-    for instancetype in instance_info_in_list.get("InstanceTypes").get("InstanceType"):
-        cpu_arch_info = instancetype.get("CpuArchitecture").upper()
-        if cpu_arch_info == "X86":
-            set_cpu_arch = CpuArchitecture.X86_64
-        elif cpu_arch_info == "ARM":
-            set_cpu_arch = CpuArchitecture.ARM64
-        else:
-            set_cpu_arch = None
 
-        logger.debug(
-            "Adding instance {iid} to database...".format(
-                iid=instancetype.get("InstanceTypeId")
-            )
+    client = _client()
+
+    request = DescribeInstanceTypesRequest(max_results=1000)
+    response = client.describe_instance_types(request)
+    instance_types = [
+        instance_type.to_map()
+        for instance_type in response.body.instance_types.instance_type
+    ]
+    while response.body.next_token:
+        request = DescribeInstanceTypesRequest(
+            max_results=1000, next_token=response.body.next_token
         )
+        response = client.describe_instance_types(request)
+        for instance_type in response.body.instance_types.instance_type:
+            instance_types.append(instance_type.to_map())
+
+    from collections import Counter
+
+    Counter(
+        instance_type.get("LocalStorageCategory") for instance_type in instance_types
+    )
+
+    for i in instance_types:
+        if i.get("InstanceTypeId") == "ecs.i5g.8xlarge":
+            print("OOO")
+            break
+
+    CPU_ARCH_MAP = {"X86": CpuArchitecture.X86_64, "ARM": CpuArchitecture.ARM64}
+    STORAGE_CATEGORY_MAP = {
+        "": None,
+        "local_ssd_pro": StorageType.SSD,
+        "local_hdd_pro": StorageType.HDD,
+    }
+
+    def drop_zero_value(x):
+        return None if x == 0 else x
+
+    items = []
+    for instance_type in instance_types:
+        family = instance_type.get("InstanceTypeFamily")
+        vcpus = instance_type.get("CpuCoreCount")
+        memory_size_gb = int((instance_type.get("MemorySize") * 1024))
+        storage_size = int(
+            instance_type.get("LocalStorageAmount", 0)
+            * instance_type.get("LocalStorageCapacity", 0)
+            # convert GiB to GB
+            * 1024**3
+            / 1000**3
+        )
+        storage_type = STORAGE_CATEGORY_MAP[instance_type.get("LocalStorageCategory")]
+        gpu_count = instance_type.get("GPUAmount", 0)
+        gpu_memory_per_gpu = instance_type.get("GPUMemorySize", 0) * 1024  # GiB -> MiB
+        gpu_memory_total = gpu_count * gpu_memory_per_gpu
+        gpu_model = instance_type.get("GPUSpec")
+        description_parts = [
+            f"{vcpus} vCPUs",
+            f"{memory_size_gb} GiB RAM",
+            f"{storage_size} GB {storage_type.value if storage_type else ''} storage",
+            (
+                f"{gpu_count}x{gpu_model} {gpu_memory_per_gpu} GiB VRAM"
+                if gpu_count and gpu_model
+                else None
+            ),
+        ]
+        description = f"{family} family ({', '.join(filter(None, description_parts))})"
+
         items.append(
             {
                 "vendor_id": vendor.vendor_id,
-                "server_id": instancetype.get("InstanceTypeId"),
-                "name": instancetype.get("InstanceTypeId"),
-                "api_reference": instancetype.get("InstanceTypeId"),
-                "display_name": instancetype.get("InstanceTypeId"),
-                "description": "{ifam}, {icat}".format(
-                    icat=instancetype.get("InstanceCategory"),
-                    ifam=instancetype.get("InstanceFamilyLevel"),
-                ),
-                "family": instancetype.get("InstanceTypeFamily"),
-                "vcpus": instancetype.get("CpuCoreCount"),
+                "server_id": instance_type.get("InstanceTypeId"),
+                "name": instance_type.get("InstanceTypeId"),
+                "api_reference": instance_type.get("InstanceTypeId"),
+                "display_name": instance_type.get("InstanceTypeId"),
+                "description": description,
+                "family": family,
+                "vcpus": vcpus,
                 "hypervisor": "KVM",
                 "cpu_allocation": CpuAllocation.DEDICATED,
-                "cpu_cores": instancetype.get("CpuCoreCount", 0),
-                "cpu_speed": instancetype.get("CpuSpeedFrequency"),
-                "cpu_architecture": set_cpu_arch,
+                "cpu_cores": instance_type.get("CpuCoreCount", 0),
+                "cpu_speed": drop_zero_value(instance_type.get("CpuSpeedFrequency")),
+                # TODO check after inspector run if vendor API data is better than dmidecode
+                "cpu_architecture": CPU_ARCH_MAP[instance_type.get("CpuArchitecture")],
                 "cpu_manufacturer": None,
                 "cpu_family": None,
-                "cpu_model": instancetype.get("PhysicalProcessorModel"),
+                "cpu_model": instance_type.get("PhysicalProcessorModel"),
                 "cpu_l1_cache": None,
                 "cpu_l2_cache": None,
                 "cpu_l3_cache": None,
                 "cpu_flags": [],
                 "cpus": [],
-                "memory_amount": int((instancetype.get("MemorySize") * 1024)),
+                "memory_amount": memory_size_gb,
                 "memory_generation": None,
                 "memory_speed": None,
                 "memory_ecc": None,
-                "gpu_count": instancetype.get("GPUAmount", 0),
-                "gpu_memory_min": None,
-                "gpu_memory_total": None,
+                "gpu_count": gpu_count,
+                "gpu_memory_min": drop_zero_value(int(gpu_memory_per_gpu)),
+                "gpu_memory_total": drop_zero_value(int(gpu_memory_total)),
+                # TODO fill in from GPUSpec? or just let the inspector fill it in?
                 "gpu_manufacturer": None,
                 "gpu_family": None,
-                "gpu_model": instancetype.get("GPUSpec"),
+                "gpu_model": gpu_model,
                 "gpus": [],
-                "storage_size": 0,
-                "storage_type": None,
+                "storage_size": storage_size,
+                "storage_type": storage_type,
                 "storages": [],
-                "network_speed": None,
+                "network_speed": drop_zero_value(
+                    instance_type.get("InstanceBandwidthRx", 0) / 1024 / 1000
+                ),
                 "inbound_traffic": 0,
                 "outbound_traffic": 0,
                 "ipv4": 0,
