@@ -232,7 +232,7 @@ def _get_regions() -> list[dict]:
     Returns:
         List of region codes
     """
-    request = DescribeRegionsRequest()
+    request = DescribeRegionsRequest(accept_language="en-US")
     response = _client().describe_regions(request)
     return [region.to_map() for region in response.body.regions.region]
 
