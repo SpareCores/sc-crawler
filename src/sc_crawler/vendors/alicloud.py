@@ -1,10 +1,7 @@
 import json
 import os
-from concurrent.futures import ThreadPoolExecutor
 from functools import cache
-from itertools import chain, repeat
 from os import environ
-from typing import List
 
 from alibabacloud_credentials.client import Client as CredClient
 from alibabacloud_ecs20140526.client import Client
@@ -20,7 +17,6 @@ from ..table_fields import (
     PriceUnit,
     StorageType,
 )
-from ..tables import Region, Vendor
 
 # ##############################################################################
 # Internal helpers
@@ -276,35 +272,28 @@ def inventory_zones(vendor):
     vendor.progress_tracker.start_task(
         name="Scanning region(s) for zone(s)", total=len(vendor.regions)
     )
-
-    def get_zones(region: Region, vendor: Vendor) -> List[dict]:
-        new = []
+    for region in vendor.regions:
         request = DescribeZonesRequest(
             region_id=region.region_id, accept_language="en-US"
         )
         try:
             response = _client(region_id=region.region_id).describe_zones(request)
+            for zone in response.body.to_map()["Zones"]["Zone"]:
+                items.append(
+                    {
+                        "vendor_id": vendor.vendor_id,
+                        "region_id": region.region_id,
+                        "zone_id": zone.get("ZoneId"),
+                        "name": zone.get("LocalName"),
+                        "api_reference": zone.get("ZoneId"),
+                        "display_name": zone.get("LocalName"),
+                    }
+                )
         except Exception as e:
             logger.error(f"Failed to get zones for region {region.region_id}: {e}")
-            return []
-        for zone in response.body.to_map()["Zones"]["Zone"]:
-            new.append(
-                {
-                    "vendor_id": vendor.vendor_id,
-                    "region_id": region.region_id,
-                    "zone_id": zone.get("ZoneId"),
-                    "name": zone.get("LocalName"),
-                    "api_reference": zone.get("ZoneId"),
-                    "display_name": zone.get("LocalName"),
-                }
-            )
-        return new
-
-    with ThreadPoolExecutor(max_workers=8) as executor:
-        zones = executor.map(get_zones, vendor.regions, repeat(vendor))
-    zones = list(chain.from_iterable(zones))
+        vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
-    return zones
+    return items
 
 
 def inventory_servers(vendor):
