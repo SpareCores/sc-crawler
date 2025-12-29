@@ -1,7 +1,12 @@
 import json
 import os
-from functools import lru_cache
+from functools import cache, lru_cache
+from os import environ
 
+from alibabacloud_credentials.client import Client as CredClient
+from alibabacloud_ecs20140526.client import Client
+from alibabacloud_ecs20140526.models import DescribeRegionsRequest
+from alibabacloud_tea_openapi.models import Config
 from aliyunsdkbssopenapi.request.v20171214 import DescribePricingModuleRequest
 from aliyunsdkcore.acs_exception.exceptions import ClientException, ServerException
 from aliyunsdkcore.client import AcsClient
@@ -26,6 +31,24 @@ from ..table_fields import (
 ONE_REGION_QUERY = False
 SKIP_CHINA = False
 DEFAULT_REGION = "eu-central-1"
+
+
+@cache
+def _client() -> Client:
+    """Create an Alibaba Cloud client using the default credentials chain.
+
+    Environment variables required:
+    - `ALIBABA_CLOUD_ACCESS_KEY_ID`: The Alibaba Cloud access key ID.
+    - `ALIBABA_CLOUD_ACCESS_KEY_SECRET`: The Alibaba Cloud access key secret.
+    - `ALIBABA_CLOUD_REGION_ID`: The region ID to use, defaults to `eu-central-1`.
+    """
+    cred = CredClient()
+    config = Config(
+        credential=cred,
+        region_id=environ.get("ALIBABA_CLOUD_REGION_ID", "eu-central-1"),
+    )
+    return Client(config)
+
 
 aliyun_region_coords = {
     # -------- Mainland China --------
@@ -200,6 +223,18 @@ aliyun_region_coords = {
         "country_id": "SA",
     },
 }
+
+
+@cache
+def _get_regions() -> list[dict]:
+    """Fetch available regions enabled for a project.
+
+    Returns:
+        List of region codes
+    """
+    request = DescribeRegionsRequest()
+    response = _client().describe_regions(request)
+    return [region.to_map() for region in response.body.regions.region]
 
 
 @lru_cache(maxsize=1)
