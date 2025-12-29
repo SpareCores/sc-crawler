@@ -1,6 +1,8 @@
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor
 from functools import cache
+from itertools import chain
 from os import environ
 
 from alibabacloud_credentials.client import Client as CredClient
@@ -272,14 +274,24 @@ def inventory_zones(vendor):
     vendor.progress_tracker.start_task(
         name="Scanning region(s) for zone(s)", total=len(vendor.regions)
     )
+
+    # create all clients in the main thread before threading,
+    # as the client sets up signal handlers during client initialization,
+    # which needs to run in the main thread
+    clients = {}
     for region in vendor.regions:
+        clients[region.region_id] = _client(region_id=region.region_id)
+
+    def fetch_zones_for_region(region):
+        """Worker function to fetch zones for a single region."""
         request = DescribeZonesRequest(
             region_id=region.region_id, accept_language="en-US"
         )
         try:
-            response = _client(region_id=region.region_id).describe_zones(request)
+            response = clients[region.region_id].describe_zones(request)
+            zone_items = []
             for zone in response.body.to_map()["Zones"]["Zone"]:
-                items.append(
+                zone_items.append(
                     {
                         "vendor_id": vendor.vendor_id,
                         "region_id": region.region_id,
@@ -289,9 +301,17 @@ def inventory_zones(vendor):
                         "display_name": zone.get("LocalName"),
                     }
                 )
+            return zone_items
         except Exception as e:
             logger.error(f"Failed to get zones for region {region.region_id}: {e}")
-        vendor.progress_tracker.advance_task()
+            return []
+        finally:
+            vendor.progress_tracker.advance_task()
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        items = executor.map(fetch_zones_for_region, vendor.regions)
+
+    items = list(chain.from_iterable(items))
     vendor.progress_tracker.hide_task()
     return items
 
