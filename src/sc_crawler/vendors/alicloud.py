@@ -1,11 +1,14 @@
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor
 from functools import cache
+from itertools import chain, repeat
 from os import environ
+from typing import List
 
 from alibabacloud_credentials.client import Client as CredClient
 from alibabacloud_ecs20140526.client import Client
-from alibabacloud_ecs20140526.models import DescribeRegionsRequest
+from alibabacloud_ecs20140526.models import DescribeRegionsRequest, DescribeZonesRequest
 from alibabacloud_tea_openapi.models import Config
 
 from ..logger import logger
@@ -17,29 +20,27 @@ from ..table_fields import (
     PriceUnit,
     StorageType,
 )
-
-ONE_REGION_QUERY = False
-SKIP_CHINA = False
-DEFAULT_REGION = "eu-central-1"
+from ..tables import Region, Vendor
 
 # ##############################################################################
 # Internal helpers
 
 
 @cache
-def _client() -> Client:
+def _client(
+    region_id: str = environ.get("ALIBABA_CLOUD_REGION_ID", "eu-central-1"),
+) -> Client:
     """Create an Alibaba Cloud client using the default credentials chain.
+
+    Args:
+        region_id: The region ID to use, defaults to the `ALIBABA_CLOUD_REGION_ID` env var with a fallback of `eu-central-1`.
 
     Environment variables required:
     - `ALIBABA_CLOUD_ACCESS_KEY_ID`: The Alibaba Cloud access key ID.
     - `ALIBABA_CLOUD_ACCESS_KEY_SECRET`: The Alibaba Cloud access key secret.
-    - `ALIBABA_CLOUD_REGION_ID`: The region ID to use, defaults to `eu-central-1`.
     """
     cred = CredClient()
-    config = Config(
-        credential=cred,
-        region_id=environ.get("ALIBABA_CLOUD_REGION_ID", "eu-central-1"),
-    )
+    config = Config(credential=cred, region_id=region_id)
     return Client(config)
 
 
@@ -269,55 +270,41 @@ def inventory_regions(vendor):
     return items
 
 
-def inventory_zones(vendor, skip_china=SKIP_CHINA):
-    """
-    Puts together the list containing information about the available zones for each region in the Alibaba Cloud service. Mainland Chinese regions were inaccessible due to the existence of the Great Firewall, so regions with a 'cn' region code are ignored while creating the list.
-    """
+def inventory_zones(vendor):
+    """List all availability zones."""
     items = []
-    region_info_in_list = get_regions(one_region_query=ONE_REGION_QUERY)
-    for region in region_info_in_list.get("Regions").get("Region"):
-        # a try block with a specific exception for timeout would be probably better, but why should we wait for the timeout
-        if skip_china:
-            if "cn-" in region.get("RegionId"):
-                logger.info(
-                    "Region {rid} is inaccessible, skipping zones...".format(
-                        rid=region.get("RegionId")
-                    )
-                )
-                continue  # chinese regions are not accessible from here
-        else:
-            try:
-                tempclient = AcsClient(
-                    os.environ["ALIYUN_ACCESS_KEY"],
-                    os.environ["ALIYUN_SECRET"],
-                    region.get("RegionId"),
-                )
+    vendor.progress_tracker.start_task(
+        name="Scanning region(s) for zone(s)", total=len(vendor.regions)
+    )
 
-                zone_info_in_list = get_zones(tempcl=tempclient)
+    def get_zones(region: Region, vendor: Vendor) -> List[dict]:
+        new = []
+        request = DescribeZonesRequest(
+            region_id=region.region_id, accept_language="en-US"
+        )
+        try:
+            response = _client(region_id=region.region_id).describe_zones(request)
+        except Exception as e:
+            logger.error(f"Failed to get zones for region {region.region_id}: {e}")
+            return []
+        for zone in response.body.to_map()["Zones"]["Zone"]:
+            new.append(
+                {
+                    "vendor_id": vendor.vendor_id,
+                    "region_id": region.region_id,
+                    "zone_id": zone.get("ZoneId"),
+                    "name": zone.get("LocalName"),
+                    "api_reference": zone.get("ZoneId"),
+                    "display_name": zone.get("LocalName"),
+                }
+            )
+        return new
 
-                for zone in zone_info_in_list.get("Zones").get("Zone"):
-                    logger.debug(
-                        "Getting zone {} in region {}...".format(
-                            region.get("RegionId"), zone.get("ZoneId")
-                        )
-                    )
-                    items.append(
-                        {
-                            "vendor_id": vendor.vendor_id,
-                            "region_id": region.get("RegionId"),
-                            "zone_id": zone.get("ZoneId"),
-                            "name": zone.get("ZoneId"),
-                            "api_reference": zone.get("ZoneId"),
-                            "display_name": zone.get("ZoneId"),
-                        }
-                    )
-            except ClientException as ce:
-                logger.debug(
-                    "Failed to query region {rid}".format(rid=region.get("RegionId"))
-                )
-                logger.debug(ce)
-
-    return items
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        zones = executor.map(get_zones, vendor.regions, repeat(vendor))
+    zones = list(chain.from_iterable(zones))
+    vendor.progress_tracker.hide_task()
+    return zones
 
 
 def inventory_servers(vendor):
@@ -561,7 +548,7 @@ def inventory_storages(vendor):
     return items
 
 
-def inventory_storage_prices(vendor, skip_china=SKIP_CHINA):
+def inventory_storage_prices(vendor):
     """
     Puts together a list of storage prices. As storage is treated as a separate pricing package, the implementation assumes an instance type which is common, and can be found in any data center. Then it cycles through the hardcoded storage types.
 
