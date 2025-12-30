@@ -186,6 +186,19 @@ This choice affects the currency used for prices.
 
 </details>
 
+<details markdown="1">
+
+<summary>Alibaba Cloud</summary>
+
+Create a RAM user with the `AliyunBSSReadOnlyAccess` system policy (or a custom policy with at least the `bss:DescribeProduct` permission), then configure the following environment variables:
+
+- `ALIBABA_CLOUD_ACCESS_KEY_ID`
+- `ALIBABA_CLOUD_ACCESS_KEY_SECRET`
+
+Optionally, you can also specify the default region to use via the `ALIBABA_CLOUD_REGION_ID` environment variable, otherwise the default region (`eu-central-1`) will be used.
+
+</details>
+
 Fetch and standardize datacenter, zone, servers, traffic, storage etc data from AWS into a single SQLite file:
 
 ```shell
