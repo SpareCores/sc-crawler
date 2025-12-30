@@ -14,7 +14,12 @@ from alibabacloud_ecs20140526.models import (
 )
 from alibabacloud_tea_openapi.models import Config
 
-from ..inspector import _extract_family, _extract_manufacturer, _standardize_cpu_model
+from ..inspector import (
+    _extract_family,
+    _extract_manufacturer,
+    _standardize_cpu_model,
+    _standardize_gpu_model,
+)
 from ..logger import logger
 from ..lookup import map_compliance_frameworks_to_vendor
 from ..table_fields import (
@@ -397,7 +402,7 @@ def inventory_servers(vendor):
         gpu_count = instance_type.get("GPUAmount", 0)
         gpu_memory_per_gpu = instance_type.get("GPUMemorySize", 0) * 1024  # GiB -> MiB
         gpu_memory_total = gpu_count * gpu_memory_per_gpu
-        gpu_model = instance_type.get("GPUSpec")
+        gpu_model = _standardize_gpu_model(instance_type.get("GPUSpec"))
         description_parts = [
             f"{vcpus} vCPUs",
             f"{memory_size_gb} GiB RAM",

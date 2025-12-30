@@ -676,6 +676,8 @@ def _standardize_cpu_model(model):
 
 def _standardize_gpu_model(model, server=None):
     model = model.strip()
+    if model in ["", "0", "NULL", "NA", "N/A"]:
+        return None
     for prefix in [
         "NVIDIA ",
         "Tesla ",
@@ -696,6 +698,10 @@ def _standardize_gpu_model(model, server=None):
         model = "RTX Pro 6000"
     if server and server["vendor_id"] and server["server_id"] == "p4de.24xlarge":
         model = "A100-SXM4-40GB"
+    if model in ["RTX 5880 Ada", "RTX5880"]:
+        return "RTX 5880"
+    if model == "RTX6000":
+        return "RTX 6000"
     # drop too specific parts
     model = sub(r" NVL$", "", model)
     model = sub(r"-SXM[0-9]-[0-9]*GB$", "", model)
