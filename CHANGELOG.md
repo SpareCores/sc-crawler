@@ -1,3 +1,9 @@
+## v0.3.x (development version)
+
+Fix(es):
+
+- Don't include instruction cache in L1 cache size.
+
 ## v0.3.2 (Dec 04, 2025)
 
 New vendor(s):
