@@ -5,14 +5,17 @@ from functools import cache
 from itertools import chain
 from os import environ
 
+from alibabacloud_bssopenapi20171214.client import Client as BssClient
+from alibabacloud_bssopenapi20171214.models import QuerySkuPriceListRequest
 from alibabacloud_credentials.client import Client as CredClient
-from alibabacloud_ecs20140526.client import Client
+from alibabacloud_ecs20140526.client import Client as EcsClient
 from alibabacloud_ecs20140526.models import (
     DescribeInstanceTypesRequest,
     DescribeRegionsRequest,
     DescribeZonesRequest,
 )
 from alibabacloud_tea_openapi.models import Config
+from alibabacloud_tea_util.models import RuntimeOptions
 
 from ..inspector import (
     _extract_family,
@@ -36,9 +39,9 @@ from ..tables import Vendor
 
 
 @cache
-def _client(
+def _ecs_client(
     region_id: str = environ.get("ALIBABA_CLOUD_REGION_ID", "eu-central-1"),
-) -> Client:
+) -> EcsClient:
     """Create an Alibaba Cloud client using the default credentials chain.
 
     Args:
@@ -50,10 +53,10 @@ def _client(
     """
     cred = CredClient()
     config = Config(credential=cred, region_id=region_id)
-    return Client(config)
+    return EcsClient(config)
 
 
-def _clients(vendor: Vendor) -> dict[str, Client]:
+def _ecs_clients(vendor: Vendor) -> dict[str, EcsClient]:
     """Create a dictionary of clients for all regions in the vendor.
 
     This needs to be called in the main thread before threading,
@@ -68,9 +71,19 @@ def _clients(vendor: Vendor) -> dict[str, Client]:
         A dictionary of clients for all regions in the vendor.
     """
     return {
-        region.region_id: _client(region_id=region.region_id)
+        region.region_id: _ecs_client(region_id=region.region_id)
         for region in vendor.regions
     }
+
+
+@cache
+def _bss_client(
+    region_id: str = environ.get("ALIBABA_CLOUD_REGION_ID", "eu-central-1"),
+) -> BssClient:
+    """Create an Alibaba Cloud BSS client using the default credentials chain."""
+    cred = CredClient()
+    config = Config(credential=cred, region_id=region_id)
+    return BssClient(config)
 
 
 # ##############################################################################
@@ -274,7 +287,7 @@ def inventory_regions(vendor):
     - <https://api.alibabacloud.com/document/Ecs/2014-05-26/DescribeRegions>
     """
     request = DescribeRegionsRequest(accept_language="en-US")
-    response = _client().describe_regions(request)
+    response = _ecs_client().describe_regions(request)
     regions = [region.to_map() for region in response.body.regions.region]
 
     items = []
@@ -307,7 +320,7 @@ def inventory_zones(vendor):
     vendor.progress_tracker.start_task(
         name="Scanning region(s) for zone(s)", total=len(vendor.regions)
     )
-    clients = _clients(vendor)
+    clients = _ecs_clients(vendor)
 
     def fetch_zones_for_region(region):
         """Worker function to fetch zones for a single region."""
@@ -348,7 +361,7 @@ def inventory_servers(vendor):
     """
     items = []
 
-    client = _client()
+    client = _ecs_client()
 
     request = DescribeInstanceTypesRequest(max_results=1000)
     response = client.describe_instance_types(request)
@@ -455,69 +468,68 @@ def inventory_servers(vendor):
 
 def inventory_server_prices(vendor):
     """
+    TODO
+
     Puts together the list containing information about the hardware capabilities of each ECS type in the Alibaba Cloud service. These are hourly, pay-as-you-go prices.
-
     """
-    items = []
-
-    tempclient = get_client()
-
-    next_token = None
-    page = 1
-    while True:
-        sku_price_data = get_instance_price_with_sku_price_list(
-            tempclient, next_token=next_token
+    client = _bss_client()
+    request = QuerySkuPriceListRequest(
+        commodity_code="ecs_intl",
+        price_entity_code="instance_type",
+        page_size=50,
+        lang="en",
+        # filter for Linux prices only for now
+        price_factor_condition_map={"vm_os_kind": ["linux"]},
+    )
+    runtime = RuntimeOptions()
+    response = client.query_sku_price_list_with_options(request, runtime)
+    skus = [
+        sku_price.to_map()
+        for sku_price in response.body.data.sku_price_page.sku_price_list
+    ]
+    pages = response.body.data.sku_price_page.total_count // 50
+    vendor.progress_tracker.start_task(name="Fetching server prices", total=pages)
+    while response.body.data.sku_price_page.next_page_token:
+        print(".")
+        request.next_page_token = response.body.data.sku_price_page.next_page_token
+        response = client.query_sku_price_list_with_options(request, runtime)
+        skus.extend(
+            [
+                sku_price.to_map()
+                for sku_price in response.body.data.sku_price_page.sku_price_list
+            ]
         )
-        logger.debug(
-            "Getting page {pagenum} of QuerySkuPriceList ...".format(pagenum=page)
-        )
-        for sku in sku_price_data.get("Data").get("SkuPricePage").get("SkuPriceList"):
-            try:
-                logger.debug(
-                    "Adding instance info - region_id: {region_id}, instance type: {itype}, price: {price} {curr}".format(
-                        region_id=sku["SkuFactorMap"]["vm_region_no"],
-                        itype=sku["SkuFactorMap"]["instance_type"],
-                        price=sku["CskuPriceList"][0]["Price"],
-                        curr=sku["CskuPriceList"][0]["Currency"],
-                    )
-                )
-                items.append(
-                    {
-                        "vendor_id": vendor.vendor_id,
-                        "region_id": sku.get("SkuFactorMap").get("vm_region_no"),
-                        "zone_id": "all zones",
-                        "server_id": sku.get("SkuFactorMap").get("instance_type"),
-                        "operating_system": sku.get("SkuFactorMap").get("vm_os_kind"),
-                        "allocation": Allocation.ONDEMAND,
-                        "unit": PriceUnit.HOUR,
-                        "price": sku.get("CskuPriceList")[0].get("Price"),
-                        "price_upfront": 0,
-                        "price_tiered": [],
-                        "currency": sku.get("CskuPriceList")[0].get("Currency"),
-                    }
-                )
-            except ServerException as se:
-                logger.debug(
-                    "Failed to add instance info - region_id: {region_id}, instance type: {itype}, price: {price} {curr}".format(
-                        region_id=sku["SkuFactorMap"]["vm_region_no"],
-                        itype=sku["SkuFactorMap"]["instance_type"],
-                        price=sku["CskuPriceList"][0]["Price"],
-                        curr=sku["CskuPriceList"][0]["Currency"],
-                    )
-                )
-                logger.debug(se)
-        # Safely extract next token if present
-        next_token = (
-            sku_price_data.get("Data", {}).get("SkuPricePage", {}).get("NextPageToken")
-        )
+        vendor.progress_tracker.advance_task()
+    vendor.progress_tracker.hide_task()
 
-        if not next_token:
-            logger.debug(
-                "No more QuerySkuPriceList pages or response json is missing Data — stopping query."
-            )
+    from collections import Counter
+
+    pp(Counter(i.get("SkuFactorMap")["vm_region_no"] for i in skus))
+
+    for i in instance_types:
+        if i.get("InstanceTypeId") == "ecs.i5g.8xlarge":
+            print("OOO")
             break
 
-        page += 1
+    items = []
+    for sku in skus:
+        items.append(
+            {
+                "vendor_id": vendor.vendor_id,
+                # TODO region id is not in sync with the region id in the server inventory
+                # e.g. cn-hongkong-am4-c04
+                "region_id": sku.get("SkuFactorMap").get("vm_region_no"),
+                "zone_id": "all zones",
+                "server_id": sku.get("SkuFactorMap").get("instance_type"),
+                "operating_system": sku.get("SkuFactorMap").get("vm_os_kind"),
+                "allocation": Allocation.ONDEMAND,
+                "unit": PriceUnit.HOUR,
+                "price": sku.get("CskuPriceList")[0].get("Price"),
+                "price_upfront": 0,
+                "price_tiered": [],
+                "currency": sku.get("CskuPriceList")[0].get("Currency"),
+            }
+        )
 
     return items
 

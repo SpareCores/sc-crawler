@@ -57,7 +57,7 @@ gcp = ["google-cloud", "google-cloud-compute", "google-cloud-billing"]
 azure = ["azure-identity", "azure-mgmt-resource", "azure-mgmt-compute"]
 upcloud = ["upcloud-api"]
 ovh = ["ovh"]
-alicloud = ["alibabacloud_ecs20140526"]
+alicloud = ["alibabacloud_ecs20140526", "alibabacloud_bssopenapi20171214"]
 vendors = [
   "sparecores-crawler[aws]",
   "sparecores-crawler[hcloud]",
