@@ -549,6 +549,8 @@ def _extract_manufacturer(name: str) -> str:
             return "AMD"
     if "yitian" in nl:
         return "Alibaba"
+    if "hygon" in nl:
+        return "Hygon"
     return None
 
 
