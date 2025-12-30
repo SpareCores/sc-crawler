@@ -14,6 +14,7 @@ from alibabacloud_ecs20140526.models import (
 )
 from alibabacloud_tea_openapi.models import Config
 
+from ..inspector import _extract_family, _extract_manufacturer, _standardize_cpu_model
 from ..logger import logger
 from ..lookup import map_compliance_frameworks_to_vendor
 from ..table_fields import (
@@ -383,6 +384,7 @@ def inventory_servers(vendor):
     for instance_type in instance_types:
         family = instance_type.get("InstanceTypeFamily")
         vcpus = instance_type.get("CpuCoreCount")
+        cpu_model = instance_type.get("PhysicalProcessorModel")
         memory_size_gb = int((instance_type.get("MemorySize") * 1024))
         storage_size = int(
             instance_type.get("LocalStorageAmount", 0)
@@ -422,11 +424,10 @@ def inventory_servers(vendor):
                 "cpu_allocation": CpuAllocation.DEDICATED,
                 "cpu_cores": instance_type.get("CpuCoreCount", 0),
                 "cpu_speed": drop_zero_value(instance_type.get("CpuSpeedFrequency")),
-                # TODO check after inspector run if vendor API data is better than dmidecode
                 "cpu_architecture": CPU_ARCH_MAP[instance_type.get("CpuArchitecture")],
-                "cpu_manufacturer": None,
-                "cpu_family": None,
-                "cpu_model": instance_type.get("PhysicalProcessorModel"),
+                "cpu_manufacturer": _extract_manufacturer(cpu_model),
+                "cpu_family": _extract_family(cpu_model),
+                "cpu_model": _standardize_cpu_model(cpu_model),
                 "cpu_l1_cache": None,
                 "cpu_l2_cache": None,
                 "cpu_l3_cache": None,
