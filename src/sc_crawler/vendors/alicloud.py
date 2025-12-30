@@ -364,17 +364,6 @@ def inventory_servers(vendor):
         for instance_type in response.body.instance_types.instance_type:
             instance_types.append(instance_type.to_map())
 
-    from collections import Counter
-
-    Counter(
-        instance_type.get("LocalStorageCategory") for instance_type in instance_types
-    )
-
-    for i in instance_types:
-        if i.get("InstanceTypeId") == "ecs.i5g.8xlarge":
-            print("OOO")
-            break
-
     CPU_ARCH_MAP = {"X86": CpuArchitecture.X86_64, "ARM": CpuArchitecture.ARM64}
     STORAGE_CATEGORY_MAP = {
         "": None,
