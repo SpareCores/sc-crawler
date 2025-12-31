@@ -95,7 +95,7 @@ locations = {
     #  - ap-southeast-au49-a01 - no data found on this at all
     # -------- Mainland China --------
     "cn-qingdao": {
-        "alias": "cn-qingdao-cm5-a01",
+        "alias": ["cn-qingdao-cm5-a01"],
         "city": "Qingdao",
         "lat": 36.0671,
         "lon": 120.3826,
@@ -103,7 +103,7 @@ locations = {
         "founding_year": 2012,
     },
     "cn-beijing": {
-        "alias": "cn-beijing-btc-a01",
+        "alias": ["cn-beijing-btc-a01"],
         "city": "Beijing",
         "lat": 39.9042,
         "lon": 116.4074,
@@ -111,7 +111,7 @@ locations = {
         "founding_year": 2013,
     },
     "cn-zhangjiakou": {
-        "alias": "cn-zhangjiakou-na62-a01",
+        "alias": ["cn-zhangjiakou-na62-a01"],
         "city": "Zhangjiakou",
         "lat": 40.8244,
         "lon": 114.8875,
@@ -119,7 +119,7 @@ locations = {
         "founding_year": 2014,
     },
     "cn-huhehaote": {
-        "alias": "cn-huhehaote-nt12-a01",
+        "alias": ["cn-huhehaote-nt12-a01"],
         "city": "Hohhot",
         "lat": 40.8426,
         "lon": 111.7490,
@@ -127,7 +127,7 @@ locations = {
         "founding_year": 2017,
     },
     "cn-wulanchabu": {
-        "alias": "cn-wulanchabu-na130-a01",
+        "alias": ["cn-wulanchabu-na130-a01"],
         "city": "Ulanqab",
         "lat": 41.0350,
         "lon": 113.1343,
@@ -135,7 +135,7 @@ locations = {
         "founding_year": 2020,
     },
     "cn-hangzhou": {
-        "alias": "cn-hangzhou-dg-a01",
+        "alias": ["cn-hangzhou-dg-a01"],
         "city": "Hangzhou",
         "lat": 30.2741,
         "lon": 120.1551,
@@ -143,7 +143,7 @@ locations = {
         "founding_year": 2011,
     },
     "cn-shanghai": {
-        "alias": "cn-shanghai-eu13-a01",
+        "alias": ["cn-shanghai-eu13-a01"],
         "city": "Shanghai",
         "lat": 31.2304,
         "lon": 121.4737,
@@ -152,7 +152,7 @@ locations = {
     },
     "cn-nanjing": {
         # local region and closing
-        "alias": "cn-nanjing-lnj1-a01",
+        "alias": ["cn-nanjing-lnj1-a01"],
         "city": "Nanjing",
         "lat": 32.0603,
         "lon": 118.7969,
@@ -160,7 +160,7 @@ locations = {
         "founding_year": 2021,
     },
     "cn-shenzhen": {
-        "alias": "cn-shenzhen-st3-a01",
+        "alias": ["cn-shenzhen-st3-a01"],
         "city": "Shenzhen",
         "lat": 22.5431,
         "lon": 114.0579,
@@ -168,7 +168,7 @@ locations = {
         "founding_year": 2014,
     },
     "cn-heyuan": {
-        "alias": "cn-heyuan-sa127-a01",
+        "alias": ["cn-heyuan-sa127-a01"],
         "city": "Heyuan",
         "lat": 23.7405,
         "lon": 114.7003,
@@ -176,7 +176,7 @@ locations = {
         "founding_year": 2020,
     },
     "cn-guangzhou": {
-        "alias": "cn-guangzhou-so157-a01",
+        "alias": ["cn-guangzhou-so157-a01"],
         "city": "Guangzhou",
         "lat": 23.1291,
         "lon": 113.2644,
@@ -185,7 +185,7 @@ locations = {
     },
     "cn-fuzhou": {
         # local region and closing
-        "alias": "cn-fuzhou",
+        "alias": ["cn-fuzhou"],
         "city": "Fuzhou",
         "lat": 26.0745,
         "lon": 119.2965,
@@ -201,7 +201,7 @@ locations = {
         "founding_year": 2023,
     },
     "cn-chengdu": {
-        "alias": "cn-chengdu-wt97-a01",
+        "alias": ["cn-chengdu-wt97-a01"],
         "city": "Chengdu",
         "lat": 30.5728,
         "lon": 104.0668,
@@ -210,7 +210,7 @@ locations = {
     },
     # -------- Hong Kong --------
     "cn-hongkong": {
-        "alias": "cn-hongkong-am4-c04",
+        "alias": ["cn-hongkong-am4-c04"],
         "city": "Hong Kong",
         "lat": 22.3193,
         "lon": 114.1694,
@@ -219,7 +219,7 @@ locations = {
     },
     # -------- Asia Pacific --------
     "ap-northeast-1": {
-        "alias": "ap-northeast-jp59-a01",
+        "alias": ["ap-northeast-jp59-a01"],
         "city": "Tokyo",
         "lat": 35.6895,
         "lon": 139.6917,
@@ -227,7 +227,7 @@ locations = {
         "founding_year": 2016,
     },
     "ap-northeast-2": {
-        "alias": "ap-northeast-2",
+        "alias": ["ap-northeast-2"],
         "city": "Seoul",
         "lat": 37.5665,
         "lon": 126.9780,
@@ -235,7 +235,7 @@ locations = {
         "founding_year": 2022,
     },
     "ap-southeast-1": {
-        "alias": "ap-southeast-os30-a01",
+        "alias": ["ap-southeast-os30-a01"],
         "city": "Singapore",
         "lat": 1.3521,
         "lon": 103.8198,
@@ -243,7 +243,7 @@ locations = {
         "founding_year": 2015,
     },
     "ap-southeast-3": {
-        "alias": "ap-southeast-my88-a01",
+        "alias": ["ap-southeast-my88-a01"],
         "city": "Kuala Lumpur",
         "lat": 3.1390,
         "lon": 101.6869,
@@ -251,7 +251,7 @@ locations = {
         "founding_year": 2017,
     },
     "ap-southeast-6": {
-        "alias": "ap-southeast-6",
+        "alias": ["ap-southeast-6"],
         "city": "Manila",
         "lat": 14.5995,
         "lon": 120.9842,
@@ -259,7 +259,7 @@ locations = {
         "founding_year": 2021,
     },
     "ap-southeast-5": {
-        "alias": "ap-southeast-id35-a01",
+        "alias": ["ap-southeast-id35-a01"],
         "city": "Jakarta",
         "lat": 6.2088,
         "lon": 106.8456,
@@ -267,7 +267,7 @@ locations = {
         "founding_year": 2018,
     },
     "ap-southeast-7": {
-        "alias": "ap-southeast-7",
+        "alias": ["ap-southeast-7"],
         "city": "Bangkok",
         "lat": 13.7563,
         "lon": 100.5018,
@@ -276,7 +276,7 @@ locations = {
     },
     # -------- United States --------
     "us-east-1": {
-        "alias": "us-east-us44-a01",
+        "alias": ["us-east-us44-a01"],
         "city": "Virginia",
         "lat": 38.0293,
         "lon": -78.4767,
@@ -284,7 +284,7 @@ locations = {
         "founding_year": 2015,
     },
     "us-west-1": {
-        "alias": "us-west-ot7-a01",
+        "alias": ["us-west-ot7-a01"],
         "city": "Silicon Valley",
         "lat": 37.3875,
         "lon": -122.0575,
@@ -301,7 +301,7 @@ locations = {
     },
     # -------- Europe --------
     "eu-west-1": {
-        "alias": "eu-west-1-gb33-a01",
+        "alias": ["eu-west-1-gb33-a01"],
         "city": "London",
         "lat": 51.5074,
         "lon": -0.1278,
@@ -309,7 +309,7 @@ locations = {
         "founding_year": 2018,
     },
     "eu-central-1": {
-        "alias": "eu-central-de46-a01",
+        "alias": ["eu-central-de46-a01"],
         "city": "Frankfurt",
         "lat": 50.1109,
         "lon": 8.6821,
@@ -318,7 +318,7 @@ locations = {
     },
     # -------- Middle East --------
     "me-east-1": {
-        "alias": "me-east-db47-a01",
+        "alias": ["me-east-db47-a01"],
         "city": "Dubai",
         "lat": 25.2048,
         "lon": 55.2708,
@@ -327,7 +327,7 @@ locations = {
     },
     "me-central-1": {
         # partner region
-        "alias": "me-central-1",
+        "alias": ["me-central-1"],
         "city": "Riyadh",
         "lat": 24.7136,
         "lon": 46.6753,
