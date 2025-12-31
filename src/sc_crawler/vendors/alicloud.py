@@ -64,6 +64,10 @@ def _ecs_clients(vendor: Vendor) -> dict[str, EcsClient]:
     and throws the "signal only works in main thread of the main interpreter"
     `RuntimeError` if called in a thread.
 
+    References:
+
+    - Region name changes (old names recorded as alias): <https://help.aliyun.com/zh/user-center/product-overview/regional-name-change-announcement>
+
     Args:
         vendor: The vendor to create clients for.
 
@@ -90,74 +94,89 @@ def _bss_client(
 # Manual data/mapping
 
 region_locations = {
+    # TODO unknown region ids returned by QuerySkuPriceListRequest:
+    #  - ap-south-in73-a01 - India (Mumbai) Closed Down
+    #  - ap-southeast-au49-a01 - no data found on this at all
     # -------- Mainland China --------
     "cn-qingdao": {
+        "alias": "cn-qingdao-cm5-a01",
         "city": "Qingdao",
         "lat": 36.0671,
         "lon": 120.3826,
         "country_id": "CN",
     },
     "cn-beijing": {
+        "alias": "cn-beijing-btc-a01",
         "city": "Beijing",
         "lat": 39.9042,
         "lon": 116.4074,
         "country_id": "CN",
     },
     "cn-zhangjiakou": {
+        "alias": "cn-zhangjiakou-na62-a01",
         "city": "Zhangjiakou",
         "lat": 40.8244,
         "lon": 114.8875,
         "country_id": "CN",
     },
     "cn-huhehaote": {
+        "alias": "cn-huhehaote-nt12-a01",
         "city": "Hohhot",
         "lat": 40.8426,
         "lon": 111.7490,
         "country_id": "CN",
     },
     "cn-wulanchabu": {
+        "alias": "cn-wulanchabu-na130-a01",
         "city": "Ulanqab",
         "lat": 41.0350,
         "lon": 113.1343,
         "country_id": "CN",
     },
     "cn-hangzhou": {
+        "alias": "cn-hangzhou-dg-a01",
         "city": "Hangzhou",
         "lat": 30.2741,
         "lon": 120.1551,
         "country_id": "CN",
     },
     "cn-shanghai": {
+        "alias": "cn-shanghai-eu13-a01",
         "city": "Shanghai",
         "lat": 31.2304,
         "lon": 121.4737,
         "country_id": "CN",
     },
     "cn-nanjing": {
+        "alias": "cn-nanjing-lnj1-a01",
         "city": "Nanjing",
         "lat": 32.0603,
         "lon": 118.7969,
         "country_id": "CN",
     },
     "cn-shenzhen": {
+        "alias": "cn-shenzhen-st3-a01",
         "city": "Shenzhen",
         "lat": 22.5431,
         "lon": 114.0579,
         "country_id": "CN",
     },
     "cn-heyuan": {
+        "alias": "cn-heyuan-sa127-a01",
         "city": "Heyuan",
         "lat": 23.7405,
         "lon": 114.7003,
         "country_id": "CN",
     },
     "cn-guangzhou": {
+        "alias": "cn-guangzhou-so157-a01",
         "city": "Guangzhou",
         "lat": 23.1291,
         "lon": 113.2644,
         "country_id": "CN",
     },
     "cn-fuzhou": {
+        "alias": "cn-fuzhou",
         "city": "Fuzhou",
         "lat": 26.0745,
         "lon": 119.2965,
@@ -170,6 +189,7 @@ region_locations = {
         "country_id": "CN",
     },
     "cn-chengdu": {
+        "alias": "cn-chengdu-wt97-a01",
         "city": "Chengdu",
         "lat": 30.5728,
         "lon": 104.0668,
@@ -177,6 +197,7 @@ region_locations = {
     },
     # -------- Hong Kong --------
     "cn-hongkong": {
+        "alias": "cn-hongkong-am4-c04",
         "city": "Hong Kong",
         "lat": 22.3193,
         "lon": 114.1694,
@@ -184,42 +205,49 @@ region_locations = {
     },
     # -------- Asia Pacific --------
     "ap-northeast-1": {
+        "alias": "ap-northeast-jp59-a01",
         "city": "Tokyo",
         "lat": 35.6895,
         "lon": 139.6917,
         "country_id": "JP",
     },
     "ap-northeast-2": {
+        "alias": "ap-northeast-2",
         "city": "Seoul",
         "lat": 37.5665,
         "lon": 126.9780,
         "country_id": "KR",
     },
     "ap-southeast-1": {
+        "alias": "ap-southeast-os30-a01",
         "city": "Singapore",
         "lat": 1.3521,
         "lon": 103.8198,
         "country_id": "SG",
     },
     "ap-southeast-3": {
+        "alias": "ap-southeast-my88-a01",
         "city": "Kuala Lumpur",
         "lat": 3.1390,
         "lon": 101.6869,
         "country_id": "MY",
     },
     "ap-southeast-6": {
+        "alias": "ap-southeast-6",
         "city": "Manila",
         "lat": 14.5995,
         "lon": 120.9842,
         "country_id": "PH",
     },
     "ap-southeast-5": {
+        "alias": "ap-southeast-id35-a01",
         "city": "Jakarta",
         "lat": 6.2088,
         "lon": 106.8456,
         "country_id": "ID",
     },
     "ap-southeast-7": {
+        "alias": "ap-southeast-7",
         "city": "Bangkok",
         "lat": 13.7563,
         "lon": 100.5018,
@@ -227,12 +255,14 @@ region_locations = {
     },
     # -------- United States --------
     "us-east-1": {
+        "alias": "us-east-us44-a01",
         "city": "Virginia",
         "lat": 38.0293,
         "lon": -78.4767,
         "country_id": "US",
     },
     "us-west-1": {
+        "alias": "us-west-ot7-a01",
         "city": "Silicon Valley",
         "lat": 37.3875,
         "lon": -122.0575,
@@ -246,16 +276,30 @@ region_locations = {
         "country_id": "MX",
     },
     # -------- Europe --------
-    "eu-west-1": {"city": "London", "lat": 51.5074, "lon": -0.1278, "country_id": "GB"},
+    "eu-west-1": {
+        "alias": "eu-west-1-gb33-a01",
+        "city": "London",
+        "lat": 51.5074,
+        "lon": -0.1278,
+        "country_id": "GB",
+    },
     "eu-central-1": {
+        "alias": "eu-central-de46-a01",
         "city": "Frankfurt",
         "lat": 50.1109,
         "lon": 8.6821,
         "country_id": "DE",
     },
     # -------- Middle East --------
-    "me-east-1": {"city": "Dubai", "lat": 25.2048, "lon": 55.2708, "country_id": "AE"},
+    "me-east-1": {
+        "alias": "me-east-db47-a01",
+        "city": "Dubai",
+        "lat": 25.2048,
+        "lon": 55.2708,
+        "country_id": "AE",
+    },
     "me-central-1": {
+        "alias": "me-central-1",
         "city": "Riyadh",
         "lat": 24.7136,
         "lon": 46.6753,
