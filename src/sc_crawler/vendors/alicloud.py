@@ -3,6 +3,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from functools import cache
 from itertools import chain
+from logging import WARN
 from os import environ
 
 from alibabacloud_bssopenapi20171214.client import Client as BssClient
@@ -558,9 +559,8 @@ def inventory_server_prices(vendor):
         for sku_price in response.body.data.sku_price_page.sku_price_list
     ]
     pages = response.body.data.sku_price_page.total_count // 50
-    vendor.progress_tracker.start_task(name="Fetching server prices", total=pages)
+    vendor.progress_tracker.start_task(name="Fetching server price pages", total=pages)
     while response.body.data.sku_price_page.next_page_token:
-        print(".")
         request.next_page_token = response.body.data.sku_price_page.next_page_token
         response = client.query_sku_price_list_with_options(request, runtime)
         skus.extend(
@@ -572,35 +572,41 @@ def inventory_server_prices(vendor):
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
 
-    from collections import Counter
-
-    pp(Counter(i.get("SkuFactorMap")["vm_region_no"] for i in skus))
-
-    for i in instance_types:
-        if i.get("InstanceTypeId") == "ecs.i5g.8xlarge":
-            print("OOO")
-            break
-
     items = []
+    unsupported_regions = set()
     for sku in skus:
-        items.append(
-            {
-                "vendor_id": vendor.vendor_id,
-                # TODO region id is not in sync with the region id in the server inventory
-                # e.g. cn-hongkong-am4-c04
-                "region_id": sku.get("SkuFactorMap").get("vm_region_no"),
-                "zone_id": "all zones",
-                "server_id": sku.get("SkuFactorMap").get("instance_type"),
-                "operating_system": sku.get("SkuFactorMap").get("vm_os_kind"),
-                "allocation": Allocation.ONDEMAND,
-                "unit": PriceUnit.HOUR,
-                "price": sku.get("CskuPriceList")[0].get("Price"),
-                "price_upfront": 0,
-                "price_tiered": [],
-                "currency": sku.get("CskuPriceList")[0].get("Currency"),
-            }
+        region = next(
+            (
+                region
+                for region in vendor.regions
+                if (
+                    sku["SkuFactorMap"]["vm_region_no"]
+                    in [region.api_reference, *region.aliases]
+                )
+            ),
+            None,
         )
-
+        if not region:
+            unsupported_regions.add(sku["SkuFactorMap"]["vm_region_no"])
+            continue
+        for zone in region.zones:
+            items.append(
+                {
+                    "vendor_id": vendor.vendor_id,
+                    "region_id": region.region_id,
+                    "zone_id": zone.zone_id,
+                    "server_id": sku.get("SkuFactorMap").get("instance_type"),
+                    "operating_system": sku.get("SkuFactorMap").get("vm_os_kind"),
+                    "allocation": Allocation.ONDEMAND,
+                    "unit": PriceUnit.HOUR,
+                    "price": sku.get("CskuPriceList")[0].get("Price"),
+                    "price_upfront": 0,
+                    "price_tiered": [],
+                    "currency": sku.get("CskuPriceList")[0].get("Currency"),
+                }
+            )
+    for unsupported_region in unsupported_regions:
+        vendor.log(f"Found non-supported region: {unsupported_region}", level=WARN)
     return items
 
 
