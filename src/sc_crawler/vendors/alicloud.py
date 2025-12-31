@@ -185,7 +185,6 @@ locations = {
     },
     "cn-fuzhou": {
         # local region and closing
-        "alias": ["cn-fuzhou"],
         "city": "Fuzhou",
         "lat": 26.0745,
         "lon": 119.2965,
@@ -227,7 +226,6 @@ locations = {
         "founding_year": 2016,
     },
     "ap-northeast-2": {
-        "alias": ["ap-northeast-2"],
         "city": "Seoul",
         "lat": 37.5665,
         "lon": 126.9780,
@@ -251,7 +249,6 @@ locations = {
         "founding_year": 2017,
     },
     "ap-southeast-6": {
-        "alias": ["ap-southeast-6"],
         "city": "Manila",
         "lat": 14.5995,
         "lon": 120.9842,
@@ -267,7 +264,6 @@ locations = {
         "founding_year": 2018,
     },
     "ap-southeast-7": {
-        "alias": ["ap-southeast-7"],
         "city": "Bangkok",
         "lat": 13.7563,
         "lon": 100.5018,
@@ -327,7 +323,6 @@ locations = {
     },
     "me-central-1": {
         # partner region
-        "alias": ["me-central-1"],
         "city": "Riyadh",
         "lat": 24.7136,
         "lon": 46.6753,
@@ -375,7 +370,7 @@ def inventory_regions(vendor):
                 "name": region.get("LocalName"),
                 "api_reference": region.get("RegionId"),
                 "display_name": region.get("LocalName"),
-                "aliases": [],
+                "aliases": location.get("alias", []),
                 "country_id": location.get("country_id"),
                 "state": None,  # not available
                 "city": location.get("city"),
