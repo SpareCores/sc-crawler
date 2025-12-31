@@ -64,10 +64,6 @@ def _ecs_clients(vendor: Vendor) -> dict[str, EcsClient]:
     and throws the "signal only works in main thread of the main interpreter"
     `RuntimeError` if called in a thread.
 
-    References:
-
-    - Region name changes (old names recorded as alias): <https://help.aliyun.com/zh/user-center/product-overview/regional-name-change-announcement>
-
     Args:
         vendor: The vendor to create clients for.
 
@@ -93,7 +89,7 @@ def _bss_client(
 # ##############################################################################
 # Manual data/mapping
 
-region_locations = {
+locations = {
     # TODO unknown region ids returned by QuerySkuPriceListRequest:
     #  - ap-south-in73-a01 - India (Mumbai) Closed Down
     #  - ap-southeast-au49-a01 - no data found on this at all
@@ -104,6 +100,7 @@ region_locations = {
         "lat": 36.0671,
         "lon": 120.3826,
         "country_id": "CN",
+        "founding_year": 2012,
     },
     "cn-beijing": {
         "alias": "cn-beijing-btc-a01",
@@ -111,6 +108,7 @@ region_locations = {
         "lat": 39.9042,
         "lon": 116.4074,
         "country_id": "CN",
+        "founding_year": 2013,
     },
     "cn-zhangjiakou": {
         "alias": "cn-zhangjiakou-na62-a01",
@@ -118,6 +116,7 @@ region_locations = {
         "lat": 40.8244,
         "lon": 114.8875,
         "country_id": "CN",
+        "founding_year": 2014,
     },
     "cn-huhehaote": {
         "alias": "cn-huhehaote-nt12-a01",
@@ -125,6 +124,7 @@ region_locations = {
         "lat": 40.8426,
         "lon": 111.7490,
         "country_id": "CN",
+        "founding_year": 2017,
     },
     "cn-wulanchabu": {
         "alias": "cn-wulanchabu-na130-a01",
@@ -132,6 +132,7 @@ region_locations = {
         "lat": 41.0350,
         "lon": 113.1343,
         "country_id": "CN",
+        "founding_year": 2020,
     },
     "cn-hangzhou": {
         "alias": "cn-hangzhou-dg-a01",
@@ -139,6 +140,7 @@ region_locations = {
         "lat": 30.2741,
         "lon": 120.1551,
         "country_id": "CN",
+        "founding_year": 2011,
     },
     "cn-shanghai": {
         "alias": "cn-shanghai-eu13-a01",
@@ -146,13 +148,16 @@ region_locations = {
         "lat": 31.2304,
         "lon": 121.4737,
         "country_id": "CN",
+        "founding_year": 2015,
     },
     "cn-nanjing": {
+        # local region and closing
         "alias": "cn-nanjing-lnj1-a01",
         "city": "Nanjing",
         "lat": 32.0603,
         "lon": 118.7969,
         "country_id": "CN",
+        "founding_year": 2021,
     },
     "cn-shenzhen": {
         "alias": "cn-shenzhen-st3-a01",
@@ -160,6 +165,7 @@ region_locations = {
         "lat": 22.5431,
         "lon": 114.0579,
         "country_id": "CN",
+        "founding_year": 2014,
     },
     "cn-heyuan": {
         "alias": "cn-heyuan-sa127-a01",
@@ -167,6 +173,7 @@ region_locations = {
         "lat": 23.7405,
         "lon": 114.7003,
         "country_id": "CN",
+        "founding_year": 2020,
     },
     "cn-guangzhou": {
         "alias": "cn-guangzhou-so157-a01",
@@ -174,19 +181,24 @@ region_locations = {
         "lat": 23.1291,
         "lon": 113.2644,
         "country_id": "CN",
+        "founding_year": 2020,
     },
     "cn-fuzhou": {
+        # local region and closing
         "alias": "cn-fuzhou",
         "city": "Fuzhou",
         "lat": 26.0745,
         "lon": 119.2965,
         "country_id": "CN",
+        "founding_year": 2022,
     },
     "cn-wuhan-lr": {
+        # local region
         "city": "Wuhan",
         "lat": 30.5928,
         "lon": 114.3055,
         "country_id": "CN",
+        "founding_year": 2023,
     },
     "cn-chengdu": {
         "alias": "cn-chengdu-wt97-a01",
@@ -194,6 +206,7 @@ region_locations = {
         "lat": 30.5728,
         "lon": 104.0668,
         "country_id": "CN",
+        "founding_year": 2020,
     },
     # -------- Hong Kong --------
     "cn-hongkong": {
@@ -202,6 +215,7 @@ region_locations = {
         "lat": 22.3193,
         "lon": 114.1694,
         "country_id": "HK",
+        "founding_year": 2014,
     },
     # -------- Asia Pacific --------
     "ap-northeast-1": {
@@ -210,6 +224,7 @@ region_locations = {
         "lat": 35.6895,
         "lon": 139.6917,
         "country_id": "JP",
+        "founding_year": 2016,
     },
     "ap-northeast-2": {
         "alias": "ap-northeast-2",
@@ -217,6 +232,7 @@ region_locations = {
         "lat": 37.5665,
         "lon": 126.9780,
         "country_id": "KR",
+        "founding_year": 2022,
     },
     "ap-southeast-1": {
         "alias": "ap-southeast-os30-a01",
@@ -224,6 +240,7 @@ region_locations = {
         "lat": 1.3521,
         "lon": 103.8198,
         "country_id": "SG",
+        "founding_year": 2015,
     },
     "ap-southeast-3": {
         "alias": "ap-southeast-my88-a01",
@@ -231,6 +248,7 @@ region_locations = {
         "lat": 3.1390,
         "lon": 101.6869,
         "country_id": "MY",
+        "founding_year": 2017,
     },
     "ap-southeast-6": {
         "alias": "ap-southeast-6",
@@ -238,6 +256,7 @@ region_locations = {
         "lat": 14.5995,
         "lon": 120.9842,
         "country_id": "PH",
+        "founding_year": 2021,
     },
     "ap-southeast-5": {
         "alias": "ap-southeast-id35-a01",
@@ -245,6 +264,7 @@ region_locations = {
         "lat": 6.2088,
         "lon": 106.8456,
         "country_id": "ID",
+        "founding_year": 2018,
     },
     "ap-southeast-7": {
         "alias": "ap-southeast-7",
@@ -252,6 +272,7 @@ region_locations = {
         "lat": 13.7563,
         "lon": 100.5018,
         "country_id": "TH",
+        "founding_year": 2022,
     },
     # -------- United States --------
     "us-east-1": {
@@ -260,6 +281,7 @@ region_locations = {
         "lat": 38.0293,
         "lon": -78.4767,
         "country_id": "US",
+        "founding_year": 2015,
     },
     "us-west-1": {
         "alias": "us-west-ot7-a01",
@@ -267,6 +289,7 @@ region_locations = {
         "lat": 37.3875,
         "lon": -122.0575,
         "country_id": "US",
+        "founding_year": 2014,
     },
     # -------- North America --------
     "na-south-1": {
@@ -274,6 +297,7 @@ region_locations = {
         "lat": 19.4326,
         "lon": -99.1332,
         "country_id": "MX",
+        "founding_year": 2025,
     },
     # -------- Europe --------
     "eu-west-1": {
@@ -282,6 +306,7 @@ region_locations = {
         "lat": 51.5074,
         "lon": -0.1278,
         "country_id": "GB",
+        "founding_year": 2018,
     },
     "eu-central-1": {
         "alias": "eu-central-de46-a01",
@@ -289,6 +314,7 @@ region_locations = {
         "lat": 50.1109,
         "lon": 8.6821,
         "country_id": "DE",
+        "founding_year": 2016,
     },
     # -------- Middle East --------
     "me-east-1": {
@@ -297,13 +323,16 @@ region_locations = {
         "lat": 25.2048,
         "lon": 55.2708,
         "country_id": "AE",
+        "founding_year": 2016,
     },
     "me-central-1": {
+        # partner region
         "alias": "me-central-1",
         "city": "Riyadh",
         "lat": 24.7136,
         "lon": 46.6753,
         "country_id": "SA",
+        "founding_year": 2022,
     },
 }
 
@@ -329,6 +358,8 @@ def inventory_regions(vendor):
     Data sources:
 
     - <https://api.alibabacloud.com/document/Ecs/2014-05-26/DescribeRegions>
+    - Foundation year collected from <https://www.alibabacloud.com/en/global-locations?_p_lc=1>
+    - Aliases (old region names) collected from <https://help.aliyun.com/zh/user-center/product-overview/regional-name-change-announcement>
     """
     request = DescribeRegionsRequest(accept_language="en-US")
     response = _ecs_client().describe_regions(request)
@@ -336,7 +367,7 @@ def inventory_regions(vendor):
 
     items = []
     for region in regions:
-        location = region_locations[region.get("RegionId")]
+        location = locations[region.get("RegionId")]
         items.append(
             {
                 "vendor_id": vendor.vendor_id,
