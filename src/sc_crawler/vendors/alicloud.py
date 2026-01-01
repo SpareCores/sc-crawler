@@ -31,6 +31,7 @@ from ..table_fields import (
     CpuArchitecture,
     PriceUnit,
     StorageType,
+    TrafficDirection,
 )
 from ..tables import Vendor
 
@@ -795,20 +796,56 @@ def inventory_storage_prices(vendor):
 
 
 def inventory_traffic_prices(vendor):
-    # TODO: implement later.
+    """TODO
+
+    Inbound is free as per <https://www.alibabacloud.com/help/en/ecs/public-bandwidth>.
+    """
     items = []
-    # for price in []:
-    #     items.append(
-    #         {
-    #             "vendor_id": vendor.vendor_id,
-    #             "region_id": ,
-    #             "price": ,
-    #             "price_tiered": [],
-    #             "currency": "USD",
-    #             "unit": PriceUnit.GB_MONTH,
-    #             "direction": TrafficDirection....,
-    #         }
-    #     )
+    skus = _get_sku_prices(
+        sku_type="traffic",
+        extra_request_params={"price_entity_code": "vm_flow_out"},
+        # vendor=vendor,
+    )
+    unsupported_regions = set()
+    for sku in skus:
+        region_id = sku["SkuFactorMap"]["vm_region_no"]
+        region = next(
+            (
+                region
+                for region in vendor.regions
+                if (region_id in [region.api_reference, *region.aliases])
+            ),
+            None,
+        )
+        if not region:
+            unsupported_regions.add(region_id)
+            continue
+        price = next(p for p in sku["CskuPriceList"] if float(p["Price"]) > 0)
+        items.append(
+            {
+                "vendor_id": vendor.vendor_id,
+                "region_id": region.region_id,
+                "price": price["Price"],
+                "price_tiered": [],
+                "currency": price["Currency"],
+                "unit": PriceUnit.GB_MONTH,
+                "direction": TrafficDirection.OUT,
+            }
+        )
+        # incoming traffic is free
+        items.append(
+            {
+                "vendor_id": vendor.vendor_id,
+                "region_id": region.region_id,
+                "price": 0,
+                "price_tiered": [],
+                "currency": price["Currency"],
+                "unit": PriceUnit.GB_MONTH,
+                "direction": TrafficDirection.IN,
+            }
+        )
+    for unsupported_region in unsupported_regions:
+        vendor.log(f"Found non-supported region: {unsupported_region}", level=WARN)
     return items
 
 
