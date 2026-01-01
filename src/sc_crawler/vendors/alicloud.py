@@ -628,22 +628,19 @@ def inventory_server_prices_spot(vendor):
 
 
 def inventory_storages(vendor):
+    """List all block storage offerings.
+
+    Data sources:
+
+    - <https://www.alibabacloud.com/help/en/ecs/user-guide/essds>
+    - <https://www.alibabacloud.com/help/en/ecs/developer-reference/api-ecs-2014-05-26-createdisk>
     """
-    Puts together a list on hardware information related to different disk type choices available to be attached to an ECS instance. Most of the information is not supplied by the API, so instead this information is manually gathered and hardcoded based on the official information available in the related section of the user guide pages. MB/s is converted to Mb/sec to store information consistent to data supplied by the AWS module.
-    <https://www.alibabacloud.com/help/en/ecs/user-guide/essds>
-    """
-
-    items = []
-
-    # hardcoded, because API does not give back this information. MB/s converted to Mb/s
-    # source: https://www.alibabacloud.com/help/en/ecs/user-guide/essds
-
     disk_info = [
         {
             "name": "cloud_essd-pl0",
             "min_size": 1,
             "max_size": 65536,
-            "max_iop": 10000,
+            "max_iops": 10000,
             "max_tp": 1440,
             "info": "Enterprise SSD with Performance level 0.",
         },
@@ -651,7 +648,7 @@ def inventory_storages(vendor):
             "name": "cloud_essd-pl1",
             "min_size": 20,
             "max_size": 65536,
-            "max_iop": 50000,
+            "max_iops": 50000,
             "max_tp": 2800,
             "info": "Enterprise SSD with Performance level 1.",
         },
@@ -659,7 +656,7 @@ def inventory_storages(vendor):
             "name": "cloud_essd-pl2",
             "min_size": 461,
             "max_size": 65536,
-            "max_iop": 100000,
+            "max_iops": 100000,
             "max_tp": 6000,
             "info": "Enterprise SSD with Performance level 2.",
         },
@@ -667,7 +664,7 @@ def inventory_storages(vendor):
             "name": "cloud_essd-pl3",
             "min_size": 1261,
             "max_size": 65536,
-            "max_iop": 1000000,
+            "max_iops": 1000000,
             "max_tp": 32000,
             "info": "Enterprise SSD with Performance level 3.",
         },
@@ -675,7 +672,7 @@ def inventory_storages(vendor):
             "name": "cloud_ssd",
             "min_size": 20,
             "max_size": 32768,
-            "max_iop": 20000,
+            "max_iops": 20000,
             "max_tp": 256,
             "info": "Standard SSD.",
         },
@@ -683,7 +680,7 @@ def inventory_storages(vendor):
             "name": "cloud_efficiency",
             "min_size": 20,
             "max_size": 32768,
-            "max_iop": 3000,
+            "max_iops": 3000,
             "max_tp": 80,
             "info": "Ultra Disk, older generation.",
         },
@@ -691,26 +688,24 @@ def inventory_storages(vendor):
             "name": "cloud",
             "min_size": 5,
             "max_size": 2000,
-            "max_iop": 300,
+            "max_iops": 300,
             "max_tp": 40,
             "info": "Lowest cost HDD.",
         },
     ]
 
+    items = []
     for disk in disk_info:
-        logger.debug(
-            "Adding information to database on disk type {}...".format(disk.get("name"))
-        )
         items.append(
             {
                 "storage_id": disk.get("name"),
                 "vendor_id": vendor.vendor_id,
                 "name": disk.get("name"),
                 "description": disk.get("info"),
-                "storage_type": StorageType.HDD
-                if disk.get("name") == "cloud"
-                else StorageType.SSD,
-                "max_iops": disk.get("max_iop"),
+                "storage_type": (
+                    StorageType.HDD if disk.get("name") == "cloud" else StorageType.SSD
+                ),
+                "max_iops": disk.get("max_iops"),
                 "max_throughput": disk.get("max_tp"),
                 "min_size": disk.get("min_size"),
                 "max_size": disk.get("max_size"),
