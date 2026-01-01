@@ -12,6 +12,7 @@ from alibabacloud_credentials.client import Client as CredClient
 from alibabacloud_ecs20140526.client import Client as EcsClient
 from alibabacloud_ecs20140526.models import (
     DescribeInstanceTypesRequest,
+    DescribePriceRequest,
     DescribeRegionsRequest,
     DescribeZonesRequest,
 )
@@ -538,11 +539,9 @@ def inventory_servers(vendor):
 
 
 def inventory_server_prices(vendor):
-    """
-    TODO
+    """Fetch server pricing and regional availability using the `QuerySkuPriceListRequest` API endpoint.
 
-    Puts together the list containing information about the hardware capabilities of each ECS type in the Alibaba Cloud service. These are hourly, pay-as-you-go prices.
-    """
+    Alternative approach could be looking at <https://g.alicdn.com/aliyun/ecs-price-info-intl/2.0.375/price/download/instancePrice.json>."""
     client = _bss_client()
     request = QuerySkuPriceListRequest(
         commodity_code="ecs_intl",
@@ -611,8 +610,20 @@ def inventory_server_prices(vendor):
 
 
 def inventory_server_prices_spot(vendor):
-    # TODO: implement later.
-
+    # TODO spot prices can only be queried one-by-one, so let's revisit later?
+    # client = _ecs_client()
+    # request = DescribePriceRequest(
+    #     region_id="eu-central-1",
+    #     resource_type="instance",
+    #     instance_type="ecs.c6.large",
+    #     spot_strategy="SpotAsPriceGo",
+    # )
+    # response = client.describe_price(request)
+    # next(
+    #     p.trade_price
+    #     for p in response.body.price_info.price.detail_infos.detail_info
+    #     if p.resource == "instanceType"
+    # )
     return []
 
 

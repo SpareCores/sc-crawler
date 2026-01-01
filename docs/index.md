@@ -190,7 +190,7 @@ This choice affects the currency used for prices.
 
 <summary>Alibaba Cloud</summary>
 
-Create a RAM user with the `AliyunBSSReadOnlyAccess` system policy (or a custom policy with at least the `bss:DescribeProduct` permission), then configure the following environment variables:
+Create a RAM user with the `AliyunBSSReadOnlyAccess` and `AliyunECSReadOnlyAccess` system policies (or a custom policy with at least the `bss:DescribeProduct` and `ecs:DescribePrice` permissions), then configure the following environment variables:
 
 - `ALIBABA_CLOUD_ACCESS_KEY_ID`
 - `ALIBABA_CLOUD_ACCESS_KEY_SECRET`
