@@ -760,7 +760,7 @@ def inventory_storage_prices(vendor):
         pl = sku["SkuFactorMap"]["datadisk_performance_level"]
         if storage_id in ["cloud", "cloud_ssd", "cloud_efficiency"]:
             # no diff in performance levels, pick one
-            if pl != "P1":
+            if pl != "PL1":
                 continue
         else:
             # keep the 4 performance levels
