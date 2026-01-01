@@ -1,10 +1,9 @@
-import json
-import os
 from concurrent.futures import ThreadPoolExecutor
 from functools import cache
 from itertools import chain
 from logging import WARN
 from os import environ
+from typing import Optional
 
 from alibabacloud_bssopenapi20171214.client import Client as BssClient
 from alibabacloud_bssopenapi20171214.models import QuerySkuPriceListRequest
@@ -12,7 +11,6 @@ from alibabacloud_credentials.client import Client as CredClient
 from alibabacloud_ecs20140526.client import Client as EcsClient
 from alibabacloud_ecs20140526.models import (
     DescribeInstanceTypesRequest,
-    DescribePriceRequest,
     DescribeRegionsRequest,
     DescribeZonesRequest,
 )
@@ -86,6 +84,55 @@ def _bss_client(
     cred = CredClient()
     config = Config(credential=cred, region_id=region_id)
     return BssClient(config)
+
+
+def _get_sku_prices(
+    sku_type: str,
+    extra_request_params: dict = {},
+    vendor: Optional[Vendor] = None,
+) -> list[dict]:
+    """Fetch SKU prices using the `QuerySkuPriceListRequest` API endpoint.
+
+    Args:
+        sku_type: The type of SKU to fetch prices for.
+        extra_request_params: Extra parameters to pass to the API request.
+        vendor: The Vendor object used for interacting with the progress tracker and logging.
+
+    Returns:
+        A list of SKU prices.
+    """
+    client = _bss_client()
+    request = QuerySkuPriceListRequest(
+        commodity_code="ecs_intl",
+        page_size=50,
+        lang="en",
+        **extra_request_params,
+    )
+    runtime = RuntimeOptions()
+    response = client.query_sku_price_list_with_options(request, runtime)
+    skus = [
+        sku_price.to_map()
+        for sku_price in response.body.data.sku_price_page.sku_price_list
+    ]
+    pages = response.body.data.sku_price_page.total_count // 50
+    if vendor:
+        vendor.progress_tracker.start_task(
+            name=f"Fetching {sku_type} price pages", total=pages
+        )
+    while response.body.data.sku_price_page.next_page_token:
+        request.next_page_token = response.body.data.sku_price_page.next_page_token
+        response = client.query_sku_price_list_with_options(request, runtime)
+        skus.extend(
+            [
+                sku_price.to_map()
+                for sku_price in response.body.data.sku_price_page.sku_price_list
+            ]
+        )
+        if vendor:
+            vendor.progress_tracker.advance_task()
+    if vendor:
+        vendor.progress_tracker.hide_task()
+    return skus
 
 
 # ##############################################################################
@@ -541,35 +588,17 @@ def inventory_servers(vendor):
 def inventory_server_prices(vendor):
     """Fetch server pricing and regional availability using the `QuerySkuPriceListRequest` API endpoint.
 
-    Alternative approach could be looking at <https://g.alicdn.com/aliyun/ecs-price-info-intl/2.0.375/price/download/instancePrice.json>."""
-    client = _bss_client()
-    request = QuerySkuPriceListRequest(
-        commodity_code="ecs_intl",
-        price_entity_code="instance_type",
-        page_size=50,
-        lang="en",
-        # filter for Linux prices only for now
-        price_factor_condition_map={"vm_os_kind": ["linux"]},
+    Alternative approach could be looking at <https://g.alicdn.com/aliyun/ecs-price-info-intl/2.0.375/price/download/instancePrice.json>.
+    """
+    skus = _get_sku_prices(
+        sku_type="server",
+        extra_request_params={
+            "price_entity_code": "instance_type",
+            # filter for Linux prices only for now
+            "price_factor_condition_map": {"vm_os_kind": ["linux"]},
+        },
+        vendor=vendor,
     )
-    runtime = RuntimeOptions()
-    response = client.query_sku_price_list_with_options(request, runtime)
-    skus = [
-        sku_price.to_map()
-        for sku_price in response.body.data.sku_price_page.sku_price_list
-    ]
-    pages = response.body.data.sku_price_page.total_count // 50
-    vendor.progress_tracker.start_task(name="Fetching server price pages", total=pages)
-    while response.body.data.sku_price_page.next_page_token:
-        request.next_page_token = response.body.data.sku_price_page.next_page_token
-        response = client.query_sku_price_list_with_options(request, runtime)
-        skus.extend(
-            [
-                sku_price.to_map()
-                for sku_price in response.body.data.sku_price_page.sku_price_list
-            ]
-        )
-        vendor.progress_tracker.advance_task()
-    vendor.progress_tracker.hide_task()
 
     items = []
     unsupported_regions = set()
@@ -636,13 +665,15 @@ def inventory_storages(vendor):
     - <https://www.alibabacloud.com/help/en/ecs/developer-reference/api-ecs-2014-05-26-createdisk>
     """
     disk_info = [
+        # NOTE there's only `cloud_essd` option but we suffix with the Performance Level
+        # as these are products with very different characteristics
         {
             "name": "cloud_essd-pl0",
             "min_size": 1,
             "max_size": 65536,
             "max_iops": 10000,
             "max_tp": 1440,
-            "info": "Enterprise SSD with Performance level 0.",
+            "info": "Enterprise SSD with performance level 0.",
         },
         {
             "name": "cloud_essd-pl1",
@@ -650,7 +681,7 @@ def inventory_storages(vendor):
             "max_size": 65536,
             "max_iops": 50000,
             "max_tp": 2800,
-            "info": "Enterprise SSD with Performance level 1.",
+            "info": "Enterprise SSD with performance level 1.",
         },
         {
             "name": "cloud_essd-pl2",
@@ -658,7 +689,7 @@ def inventory_storages(vendor):
             "max_size": 65536,
             "max_iops": 100000,
             "max_tp": 6000,
-            "info": "Enterprise SSD with Performance level 2.",
+            "info": "Enterprise SSD with performance level 2.",
         },
         {
             "name": "cloud_essd-pl3",
@@ -666,7 +697,7 @@ def inventory_storages(vendor):
             "max_size": 65536,
             "max_iops": 1000000,
             "max_tp": 32000,
-            "info": "Enterprise SSD with Performance level 3.",
+            "info": "Enterprise SSD with performance level 3.",
         },
         {
             "name": "cloud_ssd",
@@ -715,172 +746,65 @@ def inventory_storages(vendor):
 
 
 def inventory_storage_prices(vendor):
-    """
-    Puts together a list of storage prices. As storage is treated as a separate pricing package, the implementation assumes an instance type which is common, and can be found in any data center. Then it cycles through the hardcoded storage types.
+    """Fetch server prices using the `QuerySkuPriceListRequest` API endpoint."""
+    skus = _get_sku_prices(
+        sku_type="storage",
+        extra_request_params={"price_entity_code": "datadisk"},
+        vendor=vendor,
+    )
 
-    Notes:
-    - cloud_efficiency: Missing in new regions
-    - cloud (basic): Missing in many regions
-    - ephemeral_ssd: Missing in 95% of regions
-    - cloud_essd PL2/PL3: Missing in some small regions
-    - elastic_ephemeral_disk: Only available on local NVMe instance types (not queried here)
-    """
     items = []
-    tempclient = get_client()
-
-    DEFAULT_INSTANCE_TYPE = "ecs.c6.large"  # common instance, available in most regions. required for query.
-    options_system_disk_category = [
-        "cloud",
-        "cloud_efficiency",
-        "cloud_ssd",
-        "ephemeral_ssd",
-        "cloud_essd",
-        "cloud_auto",
-    ]
-    options_essd_disk_performance_level = ["PL0", "PL1", "PL2", "PL3"]
-
-    # cycling through regions, so we can get region-based data. If one region query is true, it only returns the default region.
-    region_info_in_list = get_regions(one_region_query=ONE_REGION_QUERY)
-    for region in region_info_in_list.get("Regions").get("Region"):
-        # a try block with a specific exception for timeout would be probably better, but why should we wait for the timeout
-
-        if skip_china:
-            if "cn-" in region.get("RegionId"):
-                continue  # chinese regions are not accessible from here
+    unsupported_regions = set()
+    for sku in skus:
+        if sku["SkuFactorMap"]["datadisk_category"] in [
+            "cloud",
+            "cloud_ssd",
+            "cloud_efficiency",
+        ]:
+            # no diff in performance levels, pick one
+            if sku["SkuFactorMap"]["datadisk_performance_level"] != "P1":
+                continue
+            storage_id = sku["SkuFactorMap"]["datadisk_category"]
         else:
-            tempclient = AcsClient(
-                os.environ["ALIYUN_ACCESS_KEY"],
-                os.environ["ALIYUN_SECRET"],
-                region.get("RegionId"),
+            # keep the 4 performance levels
+            if sku["SkuFactorMap"]["datadisk_performance_level"] not in [
+                "PL0",
+                "PL1",
+                "PL2",
+                "PL3",
+            ]:
+                continue
+            storage_id = (
+                sku["SkuFactorMap"]["datadisk_category"]
+                + "-"
+                + sku["SkuFactorMap"]["datadisk_performance_level"].lower()
             )
-            for disk in options_system_disk_category:
-                request = DescribePriceRequest.DescribePriceRequest()
-                request.set_PriceUnit("Hour")
-                request.set_InstanceType(DEFAULT_INSTANCE_TYPE)
-                request.set_DataDisk1Size(
-                    2000
-                )  # PL3 disks require a minimum of 1,261 GiB
-                request.set_DataDisk1Category(disk)
-                if disk == "cloud_essd":
-                    for pl in options_essd_disk_performance_level:
-                        request.set_DataDisk1PerformanceLevel(pl)
-                        try:
-                            response = tempclient.do_action_with_exception(request)
-                            respone_dict = json.loads(response.decode("utf-8"))
-
-                            for dti in (
-                                respone_dict.get("PriceInfo")
-                                .get("Price")
-                                .get("DetailInfos")
-                                .get("DetailInfo")
-                            ):
-                                if (
-                                    dti.get("Resource") == "systemDisk"
-                                    or dti.get("Resource") == "dataDisk"
-                                ):
-                                    items.append(
-                                        {
-                                            "vendor_id": vendor.vendor_id,
-                                            "region_id": tempclient.get_region_id(),
-                                            "storage_id": disk + "-" + pl,
-                                            "unit": PriceUnit.GB_MONTH,
-                                            "price": dti.get("TradePrice"),
-                                            "currency": respone_dict.get("PriceInfo")
-                                            .get("Price")
-                                            .get("Currency"),
-                                        }
-                                    )
-                                    logger.debug(
-                                        "Successfully added disk info - Region: {tcl}, disk: {disk}, size: {size}, pl: {pl}".format(
-                                            tcl=tempclient.get_region_id(),
-                                            disk=disk,
-                                            size=2000,
-                                            pl=pl,
-                                        )
-                                    )
-                        except ServerException as se:
-                            logger.debug(se)
-                            logger.debug(
-                                "Failed to add disk info - Region: {tcl}, disk: {disk}, size: {size}, pl: {pl}".format(
-                                    tcl=tempclient.get_region_id(),
-                                    disk=disk,
-                                    size=2000,
-                                    pl=pl,
-                                )
-                            )
-                            try:
-                                if "OperationDenied.PerformanceLevelNotMatch" in str(
-                                    se.get_error_code()
-                                ):
-                                    logger.debug(
-                                        "Error indicates that this zone is likely not supporting this disk type."
-                                    )
-                                elif "InvalidDataDiskCategory.ValueNotSupported" in str(
-                                    se.get_error_code()
-                                ):
-                                    logger.debug(
-                                        "Error indicates likely invalid region / disk combination."
-                                    )
-                            except ServerException as se:
-                                logger.debug(
-                                    "Second error within the same cycle. This should not be here. {se}"
-                                )
-                        except ClientException as ce:
-                            logger.debug(
-                                "Failed to query region {rid}".format(
-                                    rid=region.get("RegionId")
-                                )
-                            )
-                            logger.debug(ce)
-
-                else:
-                    try:
-                        response = tempclient.do_action_with_exception(request)
-                        respone_dict = json.loads(response.decode("utf-8"))
-                        for dti in (
-                            respone_dict.get("PriceInfo")
-                            .get("Price")
-                            .get("DetailInfos")
-                            .get("DetailInfo")
-                        ):
-                            if (
-                                dti.get("Resource") == "systemDisk"
-                                or dti.get("Resource") == "dataDisk"
-                            ):
-                                items.append(
-                                    {
-                                        "vendor_id": vendor.vendor_id,
-                                        "region_id": tempclient.get_region_id(),
-                                        "storage_id": disk,
-                                        "unit": PriceUnit.GB_MONTH,
-                                        "price": dti.get("TradePrice"),
-                                        "currency": respone_dict.get("PriceInfo")
-                                        .get("Price")
-                                        .get("Currency"),
-                                    }
-                                )
-                                logger.debug(
-                                    "Successfully added disk info - Region: {tcl}, disk: {disk}, size: {size}".format(
-                                        tcl=tempclient.get_region_id(),
-                                        disk=disk,
-                                        size=2000,
-                                    )
-                                )
-                    except ServerException as se:
-                        logger.debug(se)
-                        logger.debug(
-                            "Failed to add disk info - Region: {tcl}, disk: {disk}, size: {size}".format(
-                                tcl=tempclient.get_region_id(), disk=disk, size=2000
-                            )
-                        )
-                    except ClientException as ce:
-                        logger.debug(
-                            "Failed to query region {rid}".format(
-                                rid=region.get("RegionId")
-                            )
-                        )
-                        logger.debug(ce)
-
+        region = next(
+            (
+                region
+                for region in vendor.regions
+                if (
+                    sku["SkuFactorMap"]["vm_region_no"]
+                    in [region.api_reference, *region.aliases]
+                )
+            ),
+            None,
+        )
+        if not region:
+            unsupported_regions.add(sku["SkuFactorMap"]["vm_region_no"])
+            continue
+        items.append(
+            {
+                "vendor_id": vendor.vendor_id,
+                "region_id": region.region_id,
+                "storage_id": storage_id,
+                "unit": PriceUnit.GB_MONTH,
+                "price": sku["CskuPriceList"][0]["Price"],
+                "currency": sku["CskuPriceList"][0]["Currency"],
+            }
+        )
+    for unsupported_region in unsupported_regions:
+        vendor.log(f"Found non-supported region: {unsupported_region}", level=WARN)
     return items
 
 
