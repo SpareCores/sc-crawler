@@ -756,42 +756,28 @@ def inventory_storage_prices(vendor):
     items = []
     unsupported_regions = set()
     for sku in skus:
-        if sku["SkuFactorMap"]["datadisk_category"] in [
-            "cloud",
-            "cloud_ssd",
-            "cloud_efficiency",
-        ]:
+        storage_id = sku["SkuFactorMap"]["datadisk_category"]
+        pl = sku["SkuFactorMap"]["datadisk_performance_level"]
+        if storage_id in ["cloud", "cloud_ssd", "cloud_efficiency"]:
             # no diff in performance levels, pick one
-            if sku["SkuFactorMap"]["datadisk_performance_level"] != "P1":
+            if pl != "P1":
                 continue
-            storage_id = sku["SkuFactorMap"]["datadisk_category"]
         else:
             # keep the 4 performance levels
-            if sku["SkuFactorMap"]["datadisk_performance_level"] not in [
-                "PL0",
-                "PL1",
-                "PL2",
-                "PL3",
-            ]:
+            if pl not in ["PL0", "PL1", "PL2", "PL3"]:
                 continue
-            storage_id = (
-                sku["SkuFactorMap"]["datadisk_category"]
-                + "-"
-                + sku["SkuFactorMap"]["datadisk_performance_level"].lower()
-            )
+            storage_id = storage_id + "-" + pl.lower()
+        region_id = sku["SkuFactorMap"]["vm_region_no"]
         region = next(
             (
                 region
                 for region in vendor.regions
-                if (
-                    sku["SkuFactorMap"]["vm_region_no"]
-                    in [region.api_reference, *region.aliases]
-                )
+                if (region_id in [region.api_reference, *region.aliases])
             ),
             None,
         )
         if not region:
-            unsupported_regions.add(sku["SkuFactorMap"]["vm_region_no"])
+            unsupported_regions.add(region_id)
             continue
         items.append(
             {
