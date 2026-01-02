@@ -440,7 +440,7 @@ def inventory_regions(vendor):
                 "zip_code": None,  # not available
                 "lon": location.get("lon"),
                 "lat": location.get("lat"),
-                "founding_year": None,  # not available
+                "founding_year": location.get("founding_year"),
                 "green_energy": None,  # not available
             }
         )
