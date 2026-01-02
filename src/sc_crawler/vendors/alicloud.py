@@ -33,7 +33,8 @@ from ..table_fields import (
     StorageType,
     TrafficDirection,
 )
-from ..tables import Region, Vendor
+from ..tables import Vendor
+from ..vendor_helpers import get_region_by_id
 
 # ##############################################################################
 # Internal helpers
@@ -136,18 +137,6 @@ def _get_sku_prices(
     if vendor:
         vendor.progress_tracker.hide_task()
     return skus
-
-
-def _get_region_by_id(region_id: str, vendor: Vendor) -> Optional[Region]:
-    """Get a region by its ID or alias."""
-    return next(
-        (
-            region
-            for region in vendor.regions
-            if (region_id in [region.api_reference, *region.aliases])
-        ),
-        None,
-    )
 
 
 # ##############################################################################
@@ -620,7 +609,7 @@ def inventory_server_prices(vendor):
     items = []
     unsupported_regions = set()
     for sku in skus:
-        region = _get_region_by_id(sku["SkuFactorMap"]["vm_region_no"], vendor)
+        region = get_region_by_id(sku["SkuFactorMap"]["vm_region_no"], vendor)
         if not region:
             unsupported_regions.add(sku["SkuFactorMap"]["vm_region_no"])
             continue
@@ -776,7 +765,7 @@ def inventory_storage_prices(vendor):
                 continue
             storage_id = storage_id + "-" + pl.lower()
         region_id = sku["SkuFactorMap"]["vm_region_no"]
-        region = _get_region_by_id(region_id, vendor)
+        region = get_region_by_id(region_id, vendor)
         if not region:
             unsupported_regions.add(region_id)
             continue
@@ -812,7 +801,7 @@ def inventory_traffic_prices(vendor):
     unsupported_regions = set()
     for sku in skus:
         region_id = sku["SkuFactorMap"]["vm_region_no"]
-        region = _get_region_by_id(region_id, vendor)
+        region = get_region_by_id(region_id, vendor)
         if not region:
             unsupported_regions.add(region_id)
             continue
