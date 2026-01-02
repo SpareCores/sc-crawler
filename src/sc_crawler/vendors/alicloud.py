@@ -89,7 +89,7 @@ def _bss_client(
 
 def _get_sku_prices(
     sku_type: str,
-    extra_request_params: dict = {},
+    extra_request_params: Optional[dict] = None,
     vendor: Optional[Vendor] = None,
 ) -> list[dict]:
     """Fetch SKU prices using the `QuerySkuPriceListRequest` API endpoint.
@@ -103,6 +103,8 @@ def _get_sku_prices(
         A list of SKU prices.
     """
     client = _bss_client()
+    if extra_request_params is None:
+        extra_request_params = {}
     request = QuerySkuPriceListRequest(
         commodity_code="ecs_intl",
         page_size=50,
