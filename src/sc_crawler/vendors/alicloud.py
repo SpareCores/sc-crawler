@@ -431,7 +431,7 @@ def inventory_regions(vendor):
                 "region_id": region.get("RegionId"),
                 "name": region.get("LocalName"),
                 "api_reference": region.get("RegionId"),
-                "display_name": region.get("LocalName"),
+                "display_name": f"{location['city']} ({location['country_id']})",
                 "aliases": location.get("alias", []),
                 "country_id": location.get("country_id"),
                 "state": None,  # not available
