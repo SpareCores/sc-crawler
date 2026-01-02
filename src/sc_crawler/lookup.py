@@ -75,13 +75,6 @@ compliance_frameworks: dict = {
         description="ISO 27001 is standard for information security management systems.",  # noqa: E501
         homepage="https://www.iso.org/standard/27001",  # noqa: E501
     ),
-    # TODO add more e.g.
-    # soc2t1
-    # iso27701
-    # gdpr
-    # pci
-    # ccpa
-    # csa
 }
 """Dictionary of [sc_crawler.tables.ComplianceFramework][] instances keyed by the `compliance_framework_id`."""
 

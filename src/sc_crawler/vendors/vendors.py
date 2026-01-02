@@ -82,6 +82,21 @@ upcloud = Vendor(
 )
 """UpCloud."""
 
+alicloud = Vendor(
+    vendor_id="alicloud",
+    name="Alibaba Cloud",
+    logo="https://sparecores.com/assets/images/vendors/alicloud.svg",
+    homepage="https://www.alibabacloud.com/",
+    country=countries["CN"],
+    state="Zhejiang",
+    city="Hangzhou",
+    address_line="969 West Wen Yi Road",
+    zip_code="311121",
+    founding_year=2009,
+    status_page="https://status.alibabacloud.com/",
+)
+"""Alibaba Cloud."""
+
 ovh = Vendor(
     vendor_id="ovh",
     name="OVHcloud",

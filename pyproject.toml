@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sparecores-crawler"
-version = "0.3.2"
+version = "0.3.3"
 requires-python = ">= 3.9"
 dependencies = [
   "alembic",
@@ -57,6 +57,7 @@ gcp = ["google-cloud", "google-cloud-compute", "google-cloud-billing"]
 azure = ["azure-identity", "azure-mgmt-resource", "azure-mgmt-compute"]
 upcloud = ["upcloud-api"]
 ovh = ["ovh"]
+alicloud = ["alibabacloud-ecs20140526", "alibabacloud-bssopenapi20171214"]
 vendors = [
   "sparecores-crawler[aws]",
   "sparecores-crawler[hcloud]",
@@ -64,6 +65,7 @@ vendors = [
   "sparecores-crawler[azure]",
   "sparecores-crawler[upcloud]",
   "sparecores-crawler[ovh]",
+  "sparecores-crawler[alicloud]",
 ]
 all = ["sparecores-crawler[testing]", "sparecores-crawler[vendors]"]
 

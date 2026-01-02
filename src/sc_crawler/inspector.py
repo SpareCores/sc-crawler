@@ -535,6 +535,38 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
     return benchmarks
 
 
+def _extract_manufacturer(name: str) -> str:
+    """Extract the manufacturer from a CPU model name."""
+    nl = name.strip().lower()
+    for m in ["Intel", "AMD", "NVIDIA", "Microsoft", "Alibaba", "Ampere", "Hygon"]:
+        if m.lower() in nl:
+            return m
+    for p in ["xeon"]:
+        if p in nl:
+            return "Intel"
+    for p in ["epyc", "turin", "genoa"]:
+        if p in nl:
+            return "AMD"
+    if "yitian" in nl:
+        return "Alibaba"
+    return None
+
+
+def _extract_family(name: str) -> str:
+    """Extract the family from a CPU model name."""
+    nl = name.strip().lower()
+    if "xeon" in nl:
+        return "Xeon"
+    for p in ["epyc", "turin", "genoa"]:
+        if p in nl:
+            return "EPYC"
+    if "ampere" in nl:
+        return "Ampere Altra"
+    if "yitian" in nl:
+        return "Yitian"
+    return None
+
+
 def _standardize_manufacturer(manufacturer):
     if manufacturer == "Advanced Micro Devices, Inc.":
         return "AMD"
@@ -578,24 +610,55 @@ def _standardize_cpu_model(model):
     ]:
         return None
     for prefix in [
-        "Intel(R) Xeon(R) Platinum ",
-        "INTEL(R) XEON(R) PLATINUM ",
-        "Intel(R) Xeon(R) Gold ",
-        "Intel(R) Xeon(R) CPU ",
-        "Intel(R) Xeon(R) ",
-        "Intel Xeon Processor (Skylake, IBRS)",
-        "Intel Xeon Processor (Skylake, IBRS, no TSX)",
-        "AMD ",
+        "Alibaba",
+        "Hygon",
+        "Intel®",
+        "Intel",
+        "INTEL",
+        "AMD",
+        "(R)",
+        "Xeon®",
+        "Xeon",
+        "XEON",
         "EPYC ",
+        "EPYC™ ",
         "AWS ",
+        "(R)",
+        "™",
+        "Platinum",
+        "PLATINUM",
+        "Gold",
+        "CPU",
         "Processor",
+        "(Ice Lake)",
+        "(Cascade Lake)",
+        "(Skylake)",
+        "(Skylake, IBRS)",
+        "(Skylake, IBRS, no TSX)",
+        "(Cooper Lake)",
+        "(Sapphire Rapid)",
+        "(Sapphire Rapids)",
+        "(Emerald Rapids)",
+        "(EMR)",
+        "EMR ",
+        "Genoa",
+        "Milan",
+        "ROME",
+        "Turin-C",
+        "Turin",
+        "Platinum",
+        "Gold",
     ]:
         if model.startswith(prefix):
             model = model[len(prefix) :].lstrip()
     # drop trailing "CPU @ 2.50GHz"
     model = sub(r"( CPU)? ?@ \d+\.\d+GHz$", "", model)
-    # drop trailing "48-Core Processor"
-    model = sub(r"( \d+-Core)? Processor$", "", model)
+    # drop trailing "48-Core Processor" or "48-Core"
+    model = sub(r"( \d+-Core)?( Processor)?$", "", model)
+    # drop anything after a slash
+    model = sub(r"/.*$", "", model)
+    # or an odd unicode paren start
+    model = sub(r"（.*$", "", model)
     # at least product family is known
     if model == "Intel Core Processor (Haswell, no TSX)":
         return "Haswell"
@@ -611,6 +674,8 @@ def _standardize_cpu_model(model):
 
 def _standardize_gpu_model(model, server=None):
     model = model.strip()
+    if model in ["", "0", "NULL", "NA", "N/A"]:
+        return None
     for prefix in [
         "NVIDIA ",
         "Tesla ",
@@ -631,6 +696,10 @@ def _standardize_gpu_model(model, server=None):
         model = "RTX Pro 6000"
     if server and server["vendor_id"] and server["server_id"] == "p4de.24xlarge":
         model = "A100-SXM4-40GB"
+    if model in ["RTX 5880 Ada", "RTX5880"]:
+        return "RTX 5880"
+    if model == "RTX6000":
+        return "RTX 6000"
     # drop too specific parts
     model = sub(r" NVL$", "", model)
     model = sub(r"-SXM[0-9]-[0-9]*GB$", "", model)
@@ -780,6 +849,8 @@ def inspect_update_server_dict(server: dict) -> dict:
         if speed:
             server["cpu_speed"] = speed.group(1)
         # manufacturer data might be more likely to present in lscpu (unstructured)
+        # TODO note that we might have prefilled info about manufacturer/family/model in a reliable way
+        #      so we might not want to overwrite them here
         for manufacturer in ["Intel", "AMD"]:
             if manufacturer in cpu_model:
                 server["cpu_manufacturer"] = manufacturer
