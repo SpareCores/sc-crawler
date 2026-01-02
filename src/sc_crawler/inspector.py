@@ -726,9 +726,8 @@ def _standardize_gpu_family(server):
 
 def _l123_cache(lscpu: dict, level: int):
     if level == 1:
-        l1i = _listsearch(lscpu, "field", "L1i cache:")["data"].split(" ")[0]
-        l1d = _listsearch(lscpu, "field", "L1d cache:")["data"].split(" ")[0]
-        cache = int(l1i) + int(l1d)
+        # don't include instruction cache
+        cache = int(_listsearch(lscpu, "field", "L1d cache:")["data"].split(" ")[0])
         if cache > 32 * 1024 * 1024:  # 32 MiB+ is potentially corrupted data
             return None
         return cache
