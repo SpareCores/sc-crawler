@@ -538,19 +538,17 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
 def _extract_manufacturer(name: str) -> str:
     """Extract the manufacturer from a CPU model name."""
     nl = name.strip().lower()
-    for m in ["Intel", "AMD", "NVIDIA", "Microsoft", "Alibaba"]:
+    for m in ["Intel", "AMD", "NVIDIA", "Microsoft", "Alibaba", "Ampere", "Hygon"]:
         if m.lower() in nl:
             return m
     for p in ["xeon"]:
         if p in nl:
             return "Intel"
-    for p in ["epyc", "ampere", "turin", "genoa"]:
+    for p in ["epyc", "turin", "genoa"]:
         if p in nl:
             return "AMD"
     if "yitian" in nl:
         return "Alibaba"
-    if "hygon" in nl:
-        return "Hygon"
     return None
 
 
