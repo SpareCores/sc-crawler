@@ -33,7 +33,7 @@ from ..table_fields import (
     StorageType,
     TrafficDirection,
 )
-from ..tables import Vendor
+from ..tables import Region, Vendor
 
 # ##############################################################################
 # Internal helpers
@@ -134,6 +134,18 @@ def _get_sku_prices(
     if vendor:
         vendor.progress_tracker.hide_task()
     return skus
+
+
+def _get_region_by_id(region_id: str, vendor: Vendor) -> Optional[Region]:
+    """Get a region by its ID or alias."""
+    return next(
+        (
+            region
+            for region in vendor.regions
+            if (region_id in [region.api_reference, *region.aliases])
+        ),
+        None,
+    )
 
 
 # ##############################################################################
@@ -604,17 +616,7 @@ def inventory_server_prices(vendor):
     items = []
     unsupported_regions = set()
     for sku in skus:
-        region = next(
-            (
-                region
-                for region in vendor.regions
-                if (
-                    sku["SkuFactorMap"]["vm_region_no"]
-                    in [region.api_reference, *region.aliases]
-                )
-            ),
-            None,
-        )
+        region = _get_region_by_id(sku["SkuFactorMap"]["vm_region_no"], vendor)
         if not region:
             unsupported_regions.add(sku["SkuFactorMap"]["vm_region_no"])
             continue
@@ -769,14 +771,7 @@ def inventory_storage_prices(vendor):
                 continue
             storage_id = storage_id + "-" + pl.lower()
         region_id = sku["SkuFactorMap"]["vm_region_no"]
-        region = next(
-            (
-                region
-                for region in vendor.regions
-                if (region_id in [region.api_reference, *region.aliases])
-            ),
-            None,
-        )
+        region = _get_region_by_id(region_id, vendor)
         if not region:
             unsupported_regions.add(region_id)
             continue
@@ -796,9 +791,10 @@ def inventory_storage_prices(vendor):
 
 
 def inventory_traffic_prices(vendor):
-    """TODO
+    """Collect inbound and outbound traffic prices of Alibaba Cloud regions.
 
     Inbound is free as per <https://www.alibabacloud.com/help/en/ecs/public-bandwidth>.
+    Outbound traffic pricing collected from the `QuerySkuPriceListRequest` API endpoint.
     """
     items = []
     skus = _get_sku_prices(
@@ -809,14 +805,7 @@ def inventory_traffic_prices(vendor):
     unsupported_regions = set()
     for sku in skus:
         region_id = sku["SkuFactorMap"]["vm_region_no"]
-        region = next(
-            (
-                region
-                for region in vendor.regions
-                if (region_id in [region.api_reference, *region.aliases])
-            ),
-            None,
-        )
+        region = _get_region_by_id(region_id, vendor)
         if not region:
             unsupported_regions.add(region_id)
             continue
