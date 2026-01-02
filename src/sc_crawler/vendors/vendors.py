@@ -90,8 +90,8 @@ alicloud = Vendor(
     country=countries["CN"],
     state="Zhejiang",
     city="Hangzhou",
-    address_line="5F, Builing D, the West Lake International Plaza of S&T No.391 Wen'er Road",
-    zip_code="310099",
+    address_line="969 West Wen Yi Road",
+    zip_code="311121",
     founding_year=2009,
     status_page="https://status.alibabacloud.com/",
 )
