@@ -13,7 +13,6 @@ from ..table_fields import (
     StorageType,
     TrafficDirection,
 )
-from ..vendor_helpers import convert_regions_to_zones
 
 # ##############################################################################
 # Cached client wrappers
@@ -278,7 +277,19 @@ def inventory_zones(vendor):
     a region (virtual datacenter) at UpCloud, so creating 1-1
     dummy Zones reusing the Region id and name.
     """
-    return convert_regions_to_zones(vendor)
+    items = []
+    for region in vendor.regions:
+        items.append(
+            {
+                "vendor_id": vendor.vendor_id,
+                "region_id": region.region_id,
+                "zone_id": region.region_id,
+                "name": region.name,
+                "api_reference": region.region_id,
+                "display_name": region.name,
+            }
+        )
+    return items
 
 
 def inventory_servers(vendor):
