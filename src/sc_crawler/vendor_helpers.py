@@ -3,7 +3,7 @@ from itertools import chain, repeat
 from typing import Callable, List, Literal, Optional
 
 from .table_fields import Status
-from .tables import Vendor
+from .tables import Region, Vendor
 
 
 def fetch_servers(fn: Callable, where: str, vendor: Optional[Vendor]) -> List[dict]:
@@ -89,6 +89,31 @@ def add_vendor_id(obj: dict, vendor: Vendor) -> dict:
     """Adds `vendor_id` field to a dict."""
     obj["vendor_id"] = vendor.vendor_id
     return obj
+
+
+def convert_regions_to_zones(vendor: Vendor) -> List[dict]:
+    """Create a dummy list of [zones][sc_crawler.tables.Zone] from the list of [regions][sc_crawler.tables.Region] of a [vendor][sc_crawler.tables.Vendor].
+
+    Args:
+        vendor: The [vendor][sc_crawler.tables.Vendor] to convert the regions of.
+
+    Returns:
+        A list of [zones][sc_crawler.tables.Zone] as [dict]s.
+    """
+    items = []
+    for region in vendor.regions:
+        items.append(
+            {
+                "vendor_id": vendor.vendor_id,
+                "region_id": region.region_id,
+                "zone_id": region.region_id,
+                "name": region.name,
+                "api_reference": region.name,
+                "display_name": region.name,
+            }
+        )
+    return items
+
 
 def get_region_by_id(region_id: str, vendor: Vendor) -> Optional[Region]:
     """Get a [region][sc_crawler.tables.Region] by its ID or alias.
