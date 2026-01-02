@@ -3,7 +3,7 @@ from itertools import chain, repeat
 from typing import Callable, List, Literal, Optional
 
 from .table_fields import Status
-from .tables import Vendor
+from .tables import Region, Vendor
 
 
 def fetch_servers(fn: Callable, where: str, vendor: Optional[Vendor]) -> List[dict]:
@@ -89,6 +89,7 @@ def add_vendor_id(obj: dict, vendor: Vendor) -> dict:
     """Adds `vendor_id` field to a dict."""
     obj["vendor_id"] = vendor.vendor_id
     return obj
+
 
 def get_region_by_id(region_id: str, vendor: Vendor) -> Optional[Region]:
     """Get a [region][sc_crawler.tables.Region] by its ID or alias.
