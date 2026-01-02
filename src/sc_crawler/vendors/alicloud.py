@@ -536,11 +536,11 @@ def inventory_servers(vendor):
             * 1024**3
             / 1000**3
         )
-        storage_type = STORAGE_CATEGORY_MAP[instance_type.get("LocalStorageCategory")]
+        storage_type = STORAGE_CATEGORY_MAP[instance_type["LocalStorageCategory"]]
         gpu_count = instance_type.get("GPUAmount", 0)
         gpu_memory_per_gpu = instance_type.get("GPUMemorySize", 0) * 1024  # GiB -> MiB
         gpu_memory_total = gpu_count * gpu_memory_per_gpu
-        gpu_model = _standardize_gpu_model(instance_type.get("GPUSpec"))
+        gpu_model = _standardize_gpu_model(instance_type["GPUSpec"])
         description_parts = [
             f"{vcpus} vCPUs",
             f"{memory_size_gb} GiB RAM",
