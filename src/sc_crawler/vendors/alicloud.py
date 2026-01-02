@@ -668,8 +668,9 @@ def inventory_storages(vendor):
     - <https://www.alibabacloud.com/help/en/ecs/developer-reference/api-ecs-2014-05-26-createdisk>
     """
     disk_info = [
-        # NOTE there's only `cloud_essd` option but we suffix with the Performance Level
-        # as these are products with very different characteristics
+        # NOTE there's only a single `cloud_essd` ID at Alibaba Cloud,
+        # but we suffix with the performance level (PL0, PL1, PL2, PL3)
+        # to differentiate them as these are products with very different characteristics
         {
             "name": "cloud_essd-pl0",
             "min_size": 1,
@@ -795,6 +796,8 @@ def inventory_traffic_prices(vendor):
 
     Inbound is free as per <https://www.alibabacloud.com/help/en/ecs/public-bandwidth>.
     Outbound traffic pricing collected from the `QuerySkuPriceListRequest` API endpoint.
+
+    Account level tiering information can be found at <https://www.alibabacloud.com/help/en/cdt/internet-data-transfers/#4a98c9ee8eemn>.
     """
     items = []
     skus = _get_sku_prices(
@@ -839,16 +842,20 @@ def inventory_traffic_prices(vendor):
 
 
 def inventory_ipv4_prices(vendor):
-    # TODO: implement later.
+    """Static IPv4 pricing of Alibaba Cloud regions.
+
+    Static (not Elastic) IP addresses are free, you only pay for bandwidth or traffic
+    as per <https://www.alibabacloud.com/help/en/ecs/user-guide/public-ip-address?spm=a2c63.p38356.0.i1#52c0fa8bbcee6>.
+    """
     items = []
-    # for price in []:
-    #     items.append(
-    #         {
-    #             "vendor_id": vendor.vendor_id,
-    #             "region_id": ,
-    #             "price": ,
-    #             "currency": "USD",
-    #             "unit": PriceUnit.MONTH,
-    #         }
-    #     )
+    for region in vendor.regions:
+        items.append(
+            {
+                "vendor_id": vendor.vendor_id,
+                "region_id": region.region_id,
+                "price": 0,
+                "currency": "USD",
+                "unit": PriceUnit.MONTH,
+            }
+        )
     return items
