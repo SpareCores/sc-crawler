@@ -481,13 +481,8 @@ def inventory_zones(vendor):
 
 
 def inventory_servers(vendor):
-    """
-    Puts together the list containing information about the hardware capabilities of each ECS type in the Alibaba Cloud service.
-    """
-    items = []
-
+    """List all server types at Alibaba Cloud using the `DescribeInstanceTypes` API endpoint."""
     client = _ecs_client()
-
     request = DescribeInstanceTypesRequest(max_results=1000)
     response = client.describe_instance_types(request)
     instance_types = [
