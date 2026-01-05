@@ -432,7 +432,7 @@ def inventory_regions(vendor):
                 "lon": location.get("lon"),
                 "lat": location.get("lat"),
                 "founding_year": location.get("founding_year"),
-                # Clean electricity accounted for 56.0% of the total electricity consumption at Alibaba Cloud’s self-built data centers
+                # "Clean electricity accounted for 56.0% of the total electricity consumption at Alibaba Cloud's self-built data centers"
                 # https://www.alibabagroup.com/en-US/esg?spm=a3c0i.28208492.4078276800.1.3ee123b78lagGT
                 "green_energy": None,
             }
