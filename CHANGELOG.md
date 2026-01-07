@@ -1,8 +1,15 @@
 ## v0.3.x (development version)
 
+## v0.3.3 (Jan 02, 2026)
+
+New vendor(s):
+
+- Alibaba Cloud
+
 Fix(es):
 
 - Don't include instruction cache in L1 cache size.
+- Manufacturer of Ampere Altra.
 
 ## v0.3.2 (Dec 04, 2025)
 

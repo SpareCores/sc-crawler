@@ -15,4 +15,5 @@
     - [ ] Tested on SQLite
     - [ ] Tested on PostgreSQL
 - [ ] `sc-crawler pull` was tested on all vendors and records
+- [ ] `mkdocs` renders correctly and has been checked for new functions/methods
 - [ ] Human approval
