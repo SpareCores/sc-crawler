@@ -126,12 +126,13 @@ def _get_sku_prices(
     while response.body.data.sku_price_page.next_page_token:
         request.next_page_token = response.body.data.sku_price_page.next_page_token
         response = client.query_sku_price_list_with_options(request, runtime)
-        skus.extend(
-            [
-                sku_price.to_map()
-                for sku_price in response.body.data.sku_price_page.sku_price_list
-            ]
-        )
+        if response.body.data:
+            skus.extend(
+                [
+                    sku_price.to_map()
+                    for sku_price in response.body.data.sku_price_page.sku_price_list
+                ]
+            )
         if vendor:
             vendor.progress_tracker.advance_task()
     if vendor:
