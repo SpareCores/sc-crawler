@@ -455,6 +455,17 @@ def inventory_regions(vendor):
             "lon": 114.2723379,
         },
         {
+            "region_id": "ap-east-2",
+            "name": "Asia Pacific (Taipei)",
+            "vendor_id": vendor.vendor_id,
+            "country_id": "TW",
+            "city": "Taipei",
+            "founding_year": 2025,
+            # approximation based on city
+            "lat": 25.037518,
+            "lon": 121.563667,
+        },
+        {
             "region_id": "ap-northeast-1",
             "name": "Asia Pacific (Tokyo)",
             "vendor_id": vendor.vendor_id,
@@ -545,6 +556,36 @@ def inventory_regions(vendor):
             # approximation based on city location
             "lat": -37.8038607,
             "lon": 144.7119569,
+        },
+        {
+            "region_id": "ap-southeast-5",
+            "name": "Asia Pacific (Malaysia)",
+            "vendor_id": vendor.vendor_id,
+            "country_id": "MY",
+            "founding_year": 2024,
+            # approximation based on country
+            "lat": 4.1230237,
+            "lon": 104.3228082,
+        },
+        {
+            "region_id": "ap-southeast-6",
+            "name": "Asia Pacific (New Zealand)",
+            "vendor_id": vendor.vendor_id,
+            "country_id": "MY",
+            "founding_year": 2025,
+            # approximation based on country
+            "lat": -40.900775,
+            "lon": 174.802185,
+        },
+        {
+            "region_id": "ap-southeast-7",
+            "name": "Asia Pacific (Thailand)",
+            "vendor_id": vendor.vendor_id,
+            "country_id": "TH",
+            "founding_year": 2022,
+            # approximation based on country
+            "lat": 15.870032,
+            "lon": 100.992538,
         },
         {
             "region_id": "ca-central-1",
@@ -708,6 +749,16 @@ def inventory_regions(vendor):
             "founding_year": 2019,
             "lat": 25.941298,
             "lon": 50.3073907,
+        },
+        {
+            "region_id": "mx-central-1",
+            "name": "Mexico (Central)",
+            "vendor_id": vendor.vendor_id,
+            "country_id": "MX",
+            "founding_year": 2025,
+            # approximation based on country
+            "lat": 20.5896,
+            "lon": -100.3897,
         },
         {
             "region_id": "sa-east-1",
