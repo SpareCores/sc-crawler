@@ -114,6 +114,8 @@ def _get_sku_prices(
     )
     runtime = RuntimeOptions()
     response = client.query_sku_price_list_with_options(request, runtime)
+    if not response.body.data:
+        print(f"No data in response: {response.to_map()}")
     skus = [
         sku_price.to_map()
         for sku_price in response.body.data.sku_price_page.sku_price_list
