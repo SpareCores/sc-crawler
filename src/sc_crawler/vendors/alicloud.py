@@ -135,6 +135,8 @@ def _get_sku_prices(
             )
         if vendor:
             vendor.progress_tracker.advance_task()
+        if not response.body.data:
+            break
     if vendor:
         vendor.progress_tracker.hide_task()
     return skus
