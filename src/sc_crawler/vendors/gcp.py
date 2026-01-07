@@ -544,6 +544,15 @@ def inventory_regions(vendor):
             "lat": -6.2297401,
             "lon": 106.747117,
         },
+        "asia-southeast3": {
+            "country_id": "TH",
+            "city": "Bangkok",
+            "founding_year": 2025,
+            "green_energy": False,
+            # approximation based on city
+            "lat": 15.870032,
+            "lon": 100.992538,
+        },
         "australia-southeast1": {
             "country_id": "AU",
             "city": "Sydney",
