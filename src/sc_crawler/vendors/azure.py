@@ -359,7 +359,7 @@ def _standardize_server(server: dict, vendor) -> dict:
         "api_reference": server["name"],
         "display_name": server["name"].removeprefix("Standard_"),
         "family": family,
-        "vcpus": int(capability("vCPUs")),
+        "vcpus": int(capability("vCPUsAvailable")),
         "hypervisor": "Microsoft Hyper-V",
         "cpu_allocation": (
             CpuAllocation.BURSTABLE

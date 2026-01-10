@@ -802,7 +802,6 @@ def inspect_update_server_dict(server: dict) -> dict:
         return _listsearch(lookups["lscpu"], "field", field)["data"]
 
     mappings = {
-        # cannot even trust vendor-provided vCPU count as it might be coming from text parsing
         "vcpus": lambda: lscpu_lookup("CPU(s):"),
         "cpu_cores": lambda: (
             int(lscpu_lookup("Core(s) per socket:")) * int(lscpu_lookup("Socket(s):"))
