@@ -181,13 +181,20 @@ STORAGE_METER_MAPPING = {
 def _parse_server_name(name):
     """Extract information from the server name/size.
 
-    Based on <https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/overview>."""
+    References:
 
+    - <https://learn.microsoft.com/en-us/azure/virtual-machines/vm-naming-conventions>
+    - <https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/overview>
+    """
+
+    # NOTE this is a best effort to fill in the database with initial data until inspector runs
+    # and it comes with already known undocumented bugs, such as E64-16s_v3 reporting 64 vCPUs instead of 16
     name_pattern = recompile(
         # there is a constant prefix (Standard_), and there used to be Basic_
         # servers as well, but the latter were deprecated in Aug 2024
         r"((?P<prefix>[A-Za-z]+)_)"
         # first ALLCAPS chars are the family name (we don't care about the subfamily for now)
+        # TODO recently some server (sub)families include digits as well, e.g. E16 or M128
         r"(?P<family>[A-Z]+)"
         r"(?P<vcpus>[0-9]+)"
         r"(-(?P<constrained_vcpus>\d+))?"
