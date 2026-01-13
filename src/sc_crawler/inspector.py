@@ -14,11 +14,12 @@ from typing import TYPE_CHECKING, List
 from zipfile import ZipFile
 
 from requests import get
+from sqlalchemy import null
 from yaml import safe_load as yaml_safe_load
 
 from .logger import logger
 from .table_bases import ServerBase
-from .table_fields import DdrGeneration
+from .table_fields import DdrGeneration, StorageType
 
 if TYPE_CHECKING:
     from .tables import Server
@@ -130,6 +131,11 @@ def _listsearch(items: List, key: str, value: str):
 
 def _server_lscpu_field(server: "Server", field: str) -> str:
     return _listsearch(_server_lscpu(server), "field", field)["data"]
+
+
+def _server_lshw(server: "Server") -> dict:
+    with open(_server_framework_path(server, "lshw", "stdout"), "r") as fp:
+        return json.load(fp)
 
 
 def _server_dmidecode(server: "Server") -> dict:
@@ -773,6 +779,82 @@ def _gpu_most_common(gpus: List[dict], field: str) -> str:
     return mode([gpu[field] for gpu in gpus])
 
 
+def _find_storage_devices(node: dict, devices: list) -> None:
+    """Recursively find storage devices in lshw JSON output."""
+    node_class = node.get("class", "")
+
+    if node_class == "storage" or node_class == "disk":
+        for child in node.get("children", []):
+            if child.get("class") == "disk" and "size" in child and not child.get("children"):
+                device_type = _determine_storage_type(node, child)
+                size_bytes = node.get("size", 0)
+                description = node.get("description")
+                devices.append({
+                    "storage_size": round(size_bytes // (1024 ** 3)),  # size in GiB
+                    "storage_type": device_type,
+                    "description": description,
+                })
+            if child.get("class") == "volume" and "size" in child:
+                device_type = _determine_storage_type(node, child)
+                size_bytes = child.get("size", 0)
+                description = child.get("description")
+                devices.append({
+                    "storage_size": round(size_bytes // (1024 ** 3)),  # size in GiB
+                    "storage_type": device_type,
+                    "description": description,
+                })
+
+    # Recurse into children
+    for child in node.get("children", []):
+        _find_storage_devices(child, devices)
+
+
+def _determine_storage_type(parent_node: dict, disk_node: dict) -> StorageType:
+    """Determine disk type based on parent controller and disk properties."""
+    is_nvme = parent_node.get("capabilities", {}).get("nvme", False)
+
+    # Check for network/cloud persistent disk indicators:
+    # - Has GUID (typically cloud persistent disks have partition GUIDs)
+    # - Has partitioned capabilities (local SSDs are usually raw)
+    # - Has wwid with specific patterns
+    has_guid = "guid" in disk_node.get("configuration", {})
+    disk_capabilities = disk_node.get("capabilities", {})
+    is_partitioned = disk_capabilities.get("partitioned") or disk_capabilities.get("partitioned:gpt")
+
+    if is_nvme:
+        # Local NVMe SSDs typically: no partitions, no GUID
+        # Network/Persistent disks typically: have partitions, GUID
+        if has_guid or is_partitioned:
+            return StorageType.NETWORK
+        else:
+            return StorageType.NVME_SSD
+
+    # Non-NVMe detection (SCSI/SATA)
+    if has_guid or is_partitioned:
+        # Could be network or local - check for virtual indicators
+        product = parent_node.get("product", "").lower()
+        if "virtual" in product or "google" in parent_node.get("vendor", "").lower():
+            return StorageType.NETWORK
+
+    return StorageType.HDD
+
+
+def _parse_lshw_storage(lshw_data: dict) -> dict:
+    """Parse lshw JSON and extract storage information."""
+    devices = []
+    _find_storage_devices(lshw_data, devices)
+
+    total_size = sum(d["storage_size"] for d in devices)
+    largest_disk = max(devices, key=lambda d: d["storage_size"])
+    primary_type = largest_disk["type"]
+
+    return {
+        "storage_type": primary_type,
+        "storage_size": round(total_size),
+        "storages": devices
+    }
+
+
 def inspect_update_server_dict(server: dict) -> dict:
     """Update a Server-like dict based on inspector data."""
     server_obj = ServerBase.validate(server)
@@ -788,6 +870,7 @@ def inspect_update_server_dict(server: dict) -> dict:
             server_obj, "Memory Device"
         ),
         "lscpu": lambda: _server_lscpu(server_obj),
+        "lshw": lambda: _server_lshw(server_obj),
         "nvidiasmi": lambda: _server_nvidiasmi(server_obj),
         "gpu": lambda: lookups["nvidiasmi"].find("gpu"),
         "gpus": lambda: lookups["nvidiasmi"].findall("gpu"),
@@ -800,6 +883,8 @@ def inspect_update_server_dict(server: dict) -> dict:
 
     def lscpu_lookup(field: str):
         return _listsearch(lookups["lscpu"], "field", field)["data"]
+
+    lshw_storage_info = _parse_lshw_storage(lookups["lshw"])
 
     mappings = {
         "vcpus": lambda: lscpu_lookup("CPU(s):"),
@@ -832,6 +917,10 @@ def inspect_update_server_dict(server: dict) -> dict:
         "gpu_count": lambda: len(server["gpus"]) if len(server["gpus"]) else None,
         "gpu_memory_min": lambda: min([gpu["memory"] for gpu in server["gpus"]]),
         "gpu_memory_total": lambda: sum([gpu["memory"] for gpu in server["gpus"]]),
+        # skip storage update if lshw parsing failed or API data is present
+        "storage_type": lambda: lshw_storage_info["storage_type"] if lshw_storage_info["storage_type"] and not server.get("storage_type") else None,
+        "storage_size": lambda: lshw_storage_info["storage_size_gb"] if lshw_storage_info["storage_size_gb"] and not server.get("storage_size") else None,
+        "storages": lambda: lshw_storage_info["storages"] if lshw_storage_info["storages"] and not server.get("storages") else None,
     }
     for k, f in mappings.items():
         try:
