@@ -94,7 +94,7 @@ def _server_path(server: "Server") -> str | PathLike:
 
 
 def _server_framework_path(
-        server: "Server", framework: str, relpath: str = None
+    server: "Server", framework: str, relpath: str = None
 ) -> str | PathLike:
     path_parts = [_server_path(server), framework, relpath]
     path_parts = [path_part for path_part in path_parts if path_part is not None]
@@ -161,7 +161,7 @@ def _observed_at(server: "Server", framework: str) -> dict:
 
 
 def _benchmark_metafields(
-        server: "Server", framework: str = None, benchmark_id: str = None
+    server: "Server", framework: str = None, benchmark_id: str = None
 ) -> dict:
     if benchmark_id is None:
         if framework is None:
@@ -371,7 +371,7 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
         try:
             records = []
             with open(
-                    _server_framework_stdout_path(server, "stressngfull"), newline=""
+                _server_framework_stdout_path(server, "stressngfull"), newline=""
             ) as f:
                 rows = csv.reader(f, quoting=csv.QUOTE_NONNUMERIC)
                 for row in rows:
@@ -401,7 +401,7 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
     try:
         records = []
         with open(
-                _server_framework_stdout_path(server, "stressngfull"), newline=""
+            _server_framework_stdout_path(server, "stressngfull"), newline=""
         ) as f:
             rows = csv.reader(f, quoting=csv.QUOTE_NONNUMERIC)
             for row in rows:
@@ -450,7 +450,7 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
 
             records = []
             with open(
-                    _server_framework_stdout_path(server, framework), newline=""
+                _server_framework_stdout_path(server, framework), newline=""
             ) as f:
                 rows = csv.DictReader(f, quoting=csv.QUOTE_NONNUMERIC)
                 for row in rows:
@@ -600,7 +600,7 @@ def _standardize_cpu_family(family):
         return None
     for prefix in ["Ampere "]:
         if family.startswith(prefix):
-            family = family[len(prefix):].lstrip()
+            family = family[len(prefix) :].lstrip()
     return family
 
 
@@ -655,7 +655,7 @@ def _standardize_cpu_model(model):
         "Gold",
     ]:
         if model.startswith(prefix):
-            model = model[len(prefix):].lstrip()
+            model = model[len(prefix) :].lstrip()
     # drop trailing "CPU @ 2.50GHz"
     model = sub(r"( CPU)? ?@ \d+\.\d+GHz$", "", model)
     # drop trailing "48-Core Processor" or "48-Core"
@@ -690,7 +690,7 @@ def _standardize_gpu_model(model, server=None):
         "GeeForce ",
     ]:
         if model.startswith(prefix):
-            model = model[len(prefix):].lstrip()
+            model = model[len(prefix) :].lstrip()
     if model == "nvidia-a100-80gb":
         model = "A100-SXM4-80GB"
     if model == "nvidia-b200":
@@ -788,19 +788,23 @@ def _find_storage_devices(node: dict, devices: list, server: ServerBase) -> None
                 size_bytes = child.get("size", 0)
                 device_type = _determine_storage_type(node, child, server)
                 description = child.get("description")
-                devices.append({
-                    "storage_product": node.get("product", "").lower(),
-                    "storage_type": device_type,
-                    "size": round(size_bytes // (1024 ** 3)),  # size in GiB
-                    "description": description,
-                })
+                devices.append(
+                    {
+                        "storage_product": node.get("product", "").lower(),
+                        "storage_type": device_type,
+                        "size": round(size_bytes // (1024**3)),  # size in GiB
+                        "description": description,
+                    }
+                )
 
     # Recurse into children
     for child in node.get("children", []):
         _find_storage_devices(child, devices, server)
 
 
-def _determine_storage_type(parent_node: dict, disk_node: dict, server: ServerBase) -> StorageType:
+def _determine_storage_type(
+    parent_node: dict, disk_node: dict, server: ServerBase
+) -> StorageType:
     """Determine disk type based on parent controller and disk properties."""
     vendor_id = server.vendor_id
     storage_product = parent_node.get("product", "").lower()
@@ -833,6 +837,7 @@ def _parse_lshw_storage_info(lshw_data: dict, server: ServerBase) -> dict:
     }
 
     if devices:
+
         def sort_by_storage_product(d):
             product = d["storage_product"]
             numbers = search(r"(\d+)", product)
@@ -884,7 +889,8 @@ def inspect_update_server_dict(server: dict) -> dict:
 
     # Parse lshw storage info once (None if lshw lookup failed)
     lshw_storage_info = (
-        None if isinstance(lookups["lshw"], Exception)
+        None
+        if isinstance(lookups["lshw"], Exception)
         else _parse_lshw_storage_info(lookups["lshw"], server_obj)
     )
 
@@ -909,7 +915,7 @@ def inspect_update_server_dict(server: dict) -> dict:
     mappings = {
         "vcpus": lambda: lscpu_lookup("CPU(s):"),
         "cpu_cores": lambda: (
-                int(lscpu_lookup("Core(s) per socket:")) * int(lscpu_lookup("Socket(s):"))
+            int(lscpu_lookup("Core(s) per socket:")) * int(lscpu_lookup("Socket(s):"))
         ),
         # use 1st CPU's speed, convert to Ghz
         "cpu_speed": lambda: lookups["dmidecode_cpu"]["Max Speed"] / 1e9,
