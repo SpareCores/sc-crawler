@@ -14,7 +14,6 @@ from typing import TYPE_CHECKING, List
 from zipfile import ZipFile
 
 from requests import get
-from sqlalchemy import null
 from yaml import safe_load as yaml_safe_load
 
 from .logger import logger
@@ -786,12 +785,13 @@ def _find_storage_devices(node: dict, devices: list, server: ServerBase) -> None
     if node_class == "storage":
         for child in node.get("children", []):
             if child.get("class") == "disk" and "size" in child:
-                size_bytes = node.get("size", 0)
+                size_bytes = child.get("size", 0)
                 device_type = _determine_storage_type(node, child, server)
-                description = node.get("description")
+                description = child.get("description")
                 devices.append({
+                    "storage_product": node.get("product", "").lower(),
                     "storage_type": device_type,
-                    "storage_size": round(size_bytes // (1024 ** 3)),  # size in GiB
+                    "size": round(size_bytes // (1024 ** 3)),  # size in GiB
                     "description": description,
                 })
 
@@ -809,7 +809,10 @@ def _determine_storage_type(parent_node: dict, disk_node: dict, server: ServerBa
     if vendor_id == "gcp" and "-pd" in storage_product:
         return StorageType.NETWORK
 
-    if vendor_id == "aws" and "elastic block store" in storage_product:
+    if vendor_id == "aws" and "amazon elastic block store" in storage_product:
+        return StorageType.NETWORK
+
+    if vendor_id == "upcloud" and "virtio block device" in storage_product:
         return StorageType.NETWORK
 
     if "nvme" in disk_description:
@@ -820,19 +823,31 @@ def _determine_storage_type(parent_node: dict, disk_node: dict, server: ServerBa
 
 def _parse_lshw_storage_info(lshw_data: dict, server: ServerBase) -> dict:
     """Parse lshw JSON and extract storage information."""
-    devices = []
+    devices: list[dict] = []
     _find_storage_devices(lshw_data, devices, server)
 
     storage_info = {
         "storage_type": None,
-        "storage_size": 0,
-        "storages": devices
+        "size": 0,
+        "storages": devices,
     }
 
     if devices:
-        largest_disk = max(devices, key=lambda d: d["storage_size"])
-        storage_info["storage_type"] = largest_disk["type"]
-        storage_info["storage_size"] = sum(d["storage_size"] for d in devices)
+        def sort_by_storage_product(d):
+            product = d["storage_product"]
+            numbers = search(r"(\d+)", product)
+            # Items with number: sort by number first, then by string length
+            # Items without number: sort last, then by string length
+            if numbers:
+                return 0, int(numbers.group(1)), len(product)
+            else:
+                return 1, 0, len(product)
+        devices.sort(key=sort_by_storage_product)
+        for device in devices:
+            device.pop("storage_product", None)
+        largest_disk = max(devices, key=lambda d: d["size"])
+        storage_info["storage_type"] = largest_disk["storage_type"]
+        storage_info["size"] = sum(d["size"] for d in devices)
 
     return storage_info
 
@@ -866,7 +881,29 @@ def inspect_update_server_dict(server: dict) -> dict:
     def lscpu_lookup(field: str):
         return _listsearch(lookups["lscpu"], "field", field)["data"]
 
-    lshw_storage_info = _parse_lshw_storage_info(lookups["lshw"], server_obj)
+    # Parse lshw storage info once (None if lshw lookup failed)
+    lshw_storage_info = (
+        None if isinstance(lookups["lshw"], Exception)
+        else _parse_lshw_storage_info(lookups["lshw"], server_obj)
+    )
+
+    def get_storage_type():
+        if not lshw_storage_info:
+            return None
+        val = lshw_storage_info["storage_type"]
+        return val if val and not server_obj.storage_type else None
+
+    def get_storage_size():
+        if not lshw_storage_info:
+            return None
+        val = lshw_storage_info["size"]
+        return val if val and not server_obj.storage_size else None
+
+    def get_storages():
+        if not lshw_storage_info:
+            return None
+        val = lshw_storage_info["storages"]
+        return val if val and not server_obj.storages else None
 
     mappings = {
         "vcpus": lambda: lscpu_lookup("CPU(s):"),
@@ -900,9 +937,9 @@ def inspect_update_server_dict(server: dict) -> dict:
         "gpu_memory_min": lambda: min([gpu["memory"] for gpu in server["gpus"]]),
         "gpu_memory_total": lambda: sum([gpu["memory"] for gpu in server["gpus"]]),
         # skip storage update if lshw parsing failed or API data is present
-        "storage_type": lambda: lshw_storage_info["storage_type"] if lshw_storage_info["storage_type"] and not server.get("storage_type") else None,
-        "storage_size": lambda: lshw_storage_info["storage_size"] if lshw_storage_info["storage_size"] and not server.get("storage_size") else None,
-        "storages": lambda: lshw_storage_info["storages"] if lshw_storage_info["storages"] and not server.get("storages") else None,
+        "storage_type": get_storage_type,
+        "storage_size": get_storage_size,
+        "storages": get_storages,
     }
     for k, f in mappings.items():
         try:
