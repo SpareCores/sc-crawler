@@ -830,7 +830,7 @@ def _determine_storage_type(parent_node: dict, disk_node: dict) -> StorageType:
             return StorageType.NVME_SSD
 
     # Non-NVMe detection (SCSI/SATA)
-    # TODO: further refine based on more indicators
+    # TODO: further refine based on more indicators, e.g. model names, vendors, etc.
     if has_guid or is_partitioned:
         # Could be network or local - check for virtual indicators
         product = parent_node.get("product", "").lower()
