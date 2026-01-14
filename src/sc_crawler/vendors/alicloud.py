@@ -517,7 +517,12 @@ def inventory_servers(vendor):
         family = instance_type.get("InstanceTypeFamily")
         vcpus = instance_type.get("CpuCoreCount")
         cpu_model = instance_type.get("PhysicalProcessorModel")
-        memory_size_gb = int((instance_type.get("MemorySize") * 1024))
+        memory_size_mb = int((instance_type.get("MemorySize") * 1024))
+        memory_size_gb = (
+            memory_size_mb // 1024
+            if memory_size_mb >= 1024
+            else round(memory_size_mb / 1024, 2)
+        )
         storage_size = int(
             instance_type.get("LocalStorageAmount", 0)
             * instance_type.get("LocalStorageCapacity", 0)
@@ -565,7 +570,7 @@ def inventory_servers(vendor):
                 "cpu_l3_cache": None,
                 "cpu_flags": [],
                 "cpus": [],
-                "memory_amount": memory_size_gb,
+                "memory_amount": memory_size_mb,
                 "memory_generation": None,
                 "memory_speed": None,
                 "memory_ecc": None,
