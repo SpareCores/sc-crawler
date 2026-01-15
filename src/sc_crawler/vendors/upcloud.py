@@ -174,6 +174,17 @@ def inventory_regions(vendor):
             "lon": 4.8400019,
             "lat": 52.3998291,
         },
+        "no-svg1": {
+            "country_id": "NO",
+            "state": "Rogaland",
+            "city": "Stavanger",
+            "founding_year": 2025,
+            # TODO update when data shared on homepage
+            "green_energy": False,
+            # approximation based on city - TODO update when info becomes available on the homepage
+            "lon": 5.5979374,
+            "lat": 58.9487157,
+        },
         "pl-waw1": {
             "country_id": "PL",
             "state": "Mazowieckie",
