@@ -18,7 +18,7 @@ from yaml import safe_load as yaml_safe_load
 
 from .logger import logger
 from .table_bases import ServerBase
-from .table_fields import DdrGeneration, StorageType
+from .table_fields import DdrGeneration, StorageType, Disk
 
 if TYPE_CHECKING:
     from .tables import Server
@@ -778,7 +778,7 @@ def _gpu_most_common(gpus: List[dict], field: str) -> str:
     return mode([gpu[field] for gpu in gpus])
 
 
-def _find_storage_devices(node: dict, devices: list, server: ServerBase) -> None:
+def _find_storage_disks(node: dict, disks: List[Disk], server: ServerBase) -> None:
     """Recursively find storage devices in lshw JSON output."""
     node_class = node.get("class", "")
 
@@ -787,19 +787,17 @@ def _find_storage_devices(node: dict, devices: list, server: ServerBase) -> None
             if child.get("class") == "disk" and "size" in child:
                 size_bytes = child.get("size", 0)
                 device_type = _determine_storage_type(node, child, server)
-                description = child.get("description")
-                devices.append(
-                    {
-                        "storage_product": node.get("product", "").lower(),
-                        "storage_type": device_type,
-                        "size": round(size_bytes // (1024**3)),  # size in GiB
-                        "description": description,
-                    }
+                disks.append(
+                    Disk(
+                        size=round(size_bytes // (1024**3)),  # size in GiB
+                        storage_type=device_type,
+                        description=node.get("product", "").lower(),
+                    )
                 )
 
     # Recurse into children
     for child in node.get("children", []):
-        _find_storage_devices(child, devices, server)
+        _find_storage_disks(child, disks, server)
 
 
 def _determine_storage_type(
@@ -827,33 +825,32 @@ def _determine_storage_type(
 
 def _parse_lshw_storage_info(lshw_data: dict, server: ServerBase) -> dict:
     """Parse lshw JSON and extract storage information."""
-    devices: list[dict] = []
-    _find_storage_devices(lshw_data, devices, server)
+    disks: List[Disk] = []
+    _find_storage_disks(lshw_data, disks, server)
 
     storage_info = {
         "storage_type": None,
-        "size": 0,
-        "storages": devices,
+        "storage_size": 0,
+        "storages": disks,
     }
 
-    if devices:
+    if disks:
 
-        def sort_by_storage_product(d):
-            product = d["storage_product"]
-            numbers = search(r"(\d+)", product)
-            # Items with number: sort by number first, then by string length
-            # Items without number: sort last, then by string length
+        def sort_by_storage_product(d: Disk):
+            """Sort disks by storage product name characteristics and size."""
+            numbers = search(r"(\d+)", d.description)
             if numbers:
-                return 0, int(numbers.group(1)), len(product)
+                return 0, int(numbers.group(1)), len(d.description), d.size
             else:
-                return 1, 0, len(product)
+                return 1, 0, len(d.description), d.size
 
-        devices.sort(key=sort_by_storage_product)
-        for device in devices:
-            device.pop("storage_product", None)
-        largest_disk = max(devices, key=lambda d: d["size"])
-        storage_info["storage_type"] = largest_disk["storage_type"]
-        storage_info["size"] = sum(d["size"] for d in devices)
+        disks.sort(key=sort_by_storage_product)
+        # Remove descriptions because they are not informative enough
+        for disk in disks:
+            disk.description = None
+        largest_disk = max(disks, key=lambda d: d.size)
+        storage_info["storage_type"] = largest_disk.storage_type
+        storage_info["storage_size"] = sum(d.size for d in disks)
 
     return storage_info
 
@@ -894,23 +891,14 @@ def inspect_update_server_dict(server: dict) -> dict:
         else _parse_lshw_storage_info(lookups["lshw"], server_obj)
     )
 
-    def get_storage_type():
+    def get_storage_info(storage_field, server_field):
         if not lshw_storage_info:
             return None
-        val = lshw_storage_info["storage_type"]
-        return val if val and not server_obj.storage_type else None
-
-    def get_storage_size():
-        if not lshw_storage_info:
-            return None
-        val = lshw_storage_info["size"]
-        return val if val and not server_obj.storage_size else None
-
-    def get_storages():
-        if not lshw_storage_info:
-            return None
-        val = lshw_storage_info["storages"]
-        return val if val and not server_obj.storages else None
+        val = lshw_storage_info[storage_field]
+        # only update GCP storage info to avoid overwriting reliable API data
+        return (
+            val if val and not server_field and server_obj.vendor_id == "gcp" else None
+        )
 
     mappings = {
         "vcpus": lambda: lscpu_lookup("CPU(s):"),
@@ -944,9 +932,13 @@ def inspect_update_server_dict(server: dict) -> dict:
         "gpu_memory_min": lambda: min([gpu["memory"] for gpu in server["gpus"]]),
         "gpu_memory_total": lambda: sum([gpu["memory"] for gpu in server["gpus"]]),
         # skip storage update if lshw parsing failed or API data is present
-        "storage_type": get_storage_type,
-        "storage_size": get_storage_size,
-        "storages": get_storages,
+        "storage_type": lambda: get_storage_info(
+            "storage_type", server_obj.storage_type
+        ),
+        "storage_size": lambda: get_storage_info(
+            "storage_size", server_obj.storage_size
+        ),
+        "storages": lambda: get_storage_info("storages", server_obj.storages),
     }
     for k, f in mappings.items():
         try:
