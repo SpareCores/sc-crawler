@@ -18,7 +18,7 @@ from yaml import safe_load as yaml_safe_load
 
 from .logger import logger
 from .table_bases import ServerBase
-from .table_fields import DdrGeneration, StorageType, Disk
+from .table_fields import DdrGeneration, Disk, StorageType
 
 if TYPE_CHECKING:
     from .tables import Server
