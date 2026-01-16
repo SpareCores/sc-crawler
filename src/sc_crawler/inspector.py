@@ -787,6 +787,9 @@ def _find_storage_disks(node: dict, disks: List[Disk], server: ServerBase) -> No
             if child.get("class") == "disk" and "size" in child:
                 size_bytes = child.get("size", 0)
                 device_type = _determine_storage_type(node, child, server)
+                # GCP network disks are added manually, not bundled, so skip them
+                if server.vendor_id == "gcp" and device_type == StorageType.NETWORK:
+                    continue
                 disks.append(
                     Disk(
                         size=size_bytes // (1024**3),  # size in GiB
