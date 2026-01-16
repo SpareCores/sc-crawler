@@ -789,7 +789,7 @@ def _find_storage_disks(node: dict, disks: List[Disk], server: ServerBase) -> No
                 device_type = _determine_storage_type(node, child, server)
                 disks.append(
                     Disk(
-                        size=round(size_bytes // (1024**3)),  # size in GiB
+                        size=size_bytes // (1024**3),  # size in GiB
                         storage_type=device_type,
                         description=node.get("product", "").lower(),
                     )
