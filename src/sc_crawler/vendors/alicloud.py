@@ -153,7 +153,6 @@ def _get_resource_info(
     destination_resource: str = "InstanceType",
     resource_type: str = "instance",
     extra_request_params: Optional[dict] = None,
-    vendor: Optional[Vendor] = None,
 ) -> list[dict]:
     """Fetch available resource info for a given region using the `DescribeAvailableResource` API endpoint.
 
@@ -163,7 +162,6 @@ def _get_resource_info(
         destination_resource: The destination resource type, defaults to "InstanceType".
         resource_type: The resource type, defaults to "Instance".
         extra_request_params: Extra parameters to pass to the API request.
-        vendor: The Vendor object used for interacting with the progress tracker and logging.
 
     Returns:
         A list of available resource info.
@@ -188,9 +186,7 @@ def _get_resource_info(
                 for resource in response.body.available_zones.available_zone
             ]
     except Exception as e:
-        logger.warning(
-            f"Failed to get available resources for region {region_id}: {e}"
-        )
+        logger.warning(f"Failed to get available resources for region {region_id}: {e}")
     return resources
 
 
@@ -664,17 +660,35 @@ def inventory_server_prices(vendor):
     items = []
     unsupported_regions = set()
     region_availability_info: dict[str, list[dict]] = {}
+
+    def fetch_region_availability(region_id):
+        try:
+            return region_id, _get_resource_info(region_id=region_id)
+        except Exception as e:
+            logger.error(f"Failed to get availability info for region {region_id}: {e}")
+            return region_id, []
+        finally:
+            vendor.progress_tracker.advance_task()
+
+    vendor.progress_tracker.start_task(
+        name="Fetching server availability info", total=len(vendor.regions)
+    )
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        results = executor.map(
+            fetch_region_availability, [r.region_id for r in vendor.regions]
+        )
+    for region_id, resources in results:
+        region_availability_info[region_id] = resources
+    vendor.progress_tracker.hide_task()
+
     for sku in skus:
         sku_region_id = sku["SkuFactorMap"]["vm_region_no"]
         region = get_region_by_id(sku_region_id, vendor)
         if not region:
             unsupported_regions.add(sku_region_id)
             continue
-        if region.region_id not in region_availability_info:
-            resources = _get_resource_info(region_id=region.region_id)
-            region_availability_info[region.region_id] = resources
         for zone in region.zones:
-            server_id = sku.get("SkuFactorMap").get("instance_type")
+            server_id = sku.get("SkuFactorMap", {}).get("instance_type")
             status = Status.INACTIVE
             zone_availability_info = next(
                 (
@@ -702,6 +716,7 @@ def inventory_server_prices(vendor):
                 )
                 if server_info.get("StatusCategory") == "WithStock":
                     status = Status.ACTIVE
+
             items.append(
                 {
                     "vendor_id": vendor.vendor_id,
