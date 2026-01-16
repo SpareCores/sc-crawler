@@ -10,6 +10,7 @@ from alibabacloud_bssopenapi20171214.models import QuerySkuPriceListRequest
 from alibabacloud_credentials.client import Client as CredClient
 from alibabacloud_ecs20140526.client import Client as EcsClient
 from alibabacloud_ecs20140526.models import (
+    DescribeAvailableResourceRequest,
     DescribeInstanceTypesRequest,
     DescribeRegionsRequest,
     DescribeZonesRequest,
@@ -30,11 +31,13 @@ from ..table_fields import (
     CpuAllocation,
     CpuArchitecture,
     PriceUnit,
+    Status,
     StorageType,
     TrafficDirection,
 )
 from ..tables import Vendor
 from ..vendor_helpers import get_region_by_id
+
 
 # ##############################################################################
 # Internal helpers
@@ -142,6 +145,53 @@ def _get_sku_prices(
     if vendor:
         vendor.progress_tracker.hide_task()
     return skus
+
+
+def _get_resource_info(
+    region_id: str,
+    instance_charge_type: str = "PostPaid",
+    destination_resource: str = "InstanceType",
+    resource_type: str = "instance",
+    extra_request_params: Optional[dict] = None,
+    vendor: Optional[Vendor] = None,
+) -> list[dict]:
+    """Fetch available resource info for a given region using the `DescribeAvailableResource` API endpoint.
+
+    Args:
+        region_id: The region ID to fetch resource info for.
+        instance_charge_type: The instance charge type, defaults to "PostPaid".
+        destination_resource: The destination resource type, defaults to "InstanceType".
+        resource_type: The resource type, defaults to "Instance".
+        extra_request_params: Extra parameters to pass to the API request.
+        vendor: The Vendor object used for interacting with the progress tracker and logging.
+
+    Returns:
+        A list of available resource info.
+    """
+    resources = []
+    client = _ecs_client(region_id=region_id)
+    if extra_request_params is None:
+        extra_request_params = {}
+    request = DescribeAvailableResourceRequest(
+        region_id=region_id,
+        instance_charge_type=instance_charge_type,
+        destination_resource=destination_resource,
+        resource_type=resource_type,
+        **extra_request_params,
+    )
+    runtime = RuntimeOptions()
+    try:
+        response = client.describe_available_resource_with_options(request, runtime)
+        if response.body:
+            resources = [
+                resource.to_map()
+                for resource in response.body.available_zones.available_zone
+            ]
+    except Exception as e:
+        logger.warning(
+            f"Failed to get available resources for region {region_id}: {e}"
+        )
+    return resources
 
 
 # ##############################################################################
@@ -613,18 +663,51 @@ def inventory_server_prices(vendor):
 
     items = []
     unsupported_regions = set()
+    region_availability_info: dict[str, list[dict]] = {}
     for sku in skus:
-        region = get_region_by_id(sku["SkuFactorMap"]["vm_region_no"], vendor)
+        sku_region_id = sku["SkuFactorMap"]["vm_region_no"]
+        region = get_region_by_id(sku_region_id, vendor)
         if not region:
-            unsupported_regions.add(sku["SkuFactorMap"]["vm_region_no"])
+            unsupported_regions.add(sku_region_id)
             continue
+        if region.region_id not in region_availability_info:
+            resources = _get_resource_info(region_id=region.region_id)
+            region_availability_info[region.region_id] = resources
         for zone in region.zones:
+            server_id = sku.get("SkuFactorMap").get("instance_type")
+            status = Status.INACTIVE
+            zone_availability_info = next(
+                (
+                    r
+                    for r in region_availability_info[region.region_id]
+                    if r["ZoneId"] == zone.zone_id
+                ),
+                None,
+            )
+            if zone_availability_info:
+                available_resource: list[dict] = zone_availability_info.get(
+                    "AvailableResources", {}
+                ).get("AvailableResource", [])
+                supported_resource: list[dict] = (
+                    next(
+                        (r for r in available_resource if r["Type"] == "InstanceType"),
+                        {},
+                    )
+                    .get("SupportedResources", {})
+                    .get("SupportedResource", [])
+                )
+                server_info = next(
+                    (r for r in supported_resource if r["Value"] == server_id),
+                    {},
+                )
+                if server_info.get("StatusCategory") == "WithStock":
+                    status = Status.ACTIVE
             items.append(
                 {
                     "vendor_id": vendor.vendor_id,
                     "region_id": region.region_id,
                     "zone_id": zone.zone_id,
-                    "server_id": sku.get("SkuFactorMap").get("instance_type"),
+                    "server_id": server_id,
                     "operating_system": sku.get("SkuFactorMap").get("vm_os_kind"),
                     "allocation": Allocation.ONDEMAND,
                     "unit": PriceUnit.HOUR,
@@ -632,6 +715,7 @@ def inventory_server_prices(vendor):
                     "price_upfront": 0,
                     "price_tiered": [],
                     "currency": sku.get("CskuPriceList")[0].get("Currency"),
+                    "status": status,
                 }
             )
     for unsupported_region in unsupported_regions:
