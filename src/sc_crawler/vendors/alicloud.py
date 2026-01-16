@@ -38,7 +38,6 @@ from ..table_fields import (
 from ..tables import Vendor
 from ..vendor_helpers import get_region_by_id
 
-
 # ##############################################################################
 # Internal helpers
 
