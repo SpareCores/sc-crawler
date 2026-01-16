@@ -897,7 +897,7 @@ def inspect_update_server_dict(server: dict) -> dict:
         if server_obj.vendor_id != "gcp":
             return None
         # don't override data fetched from vendor API
-        if not server_field:
+        if server_field:
             return None
         if not lshw_storage_info:
             return None
