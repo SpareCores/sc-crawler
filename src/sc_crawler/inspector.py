@@ -892,13 +892,16 @@ def inspect_update_server_dict(server: dict) -> dict:
     )
 
     def get_storage_info(storage_field, server_field):
+        # only update GCP (without any related vendor data) for now
+        # as other vendors usually provide storage data via API
+        if server_obj.vendor_id != "gcp":
+            return None
+        # don't override data fetched from vendor API
+        if not server_field:
+            return None
         if not lshw_storage_info:
             return None
-        val = lshw_storage_info[storage_field]
-        # only update GCP storage info to avoid overwriting reliable API data
-        return (
-            val if val and not server_field and server_obj.vendor_id == "gcp" else None
-        )
+        return lshw_storage_info[storage_field]
 
     mappings = {
         "vcpus": lambda: lscpu_lookup("CPU(s):"),
