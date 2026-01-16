@@ -1,5 +1,9 @@
 ## v0.3.x (development version)
 
+Fix(es):
+
+- Add storage infos from lshw outputs to GCP servers.
+
 ## v0.3.3 (Jan 02, 2026)
 
 New vendor(s):
