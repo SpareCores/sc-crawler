@@ -677,8 +677,8 @@ def inventory_server_prices(vendor):
         results = executor.map(
             fetch_region_availability, [r.region_id for r in vendor.regions]
         )
-    for region_id, resources in results:
-        region_availability_info[region_id] = resources
+        for region_id, resources in results:
+            region_availability_info[region_id] = resources
     vendor.progress_tracker.hide_task()
 
     for sku in skus:
