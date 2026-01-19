@@ -185,10 +185,12 @@ def _get_resource_availability_info(
             runtime = RuntimeOptions()
             response = client.describe_available_resource_with_options(request, runtime)
             if response.body:
-                resources = [
-                    resource.to_map()
-                    for resource in response.body.available_zones.available_zone
-                ]
+                available_zones = response.body.available_zones
+                if available_zones and available_zones.available_zone:
+                    resources = [
+                        resource.to_map()
+                        for resource in response.body.available_zones.available_zone
+                    ]
             return region_id, resources
         except Exception:
             logger.exception(f"Failed to get availability info for region {region_id}")
