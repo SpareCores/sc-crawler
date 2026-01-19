@@ -3,7 +3,7 @@
 Fix(es):
 
 - Add storage infos from lshw outputs to GCP servers.
-- Check region availability for Alibaba Cloud servers before add their prices.
+- Check region availability for Alibaba Cloud servers before adding their prices.
 
 ## v0.3.3 (Jan 02, 2026)
 
