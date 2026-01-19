@@ -146,17 +146,17 @@ def _get_sku_prices(
     return skus
 
 
-def _get_resource_info(
-    region_id: str,
+def _get_resource_availability_info(
+    vendor: Vendor,
     instance_charge_type: str = "PostPaid",
     destination_resource: str = "InstanceType",
     resource_type: str = "instance",
     extra_request_params: Optional[dict] = None,
-) -> list[dict]:
+) -> dict[str, list[dict]]:
     """Fetch available resource info for a given region using the `DescribeAvailableResource` API endpoint.
 
     Args:
-        region_id: The region ID to fetch resource info for.
+        vendor: The Vendor object used for get region list, interacting with the progress tracker and logging.
         instance_charge_type: The instance charge type, defaults to "PostPaid".
         destination_resource: The destination resource type, defaults to "InstanceType".
         resource_type: The resource type, defaults to "Instance".
@@ -165,28 +165,48 @@ def _get_resource_info(
     Returns:
         A list of available resource info.
     """
-    resources = []
-    client = _ecs_client(region_id=region_id)
     if extra_request_params is None:
         extra_request_params = {}
-    request = DescribeAvailableResourceRequest(
-        region_id=region_id,
-        instance_charge_type=instance_charge_type,
-        destination_resource=destination_resource,
-        resource_type=resource_type,
-        **extra_request_params,
+    region_availability_info: dict[str, list[dict]] = {}
+    ecs_clients: dict[str, EcsClient] = _ecs_clients(vendor)
+
+    def fetch_region_availability(region_id: str, client: EcsClient) -> tuple[str, list[dict]]:
+        try:
+            resources = []
+            request = DescribeAvailableResourceRequest(
+                region_id=region_id,
+                instance_charge_type=instance_charge_type,
+                destination_resource=destination_resource,
+                resource_type=resource_type,
+                **extra_request_params,
+            )
+            runtime = RuntimeOptions()
+            response = client.describe_available_resource_with_options(request, runtime)
+            if response.body:
+                resources = [
+                    resource.to_map()
+                    for resource in response.body.available_zones.available_zone
+                ]
+            return region_id, resources
+        except Exception as e:
+            logger.exception(f"Failed to get availability info for region {region_id}")
+            return region_id, []
+        finally:
+            vendor.progress_tracker.advance_task()
+
+    vendor.progress_tracker.start_task(
+        name="Fetching server availability info", total=len(vendor.regions)
     )
-    runtime = RuntimeOptions()
-    try:
-        response = client.describe_available_resource_with_options(request, runtime)
-        if response.body:
-            resources = [
-                resource.to_map()
-                for resource in response.body.available_zones.available_zone
-            ]
-    except Exception as e:
-        logger.warning(f"Failed to get available resources for region {region_id}: {e}")
-    return resources
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        results = executor.map(
+            lambda args: fetch_region_availability(*args),
+            [(r.region_id, ecs_clients[r.region_id]) for r in vendor.regions],
+        )
+        for region_id, resources in results:
+            region_availability_info[region_id] = resources
+    vendor.progress_tracker.hide_task()
+
+    return region_availability_info
 
 
 # ##############################################################################
@@ -658,27 +678,9 @@ def inventory_server_prices(vendor):
 
     items = []
     unsupported_regions = set()
-    region_availability_info: dict[str, list[dict]] = {}
-
-    def fetch_region_availability(region_id):
-        try:
-            return region_id, _get_resource_info(region_id=region_id)
-        except Exception as e:
-            logger.error(f"Failed to get availability info for region {region_id}: {e}")
-            return region_id, []
-        finally:
-            vendor.progress_tracker.advance_task()
-
-    vendor.progress_tracker.start_task(
-        name="Fetching server availability info", total=len(vendor.regions)
+    region_availability_info: dict[str, list[dict]] = _get_resource_availability_info(
+        vendor
     )
-    with ThreadPoolExecutor(max_workers=8) as executor:
-        results = executor.map(
-            fetch_region_availability, [r.region_id for r in vendor.regions]
-        )
-        for region_id, resources in results:
-            region_availability_info[region_id] = resources
-    vendor.progress_tracker.hide_task()
 
     for sku in skus:
         sku_region_id = sku["SkuFactorMap"]["vm_region_no"]
