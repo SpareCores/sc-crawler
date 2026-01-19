@@ -170,7 +170,9 @@ def _get_resource_availability_info(
     region_availability_info: dict[str, list[dict]] = {}
     ecs_clients: dict[str, EcsClient] = _ecs_clients(vendor)
 
-    def fetch_region_availability(region_id: str, client: EcsClient) -> tuple[str, list[dict]]:
+    def fetch_region_availability(
+        region_id: str, client: EcsClient
+    ) -> tuple[str, list[dict]]:
         try:
             resources = []
             request = DescribeAvailableResourceRequest(
