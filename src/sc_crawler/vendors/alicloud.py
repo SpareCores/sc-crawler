@@ -10,6 +10,7 @@ from alibabacloud_bssopenapi20171214.models import QuerySkuPriceListRequest
 from alibabacloud_credentials.client import Client as CredClient
 from alibabacloud_ecs20140526.client import Client as EcsClient
 from alibabacloud_ecs20140526.models import (
+    DescribeAvailableResourceRequest,
     DescribeInstanceTypesRequest,
     DescribeRegionsRequest,
     DescribeZonesRequest,
@@ -30,6 +31,7 @@ from ..table_fields import (
     CpuAllocation,
     CpuArchitecture,
     PriceUnit,
+    Status,
     StorageType,
     TrafficDirection,
 )
@@ -142,6 +144,73 @@ def _get_sku_prices(
     if vendor:
         vendor.progress_tracker.hide_task()
     return skus
+
+
+def _get_resource_availability_info(
+    vendor: Vendor,
+    instance_charge_type: str = "PostPaid",
+    destination_resource: str = "InstanceType",
+    resource_type: str = "instance",
+    extra_request_params: Optional[dict] = None,
+) -> dict[str, list[dict]]:
+    """Fetch resource availability information using the `DescribeAvailableResource` API endpoint across all supported regions.
+
+    Args:
+        vendor: The Vendor object used for get region list, interacting with the progress tracker and logging.
+        instance_charge_type: The instance charge type, defaults to "PostPaid".
+        destination_resource: The destination resource type, defaults to "InstanceType".
+        resource_type: The resource type, defaults to "Instance".
+        extra_request_params: Extra parameters to pass to the API request.
+
+    Returns:
+        A list of available resource info.
+    """
+    if extra_request_params is None:
+        extra_request_params = {}
+    region_availability_info: dict[str, list[dict]] = {}
+    ecs_clients: dict[str, EcsClient] = _ecs_clients(vendor)
+
+    def fetch_region_availability(
+        region_id: str, client: EcsClient
+    ) -> tuple[str, list[dict]]:
+        try:
+            resources = []
+            request = DescribeAvailableResourceRequest(
+                region_id=region_id,
+                instance_charge_type=instance_charge_type,
+                destination_resource=destination_resource,
+                resource_type=resource_type,
+                **extra_request_params,
+            )
+            runtime = RuntimeOptions()
+            response = client.describe_available_resource_with_options(request, runtime)
+            if response.body:
+                available_zones = response.body.available_zones
+                if available_zones and available_zones.available_zone:
+                    resources = [
+                        resource.to_map()
+                        for resource in response.body.available_zones.available_zone
+                    ]
+            return region_id, resources
+        except Exception:
+            logger.exception(f"Failed to get availability info for region {region_id}")
+            return region_id, []
+        finally:
+            vendor.progress_tracker.advance_task()
+
+    vendor.progress_tracker.start_task(
+        name="Fetching server availability info", total=len(vendor.regions)
+    )
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        results = executor.map(
+            lambda args: fetch_region_availability(*args),
+            [(r.region_id, ecs_clients[r.region_id]) for r in vendor.regions],
+        )
+        for region_id, resources in results:
+            region_availability_info[region_id] = resources
+    vendor.progress_tracker.hide_task()
+
+    return region_availability_info
 
 
 # ##############################################################################
@@ -613,18 +682,52 @@ def inventory_server_prices(vendor):
 
     items = []
     unsupported_regions = set()
+    region_availability_info: dict[str, list[dict]] = _get_resource_availability_info(
+        vendor
+    )
+
     for sku in skus:
-        region = get_region_by_id(sku["SkuFactorMap"]["vm_region_no"], vendor)
+        sku_region_id = sku["SkuFactorMap"]["vm_region_no"]
+        region = get_region_by_id(sku_region_id, vendor)
         if not region:
-            unsupported_regions.add(sku["SkuFactorMap"]["vm_region_no"])
+            unsupported_regions.add(sku_region_id)
             continue
         for zone in region.zones:
+            server_id = sku.get("SkuFactorMap", {}).get("instance_type")
+            status = Status.INACTIVE
+            zone_availability_info = next(
+                (
+                    r
+                    for r in region_availability_info[region.region_id]
+                    if r["ZoneId"] == zone.zone_id
+                ),
+                None,
+            )
+            if zone_availability_info:
+                available_resource: list[dict] = zone_availability_info.get(
+                    "AvailableResources", {}
+                ).get("AvailableResource", [])
+                supported_resource: list[dict] = (
+                    next(
+                        (r for r in available_resource if r["Type"] == "InstanceType"),
+                        {},
+                    )
+                    .get("SupportedResources", {})
+                    .get("SupportedResource", [])
+                )
+                server_info = next(
+                    (r for r in supported_resource if r["Value"] == server_id),
+                    {},
+                )
+                if server_info.get("StatusCategory") == "WithStock":
+                    status = Status.ACTIVE
+
             items.append(
                 {
                     "vendor_id": vendor.vendor_id,
                     "region_id": region.region_id,
                     "zone_id": zone.zone_id,
-                    "server_id": sku.get("SkuFactorMap").get("instance_type"),
+                    "server_id": server_id,
                     "operating_system": sku.get("SkuFactorMap").get("vm_os_kind"),
                     "allocation": Allocation.ONDEMAND,
                     "unit": PriceUnit.HOUR,
@@ -632,6 +735,7 @@ def inventory_server_prices(vendor):
                     "price_upfront": 0,
                     "price_tiered": [],
                     "currency": sku.get("CskuPriceList")[0].get("Currency"),
+                    "status": status,
                 }
             )
     for unsupported_region in unsupported_regions:
