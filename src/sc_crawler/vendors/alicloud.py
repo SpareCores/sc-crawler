@@ -153,7 +153,7 @@ def _get_resource_availability_info(
     resource_type: str = "instance",
     extra_request_params: Optional[dict] = None,
 ) -> dict[str, list[dict]]:
-    """Fetch available resource info for a given region using the `DescribeAvailableResource` API endpoint.
+    """Fetch resource availability information using the `DescribeAvailableResource` API endpoint across all supported regions.
 
     Args:
         vendor: The Vendor object used for get region list, interacting with the progress tracker and logging.
