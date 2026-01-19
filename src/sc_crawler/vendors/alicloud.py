@@ -190,7 +190,7 @@ def _get_resource_availability_info(
                     for resource in response.body.available_zones.available_zone
                 ]
             return region_id, resources
-        except Exception as e:
+        except Exception:
             logger.exception(f"Failed to get availability info for region {region_id}")
             return region_id, []
         finally:
