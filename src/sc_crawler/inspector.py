@@ -573,6 +573,7 @@ def _extract_family(name: str) -> str:
 
 
 def _standardize_manufacturer(manufacturer):
+    # standardize to short names
     if manufacturer == "Advanced Micro Devices, Inc.":
         return "AMD"
     if manufacturer == "Intel(R) Corporation":
@@ -581,17 +582,20 @@ def _standardize_manufacturer(manufacturer):
         return "NVIDIA"
     if manufacturer == "MICROSOFT CORPORATION":
         return "Microsoft"
+    if manufacturer in ["Alibaba Cloud"]:
+        return "Alibaba"
+    # drop invalid manufacturers
     if manufacturer in [
         "(invalid)",
         "Not Specified",
         "QEMU",
         "Google",
-        "AWS",
         "Amazon EC2",
     ]:
         return None
     # drop the copyright symbol
     manufacturer = sub(r"(\([rRcC]\)|®|©)", "", manufacturer)
+    # rest should be fine
     return manufacturer.strip()
 
 
