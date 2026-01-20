@@ -771,6 +771,9 @@ def _gpu_details(gpu: xmltree.Element) -> dict:
     for clock in ["graphics_clock", "sm_clock", "mem_clock", "video_clock"]:
         clockstring = gpu.find("max_clocks").find(clock).text
         res[clock] = int(clockstring[:-4])
+    # fix known issues in hypervisor reports
+    if res["manufacturer"] == "Quadro RTX":  # OVH / rtx5000 series
+        res["manufacturer"] = "NVIDIA"
     return res
 
 
