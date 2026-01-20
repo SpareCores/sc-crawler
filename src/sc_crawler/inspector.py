@@ -689,9 +689,11 @@ def _standardize_gpu_model(model, server=None):
         "NVIDIA ",
         "Tesla ",
         "Radeon Pro ",
+        "Nvidia Tesla ",
         "Gaudi ",
         "Quadro ",
         "GeeForce ",
+        "AMD ",
     ]:
         if model.startswith(prefix):
             model = model[len(prefix) :].lstrip()
@@ -713,6 +715,13 @@ def _standardize_gpu_model(model, server=None):
     model = sub(r" NVL$", "", model)
     model = sub(r"-SXM[0-9]-[0-9]*GB$", "", model)
     model = sub(r" [0-9]*GB (HBM3|PCIe)$", "", model)
+    model = sub(r"( |-)[0-9]*GB?$", "", model)
+    model = sub(r"-PCIE$", "", model)
+    model = sub(r"-virt1$", "", model)
+    # we don't support fractional GPUs (e.g. "P4*1/4" or "T4/8")in the schema yet
+    model = sub(r"(\*1)?/\d+$", "", model)
+    # yes, sometimes it's written out that there's 1
+    model = sub(r"\*1$", "", model)
     return model
 
 
