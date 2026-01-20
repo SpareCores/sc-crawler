@@ -711,12 +711,14 @@ def _standardize_gpu_model(model, server=None):
         return "RTX 5880"
     if model == "RTX6000":
         return "RTX 6000"
+    if model == "RTX PRO Server 6000":
+        return "RTX Pro 6000"
     # drop too specific parts
     model = sub(r" NVL$", "", model)
     model = sub(r"-SXM[0-9]-[0-9]*GB$", "", model)
     model = sub(r" [0-9]*GB (HBM3|PCIe)$", "", model)
     model = sub(r"( |-)[0-9]*GB?$", "", model)
-    model = sub(r"-PCIE$", "", model)
+    model = sub(r"-PCI(e|E)$", "", model)
     model = sub(r"-virt1$", "", model)
     # we don't support fractional GPUs (e.g. "P4*1/4" or "T4/8")in the schema yet
     model = sub(r"(\*1)?/\d+$", "", model)
