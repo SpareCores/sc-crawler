@@ -213,6 +213,24 @@ def _get_resource_availability_info(
     return region_availability_info
 
 
+def _determine_cpu_allocation_type(instance_type: dict) -> CpuAllocation:
+    """Determine the CPU allocation type based on the instance type properties.
+
+    Args:
+        instance_type: The instance type dictionary.
+
+    Returns:
+        The CPU allocation type.
+    """
+    instance_category = instance_type.get("InstanceCategory", "")
+    baseline_credit = instance_type.get("BaselineCredit", 0)
+    if baseline_credit > 0:
+        return CpuAllocation.BURSTABLE
+    if instance_category == "Shared":
+        return CpuAllocation.SHARED
+    return CpuAllocation.DEDICATED
+
+
 # ##############################################################################
 # Manual data/mapping
 
@@ -627,7 +645,7 @@ def inventory_servers(vendor):
                 "family": family,
                 "vcpus": vcpus,
                 "hypervisor": "KVM",
-                "cpu_allocation": CpuAllocation.DEDICATED,
+                "cpu_allocation": _determine_cpu_allocation_type(instance_type),
                 "cpu_cores": instance_type.get("CpuCoreCount", 0),
                 "cpu_speed": drop_zero_value(instance_type.get("CpuSpeedFrequency")),
                 "cpu_architecture": CPU_ARCH_MAP[instance_type.get("CpuArchitecture")],
