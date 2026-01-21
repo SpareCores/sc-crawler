@@ -9,6 +9,7 @@ from enum import Enum
 from json import dump as json_dump
 from json import dumps, loads
 from pathlib import Path
+from re import sub
 from types import SimpleNamespace
 from typing import List, Optional
 
@@ -586,7 +587,8 @@ def dump(
                                 row_dict[col_name] = loads(row_dict[col_name])
                 for ignored_col in ignored:
                     row_dict.pop(ignored_col, None)
-                pk_values = [str(row_dict[pk]) for pk in pk_columns]
+                # sanitize PK values for safe file paths (replace non-word chars)
+                pk_values = [sub(r"[^\w]", "_", str(row_dict[pk])) for pk in pk_columns]
                 file_path = output_directory / table_name
                 if len(pk_values) > 1:
                     file_path = file_path / Path(*pk_values[:-1])
