@@ -505,7 +505,7 @@ def dump(
         typer.Option(help="Directory path where JSON files will be written."),
     ] = Path("."),
     dump_tables: Annotated[
-        List[str],
+        Optional[List[str]],
         typer.Option(
             help="Tables to be dumped. Can be specified multiple times. Defaults to all tables."
         ),
