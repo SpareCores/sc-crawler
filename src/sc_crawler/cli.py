@@ -30,6 +30,7 @@ from rich.table import Table
 from rich.text import Text
 from sqlalchemy import text
 from sqlalchemy.engine.reflection import Inspector
+from sqlalchemy.sql import quoted_name
 from sqlmodel import Session, create_engine, select
 from typing_extensions import Annotated
 
@@ -561,7 +562,7 @@ def dump(
                 continue
 
             count_result = connection.execute(
-                text(f"SELECT COUNT(*) FROM {table_name}")
+                text(f"SELECT COUNT(*) FROM {quoted_name(table_name, quote=True)}")
             )
             row_count = count_result.scalar()
             if row_count == 0:
@@ -569,7 +570,9 @@ def dump(
                 continue
 
             table_task = progress.add_task(f"{table_name}", total=row_count)
-            result = connection.execute(text(f"SELECT * FROM {table_name}"))
+            result = connection.execute(
+                text(f"SELECT * FROM {quoted_name(table_name, quote=True)}")
+            )
             column_names = list(result.keys())
             # SQLite stores all nested objects as JSON strings that we need to parse back to objects
             columns_info = inspector.get_columns(table_name)
