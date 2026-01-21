@@ -3,8 +3,10 @@
 Check `sc-crawler --help` for more details."""
 
 import logging
+from contextlib import suppress
 from datetime import datetime, timedelta
 from enum import Enum
+from json import dump as json_dump
 from json import dumps, loads
 from pathlib import Path
 from types import SimpleNamespace
@@ -25,6 +27,8 @@ from rich.progress import (
 )
 from rich.table import Table
 from rich.text import Text
+from sqlalchemy import text
+from sqlalchemy.engine.reflection import Inspector
 from sqlmodel import Session, create_engine, select
 from typing_extensions import Annotated
 
@@ -486,6 +490,114 @@ def sync(
                     insert_items(model, items, session=session, progress=progress)
                     logger.info("Updated %d %s(s) rows" % (len(items), table_name))
             session.commit()
+
+
+@cli.command()
+def dump(
+    connection_string: Annotated[
+        str,
+        typer.Option(
+            help="Database URL (SQLAlchemy connection string) to export from."
+        ),
+    ],
+    output_directory: Annotated[
+        Path,
+        typer.Option(help="Directory path where JSON files will be written."),
+    ] = Path("."),
+    dump_tables: Annotated[
+        List[str],
+        typer.Option(
+            help="Tables to be dumped. Can be specified multiple times. Defaults to all tables."
+        ),
+    ] = None,
+    ignored: Annotated[
+        List[str],
+        typer.Option(
+            help="Column names to exclude from JSON output. Can be specified multiple times."
+        ),
+    ] = ["observed_at"],
+):
+    """
+    Export database records to JSON files organized by primary keys.
+
+    Each record is written as a pretty-printed JSON file in a folder
+    hierarchy based on the primary key values. For example, a server
+    record with vendor_id='aws' and server_id='t3.small' would be
+    written to: `output_directory/server/aws/t3.small.json`
+    """
+    channel = ScRichHandler()
+    formatter = logging.Formatter("%(message)s")
+    channel.setFormatter(formatter)
+    logger.setLevel(logging.INFO)
+    logger.addHandler(channel)
+
+    engine = create_engine(connection_string, pool_pre_ping=True)
+    inspector = Inspector.from_engine(engine)
+    available_tables = inspector.get_table_names()
+    if dump_tables is None:
+        tables_to_dump = available_tables
+    else:
+        tables_to_dump = [t for t in dump_tables if t in available_tables]
+    if not tables_to_dump:
+        logger.warning("No tables to dump.")
+        raise typer.Exit()
+
+    progress = Progress(
+        TimeElapsedColumn(),
+        TextColumn("{task.description}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+    )
+    panel = Panel(progress, title="Dumping tables", expand=False)
+    with Live(panel), engine.connect() as connection:
+        tables_task = progress.add_task("Overall progress", total=len(tables_to_dump))
+        for table_name in tables_to_dump:
+            pk_constraint = inspector.get_pk_constraint(table_name)
+            pk_columns = pk_constraint.get("constrained_columns", [])
+            if not pk_columns:
+                logger.warning(f"Table '{table_name}' has no primary key, skipping.")
+                progress.update(tables_task, advance=1)
+                continue
+
+            count_result = connection.execute(
+                text(f"SELECT COUNT(*) FROM {table_name}")
+            )
+            row_count = count_result.scalar()
+            if row_count == 0:
+                progress.update(tables_task, advance=1)
+                continue
+
+            table_task = progress.add_task(f"{table_name}", total=row_count)
+            result = connection.execute(text(f"SELECT * FROM {table_name}"))
+            column_names = list(result.keys())
+            # SQLite stores all nested objects as JSON strings that we need to parse back to objects
+            columns_info = inspector.get_columns(table_name)
+            json_columns = {
+                col["name"] for col in columns_info if "JSON" in str(col["type"])
+            }
+
+            for row in result:
+                row_dict = dict(zip(column_names, row))
+                # try to parse JSON strings back to nested objects
+                for col_name in json_columns:
+                    if col_name in row_dict and row_dict[col_name] is not None:
+                        if isinstance(row_dict[col_name], str):
+                            with suppress(Exception):
+                                row_dict[col_name] = loads(row_dict[col_name])
+                for ignored_col in ignored:
+                    row_dict.pop(ignored_col, None)
+                pk_values = [str(row_dict[pk]) for pk in pk_columns]
+                file_path = output_directory / table_name
+                if len(pk_values) > 1:
+                    file_path = file_path / Path(*pk_values[:-1])
+                file_path = file_path / f"{pk_values[-1]}.json"
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(file_path, "w") as f:
+                    json_dump(row_dict, f, indent=2)
+                progress.update(table_task, advance=1)
+            progress.update(tables_task, advance=1)
+
+    logger.info(f"Dumped {len(tables_to_dump)} table(s) to '{output_directory}'")
 
 
 @cli.command()
