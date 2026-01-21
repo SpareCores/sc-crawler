@@ -912,11 +912,14 @@ def inspect_update_server_dict(server: dict) -> dict:
         else _parse_lshw_storage_info(lookups["lshw"], server_obj)
     )
 
-    def get_storage_info(storage_field, server_field):
+    def get_storage_info(storage_field, server_field=None):
         # only update GCP (without any related vendor data) for now
         # as other vendors usually provide storage data via API
         if server_obj.vendor_id != "gcp":
             return None
+        # don't override data fetched from vendor API
+        # if server_field:
+        #     return None
         if not lshw_storage_info:
             return None
         return lshw_storage_info[storage_field]
@@ -953,19 +956,31 @@ def inspect_update_server_dict(server: dict) -> dict:
         "gpu_memory_min": lambda: min([gpu["memory"] for gpu in server["gpus"]]),
         "gpu_memory_total": lambda: sum([gpu["memory"] for gpu in server["gpus"]]),
         # skip storage update if lshw parsing failed or API data is present
-        "storage_type": lambda: get_storage_info(
-            "storage_type", server_obj.storage_type
-        ),
-        "storage_size": lambda: get_storage_info(
-            "storage_size", server_obj.storage_size
-        ),
-        "storages": lambda: get_storage_info("storages", server_obj.storages),
+        "storage_type": lambda: get_storage_info("storage_type"),
+        "storage_size": lambda: get_storage_info("storage_size"),
+        "storages": lambda: get_storage_info("storages"),
     }
+
+    def override_mapping(server, field, newval):
+        if not server.get(field):
+            return newval
+        # special handling for GCP GPU model - better naming from nvidia-smi
+        if server.vendor_id == "gcp":
+            if field == "gpu_model":
+                return newval
+        if server.vendor_id == "azure":
+            if field == "gpu_count":
+                return newval
+        return server.get(field)
+
     for k, f in mappings.items():
         try:
             newval = f()
-            if newval and not server[k]:
-                server[k] = newval
+            if newval:
+                # if server.get(k) and str(server.get(k)).lower() != str(newval).lower():
+                #     with open(f"{server_obj.vendor_id}_modified.log", "a") as logfile:
+                #         logfile.write(f"{server_obj.api_reference}: {k}: {server.get(k)} -> {newval}\n")
+                server[k] = override_mapping(server_obj, k, newval)
         except Exception as e:
             _log_cannot_update_server(server_obj, k, e)
 
