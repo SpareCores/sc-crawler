@@ -917,9 +917,6 @@ def inspect_update_server_dict(server: dict) -> dict:
         # as other vendors usually provide storage data via API
         if server_obj.vendor_id != "gcp":
             return None
-        # don't override data fetched from vendor API
-        if server_field:
-            return None
         if not lshw_storage_info:
             return None
         return lshw_storage_info[storage_field]
@@ -967,7 +964,7 @@ def inspect_update_server_dict(server: dict) -> dict:
     for k, f in mappings.items():
         try:
             newval = f()
-            if newval:
+            if newval and not server[k]:
                 server[k] = newval
         except Exception as e:
             _log_cannot_update_server(server_obj, k, e)
@@ -978,7 +975,7 @@ def inspect_update_server_dict(server: dict) -> dict:
         # CPU speed seems to be unreliable as reported by dmidecode,
         # e.g. it's 2Ghz in GCP for all instances
         speed = search(r" @ ([0-9\.]*)GHz$", cpu_model)
-        if speed:
+        if speed and not server["cpu_speed"]:
             server["cpu_speed"] = speed.group(1)
         # manufacturer data might be more likely to present in lscpu (unstructured)
         # TODO note that we might have prefilled info about manufacturer/family/model in a reliable way
