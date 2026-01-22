@@ -124,23 +124,7 @@ class Vendor(VendorBase, table=True):
             raise ValueError("No vendor homepage provided")
         if not self.country:
             raise ValueError("No vendor country provided")
-        # make sure methods are provided
-        methods = self._get_methods().__dir__()
-        for method in [
-            "inventory_compliance_frameworks",
-            "inventory_regions",
-            "inventory_zones",
-            "inventory_servers",
-            "inventory_server_prices",
-            "inventory_server_prices_spot",
-            "inventory_storage_prices",
-            "inventory_traffic_prices",
-            "inventory_ipv4_prices",
-        ]:
-            if method not in methods:
-                raise NotImplementedError(
-                    f"Unsupported '{self.vendor_id}' vendor: missing '{method}' method."
-                )
+        # method validation is deferred to _get_methods to avoid importing all vendor modules at CLI startup
 
     def _get_methods(self):
         # private attributes are not (always) initialized correctly by SQLmodel
@@ -156,6 +140,23 @@ class Vendor(VendorBase, table=True):
                     [__name__.split(".", maxsplit=1)[0], "vendors", self.vendor_id]
                 )
                 self._methods = import_module(vendor_module)
+                # make sure all required methods exist
+                methods = self._methods.__dir__()
+                for method in [
+                    "inventory_compliance_frameworks",
+                    "inventory_regions",
+                    "inventory_zones",
+                    "inventory_servers",
+                    "inventory_server_prices",
+                    "inventory_server_prices_spot",
+                    "inventory_storage_prices",
+                    "inventory_traffic_prices",
+                    "inventory_ipv4_prices",
+                ]:
+                    if method not in methods:
+                        raise NotImplementedError(
+                            f"Unsupported '{self.vendor_id}' vendor: missing '{method}' method."
+                        )
             except Exception as exc:
                 raise NotImplementedError(
                     f"Unsupported '{self.vendor_id}' vendor: no methods defined."
