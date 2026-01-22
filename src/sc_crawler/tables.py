@@ -134,35 +134,35 @@ class Vendor(VendorBase, table=True):
         except Exception:
             self._methods = None
         if not self._methods:
+            vendor_module = ".".join(
+                [
+                    __name__.split(".", maxsplit=1)[0],
+                    "vendors",
+                    f"_{self.vendor_id}",
+                ]
+            )
             try:
-                vendor_module = ".".join(
-                    [
-                        __name__.split(".", maxsplit=1)[0],
-                        "vendors",
-                        f"_{self.vendor_id}",
-                    ]
-                )
                 self._methods = import_module(vendor_module)
-                # make sure all required methods exist
-                for method in [
-                    "inventory_compliance_frameworks",
-                    "inventory_regions",
-                    "inventory_zones",
-                    "inventory_servers",
-                    "inventory_server_prices",
-                    "inventory_server_prices_spot",
-                    "inventory_storage_prices",
-                    "inventory_traffic_prices",
-                    "inventory_ipv4_prices",
-                ]:
-                    if not hasattr(self._methods, method):
-                        raise NotImplementedError(
-                            f"Unsupported '{self.vendor_id}' vendor: missing '{method}' method."
-                        )
             except Exception as exc:
                 raise NotImplementedError(
                     f"Unsupported '{self.vendor_id}' vendor: no methods defined."
                 ) from exc
+            # make sure all required methods exist
+            for method in [
+                "inventory_compliance_frameworks",
+                "inventory_regions",
+                "inventory_zones",
+                "inventory_servers",
+                "inventory_server_prices",
+                "inventory_server_prices_spot",
+                "inventory_storage_prices",
+                "inventory_traffic_prices",
+                "inventory_ipv4_prices",
+            ]:
+                if not hasattr(self._methods, method):
+                    raise NotImplementedError(
+                        f"Unsupported '{self.vendor_id}' vendor: missing '{method}' method."
+                    )
         return self._methods
 
     @property

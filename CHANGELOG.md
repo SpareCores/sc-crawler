@@ -5,7 +5,11 @@ Fix(es):
 - Add storage infos from lshw outputs to GCP servers.
 - Check region availability for Alibaba Cloud servers before adding their prices.
 - Determine CPU allocation type for Alibaba Cloud servers.
+
+Housekeeping:
+
 - Delay method validation to avoid CLI startup slowdown.
+- Avoid name conflict in vendor modules via private modules.
 
 ## v0.3.3 (Jan 02, 2026)
 
