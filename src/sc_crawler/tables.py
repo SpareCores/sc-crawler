@@ -155,6 +155,7 @@ class Vendor(VendorBase, table=True):
                 "inventory_servers",
                 "inventory_server_prices",
                 "inventory_server_prices_spot",
+                "inventory_storages",
                 "inventory_storage_prices",
                 "inventory_traffic_prices",
                 "inventory_ipv4_prices",
