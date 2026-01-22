@@ -4,7 +4,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from sc_crawler.vendors.ovh import (
+from sc_crawler.vendors._ovh import (
     HOURS_PER_MONTH,
     MIB_PER_GIB,
     MICROCENTS_PER_CURRENCY_UNIT,
@@ -21,7 +21,7 @@ from sc_crawler.vendors.ovh import (
 @pytest.fixture(autouse=True)
 def mock_ovh_client():
     """Mock OVH client and most common API endpoints for all tests."""
-    with patch("sc_crawler.vendors.ovh._client") as mock_client_factory:
+    with patch("sc_crawler.vendors._ovh._client") as mock_client_factory:
         mock = Mock()
         mock_client_factory.return_value = mock
 
@@ -54,7 +54,7 @@ def mock_ovh_client():
 def test_mock_ovh_client():
     """Test mock OVH client API endpoints."""
     # direct API call
-    from sc_crawler.vendors.ovh import _client
+    from sc_crawler.vendors._ovh import _client
 
     assert _client().get("/cloud/project") == ["test-project"]
     # helpers
@@ -241,7 +241,7 @@ class TestInventoryComplianceFrameworks:
         result = inventory_compliance_frameworks(vendor)
         assert isinstance(result, list)
 
-    @patch("sc_crawler.vendors.ovh.map_compliance_frameworks_to_vendor")
+    @patch("sc_crawler.vendors._ovh.map_compliance_frameworks_to_vendor")
     def test_calls_mapping_function(self, mock_map):
         """Test that the function calls map_compliance_frameworks_to_vendor."""
         vendor = Mock()
