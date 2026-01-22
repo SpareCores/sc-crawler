@@ -144,7 +144,6 @@ class Vendor(VendorBase, table=True):
                 )
                 self._methods = import_module(vendor_module)
                 # make sure all required methods exist
-                methods = self._methods.__dir__()
                 for method in [
                     "inventory_compliance_frameworks",
                     "inventory_regions",
@@ -156,7 +155,7 @@ class Vendor(VendorBase, table=True):
                     "inventory_traffic_prices",
                     "inventory_ipv4_prices",
                 ]:
-                    if method not in methods:
+                    if not hasattr(self._methods, method):
                         raise NotImplementedError(
                             f"Unsupported '{self.vendor_id}' vendor: missing '{method}' method."
                         )
