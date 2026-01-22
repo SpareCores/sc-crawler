@@ -242,7 +242,7 @@ def _parse_server_name(name):
                 # but Standard_NC24(r) has 4x Tesla K80
                 if not accelerators:
                     gpus = 4
-            if vcpus in [12, 80]:
+            if vcpus in [12, 48, 80]:
                 # Standard_NC48ads_A100_v4
                 gpus = 2
             if vcpus in [64, 96]:

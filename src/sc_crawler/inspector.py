@@ -713,6 +713,8 @@ def _standardize_gpu_model(model, server=None):
         return "RTX 6000"
     if model == "RTX PRO Server 6000":
         return "RTX Pro 6000"
+    if model == "T4g":
+        return "T4G"
     # drop too specific parts
     model = sub(r" NVL$", "", model)
     model = sub(r"-SXM[0-9]-[0-9]*GB$", "", model)
@@ -956,13 +958,6 @@ def inspect_update_server_dict(server: dict) -> dict:
         # GCP fields with known API data issues
         if server.get("vendor_id") == "gcp":
             if field in ["gpu_model", "storage_type", "storage_size", "storages"]:
-                return newval
-        # Standard_NC48ads_A100_v4 reports 1 GPU via API but actually has 2 GPUs
-        if server.get("vendor_id") == "azure":
-            if (
-                server.get("api_reference") == "Standard_NC48ads_A100_v4"
-                and field == "gpu_count"
-            ):
                 return newval
         # don't override data fetched from vendor API
         return server.get(field)
