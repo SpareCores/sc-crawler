@@ -905,24 +905,12 @@ def inspect_update_server_dict(server: dict) -> dict:
     def lscpu_lookup(field: str):
         return _listsearch(lookups["lscpu"], "field", field)["data"]
 
-    # Parse lshw storage info once (None if lshw lookup failed)
+    # Parse lshw storage info once (empty dict if lshw lookup failed)
     lshw_storage_info = (
-        None
+        {}
         if isinstance(lookups["lshw"], Exception)
         else _parse_lshw_storage_info(lookups["lshw"], server_obj)
     )
-
-    def get_storage_info(storage_field, server_field=None):
-        # only update GCP (without any related vendor data) for now
-        # as other vendors usually provide storage data via API
-        if server_obj.vendor_id != "gcp":
-            return None
-        # don't override data fetched from vendor API
-        # if server_field:
-        #     return None
-        if not lshw_storage_info:
-            return None
-        return lshw_storage_info[storage_field]
 
     mappings = {
         "vcpus": lambda: lscpu_lookup("CPU(s):"),
@@ -956,21 +944,27 @@ def inspect_update_server_dict(server: dict) -> dict:
         "gpu_memory_min": lambda: min([gpu["memory"] for gpu in server["gpus"]]),
         "gpu_memory_total": lambda: sum([gpu["memory"] for gpu in server["gpus"]]),
         # skip storage update if lshw parsing failed or API data is present
-        "storage_type": lambda: get_storage_info("storage_type"),
-        "storage_size": lambda: get_storage_info("storage_size"),
-        "storages": lambda: get_storage_info("storages"),
+        "storage_type": lambda: lshw_storage_info.get("storage_type"),
+        "storage_size": lambda: lshw_storage_info.get("storage_size"),
+        "storages": lambda: lshw_storage_info.get("storages"),
     }
 
     def override_mapping(server, field, newval):
+        # return inspector data if no API data present
         if not server.get(field):
             return newval
-        # special handling for GCP GPU model - better naming from nvidia-smi
+        # GCP fields with known API data issues
         if server.vendor_id == "gcp":
-            if field == "gpu_model":
+            if field in ["gpu_model", "storage_type", "storage_size", "storages"]:
                 return newval
+        # Standard_NC48ads_A100_v4 reports 1 GPU via API but actually has 2 GPUs
         if server.vendor_id == "azure":
-            if field == "gpu_count":
+            if (
+                server.api_reference == "Standard_NC48ads_A100_v4"
+                and field == "gpu_count"
+            ):
                 return newval
+        # don't override data fetched from vendor API
         return server.get(field)
 
     for k, f in mappings.items():
