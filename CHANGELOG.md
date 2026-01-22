@@ -5,6 +5,7 @@ Fix(es):
 - Add storage infos from lshw outputs to GCP servers.
 - Check region availability for Alibaba Cloud servers before adding their prices.
 - Determine CPU allocation type for Alibaba Cloud servers.
+- Preserve vendor API data by default, only overriding when necessary for known API data issues.
 
 ## v0.3.3 (Jan 02, 2026)
 
