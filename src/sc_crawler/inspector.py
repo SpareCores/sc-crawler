@@ -954,13 +954,13 @@ def inspect_update_server_dict(server: dict) -> dict:
         if not server.get(field):
             return newval
         # GCP fields with known API data issues
-        if server.vendor_id == "gcp":
+        if server.get("vendor_id") == "gcp":
             if field in ["gpu_model", "storage_type", "storage_size", "storages"]:
                 return newval
         # Standard_NC48ads_A100_v4 reports 1 GPU via API but actually has 2 GPUs
-        if server.vendor_id == "azure":
+        if server.get("vendor_id") == "azure":
             if (
-                server.api_reference == "Standard_NC48ads_A100_v4"
+                server.get("api_reference") == "Standard_NC48ads_A100_v4"
                 and field == "gpu_count"
             ):
                 return newval
@@ -971,10 +971,7 @@ def inspect_update_server_dict(server: dict) -> dict:
         try:
             newval = f()
             if newval:
-                # if server.get(k) and str(server.get(k)).lower() != str(newval).lower():
-                #     with open(f"{server_obj.vendor_id}_modified.log", "a") as logfile:
-                #         logfile.write(f"{server_obj.api_reference}: {k}: {server.get(k)} -> {newval}\n")
-                server[k] = override_mapping(server_obj, k, newval)
+                server[k] = override_mapping(server, k, newval)
         except Exception as e:
             _log_cannot_update_server(server_obj, k, e)
 
