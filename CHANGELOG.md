@@ -10,6 +10,11 @@ New feature(s):
 
 - CLI tool to dump database tables to JSON files.
 
+Housekeeping:
+
+- Delay method validation to avoid CLI startup slowdown.
+- Avoid name conflict in vendor modules via private modules.
+
 ## v0.3.3 (Jan 02, 2026)
 
 New vendor(s):
