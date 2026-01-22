@@ -556,6 +556,54 @@ def dump(
         for table_name in tables_to_dump:
             pk_constraint = inspector.get_pk_constraint(table_name)
             pk_columns = pk_constraint.get("constrained_columns", [])
+
+            # record table schema
+            table_dir = output_directory / table_name
+            table_dir.mkdir(parents=True, exist_ok=True)
+            schema_file = table_dir / "_schema.json"
+            columns_info = inspector.get_columns(table_name)
+            schema = {
+                "table_name": table_name,
+                "columns": [
+                    {
+                        "name": col["name"],
+                        "type": str(col["type"]),
+                        "nullable": col.get("nullable", True),
+                        "default": (
+                            str(col["default"])
+                            if col.get("default") is not None
+                            else None
+                        ),
+                        # no support for this in SQLite, though
+                        "comment": col.get("comment"),
+                    }
+                    for col in columns_info
+                ],
+                "primary_key": pk_columns,
+                "foreign_keys": [
+                    {
+                        "constrained_columns": fk["constrained_columns"],
+                        "referred_table": fk["referred_table"],
+                        "referred_columns": fk["referred_columns"],
+                    }
+                    for fk in inspector.get_foreign_keys(table_name)
+                ],
+                "unique_constraints": [
+                    {"name": uc.get("name"), "columns": uc["column_names"]}
+                    for uc in inspector.get_unique_constraints(table_name)
+                ],
+                "indexes": [
+                    {
+                        "name": idx["name"],
+                        "columns": idx["column_names"],
+                        "unique": idx.get("unique", False),
+                    }
+                    for idx in inspector.get_indexes(table_name)
+                ],
+            }
+            with open(schema_file, "w") as f:
+                json_dump(schema, f, indent=2)
+
             if not pk_columns:
                 logger.warning(f"Table '{table_name}' has no primary key, skipping.")
                 progress.update(tables_task, advance=1)
@@ -566,6 +614,7 @@ def dump(
             )
             row_count = count_result.scalar()
             if row_count == 0:
+                logger.warning(f"Table '{table_name}' is empty, skipping.")
                 progress.update(tables_task, advance=1)
                 continue
 
@@ -575,7 +624,6 @@ def dump(
             )
             column_names = list(result.keys())
             # SQLite stores all nested objects as JSON strings that we need to parse back to objects
-            columns_info = inspector.get_columns(table_name)
             json_columns = {
                 col["name"] for col in columns_info if "JSON" in str(col["type"])
             }
