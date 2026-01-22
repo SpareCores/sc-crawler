@@ -145,7 +145,7 @@ class Vendor(VendorBase, table=True):
                 self._methods = import_module(vendor_module)
             except Exception as exc:
                 raise NotImplementedError(
-                    f"Unsupported '{self.vendor_id}' vendor: no methods defined."
+                    f"Unsupported '{self.vendor_id}' vendor: cannot import its module."
                 ) from exc
             # make sure all required methods exist
             for method in [
