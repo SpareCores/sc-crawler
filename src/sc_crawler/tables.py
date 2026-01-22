@@ -124,7 +124,6 @@ class Vendor(VendorBase, table=True):
             raise ValueError("No vendor homepage provided")
         if not self.country:
             raise ValueError("No vendor country provided")
-        # method validation is deferred to _get_methods to avoid importing all vendor modules at CLI startup
 
     def _get_methods(self):
         # private attributes are not (always) initialized correctly by SQLmodel
@@ -137,7 +136,11 @@ class Vendor(VendorBase, table=True):
         if not self._methods:
             try:
                 vendor_module = ".".join(
-                    [__name__.split(".", maxsplit=1)[0], "vendors", self.vendor_id]
+                    [
+                        __name__.split(".", maxsplit=1)[0],
+                        "vendors",
+                        f"_{self.vendor_id}",
+                    ]
                 )
                 self._methods = import_module(vendor_module)
                 # make sure all required methods exist

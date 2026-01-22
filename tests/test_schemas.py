@@ -34,7 +34,7 @@ def test_bad_vendor_definition():
             homepage="https://foobar",
             country=Country(country_id="US"),
             founding_year=2042,
-        )
+        ).inventory_regions()
 
 
 def test_aws():

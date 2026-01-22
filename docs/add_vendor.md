@@ -1,11 +1,11 @@
 # Vendor support
 
-Each file in the [`src/sc_crawler/vendors`](https://github.com/SpareCores/sc-crawler/tree/main/src/sc_crawler/vendors) folder provides the required helpers for a given [Vendor][sc_crawler.tables.Vendor], named as the `id` of the vendor. For example, [`aws.py`](https://github.com/SpareCores/sc-crawler/tree/main/src/sc_crawler/vendors/aws.py) provides functions to be used by its [Vendor][sc_crawler.tables.Vendor] instance, called [`aws`][sc_crawler.vendors.aws].
+Each file in the [`src/sc_crawler/vendors`](https://github.com/SpareCores/sc-crawler/tree/main/src/sc_crawler/vendors) folder provides the required helpers for a given [Vendor][sc_crawler.tables.Vendor], named as the `id` of the vendor prefixed with an underscore. For example, [`_aws.py`](https://github.com/SpareCores/sc-crawler/tree/main/src/sc_crawler/vendors/_aws.py) provides functions to be used by its [Vendor][sc_crawler.tables.Vendor] instance, called [`aws`][sc_crawler.vendors.aws].
 
 ## First steps
 
 1. Define the new [Vendor][sc_crawler.tables.Vendor] instance in `src/sc_crawler/vendors/vendors.py`.
-2. Copy the below [template file](#template-file-for-new-vendors) as a starting point to `src/sc_crawler/vendors/{vendor_id}.py`.
+2. Copy the below [template file](#template-file-for-new-vendors) as a starting point to `src/sc_crawler/vendors/_<vendor_id>.py`.
 3. Update `src/sc_crawler/vendors/__init__.py` to include the new vendor.
 4. Update `docs/add_vendor.md` with the credential requirements for the new vendor.
 5. Implement the `inventory` methods.
