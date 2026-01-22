@@ -984,7 +984,7 @@ def inspect_update_server_dict(server: dict) -> dict:
         # CPU speed seems to be unreliable as reported by dmidecode,
         # e.g. it's 2Ghz in GCP for all instances
         speed = search(r" @ ([0-9\.]*)GHz$", cpu_model)
-        if speed and not server["cpu_speed"]:
+        if speed and not server.get("cpu_speed"):
             server["cpu_speed"] = speed.group(1)
         # manufacturer data might be more likely to present in lscpu (unstructured)
         # TODO note that we might have prefilled info about manufacturer/family/model in a reliable way
