@@ -6,6 +6,10 @@ Fix(es):
 - Check region availability for Alibaba Cloud servers before adding their prices.
 - Determine CPU allocation type for Alibaba Cloud servers.
 
+New feature(s):
+
+- CLI tool to dump database tables to JSON files.
+
 Housekeeping:
 
 - Delay method validation to avoid CLI startup slowdown.
