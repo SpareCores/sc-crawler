@@ -713,6 +713,8 @@ def _standardize_gpu_model(model, server=None):
         return "RTX 6000"
     if model == "RTX PRO Server 6000":
         return "RTX Pro 6000"
+    if model == "T4g":
+        return "T4G"
     # drop too specific parts
     model = sub(r" NVL$", "", model)
     model = sub(r"-SXM[0-9]-[0-9]*GB$", "", model)
@@ -905,24 +907,12 @@ def inspect_update_server_dict(server: dict) -> dict:
     def lscpu_lookup(field: str):
         return _listsearch(lookups["lscpu"], "field", field)["data"]
 
-    # Parse lshw storage info once (None if lshw lookup failed)
+    # Parse lshw storage info once (empty dict if lshw lookup failed)
     lshw_storage_info = (
-        None
+        {}
         if isinstance(lookups["lshw"], Exception)
         else _parse_lshw_storage_info(lookups["lshw"], server_obj)
     )
-
-    def get_storage_info(storage_field, server_field):
-        # only update GCP (without any related vendor data) for now
-        # as other vendors usually provide storage data via API
-        if server_obj.vendor_id != "gcp":
-            return None
-        # don't override data fetched from vendor API
-        if server_field:
-            return None
-        if not lshw_storage_info:
-            return None
-        return lshw_storage_info[storage_field]
 
     mappings = {
         "vcpus": lambda: lscpu_lookup("CPU(s):"),
@@ -956,19 +946,27 @@ def inspect_update_server_dict(server: dict) -> dict:
         "gpu_memory_min": lambda: min([gpu["memory"] for gpu in server["gpus"]]),
         "gpu_memory_total": lambda: sum([gpu["memory"] for gpu in server["gpus"]]),
         # skip storage update if lshw parsing failed or API data is present
-        "storage_type": lambda: get_storage_info(
-            "storage_type", server_obj.storage_type
-        ),
-        "storage_size": lambda: get_storage_info(
-            "storage_size", server_obj.storage_size
-        ),
-        "storages": lambda: get_storage_info("storages", server_obj.storages),
+        "storage_type": lambda: lshw_storage_info.get("storage_type"),
+        "storage_size": lambda: lshw_storage_info.get("storage_size"),
+        "storages": lambda: lshw_storage_info.get("storages"),
     }
+
+    def override_mapping(server, field, newval):
+        # return inspector data if no API data present
+        if not server.get(field):
+            return newval
+        # GCP fields with known API data issues
+        if server.get("vendor_id") == "gcp":
+            if field in ["gpu_model", "storage_type", "storage_size", "storages"]:
+                return newval
+        # don't override data fetched from vendor API
+        return server.get(field)
+
     for k, f in mappings.items():
         try:
             newval = f()
             if newval:
-                server[k] = newval
+                server[k] = override_mapping(server, k, newval)
         except Exception as e:
             _log_cannot_update_server(server_obj, k, e)
 
@@ -978,7 +976,7 @@ def inspect_update_server_dict(server: dict) -> dict:
         # CPU speed seems to be unreliable as reported by dmidecode,
         # e.g. it's 2Ghz in GCP for all instances
         speed = search(r" @ ([0-9\.]*)GHz$", cpu_model)
-        if speed:
+        if speed and not server.get("cpu_speed"):
             server["cpu_speed"] = speed.group(1)
         # manufacturer data might be more likely to present in lscpu (unstructured)
         # TODO note that we might have prefilled info about manufacturer/family/model in a reliable way
