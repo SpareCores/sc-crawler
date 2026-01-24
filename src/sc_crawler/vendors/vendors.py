@@ -47,7 +47,7 @@ hcloud = Vendor(
     city="Gunzenhausen",
     address_line="Industriestr. 25",
     zip_code="91710",
-    founding_year=1997,
+    founding_year=2018,
     status_page="https://status.hetzner.com/",
 )
 """Hetzner Cloud."""
@@ -62,7 +62,7 @@ azure = Vendor(
     city="Redmond",
     address_line="One Microsoft Way",
     zip_code="98052",
-    founding_year=2008,
+    founding_year=2010,
     status_page="https://azure.status.microsoft.com",
 )
 """Microsoft Azure."""

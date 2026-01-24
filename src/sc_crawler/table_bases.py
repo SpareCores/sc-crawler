@@ -411,7 +411,11 @@ class VendorFields(HasName, HasVendorIdPK):
     )
 
     # https://dbpedia.org/ontology/Organisation
-    founding_year: int = Field(description="4-digit year when the Vendor was founded.")
+    founding_year: int = Field(
+        description=(
+            "4-digit year when the public cloud service of the Vendor was launched."
+        )
+    )
 
     status_page: Optional[str] = Field(
         default=None,
