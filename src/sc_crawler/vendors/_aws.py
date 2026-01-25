@@ -571,7 +571,7 @@ def inventory_regions(vendor):
             "region_id": "ap-southeast-6",
             "name": "Asia Pacific (New Zealand)",
             "vendor_id": vendor.vendor_id,
-            "country_id": "MY",
+            "country_id": "NZ",
             "founding_year": 2025,
             # approximation based on country
             "lat": -40.900775,
