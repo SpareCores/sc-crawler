@@ -1,4 +1,4 @@
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from functools import cache
 from itertools import chain
 from logging import WARN
@@ -828,80 +828,53 @@ def inventory_server_prices_spot(vendor):
         name="Calculating spot instance prices", total=spot_instance_count
     )
 
-    def _get_spot_price_for_instance(
-        region_id: str, zone_id: str, spot_instance: dict
-    ) -> Optional[dict]:
-        """Calculate spot price for a single instance."""
-        instance_type = spot_instance.get("InstanceType")
-        spot_discount: int = spot_instance.get("AverageSpotDiscount")
-
-        if not instance_type or not spot_discount:
-            return None
-
-        instance_price: ServerPrice = next(
-            (
-                p
-                for p in vendor.server_prices
-                if p.region_id == region_id
-                and p.zone_id == zone_id
-                and p.server_id == instance_type
-                and p.allocation == Allocation.ONDEMAND
-            ),
-            None,
-        )
-
-        if not instance_price:
-            return None
-
-        return {
-            "vendor_id": vendor.vendor_id,
-            "region_id": region_id,
-            "zone_id": zone_id,
-            "server_id": instance_type,
-            "operating_system": "linux",
-            "allocation": Allocation.SPOT,
-            "unit": PriceUnit.HOUR,
-            "price": round(instance_price.price * (spot_discount / 100), 4),
-            "price_upfront": 0,
-            "price_tiered": [],
-            "currency": instance_price.currency,
-            "status": Status.ACTIVE,
-        }
-
-    tasks = []
+    items = []
     for region_id, zones in spot_region_info.items():
         for zone in zones:
             zone_id = zone.get("ZoneId")
-            if not zone_id:
-                continue
             spot_instances = zone.get("AvailableSpotResources", {}).get(
                 "AvailableSpotResource", []
             )
             for spot_instance in spot_instances:
-                tasks.append((region_id, zone_id, spot_instance))
+                instance_type = spot_instance.get("InstanceType")
+                spot_discount: int = spot_instance.get("AverageSpotDiscount")
 
-    items = []
-    with ThreadPoolExecutor(max_workers=len(spot_region_info)) as executor:
-        future_to_location = {
-            executor.submit(
-                _get_spot_price_for_instance, region_id, zone_id, spot_instance
-            ): (region_id, zone_id)
-            for region_id, zone_id, spot_instance in tasks
-        }
-
-        # Use as_completed to iterate over futures as they finish (thread-safe)
-        for future in as_completed(future_to_location):
-            region_id, zone_id = future_to_location[future]
-            try:
-                item = future.result()
-                if item:
-                    items.append(item)
-            except Exception as e:
-                logger.error(
-                    f"Failed to get spot price for instance in {region_id}/{zone_id}: {e}"
-                )
-            finally:
                 vendor.progress_tracker.advance_task()
+
+                if not (zone_id and instance_type and spot_discount):
+                    continue
+
+                instance_price: ServerPrice = next(
+                    (
+                        p
+                        for p in vendor.server_prices
+                        if p.region_id == region_id
+                        and p.zone_id == zone_id
+                        and p.server_id == instance_type
+                        and p.allocation == Allocation.ONDEMAND
+                    ),
+                    None,
+                )
+
+                if not instance_price:
+                    continue
+
+                items.append(
+                    {
+                        "vendor_id": vendor.vendor_id,
+                        "region_id": region_id,
+                        "zone_id": zone_id,
+                        "server_id": instance_type,
+                        "operating_system": "linux",
+                        "allocation": Allocation.SPOT,
+                        "unit": PriceUnit.HOUR,
+                        "price": round(instance_price.price * (spot_discount / 100), 4),
+                        "price_upfront": 0,
+                        "price_tiered": [],
+                        "currency": instance_price.currency,
+                        "status": Status.ACTIVE,
+                    }
+                )
 
     vendor.progress_tracker.hide_task()
 
