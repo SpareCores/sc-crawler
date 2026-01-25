@@ -934,21 +934,49 @@ def inspect_update_server_dict(server: dict) -> dict:
         # no CPU speed data available
         return None
 
+    def get_cpu_manufacturer():
+        """Extract CPU manufacturer from lscpu or dmidecode."""
+        with suppress(Exception):
+            cpu_model = lscpu_lookup("Model name:")
+            for manufacturer in ["Intel", "AMD"]:
+                if manufacturer.lower() in cpu_model.lower():
+                    return manufacturer
+        # fall back to dmidecode
+        with suppress(Exception):
+            return _standardize_manufacturer(lookups["dmidecode_cpu"]["Manufacturer"])
+        # no CPU manufacturer data available
+        return None
+
+    def get_cpu_family():
+        """Extract CPU family from lscpu or dmidecode."""
+        with suppress(Exception):
+            cpu_model = lscpu_lookup("Model name:")
+            for family in ["Xeon", "EPYC"]:
+                if family.lower() in cpu_model.lower():
+                    return family
+        # fall back to dmidecode
+        with suppress(Exception):
+            return _standardize_cpu_family(lookups["dmidecode_cpu"]["Family"])
+        # no CPU family data available
+        return None
+
+    def get_cpu_model():
+        """Extract CPU model from lscpu or dmidecode."""
+        with suppress(Exception):
+            return _standardize_cpu_model(lscpu_lookup("Model name:"))
+        with suppress(Exception):
+            return _standardize_cpu_model(lookups["dmidecode_cpu"]["Version"])
+        return None
+
     mappings = {
         "vcpus": lambda: lscpu_lookup("CPU(s):"),
         "cpu_cores": lambda: (
             int(lscpu_lookup("Core(s) per socket:")) * int(lscpu_lookup("Socket(s):"))
         ),
         "cpu_speed": lambda: get_cpu_speed(),
-        "cpu_manufacturer": lambda: _standardize_manufacturer(
-            lookups["dmidecode_cpu"]["Manufacturer"]
-        ),
-        "cpu_family": lambda: _standardize_cpu_family(
-            lookups["dmidecode_cpu"]["Family"]
-        ),
-        "cpu_model": lambda: _standardize_cpu_model(
-            lookups["dmidecode_cpu"]["Version"]
-        ),
+        "cpu_manufacturer": lambda: get_cpu_manufacturer(),
+        "cpu_family": lambda: get_cpu_family(),
+        "cpu_model": lambda: get_cpu_model(),
         "cpu_l1_cache": lambda: _l123_cache(lookups["lscpu"], 1),
         "cpu_l2_cache": lambda: _l123_cache(lookups["lscpu"], 2),
         "cpu_l3_cache": lambda: _l123_cache(lookups["lscpu"], 3),
@@ -1018,23 +1046,6 @@ def inspect_update_server_dict(server: dict) -> dict:
                 server[k] = override_mapping(server, k, newval)
         except Exception as e:
             _log_cannot_update_server(server_obj, k, e)
-
-    # lscpu is a more reliable data source than dmidecode
-    # TODO refactor like CPU speed is handled in get_cpu_speed()
-    if not isinstance(lookups["lscpu"], BaseException):
-        cpu_model = lscpu_lookup("Model name:")
-        # manufacturer data might be more likely to present in lscpu (unstructured)
-        # TODO note that we might have prefilled info about manufacturer/family/model in a reliable way
-        #      so we might not want to overwrite them here
-        for manufacturer in ["Intel", "AMD"]:
-            if manufacturer.lower() in cpu_model.lower():
-                server["cpu_manufacturer"] = manufacturer
-        for family in ["Xeon", "EPYC"]:
-            if family.lower() in cpu_model.lower():
-                server["cpu_family"] = family
-        model = _standardize_cpu_model(cpu_model)
-        if model:
-            server["cpu_model"] = model
 
     # standardize GPU model
     if server.get("gpu_model"):
