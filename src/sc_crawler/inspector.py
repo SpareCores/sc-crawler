@@ -938,7 +938,7 @@ def inspect_update_server_dict(server: dict) -> dict:
         """Extract CPU manufacturer from lscpu or dmidecode."""
         with suppress(Exception):
             cpu_model = lscpu_lookup("Model name:")
-            for manufacturer in ["Intel", "AMD"]:
+            for manufacturer in ["Intel", "AMD", "Ampere"]:
                 if manufacturer.lower() in cpu_model.lower():
                     return manufacturer
         # fall back to dmidecode
@@ -951,7 +951,7 @@ def inspect_update_server_dict(server: dict) -> dict:
         """Extract CPU family from lscpu or dmidecode."""
         with suppress(Exception):
             cpu_model = lscpu_lookup("Model name:")
-            for family in ["Xeon", "EPYC"]:
+            for family in ["Xeon", "EPYC", "Altra"]:
                 if family.lower() in cpu_model.lower():
                     return family
         # fall back to dmidecode
