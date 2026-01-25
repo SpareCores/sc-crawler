@@ -2,6 +2,7 @@ import csv
 import json
 import xml.etree.ElementTree as xmltree
 from atexit import register
+from contextlib import suppress
 from functools import cache
 from itertools import groupby
 from operator import itemgetter
@@ -914,13 +915,31 @@ def inspect_update_server_dict(server: dict) -> dict:
         else _parse_lshw_storage_info(lookups["lshw"], server_obj)
     )
 
+    def get_cpu_speed():
+        """Extract CPU speed from lscpu or dmidecode."""
+        # lscpu is more reliable, extracting from "Model name: ... @ X.XGHz"
+        if not isinstance(lookups["lscpu"], BaseException):
+            with suppress(Exception):
+                cpu_model = lscpu_lookup("Model name:")
+                speed = search(r" @ ([0-9\.]*)GHz$", cpu_model)
+                # 2 GHz CPU speed is a lie at GCP
+                if server.vendor_id == "gcp" and speed == 2:
+                    speed = None
+                if speed:
+                    return float(speed.group(1))
+        # fall back to dmidecode
+        with suppress(Exception):
+            # use 1st CPU's speed, convert to Ghz
+            return lookups["dmidecode_cpu"]["Max Speed"] / 1e9
+        # no CPU speed data available
+        return None
+
     mappings = {
         "vcpus": lambda: lscpu_lookup("CPU(s):"),
         "cpu_cores": lambda: (
             int(lscpu_lookup("Core(s) per socket:")) * int(lscpu_lookup("Socket(s):"))
         ),
-        # use 1st CPU's speed, convert to Ghz
-        "cpu_speed": lambda: lookups["dmidecode_cpu"]["Max Speed"] / 1e9,
+        "cpu_speed": lambda: get_cpu_speed(),
         "cpu_manufacturer": lambda: _standardize_manufacturer(
             lookups["dmidecode_cpu"]["Manufacturer"]
         ),
@@ -964,17 +983,17 @@ def inspect_update_server_dict(server: dict) -> dict:
         """
         vendor_id = server.get("vendor_id")
         vendor_data = server.get(field)
-        # always override GCP fields where vendor data is known to be missing (TODO drop once we have full lsblk coverage)
+
+        # TODO drop once we have full lsblk coverage
+        # always override GCP fields where vendor data is known to be missing
         storage_fields = ["storage_type", "storage_size", "storages"]
         if vendor_id == "gcp" and field in ["gpu_model", *storage_fields]:
             return inspector_data
-        # don't trust HDD/SSD inspection data at other vendors yet (TODO drop once we have full lsblk coverage)
+        # don't trust HDD/SSD inspection data at other vendors yet
         if vendor_id != "gcp" and field in storage_fields:
             return vendor_data
+
         # keep inspector data for detailed fields that's not available from vendor API
-        if server.get("server_id") == "g5g.xlarge":
-            print(server)
-            print(inspector_data)
         if (
             field == "gpus"
             and inspector_data
@@ -1001,29 +1020,21 @@ def inspect_update_server_dict(server: dict) -> dict:
             _log_cannot_update_server(server_obj, k, e)
 
     # lscpu is a more reliable data source than dmidecode
+    # TODO refactor like CPU speed is handled in get_cpu_speed()
     if not isinstance(lookups["lscpu"], BaseException):
         cpu_model = lscpu_lookup("Model name:")
-        # CPU speed seems to be unreliable as reported by dmidecode,
-        # e.g. it's 2Ghz in GCP for all instances
-        speed = search(r" @ ([0-9\.]*)GHz$", cpu_model)
-        if speed and not server.get("cpu_speed"):
-            server["cpu_speed"] = speed.group(1)
         # manufacturer data might be more likely to present in lscpu (unstructured)
         # TODO note that we might have prefilled info about manufacturer/family/model in a reliable way
         #      so we might not want to overwrite them here
         for manufacturer in ["Intel", "AMD"]:
-            if manufacturer in cpu_model:
+            if manufacturer.lower() in cpu_model.lower():
                 server["cpu_manufacturer"] = manufacturer
         for family in ["Xeon", "EPYC"]:
-            if family in cpu_model:
+            if family.lower() in cpu_model.lower():
                 server["cpu_family"] = family
         model = _standardize_cpu_model(cpu_model)
         if model:
             server["cpu_model"] = model
-
-    # 2 Ghz CPU speed at Google is a lie
-    if server["vendor_id"] == "gcp" and server.get("cpu_speed") == 2:
-        server["cpu_speed"] = None
 
     # standardize GPU model
     if server.get("gpu_model"):
