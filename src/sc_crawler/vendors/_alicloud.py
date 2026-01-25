@@ -1,4 +1,4 @@
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import cache
 from itertools import chain
 from logging import WARN
@@ -13,10 +13,6 @@ from alibabacloud_ecs20140526.models import (
     DescribeAvailableResourceRequest,
     DescribeInstanceTypesRequest,
     DescribeRegionsRequest,
-    DescribePriceRequest,
-    DescribePriceRequestDataDisk,
-    DescribePriceRequestSystemDisk,
-    DescribePriceResponseBody,
     DescribeSpotAdviceRequest,
     DescribeZonesRequest,
 )
@@ -40,7 +36,7 @@ from ..table_fields import (
     StorageType,
     TrafficDirection,
 )
-from ..tables import Vendor
+from ..tables import Vendor, ServerPrice
 from ..vendor_helpers import get_region_by_id
 
 # ##############################################################################
@@ -197,8 +193,8 @@ def _get_resource_availability_info(
                         for resource in response.body.available_zones.available_zone
                     ]
             return region_id, resources
-        except Exception:
-            logger.exception(f"Failed to get availability info for region {region_id}")
+        except Exception as e:
+            logger.error(f"Failed to get availability info for region {region_id}: {e}")
             return region_id, []
         finally:
             vendor.progress_tracker.advance_task()
@@ -245,8 +241,8 @@ def _get_spot_region_info(
                         for spot_zone in spot_zones.available_spot_zone
                     ]
             return region_id, resources
-        except Exception:
-            logger.exception(f"Failed to get spot advice for region {region_id}")
+        except Exception as e:
+            logger.error(f"Failed to get spot info for region {region_id}: {e}")
             return region_id, []
         finally:
             vendor.progress_tracker.advance_task()
@@ -807,7 +803,7 @@ def inventory_server_prices(vendor):
                     "operating_system": sku.get("SkuFactorMap").get("vm_os_kind"),
                     "allocation": Allocation.ONDEMAND,
                     "unit": PriceUnit.HOUR,
-                    "price": sku.get("CskuPriceList")[0].get("Price"),
+                    "price": round(float(sku.get("CskuPriceList")[0].get("Price")), 4),
                     "price_upfront": 0,
                     "price_tiered": [],
                     "currency": sku.get("CskuPriceList")[0].get("Currency"),
@@ -820,122 +816,95 @@ def inventory_server_prices(vendor):
 
 
 def inventory_server_prices_spot(vendor):
+    """Fetch spot instance pricing using the `DescribeSpotAdvice` API endpoint."""
     spot_region_info = _get_spot_region_info(vendor)
-    ecs_clients = _ecs_clients(vendor)
-
-    def fetch_spot_price_with_retries(
-        client: EcsClient,
-        region_id: str,
-        zone_id: str,
-        instance_type: str,
-    ) -> Optional[DescribePriceResponseBody]:
-        """Fetch spot price with automatic retry logic for disk category errors.
-
-        Returns:
-            Response body if successful, None if price not found or error occurred.
-        """
-        request = DescribePriceRequest(
-            region_id=region_id,
-            zone_id=zone_id,
-            instance_type=instance_type,
-            resource_type="instance",
-            spot_strategy="SpotAsPriceGo",
-        )
-        runtime = RuntimeOptions()
-
-        try:
-            return client.describe_price_with_options(request, runtime).body
-        except Exception as e:
-            error_msg = str(e)
-
-            # Price not available for this instance type
-            if "PriceNotFound" in error_msg:
-                logger.info(
-                    f"No spot price found for {region_id} {zone_id} {instance_type}"
-                )
-                return None
-
-            # Retry with explicit disk categories if validation fails
-            if "InvalidSystemDiskCategory" in error_msg:
-                request.system_disk = DescribePriceRequestSystemDisk(
-                    category="cloud_essd"
-                )
-
-            if "InvalidDataDiskCategory" in error_msg or "InvalidSystemDiskCategory" in error_msg:
-                if "InvalidDataDiskCategory" in error_msg:
-                    request.data_disks = [
-                        DescribePriceRequestDataDisk(category="cloud_essd")
-                    ]
-
-                try:
-                    return client.describe_price_with_options(request, runtime).body
-                except Exception as retry_error:
-                    logger.error(
-                        f"Failed to get spot price for {region_id} {zone_id} {instance_type} "
-                        f"even after retry: {retry_error}"
-                    )
-                    return None
-
-            # Other errors
-            logger.error(
-                f"Failed to get spot price for {region_id} {zone_id} {instance_type}: {e}"
-            )
-            return None
-
-    def fetch_spot_prices_for_region(region_id: str, client: EcsClient) -> list[dict]:
-        """Fetch all spot prices for a single region (single worker per region to avoid throttling)."""
-        region_items = []
-        spot_zones = spot_region_info.get(region_id, [])
-
-        for spot_zone in spot_zones:
-            zone_id = spot_zone.get("ZoneId")
-            for spot_resource in spot_zone.get("AvailableSpotResources", {}).get(
-                "AvailableSpotResource", []
-            ):
-                instance_type = spot_resource.get("InstanceType")
-
-                response_body = fetch_spot_price_with_retries(
-                    client, region_id, zone_id, instance_type
-                )
-
-                if response_body:
-                    price = next(
-                        p.trade_price
-                        for p in response_body.price_info.price.detail_infos.detail_info
-                        if p.resource == "instanceType"
-                    )
-                    region_items.append(
-                        {
-                            "vendor_id": vendor.vendor_id,
-                            "region_id": region_id,
-                            "zone_id": zone_id,
-                            "server_id": instance_type,
-                            "operating_system": "linux",
-                            "allocation": Allocation.SPOT,
-                            "unit": PriceUnit.HOUR,
-                            "price": price,
-                            "price_upfront": 0,
-                            "price_tiered": [],
-                            "currency": response_body.price_info.price.currency,
-                            "status": Status.ACTIVE,
-                        }
-                    )
-
-        vendor.progress_tracker.advance_task()
-        return region_items
-
-    vendor.progress_tracker.start_task(
-        name="Fetching spot server prices", total=len(vendor.regions)
+    spot_instance_count = sum(
+        len(zone.get("AvailableSpotResources", {}).get("AvailableSpotResource", []))
+        for zones in spot_region_info.values()
+        for zone in zones
     )
 
-    with ThreadPoolExecutor(max_workers=2*len(vendor.regions)) as executor:
-        items = executor.map(
-            lambda args: fetch_spot_prices_for_region(*args),
-            [(r.region_id, ecs_clients[r.region_id]) for r in vendor.regions],
+    vendor.progress_tracker.start_task(
+        name="Calculating spot instance prices", total=spot_instance_count
+    )
+
+    def _get_spot_price_for_instance(
+        region_id: str, zone_id: str, spot_instance: dict
+    ) -> Optional[dict]:
+        """Calculate spot price for a single instance."""
+        instance_type = spot_instance.get("InstanceType")
+        spot_discount: int = spot_instance.get("AverageSpotDiscount")
+
+        if not instance_type or not spot_discount:
+            return None
+
+        instance_price: ServerPrice = next(
+            (
+                p
+                for p in vendor.server_prices
+                if p.region_id == region_id
+                and p.zone_id == zone_id
+                and p.server_id == instance_type
+                and p.allocation == Allocation.ONDEMAND
+            ),
+            None,
         )
-    items = list(chain.from_iterable(items))
+
+        if not instance_price:
+            return None
+
+        return {
+            "vendor_id": vendor.vendor_id,
+            "region_id": region_id,
+            "zone_id": zone_id,
+            "server_id": instance_type,
+            "operating_system": "linux",
+            "allocation": Allocation.SPOT,
+            "unit": PriceUnit.HOUR,
+            "price": round(instance_price.price * (spot_discount / 100), 4),
+            "price_upfront": 0,
+            "price_tiered": [],
+            "currency": instance_price.currency,
+            "status": Status.ACTIVE,
+        }
+
+    tasks = []
+    for region_id, zones in spot_region_info.items():
+        for zone in zones:
+            zone_id = zone.get("ZoneId")
+            if not zone_id:
+                continue
+            spot_instances = zone.get("AvailableSpotResources", {}).get(
+                "AvailableSpotResource", []
+            )
+            for spot_instance in spot_instances:
+                tasks.append((region_id, zone_id, spot_instance))
+
+    items = []
+    with ThreadPoolExecutor(max_workers=len(spot_region_info)) as executor:
+        future_to_location = {
+            executor.submit(
+                _get_spot_price_for_instance, region_id, zone_id, spot_instance
+            ): (region_id, zone_id)
+            for region_id, zone_id, spot_instance in tasks
+        }
+
+        # Use as_completed to iterate over futures as they finish (thread-safe)
+        for future in as_completed(future_to_location):
+            region_id, zone_id = future_to_location[future]
+            try:
+                item = future.result()
+                if item:
+                    items.append(item)
+            except Exception as e:
+                logger.error(
+                    f"Failed to get spot price for instance in {region_id}/{zone_id}: {e}"
+                )
+            finally:
+                vendor.progress_tracker.advance_task()
 
     vendor.progress_tracker.hide_task()
+
     return items
 
 
