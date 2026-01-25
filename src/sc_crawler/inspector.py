@@ -952,16 +952,26 @@ def inspect_update_server_dict(server: dict) -> dict:
     }
 
     def override_mapping(server, field, newval):
-        # GCP fields with known API data issues
+        # always override GCP fields with known vendor API data issues
         if server.get("vendor_id") == "gcp":
             if field in ["gpu_model", "storage_type", "storage_size", "storages"]:
                 return newval
-        # don't trust HDD/SSD inspection at other vendors yet (TODO drop once we have full lsblk coverage)
+        # don't trust HDD/SSD inspection data at other vendors yet (TODO drop once we have full lsblk coverage)
         if server.get("vendor_id") != "gcp" and field in [
             "storage_type",
             "storage_size",
             "storages",
         ]:
+            return server.get(field)
+        # keep inspector data for detailed fields that's not available from vendor API
+        if (
+            field == "gpus"
+            and server.get("gpus", {})
+            and server["gpus"][0].get("bios_version")
+        ):
+            return newval
+        # don't override with None in general
+        if newval is None:
             return server.get(field)
         # return inspector data if no API data present
         if not server.get(field):
