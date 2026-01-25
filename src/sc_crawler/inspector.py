@@ -918,21 +918,21 @@ def inspect_update_server_dict(server: dict) -> dict:
     def get_cpu_speed():
         """Extract CPU speed from lscpu or dmidecode."""
         # lscpu is more reliable, extracting from "Model name: ... @ X.XGHz"
-        if not isinstance(lookups["lscpu"], BaseException):
-            with suppress(Exception):
-                cpu_model = lscpu_lookup("Model name:")
-                speed = search(r" @ ([0-9\.]*)GHz$", cpu_model)
-                # 2 GHz CPU speed is a lie at GCP
-                if server.vendor_id == "gcp" and speed == 2:
-                    speed = None
-                if speed:
-                    return float(speed.group(1))
-        # fall back to dmidecode
+        speed = None
         with suppress(Exception):
-            # use 1st CPU's speed, convert to Ghz
-            return lookups["dmidecode_cpu"]["Max Speed"] / 1e9
-        # no CPU speed data available
-        return None
+            cpu_model = lscpu_lookup("Model name:")
+            match = search(r" @ ([0-9\.]*)GHz$", cpu_model)
+            if match:
+                speed = float(match.group(1))
+        # fall back to dmidecode
+        if not speed:
+            with suppress(Exception):
+                # use 1st CPU's speed, convert to Ghz
+                speed = lookups["dmidecode_cpu"]["Max Speed"] / 1e9
+        # 2 GHz CPU speed is a lie at GCP
+        if server_obj.vendor_id == "gcp" and speed == 2:
+            speed = None
+        return speed
 
     def get_cpu_manufacturer():
         """Extract CPU manufacturer from lscpu or dmidecode."""
