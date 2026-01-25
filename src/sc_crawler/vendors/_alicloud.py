@@ -36,7 +36,7 @@ from ..table_fields import (
     StorageType,
     TrafficDirection,
 )
-from ..tables import Vendor, ServerPrice
+from ..tables import Vendor
 from ..vendor_helpers import get_region_by_id
 
 # ##############################################################################
@@ -824,6 +824,12 @@ def inventory_server_prices_spot(vendor):
         for zone in zones
     )
 
+    ondemand_prices = {}
+    for p in vendor.server_prices:
+        if p.allocation == Allocation.ONDEMAND:
+            key = (p.region_id, p.zone_id, p.server_id)
+            ondemand_prices[key] = p
+
     vendor.progress_tracker.start_task(
         name="Calculating spot instance prices", total=spot_instance_count
     )
@@ -844,16 +850,8 @@ def inventory_server_prices_spot(vendor):
                 if not (zone_id and instance_type and spot_discount):
                     continue
 
-                instance_price: ServerPrice = next(
-                    (
-                        p
-                        for p in vendor.server_prices
-                        if p.region_id == region_id
-                        and p.zone_id == zone_id
-                        and p.server_id == instance_type
-                        and p.allocation == Allocation.ONDEMAND
-                    ),
-                    None,
+                instance_price = ondemand_prices.get(
+                    (region_id, zone_id, instance_type)
                 )
 
                 if not instance_price:
