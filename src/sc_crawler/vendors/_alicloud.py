@@ -16,6 +16,7 @@ from alibabacloud_ecs20140526.models import (
     DescribePriceRequest,
     DescribePriceRequestDataDisk,
     DescribePriceRequestSystemDisk,
+    DescribePriceResponseBody,
     DescribeSpotAdviceRequest,
     DescribeZonesRequest,
 )
@@ -217,16 +218,17 @@ def _get_resource_availability_info(
     return region_availability_info
 
 
-def _get_spot_zones(
-    vendor: Vendor,
-    extra_request_params: Optional[dict] = None
-):
+def _get_spot_region_info(
+    vendor: Vendor, extra_request_params: Optional[dict] = None
+) -> dict[str, list[dict]]:
     if extra_request_params is None:
         extra_request_params = {}
-    spot_zone_info: dict[str, list[dict]] = {}
+    spot_region_info: dict[str, list[dict]] = {}
     ecs_clients: dict[str, EcsClient] = _ecs_clients(vendor)
 
-    def fetch_region_spot_advice(region_id: str, client: EcsClient) -> tuple[str, list[dict]]:
+    def fetch_region_spot_advice(
+        region_id: str, client: EcsClient
+    ) -> tuple[str, list[dict]]:
         try:
             resources = []
             request = DescribeSpotAdviceRequest(
@@ -258,10 +260,10 @@ def _get_spot_zones(
             [(r.region_id, ecs_clients[r.region_id]) for r in vendor.regions],
         )
         for region_id, resources in results:
-            spot_zone_info[region_id] = resources
+            spot_region_info[region_id] = resources
     vendor.progress_tracker.hide_task()
 
-    return spot_zone_info
+    return spot_region_info
 
 
 def _determine_cpu_allocation_type(instance_type: dict) -> CpuAllocation:
@@ -754,7 +756,6 @@ def inventory_server_prices(vendor):
     region_availability_info: dict[str, list[dict]] = _get_resource_availability_info(
         vendor
     )
-    vendor._region_availability_info = region_availability_info
 
     for sku in skus:
         sku_region_id = sku["SkuFactorMap"]["vm_region_no"]
@@ -819,119 +820,88 @@ def inventory_server_prices(vendor):
 
 
 def inventory_server_prices_spot(vendor):
-    """Fetch spot instance prices using the DescribeSpotPriceHistory API endpoint.
-
-    Only queries prices for servers with active status to optimize API calls.
-    Uses cached region_availability_info from vendor if available.
-    """
-
-    region_availability_info = getattr(vendor, "_region_availability_info", None)
-    if region_availability_info is None:
-        region_availability_info = _get_resource_availability_info(vendor)
-
-    # Group active instances by region to avoid API throttling
-    # Each region will be processed by a single worker sequentially
-    instances_by_region = {}
-    total_instances = 0
-
-    for region in vendor.regions:
-        region_instances = []
-        for zone in region.zones:
-            zone_info = next(
-                (
-                    r
-                    for r in region_availability_info[region.region_id]
-                    if r.get("ZoneId") == zone.zone_id
-                ),
-                None,
-            )
-            if zone_info:
-                available_resources = zone_info.get("AvailableResources", {}).get(
-                    "AvailableResource", []
-                )
-                instance_types = (
-                    next(
-                        (r for r in available_resources if r["Type"] == "InstanceType"),
-                        {},
-                    )
-                    .get("SupportedResources", {})
-                    .get("SupportedResource", [])
-                )
-
-                for instance in instance_types:
-                    if instance.get("StatusCategory") == "WithStock":
-                        region_instances.append((zone.zone_id, instance["Value"]))
-
-        if region_instances:
-            instances_by_region[region.region_id] = region_instances
-            total_instances += len(region_instances)
-
-    vendor.progress_tracker.start_task(
-        name="Fetching spot prices", total=total_instances
-    )
-
+    spot_region_info = _get_spot_region_info(vendor)
     ecs_clients = _ecs_clients(vendor)
 
-    def fetch_spot_prices_for_region(region_id):
-        """Fetch all spot prices for a single region (single worker per region to avoid throttling)."""
-        client = ecs_clients[region_id]
-        region_items = []
+    def fetch_spot_price_with_retries(
+        client: EcsClient,
+        region_id: str,
+        zone_id: str,
+        instance_type: str,
+    ) -> Optional[DescribePriceResponseBody]:
+        """Fetch spot price with automatic retry logic for disk category errors.
 
-        for zone_id, instance_type in instances_by_region[region_id]:
-            try:
-                # Try without explicit disk category first (uses API defaults)
-                request = DescribePriceRequest(
-                    region_id=region_id,
-                    zone_id=zone_id,
-                    instance_type=instance_type,
-                    resource_type="instance",
-                    spot_strategy="SpotAsPriceGo",
+        Returns:
+            Response body if successful, None if price not found or error occurred.
+        """
+        request = DescribePriceRequest(
+            region_id=region_id,
+            zone_id=zone_id,
+            instance_type=instance_type,
+            resource_type="instance",
+            spot_strategy="SpotAsPriceGo",
+        )
+        runtime = RuntimeOptions()
+
+        try:
+            return client.describe_price_with_options(request, runtime).body
+        except Exception as e:
+            error_msg = str(e)
+
+            # Price not available for this instance type
+            if "PriceNotFound" in error_msg:
+                logger.info(
+                    f"No spot price found for {region_id} {zone_id} {instance_type}"
                 )
-                runtime = RuntimeOptions()
-                try:
-                    response = client.describe_price_with_options(request, runtime)
-                except Exception as e:
-                    # Check if error is related to invalid system disk category
-                    error_msg = str(e)
-                    if "InvalidSystemDiskCategory" in error_msg:
-                        # Retry with explicit cloud_essd disk category
-                        request.system_disk = DescribePriceRequestSystemDisk(
-                            category="cloud_essd"
-                        )
-                        try:
-                            response = client.describe_price_with_options(
-                                request, runtime
-                            )
-                        except Exception as e2:
-                            error_msg2 = str(e2)
-                            if "InvalidDataDiskCategory" in error_msg2:
-                                request.data_disk = [
-                                    DescribePriceRequestDataDisk(category="cloud_ssd")
-                                ]
-                                response = client.describe_price_with_options(
-                                    request, runtime
-                                )
-                            elif "PriceNotFound" in error_msg2:
-                                # No spot price found for this instance type in this zone
-                                continue
-                            else:
-                                raise
-                    elif "InvalidDataDiskCategory" in error_msg:
-                        # Retry with explicit cloud_essd data disk category
-                        request.data_disk = [
-                            DescribePriceRequestDataDisk(category="cloud_ssd")
-                        ]
-                        response = client.describe_price_with_options(request, runtime)
-                    elif "PriceNotFound" in error_msg:
-                        # No spot price found for this instance type in this zone
-                        continue
-                    else:
-                        raise
+                return None
 
-                if response.body:
+            # Retry with explicit disk categories if validation fails
+            if "InvalidSystemDiskCategory" in error_msg:
+                request.system_disk = DescribePriceRequestSystemDisk(
+                    category="cloud_essd"
+                )
+
+            if "InvalidDataDiskCategory" in error_msg or "InvalidSystemDiskCategory" in error_msg:
+                if "InvalidDataDiskCategory" in error_msg:
+                    request.data_disks = [
+                        DescribePriceRequestDataDisk(category="cloud_essd")
+                    ]
+
+                try:
+                    return client.describe_price_with_options(request, runtime).body
+                except Exception as retry_error:
+                    logger.error(
+                        f"Failed to get spot price for {region_id} {zone_id} {instance_type} "
+                        f"even after retry: {retry_error}"
+                    )
+                    return None
+
+            # Other errors
+            logger.error(
+                f"Failed to get spot price for {region_id} {zone_id} {instance_type}: {e}"
+            )
+            return None
+
+    def fetch_spot_prices_for_region(region_id: str, client: EcsClient) -> list[dict]:
+        """Fetch all spot prices for a single region (single worker per region to avoid throttling)."""
+        region_items = []
+        spot_zones = spot_region_info.get(region_id, [])
+
+        for spot_zone in spot_zones:
+            zone_id = spot_zone.get("ZoneId")
+            for spot_resource in spot_zone.get("AvailableSpotResources", {}).get(
+                "AvailableSpotResource", []
+            ):
+                instance_type = spot_resource.get("InstanceType")
+
+                response_body = fetch_spot_price_with_retries(
+                    client, region_id, zone_id, instance_type
+                )
+
+                if response_body:
                     price = next(
                         p.trade_price
-                        for p in response.body.price_info.price.detail_infos.detail_info
+                        for p in response_body.price_info.price.detail_infos.detail_info
                         if p.resource == "instanceType"
                     )
                     region_items.append(
@@ -946,24 +916,24 @@ def inventory_server_prices_spot(vendor):
                             "price": price,
                             "price_upfront": 0,
                             "price_tiered": [],
-                            "currency": response.body.price_info.price.currency,
+                            "currency": response_body.price_info.price.currency,
                             "status": Status.ACTIVE,
                         }
                     )
-            except Exception:
-                logger.exception(
-                    f"Failed to get spot price for {instance_type} in {zone_id}"
-                )
-            finally:
-                vendor.progress_tracker.advance_task()
 
+        vendor.progress_tracker.advance_task()
         return region_items
 
-    items = []
-    with ThreadPoolExecutor(max_workers=len(instances_by_region)) as executor:
-        results = executor.map(fetch_spot_prices_for_region, instances_by_region.keys())
-        for region_items in results:
-            items.extend(region_items)
+    vendor.progress_tracker.start_task(
+        name="Fetching spot server prices", total=len(vendor.regions)
+    )
+
+    with ThreadPoolExecutor(max_workers=2*len(vendor.regions)) as executor:
+        items = executor.map(
+            lambda args: fetch_spot_prices_for_region(*args),
+            [(r.region_id, ecs_clients[r.region_id]) for r in vendor.regions],
+        )
+    items = list(chain.from_iterable(items))
 
     vendor.progress_tracker.hide_task()
     return items
