@@ -951,33 +951,46 @@ def inspect_update_server_dict(server: dict) -> dict:
         "storages": lambda: lshw_storage_info.get("storages"),
     }
 
-    def override_mapping(server, field, newval):
-        # always override GCP fields with known vendor API data issues
-        if server.get("vendor_id") == "gcp":
-            if field in ["gpu_model", "storage_type", "storage_size", "storages"]:
-                return newval
+    def override_mapping(server, field, inspector_data):
+        """Decide whether to override vendor-provided server data with inspector data.
+
+        Args:
+            server: Server-like dict with vendor-provided data.
+            field: Server table column name.
+            inspector_data: New data provided by inspector.
+
+        Returns:
+            The data provided by inspector, or the vendor.
+        """
+        vendor_id = server.get("vendor_id")
+        vendor_data = server.get(field)
+        # always override GCP fields where vendor data is known to be missing (TODO drop once we have full lsblk coverage)
+        storage_fields = ["storage_type", "storage_size", "storages"]
+        if vendor_id == "gcp" and field in ["gpu_model", *storage_fields]:
+            return inspector_data
         # don't trust HDD/SSD inspection data at other vendors yet (TODO drop once we have full lsblk coverage)
-        if server.get("vendor_id") != "gcp" and field in [
-            "storage_type",
-            "storage_size",
-            "storages",
-        ]:
-            return server.get(field)
+        if vendor_id != "gcp" and field in storage_fields:
+            return vendor_data
         # keep inspector data for detailed fields that's not available from vendor API
+        if server.get("server_id") == "g5g.xlarge":
+            print(server)
+            print(inspector_data)
         if (
             field == "gpus"
-            and server.get("gpus", {})
-            and server["gpus"][0].get("bios_version")
+            and inspector_data
+            and isinstance(inspector_data, list)
+            and len(inspector_data) > 0
+            and inspector_data[0].get("bios_version")
         ):
-            return newval
-        # don't override with None in general
-        if newval is None:
-            return server.get(field)
-        # return inspector data if no API data present
-        if not server.get(field):
-            return newval
-        # don't override data fetched from vendor API
-        return server.get(field)
+            return inspector_data
+        # never override vendor data with None
+        if inspector_data is None:
+            return vendor_data
+        # return inspector data if vendor data is missing
+        if not vendor_data:
+            return inspector_data
+        # last resort: keep vendor data
+        return vendor_data
 
     for k, f in mappings.items():
         try:
