@@ -3,6 +3,7 @@ from functools import cache
 from itertools import chain
 from logging import WARN
 from os import environ
+from random import sample
 from typing import Optional
 
 from alibabacloud_bssopenapi20171214.client import Client as BssClient
@@ -12,6 +13,8 @@ from alibabacloud_ecs20140526.client import Client as EcsClient
 from alibabacloud_ecs20140526.models import (
     DescribeAvailableResourceRequest,
     DescribeInstanceTypesRequest,
+    DescribePriceRequest,
+    DescribePriceResponseBody,
     DescribeRegionsRequest,
     DescribeSpotAdviceRequest,
     DescribeZonesRequest,
@@ -157,7 +160,7 @@ def _get_resource_availability_info(
     """Fetch resource availability information using the `DescribeAvailableResource` API endpoint across all supported regions.
 
     Args:
-        vendor: The Vendor object used for get region list, interacting with the progress tracker and logging.
+        vendor: The Vendor object used for get region list and interacting with the progress tracker.
         instance_charge_type: The instance charge type, defaults to "PostPaid".
         destination_resource: The destination resource type, defaults to "InstanceType".
         resource_type: The resource type, defaults to "Instance".
@@ -214,12 +217,12 @@ def _get_resource_availability_info(
     return region_availability_info
 
 
-def _get_spot_region_info(
+def _get_spot_advices(
     vendor: Vendor, extra_request_params: Optional[dict] = None
 ) -> dict[str, list[dict]]:
     if extra_request_params is None:
         extra_request_params = {}
-    spot_region_info: dict[str, list[dict]] = {}
+    spot_advices: dict[str, list[dict]] = {}
     ecs_clients: dict[str, EcsClient] = _ecs_clients(vendor)
 
     def fetch_region_spot_advice(
@@ -256,10 +259,48 @@ def _get_spot_region_info(
             [(r.region_id, ecs_clients[r.region_id]) for r in vendor.regions],
         )
         for region_id, resources in results:
-            spot_region_info[region_id] = resources
+            spot_advices[region_id] = resources
     vendor.progress_tracker.hide_task()
 
-    return spot_region_info
+    return spot_advices
+
+
+def _get_instance_price(
+    client: EcsClient,
+    region_id: str,
+    zone_id: str,
+    instance_type: str,
+    spot_strategy: str,
+    resource_type: str = "instance",
+) -> Optional[DescribePriceResponseBody]:
+    """Fetch the price of a specific instance type in a specific region and zone.
+
+    Args:
+        client: The ECS client to use.
+        region_id: The region ID.
+        zone_id: The zone ID.
+        instance_type: The instance type.
+        spot_strategy: The spot strategy.
+        resource_type: The resource type, defaults to "instance".
+    Returns:
+        The price response body.
+    """
+    response = None
+    try:
+        request = DescribePriceRequest(
+            region_id=region_id,
+            zone_id=zone_id,
+            instance_type=instance_type,
+            resource_type=resource_type,
+            spot_strategy=spot_strategy,
+        )
+        runtime = RuntimeOptions()
+        response = client.describe_price_with_options(request, runtime)
+        return response.body
+    except Exception:
+        if response and response.headers:
+            logger.error(response.headers)
+        return None
 
 
 def _determine_cpu_allocation_type(instance_type: dict) -> CpuAllocation:
@@ -820,56 +861,82 @@ def inventory_server_prices_spot(vendor):
 
     Returns spot discount percentages relative to on-demand prices based on 30-day historical data.
     """
-    spot_region_info = _get_spot_region_info(vendor)
+    min_sample_size = 50
 
-    ondemand_prices = {}
+    ecs_clients: dict[str, EcsClient] = _ecs_clients(vendor)
+
+    ondemand_instances = {}
     for p in vendor.server_prices:
         if p.allocation == Allocation.ONDEMAND:
-            key = (p.region_id, p.zone_id, p.server_id)
-            ondemand_prices[key] = p
+            if p.region_id not in ondemand_instances:
+                ondemand_instances[p.region_id] = []
+            ondemand_instances[p.region_id].append((p.zone_id, p.server_id))
 
-    items = []
-    for region_id, zones in spot_region_info.items():
-        for zone in zones:
-            zone_id = zone.get("ZoneId")
-            if not zone_id:
-                continue
-            spot_instances = zone.get("AvailableSpotResources", {}).get(
-                "AvailableSpotResource", []
+    # Randomly sample from each region's instances
+    for region_id, instances in ondemand_instances.items():
+        if len(instances) > min_sample_size:
+            ondemand_instances[region_id] = sample(instances, min_sample_size)
+
+    def fetch_spot_instance_price(
+        region_id: str, zone_instance_list: list[tuple[str, str]], client: EcsClient
+    ):
+        spot_instances = []
+        for zone_id, instance_type in zone_instance_list:
+            price_response_body: DescribePriceResponseBody = _get_instance_price(
+                region_id=region_id,
+                zone_id=zone_id,
+                instance_type=instance_type,
+                client=client,
+                spot_strategy="SpotAsPriceGo",
             )
-            for spot_instance in spot_instances:
-                instance_type = spot_instance.get("InstanceType")
-                spot_discount = spot_instance.get("AverageSpotDiscount")
+            if not price_response_body:
+                vendor.progress_tracker.advance_task()
+                continue
+            trade_price = next(
+                (
+                    p.trade_price
+                    for p in price_response_body.price_info.price.detail_infos.detail_info
+                    if p.resource == "instanceType"
+                ),
+                None,
+            )
+            if not trade_price:
+                vendor.progress_tracker.advance_task()
+                continue
+            vendor.progress_tracker.advance_task()
+            spot_instances.append(
+                {
+                    "vendor_id": vendor.vendor_id,
+                    "region_id": region_id,
+                    "zone_id": zone_id,
+                    "server_id": instance_type,
+                    "operating_system": "linux",
+                    "allocation": Allocation.SPOT,
+                    "unit": PriceUnit.HOUR,
+                    "price": round(float(trade_price), 4),
+                    "price_upfront": 0,
+                    "price_tiered": [],
+                    "currency": price_response_body.price_info.price.currency,
+                    "status": Status.ACTIVE,
+                }
+            )
+        return spot_instances
 
-                if not instance_type or spot_discount is None:
-                    continue
+    vendor.progress_tracker.start_task(
+        name="Fetching spot instance price samples",
+        total=sum(len(v) for v in ondemand_instances.values()),
+    )
 
-                instance_price = ondemand_prices.get(
-                    (region_id, zone_id, instance_type)
-                )
-
-                if not instance_price:
-                    continue
-
-                items.append(
-                    {
-                        "vendor_id": vendor.vendor_id,
-                        "region_id": region_id,
-                        "zone_id": zone_id,
-                        "server_id": instance_type,
-                        "operating_system": "linux",
-                        "allocation": Allocation.SPOT,
-                        "unit": PriceUnit.HOUR,
-                        "price": round(
-                            instance_price.price * (int(spot_discount) / 100), 4
-                        ),
-                        "price_upfront": 0,
-                        "price_tiered": [],
-                        "currency": instance_price.currency,
-                        "status": Status.ACTIVE,
-                    }
-                )
-
+    with ThreadPoolExecutor(max_workers=len(ondemand_instances)) as executor:
+        items = executor.map(
+            lambda args: fetch_spot_instance_price(*args),
+            [
+                (region_id, zone_instance_list, ecs_clients[region_id])
+                for region_id, zone_instance_list in ondemand_instances.items()
+            ],
+        )
+    items = list(chain.from_iterable(items))
+    vendor.progress_tracker.hide_task()
     return items
 
 
