@@ -1,3 +1,4 @@
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from functools import cache
 from itertools import chain
@@ -885,21 +886,19 @@ def inventory_server_prices(vendor):
 def inventory_server_prices_spot(vendor):
     """Fetch spot instance pricing by randomly sampling on-demand instances per region.
 
-    Randomly selects up to min_sample_size on-demand instances per region and fetches their current
+    Randomly selects up to sample_size on-demand instances per region and fetches their current
     spot prices using the DescribePrice API, parallelized across regions.
     """
-    min_sample_size = 50
+    sample_size = 50
 
     ecs_clients: dict[str, EcsClient] = _ecs_clients(vendor)
 
-    ondemand_instances = {}
+    ondemand_instances = defaultdict(list)
     for server_price in vendor.server_prices:
         if (
             server_price.allocation == Allocation.ONDEMAND
             and server_price.status == Status.ACTIVE
         ):
-            if server_price.region_id not in ondemand_instances:
-                ondemand_instances[server_price.region_id] = []
             ondemand_instances[server_price.region_id].append(
                 (server_price.zone_id, server_price.server_id)
             )
@@ -909,8 +908,8 @@ def inventory_server_prices_spot(vendor):
 
     # Randomly sample from each region's instances
     for region_id, instances in ondemand_instances.items():
-        if len(instances) > min_sample_size:
-            ondemand_instances[region_id] = sample(instances, min_sample_size)
+        if len(instances) > sample_size:
+            ondemand_instances[region_id] = sample(instances, sample_size)
 
     def fetch_spot_instance_price(
         region_id: str, zone_instance_list: list[tuple[str, str]], client: EcsClient
