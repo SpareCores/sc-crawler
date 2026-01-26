@@ -886,7 +886,10 @@ def inventory_server_prices_spot(vendor):
 
     ondemand_instances = {}
     for server_price in vendor.server_prices:
-        if server_price.allocation == Allocation.ONDEMAND:
+        if (
+            server_price.allocation == Allocation.ONDEMAND
+            and server_price.status == Status.ACTIVE
+        ):
             if server_price.region_id not in ondemand_instances:
                 ondemand_instances[server_price.region_id] = []
             ondemand_instances[server_price.region_id].append(
