@@ -916,44 +916,46 @@ def inventory_server_prices_spot(vendor):
     ):
         spot_instances = []
         for zone_id, instance_type in zone_instance_list:
-            price_response_body: DescribePriceResponseBody = _get_instance_price(
-                region_id=region_id,
-                zone_id=zone_id,
-                instance_type=instance_type,
-                client=client,
-                spot_strategy="SpotAsPriceGo",
-            )
-            if not price_response_body:
+            try:
+                price_response_body: DescribePriceResponseBody = _get_instance_price(
+                    region_id=region_id,
+                    zone_id=zone_id,
+                    instance_type=instance_type,
+                    client=client,
+                    spot_strategy="SpotAsPriceGo",
+                )
+                if not price_response_body:
+                    continue
+
+                trade_price = next(
+                    (
+                        p.trade_price
+                        for p in price_response_body.price_info.price.detail_infos.detail_info
+                        if p.resource == "instanceType"
+                    ),
+                    None,
+                )
+                if not trade_price:
+                    continue
+
+                spot_instances.append(
+                    {
+                        "vendor_id": vendor.vendor_id,
+                        "region_id": region_id,
+                        "zone_id": zone_id,
+                        "server_id": instance_type,
+                        "operating_system": "linux",
+                        "allocation": Allocation.SPOT,
+                        "unit": PriceUnit.HOUR,
+                        "price": round(float(trade_price), 4),
+                        "price_upfront": 0,
+                        "price_tiered": [],
+                        "currency": price_response_body.price_info.price.currency,
+                        "status": Status.ACTIVE,
+                    }
+                )
+            finally:
                 vendor.progress_tracker.advance_task()
-                continue
-            trade_price = next(
-                (
-                    p.trade_price
-                    for p in price_response_body.price_info.price.detail_infos.detail_info
-                    if p.resource == "instanceType"
-                ),
-                None,
-            )
-            if not trade_price:
-                vendor.progress_tracker.advance_task()
-                continue
-            spot_instances.append(
-                {
-                    "vendor_id": vendor.vendor_id,
-                    "region_id": region_id,
-                    "zone_id": zone_id,
-                    "server_id": instance_type,
-                    "operating_system": "linux",
-                    "allocation": Allocation.SPOT,
-                    "unit": PriceUnit.HOUR,
-                    "price": round(float(trade_price), 4),
-                    "price_upfront": 0,
-                    "price_tiered": [],
-                    "currency": price_response_body.price_info.price.currency,
-                    "status": Status.ACTIVE,
-                }
-            )
-            vendor.progress_tracker.advance_task()
         return spot_instances
 
     vendor.progress_tracker.start_task(
