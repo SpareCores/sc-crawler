@@ -295,22 +295,30 @@ def _get_instance_price(
         spot_strategy=spot_strategy,
     )
     runtime = RuntimeOptions()
+    tried_system_disk = False
+    tried_data_disk = False
     while True:
         try:
             response = client.describe_price_with_options(request, runtime)
             return response.body
         except Exception as e:
             if "InvalidSystemDiskCategory.ValueNotSupported" in str(e):
+                if tried_system_disk:
+                    return None
                 request.system_disk = DescribePriceRequestSystemDisk(
                     category="cloud_essd"
                 )
+                tried_system_disk = True
                 continue
             elif "InvalidDataDiskCategory.ValueNotSupported" in str(e):
+                if tried_data_disk:
+                    return None
                 request.data_disks = [
                     DescribePriceRequestDataDisk(
                         category="cloud_essd",
                     )
                 ]
+                tried_data_disk = True
                 continue
             elif "InvalidInstanceType.ValueNotSupported" in str(e):
                 return None
@@ -895,6 +903,9 @@ def inventory_server_prices_spot(vendor):
             ondemand_instances[server_price.region_id].append(
                 (server_price.zone_id, server_price.server_id)
             )
+
+    if not ondemand_instances:
+        return []
 
     # Randomly sample from each region's instances
     for region_id, instances in ondemand_instances.items():
