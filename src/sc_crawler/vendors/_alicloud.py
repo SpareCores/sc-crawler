@@ -15,6 +15,8 @@ from alibabacloud_ecs20140526.models import (
     DescribeInstanceTypesRequest,
     DescribePriceRequest,
     DescribePriceResponseBody,
+    DescribePriceRequestSystemDisk,
+    DescribePriceRequestDataDisk,
     DescribeRegionsRequest,
     DescribeSpotAdviceRequest,
     DescribeZonesRequest,
@@ -285,22 +287,38 @@ def _get_instance_price(
     Returns:
         The price response body.
     """
-    response = None
-    try:
-        request = DescribePriceRequest(
-            region_id=region_id,
-            zone_id=zone_id,
-            instance_type=instance_type,
-            resource_type=resource_type,
-            spot_strategy=spot_strategy,
-        )
-        runtime = RuntimeOptions()
-        response = client.describe_price_with_options(request, runtime)
-        return response.body
-    except Exception:
-        if response and response.headers:
-            logger.error(response.headers)
-        return None
+    request = DescribePriceRequest(
+        region_id=region_id,
+        zone_id=zone_id,
+        instance_type=instance_type,
+        resource_type=resource_type,
+        spot_strategy=spot_strategy,
+    )
+    runtime = RuntimeOptions()
+    while True:
+        try:
+            response = client.describe_price_with_options(request, runtime)
+            return response.body
+        except Exception as e:
+            if "InvalidSystemDiskCategory.ValueNotSupported" in str(e):
+                request.system_disk = DescribePriceRequestSystemDisk(
+                    category="cloud_essd"
+                )
+                continue
+            elif "InvalidDataDiskCategory.ValueNotSupported" in str(e):
+                request.data_disks = [
+                    DescribePriceRequestDataDisk(
+                        category="cloud_essd",
+                    )
+                ]
+                continue
+            elif "InvalidInstanceType.ValueNotSupported" in str(e):
+                return None
+            else:
+                logger.error(
+                    f"Failed to get price for {instance_type} in {region_id}/{zone_id}: {e}"
+                )
+                return None
 
 
 def _determine_cpu_allocation_type(instance_type: dict) -> CpuAllocation:
@@ -857,20 +875,23 @@ def inventory_server_prices(vendor):
 
 
 def inventory_server_prices_spot(vendor):
-    """Fetch spot instance pricing using the `DescribeSpotAdvice` API endpoint.
+    """Fetch spot instance pricing by randomly sampling on-demand instances per region.
 
-    Returns spot discount percentages relative to on-demand prices based on 30-day historical data.
+    Randomly selects up to min_sample_size on-demand instances per region and fetches their current
+    spot prices using the DescribePrice API, parallelized across regions.
     """
     min_sample_size = 50
 
     ecs_clients: dict[str, EcsClient] = _ecs_clients(vendor)
 
     ondemand_instances = {}
-    for p in vendor.server_prices:
-        if p.allocation == Allocation.ONDEMAND:
-            if p.region_id not in ondemand_instances:
-                ondemand_instances[p.region_id] = []
-            ondemand_instances[p.region_id].append((p.zone_id, p.server_id))
+    for server_price in vendor.server_prices:
+        if server_price.allocation == Allocation.ONDEMAND:
+            if server_price.region_id not in ondemand_instances:
+                ondemand_instances[server_price.region_id] = []
+            ondemand_instances[server_price.region_id].append(
+                (server_price.zone_id, server_price.server_id)
+            )
 
     # Randomly sample from each region's instances
     for region_id, instances in ondemand_instances.items():
@@ -903,7 +924,6 @@ def inventory_server_prices_spot(vendor):
             if not trade_price:
                 vendor.progress_tracker.advance_task()
                 continue
-            vendor.progress_tracker.advance_task()
             spot_instances.append(
                 {
                     "vendor_id": vendor.vendor_id,
@@ -920,6 +940,7 @@ def inventory_server_prices_spot(vendor):
                     "status": Status.ACTIVE,
                 }
             )
+            vendor.progress_tracker.advance_task()
         return spot_instances
 
     vendor.progress_tracker.start_task(

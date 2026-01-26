@@ -10,6 +10,7 @@ Fix(es):
 New feature(s):
 
 - CLI tool to dump database tables to JSON files.
+- Implement Alibaba Cloud's spot instance price sampling.
 
 Housekeeping:
 
