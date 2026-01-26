@@ -4,7 +4,8 @@ from functools import cache
 from itertools import chain
 from logging import WARN
 from os import environ
-from random import sample
+from random import shuffle
+from time import sleep, time
 from typing import Optional
 
 from alibabacloud_bssopenapi20171214.client import Client as BssClient
@@ -223,6 +224,9 @@ def _get_resource_availability_info(
 def _get_spot_advices(
     vendor: Vendor, extra_request_params: Optional[dict] = None
 ) -> dict[str, list[dict]]:
+    """Fetch spot advice information using the `DescribeSpotAdvice` API endpoint across all supported regions.
+    Currently not used, keeping for possible future use.
+    """
     if extra_request_params is None:
         extra_request_params = {}
     spot_advices: dict[str, list[dict]] = {}
@@ -884,12 +888,12 @@ def inventory_server_prices(vendor):
 
 
 def inventory_server_prices_spot(vendor):
-    """Fetch spot instance pricing by randomly sampling on-demand instances per region.
+    """Fetch spot instance pricing by time-based sampling of on-demand instances per region.
 
-    Randomly selects up to sample_size on-demand instances per region and fetches their current
-    spot prices using the DescribePrice API, parallelized across regions.
+    Each region worker fetches spot prices for a random sample of instances within max_sample_time,
+    adapting to different response times, parallelized across regions.
     """
-    sample_size = 50
+    max_sample_time = 120  # seconds
 
     ecs_clients: dict[str, EcsClient] = _ecs_clients(vendor)
 
@@ -906,17 +910,22 @@ def inventory_server_prices_spot(vendor):
     if not ondemand_instances:
         return []
 
-    # Randomly sample from each region's instances
-    for region_id, instances in ondemand_instances.items():
-        if len(instances) > sample_size:
-            ondemand_instances[region_id] = sample(instances, sample_size)
+    for region_id in ondemand_instances:
+        shuffle(ondemand_instances[region_id])
 
     def fetch_spot_instance_price(
         region_id: str, zone_instance_list: list[tuple[str, str]], client: EcsClient
     ):
         spot_instances = []
+        start_time = time()
+
         for zone_id, instance_type in zone_instance_list:
             try:
+                # Check if time limit exceeded
+                elapsed = time() - start_time
+                if elapsed >= max_sample_time:
+                    break
+
                 price_response_body: DescribePriceResponseBody = _get_instance_price(
                     region_id=region_id,
                     zone_id=zone_id,
@@ -924,6 +933,7 @@ def inventory_server_prices_spot(vendor):
                     client=client,
                     spot_strategy="SpotAsPriceGo",
                 )
+
                 if not price_response_body:
                     continue
 
@@ -935,6 +945,7 @@ def inventory_server_prices_spot(vendor):
                     ),
                     None,
                 )
+
                 if not trade_price:
                     continue
 
@@ -954,24 +965,46 @@ def inventory_server_prices_spot(vendor):
                         "status": Status.ACTIVE,
                     }
                 )
+            except AttributeError:
+                continue
+            except Exception as e:
+                logger.error(
+                    f"Failed to get spot price for {instance_type} in {region_id}/{zone_id}: {e}"
+                )
+                continue
             finally:
                 vendor.progress_tracker.advance_task()
+
         return spot_instances
 
     vendor.progress_tracker.start_task(
-        name="Fetching spot instance price samples",
-        total=sum(len(v) for v in ondemand_instances.values()),
+        name=f"Fetching spot instance prices for {max_sample_time} seconds",
+        total=sum(len(zil) for zil in ondemand_instances.values()),
     )
 
     with ThreadPoolExecutor(max_workers=len(ondemand_instances)) as executor:
-        items = executor.map(
-            lambda args: fetch_spot_instance_price(*args),
-            [
-                (region_id, zone_instance_list, ecs_clients[region_id])
-                for region_id, zone_instance_list in ondemand_instances.items()
-            ],
-        )
-    items = list(chain.from_iterable(items))
+        futures = [
+            executor.submit(
+                fetch_spot_instance_price,
+                region_id,
+                zone_instance_list,
+                ecs_clients[region_id],
+            )
+            for region_id, zone_instance_list in ondemand_instances.items()
+        ]
+
+        items = []
+
+        while futures:
+            # Check for completed futures
+            completed = [f for f in futures if f.done()]
+            for future in completed:
+                items.extend(future.result())
+                futures.remove(future)
+
+            if futures:
+                sleep(0.1)
+
     vendor.progress_tracker.hide_task()
     return items
 
