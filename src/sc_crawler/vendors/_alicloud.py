@@ -839,9 +839,9 @@ def inventory_server_prices_spot(vendor):
             )
             for spot_instance in spot_instances:
                 instance_type = spot_instance.get("InstanceType")
-                spot_discount: int = spot_instance.get("AverageSpotDiscount")
+                spot_discount = spot_instance.get("AverageSpotDiscount")
 
-                if not instance_type and spot_discount:
+                if not instance_type or spot_discount is None:
                     continue
 
                 instance_price = ondemand_prices.get(
@@ -860,7 +860,9 @@ def inventory_server_prices_spot(vendor):
                         "operating_system": "linux",
                         "allocation": Allocation.SPOT,
                         "unit": PriceUnit.HOUR,
-                        "price": round(instance_price.price * (spot_discount / 100), 4),
+                        "price": round(
+                            instance_price.price * (int(spot_discount) / 100), 4
+                        ),
                         "price_upfront": 0,
                         "price_tiered": [],
                         "currency": instance_price.currency,
