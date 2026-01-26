@@ -816,13 +816,11 @@ def inventory_server_prices(vendor):
 
 
 def inventory_server_prices_spot(vendor):
-    """Fetch spot instance pricing using the `DescribeSpotAdvice` API endpoint."""
+    """Fetch spot instance pricing using the `DescribeSpotAdvice` API endpoint.
+
+    Returns spot discount percentages relative to on-demand prices based on 30-day historical data.
+    """
     spot_region_info = _get_spot_region_info(vendor)
-    spot_instance_count = sum(
-        len(zone.get("AvailableSpotResources", {}).get("AvailableSpotResource", []))
-        for zones in spot_region_info.values()
-        for zone in zones
-    )
 
     ondemand_prices = {}
     for p in vendor.server_prices:
@@ -830,14 +828,12 @@ def inventory_server_prices_spot(vendor):
             key = (p.region_id, p.zone_id, p.server_id)
             ondemand_prices[key] = p
 
-    vendor.progress_tracker.start_task(
-        name="Calculating spot instance prices", total=spot_instance_count
-    )
-
     items = []
     for region_id, zones in spot_region_info.items():
         for zone in zones:
             zone_id = zone.get("ZoneId")
+            if not zone_id:
+                continue
             spot_instances = zone.get("AvailableSpotResources", {}).get(
                 "AvailableSpotResource", []
             )
@@ -845,9 +841,7 @@ def inventory_server_prices_spot(vendor):
                 instance_type = spot_instance.get("InstanceType")
                 spot_discount: int = spot_instance.get("AverageSpotDiscount")
 
-                vendor.progress_tracker.advance_task()
-
-                if not (zone_id and instance_type and spot_discount):
+                if not instance_type and spot_discount:
                     continue
 
                 instance_price = ondemand_prices.get(
@@ -873,8 +867,6 @@ def inventory_server_prices_spot(vendor):
                         "status": Status.ACTIVE,
                     }
                 )
-
-    vendor.progress_tracker.hide_task()
 
     return items
 
