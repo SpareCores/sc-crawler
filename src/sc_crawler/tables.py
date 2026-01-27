@@ -319,6 +319,7 @@ class Vendor(VendorBase, table=True):
             price["price"] = round(price["price"], 4)
         insert_items(Ipv4Price, ipv4_prices, self)
 
+
 class VendorComplianceLink(VendorComplianceLinkBase, table=True):
     """List of known Compliance Frameworks paired with vendors."""
 

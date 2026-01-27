@@ -543,9 +543,7 @@ def inventory_zones(vendor):
 
     def fetch_zones_for_region(region_id):
         """Worker function to fetch zones for a single region."""
-        request = DescribeZonesRequest(
-            region_id=region_id, accept_language="en-US"
-        )
+        request = DescribeZonesRequest(region_id=region_id, accept_language="en-US")
         try:
             response = clients[region_id].describe_zones(request)
             zone_items = []
@@ -568,7 +566,9 @@ def inventory_zones(vendor):
             vendor.progress_tracker.advance_task()
 
     with ThreadPoolExecutor(max_workers=8) as executor:
-        items = executor.map(fetch_zones_for_region, [r.region_id for r in vendor.regions])
+        items = executor.map(
+            fetch_zones_for_region, [r.region_id for r in vendor.regions]
+        )
     items = list(chain.from_iterable(items))
     vendor.progress_tracker.hide_task()
     return items
