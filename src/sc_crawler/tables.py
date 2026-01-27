@@ -275,12 +275,10 @@ class Vendor(VendorBase, table=True):
         self.set_table_rows_inactive(
             ServerPrice, ServerPrice.allocation != Allocation.SPOT
         )
-        insert_items(
-            ServerPrice,
-            self._get_methods().inventory_server_prices(self),
-            self,
-            prefix="ondemand",
-        )
+        server_prices = self._get_methods().inventory_server_prices(self)
+        for price in server_prices:
+            price["price"] = round(price["price"], 4)
+        insert_items(ServerPrice, server_prices, self, prefix="ondemand")
 
     @log_start_end
     def inventory_server_prices_spot(self):
@@ -288,12 +286,10 @@ class Vendor(VendorBase, table=True):
         self.set_table_rows_inactive(
             ServerPrice, ServerPrice.allocation == Allocation.SPOT
         )
-        insert_items(
-            ServerPrice,
-            self._get_methods().inventory_server_prices_spot(self),
-            self,
-            prefix="spot",
-        )
+        server_prices = self._get_methods().inventory_server_prices(self)
+        for price in server_prices:
+            price["price"] = round(price["price"], 4)
+        insert_items(ServerPrice, server_prices, self, prefix="spot")
 
     @log_start_end
     def inventory_storages(self):
@@ -301,16 +297,27 @@ class Vendor(VendorBase, table=True):
 
     @log_start_end
     def inventory_storage_prices(self):
-        self._inventory(StoragePrice, self._get_methods().inventory_storage_prices)
+        self.set_table_rows_inactive(StoragePrice)
+        storage_prices = self._get_methods().inventory_storage_prices(self)
+        for price in storage_prices:
+            price["price"] = round(price["price"], 4)
+        insert_items(StoragePrice, storage_prices, self)
 
     @log_start_end
     def inventory_traffic_prices(self):
-        self._inventory(TrafficPrice, self._get_methods().inventory_traffic_prices)
+        self.set_table_rows_inactive(TrafficPrice)
+        traffic_prices = self._get_methods().inventory_traffic_prices(self)
+        for price in traffic_prices:
+            price["price"] = round(price["price"], 4)
+        insert_items(TrafficPrice, traffic_prices, self)
 
     @log_start_end
     def inventory_ipv4_prices(self):
-        self._inventory(Ipv4Price, self._get_methods().inventory_ipv4_prices)
-
+        self.set_table_rows_inactive(Ipv4Price)
+        ipv4_prices = self._get_methods().inventory_ipv4_prices(self)
+        for price in ipv4_prices:
+            price["price"] = round(price["price"], 4)
+        insert_items(Ipv4Price, ipv4_prices, self)
 
 class VendorComplianceLink(VendorComplianceLinkBase, table=True):
     """List of known Compliance Frameworks paired with vendors."""
