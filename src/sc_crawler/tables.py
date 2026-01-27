@@ -219,6 +219,22 @@ class Vendor(VendorBase, table=True):
                 query = query.where(arg)
             self.session.execute(query.values(status=Status.INACTIVE))
 
+    def set_table_rows_active(self, model: str, *args) -> None:
+        """Set this vendor's records to [ACTIVE][sc_crawler.table_fields.Status] in a table.
+
+        Positional arguments can be used to pass further filters
+        (besides the default model.vendor_id filter) referencing the
+        model object with SQLModel syntax.
+
+        Examples:
+            >>> aws.set_table_rows_active(ServerPrice, ServerPrice.price < 10)  # doctest: +SKIP
+        """
+        if self.session:
+            query = update(model).where(model.vendor_id == self.vendor_id)
+            for arg in args:
+                query = query.where(arg)
+            self.session.execute(query.values(status=Status.ACTIVE))
+
     def _inventory(self, table: ScModel, inventory: Callable):
         """Mark all rows in a table inactive, then insert new/updated items."""
         self.set_table_rows_inactive(table)

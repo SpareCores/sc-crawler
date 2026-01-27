@@ -1,5 +1,6 @@
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta
 from functools import cache
 from itertools import chain
 from logging import WARN
@@ -43,7 +44,7 @@ from ..table_fields import (
     StorageType,
     TrafficDirection,
 )
-from ..tables import Vendor
+from ..tables import ServerPrice, Vendor
 from ..vendor_helpers import get_region_by_id
 
 # ##############################################################################
@@ -875,7 +876,7 @@ def inventory_server_prices(vendor):
                     "operating_system": sku.get("SkuFactorMap").get("vm_os_kind"),
                     "allocation": Allocation.ONDEMAND,
                     "unit": PriceUnit.HOUR,
-                    "price": round(float(sku.get("CskuPriceList")[0].get("Price")), 4),
+                    "price": float(sku.get("CskuPriceList")[0].get("Price")),
                     "price_upfront": 0,
                     "price_tiered": [],
                     "currency": sku.get("CskuPriceList")[0].get("Currency"),
@@ -958,7 +959,7 @@ def inventory_server_prices_spot(vendor):
                         "operating_system": "linux",
                         "allocation": Allocation.SPOT,
                         "unit": PriceUnit.HOUR,
-                        "price": round(float(trade_price), 4),
+                        "price": float(trade_price),
                         "price_upfront": 0,
                         "price_tiered": [],
                         "currency": price_response_body.price_info.price.currency,
@@ -1006,6 +1007,13 @@ def inventory_server_prices_spot(vendor):
                 sleep(0.1)
 
     vendor.progress_tracker.hide_task()
+
+    vendor.set_table_rows_active(
+        ServerPrice,
+        ServerPrice.allocation == Allocation.SPOT,
+        ServerPrice.observed_at >= datetime.now() - timedelta(days=30),
+    )
+
     return items
 
 
