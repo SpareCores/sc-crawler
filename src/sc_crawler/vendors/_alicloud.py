@@ -158,7 +158,7 @@ def _get_resource_availability_info(
     """Fetch resource availability information using the `DescribeAvailableResource` API endpoint across all supported regions.
 
     Args:
-        vendor: The Vendor object used for get region list, interacting with the progress tracker and logging.
+        vendor: The Vendor object used for get region list and interacting with the progress tracker.
         instance_charge_type: The instance charge type, defaults to "PostPaid".
         destination_resource: The destination resource type, defaults to "InstanceType".
         resource_type: The resource type, defaults to "Instance".
@@ -194,8 +194,8 @@ def _get_resource_availability_info(
                         for resource in response.body.available_zones.available_zone
                     ]
             return region_id, resources
-        except Exception:
-            logger.exception(f"Failed to get availability info for region {region_id}")
+        except Exception as e:
+            logger.error(f"Failed to get availability info for region {region_id}: {e}")
             return region_id, []
         finally:
             vendor.progress_tracker.advance_task()
