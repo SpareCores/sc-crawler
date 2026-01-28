@@ -302,10 +302,10 @@ class Vendor(VendorBase, table=True):
         self.set_table_rows_inactive(
             ServerPrice, ServerPrice.allocation == Allocation.SPOT
         )
-        server_prices = self._get_methods().inventory_server_prices(self)
-        for price in server_prices:
+        server_prices_spot = self._get_methods().inventory_server_prices_spot(self)
+        for price in server_prices_spot:
             price["price"] = round(price["price"], 4)
-        insert_items(ServerPrice, server_prices, self, prefix="spot")
+        insert_items(ServerPrice, server_prices_spot, self, prefix="spot")
 
     @log_start_end
     def inventory_storages(self):
