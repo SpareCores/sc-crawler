@@ -6,7 +6,7 @@ from itertools import chain
 from logging import WARN
 from os import environ
 from random import shuffle
-from time import sleep, time
+from time import time
 from typing import Optional
 
 from alibabacloud_bssopenapi20171214.client import Client as BssClient
@@ -984,27 +984,14 @@ def inventory_server_prices_spot(vendor):
     )
 
     with ThreadPoolExecutor(max_workers=len(ondemand_instances)) as executor:
-        futures = [
-            executor.submit(
-                fetch_spot_instance_price,
-                region_id,
-                zone_instance_list,
-                ecs_clients[region_id],
-            )
-            for region_id, zone_instance_list in ondemand_instances.items()
-        ]
-
-        items = []
-
-        while futures:
-            # Check for completed futures
-            completed = [f for f in futures if f.done()]
-            for future in completed:
-                items.extend(future.result())
-                futures.remove(future)
-
-            if futures:
-                sleep(0.1)
+        items = executor.map(
+            lambda args: fetch_spot_instance_price(*args),
+            [
+                (region_id, zone_instance_list, ecs_clients[region_id])
+                for region_id, zone_instance_list in ondemand_instances.items()
+            ],
+        )
+    items = list(chain.from_iterable(items))
 
     vendor.progress_tracker.hide_task()
 
