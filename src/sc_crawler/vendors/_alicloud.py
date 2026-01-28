@@ -663,6 +663,7 @@ def inventory_zones(vendor):
     )
     clients = _ecs_clients(vendor)
 
+    @cachier(hash_func=jsoned_hash, separate_files=True)
     def fetch_zones_for_region(region_id):
         """Worker function to fetch zones for a single region."""
         request = DescribeZonesRequest(region_id=region_id, accept_language="en-US")
@@ -776,10 +777,15 @@ def inventory_servers(vendor):
                         all_supported_resources.extend(supported_resources)
 
             # StatusCategory values:
-            # *   WithStock: The resources are available and can be continuously replenished.
-            # *   ClosedWithStock: Inventory is available, but resources will not be replenished. The ability to guarantee the supply of inventory is low. We recommend selecting a product specification in the WithStock state.
-            # *   WithoutStock: The resource is out of stock and will be replenished. We recommend using other resources that are in stock.
-            # *   ClosedWithoutStock: The resource is out of stock and will no longer be replenished. We recommend using other resources that are in stock.
+            # *   WithStock: The resources are available and can be continuously
+            #     replenished.
+            # *   ClosedWithStock: Inventory is available, but resources will not be
+            #     replenished. The ability to guarantee the supply of inventory is low.
+            #     We recommend selecting a product specification in the WithStock state.
+            # *   WithoutStock: The resource is out of stock and will be replenished.
+            #     We recommend using other resources that are in stock.
+            # *   ClosedWithoutStock: The resource is out of stock and will no longer
+            #     be replenished. We recommend using other resources that are in stock.
 
             is_server_active = any(
                 r.get("Value") == instance_type.get("InstanceTypeId")
