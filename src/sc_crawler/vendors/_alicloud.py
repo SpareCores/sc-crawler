@@ -1,8 +1,12 @@
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta
 from functools import cache
 from itertools import chain
 from logging import WARN
 from os import environ
+from random import shuffle
+from time import time
 from typing import Optional
 
 from alibabacloud_bssopenapi20171214.client import Client as BssClient
@@ -12,7 +16,12 @@ from alibabacloud_ecs20140526.client import Client as EcsClient
 from alibabacloud_ecs20140526.models import (
     DescribeAvailableResourceRequest,
     DescribeInstanceTypesRequest,
+    DescribePriceRequest,
+    DescribePriceRequestDataDisk,
+    DescribePriceRequestSystemDisk,
+    DescribePriceResponseBody,
     DescribeRegionsRequest,
+    DescribeSpotAdviceRequest,
     DescribeZonesRequest,
 )
 from alibabacloud_tea_openapi.models import Config
@@ -36,7 +45,7 @@ from ..table_fields import (
     StorageType,
     TrafficDirection,
 )
-from ..tables import Vendor
+from ..tables import ServerPrice, Vendor
 from ..utils import jsoned_hash
 from ..vendor_helpers import get_region_by_id
 
@@ -213,6 +222,119 @@ def _get_resource_availability_info(
     vendor.progress_tracker.hide_task()
 
     return region_availability_info
+
+
+def _get_spot_advices(
+    vendor: Vendor, extra_request_params: Optional[dict] = None
+) -> dict[str, list[dict]]:
+    """Fetch spot advice information using the `DescribeSpotAdvice` API endpoint across all supported regions.
+    Currently not used, keeping for possible future use.
+    """
+    if extra_request_params is None:
+        extra_request_params = {}
+    spot_advices: dict[str, list[dict]] = {}
+    ecs_clients: dict[str, EcsClient] = _ecs_clients(vendor)
+
+    def fetch_region_spot_advice(
+        region_id: str, client: EcsClient
+    ) -> tuple[str, list[dict]]:
+        try:
+            resources = []
+            request = DescribeSpotAdviceRequest(
+                region_id=region_id,
+                **extra_request_params,
+            )
+            runtime = RuntimeOptions()
+            response = client.describe_spot_advice_with_options(request, runtime)
+            if response.body:
+                spot_zones = response.body.available_spot_zones
+                if spot_zones and spot_zones.available_spot_zone:
+                    resources = [
+                        spot_zone.to_map()
+                        for spot_zone in spot_zones.available_spot_zone
+                    ]
+            return region_id, resources
+        except Exception as e:
+            logger.error(f"Failed to get spot info for region {region_id}: {e}")
+            return region_id, []
+        finally:
+            vendor.progress_tracker.advance_task()
+
+    vendor.progress_tracker.start_task(
+        name="Fetching spot zone info", total=len(vendor.regions)
+    )
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        results = executor.map(
+            lambda args: fetch_region_spot_advice(*args),
+            [(r.region_id, ecs_clients[r.region_id]) for r in vendor.regions],
+        )
+        for region_id, resources in results:
+            spot_advices[region_id] = resources
+    vendor.progress_tracker.hide_task()
+
+    return spot_advices
+
+
+def _get_instance_price(
+    client: EcsClient,
+    region_id: str,
+    zone_id: str,
+    instance_type: str,
+    spot_strategy: str,
+    resource_type: str = "instance",
+) -> Optional[DescribePriceResponseBody]:
+    """Fetch the price of a specific instance type in a specific region and zone.
+
+    Args:
+        client: The ECS client to use.
+        region_id: The region ID.
+        zone_id: The zone ID.
+        instance_type: The instance type.
+        spot_strategy: The spot strategy.
+        resource_type: The resource type, defaults to "instance".
+    Returns:
+        The price response body.
+    """
+    request = DescribePriceRequest(
+        region_id=region_id,
+        zone_id=zone_id,
+        instance_type=instance_type,
+        resource_type=resource_type,
+        spot_strategy=spot_strategy,
+    )
+    runtime = RuntimeOptions()
+    tried_system_disk = False
+    tried_data_disk = False
+    while True:
+        try:
+            response = client.describe_price_with_options(request, runtime)
+            return response.body
+        except Exception as e:
+            if "InvalidSystemDiskCategory.ValueNotSupported" in str(e):
+                if tried_system_disk:
+                    return None
+                request.system_disk = DescribePriceRequestSystemDisk(
+                    category="cloud_essd"
+                )
+                tried_system_disk = True
+                continue
+            elif "InvalidDataDiskCategory.ValueNotSupported" in str(e):
+                if tried_data_disk:
+                    return None
+                request.data_disks = [
+                    DescribePriceRequestDataDisk(
+                        category="cloud_essd",
+                    )
+                ]
+                tried_data_disk = True
+                continue
+            elif "InvalidInstanceType.ValueNotSupported" in str(e):
+                return None
+            else:
+                logger.error(
+                    f"Failed to get price for {instance_type} in {region_id}/{zone_id}: {e}"
+                )
+                return None
 
 
 def _determine_cpu_allocation_type(instance_type: dict) -> CpuAllocation:
@@ -653,6 +775,12 @@ def inventory_servers(vendor):
                         ).get("SupportedResource", [])
                         all_supported_resources.extend(supported_resources)
 
+            # StatusCategory values:
+            # *   WithStock: The resources are available and can be continuously replenished.
+            # *   ClosedWithStock: Inventory is available, but resources will not be replenished. The ability to guarantee the supply of inventory is low. We recommend selecting a product specification in the WithStock state.
+            # *   WithoutStock: The resource is out of stock and will be replenished. We recommend using other resources that are in stock.
+            # *   ClosedWithoutStock: The resource is out of stock and will no longer be replenished. We recommend using other resources that are in stock.
+
             is_server_active = any(
                 r.get("Value") == instance_type.get("InstanceTypeId")
                 and r.get("StatusCategory") == "WithStock"
@@ -773,6 +901,37 @@ def inventory_server_prices(vendor):
                     )
                     if server_info.get("StatusCategory") == "WithStock":
                         status = Status.ACTIVE
+            zone_availability_info = next(
+                (
+                    r
+                    for r in region_availability_info[region.region_id]
+                    if r["ZoneId"] == zone.zone_id
+                ),
+                None,
+            )
+            if zone_availability_info:
+                available_resource: list[dict] = zone_availability_info.get(
+                    "AvailableResources", {}
+                ).get("AvailableResource", [])
+                supported_resource: list[dict] = (
+                    next(
+                        (r for r in available_resource if r["Type"] == "InstanceType"),
+                        {},
+                    )
+                    .get("SupportedResources", {})
+                    .get("SupportedResource", [])
+                )
+                server_info = next(
+                    (r for r in supported_resource if r["Value"] == server_id),
+                    {},
+                )
+                # StatusCategory values:
+                # *   WithStock: The resources are available and can be continuously replenished.
+                # *   ClosedWithStock: Inventory is available, but resources will not be replenished. The ability to guarantee the supply of inventory is low. We recommend selecting a product specification in the WithStock state.
+                # *   WithoutStock: The resource is out of stock and will be replenished. We recommend using other resources that are in stock.
+                # *   ClosedWithoutStock: The resource is out of stock and will no longer be replenished. We recommend using other resources that are in stock.
+                if server_info.get("StatusCategory") == "WithStock":
+                    status = Status.ACTIVE
 
             items.append(
                 {
@@ -796,21 +955,119 @@ def inventory_server_prices(vendor):
 
 
 def inventory_server_prices_spot(vendor):
-    # TODO spot prices can only be queried one-by-one, so let's revisit later?
-    # client = _ecs_client()
-    # request = DescribePriceRequest(
-    #     region_id="eu-central-1",
-    #     resource_type="instance",
-    #     instance_type="ecs.c6.large",
-    #     spot_strategy="SpotAsPriceGo",
-    # )
-    # response = client.describe_price(request)
-    # next(
-    #     p.trade_price
-    #     for p in response.body.price_info.price.detail_infos.detail_info
-    #     if p.resource == "instanceType"
-    # )
-    return []
+    """Fetch spot instance pricing by time-based sampling of on-demand instances per region.
+
+    Each region worker fetches spot prices for a random sample of instances within max_sample_time,
+    adapting to different response times, parallelized across regions.
+    """
+    max_sample_time = 120  # seconds
+
+    ecs_clients: dict[str, EcsClient] = _ecs_clients(vendor)
+
+    ondemand_instances = defaultdict(list)
+    for server_price in vendor.server_prices:
+        if (
+            server_price.allocation == Allocation.ONDEMAND
+            and server_price.status == Status.ACTIVE
+        ):
+            ondemand_instances[server_price.region_id].append(
+                (server_price.zone_id, server_price.server_id)
+            )
+
+    if not ondemand_instances:
+        return []
+
+    for region_id in ondemand_instances:
+        shuffle(ondemand_instances[region_id])
+
+    def fetch_spot_instance_price(
+        region_id: str, zone_instance_list: list[tuple[str, str]], client: EcsClient
+    ):
+        spot_instances = []
+        start_time = time()
+
+        for zone_id, instance_type in zone_instance_list:
+            try:
+                # Check if time limit exceeded
+                elapsed = time() - start_time
+                if elapsed >= max_sample_time:
+                    break
+
+                price_response_body: DescribePriceResponseBody = _get_instance_price(
+                    region_id=region_id,
+                    zone_id=zone_id,
+                    instance_type=instance_type,
+                    client=client,
+                    spot_strategy="SpotAsPriceGo",
+                )
+
+                if not price_response_body:
+                    continue
+
+                trade_price = next(
+                    (
+                        p.trade_price
+                        for p in price_response_body.price_info.price.detail_infos.detail_info
+                        if p.resource == "instanceType"
+                    ),
+                    None,
+                )
+
+                if not trade_price:
+                    continue
+
+                spot_instances.append(
+                    {
+                        "vendor_id": vendor.vendor_id,
+                        "region_id": region_id,
+                        "zone_id": zone_id,
+                        "server_id": instance_type,
+                        "operating_system": "linux",
+                        "allocation": Allocation.SPOT,
+                        "unit": PriceUnit.HOUR,
+                        "price": float(trade_price),
+                        "price_upfront": 0,
+                        "price_tiered": [],
+                        "currency": price_response_body.price_info.price.currency,
+                        "status": Status.ACTIVE,
+                    }
+                )
+            except AttributeError:
+                continue
+            except Exception as e:
+                logger.error(
+                    f"Failed to get spot price for {instance_type} in {region_id}/{zone_id}: {e}"
+                )
+                continue
+            finally:
+                vendor.progress_tracker.advance_task()
+
+        return spot_instances
+
+    vendor.progress_tracker.start_task(
+        name=f"Fetching spot instance prices for {max_sample_time} seconds",
+        total=sum(len(zil) for zil in ondemand_instances.values()),
+    )
+
+    with ThreadPoolExecutor(max_workers=len(ondemand_instances)) as executor:
+        items = executor.map(
+            lambda args: fetch_spot_instance_price(*args),
+            [
+                (region_id, zone_instance_list, ecs_clients[region_id])
+                for region_id, zone_instance_list in ondemand_instances.items()
+            ],
+        )
+    items = list(chain.from_iterable(items))
+
+    vendor.progress_tracker.hide_task()
+
+    vendor.set_table_rows_active(
+        ServerPrice,
+        ServerPrice.allocation == Allocation.SPOT,
+        ServerPrice.observed_at >= datetime.now() - timedelta(days=30),
+    )
+
+    return items
 
 
 def inventory_storages(vendor):
