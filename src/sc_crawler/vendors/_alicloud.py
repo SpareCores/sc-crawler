@@ -26,6 +26,7 @@ from alibabacloud_ecs20140526.models import (
 )
 from alibabacloud_tea_openapi.models import Config
 from alibabacloud_tea_util.models import RuntimeOptions
+from cachier import cachier
 
 from ..inspector import (
     _extract_family,
@@ -45,6 +46,7 @@ from ..table_fields import (
     TrafficDirection,
 )
 from ..tables import ServerPrice, Vendor
+from ..utils import jsoned_hash
 from ..vendor_helpers import get_region_by_id
 
 # ##############################################################################
@@ -179,10 +181,10 @@ def _get_resource_availability_info(
     region_availability_info: dict[str, list[dict]] = {}
     ecs_clients: dict[str, EcsClient] = _ecs_clients(vendor)
 
-    def fetch_region_availability(
-        region_id: str, client: EcsClient
-    ) -> tuple[str, list[dict]]:
+    @cachier(hash_func=jsoned_hash, separate_files=True)
+    def fetch_region_availability(region_id: str) -> tuple[str, list[dict]]:
         try:
+            client = ecs_clients[region_id]
             resources = []
             request = DescribeAvailableResourceRequest(
                 region_id=region_id,
@@ -212,8 +214,8 @@ def _get_resource_availability_info(
     )
     with ThreadPoolExecutor(max_workers=8) as executor:
         results = executor.map(
-            lambda args: fetch_region_availability(*args),
-            [(r.region_id, ecs_clients[r.region_id]) for r in vendor.regions],
+            lambda region_id: fetch_region_availability(region_id),
+            [r.region_id for r in vendor.regions],
         )
         for region_id, resources in results:
             region_availability_info[region_id] = resources
@@ -661,19 +663,18 @@ def inventory_zones(vendor):
     )
     clients = _ecs_clients(vendor)
 
-    def fetch_zones_for_region(region):
+    @cachier(hash_func=jsoned_hash, separate_files=True)
+    def fetch_zones_for_region(region_id):
         """Worker function to fetch zones for a single region."""
-        request = DescribeZonesRequest(
-            region_id=region.region_id, accept_language="en-US"
-        )
+        request = DescribeZonesRequest(region_id=region_id, accept_language="en-US")
         try:
-            response = clients[region.region_id].describe_zones(request)
+            response = clients[region_id].describe_zones(request)
             zone_items = []
             for zone in response.body.to_map()["Zones"]["Zone"]:
                 zone_items.append(
                     {
                         "vendor_id": vendor.vendor_id,
-                        "region_id": region.region_id,
+                        "region_id": region_id,
                         "zone_id": zone.get("ZoneId"),
                         "name": zone.get("LocalName"),
                         "api_reference": zone.get("ZoneId"),
@@ -682,13 +683,15 @@ def inventory_zones(vendor):
                 )
             return zone_items
         except Exception as e:
-            logger.error(f"Failed to get zones for region {region.region_id}: {e}")
+            logger.error(f"Failed to get zones for region {region_id}: {e}")
             return []
         finally:
             vendor.progress_tracker.advance_task()
 
     with ThreadPoolExecutor(max_workers=8) as executor:
-        items = executor.map(fetch_zones_for_region, vendor.regions)
+        items = executor.map(
+            fetch_zones_for_region, [r.region_id for r in vendor.regions]
+        )
     items = list(chain.from_iterable(items))
     vendor.progress_tracker.hide_task()
     return items
@@ -710,6 +713,10 @@ def inventory_servers(vendor):
         response = client.describe_instance_types(request)
         for instance_type in response.body.instance_types.instance_type:
             instance_types.append(instance_type.to_map())
+
+    region_availability_info: dict[str, list[dict]] = _get_resource_availability_info(
+        vendor
+    )
 
     CPU_ARCH_MAP = {"X86": CpuArchitecture.X86_64, "ARM": CpuArchitecture.ARM64}
     STORAGE_CATEGORY_MAP = {
@@ -755,6 +762,39 @@ def inventory_servers(vendor):
             ),
         ]
         description = f"{family} family ({', '.join(filter(None, description_parts))})"
+        status = Status.INACTIVE
+        if region_availability_info:
+            all_supported_resources: list[dict] = []
+            for region_zones in region_availability_info.values():
+                for zone_info in region_zones:
+                    available_resources = zone_info.get("AvailableResources", {}).get(
+                        "AvailableResource", []
+                    )
+                    for available_resource in available_resources:
+                        supported_resources = available_resource.get(
+                            "SupportedResources", {}
+                        ).get("SupportedResource", [])
+                        all_supported_resources.extend(supported_resources)
+
+            # StatusCategory values:
+            # *   WithStock: The resources are available and can be continuously
+            #     replenished.
+            # *   ClosedWithStock: Inventory is available, but resources will not be
+            #     replenished. The ability to guarantee the supply of inventory is low.
+            #     We recommend selecting a product specification in the WithStock state.
+            # *   WithoutStock: The resource is out of stock and will be replenished.
+            #     We recommend using other resources that are in stock.
+            # *   ClosedWithoutStock: The resource is out of stock and will no longer
+            #     be replenished. We recommend using other resources that are in stock.
+
+            is_server_active = any(
+                r.get("Value") == instance_type.get("InstanceTypeId")
+                and r.get("StatusCategory") == "WithStock"
+                for r in all_supported_resources
+            )
+
+            if is_server_active:
+                status = Status.ACTIVE
 
         items.append(
             {
@@ -800,6 +840,7 @@ def inventory_servers(vendor):
                 "inbound_traffic": 0,
                 "outbound_traffic": 0,
                 "ipv4": 0,
+                "status": status,
             }
         )
     return items
@@ -835,6 +876,37 @@ def inventory_server_prices(vendor):
         for zone in region.zones:
             server_id = sku.get("SkuFactorMap", {}).get("instance_type")
             status = Status.INACTIVE
+            if region_availability_info:
+                zone_availability_info = next(
+                    (
+                        r
+                        for r in region_availability_info[region.region_id]
+                        if r["ZoneId"] == zone.zone_id
+                    ),
+                    None,
+                )
+                if zone_availability_info:
+                    available_resource: list[dict] = zone_availability_info.get(
+                        "AvailableResources", {}
+                    ).get("AvailableResource", [])
+                    supported_resource: list[dict] = (
+                        next(
+                            (
+                                r
+                                for r in available_resource
+                                if r.get("Type") == "InstanceType"
+                            ),
+                            {},
+                        )
+                        .get("SupportedResources", {})
+                        .get("SupportedResource", [])
+                    )
+                    server_info = next(
+                        (r for r in supported_resource if r.get("Value") == server_id),
+                        {},
+                    )
+                    if server_info.get("StatusCategory") == "WithStock":
+                        status = Status.ACTIVE
             zone_availability_info = next(
                 (
                     r
@@ -891,10 +963,10 @@ def inventory_server_prices(vendor):
 def inventory_server_prices_spot(vendor):
     """Fetch spot instance pricing by time-based sampling of on-demand instances per region.
 
-    Each region worker fetches spot prices for a random sample of instances within max_sample_time,
+    Each region worker fetches spot prices for a random sample of instances within sample_time,
     adapting to different response times, parallelized across regions.
     """
-    max_sample_time = 120  # seconds
+    sample_time = 120  # seconds
 
     ecs_clients: dict[str, EcsClient] = _ecs_clients(vendor)
 
@@ -924,7 +996,7 @@ def inventory_server_prices_spot(vendor):
             try:
                 # Check if time limit exceeded
                 elapsed = time() - start_time
-                if elapsed >= max_sample_time:
+                if elapsed >= sample_time:
                     break
 
                 price_response_body: DescribePriceResponseBody = _get_instance_price(
@@ -936,6 +1008,16 @@ def inventory_server_prices_spot(vendor):
                 )
 
                 if not price_response_body:
+                    continue
+
+                if not next(
+                    (
+                        r
+                        for r in price_response_body.price_info.rules.rule
+                        if r.description == "Preemptible Instance discount"
+                    ),
+                    None,
+                ):
                     continue
 
                 trade_price = next(
@@ -979,7 +1061,7 @@ def inventory_server_prices_spot(vendor):
         return spot_instances
 
     vendor.progress_tracker.start_task(
-        name=f"Fetching spot instance prices for {max_sample_time} seconds",
+        name=f"Fetching spot instance prices for {sample_time} second(s)",
         total=sum(len(zil) for zil in ondemand_instances.values()),
     )
 
@@ -1127,7 +1209,7 @@ def inventory_storage_prices(vendor):
                 "region_id": region.region_id,
                 "storage_id": storage_id,
                 "unit": PriceUnit.GB_MONTH,
-                "price": sku["CskuPriceList"][0]["Price"],
+                "price": float(sku["CskuPriceList"][0]["Price"]),
                 "currency": sku["CskuPriceList"][0]["Currency"],
             }
         )
@@ -1162,7 +1244,7 @@ def inventory_traffic_prices(vendor):
             {
                 "vendor_id": vendor.vendor_id,
                 "region_id": region.region_id,
-                "price": price["Price"],
+                "price": float(price["Price"]),
                 "price_tiered": [],
                 "currency": price["Currency"],
                 "unit": PriceUnit.GB_MONTH,
