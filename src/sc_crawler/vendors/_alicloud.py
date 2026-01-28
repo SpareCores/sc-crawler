@@ -963,10 +963,10 @@ def inventory_server_prices(vendor):
 def inventory_server_prices_spot(vendor):
     """Fetch spot instance pricing by time-based sampling of on-demand instances per region.
 
-    Each region worker fetches spot prices for a random sample of instances within max_sample_time,
+    Each region worker fetches spot prices for a random sample of instances within sample_time,
     adapting to different response times, parallelized across regions.
     """
-    max_sample_time = 120  # seconds
+    sample_time = 120  # seconds
 
     ecs_clients: dict[str, EcsClient] = _ecs_clients(vendor)
 
@@ -996,7 +996,7 @@ def inventory_server_prices_spot(vendor):
             try:
                 # Check if time limit exceeded
                 elapsed = time() - start_time
-                if elapsed >= max_sample_time:
+                if elapsed >= sample_time:
                     break
 
                 price_response_body: DescribePriceResponseBody = _get_instance_price(
@@ -1008,6 +1008,16 @@ def inventory_server_prices_spot(vendor):
                 )
 
                 if not price_response_body:
+                    continue
+
+                if not next(
+                    (
+                        r
+                        for r in price_response_body.price_info.rules.rule
+                        if r.description == "Preemptible Instance discount"
+                    ),
+                    None,
+                ):
                     continue
 
                 trade_price = next(
@@ -1051,7 +1061,7 @@ def inventory_server_prices_spot(vendor):
         return spot_instances
 
     vendor.progress_tracker.start_task(
-        name=f"Fetching spot instance prices for {max_sample_time} seconds",
+        name=f"Fetching spot instance prices for {sample_time} second(s)",
         total=sum(len(zil) for zil in ondemand_instances.values()),
     )
 
