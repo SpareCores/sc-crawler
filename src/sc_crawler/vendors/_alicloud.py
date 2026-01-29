@@ -182,7 +182,13 @@ def _get_region_availability_info(
     ecs_clients: dict[str, EcsClient] = _ecs_clients(vendor)
 
     @cachier(hash_func=jsoned_hash, separate_files=True)
-    def fetch_region_availability(region_id: str) -> tuple[str, list[dict]]:
+    def fetch_region_availability(
+        region_id: str,
+        instance_charge_type: str,
+        destination_resource: str,
+        resource_type: str,
+        extra_request_params: dict,
+    ) -> tuple[str, list[dict]]:
         try:
             client = ecs_clients[region_id]
             resources = []
@@ -212,7 +218,13 @@ def _get_region_availability_info(
     )
     with ThreadPoolExecutor(max_workers=8) as executor:
         results = executor.map(
-            fetch_region_availability,
+            lambda region_id: fetch_region_availability(
+                region_id,
+                instance_charge_type,
+                destination_resource,
+                resource_type,
+                extra_request_params,
+            ),
             [r.region_id for r in vendor.regions],
         )
         for region_id, resources in results:
@@ -830,13 +842,13 @@ def inventory_servers(vendor):
             Status.ACTIVE
             if any(
                 _is_resource_available(
-                    region_availability_info, region_id, zone_id, server_id
+                    region_availability_info,
+                    region_id,
+                    zone_info.get("ZoneId"),
+                    server_id,
                 )
-                for region_id, zone_id in [
-                    (region.region_id, zone.zone_id)
-                    for region in vendor.regions
-                    for zone in region.zones
-                ]
+                for region_id, zones in region_availability_info.items()
+                for zone_info in zones
             )
             else Status.INACTIVE
         )
