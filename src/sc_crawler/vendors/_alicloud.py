@@ -45,7 +45,7 @@ from ..table_fields import (
     StorageType,
     TrafficDirection,
 )
-from ..tables import Region, Server, ServerPrice, Vendor, Zone
+from ..tables import ServerPrice, Vendor
 from ..utils import jsoned_hash
 from ..vendor_helpers import get_region_by_id
 
