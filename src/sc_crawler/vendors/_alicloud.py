@@ -45,7 +45,7 @@ from ..table_fields import (
     StorageType,
     TrafficDirection,
 )
-from ..tables import ServerPrice, Vendor
+from ..tables import Region, Server, ServerPrice, Vendor, Zone
 from ..utils import jsoned_hash
 from ..vendor_helpers import get_region_by_id
 
@@ -157,7 +157,7 @@ def _get_sku_prices(
     return skus
 
 
-def _get_resource_availability_info(
+def _get_region_availability_info(
     vendor: Vendor,
     instance_charge_type: str = "PostPaid",
     destination_resource: str = "InstanceType",
@@ -206,22 +206,85 @@ def _get_resource_availability_info(
         except Exception as e:
             logger.error(f"Failed to get availability info for region {region_id}: {e}")
             return region_id, []
-        finally:
-            vendor.progress_tracker.advance_task()
 
     vendor.progress_tracker.start_task(
         name="Fetching server availability info", total=len(vendor.regions)
     )
     with ThreadPoolExecutor(max_workers=8) as executor:
         results = executor.map(
-            lambda region_id: fetch_region_availability(region_id),
+            fetch_region_availability,
             [r.region_id for r in vendor.regions],
         )
         for region_id, resources in results:
             region_availability_info[region_id] = resources
+            vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
 
     return region_availability_info
+
+
+def _is_resource_available(
+    region_availability_info: dict[str, list[dict]],
+    region_id: str,
+    zone_id: str,
+    server_id: str,
+    resource_type: str = "InstanceType",
+    status_category: str = "WithStock",
+) -> bool:
+    """Check if a specific resource is available in a specific region and zone.
+
+    Args:
+        region_availability_info: The region availability information.
+        region_id: The region ID.
+        zone_id: The zone ID.
+        server_id: The server ID.
+        resource_type: The resource type, defaults to "InstanceType".
+        status_category: The status category to check for, defaults to "WithStock".
+    """
+    if not region_availability_info:
+        return False
+
+    zone_availability_info = next(
+        (r for r in region_availability_info[region_id] if r.get("ZoneId") == zone_id),
+        None,
+    )
+
+    if not zone_availability_info:
+        return False
+
+    available_resource: list[dict] = zone_availability_info.get(
+        "AvailableResources", {}
+    ).get("AvailableResource", [])
+
+    supported_resource: list[dict] = (
+        next(
+            (r for r in available_resource if r.get("Type") == resource_type),
+            {},
+        )
+        .get("SupportedResources", {})
+        .get("SupportedResource", [])
+    )
+
+    server_info = next(
+        (r for r in supported_resource if r.get("Value") == server_id),
+        {},
+    )
+
+    # StatusCategory values:
+    # *   WithStock: The resources are available and can be continuously
+    #     replenished.
+    # *   ClosedWithStock: Inventory is available, but resources will not be
+    #     replenished. The ability to guarantee the supply of inventory is low.
+    #     We recommend selecting a product specification in the WithStock state.
+    # *   WithoutStock: The resource is out of stock and will be replenished.
+    #     We recommend using other resources that are in stock.
+    # *   ClosedWithoutStock: The resource is out of stock and will no longer
+    #     be replenished. We recommend using other resources that are in stock.
+
+    if server_info.get("StatusCategory") == status_category:
+        return True
+
+    return False
 
 
 def _get_spot_advices(
@@ -714,7 +777,7 @@ def inventory_servers(vendor):
         for instance_type in response.body.instance_types.instance_type:
             instance_types.append(instance_type.to_map())
 
-    region_availability_info: dict[str, list[dict]] = _get_resource_availability_info(
+    region_availability_info: dict[str, list[dict]] = _get_region_availability_info(
         vendor
     )
 
@@ -762,47 +825,29 @@ def inventory_servers(vendor):
             ),
         ]
         description = f"{family} family ({', '.join(filter(None, description_parts))})"
-        status = Status.INACTIVE
-        if region_availability_info:
-            all_supported_resources: list[dict] = []
-            for region_zones in region_availability_info.values():
-                for zone_info in region_zones:
-                    available_resources = zone_info.get("AvailableResources", {}).get(
-                        "AvailableResource", []
-                    )
-                    for available_resource in available_resources:
-                        supported_resources = available_resource.get(
-                            "SupportedResources", {}
-                        ).get("SupportedResource", [])
-                        all_supported_resources.extend(supported_resources)
-
-            # StatusCategory values:
-            # *   WithStock: The resources are available and can be continuously
-            #     replenished.
-            # *   ClosedWithStock: Inventory is available, but resources will not be
-            #     replenished. The ability to guarantee the supply of inventory is low.
-            #     We recommend selecting a product specification in the WithStock state.
-            # *   WithoutStock: The resource is out of stock and will be replenished.
-            #     We recommend using other resources that are in stock.
-            # *   ClosedWithoutStock: The resource is out of stock and will no longer
-            #     be replenished. We recommend using other resources that are in stock.
-
-            is_server_active = any(
-                r.get("Value") == instance_type.get("InstanceTypeId")
-                and r.get("StatusCategory") == "WithStock"
-                for r in all_supported_resources
+        server_id = instance_type.get("InstanceTypeId")
+        status = (
+            Status.ACTIVE
+            if any(
+                _is_resource_available(
+                    region_availability_info, region_id, zone_id, server_id
+                )
+                for region_id, zone_id in [
+                    (region.region_id, zone.zone_id)
+                    for region in vendor.regions
+                    for zone in region.zones
+                ]
             )
-
-            if is_server_active:
-                status = Status.ACTIVE
+            else Status.INACTIVE
+        )
 
         items.append(
             {
                 "vendor_id": vendor.vendor_id,
-                "server_id": instance_type.get("InstanceTypeId"),
-                "name": instance_type.get("InstanceTypeId"),
-                "api_reference": instance_type.get("InstanceTypeId"),
-                "display_name": instance_type.get("InstanceTypeId"),
+                "server_id": server_id,
+                "name": server_id,
+                "api_reference": server_id,
+                "display_name": server_id,
                 "description": description,
                 "family": family,
                 "vcpus": vcpus,
@@ -863,7 +908,7 @@ def inventory_server_prices(vendor):
 
     items = []
     unsupported_regions = set()
-    region_availability_info: dict[str, list[dict]] = _get_resource_availability_info(
+    region_availability_info: dict[str, list[dict]] = _get_region_availability_info(
         vendor
     )
 
@@ -875,69 +920,13 @@ def inventory_server_prices(vendor):
             continue
         for zone in region.zones:
             server_id = sku.get("SkuFactorMap", {}).get("instance_type")
-            status = Status.INACTIVE
-            if region_availability_info:
-                zone_availability_info = next(
-                    (
-                        r
-                        for r in region_availability_info[region.region_id]
-                        if r["ZoneId"] == zone.zone_id
-                    ),
-                    None,
+            status = (
+                Status.ACTIVE
+                if _is_resource_available(
+                    region_availability_info, region.region_id, zone.zone_id, server_id
                 )
-                if zone_availability_info:
-                    available_resource: list[dict] = zone_availability_info.get(
-                        "AvailableResources", {}
-                    ).get("AvailableResource", [])
-                    supported_resource: list[dict] = (
-                        next(
-                            (
-                                r
-                                for r in available_resource
-                                if r.get("Type") == "InstanceType"
-                            ),
-                            {},
-                        )
-                        .get("SupportedResources", {})
-                        .get("SupportedResource", [])
-                    )
-                    server_info = next(
-                        (r for r in supported_resource if r.get("Value") == server_id),
-                        {},
-                    )
-                    if server_info.get("StatusCategory") == "WithStock":
-                        status = Status.ACTIVE
-            zone_availability_info = next(
-                (
-                    r
-                    for r in region_availability_info[region.region_id]
-                    if r["ZoneId"] == zone.zone_id
-                ),
-                None,
+                else Status.INACTIVE
             )
-            if zone_availability_info:
-                available_resource: list[dict] = zone_availability_info.get(
-                    "AvailableResources", {}
-                ).get("AvailableResource", [])
-                supported_resource: list[dict] = (
-                    next(
-                        (r for r in available_resource if r["Type"] == "InstanceType"),
-                        {},
-                    )
-                    .get("SupportedResources", {})
-                    .get("SupportedResource", [])
-                )
-                server_info = next(
-                    (r for r in supported_resource if r["Value"] == server_id),
-                    {},
-                )
-                # StatusCategory values:
-                # *   WithStock: The resources are available and can be continuously replenished.
-                # *   ClosedWithStock: Inventory is available, but resources will not be replenished. The ability to guarantee the supply of inventory is low. We recommend selecting a product specification in the WithStock state.
-                # *   WithoutStock: The resource is out of stock and will be replenished. We recommend using other resources that are in stock.
-                # *   ClosedWithoutStock: The resource is out of stock and will no longer be replenished. We recommend using other resources that are in stock.
-                if server_info.get("StatusCategory") == "WithStock":
-                    status = Status.ACTIVE
 
             items.append(
                 {

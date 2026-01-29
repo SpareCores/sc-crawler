@@ -240,6 +240,27 @@ class Vendor(VendorBase, table=True):
         self.set_table_rows_inactive(table)
         insert_items(table, inventory(self), self)
 
+    def _inventory_price_rounding(
+        self,
+        table: ScModel,
+        inventory: Callable,
+        *filters,
+        prefix: str = "",
+    ):
+        """Mark rows in a table inactive, then insert new/updated items with 4-digit price rounding.
+
+        Args:
+            table: The SQLModel table class to update.
+            inventory: Callable that returns list of items to insert.
+            *filters: Optional filter expressions to apply when marking rows inactive.
+            prefix: Optional prefix for progress tracking.
+        """
+        self.set_table_rows_inactive(table, *filters)
+        items = inventory(self)
+        for item in items:
+            item["price"] = round(float(item["price"]), 4)
+        insert_items(table, items, self, prefix=prefix)
+
     @log_start_end
     def inventory_compliance_frameworks(self):
         """Get the vendor's all compliance frameworks."""
@@ -288,52 +309,48 @@ class Vendor(VendorBase, table=True):
     @log_start_end
     def inventory_server_prices(self):
         """Get the current standard/ondemand/reserved prices of all server types."""
-        self.set_table_rows_inactive(
-            ServerPrice, ServerPrice.allocation != Allocation.SPOT
+        self._inventory_price_rounding(
+            ServerPrice,
+            self._get_methods().inventory_server_prices,
+            ServerPrice.allocation != Allocation.SPOT,
+            prefix="ondemand",
         )
-        server_prices = self._get_methods().inventory_server_prices(self)
-        for price in server_prices:
-            price["price"] = round(price["price"], 4)
-        insert_items(ServerPrice, server_prices, self, prefix="ondemand")
 
     @log_start_end
     def inventory_server_prices_spot(self):
         """Get the current spot prices of all server types."""
-        self.set_table_rows_inactive(
-            ServerPrice, ServerPrice.allocation == Allocation.SPOT
+        self._inventory_price_rounding(
+            ServerPrice,
+            self._get_methods().inventory_server_prices_spot,
+            ServerPrice.allocation == Allocation.SPOT,
+            prefix="spot",
         )
-        server_prices_spot = self._get_methods().inventory_server_prices_spot(self)
-        for price in server_prices_spot:
-            price["price"] = round(price["price"], 4)
-        insert_items(ServerPrice, server_prices_spot, self, prefix="spot")
 
     @log_start_end
     def inventory_storages(self):
+        """Get the vendor's all storage types."""
         self._inventory(Storage, self._get_methods().inventory_storages)
 
     @log_start_end
     def inventory_storage_prices(self):
-        self.set_table_rows_inactive(StoragePrice)
-        storage_prices = self._get_methods().inventory_storage_prices(self)
-        for price in storage_prices:
-            price["price"] = round(price["price"], 4)
-        insert_items(StoragePrice, storage_prices, self)
+        """Get the current prices of all storage types."""
+        self._inventory_price_rounding(
+            StoragePrice, self._get_methods().inventory_storage_prices
+        )
 
     @log_start_end
     def inventory_traffic_prices(self):
-        self.set_table_rows_inactive(TrafficPrice)
-        traffic_prices = self._get_methods().inventory_traffic_prices(self)
-        for price in traffic_prices:
-            price["price"] = round(price["price"], 4)
-        insert_items(TrafficPrice, traffic_prices, self)
+        """Get the current prices of all traffic types."""
+        self._inventory_price_rounding(
+            TrafficPrice, self._get_methods().inventory_traffic_prices
+        )
 
     @log_start_end
     def inventory_ipv4_prices(self):
-        self.set_table_rows_inactive(Ipv4Price)
-        ipv4_prices = self._get_methods().inventory_ipv4_prices(self)
-        for price in ipv4_prices:
-            price["price"] = round(price["price"], 4)
-        insert_items(Ipv4Price, ipv4_prices, self)
+        """Get the current prices of all IPv4 types."""
+        self._inventory_price_rounding(
+            Ipv4Price, self._get_methods().inventory_ipv4_prices
+        )
 
 
 class VendorComplianceLink(VendorComplianceLinkBase, table=True):
