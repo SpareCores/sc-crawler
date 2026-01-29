@@ -970,6 +970,7 @@ def inventory_server_prices_spot(vendor):
             )
 
     if not ondemand_instances:
+        logger.error("No active ondemand instances found")
         return []
 
     for region_id in ondemand_instances:
@@ -1046,6 +1047,9 @@ def inventory_server_prices_spot(vendor):
                 continue
             finally:
                 vendor.progress_tracker.advance_task()
+
+        if not spot_instances:
+            logger.info(f"No spot prices found in region {region_id}")
 
         return spot_instances
 
