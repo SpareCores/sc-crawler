@@ -612,7 +612,7 @@ class ServerFields(
         default=None,
         description="If the DDR SDRAM uses error correction code to detect and correct n-bit data corruption.",
     )
-    gpu_count: int = Field(
+    gpu_count: float = Field(
         default=0,
         description="Number of GPU accelerator(s).",
     )
