@@ -6,6 +6,7 @@ Fix(es):
 - Check region availability for Alibaba Cloud servers before adding their prices.
 - Determine CPU allocation type for Alibaba Cloud servers.
 - Preserve vendor API data by default, only overriding when necessary for known API data issues.
+- Verify Alibaba Cloud instance type retirement status.
 
 New feature(s):
 
@@ -16,6 +17,7 @@ Housekeeping:
 
 - Delay method validation to avoid CLI startup slowdown.
 - Avoid name conflict in vendor modules via private modules.
+- Convert all prices to float and round to 4 digits.
 
 ## v0.3.3 (Jan 02, 2026)
 

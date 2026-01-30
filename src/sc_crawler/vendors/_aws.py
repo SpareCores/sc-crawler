@@ -960,7 +960,7 @@ def inventory_server_prices(vendor):
                         # TODO ingest other OSs
                         "operating_system": "Linux",
                         "allocation": Allocation.ONDEMAND,
-                        "price": price[0],
+                        "price": float(price[0]),
                         "currency": price[1],
                         "unit": PriceUnit.HOUR,
                     }
@@ -1174,7 +1174,7 @@ def inventory_storage_prices(vendor):
                     "region_id": region.region_id,
                     "storage_id": attributes["volumeApiName"],
                     "unit": PriceUnit.GB_MONTH,
-                    "price": price[0],
+                    "price": float(price[0]),
                     "currency": price[1],
                 }
             )
@@ -1216,7 +1216,7 @@ def inventory_traffic_prices(vendor):
                     {
                         "vendor_id": vendor.vendor_id,
                         "region_id": region.region_id,
-                        "price": max([t["price"] for t in prices[0]]),
+                        "price": max([float(t["price"]) for t in prices[0]]),
                         "price_tiered": price,
                         "currency": prices[1],
                         "unit": PriceUnit.GB_MONTH,
@@ -1259,7 +1259,7 @@ def inventory_ipv4_prices(vendor):
             {
                 "vendor_id": vendor.vendor_id,
                 "region_id": region.region_id,
-                "price": price[0],
+                "price": float(price[0]),
                 "currency": price[1],
                 "unit": PriceUnit.HOUR,
             }
