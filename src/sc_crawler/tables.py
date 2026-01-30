@@ -312,7 +312,7 @@ class Vendor(VendorBase, table=True):
         self._inventory_price_rounding(
             ServerPrice,
             self._get_methods().inventory_server_prices,
-            ServerPrice.allocation != Allocation.SPOT,
+            ServerPrice.allocation == Allocation.ONDEMAND,
             prefix="ondemand",
         )
 
