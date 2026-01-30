@@ -257,7 +257,11 @@ def _is_resource_available(
         return False
 
     zone_availability_info = next(
-        (r for r in region_availability_info[region_id] if r.get("ZoneId") == zone_id),
+        (
+            r
+            for r in region_availability_info.get(region_id, [])
+            if r.get("ZoneId") == zone_id
+        ),
         None,
     )
 
