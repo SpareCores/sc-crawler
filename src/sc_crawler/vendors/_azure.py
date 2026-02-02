@@ -437,7 +437,7 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
                     "operating_system": "Linux",
                     "allocation": allocation,
                     "unit": PriceUnit.HOUR,
-                    "price": retail_price["retailPrice"],
+                    "price": float(retail_price["retailPrice"]),
                     "price_upfront": 0,
                     "price_tiered": [],
                     "currency": retail_price["currencyCode"],
@@ -1139,7 +1139,7 @@ def inventory_traffic_prices(vendor):
                     {
                         "vendor_id": vendor.vendor_id,
                         "region_id": region.region_id,
-                        "price": max([t["price"] for t in tiers]),
+                        "price": max([float(t["price"]) for t in tiers]),
                         "price_tiered": tiers,
                         "currency": prices[0].get("currencyCode", "USD"),
                         "unit": PriceUnit.GB_MONTH,
@@ -1178,7 +1178,7 @@ def inventory_ipv4_prices(vendor):
                 {
                     "vendor_id": vendor.vendor_id,
                     "region_id": region.region_id,
-                    "price": price["retailPrice"],
+                    "price": float(price["retailPrice"]),
                     "currency": price.get("currencyCode", "USD"),
                     "unit": PriceUnit.HOUR,
                 }
