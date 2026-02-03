@@ -54,7 +54,14 @@ class CountryScd(Scd, CountryBase, table=True):
 class VendorComplianceLinkScd(Scd, VendorComplianceLinkBase, table=True):
     """SCD version of .tables.VendorComplianceLink."""
 
-    pass
+    compliance_framework_id: str = Field(
+        primary_key=True,
+        description="Reference to the Compliance Framework.",
+    )
+    vendor_id: str = Field(
+        primary_key=True,
+        description="Reference to the Vendor.",
+    )
 
 
 class ComplianceFrameworkScd(Scd, ComplianceFrameworkBase, table=True):
@@ -66,55 +73,84 @@ class ComplianceFrameworkScd(Scd, ComplianceFrameworkBase, table=True):
 class VendorScd(Scd, VendorBase, table=True):
     """SCD version of .tables.Vendor."""
 
-    pass
+    country_id: str = Field(
+        description="Reference to the Country, where the Vendor's main headquarter is located.",
+    )
 
 
 class RegionScd(Scd, RegionBase, table=True):
     """SCD version of .tables.Region."""
 
-    pass
+    country_id: str = Field(
+        description="Reference to the Country, where the Region is located.",
+    )
+    vendor_id: str = Field(
+        primary_key=True,
+        description="Reference to the Vendor.",
+    )
 
 
 class ZoneScd(Scd, ZoneBase, table=True):
     """SCD version of .tables.Zone."""
 
-    pass
+    vendor_id: str = Field(
+        primary_key=True,
+        description="Reference to the Vendor.",
+    )
 
 
 class StorageScd(Scd, StorageBase, table=True):
     """SCD version of .tables.Storage."""
 
-    pass
+    vendor_id: str = Field(
+        primary_key=True,
+        description="Reference to the Vendor.",
+    )
 
 
 class ServerScd(Scd, ServerBase, table=True):
     """SCD version of .tables.Server."""
 
-    pass
+    vendor_id: str = Field(
+        primary_key=True,
+        description="Reference to the Vendor.",
+    )
 
 
 class ServerPriceScd(Scd, ServerPriceBase, table=True):
     """SCD version of .tables.ServerPrice."""
 
-    pass
+    vendor_id: str = Field(
+        primary_key=True,
+        description="Reference to the Vendor.",
+    )
 
 
 class StoragePriceScd(Scd, StoragePriceBase, table=True):
     """SCD version of .tables.StoragePrice."""
 
-    pass
+    vendor_id: str = Field(
+        primary_key=True,
+        description="Reference to the Vendor.",
+    )
 
 
 class TrafficPriceScd(Scd, TrafficPriceBase, table=True):
     """SCD version of .tables.TrafficPrice."""
 
-    pass
+    vendor_id: str = Field(
+        primary_key=True,
+        description="Reference to the Vendor.",
+    )
 
 
 class Ipv4PriceScd(Scd, Ipv4PriceBase, table=True):
     """SCD version of .tables.Ipv4Price."""
 
-    pass
+    vendor_id: str = Field(
+        primary_key=True,
+        description="Reference to the Vendor.",
+    )
 
 
 class BenchmarkScd(Scd, BenchmarkBase, table=True):
@@ -126,7 +162,14 @@ class BenchmarkScd(Scd, BenchmarkBase, table=True):
 class BenchmarkScoreScd(Scd, BenchmarkScoreBase, table=True):
     """SCD version of .tables.BenchmarkScore."""
 
-    pass
+    benchmark_id: str = Field(
+        primary_key=True,
+        description="Reference to the Benchmark.",
+    )
+    vendor_id: str = Field(
+        primary_key=True,
+        description="Reference to the Vendor.",
+    )
 
 
 tables_scd: List[SQLModel] = [o for o in globals().values() if is_table(o)]

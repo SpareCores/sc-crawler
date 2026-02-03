@@ -1,3 +1,4 @@
+from collections import defaultdict
 from logging import DEBUG
 from typing import TYPE_CHECKING, List, Optional
 
@@ -143,6 +144,40 @@ def insert_items(
             raise TypeError("At least one of `session` or `vendor` is required.")
         session = vendor.session
     model_name = model.get_table_name()
+
+    # Deduplicate items based on primary keys to avoid ON CONFLICT errors in PostgreSQL
+    columns = model.get_columns()
+    primary_keys = columns["primary_keys"]
+
+    seen = defaultdict(list)
+    for item in items:
+        key = tuple(str(item.get(pk, "")) for pk in primary_keys)
+        seen[key].append(item)
+
+    duplicates_found = False
+    for key, occurrences in seen.items():
+        if len(occurrences) > 1:
+            if not duplicates_found:
+                if vendor:
+                    duplicates_count = sum(
+                        len(v) - 1 for v in seen.values() if len(v) > 1
+                    )
+                    vendor.log(
+                        f"Found {duplicates_count} duplicate(s) in {space_after(prefix)}{model_name} items",
+                    )
+                duplicates_found = True
+
+    unique_items = []
+    seen_keys = set()
+    for item in reversed(items):
+        key = tuple(str(item.get(pk, "")) for pk in primary_keys)
+        if key not in seen_keys:
+            seen_keys.add(key)
+            unique_items.append(item)
+
+    unique_items.reverse()
+    items = unique_items
+
     if can_bulk_insert(session):
         items = validate_items(model, items, vendor, prefix)
         bulk_insert_items(model, items, vendor, session, progress, prefix)
