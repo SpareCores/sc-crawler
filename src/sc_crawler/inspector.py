@@ -682,7 +682,9 @@ def _standardize_cpu_model(model):
     return model
 
 
-def _standardize_gpu_count(model: str, gpu_count: int = 0) -> float:
+def _standardize_gpu_count(
+    gpu_model: str, gpu_count: int = 0, gpu_memory: int = 0
+) -> float:
     """Extract GPU count from model name suffixes.
 
     Parses patterns like:
@@ -696,13 +698,18 @@ def _standardize_gpu_count(model: str, gpu_count: int = 0) -> float:
         Float representing GPU count, rounded to 4 decimal places.
         If no suffix is found, returns the original gpu_count.
     """
-    if not model:
+    if not gpu_model:
         return gpu_count
 
-    model = model.strip()
+    if gpu_model and gpu_memory and not gpu_count:
+        # AWS g6f and gr6f instances
+        if gpu_model == "L4":
+            return round(gpu_memory / 22888, 4)
+
+    gpu_model = gpu_model.strip()
 
     # Match patterns like "*1/4" or "/4" at the end
-    fractional_match = match(r".*(\*(\d+))?/(\d+)$", model)
+    fractional_match = match(r".*(\*(\d+))?/(\d+)$", gpu_model)
     if fractional_match:
         numerator = int(fractional_match.group(2)) if fractional_match.group(2) else 1
         denominator = int(fractional_match.group(3))
@@ -710,7 +717,7 @@ def _standardize_gpu_count(model: str, gpu_count: int = 0) -> float:
             return round(numerator / denominator, 4)
 
     # Match pattern like "*1" at the end (whole number multiplier)
-    multiplier_match = match(r".*\*(\d+)$", model)
+    multiplier_match = match(r".*\*(\d+)$", gpu_model)
     if multiplier_match:
         return int(multiplier_match.group(1))
 

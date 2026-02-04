@@ -180,3 +180,15 @@ def list_search(items: List[dict], key: str, values: Union[Any, List[Any]]) -> d
     if not isinstance(values, list):
         values = [values]
     return next((item for item in items if item[key] in values), None)
+
+
+def convert_gb_to_mib(gb: int) -> int:
+    """Convert gigabytes to mebibytes.
+
+    Args:
+        gb: Size in gigabytes (GB, decimal: 10^9 bytes).
+
+    Returns:
+        Size in mebibytes (MiB, binary: 2^20 bytes).
+    """
+    return int(gb * 1_000_000_000 / 1_048_576)
