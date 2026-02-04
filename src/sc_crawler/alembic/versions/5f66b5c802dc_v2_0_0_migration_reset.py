@@ -13,8 +13,6 @@ import sqlmodel
 from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB
 
-from sc_crawler.utils import is_postgresql
-
 # revision identifiers, used by Alembic.
 revision: str = "5f66b5c802dc"
 down_revision: Union[str, None] = None

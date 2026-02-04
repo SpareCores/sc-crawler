@@ -682,6 +682,41 @@ def _standardize_cpu_model(model):
     return model
 
 
+def _standardize_gpu_count(model: str, gpu_count: int = 0) -> float:
+    """Extract GPU count from model name suffixes.
+
+    Parses patterns like:
+        "/4" -> 0.25
+        "*1/2" -> 0.5
+        "*1/12" -> 0.0833
+        "*1" -> 1
+        (no suffix) -> gpu_count
+
+    Returns:
+        Float representing GPU count, rounded to 4 decimal places.
+        If no suffix is found, returns the original gpu_count.
+    """
+    if not model:
+        return gpu_count
+
+    model = model.strip()
+
+    # Match patterns like "*1/4" or "/4" at the end
+    fractional_match = match(r".*(\*(\d+))?/(\d+)$", model)
+    if fractional_match:
+        numerator = int(fractional_match.group(2)) if fractional_match.group(2) else 1
+        denominator = int(fractional_match.group(3))
+        if denominator > 0:
+            return round(numerator / denominator, 4)
+
+    # Match pattern like "*1" at the end (whole number multiplier)
+    multiplier_match = match(r".*\*(\d+)$", model)
+    if multiplier_match:
+        return int(multiplier_match.group(1))
+
+    return gpu_count
+
+
 def _standardize_gpu_model(model, server=None):
     model = model.strip()
     if model in ["", "0", "NULL", "NA", "N/A"]:
