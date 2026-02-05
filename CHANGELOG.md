@@ -1,4 +1,4 @@
-## v0.3.x (development version)
+## v0.3.4 (Feb 05, 2026)
 
 Fix(es):
 
@@ -12,12 +12,14 @@ New feature(s):
 
 - CLI tool to dump database tables to JSON files.
 - Implement Alibaba Cloud's spot instance price sampling.
+- Support for fractional GPU counts in server instances with partial GPU allocation.
 
 Housekeeping:
 
 - Delay method validation to avoid CLI startup slowdown.
 - Avoid name conflict in vendor modules via private modules.
 - Convert all prices to float and round to 4 digits.
+- Reset Alembic revision history and rewrite initial migration script.
 
 ## v0.3.3 (Jan 02, 2026)
 
