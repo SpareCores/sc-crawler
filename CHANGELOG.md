@@ -19,6 +19,7 @@ Housekeeping:
 - Delay method validation to avoid CLI startup slowdown.
 - Avoid name conflict in vendor modules via private modules.
 - Convert all prices to float and round to 4 digits.
+- Remove foreign key constraints from SCD table definitions.
 - Reset Alembic revision history and rewrite initial migration script.
 
 ## v0.3.3 (Jan 02, 2026)
