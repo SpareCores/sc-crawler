@@ -1547,3 +1547,13 @@ def downgrade() -> None:
         op.drop_table("country")
         op.drop_table("compliance_framework")
         op.drop_table("benchmark")
+
+    if op.get_context().dialect.name == "postgresql":
+        op.execute("DROP TYPE IF EXISTS status")
+        op.execute("DROP TYPE IF EXISTS cpuallocation")
+        op.execute("DROP TYPE IF EXISTS cpuarchitecture")
+        op.execute("DROP TYPE IF EXISTS ddrgeneration")
+        op.execute("DROP TYPE IF EXISTS storagetype")
+        op.execute("DROP TYPE IF EXISTS priceunit")
+        op.execute("DROP TYPE IF EXISTS allocation")
+        op.execute("DROP TYPE IF EXISTS trafficdirection")

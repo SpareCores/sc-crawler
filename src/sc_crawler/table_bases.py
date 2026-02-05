@@ -271,7 +271,7 @@ class HasApiReference(ScModel):
         description=(
             "How this resource is referenced in the vendor API calls. "
             "This is usually either the id or name of the resource, "
-            "depening on the vendor and actual API endpoint."
+            "depending on the vendor and actual API endpoint."
         )
     )
 
@@ -731,7 +731,7 @@ class BenchmarkFields(HasDescription, HasName, HasBenchmarkIdPK):
     )
     measurement: Optional[str] = Field(
         default=None,
-        description="The name of measurement recoreded in the benchmark.",
+        description="The name of measurement recorded in the benchmark.",
     )
     unit: Optional[str] = Field(
         default=None,

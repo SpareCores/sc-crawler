@@ -22,6 +22,14 @@ def upgrade() -> None:
     server_table_name = (
         "server_scd" if op.get_context().config.attributes.get("scd") else "server"
     )
+    benchmark_table_name = (
+        "benchmark_scd"
+        if op.get_context().config.attributes.get("scd")
+        else "benchmark"
+    )
+    zone_table_name = (
+        "zone_scd" if op.get_context().config.attributes.get("scd") else "zone"
+    )
     with op.batch_alter_table(server_table_name, schema=None) as batch_op:
         batch_op.alter_column(
             "gpu_count",
@@ -29,11 +37,33 @@ def upgrade() -> None:
             type_=sa.Float(),
             existing_nullable=False,
         )
+        batch_op.alter_column(
+            "api_reference",
+            comment="How this resource is referenced in the vendor API calls. This is usually either the id or name of the resource, depending on the vendor and actual API endpoint.",
+        )
+    with op.batch_alter_table(benchmark_table_name, schema=None) as batch_op:
+        batch_op.alter_column(
+            "measurement",
+            comment="The name of measurement recorded in the benchmark.",
+        )
+    with op.batch_alter_table(zone_table_name, schema=None) as batch_op:
+        batch_op.alter_column(
+            "api_reference",
+            comment="How this resource is referenced in the vendor API calls. This is usually either the id or name of the resource, depending on the vendor and actual API endpoint.",
+        )
 
 
 def downgrade() -> None:
     server_table_name = (
         "server_scd" if op.get_context().config.attributes.get("scd") else "server"
+    )
+    benchmark_table_name = (
+        "benchmark_scd"
+        if op.get_context().config.attributes.get("scd")
+        else "benchmark"
+    )
+    zone_table_name = (
+        "zone_scd" if op.get_context().config.attributes.get("scd") else "zone"
     )
     with op.batch_alter_table(server_table_name, schema=None) as batch_op:
         batch_op.alter_column(
@@ -41,4 +71,18 @@ def downgrade() -> None:
             existing_type=sa.Float(),
             type_=sa.INTEGER(),
             existing_nullable=False,
+        )
+        batch_op.alter_column(
+            "api_reference",
+            comment="How this resource is referenced in the vendor API calls. This is usually either the id or name of the resource, depening on the vendor and actual API endpoint.",
+        )
+    with op.batch_alter_table(benchmark_table_name, schema=None) as batch_op:
+        batch_op.alter_column(
+            "measurement",
+            comment="The name of measurement recoreded in the benchmark.",
+        )
+    with op.batch_alter_table(zone_table_name, schema=None) as batch_op:
+        batch_op.alter_column(
+            "api_reference",
+            comment="How this resource is referenced in the vendor API calls. This is usually either the id or name of the resource, depening on the vendor and actual API endpoint.",
         )
