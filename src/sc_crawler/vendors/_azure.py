@@ -236,13 +236,13 @@ def _parse_server_name(name):
         if "T4" in spacers_list:
             gpu_model = "T4"
             gpu_memory = convert_gb_to_mib(16)
-        if "A10" in spacers_list:
+        elif "A10" in spacers_list:
             gpu_model = "A10"
             gpu_memory = convert_gb_to_mib(24)
-        if "M60" in spacers_list:
+        elif "M60" in spacers_list:
             gpu_model = "M60"
             gpu_memory = convert_gb_to_mib(8)
-        if "V710" in spacers_list:
+        elif "V710" in spacers_list:
             gpu_model = "V710"
             gpu_memory = convert_gb_to_mib(24)
         # default to one, list all the exceptions below

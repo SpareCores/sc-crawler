@@ -7,6 +7,7 @@ Fix(es):
 - Determine CPU allocation type for Alibaba Cloud servers.
 - Preserve vendor API data by default, only overriding when necessary for known API data issues.
 - Verify Alibaba Cloud instance type retirement status.
+- Prevent duplicate records from being inserted into the database.
 
 New feature(s):
 

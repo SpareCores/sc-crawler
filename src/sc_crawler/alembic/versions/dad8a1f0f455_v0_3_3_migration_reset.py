@@ -1,6 +1,6 @@
-"""v2.0.0 migration reset
+"""v0.3.3 migration reset
 
-Revision ID: 5f66b5c802dc
+Revision ID: dad8a1f0f455
 Revises:
 Create Date: 2026-02-02 17:46:08.598626
 

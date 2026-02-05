@@ -1,4 +1,4 @@
-"""v1.2.1 convert gpu_count from int to float
+"""v0.3.4 convert gpu_count from int to float
 
 Revision ID: aeae56af8ca6
 Revises: dad8a1f0f455

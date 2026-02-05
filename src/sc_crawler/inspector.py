@@ -704,6 +704,7 @@ def _standardize_gpu_count(
     if gpu_model and gpu_memory and not gpu_count:
         # AWS g6f and gr6f instances
         if gpu_model == "L4":
+            # L4 GPU has 22888 MiB total memory
             return round(gpu_memory / 22888, 4)
 
     gpu_model = gpu_model.strip()

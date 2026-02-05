@@ -150,12 +150,14 @@ def insert_items(
     primary_keys = columns["primary_keys"]
 
     seen = defaultdict(list)
+    item_keys = []
     for item in items:
         key = tuple(str(item.get(pk, "")) for pk in primary_keys)
+        item_keys.append(key)
         seen[key].append(item)
 
     duplicates_found = False
-    for key, occurrences in seen.items():
+    for occurrences in seen.values():
         if len(occurrences) > 1:
             if not duplicates_found:
                 if vendor:
@@ -169,8 +171,7 @@ def insert_items(
 
     unique_items = []
     seen_keys = set()
-    for item in reversed(items):
-        key = tuple(str(item.get(pk, "")) for pk in primary_keys)
+    for key, item in reversed(list(zip(item_keys, items))):
         if key not in seen_keys:
             seen_keys.add(key)
             unique_items.append(item)
