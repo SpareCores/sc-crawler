@@ -627,7 +627,7 @@ def create_server_table(is_scd: bool):
         ),
         sa.Column(
             "gpu_count",
-            sa.Float(),
+            sa.Integer(),
             nullable=False,
             comment="Number of GPU accelerator(s).",
         ),
