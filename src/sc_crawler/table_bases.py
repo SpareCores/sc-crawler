@@ -362,7 +362,7 @@ class ComplianceFrameworkFields(ScModel):
     )
     description: Optional[str] = Field(
         description=(
-            "Description of the framework in a few paragrahs, "
+            "Description of the framework in a few paragraphs, "
             "outlining key features and characteristics for reference."
         )
     )
