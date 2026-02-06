@@ -7,7 +7,8 @@ from typing import List, Optional
 from azure.core.exceptions import HttpResponseError
 from azure.identity import DefaultAzureCredential
 from azure.mgmt.compute import ComputeManagementClient
-from azure.mgmt.resource import ResourceManagementClient, SubscriptionClient
+from azure.mgmt.resource import ResourceManagementClient
+from azure.mgmt.subscription import SubscriptionClient
 from cachier import cachier
 from requests import Session as request_session
 
@@ -242,6 +243,11 @@ def _parse_server_name(name):
         elif "M60" in spacers_list:
             gpu_model = "M60"
             gpu_memory = convert_gb_to_mib(8)
+        # V620 has 32 GB of GPU memory, info from this page:
+        # https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/ngadsv620-series?tabs=sizeaccelerators
+        elif "V620" in spacers_list:
+            gpu_model = "V620"
+            gpu_memory = convert_gb_to_mib(32)
         # V710 has 24 GB of GPU memory, info from this page:
         # https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nvadsv710-v5-series?tabs=sizeaccelerators
         elif "V710" in spacers_list:
@@ -276,8 +282,14 @@ def _parse_server_name(name):
             if vcpus in [96]:
                 gpus = 8
         if family == "NG":
-            # all NG servers has 1 or just a fraction of a GPU
-            pass
+            if vcpus in [8]:
+                # Standard_NG8ads_V620_v1
+                if gpu_model == "V620":
+                    gpus = 1 / 4
+            if vcpus in [16]:
+                # Standard_NG16ads_V620_v1
+                if gpu_model == "V620":
+                    gpus = 1 / 2
         if family == "NV":
             # all NV servers without gpu_model have different base GPU memory sizes depending on the version
             # so we only set fractional gpu_count for now
