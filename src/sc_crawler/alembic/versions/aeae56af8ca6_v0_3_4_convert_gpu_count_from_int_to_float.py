@@ -18,18 +18,16 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+def scdize_suffix(table_name: str) -> str:
+    if op.get_context().config.attributes.get("scd"):
+        return table_name + "_scd"
+    return table_name
+
+
 def upgrade() -> None:
-    server_table_name = (
-        "server_scd" if op.get_context().config.attributes.get("scd") else "server"
-    )
-    benchmark_table_name = (
-        "benchmark_scd"
-        if op.get_context().config.attributes.get("scd")
-        else "benchmark"
-    )
-    zone_table_name = (
-        "zone_scd" if op.get_context().config.attributes.get("scd") else "zone"
-    )
+    server_table_name = scdize_suffix("server")
+    benchmark_table_name = scdize_suffix("benchmark")
+    zone_table_name = scdize_suffix("zone")
     with op.batch_alter_table(server_table_name, schema=None) as batch_op:
         batch_op.alter_column(
             "gpu_count",
@@ -54,17 +52,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    server_table_name = (
-        "server_scd" if op.get_context().config.attributes.get("scd") else "server"
-    )
-    benchmark_table_name = (
-        "benchmark_scd"
-        if op.get_context().config.attributes.get("scd")
-        else "benchmark"
-    )
-    zone_table_name = (
-        "zone_scd" if op.get_context().config.attributes.get("scd") else "zone"
-    )
+    server_table_name = scdize_suffix("server")
+    benchmark_table_name = scdize_suffix("benchmark")
+    zone_table_name = scdize_suffix("zone")
     with op.batch_alter_table(server_table_name, schema=None) as batch_op:
         batch_op.alter_column(
             "gpu_count",

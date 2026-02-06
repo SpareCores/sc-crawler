@@ -33,6 +33,9 @@ from .table_fields import (
 )
 from .tables import is_table
 
+# Foreign key fields from non-SCD tables are overridden as regular fields in SCD tables
+# because foreign key constraints cannot work properly when primary keys include `observed_at`.
+
 
 class Scd(ScModel):
     """Override the `observed_at` column to be primary key in SCD tables."""

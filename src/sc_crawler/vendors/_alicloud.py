@@ -831,6 +831,7 @@ def inventory_servers(vendor):
             instance_type["GPUSpec"], instance_type.get("GPUAmount", 0)
         )
         gpu_memory_per_gpu = instance_type.get("GPUMemorySize", 0) * 1024  # GiB -> MiB
+        # GPUMemorySize contains total memory for fractional or single GPUs, but per-GPU memory for multiple GPUs
         gpu_memory_total = (
             gpu_count * gpu_memory_per_gpu if gpu_count >= 1 else gpu_memory_per_gpu
         )

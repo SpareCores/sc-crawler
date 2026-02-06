@@ -152,7 +152,8 @@ def insert_items(
     seen = defaultdict(list)
     item_keys = []
     for item in items:
-        key = tuple(str(item.get(pk, "")) for pk in primary_keys)
+        # all primary keys are nullable=False, so can safely convert to string for hashing
+        key = tuple(str(item.get(pk)) for pk in primary_keys)
         item_keys.append(key)
         seen[key].append(item)
 
