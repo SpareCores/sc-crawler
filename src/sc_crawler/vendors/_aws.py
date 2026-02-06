@@ -12,6 +12,7 @@ import boto3
 from botocore.exceptions import ClientError
 from cachier import cachier, set_global_params
 
+from ..inspector import _standardize_gpu_count
 from ..logger import logger
 from ..lookup import map_compliance_frameworks_to_vendor
 from ..str_utils import extract_last_number
@@ -277,6 +278,8 @@ def _get_gpu_of_instance_type(instance_type):
     # most common
     manufacturer = mode([gpu["Manufacturer"] for gpu in info["Gpus"]])
     model = mode([gpu["Name"] for gpu in info["Gpus"]])
+    if not count:
+        count = _standardize_gpu_count(model, count, memory_total)
     return (count, memory_min, memory_total, manufacturer, model)
 
 

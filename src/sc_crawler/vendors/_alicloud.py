@@ -32,6 +32,7 @@ from ..inspector import (
     _extract_family,
     _extract_manufacturer,
     _standardize_cpu_model,
+    _standardize_gpu_count,
     _standardize_gpu_model,
 )
 from ..logger import logger
@@ -826,9 +827,14 @@ def inventory_servers(vendor):
             / 1000**3
         )
         storage_type = STORAGE_CATEGORY_MAP[instance_type["LocalStorageCategory"]]
-        gpu_count = instance_type.get("GPUAmount", 0)
+        gpu_count = _standardize_gpu_count(
+            instance_type["GPUSpec"], instance_type.get("GPUAmount", 0)
+        )
         gpu_memory_per_gpu = instance_type.get("GPUMemorySize", 0) * 1024  # GiB -> MiB
-        gpu_memory_total = gpu_count * gpu_memory_per_gpu
+        # GPUMemorySize contains total memory for fractional or single GPUs, but per-GPU memory for multiple GPUs
+        gpu_memory_total = (
+            gpu_count * gpu_memory_per_gpu if gpu_count >= 1 else gpu_memory_per_gpu
+        )
         gpu_model = _standardize_gpu_model(instance_type["GPUSpec"])
         description_parts = [
             f"{vcpus} vCPUs",
@@ -904,6 +910,7 @@ def inventory_servers(vendor):
                 "status": status,
             }
         )
+
     return items
 
 

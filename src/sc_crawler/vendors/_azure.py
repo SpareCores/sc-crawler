@@ -7,7 +7,8 @@ from typing import List, Optional
 from azure.core.exceptions import HttpResponseError
 from azure.identity import DefaultAzureCredential
 from azure.mgmt.compute import ComputeManagementClient
-from azure.mgmt.resource import ResourceManagementClient, SubscriptionClient
+from azure.mgmt.resource import ResourceManagementClient
+from azure.mgmt.subscription import SubscriptionClient
 from cachier import cachier
 from requests import Session as request_session
 
@@ -23,7 +24,7 @@ from ..table_fields import (
     TrafficDirection,
 )
 from ..tables import Vendor
-from ..utils import list_search, scmodels_to_dict
+from ..utils import convert_gb_to_mib, list_search, scmodels_to_dict
 from ..vendor_helpers import preprocess_servers
 
 credential = DefaultAzureCredential()
@@ -220,21 +221,39 @@ def _parse_server_name(name):
     # s = Premium Storage capable, including possible use of Ultra SSD
     features = [char for char in data["features"]] if data["features"] else []
 
+    spacers_list = (data.get("spacers") or "").split("_")
+
     accelerators = any(
-        [
-            s in ["A100", "H100", "MI300X", "V620", "A10"]
-            for s in (data.get("spacers") or "").split("_")
-        ]
+        [s in ["A100", "H100", "MI300X", "V620", "A10"] for s in spacers_list]
     )
 
     family = data["family"]
     vcpus = int(data["vcpus"])
     # accelerators are not always mentioned in the old server names, so we need a manual mapping
-    # which will be overwritten by the GPU count from HW inspection if we can start the node
     gpus = 0
+    gpu_model = None
+    gpu_memory = None
     if family in ["NC", "ND", "NG", "NV"]:
+        if "T4" in spacers_list:
+            gpu_model = "T4"
+            gpu_memory = convert_gb_to_mib(16)
+        elif "A10" in spacers_list:
+            gpu_model = "A10"
+            gpu_memory = convert_gb_to_mib(24)
+        elif "M60" in spacers_list:
+            gpu_model = "M60"
+            gpu_memory = convert_gb_to_mib(8)
+        # V620 has 32 GB of GPU memory, info from this page:
+        # https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/ngadsv620-series?tabs=sizeaccelerators
+        elif "V620" in spacers_list:
+            gpu_model = "V620"
+            gpu_memory = convert_gb_to_mib(32)
+        # V710 has 24 GB of GPU memory, info from this page:
+        # https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nvadsv710-v5-series?tabs=sizeaccelerators
+        elif "V710" in spacers_list:
+            gpu_model = "V710"
+            gpu_memory = convert_gb_to_mib(24)
         # default to one, list all the exceptions below
-        # note that some servers come with a fraction of a GPU, but we need int
         gpus = 1
         if family == "NC":
             if vcpus == 24:
@@ -244,8 +263,10 @@ def _parse_server_name(name):
                     gpus = 4
             if vcpus in [12, 48, 80]:
                 # Standard_NC48ads_A100_v4
+                # Standard_NC80adis_H100_v5
                 gpus = 2
             if vcpus in [64, 96]:
+                # Standard_NC64as_T4_v3
                 # Standard_NC96ads_A100_v4
                 gpus = 4
         if family == "ND":
@@ -253,18 +274,64 @@ def _parse_server_name(name):
                 gpus = 2
             if vcpus in [24]:
                 gpus = 4
-            if vcpus in [40, 96]:
+            if vcpus in [40]:
+                # Standard_ND40rs_v2
+                gpu_model = "V100"
+                gpus = 8
+                gpu_memory = convert_gb_to_mib(32)
+            if vcpus in [96]:
                 gpus = 8
         if family == "NG":
-            # all NG servers has 1 or just a fraction of a GPU
-            pass
+            if vcpus in [8]:
+                # Standard_NG8ads_V620_v1
+                if gpu_model == "V620":
+                    gpus = 1 / 4
+            if vcpus in [16]:
+                # Standard_NG16ads_V620_v1
+                if gpu_model == "V620":
+                    gpus = 1 / 2
         if family == "NV":
+            # all NV servers without gpu_model have different base GPU memory sizes depending on the version
+            # so we only set fractional gpu_count for now
+            if vcpus in [4]:
+                # Standard_NV4as_v4
+                gpus = 1 / 8
+                # Standard_NV4ads_V710_v5
+                if gpu_model == "V710":
+                    gpus = 1 / 6
+            if vcpus in [6]:
+                # Standard_NV6s_v2
+                gpus = 1 / 2
+                # Standard_NV6ads_A10_v5
+                if gpu_model == "A10":
+                    gpus = 1 / 6
+            if vcpus in [8]:
+                # Standard_NV8as_v4
+                gpus = 1 / 4
+                # Standard_NV8ads_V710_v5
+                if gpu_model == "V710":
+                    gpus = 1 / 3
+            if vcpus in [12]:
+                # Standard_NV12ads_A10_v5
+                if gpu_model == "A10":
+                    gpus = 1 / 3
+                if gpu_model == "V710":
+                    gpus = 1 / 2
+            if vcpus in [16]:
+                # Standard_NV16as_v4
+                gpus = 1 / 2
+            if vcpus in [18]:
+                # Standard_NV18ads_A10_v5
+                if gpu_model == "A10":
+                    gpus = 1 / 2
             if vcpus in [24, 72]:
                 gpus = 2
+                if gpu_model == "V710":
+                    gpus = 1
             if vcpus in [48]:
                 gpus = 4
 
-    return (family, features, gpus)
+    return (family, features, gpus, gpu_model, gpu_memory)
 
 
 def _standardize_server(server: dict, vendor) -> dict:
@@ -311,7 +378,7 @@ def _standardize_server(server: dict, vendor) -> dict:
     #         {'type': 'Zone', 'values': ['WestUS3'], 'restriction_info': {'locations': ['WestUS3'], 'zones': ['1', '2', '3']}, 'reason_code': 'NotAvailableForSubscription'}
     #     ]
     # }
-    family, features, gpus = _parse_server_name(server["name"])
+    family, features, gpus, gpu_model, gpu_memory = _parse_server_name(server["name"])
     # override family from SKU listing
     family = server["family"].removeprefix("standard").removesuffix("Family")
 
@@ -370,7 +437,16 @@ def _standardize_server(server: dict, vendor) -> dict:
             CpuArchitecture.ARM64 if architecture == "arm64" else CpuArchitecture.X86_64
         ),
         "memory_amount": float(capability("MemoryGB")) * 1024,  # MiB
-        "gpu_count": gpus,
+        "gpu_count": round(gpus, 4),
+        "gpu_model": gpu_model,
+        "gpu_memory_min": (
+            None
+            if not (gpus and gpu_memory)
+            else int(gpu_memory * gpus)
+            if gpus <= 1
+            else int(gpu_memory)
+        ),
+        "gpu_memory_total": int(gpu_memory * gpus) if gpus and gpu_memory else None,
         "storage_size": round(sum([s.size for s in storages])),  # int GB
         "storages": storages,
         "inbound_traffic": 0,

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sparecores-crawler"
-version = "0.3.3"
+version = "0.3.4"
 requires-python = ">= 3.9"
 dependencies = [
   "alembic",
@@ -54,7 +54,7 @@ testing = ["pytest", "sparecores-crawler[mkdocs]"]
 aws = ["boto3"]
 hcloud = ["hcloud"]
 gcp = ["google-cloud", "google-cloud-compute", "google-cloud-billing"]
-azure = ["azure-identity", "azure-mgmt-resource", "azure-mgmt-compute"]
+azure = ["azure-identity", "azure-mgmt-resource", "azure-mgmt-compute", "azure-mgmt-subscription"]
 upcloud = ["upcloud-api"]
 ovh = ["ovh"]
 alicloud = ["alibabacloud-ecs20140526", "alibabacloud-bssopenapi20171214"]

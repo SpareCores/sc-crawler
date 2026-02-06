@@ -271,7 +271,7 @@ class HasApiReference(ScModel):
         description=(
             "How this resource is referenced in the vendor API calls. "
             "This is usually either the id or name of the resource, "
-            "depening on the vendor and actual API endpoint."
+            "depending on the vendor and actual API endpoint."
         )
     )
 
@@ -362,7 +362,7 @@ class ComplianceFrameworkFields(ScModel):
     )
     description: Optional[str] = Field(
         description=(
-            "Description of the framework in a few paragrahs, "
+            "Description of the framework in a few paragraphs, "
             "outlining key features and characteristics for reference."
         )
     )
@@ -612,7 +612,7 @@ class ServerFields(
         default=None,
         description="If the DDR SDRAM uses error correction code to detect and correct n-bit data corruption.",
     )
-    gpu_count: int = Field(
+    gpu_count: float = Field(
         default=0,
         description="Number of GPU accelerator(s).",
     )
@@ -731,7 +731,7 @@ class BenchmarkFields(HasDescription, HasName, HasBenchmarkIdPK):
     )
     measurement: Optional[str] = Field(
         default=None,
-        description="The name of measurement recoreded in the benchmark.",
+        description="The name of measurement recorded in the benchmark.",
     )
     unit: Optional[str] = Field(
         default=None,

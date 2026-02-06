@@ -1,4 +1,4 @@
-## v0.3.x (development version)
+## v0.3.4 (Feb 05, 2026)
 
 Fix(es):
 
@@ -7,17 +7,22 @@ Fix(es):
 - Determine CPU allocation type for Alibaba Cloud servers.
 - Preserve vendor API data by default, only overriding when necessary for known API data issues.
 - Verify Alibaba Cloud instance type retirement status.
+- Prevent duplicate records from being inserted into the database.
 
 New feature(s):
 
 - CLI tool to dump database tables to JSON files.
 - Implement Alibaba Cloud's spot instance price sampling.
+- Support for fractional GPU counts in server instances with partial GPU allocation.
 
 Housekeeping:
 
 - Delay method validation to avoid CLI startup slowdown.
 - Avoid name conflict in vendor modules via private modules.
 - Convert all prices to float and round to 4 digits.
+- Change gpu_count field type from integer to float for fractional GPU support.
+- Remove foreign key constraints from SCD table definitions.
+- Reset Alembic revision history and rewrite initial migration script.
 
 ## v0.3.3 (Jan 02, 2026)
 
