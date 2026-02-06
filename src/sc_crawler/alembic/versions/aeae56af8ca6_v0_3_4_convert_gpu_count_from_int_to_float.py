@@ -51,11 +51,9 @@ def upgrade() -> None:
             comment="How this resource is referenced in the vendor API calls. This is usually either the id or name of the resource, depending on the vendor and actual API endpoint.",
         )
     with op.batch_alter_table(compliance_framework_table_name, schema=None) as batch_op:
-        (
-            sa.Column(
-                "description",
-                comment="Description of the framework in a few paragraphs, outlining key features and characteristics for reference.",
-            ),
+        batch_op.alter_column(
+            "description",
+            comment="Description of the framework in a few paragraphs, outlining key features and characteristics for reference.",
         )
 
 
@@ -86,9 +84,7 @@ def downgrade() -> None:
             comment="How this resource is referenced in the vendor API calls. This is usually either the id or name of the resource, depening on the vendor and actual API endpoint.",
         )
     with op.batch_alter_table(compliance_framework_table_name, schema=None) as batch_op:
-        (
-            sa.Column(
-                "description",
-                comment="Description of the framework in a few paragrahs, outlining key features and characteristics for reference.",
-            ),
+        batch_op.alter_column(
+            "description",
+            comment="Description of the framework in a few paragrahs, outlining key features and characteristics for reference.",
         )
