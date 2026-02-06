@@ -11,6 +11,8 @@ from typing import Sequence, Union
 import sqlalchemy as sa
 from alembic import op
 
+from sc_crawler.lookup import compliance_frameworks
+
 # revision identifiers, used by Alembic.
 revision: str = "aeae56af8ca6"
 down_revision: Union[str, None] = "dad8a1f0f455"
@@ -28,6 +30,7 @@ def upgrade() -> None:
     server_table_name = scdize_suffix("server")
     benchmark_table_name = scdize_suffix("benchmark")
     zone_table_name = scdize_suffix("zone")
+    compliance_framework_table_name = scdize_suffix("compliance_framework")
     with op.batch_alter_table(server_table_name, schema=None) as batch_op:
         batch_op.alter_column(
             "gpu_count",
@@ -49,12 +52,20 @@ def upgrade() -> None:
             "api_reference",
             comment="How this resource is referenced in the vendor API calls. This is usually either the id or name of the resource, depending on the vendor and actual API endpoint.",
         )
+    with op.batch_alter_table(compliance_framework_table_name, schema=None) as batch_op:
+        (
+            sa.Column(
+                "description",
+                comment="Description of the framework in a few paragraphs, outlining key features and characteristics for reference.",
+            ),
+        )
 
 
 def downgrade() -> None:
     server_table_name = scdize_suffix("server")
     benchmark_table_name = scdize_suffix("benchmark")
     zone_table_name = scdize_suffix("zone")
+    compliance_framework_table_name = scdize_suffix("compliance_framework")
     with op.batch_alter_table(server_table_name, schema=None) as batch_op:
         batch_op.alter_column(
             "gpu_count",
@@ -75,4 +86,11 @@ def downgrade() -> None:
         batch_op.alter_column(
             "api_reference",
             comment="How this resource is referenced in the vendor API calls. This is usually either the id or name of the resource, depening on the vendor and actual API endpoint.",
+        )
+    with op.batch_alter_table(compliance_framework_table_name, schema=None) as batch_op:
+        (
+            sa.Column(
+                "description",
+                comment="Description of the framework in a few paragrahs, outlining key features and characteristics for reference.",
+            ),
         )

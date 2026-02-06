@@ -242,6 +242,8 @@ def _parse_server_name(name):
         elif "M60" in spacers_list:
             gpu_model = "M60"
             gpu_memory = convert_gb_to_mib(8)
+        # V710 has 24 GB of GPU memory, info from this page:
+        # https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nvadsv710-v5-series?tabs=sizeaccelerators
         elif "V710" in spacers_list:
             gpu_model = "V710"
             gpu_memory = convert_gb_to_mib(24)
