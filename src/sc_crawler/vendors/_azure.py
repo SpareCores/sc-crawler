@@ -996,8 +996,11 @@ def inventory_regions(vendor):
                 "city": manual_data.get("city"),
                 "address_line": None,
                 "zip_code": None,
-                "lat": region["latitude"],
-                "lon": region["longitude"],
+                # sometimes the API passes "metadata" and the lat/long nested, sometimes it's not
+                # TODO revisit after a few days passed since this change:
+                # https://github.com/Azure/azure-sdk-for-python/blob/azure-mgmt-resource_25.0.0/sdk/resources/azure-mgmt-resource/CHANGELOG.md#2500-2026-02-04
+                "lat": region.get("metadata", {}).get("latitude") or region.get("latitude"),
+                "lon": region.get("metadata", {}).get("longitude") or region.get("longitude"),
                 "founding_year": manual_data.get("founding_year"),
                 "green_energy": manual_data.get("green_energy"),
             }
