@@ -8,7 +8,7 @@ from azure.core.exceptions import HttpResponseError
 from azure.identity import DefaultAzureCredential
 from azure.mgmt.compute import ComputeManagementClient
 from azure.mgmt.resource import ResourceManagementClient
-from azure.mgmt.subscription import SubscriptionClient
+from azure.mgmt.resource.subscriptions import SubscriptionClient
 from cachier import cachier
 from requests import Session as request_session
 
