@@ -377,6 +377,11 @@ def inventory_server_prices(vendor):
                     "unit": PriceUnit.HOUR,
                     "price": v["price"] / 100,
                     "price_upfront": 0,
+                    # as per UpCloud FAQ at <https://upcloud.com/docs/getting-started/faq/>:
+                    # > All Cloud Server plans on your account are billed hourly up to the monthly rate cap
+                    # > and the hourly rate is determined by dividing the monthly rate by 672 hours (28 days).
+                    # > However, if your server is online for more than 672 hours in a calendar month,
+                    # > we will bill you on the monthly rate.
                     "price_tiered": [
                         {"lower": 0, "upper": 672, "price": v["price"] / 100},
                         {"lower": 673, "upper": "Infinity", "price": 0},
