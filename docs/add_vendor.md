@@ -18,7 +18,7 @@ Each vendor module should provide the below functions:
 - `inventory_regions`: Define [`Region`][sc_crawler.tables.Region] instances with location, energy source etc for each region the vendor has.
 - `inventory_zones`: Define a [`Zone`][sc_crawler.tables.Zone] instance for each availability zone of the vendor in each region.
 - `inventory_servers`: Define [`Server`][sc_crawler.tables.Server] instances for the vendor's server/instance types.
-- `inventory_server_prices`: Define the [`ServerPrice`][sc_crawler.tables.ServerPrice] instances for the standard/ondemand (or optionally also for the reserved) pricing of the instance types per region and zone.
+- `inventory_server_prices`: Define the [`ServerPrice`][sc_crawler.tables.ServerPrice] instances for the standard/ondemand (or optionally also for the reserved) pricing of the instance types per region and zone. When applicable, include the monthly cap for tiered pricing in the `price_tiered` field.
 - `inventory_server_prices_spot`: Similar to the above, define [`ServerPrice`][sc_crawler.tables.ServerPrice] instances but the `allocation` field set to [`Allocation.SPOT`][sc_crawler.table_fields.Allocation]. Very likely to see different spot prices per region/zone.
 - `inventory_storage_prices`: Define [`StoragePrice`][sc_crawler.tables.StoragePrice] instances to describe the available storage options that can be attached to the servers.
 - `inventory_traffic_prices`: Define [`TrafficPrice`][sc_crawler.tables.TrafficPrice] instances to describe the pricing of ingress/egress traffic.
@@ -165,7 +165,10 @@ def inventory_server_prices(vendor):
     #         "unit": PriceUnit.HOUR,
     #         "price": ,
     #         "price_upfront": 0,
-    #         "price_tiered": [],
+    #         "price_tiered": [
+    #             {"lower": 0, "upper": monthly_cap, "price": hourly_price},
+    #             {"lower": monthly_cap + 1, "upper": "Infinity", "price": 0},
+    #         ],
     #         "currency": "USD",
     #     })
     return items

@@ -1,3 +1,9 @@
+## v0.3.x (development version, unreleased on PyPI)
+
+New feature(s):
+
+- Record the monthly cap for ondemand prices.
+
 ## v0.3.4 (Feb 05, 2026)
 
 Fix(es):
