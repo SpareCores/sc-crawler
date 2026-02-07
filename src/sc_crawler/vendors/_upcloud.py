@@ -378,7 +378,7 @@ def inventory_server_prices(vendor):
                     "price": v["price"] / 100,
                     "price_upfront": 0,
                     "price_tiered": [
-                        {"lower": 0, "upper": 672, "price": v["price"] / 100}, 
+                        {"lower": 0, "upper": 672, "price": v["price"] / 100},
                         {"lower": 673, "upper": "Infinity", "price": 0},
                     ],
                     "currency": "EUR",
