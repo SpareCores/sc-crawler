@@ -968,6 +968,10 @@ def inventory_regions(vendor):
 
     items = []
     for region in _regions():
+        # TODO drop this once the metadata field doesn't show up randomly anymore
+        # as the non-metadata responses do not seem to have these logical regions anymore
+        if region.get("metadata", {}).get("region_type", "Physical") != "Physical":
+            continue
         # no idea what are these
         if region["name"].endswith("stg"):
             continue
