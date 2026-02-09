@@ -133,10 +133,11 @@ def create(
         typer.echo(str(sql.compile(dialect=engine.dialect)) + ";")
 
     engine = create_engine(url, strategy="mock", executor=metadata_dump)
-    for table in tables:
-        table.__table__.create(engine)
     if scd:
         for table in tables_scd:
+            table.__table__.create(engine)
+    else:
+        for table in tables:
             table.__table__.create(engine)
 
 
