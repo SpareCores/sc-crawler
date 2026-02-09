@@ -28,7 +28,7 @@ from rich.progress import (
 )
 from rich.table import Table
 from rich.text import Text
-from sqlalchemy import text
+from sqlalchemy import create_mock_engine, text
 from sqlalchemy.engine.reflection import Inspector
 from sqlalchemy.sql import quoted_name
 from sqlmodel import Session, create_engine, select
@@ -132,7 +132,7 @@ def create(
     def metadata_dump(sql, *_args, **_kwargs):
         typer.echo(str(sql.compile(dialect=engine.dialect)) + ";")
 
-    engine = create_engine(url, strategy="mock", executor=metadata_dump)
+    engine = create_mock_engine(url, metadata_dump)
     if scd:
         for table in tables_scd:
             table.__table__.create(engine)
