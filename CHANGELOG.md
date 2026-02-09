@@ -3,6 +3,7 @@
 Fix(es):
 
 - Add support for Azure Denmark East region (Copenhagen).
+- Fix SCD table schema generation in CLI `create` command.
 
 New feature(s):
 
