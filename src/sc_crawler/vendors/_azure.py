@@ -813,6 +813,13 @@ def inventory_regions(vendor):
             "green_energy": False,
         },
         # Europe
+        "denmarkeast": {
+            "country_id": "DK",
+            "city": "Copenhagen",
+            "founding_year": 2026,
+            # https://news.microsoft.com/source/emea/features/accelerating-europes-digital-future-microsoft-announces-plans-for-a-new-datacenter-region-in-west-denmark
+            "green_energy": True,
+        },
         "francecentral": {
             "country_id": "FR",
             "city": "Paris",
