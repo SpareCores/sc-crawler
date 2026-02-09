@@ -1,5 +1,10 @@
 ## v0.3.x (development version, unreleased on PyPI)
 
+Fix(es):
+
+- Add support for Azure Denmark East region (Copenhagen).
+- Fix SCD table schema generation in CLI `create` command.
+
 New feature(s):
 
 - Record the monthly cap for ondemand prices.
