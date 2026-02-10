@@ -1,6 +1,6 @@
 """SCD version of the table definitions in [sc_crawler.tables][]."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import List
 
 from sqlmodel import Field, SQLModel
@@ -42,8 +42,8 @@ class Scd(ScModel):
 
     observed_at: datetime = Field(
         primary_key=True,
-        default_factory=datetime.utcnow,
-        sa_column_kwargs={"onupdate": datetime.utcnow},
+        default_factory=lambda: datetime.now(UTC),
+        sa_column_kwargs={"onupdate": lambda: datetime.now(UTC)},
         description="Timestamp of the last observation.",
     )
 

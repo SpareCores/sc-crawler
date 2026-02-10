@@ -4,7 +4,7 @@ Check `sc-crawler --help` for more details."""
 
 import logging
 from contextlib import suppress
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from enum import Enum
 from json import dump as json_dump
 from json import dumps, loads
@@ -430,7 +430,7 @@ def sync(
                         obj = get_row_by_pk(session, model, loads(key)).model_dump()
                         if obj["status"] != Status.INACTIVE:
                             obj["status"] = Status.INACTIVE
-                            obj["observed_at"] = datetime.utcnow()
+                            obj["observed_at"] = datetime.now(UTC)
                             actions["deleted"][table_name].append(obj)
                     pt.update(table_task_id, advance=1)
                 pt.update(tables_task_id, advance=1)

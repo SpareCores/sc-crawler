@@ -1,11 +1,11 @@
 """Tiny helper classes for the most commonly used fields to be inherited by [sc_crawler.tables][]."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from hashlib import sha1
 from json import dumps
 from typing import List, Optional, Union
 
-from pydantic import ConfigDict, model_validator
+from pydantic import ConfigDict, field_serializer, model_validator
 from rich.progress import Progress
 from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import declared_attr
@@ -212,8 +212,8 @@ class MetaColumns(ScModel):
         description="Status of the resource (active or inactive).",
     )
     observed_at: datetime = Field(
-        default_factory=datetime.utcnow,
-        sa_column_kwargs={"onupdate": datetime.utcnow},
+        default_factory=lambda: datetime.now(UTC),
+        sa_column_kwargs={"onupdate": lambda: datetime.now(UTC)},
         description="Timestamp of the last observation.",
     )
 
@@ -338,6 +338,16 @@ class HasPriceFieldsBase(ScModel):
         description="List of pricing tiers with min/max thresholds and actual prices.",
     )
     currency: str = Field(default="USD", description="Currency of the prices.")
+
+    @field_serializer("price_tiered")
+    @classmethod
+    def serialize_price_tiers(cls, value):
+        """Serialize price_tiered field, converting dicts to PriceTier instances first."""
+        if value is None:
+            return []
+        return [
+            (PriceTier(**item) if isinstance(item, dict) else item) for item in value
+        ]
 
 
 class HasPriceFields(MetaColumns, HasPriceFieldsBase):
@@ -675,6 +685,30 @@ class ServerFields(
     ipv4: int = Field(
         default=0, description="Number of complimentary IPv4 address(es)."
     )
+
+    @field_serializer("cpus")
+    @classmethod
+    def serialize_cpus(cls, value):
+        """Serialize cpus field, converting dicts to Cpu instances first."""
+        if value is None:
+            return []
+        return [(Cpu(**item) if isinstance(item, dict) else item) for item in value]
+
+    @field_serializer("gpus")
+    @classmethod
+    def serialize_gpus(cls, value):
+        """Serialize gpus field, converting dicts to Gpu instances first."""
+        if value is None:
+            return []
+        return [(Gpu(**item) if isinstance(item, dict) else item) for item in value]
+
+    @field_serializer("storages")
+    @classmethod
+    def serialize_storages(cls, value):
+        """Serialize storages field, converting dicts to Disk instances first."""
+        if value is None:
+            return []
+        return [(Disk(**item) if isinstance(item, dict) else item) for item in value]
 
 
 class ServerBase(MetaColumns, ServerFields):
