@@ -9,6 +9,7 @@ Fix(es):
   warnings.
 - Fix and extend test cases for field serializers and OVH vendor module.
 - Add Provisioned IOPS (io1, io2) storage types and update gp3 volume limits (IOPS, throughput, size) for AWS.
+- Upgrade required Python version to 3.11.
 
 New feature(s):
 
