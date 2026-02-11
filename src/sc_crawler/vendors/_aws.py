@@ -1057,9 +1057,8 @@ storage_types = [
     "Provisioned IOPS",
 ]
 
-# https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ebs-volume-types.html
+# https://docs.aws.amazon.com/ebs/latest/userguide/ebs-volume-types.html
 storage_manual_data = {
-    # https://docs.aws.amazon.com/ebs/latest/userguide/ebs-volume-types.html
     "standard": {
         "maxIopsvolume": 200,
         "maxThroughputvolume": 90,

@@ -8,7 +8,7 @@ Fix(es):
 - Add field serializers to `cpus`, `gpus`, `storages`, and `price_tiered` columns to prevent Pydantic serialization
   warnings.
 - Fix and extend test cases for field serializers and OVH vendor module.
-- Add Provisioned IOPS (io1, io2) storage types for AWS.
+- Add Provisioned IOPS (io1, io2) storage types and update gp3 volume limits (IOPS, throughput, size) for AWS.
 
 New feature(s):
 
