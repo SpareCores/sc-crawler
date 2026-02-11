@@ -8,10 +8,15 @@ Fix(es):
 - Add field serializers to `cpus`, `gpus`, `storages`, and `price_tiered` columns to prevent Pydantic serialization
   warnings.
 - Fix and extend test cases for field serializers and OVH vendor module.
+- Add Provisioned IOPS (io1, io2) storage types and update gp3 volume limits (IOPS, throughput, size) for AWS.
 
 New feature(s):
 
 - Record the monthly cap for ondemand prices.
+
+‼ Breaking changes:
+
+- Minimum required Python version upgraded from 3.9 to 3.11.
 
 ## v0.3.4 (Feb 05, 2026)
 

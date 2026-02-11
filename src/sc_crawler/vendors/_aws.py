@@ -1053,11 +1053,11 @@ storage_types = [
     "Cold HDD",
     "Throughput Optimized HDD",
     "General Purpose",
-    # current generation with dedicated IOPS (disabled)
-    # # "Provisioned IOPS"
+    # current generation with dedicated IOPS
+    "Provisioned IOPS",
 ]
 
-# https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ebs-volume-types.html
+# https://docs.aws.amazon.com/ebs/latest/userguide/ebs-volume-types.html
 storage_manual_data = {
     "standard": {
         "maxIopsvolume": 200,
@@ -1072,10 +1072,10 @@ storage_manual_data = {
         "maxVolumeSize": 16,
     },
     "gp3": {
-        "maxIopsvolume": 16_000,
-        "maxThroughputvolume": 250,
+        "maxIopsvolume": 80_000,
+        "maxThroughputvolume": 2_000,
         "minVolumeSize": 1 / 1024,
-        "maxVolumeSize": 16,
+        "maxVolumeSize": 64,
     },
     "st1": {
         "maxIopsvolume": 500,
@@ -1088,6 +1088,18 @@ storage_manual_data = {
         "maxThroughputvolume": 250,
         "minVolumeSize": 125 / 1024,
         "maxVolumeSize": 16,
+    },
+    "io1": {
+        "maxIopsvolume": 64_000,
+        "maxThroughputvolume": 1_000,
+        "minVolumeSize": 4 / 1024,
+        "maxVolumeSize": 16,
+    },
+    "io2": {
+        "maxIopsvolume": 256_000,
+        "maxThroughputvolume": 4_000,
+        "minVolumeSize": 4 / 1024,
+        "maxVolumeSize": 64,
     },
 }
 
