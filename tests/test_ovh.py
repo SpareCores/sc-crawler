@@ -8,6 +8,8 @@ from sc_crawler.vendors._ovh import (
     HOURS_PER_MONTH,
     MIB_PER_GIB,
     MICROCENTS_PER_CURRENCY_UNIT,
+    _client,
+    _get_catalog,
     _get_gpu_info,
     _get_project_id,
     _get_region,
@@ -21,9 +23,27 @@ from sc_crawler.vendors._ovh import (
 @pytest.fixture(autouse=True)
 def mock_ovh_client():
     """Mock OVH client and most common API endpoints for all tests."""
-    with patch("sc_crawler.vendors._ovh._client") as mock_client_factory:
+    _client.cache_clear()
+    _get_project_id.cache_clear()
+    _get_regions.cache_clear()
+    _get_region.cache_clear()
+    _get_catalog.cache_clear()
+
+    with (
+        patch("sc_crawler.vendors._ovh._client") as mock_client_factory,
+        patch("sc_crawler.vendors._ovh.getenv") as mock_getenv,
+    ):
         mock = Mock()
         mock_client_factory.return_value = mock
+
+        def mock_env_side_effect(key, default=None):
+            if key == "OVH_PROJECT_ID":
+                return None
+            if key == "OVH_SUBSIDIARY":
+                return default if default else "IE"
+            return default
+
+        mock_getenv.side_effect = mock_env_side_effect
 
         def default_fake_get(path, *args, **kwargs):
             if path == "/cloud/project":

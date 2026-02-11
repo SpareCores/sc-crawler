@@ -4,6 +4,10 @@ Fix(es):
 
 - Add support for Azure Denmark East region (Copenhagen).
 - Fix SCD table schema generation in CLI `create` command.
+- Replace deprecated `datetime.utcnow()` calls with `datetime.now(UTC)`.
+- Add field serializers to `cpus`, `gpus`, `storages`, and `price_tiered` columns to prevent Pydantic serialization
+  warnings.
+- Fix and extend test cases for field serializers and OVH vendor module.
 
 New feature(s):
 
