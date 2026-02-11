@@ -10,7 +10,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install DBML CLI and dbdocs
-        run: sudo npm install -g @dbml/cli dbdocs
+        run: sudo npm install -g @dbml/cli@6.2.1 dbdocs
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
