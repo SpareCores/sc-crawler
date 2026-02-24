@@ -5,10 +5,10 @@ from hashlib import sha1
 from json import dumps
 from typing import List, Optional, Union
 
-from pydantic import ConfigDict, field_serializer, model_validator
+from pydantic import ConfigDict, field_serializer, field_validator, model_validator
 from rich.progress import Progress
 from sqlalchemy.inspection import inspect
-from sqlalchemy.orm import declared_attr
+from sqlalchemy.orm import declared_attr, reconstructor
 from sqlmodel import JSON, Field, Session, SQLModel, select
 
 from .str_utils import snake_case
@@ -339,14 +339,24 @@ class HasPriceFieldsBase(ScModel):
     )
     currency: str = Field(default="USD", description="Currency of the prices.")
 
-    @field_serializer("price_tiered")
-    def serialize_price_tiers(self, value):
-        """Serialize price_tiered field, converting dicts to PriceTier instances first."""
+    @field_validator("price_tiered", mode="before")
+    @classmethod
+    def _deserialize_price_tiers(cls, value):
+        """Deserialize price_tiered field, converting dicts to PriceTier instances."""
         if value is None:
             return []
-        return [
-            (PriceTier(**item) if isinstance(item, dict) else item) for item in value
-        ]
+        return [PriceTier(**item) if isinstance(item, dict) else item for item in value]
+
+    @reconstructor
+    def _reconstruct_price_tiers(self):
+        """Ensure price_tiered is always a list of PriceTier instances after loading from the database."""
+        if self.price_tiered is None:
+            self.price_tiered = []
+        else:
+            self.price_tiered = [
+                PriceTier(**item) if isinstance(item, dict) else item
+                for item in self.price_tiered
+            ]
 
 
 class HasPriceFields(MetaColumns, HasPriceFieldsBase):
@@ -685,26 +695,54 @@ class ServerFields(
         default=0, description="Number of complimentary IPv4 address(es)."
     )
 
-    @field_serializer("cpus")
-    def serialize_cpus(self, value):
-        """Serialize cpus field, converting dicts to Cpu instances first."""
+    @field_validator("cpus", mode="before")
+    @classmethod
+    def _deserialize_cpus(cls, value):
+        """Deserialize cpus field, converting dicts to Cpu instances."""
         if value is None:
             return []
-        return [(Cpu(**item) if isinstance(item, dict) else item) for item in value]
+        return [Cpu(**item) if isinstance(item, dict) else item for item in value]
 
-    @field_serializer("gpus")
-    def serialize_gpus(self, value):
-        """Serialize gpus field, converting dicts to Gpu instances first."""
+    @field_validator("gpus", mode="before")
+    @classmethod
+    def _deserialize_gpus(cls, value):
+        """Deserialize gpus field, converting dicts to Gpu instances."""
         if value is None:
             return []
-        return [(Gpu(**item) if isinstance(item, dict) else item) for item in value]
+        return [Gpu(**item) if isinstance(item, dict) else item for item in value]
 
-    @field_serializer("storages")
-    def serialize_storages(self, value):
-        """Serialize storages field, converting dicts to Disk instances first."""
+    @field_validator("storages", mode="before")
+    @classmethod
+    def _deserialize_storages(cls, value):
+        """Deserialize storages field, converting dicts to Disk instances."""
         if value is None:
             return []
-        return [(Disk(**item) if isinstance(item, dict) else item) for item in value]
+        return [Disk(**item) if isinstance(item, dict) else item for item in value]
+
+    @reconstructor
+    def _reconstruct_json_fields(self):
+        """Ensure cpus, gpus and storages are always a list of Cpu, Gpu and Disk instances after loading from the database."""
+        if self.cpus is None:
+            self.cpus = []
+        else:
+            self.cpus = [
+                Cpu(**item) if isinstance(item, dict) else item for item in self.cpus
+            ]
+
+        if self.gpus is None:
+            self.gpus = []
+        else:
+            self.gpus = [
+                Gpu(**item) if isinstance(item, dict) else item for item in self.gpus
+            ]
+
+        if self.storages is None:
+            self.storages = []
+        else:
+            self.storages = [
+                Disk(**item) if isinstance(item, dict) else item
+                for item in self.storages
+            ]
 
 
 class ServerBase(MetaColumns, ServerFields):
