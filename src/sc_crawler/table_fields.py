@@ -2,9 +2,9 @@
 
 from enum import Enum
 from json import dumps
-from typing import Any, List, Optional, Union
+from typing import Any, List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_serializer, model_validator
 from sqlalchemy.types import TypeDecorator
 from sqlmodel import JSON
 
@@ -204,15 +204,32 @@ class PriceUnit(str, Enum):
 class PriceTier(Json):
     """Price tier definition.
 
-    As standard JSON does not support Inf, NaN etc values,
-    those should be passed as string, e.g. for the upper bound.
+    Infinite bounds (e.g. for an open-ended upper tier) are stored as
+    `float("inf")` in Python and automatically serialized to the
+    JSON-safe string `"Infinity"` on export. Both representations are
+    accepted as input: the model validator converts `"Infinity"` back
+    to `float("inf")` when loading from JSON."""
 
-    See [float_inf_to_str][sc_crawler.utils.float_inf_to_str] for
-    converting an infinite numeric value into "Infinity"."""
-
-    lower: Union[float, str]
+    lower: float
     """Lower bound of pricing tier, e.g. 100 GB. Unit is defined in the parent object."""
-    upper: Union[float, str]
+    upper: float
     """Upper bound of pricing tier, e.g. 1 TB. Unit is defined in the parent object."""
     price: float
     """Price in the pricing tier. Currency is defined in the parent object."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def deserialize_inf_bounds(cls, data):
+        """Convert 'Infinity' strings back to float('inf') when loading from JSON."""
+        if isinstance(data, dict):
+            for field in ("lower", "upper"):
+                if field in data and data[field] == "Infinity":
+                    data[field] = float("inf")
+        return data
+
+    @field_serializer("lower", "upper")
+    def serialize_inf_bounds(self, value):
+        """Convert float('inf') bounds to 'Infinity' string for JSON serialization."""
+        if isinstance(value, float) and value == float("inf"):
+            return "Infinity"
+        return value

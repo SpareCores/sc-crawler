@@ -340,8 +340,7 @@ class HasPriceFieldsBase(ScModel):
     currency: str = Field(default="USD", description="Currency of the prices.")
 
     @field_serializer("price_tiered")
-    @classmethod
-    def serialize_price_tiers(cls, value):
+    def serialize_price_tiers(self, value):
         """Serialize price_tiered field, converting dicts to PriceTier instances first."""
         if value is None:
             return []
@@ -687,24 +686,21 @@ class ServerFields(
     )
 
     @field_serializer("cpus")
-    @classmethod
-    def serialize_cpus(cls, value):
+    def serialize_cpus(self, value):
         """Serialize cpus field, converting dicts to Cpu instances first."""
         if value is None:
             return []
         return [(Cpu(**item) if isinstance(item, dict) else item) for item in value]
 
     @field_serializer("gpus")
-    @classmethod
-    def serialize_gpus(cls, value):
+    def serialize_gpus(self, value):
         """Serialize gpus field, converting dicts to Gpu instances first."""
         if value is None:
             return []
         return [(Gpu(**item) if isinstance(item, dict) else item) for item in value]
 
     @field_serializer("storages")
-    @classmethod
-    def serialize_storages(cls, value):
+    def serialize_storages(self, value):
         """Serialize storages field, converting dicts to Disk instances first."""
         if value is None:
             return []

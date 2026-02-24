@@ -265,7 +265,7 @@ def test_storage_price_tiered_validator_with_dicts():
     assert storage_price.price_tiered[1].upper == 1000
     assert storage_price.price_tiered[1].price == 0.15
     assert storage_price.price_tiered[2].lower == 1000
-    assert storage_price.price_tiered[2].upper == "Infinity"
+    assert storage_price.price_tiered[2].upper == float("inf")
     assert storage_price.price_tiered[2].price == 0.10
 
 
@@ -312,5 +312,5 @@ def test_storage_price_tiered_validator_with_mixed_bounds():
     assert storage_price.price_tiered[0].upper == 50.5
     assert storage_price.price_tiered[1].lower == 50.5
     assert storage_price.price_tiered[1].upper == 200.0
-    assert storage_price.price_tiered[2].lower == "200.0"
-    assert storage_price.price_tiered[2].upper == "Infinity"
+    assert storage_price.price_tiered[2].lower == 200.0
+    assert storage_price.price_tiered[2].upper == float("inf")
