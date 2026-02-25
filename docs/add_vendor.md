@@ -48,7 +48,7 @@ which will by default update the most recently created task's progress bar. If m
 to [advance_task][sc_crawler.logger.VendorProgressTracker.advance_task]
 and [hide_task][sc_crawler.logger.VendorProgressTracker.hide_task] explicitly. Make sure to call `hide_task` when the
 progress bar is not to be shown anymore. It's a good practice to log the number of fetched/synced objects afterwards
-with `logger.info.` See the manual of [`VendorProgressTracker`][sc_crawler.logger.VendorProgressTracker] for more
+with `logger.info`. See the manual of [`VendorProgressTracker`][sc_crawler.logger.VendorProgressTracker] for more
 details.
 
 Basic example:
