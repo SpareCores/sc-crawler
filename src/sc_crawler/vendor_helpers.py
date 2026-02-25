@@ -36,7 +36,7 @@ def parallel_fetch_servers(
         vendor: Required [Vendor][sc_crawler.tables.Vendor] instance used for
             the regions lookup, logging and progress bar updates.
         fn: A function to be passed to [fetch_servers][sc_crawler.vendor_helpers.fetch_servers].
-        id_cols: Field name to be used to deduplicate the list of server dicts.
+        id_col: Field name to be used to deduplicate the list of server dicts.
         by: What objects of the `vendor` to iterate on.
     """
 

@@ -24,7 +24,9 @@ Each vendor module should provide the below functions:
 - `inventory_traffic_prices`: Define [`TrafficPrice`][sc_crawler.tables.TrafficPrice] instances to describe the pricing of ingress/egress traffic.
 - `inventory_ipv4_prices`: Define [`Ipv4Price`][sc_crawler.tables.Ipv4Price] instances on the price of an IPv4 address.
 
-Each function will be picked up as the related [Vendor][sc_crawler.tables.Vendor] instance's instance methods, so each function should take a single argument, that is the [Vendor][sc_crawler.tables.Vendor] instance. E.g. [sc_crawler.vendors.aws.inventory_regions][] is called by [sc_crawler.tables.Vendor.inventory_regions][].
+Each function will be picked up as the related [Vendor][sc_crawler.tables.Vendor] instance's instance methods, so each
+function should take a single argument, that is the [Vendor][sc_crawler.tables.Vendor] instance.
+E.g. [sc_crawler.vendors._aws.inventory_regions][] is called by [sc_crawler.tables.Vendor.inventory_regions][].
 
 The functions should return an array of dict representing the related objects. The vendor's `inventory` method will pass the array to [sc_crawler.insert.insert_items][] along with the table object.
 
@@ -38,7 +40,16 @@ To create progress bars, you can use the [Vendor][sc_crawler.tables.Vendor]'s [p
 * [advance_task][sc_crawler.logger.VendorProgressTracker.advance_task]
 * [hide_task][sc_crawler.logger.VendorProgressTracker.hide_task]
 
-The [start_task][sc_crawler.logger.VendorProgressTracker.start_task] will register a task in the "Current tasks" progress bar list with the provided name automatically prefixed by the vendor name, and the provided number of expected steps. You should call [advance_task][sc_crawler.logger.VendorProgressTracker.advance_task] after each step finished, which will by default update the most recently created task's progress bar. If making updates in parallel, store the [rich.progress.TaskID][] returned by [start_task][sc_crawler.logger.VendorProgressTracker.start_task] and pass to [advance_task][sc_crawler.logger.VendorProgressTracker.advance_task] and [hide_task][sc_crawler.logger.VendorProgressTracker.hide_task] explicitly. Make sure to call `hide_task` when the progress bar is not to be shown anymore. It's a good practice to log the number of fetched/synced objects afterwards with `logger.info.` See the manual of [`VendorProgressTracker`][sc_crawler.logger.VendorProgressTracker] for more details.
+The [start_task][sc_crawler.logger.VendorProgressTracker.start_task] will register a task in the "Current tasks"
+progress bar list with the provided name automatically prefixed by the vendor name, and the provided number of expected
+steps. You should call [advance_task][sc_crawler.logger.VendorProgressTracker.advance_task] after each step finished,
+which will by default update the most recently created task's progress bar. If making updates in parallel, store the
+`TaskID` returned by [start_task][sc_crawler.logger.VendorProgressTracker.start_task] and pass
+to [advance_task][sc_crawler.logger.VendorProgressTracker.advance_task]
+and [hide_task][sc_crawler.logger.VendorProgressTracker.hide_task] explicitly. Make sure to call `hide_task` when the
+progress bar is not to be shown anymore. It's a good practice to log the number of fetched/synced objects afterwards
+with `logger.info.` See the manual of [`VendorProgressTracker`][sc_crawler.logger.VendorProgressTracker] for more
+details.
 
 Basic example:
 

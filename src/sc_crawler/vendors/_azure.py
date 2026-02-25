@@ -1088,7 +1088,7 @@ def inventory_server_prices(vendor):
 def inventory_server_prices_spot(vendor):
     """List all known server spot prices in all regions using the Azure Retail Pricing API.
 
-    See details at [inventory_server_prices][sc_crawler.vendors.azure.inventory_server_prices].
+    See details at [inventory_server_prices][sc_crawler.vendors._azure.inventory_server_prices].
     """
     return _inventory_server_prices(vendor, Allocation.SPOT)
 
