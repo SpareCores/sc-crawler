@@ -7,31 +7,31 @@ name = "sparecores-crawler"
 version = "0.3.4"
 requires-python = ">= 3.11"
 dependencies = [
-    "alembic",
-    "cachier>=3.1.1",
-    "pydantic==2.9.2", # https://github.com/pydantic/pydantic/issues/10905
-    "pydantic_extra_types",
-    "PyYAML",
-    "requests",
-    "rich",
-    "sqlmodel",
-    "typer",
+  "alembic",
+  "cachier>=3.1.1",
+  "pydantic==2.9.2", # https://github.com/pydantic/pydantic/issues/10905
+  "pydantic_extra_types",
+  "PyYAML",
+  "requests",
+  "rich",
+  "sqlmodel",
+  "typer",
 ]
 authors = [
-    { name = "Gergely Daroczi" },
-    { name = "Attila Nagy" },
+  { name = "Gergely Daroczi" },
+  { name = "Attila Nagy" },
 ]
 maintainers = [
-    { name = "Spare Cores team", email = "pkg@sparecores.com" }
+  { name = "Spare Cores team", email = "pkg@sparecores.com" }
 ]
 description = "Collect and standardize data on cloud server offerings, include specs, prices, and measured performance benchmarks."
 readme = "README.md"
 keywords = ["cloud", "compute", "etl", "sqlite", "spot-instances", "cost-optimization"]
 classifiers = [
-    "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)",
-    "Operating System :: OS Independent",
-    "Development Status :: 5 - Production/Stable",
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)",
+  "Operating System :: OS Independent",
+  "Development Status :: 5 - Production/Stable",
 ]
 
 [project.urls]
@@ -42,13 +42,14 @@ homepage = "https://sparecores.com"
 
 [project.optional-dependencies]
 mkdocs = [
-    "markdown",
-    "mkdocs",
-    "mkdocs-material[imaging]", "mkdocs-material-extensions",
-    "mkdocs-autorefs", "mkdocs-gen-files", "mkdocs-literate-nav", "mkdocs-section-index",
-    "mkdocstrings[python]>=0.18",
-    "griffe==0.49.0", # TODO breaking changes in v1.0.0
-    "griffe-inherited-docstrings",
+  "markdown",
+  "mkdocs<2.0", # MkDocs 2.0 is incompatible with mkdocs-material
+  "mkdocs-material[imaging]", "mkdocs-material-extensions",
+  "mkdocs-autorefs", "mkdocs-gen-files", "mkdocs-literate-nav", "mkdocs-section-index",
+  "mkdocstrings[python]>=0.29",
+  "griffe",
+  "griffe-inherited-docstrings",
+  #  "zensical"  # TODO: switch to zensical once it fully replaces mkdocs+mkdocs-material
 ]
 testing = ["pytest", "sparecores-crawler[mkdocs]"]
 aws = ["boto3"]
@@ -59,13 +60,13 @@ upcloud = ["upcloud-api"]
 ovh = ["ovh"]
 alicloud = ["alibabacloud-ecs20140526", "alibabacloud-bssopenapi20171214"]
 vendors = [
-    "sparecores-crawler[aws]",
-    "sparecores-crawler[hcloud]",
-    "sparecores-crawler[gcp]",
-    "sparecores-crawler[azure]",
-    "sparecores-crawler[upcloud]",
-    "sparecores-crawler[ovh]",
-    "sparecores-crawler[alicloud]",
+  "sparecores-crawler[aws]",
+  "sparecores-crawler[hcloud]",
+  "sparecores-crawler[gcp]",
+  "sparecores-crawler[azure]",
+  "sparecores-crawler[upcloud]",
+  "sparecores-crawler[ovh]",
+  "sparecores-crawler[alicloud]",
 ]
 all = ["sparecores-crawler[testing]", "sparecores-crawler[vendors]"]
 
