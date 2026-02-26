@@ -1,3 +1,9 @@
+## v0.3.6 (Feb 26, 2026)
+
+New feature(s):
+
+- Add `__version__` variable to the package.
+
 ## v0.3.5 (Feb 26, 2026)
 
 Fix(es):
