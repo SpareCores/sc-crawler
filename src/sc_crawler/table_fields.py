@@ -4,7 +4,7 @@ from enum import Enum
 from json import dumps
 from typing import Any, List, Optional
 
-from pydantic import BaseModel, field_serializer, model_validator
+from pydantic import BaseModel, field_serializer, field_validator
 from sqlalchemy.types import TypeDecorator
 from sqlmodel import JSON
 
@@ -217,19 +217,17 @@ class PriceTier(Json):
     price: float
     """Price in the pricing tier. Currency is defined in the parent object."""
 
-    @model_validator(mode="before")
+    @field_validator("upper", "lower", mode="before")
     @classmethod
-    def deserialize_inf_bounds(cls, data):
-        """Convert 'Infinity' strings back to float('inf') when loading from JSON."""
-        if isinstance(data, dict):
-            for field in ("lower", "upper"):
-                if field in data and data[field] == "Infinity":
-                    data[field] = float("inf")
-        return data
+    def _deserialize_inf_bounds(cls, value):
+        """Convert string values to float when deserializing from JSON."""
+        if isinstance(value, str):
+            return float(value)
+        return value
 
-    @field_serializer("lower", "upper")
-    def serialize_inf_bounds(self, value):
-        """Convert float('inf') bounds to 'Infinity' string for JSON serialization."""
-        if isinstance(value, float) and value == float("inf"):
+    @field_serializer("upper", "lower")
+    def _serialize_inf_bounds(self, value):
+        """Convert float('inf') bounds to 'Infinity' strings when dumping to JSON."""
+        if value == float("inf"):
             return "Infinity"
         return value

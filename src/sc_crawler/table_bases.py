@@ -5,7 +5,7 @@ from hashlib import sha1
 from json import dumps
 from typing import List, Optional, Union
 
-from pydantic import ConfigDict, field_serializer, field_validator, model_validator
+from pydantic import ConfigDict, field_validator, model_validator
 from rich.progress import Progress
 from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import declared_attr, reconstructor
