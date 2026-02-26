@@ -1,14 +1,18 @@
-## v0.3.x (development version, unreleased on PyPI)
+## v0.3.5 (Feb 26, 2026)
 
 Fix(es):
 
 - Add support for Azure Denmark East region (Copenhagen).
 - Fix SCD table schema generation in CLI `create` command.
 - Replace deprecated `datetime.utcnow()` calls with `datetime.now(UTC)`.
-- Add field serializers to `cpus`, `gpus`, `storages`, and `price_tiered` columns to prevent Pydantic serialization
-  warnings.
+- Add field deserializers and reconstructors to `cpus`, `gpus`, `storages`, and `price_tiered` columns to prevent
+  Pydantic serialization
+  warnings and to preserve the original data types when loading from the database.
 - Fix and extend test cases for field serializers and OVH vendor module.
 - Add Provisioned IOPS (io1, io2) storage types and update gp3 volume limits (IOPS, throughput, size) for AWS.
+- Fix `DynamicDocstrings` griffe extension to accept the new `agent` keyword argument introduced in griffe 0.49.0.
+- Pin `mkdocs<2.0` as MkDocs 2.0 is incompatible with Material for MkDocs.
+- Fix `mkdocs` build warnings and version incompatibilities.
 
 New feature(s):
 
