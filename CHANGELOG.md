@@ -2,7 +2,7 @@
 
 New feature(s):
 
-- Add `__version__` and `__version_info__` variables to the package.
+- Add `__version__` and `__version_info__` variables to the package..
 
 ## v0.3.5 (Feb 26, 2026)
 
