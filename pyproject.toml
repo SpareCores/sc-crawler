@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sparecores-crawler"
-version = "0.3.5"
+dynamic = ["version"]
 requires-python = ">= 3.11"
 dependencies = [
   "alembic",
@@ -72,6 +72,9 @@ all = ["sparecores-crawler[testing]", "sparecores-crawler[vendors]"]
 
 [project.scripts]
 sc-crawler = "sc_crawler.cli:cli"
+
+[tool.setuptools.dynamic]
+version = { attr = "sc_crawler.__version__" }
 
 [tool.setuptools]
 include-package-data = true  # see MANIFEST.in
