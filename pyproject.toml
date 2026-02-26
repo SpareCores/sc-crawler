@@ -20,6 +20,7 @@ dependencies = [
 authors = [
   { name = "Gergely Daroczi" },
   { name = "Attila Nagy" },
+  { name = "Tamás Hidvégi" },
 ]
 maintainers = [
   { name = "Spare Cores team", email = "pkg@sparecores.com" }
