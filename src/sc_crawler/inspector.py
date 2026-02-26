@@ -2,6 +2,7 @@ import csv
 import json
 import xml.etree.ElementTree as xmltree
 from atexit import register
+from contextlib import suppress
 from functools import cache
 from itertools import groupby
 from operator import itemgetter
@@ -18,7 +19,7 @@ from yaml import safe_load as yaml_safe_load
 
 from .logger import logger
 from .table_bases import ServerBase
-from .table_fields import DdrGeneration
+from .table_fields import DdrGeneration, Disk, StorageType
 
 if TYPE_CHECKING:
     from .tables import Server
@@ -130,6 +131,11 @@ def _listsearch(items: List, key: str, value: str):
 
 def _server_lscpu_field(server: "Server", field: str) -> str:
     return _listsearch(_server_lscpu(server), "field", field)["data"]
+
+
+def _server_lshw(server: "Server") -> dict:
+    with open(_server_framework_path(server, "lshw", "stdout"), "r") as fp:
+        return json.load(fp)
 
 
 def _server_dmidecode(server: "Server") -> dict:
@@ -535,7 +541,40 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
     return benchmarks
 
 
+def _extract_manufacturer(name: str) -> str:
+    """Extract the manufacturer from a CPU model name."""
+    nl = name.strip().lower()
+    for m in ["Intel", "AMD", "NVIDIA", "Microsoft", "Alibaba", "Ampere", "Hygon"]:
+        if m.lower() in nl:
+            return m
+    for p in ["xeon"]:
+        if p in nl:
+            return "Intel"
+    for p in ["epyc", "turin", "genoa"]:
+        if p in nl:
+            return "AMD"
+    if "yitian" in nl:
+        return "Alibaba"
+    return None
+
+
+def _extract_family(name: str) -> str:
+    """Extract the family from a CPU model name."""
+    nl = name.strip().lower()
+    if "xeon" in nl:
+        return "Xeon"
+    for p in ["epyc", "turin", "genoa"]:
+        if p in nl:
+            return "EPYC"
+    if "ampere" in nl:
+        return "Ampere Altra"
+    if "yitian" in nl:
+        return "Yitian"
+    return None
+
+
 def _standardize_manufacturer(manufacturer):
+    # standardize to short names
     if manufacturer == "Advanced Micro Devices, Inc.":
         return "AMD"
     if manufacturer == "Intel(R) Corporation":
@@ -544,17 +583,20 @@ def _standardize_manufacturer(manufacturer):
         return "NVIDIA"
     if manufacturer == "MICROSOFT CORPORATION":
         return "Microsoft"
+    if manufacturer in ["Alibaba Cloud"]:
+        return "Alibaba"
+    # drop invalid manufacturers
     if manufacturer in [
         "(invalid)",
         "Not Specified",
         "QEMU",
         "Google",
-        "AWS",
         "Amazon EC2",
     ]:
         return None
     # drop the copyright symbol
     manufacturer = sub(r"(\([rRcC]\)|®|©)", "", manufacturer)
+    # rest should be fine
     return manufacturer.strip()
 
 
@@ -578,24 +620,55 @@ def _standardize_cpu_model(model):
     ]:
         return None
     for prefix in [
-        "Intel(R) Xeon(R) Platinum ",
-        "INTEL(R) XEON(R) PLATINUM ",
-        "Intel(R) Xeon(R) Gold ",
-        "Intel(R) Xeon(R) CPU ",
-        "Intel(R) Xeon(R) ",
-        "Intel Xeon Processor (Skylake, IBRS)",
-        "Intel Xeon Processor (Skylake, IBRS, no TSX)",
-        "AMD ",
+        "Alibaba",
+        "Hygon",
+        "Intel®",
+        "Intel",
+        "INTEL",
+        "AMD",
+        "(R)",
+        "Xeon®",
+        "Xeon",
+        "XEON",
         "EPYC ",
+        "EPYC™ ",
         "AWS ",
+        "(R)",
+        "™",
+        "Platinum",
+        "PLATINUM",
+        "Gold",
+        "CPU",
         "Processor",
+        "(Ice Lake)",
+        "(Cascade Lake)",
+        "(Skylake)",
+        "(Skylake, IBRS)",
+        "(Skylake, IBRS, no TSX)",
+        "(Cooper Lake)",
+        "(Sapphire Rapid)",
+        "(Sapphire Rapids)",
+        "(Emerald Rapids)",
+        "(EMR)",
+        "EMR ",
+        "Genoa",
+        "Milan",
+        "ROME",
+        "Turin-C",
+        "Turin",
+        "Platinum",
+        "Gold",
     ]:
         if model.startswith(prefix):
             model = model[len(prefix) :].lstrip()
     # drop trailing "CPU @ 2.50GHz"
     model = sub(r"( CPU)? ?@ \d+\.\d+GHz$", "", model)
-    # drop trailing "48-Core Processor"
-    model = sub(r"( \d+-Core)? Processor$", "", model)
+    # drop trailing "48-Core Processor" or "48-Core"
+    model = sub(r"( \d+-Core)?( Processor)?$", "", model)
+    # drop anything after a slash
+    model = sub(r"/.*$", "", model)
+    # or an odd unicode paren start
+    model = sub(r"（.*$", "", model)
     # at least product family is known
     if model == "Intel Core Processor (Haswell, no TSX)":
         return "Haswell"
@@ -609,15 +682,62 @@ def _standardize_cpu_model(model):
     return model
 
 
+def _standardize_gpu_count(
+    gpu_model: str, gpu_count: int = 0, gpu_memory: int = 0
+) -> float:
+    """Extract GPU count from model name suffixes.
+
+    Parses patterns like:
+        "/4" -> 0.25
+        "*1/2" -> 0.5
+        "*1/12" -> 0.0833
+        "*1" -> 1
+        (no suffix) -> gpu_count
+
+    Returns:
+        Float representing GPU count, rounded to 4 decimal places.
+        If no suffix is found, returns the original gpu_count.
+    """
+    if not gpu_model:
+        return gpu_count
+
+    if gpu_model and gpu_memory and not gpu_count:
+        # AWS g6f and gr6f instances
+        if gpu_model == "L4":
+            # L4 GPU has 22888 MiB total memory
+            return round(gpu_memory / 22888, 4)
+
+    gpu_model = gpu_model.strip()
+
+    # Match patterns like "*1/4" or "/4" at the end
+    fractional_match = match(r".*(\*(\d+))?/(\d+)$", gpu_model)
+    if fractional_match:
+        numerator = int(fractional_match.group(2)) if fractional_match.group(2) else 1
+        denominator = int(fractional_match.group(3))
+        if denominator > 0:
+            return round(numerator / denominator, 4)
+
+    # Match pattern like "*1" at the end (whole number multiplier)
+    multiplier_match = match(r".*\*(\d+)$", gpu_model)
+    if multiplier_match:
+        return int(multiplier_match.group(1))
+
+    return gpu_count
+
+
 def _standardize_gpu_model(model, server=None):
     model = model.strip()
+    if model in ["", "0", "NULL", "NA", "N/A"]:
+        return None
     for prefix in [
         "NVIDIA ",
         "Tesla ",
         "Radeon Pro ",
+        "Nvidia Tesla ",
         "Gaudi ",
         "Quadro ",
         "GeeForce ",
+        "AMD ",
     ]:
         if model.startswith(prefix):
             model = model[len(prefix) :].lstrip()
@@ -631,10 +751,25 @@ def _standardize_gpu_model(model, server=None):
         model = "RTX Pro 6000"
     if server and server["vendor_id"] and server["server_id"] == "p4de.24xlarge":
         model = "A100-SXM4-40GB"
+    if model in ["RTX 5880 Ada", "RTX5880"]:
+        return "RTX 5880"
+    if model == "RTX6000":
+        return "RTX 6000"
+    if model == "RTX PRO Server 6000":
+        return "RTX Pro 6000"
+    if model == "T4g":
+        return "T4G"
     # drop too specific parts
     model = sub(r" NVL$", "", model)
     model = sub(r"-SXM[0-9]-[0-9]*GB$", "", model)
     model = sub(r" [0-9]*GB (HBM3|PCIe)$", "", model)
+    model = sub(r"( |-)[0-9]*GB?$", "", model)
+    model = sub(r"-PCI(e|E)$", "", model)
+    model = sub(r"-virt1$", "", model)
+    # we don't support fractional GPUs (e.g. "P4*1/4" or "T4/8")in the schema yet
+    model = sub(r"(\*1)?/\d+$", "", model)
+    # yes, sometimes it's written out that there's 1
+    model = sub(r"\*1$", "", model)
     return model
 
 
@@ -655,13 +790,21 @@ def _standardize_gpu_family(server):
 
 def _l123_cache(lscpu: dict, level: int):
     if level == 1:
-        l1i = _listsearch(lscpu, "field", "L1i cache:")["data"].split(" ")[0]
-        l1d = _listsearch(lscpu, "field", "L1d cache:")["data"].split(" ")[0]
-        return int(l1i) + int(l1d)
+        # don't include instruction cache
+        cache = int(_listsearch(lscpu, "field", "L1d cache:")["data"].split(" ")[0])
+        if cache > 32 * 1024 * 1024:  # 32 MiB+ is potentially corrupted data
+            return None
+        return cache
     elif level == 2:
-        return int(_listsearch(lscpu, "field", "L2 cache:")["data"].split(" ")[0])
+        cache = int(_listsearch(lscpu, "field", "L2 cache:")["data"].split(" ")[0])
+        if cache > 512 * 1024 * 1024:  # 512 MiB+ is potentially corrupted data
+            return None
+        return cache
     elif level == 3:
-        return int(_listsearch(lscpu, "field", "L3 cache:")["data"].split(" ")[0])
+        cache = int(_listsearch(lscpu, "field", "L3 cache:")["data"].split(" ")[0])
+        if cache > 1024 * 1024 * 1024:  # 1 GiB+ is potentially corrupted data
+            return None
+        return cache
     else:
         raise ValueError("Not known cache level.")
 
@@ -685,6 +828,9 @@ def _gpu_details(gpu: xmltree.Element) -> dict:
     for clock in ["graphics_clock", "sm_clock", "mem_clock", "video_clock"]:
         clockstring = gpu.find("max_clocks").find(clock).text
         res[clock] = int(clockstring[:-4])
+    # fix known issues in hypervisor reports
+    if res["manufacturer"] == "Quadro RTX":  # OVH / rtx5000 series
+        res["manufacturer"] = "NVIDIA"
     return res
 
 
@@ -694,6 +840,86 @@ def _gpus_details(gpus: List[xmltree.Element]) -> List[dict]:
 
 def _gpu_most_common(gpus: List[dict], field: str) -> str:
     return mode([gpu[field] for gpu in gpus])
+
+
+def _find_storage_disks(node: dict, disks: List[Disk], server: ServerBase) -> None:
+    """Recursively find storage devices in lshw JSON output."""
+    node_class = node.get("class", "")
+
+    if node_class == "storage":
+        for child in node.get("children", []):
+            if child.get("class") == "disk" and "size" in child:
+                size_bytes = child.get("size", 0)
+                device_type = _determine_storage_type(node, child, server)
+                # GCP network disks are added manually, not bundled, so skip them
+                if server.vendor_id == "gcp" and device_type == StorageType.NETWORK:
+                    continue
+                disks.append(
+                    Disk(
+                        size=size_bytes // (1024**3),  # size in GiB
+                        storage_type=device_type,
+                        description=node.get("product", "").lower(),
+                    )
+                )
+
+    # Recurse into children
+    for child in node.get("children", []):
+        _find_storage_disks(child, disks, server)
+
+
+def _determine_storage_type(
+    parent_node: dict, disk_node: dict, server: ServerBase
+) -> StorageType:
+    """Determine disk type based on parent controller and disk properties."""
+    vendor_id = server.vendor_id
+    storage_product = parent_node.get("product", "").lower()
+    disk_description = disk_node.get("description", "").lower()
+
+    if vendor_id == "gcp" and "-pd" in storage_product:
+        return StorageType.NETWORK
+
+    if vendor_id == "aws" and "amazon elastic block store" in storage_product:
+        return StorageType.NETWORK
+
+    if vendor_id == "upcloud" and "virtio block device" in storage_product:
+        return StorageType.NETWORK
+
+    if "nvme" in disk_description:
+        return StorageType.NVME_SSD
+
+    return StorageType.SSD
+
+
+def _parse_lshw_storage_info(lshw_data: dict, server: ServerBase) -> dict:
+    """Parse lshw JSON and extract storage information."""
+    disks: List[Disk] = []
+    _find_storage_disks(lshw_data, disks, server)
+
+    storage_info = {
+        "storage_type": None,
+        "storage_size": 0,
+        "storages": disks,
+    }
+
+    if disks:
+
+        def sort_by_storage_product(d: Disk):
+            """Sort disks by storage product name characteristics and size."""
+            numbers = search(r"(\d+)", d.description)
+            if numbers:
+                return 0, int(numbers.group(1)), len(d.description), d.size
+            else:
+                return 1, 0, len(d.description), d.size
+
+        disks.sort(key=sort_by_storage_product)
+        # Remove descriptions because they are not informative enough
+        for disk in disks:
+            disk.description = None
+        largest_disk = max(disks, key=lambda d: d.size)
+        storage_info["storage_type"] = largest_disk.storage_type
+        storage_info["storage_size"] = sum(d.size for d in disks)
+
+    return storage_info
 
 
 def inspect_update_server_dict(server: dict) -> dict:
@@ -711,6 +937,7 @@ def inspect_update_server_dict(server: dict) -> dict:
             server_obj, "Memory Device"
         ),
         "lscpu": lambda: _server_lscpu(server_obj),
+        "lshw": lambda: _server_lshw(server_obj),
         "nvidiasmi": lambda: _server_nvidiasmi(server_obj),
         "gpu": lambda: lookups["nvidiasmi"].find("gpu"),
         "gpus": lambda: lookups["nvidiasmi"].findall("gpu"),
@@ -724,21 +951,75 @@ def inspect_update_server_dict(server: dict) -> dict:
     def lscpu_lookup(field: str):
         return _listsearch(lookups["lscpu"], "field", field)["data"]
 
+    # Parse lshw storage info once (empty dict if lshw lookup failed)
+    lshw_storage_info = (
+        {}
+        if isinstance(lookups["lshw"], Exception)
+        else _parse_lshw_storage_info(lookups["lshw"], server_obj)
+    )
+
+    def get_cpu_speed():
+        """Extract CPU speed from lscpu or dmidecode."""
+        # lscpu is more reliable, extracting from "Model name: ... @ X.XGHz"
+        speed = None
+        with suppress(Exception):
+            cpu_model = lscpu_lookup("Model name:")
+            match = search(r" @ ([0-9\.]*)GHz$", cpu_model)
+            if match:
+                speed = float(match.group(1))
+        # fall back to dmidecode
+        if not speed:
+            with suppress(Exception):
+                # use 1st CPU's speed, convert to Ghz
+                speed = lookups["dmidecode_cpu"]["Max Speed"] / 1e9
+        # 2 GHz CPU speed is a lie at GCP
+        if server_obj.vendor_id == "gcp" and speed == 2:
+            speed = None
+        return speed
+
+    def get_cpu_manufacturer():
+        """Extract CPU manufacturer from lscpu or dmidecode."""
+        with suppress(Exception):
+            cpu_model = lscpu_lookup("Model name:")
+            for manufacturer in ["Intel", "AMD", "Ampere"]:
+                if manufacturer.lower() in cpu_model.lower():
+                    return manufacturer
+        # fall back to dmidecode
+        with suppress(Exception):
+            return _standardize_manufacturer(lookups["dmidecode_cpu"]["Manufacturer"])
+        # no CPU manufacturer data available
+        return None
+
+    def get_cpu_family():
+        """Extract CPU family from lscpu or dmidecode."""
+        with suppress(Exception):
+            cpu_model = lscpu_lookup("Model name:")
+            for family in ["Xeon", "EPYC", "Altra"]:
+                if family.lower() in cpu_model.lower():
+                    return family
+        # fall back to dmidecode
+        with suppress(Exception):
+            return _standardize_cpu_family(lookups["dmidecode_cpu"]["Family"])
+        # no CPU family data available
+        return None
+
+    def get_cpu_model():
+        """Extract CPU model from lscpu or dmidecode."""
+        with suppress(Exception):
+            return _standardize_cpu_model(lscpu_lookup("Model name:"))
+        with suppress(Exception):
+            return _standardize_cpu_model(lookups["dmidecode_cpu"]["Version"])
+        return None
+
     mappings = {
+        "vcpus": lambda: lscpu_lookup("CPU(s):"),
         "cpu_cores": lambda: (
             int(lscpu_lookup("Core(s) per socket:")) * int(lscpu_lookup("Socket(s):"))
         ),
-        # use 1st CPU's speed, convert to Ghz
-        "cpu_speed": lambda: lookups["dmidecode_cpu"]["Max Speed"] / 1e9,
-        "cpu_manufacturer": lambda: _standardize_manufacturer(
-            lookups["dmidecode_cpu"]["Manufacturer"]
-        ),
-        "cpu_family": lambda: _standardize_cpu_family(
-            lookups["dmidecode_cpu"]["Family"]
-        ),
-        "cpu_model": lambda: _standardize_cpu_model(
-            lookups["dmidecode_cpu"]["Version"]
-        ),
+        "cpu_speed": lambda: get_cpu_speed(),
+        "cpu_manufacturer": lambda: get_cpu_manufacturer(),
+        "cpu_family": lambda: get_cpu_family(),
+        "cpu_model": lambda: get_cpu_model(),
         "cpu_l1_cache": lambda: _l123_cache(lookups["lscpu"], 1),
         "cpu_l2_cache": lambda: _l123_cache(lookups["lscpu"], 2),
         "cpu_l3_cache": lambda: _l123_cache(lookups["lscpu"], 3),
@@ -754,37 +1035,60 @@ def inspect_update_server_dict(server: dict) -> dict:
         "gpu_count": lambda: len(server["gpus"]) if len(server["gpus"]) else None,
         "gpu_memory_min": lambda: min([gpu["memory"] for gpu in server["gpus"]]),
         "gpu_memory_total": lambda: sum([gpu["memory"] for gpu in server["gpus"]]),
+        # skip storage update if lshw parsing failed or API data is present
+        "storage_type": lambda: lshw_storage_info.get("storage_type"),
+        "storage_size": lambda: lshw_storage_info.get("storage_size"),
+        "storages": lambda: lshw_storage_info.get("storages"),
     }
+
+    def override_mapping(server, field, inspector_data):
+        """Decide whether to override vendor-provided server data with inspector data.
+
+        Args:
+            server: Server-like dict with vendor-provided data.
+            field: Server table column name.
+            inspector_data: New data provided by inspector.
+
+        Returns:
+            The data provided by inspector, or the vendor.
+        """
+        vendor_id = server.get("vendor_id")
+        vendor_data = server.get(field)
+
+        # TODO drop once we have full lsblk coverage
+        # always override GCP fields where vendor data is known to be missing
+        storage_fields = ["storage_type", "storage_size", "storages"]
+        if vendor_id == "gcp" and field in ["gpu_model", *storage_fields]:
+            return inspector_data
+        # don't trust HDD/SSD inspection data at other vendors yet
+        if vendor_id != "gcp" and field in storage_fields:
+            return vendor_data
+
+        # keep inspector data for detailed fields that's not available from vendor API
+        if (
+            field == "gpus"
+            and inspector_data
+            and isinstance(inspector_data, list)
+            and len(inspector_data) > 0
+            and inspector_data[0].get("bios_version")
+        ):
+            return inspector_data
+        # never override vendor data with None
+        if inspector_data is None:
+            return vendor_data
+        # return inspector data if vendor data is missing
+        if not vendor_data:
+            return inspector_data
+        # last resort: keep vendor data
+        return vendor_data
+
     for k, f in mappings.items():
         try:
             newval = f()
             if newval:
-                server[k] = newval
+                server[k] = override_mapping(server, k, newval)
         except Exception as e:
             _log_cannot_update_server(server_obj, k, e)
-
-    # lscpu is a more reliable data source than dmidecode
-    if not isinstance(lookups["lscpu"], BaseException):
-        cpu_model = lscpu_lookup("Model name:")
-        # CPU speed seems to be unreliable as reported by dmidecode,
-        # e.g. it's 2Ghz in GCP for all instances
-        speed = search(r" @ ([0-9\.]*)GHz$", cpu_model)
-        if speed:
-            server["cpu_speed"] = speed.group(1)
-        # manufacturer data might be more likely to present in lscpu (unstructured)
-        for manufacturer in ["Intel", "AMD"]:
-            if manufacturer in cpu_model:
-                server["cpu_manufacturer"] = manufacturer
-        for family in ["Xeon", "EPYC"]:
-            if family in cpu_model:
-                server["cpu_family"] = family
-        model = _standardize_cpu_model(cpu_model)
-        if model:
-            server["cpu_model"] = model
-
-    # 2 Ghz CPU speed at Google is a lie
-    if server["vendor_id"] == "gcp" and server.get("cpu_speed") == 2:
-        server["cpu_speed"] = None
 
     # standardize GPU model
     if server.get("gpu_model"):

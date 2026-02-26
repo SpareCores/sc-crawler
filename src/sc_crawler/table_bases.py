@@ -1,14 +1,14 @@
 """Tiny helper classes for the most commonly used fields to be inherited by [sc_crawler.tables][]."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from hashlib import sha1
 from json import dumps
 from typing import List, Optional, Union
 
-from pydantic import ConfigDict, model_validator
+from pydantic import ConfigDict, field_validator, model_validator
 from rich.progress import Progress
 from sqlalchemy.inspection import inspect
-from sqlalchemy.orm import declared_attr
+from sqlalchemy.orm import declared_attr, reconstructor
 from sqlmodel import JSON, Field, Session, SQLModel, select
 
 from .str_utils import snake_case
@@ -212,8 +212,8 @@ class MetaColumns(ScModel):
         description="Status of the resource (active or inactive).",
     )
     observed_at: datetime = Field(
-        default_factory=datetime.utcnow,
-        sa_column_kwargs={"onupdate": datetime.utcnow},
+        default_factory=lambda: datetime.now(UTC),
+        sa_column_kwargs={"onupdate": lambda: datetime.now(UTC)},
         description="Timestamp of the last observation.",
     )
 
@@ -271,7 +271,7 @@ class HasApiReference(ScModel):
         description=(
             "How this resource is referenced in the vendor API calls. "
             "This is usually either the id or name of the resource, "
-            "depening on the vendor and actual API endpoint."
+            "depending on the vendor and actual API endpoint."
         )
     )
 
@@ -339,6 +339,25 @@ class HasPriceFieldsBase(ScModel):
     )
     currency: str = Field(default="USD", description="Currency of the prices.")
 
+    @field_validator("price_tiered", mode="before")
+    @classmethod
+    def _deserialize_price_tiers(cls, value):
+        """Deserialize price_tiered field, converting dicts to PriceTier instances."""
+        if value is None:
+            return []
+        return [PriceTier(**item) if isinstance(item, dict) else item for item in value]
+
+    @reconstructor
+    def _reconstruct_price_tiers(self):
+        """Ensure price_tiered is always a list of PriceTier instances after loading from the database."""
+        if self.price_tiered is None:
+            self.price_tiered = []
+        else:
+            self.price_tiered = [
+                PriceTier(**item) if isinstance(item, dict) else item
+                for item in self.price_tiered
+            ]
+
 
 class HasPriceFields(MetaColumns, HasPriceFieldsBase):
     pass
@@ -362,7 +381,7 @@ class ComplianceFrameworkFields(ScModel):
     )
     description: Optional[str] = Field(
         description=(
-            "Description of the framework in a few paragrahs, "
+            "Description of the framework in a few paragraphs, "
             "outlining key features and characteristics for reference."
         )
     )
@@ -411,7 +430,11 @@ class VendorFields(HasName, HasVendorIdPK):
     )
 
     # https://dbpedia.org/ontology/Organisation
-    founding_year: int = Field(description="4-digit year when the Vendor was founded.")
+    founding_year: int = Field(
+        description=(
+            "4-digit year when the public cloud service of the Vendor was launched."
+        )
+    )
 
     status_page: Optional[str] = Field(
         default=None,
@@ -608,7 +631,7 @@ class ServerFields(
         default=None,
         description="If the DDR SDRAM uses error correction code to detect and correct n-bit data corruption.",
     )
-    gpu_count: int = Field(
+    gpu_count: float = Field(
         default=0,
         description="Number of GPU accelerator(s).",
     )
@@ -672,6 +695,55 @@ class ServerFields(
         default=0, description="Number of complimentary IPv4 address(es)."
     )
 
+    @field_validator("cpus", mode="before")
+    @classmethod
+    def _deserialize_cpus(cls, value):
+        """Deserialize cpus field, converting dicts to Cpu instances."""
+        if value is None:
+            return []
+        return [Cpu(**item) if isinstance(item, dict) else item for item in value]
+
+    @field_validator("gpus", mode="before")
+    @classmethod
+    def _deserialize_gpus(cls, value):
+        """Deserialize gpus field, converting dicts to Gpu instances."""
+        if value is None:
+            return []
+        return [Gpu(**item) if isinstance(item, dict) else item for item in value]
+
+    @field_validator("storages", mode="before")
+    @classmethod
+    def _deserialize_storages(cls, value):
+        """Deserialize storages field, converting dicts to Disk instances."""
+        if value is None:
+            return []
+        return [Disk(**item) if isinstance(item, dict) else item for item in value]
+
+    @reconstructor
+    def _reconstruct_json_fields(self):
+        """Ensure cpus, gpus and storages are always a list of Cpu, Gpu and Disk instances after loading from the database."""
+        if self.cpus is None:
+            self.cpus = []
+        else:
+            self.cpus = [
+                Cpu(**item) if isinstance(item, dict) else item for item in self.cpus
+            ]
+
+        if self.gpus is None:
+            self.gpus = []
+        else:
+            self.gpus = [
+                Gpu(**item) if isinstance(item, dict) else item for item in self.gpus
+            ]
+
+        if self.storages is None:
+            self.storages = []
+        else:
+            self.storages = [
+                Disk(**item) if isinstance(item, dict) else item
+                for item in self.storages
+            ]
+
 
 class ServerBase(MetaColumns, ServerFields):
     pass
@@ -727,7 +799,7 @@ class BenchmarkFields(HasDescription, HasName, HasBenchmarkIdPK):
     )
     measurement: Optional[str] = Field(
         default=None,
-        description="The name of measurement recoreded in the benchmark.",
+        description="The name of measurement recorded in the benchmark.",
     )
     unit: Optional[str] = Field(
         default=None,

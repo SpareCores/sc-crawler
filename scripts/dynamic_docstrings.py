@@ -8,7 +8,7 @@ logger = get_logger(__name__)
 
 # https://mkdocstrings.github.io/griffe/extensions/#full-example
 class DynamicDocstrings(Extension):
-    def on_instance(self, node: ast.AST | ObjectNode, obj: Object) -> None:
+    def on_instance(self, node: ast.AST | ObjectNode, obj: Object, **kwargs) -> None:
         if isinstance(node, ObjectNode):
             return  # skip runtime objects, their docstrings are already right
 

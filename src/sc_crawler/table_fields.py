@@ -2,9 +2,9 @@
 
 from enum import Enum
 from json import dumps
-from typing import Any, List, Optional, Union
+from typing import Any, List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_serializer, field_validator
 from sqlalchemy.types import TypeDecorator
 from sqlmodel import JSON
 
@@ -204,15 +204,30 @@ class PriceUnit(str, Enum):
 class PriceTier(Json):
     """Price tier definition.
 
-    As standard JSON does not support Inf, NaN etc values,
-    those should be passed as string, e.g. for the upper bound.
+    Infinite bounds (e.g. for an open-ended upper tier) are stored as
+    `float("inf")` in Python and automatically serialized to the
+    JSON-safe string `"Infinity"` on export. Both representations are
+    accepted as input: the model validator converts `"Infinity"` back
+    to `float("inf")` when loading from JSON."""
 
-    See [float_inf_to_str][sc_crawler.utils.float_inf_to_str] for
-    converting an infinite numeric value into "Infinity"."""
-
-    lower: Union[float, str]
+    lower: float
     """Lower bound of pricing tier, e.g. 100 GB. Unit is defined in the parent object."""
-    upper: Union[float, str]
+    upper: float
     """Upper bound of pricing tier, e.g. 1 TB. Unit is defined in the parent object."""
     price: float
     """Price in the pricing tier. Currency is defined in the parent object."""
+
+    @field_validator("upper", "lower", mode="before")
+    @classmethod
+    def _deserialize_inf_bounds(cls, value):
+        """Convert string values to float when deserializing from JSON."""
+        if isinstance(value, str):
+            return float(value)
+        return value
+
+    @field_serializer("upper", "lower")
+    def _serialize_inf_bounds(self, value):
+        """Convert float('inf') bounds to 'Infinity' strings when dumping to JSON."""
+        if value == float("inf"):
+            return "Infinity"
+        return value

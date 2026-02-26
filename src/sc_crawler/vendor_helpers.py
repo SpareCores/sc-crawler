@@ -3,7 +3,7 @@ from itertools import chain, repeat
 from typing import Callable, List, Literal, Optional
 
 from .table_fields import Status
-from .tables import Vendor
+from .tables import Region, Vendor
 
 
 def fetch_servers(fn: Callable, where: str, vendor: Optional[Vendor]) -> List[dict]:
@@ -36,7 +36,7 @@ def parallel_fetch_servers(
         vendor: Required [Vendor][sc_crawler.tables.Vendor] instance used for
             the regions lookup, logging and progress bar updates.
         fn: A function to be passed to [fetch_servers][sc_crawler.vendor_helpers.fetch_servers].
-        id_cols: Field name to be used to deduplicate the list of server dicts.
+        id_col: Field name to be used to deduplicate the list of server dicts.
         by: What objects of the `vendor` to iterate on.
     """
 
@@ -89,3 +89,23 @@ def add_vendor_id(obj: dict, vendor: Vendor) -> dict:
     """Adds `vendor_id` field to a dict."""
     obj["vendor_id"] = vendor.vendor_id
     return obj
+
+
+def get_region_by_id(region_id: str, vendor: Vendor) -> Optional[Region]:
+    """Get a [region][sc_crawler.tables.Region] by its ID or alias.
+
+    Args:
+        region_id: The ID or alias of the region to get.
+        vendor: The [vendor][sc_crawler.tables.Vendor] to get the region from.
+
+    Returns:
+        The [region][sc_crawler.tables.Region] if found, otherwise None.
+    """
+    return next(
+        (
+            region
+            for region in vendor.regions
+            if (region_id in [region.api_reference, *region.aliases])
+        ),
+        None,
+    )

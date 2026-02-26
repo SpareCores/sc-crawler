@@ -1,3 +1,64 @@
+## v0.3.5 (Feb 26, 2026)
+
+Fix(es):
+
+- Add support for Azure Denmark East region (Copenhagen).
+- Fix SCD table schema generation in CLI `create` command.
+- Replace deprecated `datetime.utcnow()` calls with `datetime.now(UTC)`.
+- Add field deserializers and reconstructors to `cpus`, `gpus`, `storages`, and `price_tiered` columns to prevent
+  Pydantic serialization
+  warnings and to preserve the original data types when loading from the database.
+- Fix and extend test cases for field serializers and OVH vendor module.
+- Add Provisioned IOPS (io1, io2) storage types and update gp3 volume limits (IOPS, throughput, size) for AWS.
+- Fix `DynamicDocstrings` griffe extension to accept the new `agent` keyword argument introduced in griffe 0.49.0.
+- Pin `mkdocs<2.0` as MkDocs 2.0 is incompatible with Material for MkDocs.
+- Fix `mkdocs` build warnings and version incompatibilities.
+
+New feature(s):
+
+- Record the monthly cap for ondemand prices.
+
+‼ Breaking changes:
+
+- Minimum required Python version upgraded from 3.9 to 3.11.
+
+## v0.3.4 (Feb 05, 2026)
+
+Fix(es):
+
+- Add storage infos from lshw outputs to GCP servers.
+- Check region availability for Alibaba Cloud servers before adding their prices.
+- Determine CPU allocation type for Alibaba Cloud servers.
+- Preserve vendor API data by default, only overriding when necessary for known API data issues.
+- Verify Alibaba Cloud instance type retirement status.
+- Prevent duplicate records from being inserted into the database.
+
+New feature(s):
+
+- CLI tool to dump database tables to JSON files.
+- Implement Alibaba Cloud's spot instance price sampling.
+- Support for fractional GPU counts in server instances with partial GPU allocation.
+
+Housekeeping:
+
+- Delay method validation to avoid CLI startup slowdown.
+- Avoid name conflict in vendor modules via private modules.
+- Convert all prices to float and round to 4 digits.
+- Change gpu_count field type from integer to float for fractional GPU support.
+- Remove foreign key constraints from SCD table definitions.
+- Reset Alembic revision history and rewrite initial migration script.
+
+## v0.3.3 (Jan 02, 2026)
+
+New vendor(s):
+
+- Alibaba Cloud
+
+Fix(es):
+
+- Don't include instruction cache in L1 cache size.
+- Manufacturer of Ampere Altra.
+
 ## v0.3.2 (Dec 04, 2025)
 
 New vendor(s):

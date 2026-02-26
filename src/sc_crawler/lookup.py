@@ -34,11 +34,13 @@ country_continent_mapping = {
     "NL": "Europe",
     "NO": "Europe",
     "NZ": "Oceania",
+    "PH": "Asia",
     "PL": "Europe",
     "QA": "Asia",
     "SA": "Asia",
     "SE": "Europe",
     "SG": "Asia",
+    "TH": "Asia",
     "TW": "Asia",
     "US": "North America",
     "ZA": "Africa",
@@ -75,13 +77,6 @@ compliance_frameworks: dict = {
         description="ISO 27001 is standard for information security management systems.",  # noqa: E501
         homepage="https://www.iso.org/standard/27001",  # noqa: E501
     ),
-    # TODO add more e.g.
-    # soc2t1
-    # iso27701
-    # gdpr
-    # pci
-    # ccpa
-    # csa
 }
 """Dictionary of [sc_crawler.tables.ComplianceFramework][] instances keyed by the `compliance_framework_id`."""
 

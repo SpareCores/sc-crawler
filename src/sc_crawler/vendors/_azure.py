@@ -7,7 +7,8 @@ from typing import List, Optional
 from azure.core.exceptions import HttpResponseError
 from azure.identity import DefaultAzureCredential
 from azure.mgmt.compute import ComputeManagementClient
-from azure.mgmt.resource import ResourceManagementClient, SubscriptionClient
+from azure.mgmt.resource import ResourceManagementClient
+from azure.mgmt.resource.subscriptions import SubscriptionClient
 from cachier import cachier
 from requests import Session as request_session
 
@@ -23,7 +24,7 @@ from ..table_fields import (
     TrafficDirection,
 )
 from ..tables import Vendor
-from ..utils import list_search, scmodels_to_dict
+from ..utils import convert_gb_to_mib, list_search, scmodels_to_dict
 from ..vendor_helpers import preprocess_servers
 
 credential = DefaultAzureCredential()
@@ -181,13 +182,20 @@ STORAGE_METER_MAPPING = {
 def _parse_server_name(name):
     """Extract information from the server name/size.
 
-    Based on <https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/overview>."""
+    References:
 
+    - <https://learn.microsoft.com/en-us/azure/virtual-machines/vm-naming-conventions>
+    - <https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/overview>
+    """
+
+    # NOTE this is a best effort to fill in the database with initial data until inspector runs
+    # and it comes with already known undocumented bugs, such as E64-16s_v3 reporting 64 vCPUs instead of 16
     name_pattern = recompile(
         # there is a constant prefix (Standard_), and there used to be Basic_
         # servers as well, but the latter were deprecated in Aug 2024
         r"((?P<prefix>[A-Za-z]+)_)"
         # first ALLCAPS chars are the family name (we don't care about the subfamily for now)
+        # TODO recently some server (sub)families include digits as well, e.g. E16 or M128
         r"(?P<family>[A-Z]+)"
         r"(?P<vcpus>[0-9]+)"
         r"(-(?P<constrained_vcpus>\d+))?"
@@ -213,21 +221,39 @@ def _parse_server_name(name):
     # s = Premium Storage capable, including possible use of Ultra SSD
     features = [char for char in data["features"]] if data["features"] else []
 
+    spacers_list = (data.get("spacers") or "").split("_")
+
     accelerators = any(
-        [
-            s in ["A100", "H100", "MI300X", "V620", "A10"]
-            for s in (data.get("spacers") or "").split("_")
-        ]
+        [s in ["A100", "H100", "MI300X", "V620", "A10"] for s in spacers_list]
     )
 
     family = data["family"]
     vcpus = int(data["vcpus"])
     # accelerators are not always mentioned in the old server names, so we need a manual mapping
-    # which will be overwritten by the GPU count from HW inspection if we can start the node
     gpus = 0
+    gpu_model = None
+    gpu_memory = None
     if family in ["NC", "ND", "NG", "NV"]:
+        if "T4" in spacers_list:
+            gpu_model = "T4"
+            gpu_memory = convert_gb_to_mib(16)
+        elif "A10" in spacers_list:
+            gpu_model = "A10"
+            gpu_memory = convert_gb_to_mib(24)
+        elif "M60" in spacers_list:
+            gpu_model = "M60"
+            gpu_memory = convert_gb_to_mib(8)
+        # V620 has 32 GB of GPU memory, info from this page:
+        # https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/ngadsv620-series?tabs=sizeaccelerators
+        elif "V620" in spacers_list:
+            gpu_model = "V620"
+            gpu_memory = convert_gb_to_mib(32)
+        # V710 has 24 GB of GPU memory, info from this page:
+        # https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nvadsv710-v5-series?tabs=sizeaccelerators
+        elif "V710" in spacers_list:
+            gpu_model = "V710"
+            gpu_memory = convert_gb_to_mib(24)
         # default to one, list all the exceptions below
-        # note that some servers come with a fraction of a GPU, but we need int
         gpus = 1
         if family == "NC":
             if vcpus == 24:
@@ -235,10 +261,12 @@ def _parse_server_name(name):
                 # but Standard_NC24(r) has 4x Tesla K80
                 if not accelerators:
                     gpus = 4
-            if vcpus in [12, 80]:
+            if vcpus in [12, 48, 80]:
                 # Standard_NC48ads_A100_v4
+                # Standard_NC80adis_H100_v5
                 gpus = 2
             if vcpus in [64, 96]:
+                # Standard_NC64as_T4_v3
                 # Standard_NC96ads_A100_v4
                 gpus = 4
         if family == "ND":
@@ -246,18 +274,64 @@ def _parse_server_name(name):
                 gpus = 2
             if vcpus in [24]:
                 gpus = 4
-            if vcpus in [40, 96]:
+            if vcpus in [40]:
+                # Standard_ND40rs_v2
+                gpu_model = "V100"
+                gpus = 8
+                gpu_memory = convert_gb_to_mib(32)
+            if vcpus in [96]:
                 gpus = 8
         if family == "NG":
-            # all NG servers has 1 or just a fraction of a GPU
-            pass
+            if vcpus in [8]:
+                # Standard_NG8ads_V620_v1
+                if gpu_model == "V620":
+                    gpus = 1 / 4
+            if vcpus in [16]:
+                # Standard_NG16ads_V620_v1
+                if gpu_model == "V620":
+                    gpus = 1 / 2
         if family == "NV":
+            # all NV servers without gpu_model have different base GPU memory sizes depending on the version
+            # so we only set fractional gpu_count for now
+            if vcpus in [4]:
+                # Standard_NV4as_v4
+                gpus = 1 / 8
+                # Standard_NV4ads_V710_v5
+                if gpu_model == "V710":
+                    gpus = 1 / 6
+            if vcpus in [6]:
+                # Standard_NV6s_v2
+                gpus = 1 / 2
+                # Standard_NV6ads_A10_v5
+                if gpu_model == "A10":
+                    gpus = 1 / 6
+            if vcpus in [8]:
+                # Standard_NV8as_v4
+                gpus = 1 / 4
+                # Standard_NV8ads_V710_v5
+                if gpu_model == "V710":
+                    gpus = 1 / 3
+            if vcpus in [12]:
+                # Standard_NV12ads_A10_v5
+                if gpu_model == "A10":
+                    gpus = 1 / 3
+                if gpu_model == "V710":
+                    gpus = 1 / 2
+            if vcpus in [16]:
+                # Standard_NV16as_v4
+                gpus = 1 / 2
+            if vcpus in [18]:
+                # Standard_NV18ads_A10_v5
+                if gpu_model == "A10":
+                    gpus = 1 / 2
             if vcpus in [24, 72]:
                 gpus = 2
+                if gpu_model == "V710":
+                    gpus = 1
             if vcpus in [48]:
                 gpus = 4
 
-    return (family, features, gpus)
+    return (family, features, gpus, gpu_model, gpu_memory)
 
 
 def _standardize_server(server: dict, vendor) -> dict:
@@ -304,7 +378,7 @@ def _standardize_server(server: dict, vendor) -> dict:
     #         {'type': 'Zone', 'values': ['WestUS3'], 'restriction_info': {'locations': ['WestUS3'], 'zones': ['1', '2', '3']}, 'reason_code': 'NotAvailableForSubscription'}
     #     ]
     # }
-    family, features, gpus = _parse_server_name(server["name"])
+    family, features, gpus, gpu_model, gpu_memory = _parse_server_name(server["name"])
     # override family from SKU listing
     family = server["family"].removeprefix("standard").removesuffix("Family")
 
@@ -352,7 +426,7 @@ def _standardize_server(server: dict, vendor) -> dict:
         "api_reference": server["name"],
         "display_name": server["name"].removeprefix("Standard_"),
         "family": family,
-        "vcpus": int(capability("vCPUs")),
+        "vcpus": int(capability("vCPUsAvailable")),
         "hypervisor": "Microsoft Hyper-V",
         "cpu_allocation": (
             CpuAllocation.BURSTABLE
@@ -363,7 +437,16 @@ def _standardize_server(server: dict, vendor) -> dict:
             CpuArchitecture.ARM64 if architecture == "arm64" else CpuArchitecture.X86_64
         ),
         "memory_amount": float(capability("MemoryGB")) * 1024,  # MiB
-        "gpu_count": gpus,
+        "gpu_count": round(gpus, 4),
+        "gpu_model": gpu_model,
+        "gpu_memory_min": (
+            None
+            if not (gpus and gpu_memory)
+            else int(gpu_memory * gpus)
+            if gpus <= 1
+            else int(gpu_memory)
+        ),
+        "gpu_memory_total": int(gpu_memory * gpus) if gpus and gpu_memory else None,
         "storage_size": round(sum([s.size for s in storages])),  # int GB
         "storages": storages,
         "inbound_traffic": 0,
@@ -430,7 +513,7 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
                     "operating_system": "Linux",
                     "allocation": allocation,
                     "unit": PriceUnit.HOUR,
-                    "price": retail_price["retailPrice"],
+                    "price": float(retail_price["retailPrice"]),
                     "price_upfront": 0,
                     "price_tiered": [],
                     "currency": retail_price["currencyCode"],
@@ -730,6 +813,13 @@ def inventory_regions(vendor):
             "green_energy": False,
         },
         # Europe
+        "denmarkeast": {
+            "country_id": "DK",
+            "city": "Copenhagen",
+            "founding_year": 2026,
+            # https://news.microsoft.com/source/emea/features/accelerating-europes-digital-future-microsoft-announces-plans-for-a-new-datacenter-region-in-west-denmark
+            "green_energy": True,
+        },
         "francecentral": {
             "country_id": "FR",
             "city": "Paris",
@@ -885,7 +975,9 @@ def inventory_regions(vendor):
 
     items = []
     for region in _regions():
-        if region["metadata"]["region_type"] != "Physical":
+        # TODO drop this once the metadata field doesn't show up randomly anymore
+        # as the non-metadata responses do not seem to have these logical regions anymore
+        if region.get("metadata", {}).get("region_type", "Physical") != "Physical":
             continue
         # no idea what are these
         if region["name"].endswith("stg"):
@@ -915,8 +1007,15 @@ def inventory_regions(vendor):
                 "city": manual_data.get("city"),
                 "address_line": None,
                 "zip_code": None,
-                "lat": region["metadata"]["latitude"],
-                "lon": region["metadata"]["longitude"],
+                # sometimes the API passes "metadata" and the lat/long nested, sometimes it's not
+                # TODO revisit after a few days passed since this change:
+                # https://github.com/Azure/azure-sdk-for-python/blob/azure-mgmt-resource_25.0.0/sdk/resources/azure-mgmt-resource/CHANGELOG.md#2500-2026-02-04
+                "lat": region.get("metadata", {}).get(
+                    "latitude", region.get("latitude")
+                ),
+                "lon": region.get("metadata", {}).get(
+                    "longitude", region.get("longitude")
+                ),
                 "founding_year": manual_data.get("founding_year"),
                 "green_energy": manual_data.get("green_energy"),
             }
@@ -989,7 +1088,7 @@ def inventory_server_prices(vendor):
 def inventory_server_prices_spot(vendor):
     """List all known server spot prices in all regions using the Azure Retail Pricing API.
 
-    See details at [inventory_server_prices][sc_crawler.vendors.azure.inventory_server_prices].
+    See details at [inventory_server_prices][sc_crawler.vendors._azure.inventory_server_prices].
     """
     return _inventory_server_prices(vendor, Allocation.SPOT)
 
@@ -1132,7 +1231,7 @@ def inventory_traffic_prices(vendor):
                     {
                         "vendor_id": vendor.vendor_id,
                         "region_id": region.region_id,
-                        "price": max([t["price"] for t in tiers]),
+                        "price": max([float(t["price"]) for t in tiers]),
                         "price_tiered": tiers,
                         "currency": prices[0].get("currencyCode", "USD"),
                         "unit": PriceUnit.GB_MONTH,
@@ -1171,7 +1270,7 @@ def inventory_ipv4_prices(vendor):
                 {
                     "vendor_id": vendor.vendor_id,
                     "region_id": region.region_id,
-                    "price": price["retailPrice"],
+                    "price": float(price["retailPrice"]),
                     "currency": price.get("currencyCode", "USD"),
                     "unit": PriceUnit.HOUR,
                 }

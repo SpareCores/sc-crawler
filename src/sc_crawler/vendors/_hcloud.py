@@ -59,11 +59,11 @@ def _server_cpu(server_name):
         # could be either Intel or AMD
         return (None, None, None)
     if server_name.upper() in ["CPX11", "CPX21", "CPX31", "CPX41", "CPX51"]:
-        return ("AMD", "EPYC 7002", None)
+        return ("AMD", "EPYC", None)
     if server_name.upper() in ["CPX12", "CPX22", "CPX32", "CPX42", "CPX52", "CPX62"]:
         return ("AMD", None, None)
     if server_name.upper() in ["CAX11", "CAX21", "CAX31", "CAX41"]:
-        return ("AMD", "Ampere Altra", None)
+        return ("Ampere", "Ampere Altra", None)
     if server_name.upper() in ["CCX13", "CCX23", "CCX33", "CCX43", "CCX53", "CCX63"]:
         return ("AMD", None, None)
     raise ValueError("Unknown Hetzner Cloud server name: " + server_name)
@@ -246,6 +246,12 @@ def inventory_server_prices(vendor):
     for server in _client().server_types.get_all():
         for location in server.prices:
             region_id = regions[location["location"]].region_id
+            hourly_price = float(location["price_hourly"]["net"])
+            # Hetzner provides separate hourly and monthly prices,
+            # so to describe the monthly cap with tiered hourly pricing,
+            # we need to proxy the number of discounted hours in a month
+            # (rounding to full hours is a good-enough approximation)
+            monthly_cap = int(float(location["price_monthly"]["net"]) / hourly_price)
             items.append(
                 {
                     "vendor_id": vendor.vendor_id,
@@ -256,9 +262,12 @@ def inventory_server_prices(vendor):
                     "operating_system": "Linux",
                     "allocation": Allocation.ONDEMAND,
                     "unit": PriceUnit.HOUR,
-                    "price": float(location["price_hourly"]["net"]),
+                    "price": hourly_price,
                     "price_upfront": 0,
-                    "price_tiered": [],
+                    "price_tiered": [
+                        {"lower": 0, "upper": monthly_cap, "price": hourly_price},
+                        {"lower": monthly_cap + 1, "upper": "Infinity", "price": 0},
+                    ],
                     "currency": "EUR",
                 }
             )
@@ -337,7 +346,7 @@ def inventory_traffic_prices(vendor):
             {
                 "vendor_id": vendor.vendor_id,
                 "region_id": region.region_id,
-                "price": round(1 / 1024, 8),
+                "price": 1 / 1024,
                 "price_tiered": [],
                 "currency": "EUR",
                 "unit": PriceUnit.GB_MONTH,

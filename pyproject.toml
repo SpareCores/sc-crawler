@@ -4,12 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sparecores-crawler"
-version = "0.3.2"
-requires-python = ">= 3.9"
+version = "0.3.5"
+requires-python = ">= 3.11"
 dependencies = [
   "alembic",
   "cachier>=3.1.1",
-  "pydantic==2.9.2",  # https://github.com/pydantic/pydantic/issues/10905
+  "pydantic==2.9.2", # https://github.com/pydantic/pydantic/issues/10905
   "pydantic_extra_types",
   "PyYAML",
   "requests",
@@ -18,11 +18,11 @@ dependencies = [
   "typer",
 ]
 authors = [
-  { name="Gergely Daroczi" },
-  { name="Attila Nagy" },
+  { name = "Gergely Daroczi" },
+  { name = "Attila Nagy" },
 ]
 maintainers = [
-  { name="Spare Cores team", email="pkg@sparecores.com" }
+  { name = "Spare Cores team", email = "pkg@sparecores.com" }
 ]
 description = "Collect and standardize data on cloud server offerings, include specs, prices, and measured performance benchmarks."
 readme = "README.md"
@@ -43,20 +43,22 @@ homepage = "https://sparecores.com"
 [project.optional-dependencies]
 mkdocs = [
   "markdown",
-  "mkdocs",
+  "mkdocs<2.0", # MkDocs 2.0 is incompatible with mkdocs-material
   "mkdocs-material[imaging]", "mkdocs-material-extensions",
   "mkdocs-autorefs", "mkdocs-gen-files", "mkdocs-literate-nav", "mkdocs-section-index",
-  "mkdocstrings[python]>=0.18",
-  "griffe==0.49.0", # TODO breaking changes in v1.0.0
+  "mkdocstrings[python]>=0.29",
+  "griffe",
   "griffe-inherited-docstrings",
+  #  "zensical"  # TODO: switch to zensical once it fully replaces mkdocs+mkdocs-material
 ]
 testing = ["pytest", "sparecores-crawler[mkdocs]"]
 aws = ["boto3"]
 hcloud = ["hcloud"]
 gcp = ["google-cloud", "google-cloud-compute", "google-cloud-billing"]
-azure = ["azure-identity", "azure-mgmt-resource", "azure-mgmt-compute"]
+azure = ["azure-identity", "azure-mgmt-resource", "azure-mgmt-resource-subscriptions", "azure-mgmt-compute"]
 upcloud = ["upcloud-api"]
 ovh = ["ovh"]
+alicloud = ["alibabacloud-ecs20140526", "alibabacloud-bssopenapi20171214"]
 vendors = [
   "sparecores-crawler[aws]",
   "sparecores-crawler[hcloud]",
@@ -64,6 +66,7 @@ vendors = [
   "sparecores-crawler[azure]",
   "sparecores-crawler[upcloud]",
   "sparecores-crawler[ovh]",
+  "sparecores-crawler[alicloud]",
 ]
 all = ["sparecores-crawler[testing]", "sparecores-crawler[vendors]"]
 
@@ -79,32 +82,32 @@ where = ["src"]
 [tool.ruff]
 # Exclude a variety of commonly ignored directories.
 exclude = [
-    ".bzr",
-    ".direnv",
-    ".eggs",
-    ".git",
-    ".git-rewrite",
-    ".hg",
-    ".ipynb_checkpoints",
-    ".mypy_cache",
-    ".nox",
-    ".pants.d",
-    ".pyenv",
-    ".pytest_cache",
-    ".pytype",
-    ".ruff_cache",
-    ".svn",
-    ".tox",
-    ".venv",
-    ".vscode",
-    "__pypackages__",
-    "_build",
-    "buck-out",
-    "build",
-    "dist",
-    "node_modules",
-    "site-packages",
-    "venv",
+  ".bzr",
+  ".direnv",
+  ".eggs",
+  ".git",
+  ".git-rewrite",
+  ".hg",
+  ".ipynb_checkpoints",
+  ".mypy_cache",
+  ".nox",
+  ".pants.d",
+  ".pyenv",
+  ".pytest_cache",
+  ".pytype",
+  ".ruff_cache",
+  ".svn",
+  ".tox",
+  ".venv",
+  ".vscode",
+  "__pypackages__",
+  "_build",
+  "buck-out",
+  "build",
+  "dist",
+  "node_modules",
+  "site-packages",
+  "venv",
 ]
 
 # Same as Black.

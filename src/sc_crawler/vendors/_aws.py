@@ -12,6 +12,7 @@ import boto3
 from botocore.exceptions import ClientError
 from cachier import cachier, set_global_params
 
+from ..inspector import _standardize_gpu_count
 from ..logger import logger
 from ..lookup import map_compliance_frameworks_to_vendor
 from ..str_utils import extract_last_number
@@ -277,6 +278,8 @@ def _get_gpu_of_instance_type(instance_type):
     # most common
     manufacturer = mode([gpu["Manufacturer"] for gpu in info["Gpus"]])
     model = mode([gpu["Name"] for gpu in info["Gpus"]])
+    if not count:
+        count = _standardize_gpu_count(model, count, memory_total)
     return (count, memory_min, memory_total, manufacturer, model)
 
 
@@ -430,7 +433,7 @@ def inventory_regions(vendor):
     Some data sources are not available from APIs, and were collected manually:
 
     - launch date: <https://aws.amazon.com/about-aws/global-infrastructure/regions_az/>,
-    - energy source: <https://sustainability.aboutamazon.com/products-services/the-cloud?energyType=true#renewable-energy>,
+    - energy source: <https://sustainability.aboutamazon.com/products-services/the-cloud?energyType=true#renewable-energy> and <https://www.aboutamazon.com/news/sustainability/amazon-renewable-energy-goal>,
     - lon/lat coordinates: <https://gist.github.com/martinheidegger/88950cb51ee5bdeafd51bc55287b1092> and approximation based on the city when no more accurate data was available.
     """  # noqa: E501
     regions = [
@@ -441,7 +444,6 @@ def inventory_regions(vendor):
             "country_id": "ZA",
             "city": "Cape Town",
             "founding_year": 2020,
-            "green_energy": False,
             "lat": -33.914651,
             "lon": 18.3758801,
         },
@@ -452,9 +454,19 @@ def inventory_regions(vendor):
             "country_id": "HK",
             "city": "Hong Kong",
             "founding_year": 2019,
-            "green_energy": False,
             "lat": 22.2908475,
             "lon": 114.2723379,
+        },
+        {
+            "region_id": "ap-east-2",
+            "name": "Asia Pacific (Taipei)",
+            "vendor_id": vendor.vendor_id,
+            "country_id": "TW",
+            "city": "Taipei",
+            "founding_year": 2025,
+            # approximation based on city
+            "lat": 25.037518,
+            "lon": 121.563667,
         },
         {
             "region_id": "ap-northeast-1",
@@ -463,7 +475,6 @@ def inventory_regions(vendor):
             "country_id": "JP",
             "city": "Tokyo",
             "founding_year": 2011,
-            "green_energy": False,
             "lat": 35.617436,
             "lon": 139.7459176,
         },
@@ -474,7 +485,6 @@ def inventory_regions(vendor):
             "country_id": "KR",
             "city": "Seoul",
             "founding_year": 2016,
-            "green_energy": False,
             "lat": 37.5616592,
             "lon": 126.8736237,
         },
@@ -485,7 +495,6 @@ def inventory_regions(vendor):
             "country_id": "JP",
             "city": "Osaka",
             "founding_year": 2021,
-            "green_energy": False,
             "lat": 34.693889,
             "lon": 135.502222,
         },
@@ -496,7 +505,6 @@ def inventory_regions(vendor):
             "country_id": "IN",
             "city": "Mumbai",
             "founding_year": 2016,
-            "green_energy": True,
             "lat": 19.2425503,
             "lon": 72.9667878,
         },
@@ -507,7 +515,6 @@ def inventory_regions(vendor):
             "country_id": "IN",
             "city": "Hyderabad",
             "founding_year": 2022,
-            "green_energy": True,
             # approximation based on city location
             "lat": 17.412281,
             "lon": 78.243237,
@@ -519,7 +526,6 @@ def inventory_regions(vendor):
             "country_id": "SG",
             "city": "Singapore",
             "founding_year": 2010,
-            "green_energy": False,
             "lat": 1.3218269,
             "lon": 103.6930643,
         },
@@ -530,7 +536,6 @@ def inventory_regions(vendor):
             "country_id": "AU",
             "city": "Sydney",
             "founding_year": 2012,
-            "green_energy": False,
             "lat": -33.9117717,
             "lon": 151.1907535,
         },
@@ -541,7 +546,6 @@ def inventory_regions(vendor):
             "country_id": "ID",
             "city": "Jakarta",
             "founding_year": 2021,
-            "green_energy": False,
             "lat": -6.2,
             "lon": 106.816667,
         },
@@ -552,10 +556,39 @@ def inventory_regions(vendor):
             "country_id": "AU",
             "city": "Melbourne",
             "founding_year": 2023,
-            "green_energy": False,
             # approximation based on city location
             "lat": -37.8038607,
             "lon": 144.7119569,
+        },
+        {
+            "region_id": "ap-southeast-5",
+            "name": "Asia Pacific (Malaysia)",
+            "vendor_id": vendor.vendor_id,
+            "country_id": "MY",
+            "founding_year": 2024,
+            # approximation based on country
+            "lat": 4.1230237,
+            "lon": 104.3228082,
+        },
+        {
+            "region_id": "ap-southeast-6",
+            "name": "Asia Pacific (New Zealand)",
+            "vendor_id": vendor.vendor_id,
+            "country_id": "NZ",
+            "founding_year": 2025,
+            # approximation based on country
+            "lat": -40.900775,
+            "lon": 174.802185,
+        },
+        {
+            "region_id": "ap-southeast-7",
+            "name": "Asia Pacific (Thailand)",
+            "vendor_id": vendor.vendor_id,
+            "country_id": "TH",
+            "founding_year": 2022,
+            # approximation based on country
+            "lat": 15.870032,
+            "lon": 100.992538,
         },
         {
             "region_id": "ca-central-1",
@@ -564,7 +597,6 @@ def inventory_regions(vendor):
             "country_id": "CA",
             "city": "Quebec",  # NOTE needs city name
             "founding_year": 2016,
-            "green_energy": True,
             "lat": 45.5,
             "lon": -73.6,
         },
@@ -575,7 +607,6 @@ def inventory_regions(vendor):
             "country_id": "CA",
             "city": "Calgary",
             "founding_year": 2023,
-            "green_energy": False,
             # approximation based on city location
             "lat": 51.046574,
             "lon": -114.129024,
@@ -587,7 +618,6 @@ def inventory_regions(vendor):
             "country_id": "CN",
             "city": "Beijing",
             "founding_year": 2016,
-            "green_energy": True,
             "lat": 39.8094478,
             "lon": 116.5783234,
         },
@@ -598,7 +628,6 @@ def inventory_regions(vendor):
             "country_id": "CN",
             "city": "Ningxia",  # NOTE needs city name
             "founding_year": 2017,
-            "green_energy": True,
             "lat": 37.5024418,
             "lon": 105.1627193,
         },
@@ -610,7 +639,6 @@ def inventory_regions(vendor):
             "country_id": "DE",
             "city": "Frankfurt",
             "founding_year": 2014,
-            "green_energy": True,
             "lat": 50.0992094,
             "lon": 8.6303932,
         },
@@ -621,7 +649,6 @@ def inventory_regions(vendor):
             "country_id": "CH",
             "city": "Zurich",
             "founding_year": 2022,
-            "green_energy": True,
             # approximation based on city location
             "lat": 47.3862924,
             "lon": 8.4448814,
@@ -634,7 +661,6 @@ def inventory_regions(vendor):
             "country_id": "SE",
             "city": "Stockholm",
             "founding_year": 2018,
-            "green_energy": True,
             "lat": 59.326242,
             "lon": 17.8419717,
         },
@@ -646,7 +672,6 @@ def inventory_regions(vendor):
             "country_id": "IT",
             "city": "Milan",
             "founding_year": 2020,
-            "green_energy": True,
             "lat": 45.4628328,
             "lon": 9.1076927,
         },
@@ -657,7 +682,6 @@ def inventory_regions(vendor):
             "country_id": "ES",
             "city": "Aragón",  # NOTE needs city name
             "founding_year": 2022,
-            "green_energy": True,
             # approximation based on city location
             "lat": 41.7943702,
             "lon": -0.8516735,
@@ -670,7 +694,6 @@ def inventory_regions(vendor):
             "country_id": "IE",
             "city": "Dublin",
             "founding_year": 2007,
-            "green_energy": True,
             "lat": 53.4056545,
             "lon": -6.224503,
         },
@@ -682,7 +705,6 @@ def inventory_regions(vendor):
             "country_id": "GB",
             "city": "London",
             "founding_year": 2016,
-            "green_energy": True,
             "lat": 51.5085036,
             "lon": -0.0609266,
         },
@@ -694,7 +716,6 @@ def inventory_regions(vendor):
             "country_id": "FR",
             "city": "Paris",
             "founding_year": 2017,
-            "green_energy": True,
             "lat": 48.6009709,
             "lon": 2.2976644,
         },
@@ -705,7 +726,6 @@ def inventory_regions(vendor):
             "country_id": "IL",
             "city": "Tel Aviv",
             "founding_year": 2023,
-            "green_energy": False,
             # approximation based on city location
             "lat": 32.0491183,
             "lon": 34.7891105,
@@ -718,7 +738,6 @@ def inventory_regions(vendor):
             # NOTE city and state unknown
             "display_name": "United Arab Emirates",
             "founding_year": 2022,
-            "green_energy": False,
             # approximation based on country
             "lat": 25.0647937,
             "lon": 55.1363688,
@@ -731,9 +750,18 @@ def inventory_regions(vendor):
             # NOTE city and stateunknown
             "display_name": "Bahrain",
             "founding_year": 2019,
-            "green_energy": False,
             "lat": 25.941298,
             "lon": 50.3073907,
+        },
+        {
+            "region_id": "mx-central-1",
+            "name": "Mexico (Central)",
+            "vendor_id": vendor.vendor_id,
+            "country_id": "MX",
+            "founding_year": 2025,
+            # approximation based on country
+            "lat": 20.5896,
+            "lon": -100.3897,
         },
         {
             "region_id": "sa-east-1",
@@ -742,7 +770,6 @@ def inventory_regions(vendor):
             "country_id": "BR",
             "city": "Sao Paulo",
             "founding_year": 2011,
-            "green_energy": False,
             "lat": -23.4925798,
             "lon": -46.8105593,
         },
@@ -754,7 +781,6 @@ def inventory_regions(vendor):
             "state": "Northern Virgina",
             # NOTE city unknown
             "founding_year": 2006,
-            "green_energy": True,
             "lat": 38.9940541,
             "lon": -77.4524237,
         },
@@ -766,7 +792,6 @@ def inventory_regions(vendor):
             "state": "Ohio",
             # NOTE city unknown
             "founding_year": 2016,
-            "green_energy": True,
             "lat": 40.0946354,
             "lon": -82.7541337,
         },
@@ -778,7 +803,6 @@ def inventory_regions(vendor):
             "state": "California",
             # NOTE city unknown
             "founding_year": 2009,
-            "green_energy": True,
             "lat": 37.443680,
             "lon": -122.153664,
         },
@@ -790,7 +814,6 @@ def inventory_regions(vendor):
             "state": "Oregon",
             # NOTE city unknown
             "founding_year": 2011,
-            "green_energy": True,
             "lat": 45.9174667,
             "lon": -119.2684488,
         },
@@ -820,6 +843,11 @@ def inventory_regions(vendor):
             region["status"] = "active"
         else:
             region["status"] = "inactive"
+
+    # all regions are matched with 100% renewable energy
+    # https://www.aboutamazon.com/news/sustainability/amazon-renewable-energy-goal
+    for region in regions:
+        region["green_energy"] = True
 
     return regions
 
@@ -935,7 +963,7 @@ def inventory_server_prices(vendor):
                         # TODO ingest other OSs
                         "operating_system": "Linux",
                         "allocation": Allocation.ONDEMAND,
-                        "price": price[0],
+                        "price": float(price[0]),
                         "currency": price[1],
                         "unit": PriceUnit.HOUR,
                     }
@@ -1025,11 +1053,11 @@ storage_types = [
     "Cold HDD",
     "Throughput Optimized HDD",
     "General Purpose",
-    # current generation with dedicated IOPS (disabled)
-    # # "Provisioned IOPS"
+    # current generation with dedicated IOPS
+    "Provisioned IOPS",
 ]
 
-# https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ebs-volume-types.html
+# https://docs.aws.amazon.com/ebs/latest/userguide/ebs-volume-types.html
 storage_manual_data = {
     "standard": {
         "maxIopsvolume": 200,
@@ -1044,10 +1072,10 @@ storage_manual_data = {
         "maxVolumeSize": 16,
     },
     "gp3": {
-        "maxIopsvolume": 16_000,
-        "maxThroughputvolume": 250,
+        "maxIopsvolume": 80_000,
+        "maxThroughputvolume": 2_000,
         "minVolumeSize": 1 / 1024,
-        "maxVolumeSize": 16,
+        "maxVolumeSize": 64,
     },
     "st1": {
         "maxIopsvolume": 500,
@@ -1060,6 +1088,18 @@ storage_manual_data = {
         "maxThroughputvolume": 250,
         "minVolumeSize": 125 / 1024,
         "maxVolumeSize": 16,
+    },
+    "io1": {
+        "maxIopsvolume": 64_000,
+        "maxThroughputvolume": 1_000,
+        "minVolumeSize": 4 / 1024,
+        "maxVolumeSize": 16,
+    },
+    "io2": {
+        "maxIopsvolume": 256_000,
+        "maxThroughputvolume": 4_000,
+        "minVolumeSize": 4 / 1024,
+        "maxVolumeSize": 64,
     },
 }
 
@@ -1149,7 +1189,7 @@ def inventory_storage_prices(vendor):
                     "region_id": region.region_id,
                     "storage_id": attributes["volumeApiName"],
                     "unit": PriceUnit.GB_MONTH,
-                    "price": price[0],
+                    "price": float(price[0]),
                     "currency": price[1],
                 }
             )
@@ -1191,7 +1231,7 @@ def inventory_traffic_prices(vendor):
                     {
                         "vendor_id": vendor.vendor_id,
                         "region_id": region.region_id,
-                        "price": max([t["price"] for t in prices[0]]),
+                        "price": max([float(t["price"]) for t in prices[0]]),
                         "price_tiered": price,
                         "currency": prices[1],
                         "unit": PriceUnit.GB_MONTH,
@@ -1234,7 +1274,7 @@ def inventory_ipv4_prices(vendor):
             {
                 "vendor_id": vendor.vendor_id,
                 "region_id": region.region_id,
-                "price": price[0],
+                "price": float(price[0]),
                 "currency": price[1],
                 "unit": PriceUnit.HOUR,
             }

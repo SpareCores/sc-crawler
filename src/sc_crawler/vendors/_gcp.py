@@ -415,7 +415,7 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
                             "operating_system": "Linux",
                             "allocation": allocation,
                             "unit": PriceUnit.HOUR,
-                            "price": round(price, 5),
+                            "price": price,
                             "price_upfront": 0,
                             "price_tiered": [],
                             "currency": currency,
@@ -543,6 +543,15 @@ def inventory_regions(vendor):
             # approximation based on city
             "lat": -6.2297401,
             "lon": 106.747117,
+        },
+        "asia-southeast3": {
+            "country_id": "TH",
+            "city": "Bangkok",
+            "founding_year": 2025,
+            "green_energy": False,
+            # approximation based on city
+            "lat": 15.870032,
+            "lon": 100.992538,
         },
         "australia-southeast1": {
             "country_id": "AU",
@@ -967,7 +976,7 @@ def inventory_storage_prices(vendor):
                         "region_id": region.region_id,
                         "storage_id": storage.storage_id,
                         "unit": PriceUnit.GB_MONTH,
-                        "price": price,
+                        "price": float(price),
                         "currency": currency,
                     }
                 )
@@ -1016,7 +1025,7 @@ def inventory_traffic_prices(vendor):
                 {
                     "vendor_id": vendor.vendor_id,
                     "region_id": region.region_id,
-                    "price": max([t["price"] for t in price_tiers]),
+                    "price": max([float(t["price"]) for t in price_tiers]),
                     "price_tiered": price_tiers,
                     "currency": tiered_rates[0].unit_price.currency_code,
                     "unit": PriceUnit.GB_MONTH,

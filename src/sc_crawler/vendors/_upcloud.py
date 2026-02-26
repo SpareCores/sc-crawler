@@ -174,6 +174,17 @@ def inventory_regions(vendor):
             "lon": 4.8400019,
             "lat": 52.3998291,
         },
+        "no-svg1": {
+            "country_id": "NO",
+            "state": "Rogaland",
+            "city": "Stavanger",
+            "founding_year": 2025,
+            # TODO update when data shared on homepage
+            "green_energy": False,
+            # approximation based on city - TODO update when info becomes available on the homepage
+            "lon": 5.5979374,
+            "lat": 58.9487157,
+        },
         "pl-waw1": {
             "country_id": "PL",
             "state": "Mazowieckie",
@@ -366,7 +377,15 @@ def inventory_server_prices(vendor):
                     "unit": PriceUnit.HOUR,
                     "price": v["price"] / 100,
                     "price_upfront": 0,
-                    "price_tiered": [],
+                    # as per UpCloud FAQ at <https://upcloud.com/docs/getting-started/faq/>:
+                    # > All Cloud Server plans on your account are billed hourly up to the monthly rate cap
+                    # > and the hourly rate is determined by dividing the monthly rate by 672 hours (28 days).
+                    # > However, if your server is online for more than 672 hours in a calendar month,
+                    # > we will bill you on the monthly rate.
+                    "price_tiered": [
+                        {"lower": 0, "upper": 672, "price": v["price"] / 100},
+                        {"lower": 673, "upper": "Infinity", "price": 0},
+                    ],
                     "currency": "EUR",
                 }
             )

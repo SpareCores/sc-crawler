@@ -124,23 +124,6 @@ class Vendor(VendorBase, table=True):
             raise ValueError("No vendor homepage provided")
         if not self.country:
             raise ValueError("No vendor country provided")
-        # make sure methods are provided
-        methods = self._get_methods().__dir__()
-        for method in [
-            "inventory_compliance_frameworks",
-            "inventory_regions",
-            "inventory_zones",
-            "inventory_servers",
-            "inventory_server_prices",
-            "inventory_server_prices_spot",
-            "inventory_storage_prices",
-            "inventory_traffic_prices",
-            "inventory_ipv4_prices",
-        ]:
-            if method not in methods:
-                raise NotImplementedError(
-                    f"Unsupported '{self.vendor_id}' vendor: missing '{method}' method."
-                )
 
     def _get_methods(self):
         # private attributes are not (always) initialized correctly by SQLmodel
@@ -151,15 +134,36 @@ class Vendor(VendorBase, table=True):
         except Exception:
             self._methods = None
         if not self._methods:
+            vendor_module = ".".join(
+                [
+                    __name__.split(".", maxsplit=1)[0],
+                    "vendors",
+                    f"_{self.vendor_id}",
+                ]
+            )
             try:
-                vendor_module = ".".join(
-                    [__name__.split(".", maxsplit=1)[0], "vendors", self.vendor_id]
-                )
                 self._methods = import_module(vendor_module)
             except Exception as exc:
                 raise NotImplementedError(
-                    f"Unsupported '{self.vendor_id}' vendor: no methods defined."
+                    f"Unsupported '{self.vendor_id}' vendor: cannot import its module."
                 ) from exc
+            # make sure all required methods exist
+            for method in [
+                "inventory_compliance_frameworks",
+                "inventory_regions",
+                "inventory_zones",
+                "inventory_servers",
+                "inventory_server_prices",
+                "inventory_server_prices_spot",
+                "inventory_storages",
+                "inventory_storage_prices",
+                "inventory_traffic_prices",
+                "inventory_ipv4_prices",
+            ]:
+                if not hasattr(self._methods, method):
+                    raise NotImplementedError(
+                        f"Unsupported '{self.vendor_id}' vendor: missing '{method}' method."
+                    )
         return self._methods
 
     @property
@@ -215,10 +219,47 @@ class Vendor(VendorBase, table=True):
                 query = query.where(arg)
             self.session.execute(query.values(status=Status.INACTIVE))
 
+    def set_table_rows_active(self, model: str, *args) -> None:
+        """Set this vendor's records to [ACTIVE][sc_crawler.table_fields.Status] in a table.
+
+        Positional arguments can be used to pass further filters
+        (besides the default model.vendor_id filter) referencing the
+        model object with SQLModel syntax.
+
+        Examples:
+            >>> aws.set_table_rows_active(ServerPrice, ServerPrice.price < 10)  # doctest: +SKIP
+        """
+        if self.session:
+            query = update(model).where(model.vendor_id == self.vendor_id)
+            for arg in args:
+                query = query.where(arg)
+            self.session.execute(query.values(status=Status.ACTIVE))
+
     def _inventory(self, table: ScModel, inventory: Callable):
         """Mark all rows in a table inactive, then insert new/updated items."""
         self.set_table_rows_inactive(table)
         insert_items(table, inventory(self), self)
+
+    def _inventory_price_rounding(
+        self,
+        table: ScModel,
+        inventory: Callable,
+        *filters,
+        prefix: str = "",
+    ):
+        """Mark rows in a table inactive, then insert new/updated items with 4-digit price rounding.
+
+        Args:
+            table: The SQLModel table class to update.
+            inventory: Callable that returns list of items to insert.
+            *filters: Optional filter expressions to apply when marking rows inactive.
+            prefix: Optional prefix for progress tracking.
+        """
+        self.set_table_rows_inactive(table, *filters)
+        items = inventory(self)
+        for item in items:
+            item["price"] = round(float(item["price"]), 4)
+        insert_items(table, items, self, prefix=prefix)
 
     @log_start_end
     def inventory_compliance_frameworks(self):
@@ -268,44 +309,48 @@ class Vendor(VendorBase, table=True):
     @log_start_end
     def inventory_server_prices(self):
         """Get the current standard/ondemand/reserved prices of all server types."""
-        self.set_table_rows_inactive(
-            ServerPrice, ServerPrice.allocation != Allocation.SPOT
-        )
-        insert_items(
+        self._inventory_price_rounding(
             ServerPrice,
-            self._get_methods().inventory_server_prices(self),
-            self,
+            self._get_methods().inventory_server_prices,
+            ServerPrice.allocation == Allocation.ONDEMAND,
             prefix="ondemand",
         )
 
     @log_start_end
     def inventory_server_prices_spot(self):
         """Get the current spot prices of all server types."""
-        self.set_table_rows_inactive(
-            ServerPrice, ServerPrice.allocation == Allocation.SPOT
-        )
-        insert_items(
+        self._inventory_price_rounding(
             ServerPrice,
-            self._get_methods().inventory_server_prices_spot(self),
-            self,
+            self._get_methods().inventory_server_prices_spot,
+            ServerPrice.allocation == Allocation.SPOT,
             prefix="spot",
         )
 
     @log_start_end
     def inventory_storages(self):
+        """Get the vendor's all storage types."""
         self._inventory(Storage, self._get_methods().inventory_storages)
 
     @log_start_end
     def inventory_storage_prices(self):
-        self._inventory(StoragePrice, self._get_methods().inventory_storage_prices)
+        """Get the current prices of all storage types."""
+        self._inventory_price_rounding(
+            StoragePrice, self._get_methods().inventory_storage_prices
+        )
 
     @log_start_end
     def inventory_traffic_prices(self):
-        self._inventory(TrafficPrice, self._get_methods().inventory_traffic_prices)
+        """Get the current prices of all traffic types."""
+        self._inventory_price_rounding(
+            TrafficPrice, self._get_methods().inventory_traffic_prices
+        )
 
     @log_start_end
     def inventory_ipv4_prices(self):
-        self._inventory(Ipv4Price, self._get_methods().inventory_ipv4_prices)
+        """Get the current prices of all IPv4 types."""
+        self._inventory_price_rounding(
+            Ipv4Price, self._get_methods().inventory_ipv4_prices
+        )
 
 
 class VendorComplianceLink(VendorComplianceLinkBase, table=True):

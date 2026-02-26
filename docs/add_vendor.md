@@ -1,11 +1,11 @@
 # Vendor support
 
-Each file in the [`src/sc_crawler/vendors`](https://github.com/SpareCores/sc-crawler/tree/main/src/sc_crawler/vendors) folder provides the required helpers for a given [Vendor][sc_crawler.tables.Vendor], named as the `id` of the vendor. For example, [`aws.py`](https://github.com/SpareCores/sc-crawler/tree/main/src/sc_crawler/vendors/aws.py) provides functions to be used by its [Vendor][sc_crawler.tables.Vendor] instance, called [`aws`][sc_crawler.vendors.aws].
+Each file in the [`src/sc_crawler/vendors`](https://github.com/SpareCores/sc-crawler/tree/main/src/sc_crawler/vendors) folder provides the required helpers for a given [Vendor][sc_crawler.tables.Vendor], named as the `id` of the vendor prefixed with an underscore. For example, [`_aws.py`](https://github.com/SpareCores/sc-crawler/tree/main/src/sc_crawler/vendors/_aws.py) provides functions to be used by its [Vendor][sc_crawler.tables.Vendor] instance, called [`aws`][sc_crawler.vendors.aws].
 
 ## First steps
 
 1. Define the new [Vendor][sc_crawler.tables.Vendor] instance in `src/sc_crawler/vendors/vendors.py`.
-2. Copy the below [template file](#template-file-for-new-vendors) as a starting point to `src/sc_crawler/vendors/{vendor_id}.py`.
+2. Copy the below [template file](#template-file-for-new-vendors) as a starting point to `src/sc_crawler/vendors/_<vendor_id>.py`.
 3. Update `src/sc_crawler/vendors/__init__.py` to include the new vendor.
 4. Update `docs/add_vendor.md` with the credential requirements for the new vendor.
 5. Implement the `inventory` methods.
@@ -18,13 +18,15 @@ Each vendor module should provide the below functions:
 - `inventory_regions`: Define [`Region`][sc_crawler.tables.Region] instances with location, energy source etc for each region the vendor has.
 - `inventory_zones`: Define a [`Zone`][sc_crawler.tables.Zone] instance for each availability zone of the vendor in each region.
 - `inventory_servers`: Define [`Server`][sc_crawler.tables.Server] instances for the vendor's server/instance types.
-- `inventory_server_prices`: Define the [`ServerPrice`][sc_crawler.tables.ServerPrice] instances for the standard/ondemand (or optionally also for the reserved) pricing of the instance types per region and zone.
+- `inventory_server_prices`: Define the [`ServerPrice`][sc_crawler.tables.ServerPrice] instances for the standard/ondemand (or optionally also for the reserved) pricing of the instance types per region and zone. When applicable, include the monthly cap for tiered pricing in the `price_tiered` field.
 - `inventory_server_prices_spot`: Similar to the above, define [`ServerPrice`][sc_crawler.tables.ServerPrice] instances but the `allocation` field set to [`Allocation.SPOT`][sc_crawler.table_fields.Allocation]. Very likely to see different spot prices per region/zone.
 - `inventory_storage_prices`: Define [`StoragePrice`][sc_crawler.tables.StoragePrice] instances to describe the available storage options that can be attached to the servers.
 - `inventory_traffic_prices`: Define [`TrafficPrice`][sc_crawler.tables.TrafficPrice] instances to describe the pricing of ingress/egress traffic.
 - `inventory_ipv4_prices`: Define [`Ipv4Price`][sc_crawler.tables.Ipv4Price] instances on the price of an IPv4 address.
 
-Each function will be picked up as the related [Vendor][sc_crawler.tables.Vendor] instance's instance methods, so each function should take a single argument, that is the [Vendor][sc_crawler.tables.Vendor] instance. E.g. [sc_crawler.vendors.aws.inventory_regions][] is called by [sc_crawler.tables.Vendor.inventory_regions][].
+Each function will be picked up as the related [Vendor][sc_crawler.tables.Vendor] instance's instance methods, so each
+function should take a single argument, that is the [Vendor][sc_crawler.tables.Vendor] instance.
+E.g. [sc_crawler.vendors._aws.inventory_regions][] is called by [sc_crawler.tables.Vendor.inventory_regions][].
 
 The functions should return an array of dict representing the related objects. The vendor's `inventory` method will pass the array to [sc_crawler.insert.insert_items][] along with the table object.
 
@@ -38,7 +40,16 @@ To create progress bars, you can use the [Vendor][sc_crawler.tables.Vendor]'s [p
 * [advance_task][sc_crawler.logger.VendorProgressTracker.advance_task]
 * [hide_task][sc_crawler.logger.VendorProgressTracker.hide_task]
 
-The [start_task][sc_crawler.logger.VendorProgressTracker.start_task] will register a task in the "Current tasks" progress bar list with the provided name automatically prefixed by the vendor name, and the provided number of expected steps. You should call [advance_task][sc_crawler.logger.VendorProgressTracker.advance_task] after each step finished, which will by default update the most recently created task's progress bar. If making updates in parallel, store the [rich.progress.TaskID][] returned by [start_task][sc_crawler.logger.VendorProgressTracker.start_task] and pass to [advance_task][sc_crawler.logger.VendorProgressTracker.advance_task] and [hide_task][sc_crawler.logger.VendorProgressTracker.hide_task] explicitly. Make sure to call `hide_task` when the progress bar is not to be shown anymore. It's a good practice to log the number of fetched/synced objects afterwards with `logger.info.` See the manual of [`VendorProgressTracker`][sc_crawler.logger.VendorProgressTracker] for more details.
+The [start_task][sc_crawler.logger.VendorProgressTracker.start_task] will register a task in the "Current tasks"
+progress bar list with the provided name automatically prefixed by the vendor name, and the provided number of expected
+steps. You should call [advance_task][sc_crawler.logger.VendorProgressTracker.advance_task] after each step finished,
+which will by default update the most recently created task's progress bar. If making updates in parallel, store the
+`TaskID` returned by [start_task][sc_crawler.logger.VendorProgressTracker.start_task] and pass
+to [advance_task][sc_crawler.logger.VendorProgressTracker.advance_task]
+and [hide_task][sc_crawler.logger.VendorProgressTracker.hide_task] explicitly. Make sure to call `hide_task` when the
+progress bar is not to be shown anymore. It's a good practice to log the number of fetched/synced objects afterwards
+with `logger.info`. See the manual of [`VendorProgressTracker`][sc_crawler.logger.VendorProgressTracker] for more
+details.
 
 Basic example:
 
@@ -165,7 +176,10 @@ def inventory_server_prices(vendor):
     #         "unit": PriceUnit.HOUR,
     #         "price": ,
     #         "price_upfront": 0,
-    #         "price_tiered": [],
+    #         "price_tiered": [
+    #             {"lower": 0, "upper": monthly_cap, "price": hourly_price},
+    #             {"lower": monthly_cap + 1, "upper": "Infinity", "price": 0},
+    #         ],
     #         "currency": "USD",
     #     })
     return items
