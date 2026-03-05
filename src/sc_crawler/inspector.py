@@ -802,7 +802,7 @@ def _l123_cache(lstopo: xmltree.ElementTree, lscpu: dict, level: int):
         for obj in root.iter("object"):
             if obj.attrib.get("type") == f"L{level}Cache":
                 size = int(obj.attrib.get("cache_size", 0))
-                return size * 1024  # Convert from KiB to bytes
+                return size
 
     lstopo_size = _get_lstopo_cache_size()
     if lstopo_size:
