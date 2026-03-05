@@ -507,6 +507,57 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
         except Exception as e:
             _log_cannot_load_benchmarks(server, framework, e, True)
 
+    framework = "membench"
+    try:
+        membench_meta = _server_framework_meta(server, framework)
+        membench_version = membench_meta["version"]
+        with open(_server_framework_stdout_path(server, framework), newline="") as fp:
+            reader = csv.DictReader(fp)
+            for row in reader:
+                operation = row["operation"]
+                size_kb = int(float(row["size_kb"]))
+                threads = int(float(row["threads"]))
+                config = {
+                    "size_kb": size_kb,
+                    "threads": threads,
+                    "tries": 3,
+                    "time_limit": 1800,
+                    "huge_pages": True,
+                    "framework_version": membench_version,
+                }
+                if operation == "latency":
+                    score = float(row["latency_ns"])
+                    if score == 0:
+                        continue
+                    benchmarks.append(
+                        {
+                            **_benchmark_metafields(
+                                server,
+                                framework=framework,
+                                benchmark_id="membench:latency",
+                            ),
+                            "config": config,
+                            "score": score,
+                        }
+                    )
+                elif operation in ("read", "write", "copy"):
+                    score = float(row["bandwidth_mb_s"])
+                    if score == 0:
+                        continue
+                    benchmarks.append(
+                        {
+                            **_benchmark_metafields(
+                                server,
+                                framework=framework,
+                                benchmark_id=f"membench:bandwidth_{operation}",
+                            ),
+                            "config": config,
+                            "score": score,
+                        }
+                    )
+    except Exception as e:
+        _log_cannot_load_benchmarks(server, framework, e, True)
+
     framework = "llm_speed"
     try:
         assert _server_framework_meta(server, "llm")["exit_code"] == 0
