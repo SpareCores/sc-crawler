@@ -151,8 +151,12 @@ def _server_dmidecode_sections(server: "Server", section: str) -> dict:
     return [s["props"] for s in _server_dmidecode(server) if s["name"] == section]
 
 
-def _server_nvidiasmi(server: "Server") -> dict:
+def _server_nvidiasmi(server: "Server") -> xmltree.ElementTree:
     return xmltree.parse(_server_framework_path(server, "nvidia_smi", "stdout"))
+
+
+def _server_lstopo(server: "Server") -> xmltree.ElementTree:
+    return xmltree.parse(_server_framework_path(server, "lstopo", "stdout"))
 
 
 def _observed_at(server: "Server", framework: str) -> dict:
@@ -788,7 +792,22 @@ def _standardize_gpu_family(server):
     return family
 
 
-def _l123_cache(lscpu: dict, level: int):
+def _l123_cache(lstopo: xmltree.ElementTree, lscpu: dict, level: int):
+    def _get_lstopo_cache_size():
+        if not isinstance(lstopo, xmltree.ElementTree):
+            return None
+
+        root = lstopo.getroot()
+
+        for obj in root.iter("object"):
+            if obj.attrib.get("type") == f"L{level}Cache":
+                size = int(obj.attrib.get("cache_size", 0))
+                return size * 1024  # Convert from KiB to bytes
+
+    lstopo_size = _get_lstopo_cache_size()
+    if lstopo_size:
+        return lstopo_size
+
     if level == 1:
         # don't include instruction cache
         cache = int(_listsearch(lscpu, "field", "L1d cache:")["data"].split(" ")[0])
@@ -938,6 +957,7 @@ def inspect_update_server_dict(server: dict) -> dict:
         ),
         "lscpu": lambda: _server_lscpu(server_obj),
         "lshw": lambda: _server_lshw(server_obj),
+        "lstopo": lambda: _server_lstopo(server_obj),
         "nvidiasmi": lambda: _server_nvidiasmi(server_obj),
         "gpu": lambda: lookups["nvidiasmi"].find("gpu"),
         "gpus": lambda: lookups["nvidiasmi"].findall("gpu"),
@@ -1020,9 +1040,9 @@ def inspect_update_server_dict(server: dict) -> dict:
         "cpu_manufacturer": lambda: get_cpu_manufacturer(),
         "cpu_family": lambda: get_cpu_family(),
         "cpu_model": lambda: get_cpu_model(),
-        "cpu_l1_cache": lambda: _l123_cache(lookups["lscpu"], 1),
-        "cpu_l2_cache": lambda: _l123_cache(lookups["lscpu"], 2),
-        "cpu_l3_cache": lambda: _l123_cache(lookups["lscpu"], 3),
+        "cpu_l1_cache": lambda: _l123_cache(lookups["lstopo"], lookups["lscpu"], 1),
+        "cpu_l2_cache": lambda: _l123_cache(lookups["lstopo"], lookups["lscpu"], 2),
+        "cpu_l3_cache": lambda: _l123_cache(lookups["lstopo"], lookups["lscpu"], 3),
         "cpu_flags": lambda: lscpu_lookup("Flags:").split(" "),
         "memory_generation": lambda: DdrGeneration[lookups["dmidecode_memory"]["Type"]],
         # convert to Mhz

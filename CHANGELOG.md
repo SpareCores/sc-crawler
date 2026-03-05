@@ -1,3 +1,10 @@
+## v0.3.x (Mar 5, 2026)
+
+Fix(es):
+
+- Use `lstopo` output as the primary source for L1/L2/L3 CPU cache sizes, falling back to `lscpu` only when no
+  `lstopo` data is available.
+
 ## v0.3.6 (Feb 26, 2026)
 
 New feature(s):
