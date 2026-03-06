@@ -17,6 +17,7 @@ from zipfile import ZipFile
 from requests import get
 from yaml import safe_load as yaml_safe_load
 
+from .inspector_helpers import _get_cpu_cache_info
 from .logger import logger
 from .table_bases import ServerBase
 from .table_fields import DdrGeneration, Disk, StorageType
@@ -792,22 +793,8 @@ def _standardize_gpu_family(server):
     return family
 
 
-def _l123_cache(lstopo: xmltree.ElementTree, lscpu: dict, level: int):
-    def _get_lstopo_cache_size():
-        if not isinstance(lstopo, xmltree.ElementTree):
-            return None
-
-        root = lstopo.getroot()
-
-        for obj in root.iter("object"):
-            if obj.attrib.get("type") == f"L{level}Cache":
-                size = int(obj.attrib.get("cache_size", 0))
-                return size
-
-    lstopo_size = _get_lstopo_cache_size()
-    if lstopo_size:
-        return lstopo_size
-
+# TODO: deprecated, deletable once we successfully avoid corrupted lscpu cache data
+def _l123_cache(lscpu: dict, level: int):
     if level == 1:
         # don't include instruction cache
         cache = int(_listsearch(lscpu, "field", "L1d cache:")["data"].split(" ")[0])
@@ -978,6 +965,13 @@ def inspect_update_server_dict(server: dict) -> dict:
         else _parse_lshw_storage_info(lookups["lshw"], server_obj)
     )
 
+    # Parse CPU cache info once (empty dict if lscpu lookup failed)
+    cpu_cache_info = (
+        {}
+        if isinstance(lookups["lscpu"], Exception)
+        else _get_cpu_cache_info(lookups["lscpu"], lookups["lstopo"])
+    )
+
     def get_cpu_speed():
         """Extract CPU speed from lscpu or dmidecode."""
         # lscpu is more reliable, extracting from "Model name: ... @ X.XGHz"
@@ -1040,9 +1034,14 @@ def inspect_update_server_dict(server: dict) -> dict:
         "cpu_manufacturer": lambda: get_cpu_manufacturer(),
         "cpu_family": lambda: get_cpu_family(),
         "cpu_model": lambda: get_cpu_model(),
-        "cpu_l1_cache": lambda: _l123_cache(lookups["lstopo"], lookups["lscpu"], 1),
-        "cpu_l2_cache": lambda: _l123_cache(lookups["lstopo"], lookups["lscpu"], 2),
-        "cpu_l3_cache": lambda: _l123_cache(lookups["lstopo"], lookups["lscpu"], 3),
+        "cpu_l1d_cache": lambda: cpu_cache_info.get("L1d", {}).get("per_instance_KiB"),
+        "cpu_l1d_cache_total": lambda: cpu_cache_info.get("L1d", {}).get("total_KiB"),
+        "cpu_l1i_cache": lambda: cpu_cache_info.get("L1i", {}).get("per_instance_KiB"),
+        "cpu_l1i_cache_total": lambda: cpu_cache_info.get("L1i", {}).get("total_KiB"),
+        "cpu_l2_cache": lambda: cpu_cache_info.get("L2", {}).get("per_instance_KiB"),
+        "cpu_l2_cache_total": lambda: cpu_cache_info.get("L2", {}).get("total_KiB"),
+        "cpu_l3_cache": lambda: cpu_cache_info.get("L3", {}).get("per_instance_KiB"),
+        "cpu_l3_cache_total": lambda: cpu_cache_info.get("L3", {}).get("total_KiB"),
         "cpu_flags": lambda: lscpu_lookup("Flags:").split(" "),
         "memory_generation": lambda: DdrGeneration[lookups["dmidecode_memory"]["Type"]],
         # convert to Mhz
