@@ -1,8 +1,22 @@
-## v0.3.x (Mar 5, 2026)
+## v0.4.0 (Mar 6, 2026)
 
 New benchmark(s):
 
 - membench
+
+Fix(es):
+
+- Refactor CPU cache columns: split the old `cpu_l1_cache` (total bytes) into separate per-core KiB columns
+  `cpu_l1d_cache` and `cpu_l1i_cache`; convert `cpu_l2_cache` and `cpu_l3_cache` from total bytes to per-core KiB;
+  add `cpu_l1d_cache_total`, `cpu_l1i_cache_total`, `cpu_l2_cache_total`, and `cpu_l3_cache_total` columns storing
+  the total cache size in KiB across all cores.
+- Use `lstopo` output as the primary source for L1/L2/L3 CPU cache sizes, falling back to `lscpu` only when no
+  `lstopo` data is available.
+
+‼ Breaking changes:
+
+- `cpu_l1_cache` removed; replaced by `cpu_l1d_cache` and `cpu_l1i_cache` (per-core KiB).
+- `cpu_l2_cache` and `cpu_l3_cache` unit changed from total bytes to per-core KiB.
 
 ## v0.3.6 (Feb 26, 2026)
 
