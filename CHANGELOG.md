@@ -1,3 +1,9 @@
+## v0.3.x (Mar 5, 2026)
+
+New benchmark(s):
+
+- membench
+
 ## v0.3.6 (Feb 26, 2026)
 
 New feature(s):
