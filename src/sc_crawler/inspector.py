@@ -516,13 +516,8 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
             for row in reader:
                 operation = row["operation"]
                 size_kb = int(float(row["size_kb"]))
-                threads = int(float(row["threads"]))
                 config = {
                     "size_kb": size_kb,
-                    "threads": threads,
-                    "tries": 3,
-                    "time_limit": 1800,
-                    "huge_pages": True,
                     "framework_version": membench_version,
                 }
                 if operation == "latency":
