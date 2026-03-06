@@ -1,5 +1,9 @@
 ## v0.4.0 (Mar 6, 2026)
 
+New benchmark(s):
+
+- membench
+
 Fix(es):
 
 - Refactor CPU cache columns: split the old `cpu_l1_cache` (total bytes) into separate per-core KiB columns
