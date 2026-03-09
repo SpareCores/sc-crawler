@@ -126,7 +126,7 @@ def _apply_lstopo_to_caches(
     misreports topology (e.g. one L3 per vCPU instead of shared).
     """
     for level, entries in lstopo_data.items():
-        if not entries or level not in caches:
+        if not entries:
             continue
         total_bytes = sum(s for s, _ in entries)
         instances = len(entries)
@@ -137,12 +137,14 @@ def _apply_lstopo_to_caches(
         per_inst = total_bytes // instances if instances else 0
         effective = (per_inst / cores_per_domain) if cores_per_domain > 0 else 0.0
 
-        info = caches[level]
+        info = caches.setdefault(
+            level,
+            CpuCacheInfo(level=level, total_bytes=0, instances=0),
+        )
         info.total_bytes = total_bytes
         info.instances = instances
         info.cores_per_domain = cores_per_domain
         info.effective_per_core_bytes = effective
-
         # Preserve per-instance size from lstopo (may differ from lscpu)
         if per_inst != info.per_instance_bytes:
             # CacheInfo stores total_bytes and instances; per_instance_bytes is derived.
