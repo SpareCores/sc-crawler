@@ -116,73 +116,51 @@ server_table = sa.Table(
 
 def upgrade() -> None:
     server_table_name = scdize_suffix("server")
-    with op.batch_alter_table(
-        server_table_name, schema=None, copy_from=server_table, recreate="always"
-    ) as batch_op:
-        batch_op.add_column(
-            sa.Column(
-                "cpu_l1d_cache",
-                sa.Integer(),
-                nullable=True,
-                comment="L1d cache size (KiB).",
-            ),
-            insert_after="cpu_model",
-        )
-        batch_op.add_column(
-            sa.Column(
-                "cpu_l1d_cache_total",
-                sa.Integer(),
-                nullable=True,
-                comment="Total L1d cache size (KiB) across all cores.",
-            ),
-            insert_after="cpu_l1d_cache",
-        )
-        batch_op.add_column(
-            sa.Column(
-                "cpu_l1i_cache",
-                sa.Integer(),
-                nullable=True,
-                comment="L1i cache size (KiB).",
-            ),
-            insert_after="cpu_l1d_cache_total",
-        )
-        batch_op.add_column(
-            sa.Column(
-                "cpu_l1i_cache_total",
-                sa.Integer(),
-                nullable=True,
-                comment="Total L1i cache size (KiB) across all cores.",
-            ),
-            insert_after="cpu_l1i_cache",
-        )
-        batch_op.add_column(
-            sa.Column(
-                "cpu_l2_cache_total",
-                sa.Integer(),
-                nullable=True,
-                comment="Total L2 cache size (KiB) across all cores.",
-            ),
-            insert_after="cpu_l2_cache",
-        )
-        batch_op.add_column(
-            sa.Column(
-                "cpu_l3_cache_total",
-                sa.Integer(),
-                nullable=True,
-                comment="Total L3 cache size (KiB) across all cores.",
-            ),
-            insert_after="cpu_l3_cache",
-        )
+    is_sqlite_migration = op.get_context().dialect.name == "sqlite"
 
-    for column in [
-        sa.Column("cpu_l1d_cache", sa.Integer()),
-        sa.Column("cpu_l1d_cache_total", sa.Integer()),
-        sa.Column("cpu_l1i_cache", sa.Integer()),
-        sa.Column("cpu_l1i_cache_total", sa.Integer()),
-        sa.Column("cpu_l2_cache_total", sa.Integer()),
-        sa.Column("cpu_l3_cache_total", sa.Integer()),
-    ]:
-        server_table.append_column(column)
+    new_columns = [
+        ("cpu_l1d_cache", "L1 data cache size (KiB).", "cpu_model"),
+        (
+            "cpu_l1d_cache_total",
+            "Total L1 data cache size (KiB) across all cores.",
+            "cpu_l1d_cache",
+        ),
+        ("cpu_l1i_cache", "L1 instruction cache size (KiB).", "cpu_l1d_cache_total"),
+        (
+            "cpu_l1i_cache_total",
+            "Total L1 instruction cache size (KiB) across all cores.",
+            "cpu_l1i_cache",
+        ),
+        (
+            "cpu_l2_cache_total",
+            "Total L2 cache size (KiB) across all cores.",
+            "cpu_l2_cache",
+        ),
+        (
+            "cpu_l3_cache_total",
+            "Total L3 cache size (KiB) across all cores.",
+            "cpu_l3_cache",
+        ),
+    ]
+
+    if is_sqlite_migration:
+        with op.batch_alter_table(
+            server_table_name, schema=None, copy_from=server_table, recreate="always"
+        ) as batch_op:
+            for col_name, comment, after in new_columns:
+                batch_op.add_column(
+                    sa.Column(col_name, sa.Integer(), nullable=True, comment=comment),
+                    insert_after=after,
+                )
+    else:
+        for col_name, comment, _ in new_columns:
+            op.add_column(
+                server_table_name,
+                sa.Column(col_name, sa.Integer(), nullable=True, comment=comment),
+            )
+
+    for col_name, _, _ in new_columns:
+        server_table.append_column(sa.Column(col_name, sa.Integer()))
 
     # Old cpu_l1/l2/l3_cache columns store total cache size in bytes across all cores.
     # New _total columns store total in KiB; per-core columns store per-core size in KiB.
@@ -221,39 +199,53 @@ def upgrade() -> None:
         server_table.update()
         .where(server_table.c.cpu_l3_cache.isnot(None))
         .values(
-            cpu_l3_cache_total=server_table.c.cpu_l3_cache / 1024,
-            cpu_l3_cache=None,
+            cpu_l3_cache_total=server_table.c.cpu_l3_cache / 1024, cpu_l3_cache=None
         )
     )
 
-    with op.batch_alter_table(server_table_name, schema=None) as batch_op:
-        batch_op.drop_column("cpu_l1_cache")
+    if is_sqlite_migration:
+        with op.batch_alter_table(server_table_name, schema=None) as batch_op:
+            batch_op.drop_column("cpu_l1_cache")
+    else:
+        op.drop_column(server_table_name, "cpu_l1_cache")
 
 
 def downgrade() -> None:
     server_table_name = scdize_suffix("server")
+    is_sqlite_migration = op.get_context().dialect.name == "sqlite"
 
-    for column in [
-        sa.Column("cpu_l1d_cache", sa.Integer()),
-        sa.Column("cpu_l1d_cache_total", sa.Integer()),
-        sa.Column("cpu_l1i_cache", sa.Integer()),
-        sa.Column("cpu_l1i_cache_total", sa.Integer()),
-        sa.Column("cpu_l2_cache_total", sa.Integer()),
-        sa.Column("cpu_l3_cache_total", sa.Integer()),
+    for col_name in [
+        "cpu_l1d_cache",
+        "cpu_l1d_cache_total",
+        "cpu_l1i_cache",
+        "cpu_l1i_cache_total",
+        "cpu_l2_cache_total",
+        "cpu_l3_cache_total",
     ]:
-        server_table.append_column(column)
+        server_table.append_column(sa.Column(col_name, sa.Integer()))
 
-    with op.batch_alter_table(
-        server_table_name, schema=None, copy_from=server_table, recreate="always"
-    ) as batch_op:
-        batch_op.add_column(
+    if is_sqlite_migration:
+        with op.batch_alter_table(
+            server_table_name, schema=None, copy_from=server_table, recreate="always"
+        ) as batch_op:
+            batch_op.add_column(
+                sa.Column(
+                    "cpu_l1_cache",
+                    sa.INTEGER(),
+                    nullable=True,
+                    comment="L1 cache size (bytes).",
+                ),
+                insert_after="cpu_model",
+            )
+    else:
+        op.add_column(
+            server_table_name,
             sa.Column(
                 "cpu_l1_cache",
                 sa.INTEGER(),
                 nullable=True,
                 comment="L1 cache size (bytes).",
             ),
-            insert_after="cpu_model",
         )
 
     # Restore total bytes from _total KiB columns: total_bytes = total_KiB * 1024
@@ -273,10 +265,18 @@ def downgrade() -> None:
         .values(cpu_l3_cache=server_table.c.cpu_l3_cache_total * 1024)
     )
 
-    with op.batch_alter_table(server_table_name, schema=None) as batch_op:
-        batch_op.drop_column("cpu_l3_cache_total")
-        batch_op.drop_column("cpu_l2_cache_total")
-        batch_op.drop_column("cpu_l1d_cache_total")
-        batch_op.drop_column("cpu_l1d_cache")
-        batch_op.drop_column("cpu_l1i_cache_total")
-        batch_op.drop_column("cpu_l1i_cache")
+    drop_columns = [
+        "cpu_l1d_cache",
+        "cpu_l1d_cache_total",
+        "cpu_l1i_cache",
+        "cpu_l1i_cache_total",
+        "cpu_l2_cache_total",
+        "cpu_l3_cache_total",
+    ]
+    if is_sqlite_migration:
+        with op.batch_alter_table(server_table_name, schema=None) as batch_op:
+            for col in drop_columns:
+                batch_op.drop_column(col)
+    else:
+        for col in drop_columns:
+            op.drop_column(server_table_name, col)

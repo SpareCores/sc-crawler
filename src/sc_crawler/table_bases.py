@@ -597,18 +597,18 @@ class ServerFields(
         default=None,
         description="The model number of the primary processor, e.g. 9750H.",
     )
+    cpu_l1d_cache: Optional[int] = Field(
+        default=None, description="L1 data cache size (KiB)."
+    )
+    cpu_l1d_cache_total: Optional[int] = Field(
+        default=None, description="Total L1 data cache size (KiB) across all cores."
+    )
     cpu_l1i_cache: Optional[int] = Field(
         default=None, description="L1 instruction cache size (KiB)."
     )
     cpu_l1i_cache_total: Optional[int] = Field(
         default=None,
         description="Total L1 instruction cache size (KiB) across all cores.",
-    )
-    cpu_l1d_cache: Optional[int] = Field(
-        default=None, description="L1 data cache size (KiB)."
-    )
-    cpu_l1d_cache_total: Optional[int] = Field(
-        default=None, description="Total L1 data cache size (KiB) across all cores."
     )
     cpu_l2_cache: Optional[int] = Field(
         default=None, description="L2 cache size (KiB)."
