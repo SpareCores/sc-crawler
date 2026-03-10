@@ -116,7 +116,9 @@ server_table = sa.Table(
 
 def upgrade() -> None:
     server_table_name = scdize_suffix("server")
-    is_sqlite_migration = op.get_context().dialect.name == "sqlite"
+    do_recreate_tables = (
+        op.get_context().dialect.name == "sqlite"
+    ) or op.get_context().config.attributes.get("scd")
 
     new_columns = [
         ("cpu_l1d_cache", "L1 data cache size (KiB).", "cpu_model"),
@@ -143,7 +145,7 @@ def upgrade() -> None:
         ),
     ]
 
-    if is_sqlite_migration:
+    if do_recreate_tables:
         with op.batch_alter_table(
             server_table_name, schema=None, copy_from=server_table, recreate="always"
         ) as batch_op:
@@ -203,7 +205,7 @@ def upgrade() -> None:
         )
     )
 
-    if is_sqlite_migration:
+    if do_recreate_tables:
         with op.batch_alter_table(server_table_name, schema=None) as batch_op:
             batch_op.drop_column("cpu_l1_cache")
     else:
@@ -212,7 +214,9 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     server_table_name = scdize_suffix("server")
-    is_sqlite_migration = op.get_context().dialect.name == "sqlite"
+    do_recreate_tables = (
+        op.get_context().dialect.name == "sqlite"
+    ) or op.get_context().config.attributes.get("scd")
 
     for col_name in [
         "cpu_l1d_cache",
@@ -224,7 +228,7 @@ def downgrade() -> None:
     ]:
         server_table.append_column(sa.Column(col_name, sa.Integer()))
 
-    if is_sqlite_migration:
+    if do_recreate_tables:
         with op.batch_alter_table(
             server_table_name, schema=None, copy_from=server_table, recreate="always"
         ) as batch_op:
@@ -273,7 +277,7 @@ def downgrade() -> None:
         "cpu_l2_cache_total",
         "cpu_l3_cache_total",
     ]
-    if is_sqlite_migration:
+    if do_recreate_tables:
         with op.batch_alter_table(server_table_name, schema=None) as batch_op:
             for col in drop_columns:
                 batch_op.drop_column(col)
