@@ -12,9 +12,7 @@ import sqlalchemy as sa
 import sqlmodel
 from alembic import op
 
-from sc_crawler.alembic.create_tables import (
-    create_server_table,
-)
+from sc_crawler.alembic.create_tables import _insert_column_after, get_server_table
 
 # revision identifiers, used by Alembic.
 revision: str = "da8aff9a4741"
@@ -35,15 +33,20 @@ def scdize_suffix(table_name: str) -> str:
 
 def get_server_table_v034(scd: bool) -> sa.Table:
     """Return server table as it exists after aeae56af8ca6 (v0.3.4)."""
-    table = create_server_table(scd)
-    gpu_col = table.c.gpu_count
-    new_col = sa.Column(
-        "gpu_count",
-        sa.Float(),
-        nullable=gpu_col.nullable,
-        comment=gpu_col.comment,
+    table = get_server_table(scd)
+    table._columns.replace(
+        sa.Column(
+            "gpu_count", sa.Float(), nullable=False, comment=table.c.gpu_count.comment
+        )
     )
-    table._columns.replace(new_col)
+    table._columns.replace(
+        sa.Column(
+            "api_reference",
+            sqlmodel.sql.sqltypes.AutoString(),
+            nullable=False,
+            comment="How this resource is referenced in the vendor API calls. This is usually either the id or name of the resource, depending on the vendor and actual API endpoint.",
+        )
+    )
     return table
 
 
@@ -94,27 +97,11 @@ def upgrade() -> None:
                 server_table_name,
                 sa.Column(col_name, sa.Integer(), nullable=True, comment=comment),
             )
-        # Only convert if BigInteger (i.e. downgrade was run before re-upgrading)
-        conn = op.get_bind()
-        inspector = sa.inspect(conn)
-        cols = {c["name"]: c["type"] for c in inspector.get_columns(server_table_name)}
-        if isinstance(cols.get("cpu_l2_cache"), sa.BigInteger):
-            op.alter_column(
-                server_table_name,
-                "cpu_l2_cache",
-                existing_type=sa.BigInteger(),
-                type_=sa.Integer(),
-            )
-        if isinstance(cols.get("cpu_l3_cache"), sa.BigInteger):
-            op.alter_column(
-                server_table_name,
-                "cpu_l3_cache",
-                existing_type=sa.BigInteger(),
-                type_=sa.Integer(),
-            )
 
-    for col_name, _, _ in new_columns:
-        server_table.append_column(sa.Column(col_name, sa.Integer()))
+    for col_name, comment, after in new_columns:
+        _insert_column_after(
+            server_table, sa.Column(col_name, sa.Integer(), comment=comment), after
+        )
 
     # Old cpu_l1/l2/l3_cache columns store total cache size in bytes across all cores.
     # New _total columns store total in KiB; per-core columns store per-core size in KiB.

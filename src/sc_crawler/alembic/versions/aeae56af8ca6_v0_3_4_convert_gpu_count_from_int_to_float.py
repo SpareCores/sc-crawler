@@ -12,10 +12,10 @@ import sqlalchemy as sa
 from alembic import op
 
 from sc_crawler.alembic.create_tables import (
-    create_benchmark_table,
-    create_compliance_framework_table,
-    create_server_table,
-    create_zone_table,
+    get_benchmark_table,
+    get_compliance_framework_table,
+    get_server_table,
+    get_zone_table,
 )
 
 # revision identifiers, used by Alembic.
@@ -40,12 +40,12 @@ def upgrade() -> None:
     compliance_framework_table_name = scdize_suffix("compliance_framework")
     server_table_name = scdize_suffix("server")
     zone_table_name = scdize_suffix("zone")
-    benchmark_table: sa.Table = create_benchmark_table(is_scd_migration())
-    compliance_framework_table: sa.Table = create_compliance_framework_table(
+    benchmark_table: sa.Table = get_benchmark_table(is_scd_migration())
+    compliance_framework_table: sa.Table = get_compliance_framework_table(
         is_scd_migration()
     )
-    server_table: sa.Table = create_server_table(is_scd_migration())
-    zone_table: sa.Table = create_zone_table(is_scd_migration())
+    server_table: sa.Table = get_server_table(is_scd_migration())
+    zone_table: sa.Table = get_zone_table(is_scd_migration())
     with op.batch_alter_table(
         server_table_name,
         schema=None,
@@ -91,12 +91,12 @@ def downgrade() -> None:
     compliance_framework_table_name = scdize_suffix("compliance_framework")
     server_table_name = scdize_suffix("server")
     zone_table_name = scdize_suffix("zone")
-    benchmark_table: sa.Table = create_benchmark_table(is_scd_migration())
-    compliance_framework_table: sa.Table = create_compliance_framework_table(
+    benchmark_table: sa.Table = get_benchmark_table(is_scd_migration())
+    compliance_framework_table: sa.Table = get_compliance_framework_table(
         is_scd_migration()
     )
-    server_table: sa.Table = create_server_table(is_scd_migration())
-    zone_table: sa.Table = create_zone_table(is_scd_migration())
+    server_table: sa.Table = get_server_table(is_scd_migration())
+    zone_table: sa.Table = get_zone_table(is_scd_migration())
     with op.batch_alter_table(
         server_table_name, schema=None, copy_from=server_table
     ) as batch_op:

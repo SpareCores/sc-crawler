@@ -4,13 +4,14 @@ from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB
 
 
-def create_benchmark_table(is_scd: bool) -> sa.Table:
-    is_postgresql_migration = op.get_context().dialect.name == "postgresql"
-    json_type = JSONB if is_postgresql_migration else sa.JSON
+def get_benchmark_table(is_scd: bool) -> sa.Table:
     table_name = "benchmark_scd" if is_scd else "benchmark"
     primary_key = ("benchmark_id", "observed_at") if is_scd else ("benchmark_id",)
-    return op.create_table(
+    is_postgresql_migration = op.get_context().dialect.name == "postgresql"
+    json_type = JSONB if is_postgresql_migration else sa.JSON
+    return sa.Table(
         table_name,
+        sa.MetaData(),
         sa.Column(
             "benchmark_id",
             sqlmodel.sql.sqltypes.AutoString(),
@@ -71,26 +72,32 @@ def create_benchmark_table(is_scd: bool) -> sa.Table:
             nullable=False,
             comment="Timestamp of the last observation.",
         ),
-        sa.PrimaryKeyConstraint(
-            *primary_key,
-            name=op.f(f"pk_{table_name}"),
-        ),
-        comment="SCD version of .tables.Benchmark."
-        if is_scd
-        else "Benchmark scenario definitions.",
-        if_not_exists=True,
+        sa.PrimaryKeyConstraint(*primary_key, name=op.f(f"pk_{table_name}")),
     )
 
 
-def create_compliance_framework_table(is_scd: bool) -> sa.Table:
+def create_benchmark_table(is_scd: bool) -> sa.Table:
+    table = get_benchmark_table(is_scd)
+    comment = (
+        "SCD version of .tables.Benchmark."
+        if is_scd
+        else "Benchmark scenario definitions."
+    )
+    return op.create_table(
+        table.name, *table.c, *table.constraints, comment=comment, if_not_exists=True
+    )
+
+
+def get_compliance_framework_table(is_scd: bool) -> sa.Table:
     table_name = "compliance_framework_scd" if is_scd else "compliance_framework"
     primary_key = (
         ("compliance_framework_id", "observed_at")
         if is_scd
         else ("compliance_framework_id",)
     )
-    return op.create_table(
+    return sa.Table(
         table_name,
+        sa.MetaData(),
         sa.Column(
             "compliance_framework_id",
             sqlmodel.sql.sqltypes.AutoString(),
@@ -139,22 +146,28 @@ def create_compliance_framework_table(is_scd: bool) -> sa.Table:
             nullable=False,
             comment="Timestamp of the last observation.",
         ),
-        sa.PrimaryKeyConstraint(
-            *primary_key,
-            name=op.f(f"pk_{table_name}"),
-        ),
-        comment="SCD version of .tables.ComplianceFramework."
-        if is_scd
-        else "List of Compliance Frameworks, such as HIPAA or SOC 2 Type 1.",
-        if_not_exists=True,
+        sa.PrimaryKeyConstraint(*primary_key, name=op.f(f"pk_{table_name}")),
     )
 
 
-def create_country_table(is_scd: bool) -> sa.Table:
+def create_compliance_framework_table(is_scd: bool) -> sa.Table:
+    table = get_compliance_framework_table(is_scd)
+    comment = (
+        "SCD version of .tables.ComplianceFramework."
+        if is_scd
+        else "List of Compliance Frameworks, such as HIPAA or SOC 2 Type 1."
+    )
+    return op.create_table(
+        table.name, *table.c, *table.constraints, comment=comment, if_not_exists=True
+    )
+
+
+def get_country_table(is_scd: bool) -> sa.Table:
     table_name = "country_scd" if is_scd else "country"
     primary_key = ("country_id", "observed_at") if is_scd else ("country_id",)
-    return op.create_table(
+    return sa.Table(
         table_name,
+        sa.MetaData(),
         sa.Column(
             "country_id",
             sqlmodel.sql.sqltypes.AutoString(),
@@ -179,18 +192,23 @@ def create_country_table(is_scd: bool) -> sa.Table:
             nullable=False,
             comment="Timestamp of the last observation.",
         ),
-        sa.PrimaryKeyConstraint(
-            *primary_key,
-            name=op.f(f"pk_{table_name}"),
-        ),
-        comment="SCD version of .tables.Country."
-        if is_scd
-        else "Country and continent mapping.",
-        if_not_exists=True,
+        sa.PrimaryKeyConstraint(*primary_key, name=op.f(f"pk_{table_name}")),
     )
 
 
-def create_vendor_table(is_scd: bool) -> sa.Table:
+def create_country_table(is_scd: bool) -> sa.Table:
+    table = get_country_table(is_scd)
+    comment = (
+        "SCD version of .tables.Country."
+        if is_scd
+        else "Country and continent mapping."
+    )
+    return op.create_table(
+        table.name, *table.c, *table.constraints, comment=comment, if_not_exists=True
+    )
+
+
+def get_vendor_table(is_scd: bool) -> sa.Table:
     table_name = "vendor_scd" if is_scd else "vendor"
     primary_key = ("vendor_id", "observed_at") if is_scd else ("vendor_id",)
     country_table_name = "country_scd" if is_scd else "country"
@@ -205,8 +223,9 @@ def create_vendor_table(is_scd: bool) -> sa.Table:
         if not is_scd
         else ()
     )
-    return op.create_table(
+    return sa.Table(
         table_name,
+        sa.MetaData(),
         sa.Column(
             "vendor_id",
             sqlmodel.sql.sqltypes.AutoString(),
@@ -286,26 +305,28 @@ def create_vendor_table(is_scd: bool) -> sa.Table:
             comment="Timestamp of the last observation.",
         ),
         *foreign_key,
-        sa.PrimaryKeyConstraint(
-            *primary_key,
-            name=op.f(f"pk_{table_name}"),
-        ),
-        comment="SCD version of .tables.Vendor."
-        if is_scd
-        else "Compute resource vendors, such as cloud and server providers.",
-        if_not_exists=True,
+        sa.PrimaryKeyConstraint(*primary_key, name=op.f(f"pk_{table_name}")),
     )
 
 
-def create_region_table(is_scd: bool) -> sa.Table:
+def create_vendor_table(is_scd: bool) -> sa.Table:
+    table = get_vendor_table(is_scd)
+    comment = (
+        "SCD version of .tables.Vendor."
+        if is_scd
+        else "Compute resource vendors, such as cloud and server providers."
+    )
+    return op.create_table(
+        table.name, *table.c, *table.constraints, comment=comment, if_not_exists=True
+    )
+
+
+def get_region_table(is_scd: bool) -> sa.Table:
     table_name = "region_scd" if is_scd else "region"
     primary_key = (
         ("vendor_id", "region_id", "observed_at")
         if is_scd
-        else (
-            "vendor_id",
-            "region_id",
-        )
+        else ("vendor_id", "region_id")
     )
     country_table_name = "country_scd" if is_scd else "country"
     vendor_table_name = "vendor_scd" if is_scd else "vendor"
@@ -325,8 +346,9 @@ def create_region_table(is_scd: bool) -> sa.Table:
         if not is_scd
         else ()
     )
-    return op.create_table(
+    return sa.Table(
         table_name,
+        sa.MetaData(),
         sa.Column(
             "vendor_id",
             sqlmodel.sql.sqltypes.AutoString(),
@@ -361,7 +383,7 @@ def create_region_table(is_scd: bool) -> sa.Table:
             "aliases",
             sa.JSON(),
             nullable=False,
-            comment="List of other commonly used names for the same Region.",
+            comment="List of aliases, i.e. other commonly used names for the same Region.",
         ),
         sa.Column(
             "country_id",
@@ -379,31 +401,31 @@ def create_region_table(is_scd: bool) -> sa.Table:
             "city",
             sqlmodel.sql.sqltypes.AutoString(),
             nullable=True,
-            comment="Optional city name of the Region's location.",
+            comment="Optional city name of the Region's main location.",
         ),
         sa.Column(
             "address_line",
             sqlmodel.sql.sqltypes.AutoString(),
             nullable=True,
-            comment="Optional address line of the Region's location.",
+            comment="Optional address line of the Region's main location.",
         ),
         sa.Column(
             "zip_code",
             sqlmodel.sql.sqltypes.AutoString(),
             nullable=True,
-            comment="Optional ZIP code of the Region's location.",
+            comment="Optional ZIP code of the Region's main location.",
         ),
         sa.Column(
             "lon",
             sa.Float(),
             nullable=True,
-            comment="Longitude coordinate of the Region's known or approximate location.",
+            comment="Longitude coordinate of the Region's main location.",
         ),
         sa.Column(
             "lat",
             sa.Float(),
             nullable=True,
-            comment="Latitude coordinate of the Region's known or approximate location.",
+            comment="Latitude coordinate of the Region's main location.",
         ),
         sa.Column(
             "founding_year",
@@ -431,20 +453,23 @@ def create_region_table(is_scd: bool) -> sa.Table:
         ),
         *foreign_key,
         sa.PrimaryKeyConstraint(*primary_key, name=op.f(f"pk_{table_name}")),
-        comment="SCD version of .tables.Region." if is_scd else "Regions of Vendors.",
-        if_not_exists=True,
     )
 
 
-def create_server_table(is_scd: bool) -> sa.Table:
+def create_region_table(is_scd: bool) -> sa.Table:
+    table = get_region_table(is_scd)
+    comment = "SCD version of .tables.Region." if is_scd else "Regions of Vendors."
+    return op.create_table(
+        table.name, *table.c, *table.constraints, comment=comment, if_not_exists=True
+    )
+
+
+def get_server_table(is_scd: bool) -> sa.Table:
     table_name = "server_scd" if is_scd else "server"
     primary_key = (
         ("vendor_id", "server_id", "observed_at")
         if is_scd
-        else (
-            "vendor_id",
-            "server_id",
-        )
+        else ("vendor_id", "server_id")
     )
     vendor_table_name = "vendor_scd" if is_scd else "vendor"
     foreign_key = (
@@ -458,8 +483,9 @@ def create_server_table(is_scd: bool) -> sa.Table:
         if not is_scd
         else ()
     )
-    return op.create_table(
+    return sa.Table(
         table_name,
+        sa.MetaData(),
         sa.Column(
             "vendor_id",
             sqlmodel.sql.sqltypes.AutoString(),
@@ -516,12 +542,7 @@ def create_server_table(is_scd: bool) -> sa.Table:
         ),
         sa.Column(
             "cpu_allocation",
-            sa.Enum(
-                "SHARED",
-                "BURSTABLE",
-                "DEDICATED",
-                name="cpuallocation",
-            ),
+            sa.Enum("SHARED", "BURSTABLE", "DEDICATED", name="cpuallocation"),
             nullable=False,
             comment="Allocation of CPU(s) to the server, e.g. shared, burstable or dedicated.",
         ),
@@ -569,22 +590,13 @@ def create_server_table(is_scd: bool) -> sa.Table:
             comment="The model number of the primary processor, e.g. 9750H.",
         ),
         sa.Column(
-            "cpu_l1_cache",
-            sa.Integer(),
-            nullable=True,
-            comment="L1 cache size (byte).",
+            "cpu_l1_cache", sa.Integer(), nullable=True, comment="L1 cache size (byte)."
         ),
         sa.Column(
-            "cpu_l2_cache",
-            sa.Integer(),
-            nullable=True,
-            comment="L2 cache size (byte).",
+            "cpu_l2_cache", sa.Integer(), nullable=True, comment="L2 cache size (byte)."
         ),
         sa.Column(
-            "cpu_l3_cache",
-            sa.Integer(),
-            nullable=True,
-            comment="L3 cache size (byte).",
+            "cpu_l3_cache", sa.Integer(), nullable=True, comment="L3 cache size (byte)."
         ),
         sa.Column(
             "cpu_flags", sa.JSON(), nullable=False, comment="CPU features/flags."
@@ -596,10 +608,7 @@ def create_server_table(is_scd: bool) -> sa.Table:
             comment="JSON array of known CPU details, e.g. the manufacturer, family, model; L1/L2/L3 cache size; microcode version; feature flags; bugs etc.",
         ),
         sa.Column(
-            "memory_amount",
-            sa.Integer(),
-            nullable=False,
-            comment="RAM amount (MiB).",
+            "memory_amount", sa.Integer(), nullable=False, comment="RAM amount (MiB)."
         ),
         sa.Column(
             "memory_generation",
@@ -669,13 +678,7 @@ def create_server_table(is_scd: bool) -> sa.Table:
         ),
         sa.Column(
             "storage_type",
-            sa.Enum(
-                "HDD",
-                "SSD",
-                "NVME_SSD",
-                "NETWORK",
-                name="storagetype",
-            ),
+            sa.Enum("HDD", "SSD", "NVME_SSD", "NETWORK", name="storagetype"),
             nullable=True,
             comment="Primary disk type, e.g. HDD, SSD, NVMe SSD, or network).",
         ),
@@ -723,20 +726,23 @@ def create_server_table(is_scd: bool) -> sa.Table:
         ),
         *foreign_key,
         sa.PrimaryKeyConstraint(*primary_key, name=op.f(f"pk_{table_name}")),
-        comment="SCD version of .tables.Server." if is_scd else "Server types.",
-        if_not_exists=True,
     )
 
 
-def create_storage_table(is_scd: bool) -> sa.Table:
+def create_server_table(is_scd: bool) -> sa.Table:
+    table = get_server_table(is_scd)
+    comment = "SCD version of .tables.Server." if is_scd else "Server types."
+    return op.create_table(
+        table.name, *table.c, *table.constraints, comment=comment, if_not_exists=True
+    )
+
+
+def get_storage_table(is_scd: bool) -> sa.Table:
     table_name = "storage_scd" if is_scd else "storage"
     primary_key = (
         ("vendor_id", "storage_id", "observed_at")
         if is_scd
-        else (
-            "vendor_id",
-            "storage_id",
-        )
+        else ("vendor_id", "storage_id")
     )
     vendor_table_name = "vendor_scd" if is_scd else "vendor"
     foreign_key = (
@@ -750,8 +756,9 @@ def create_storage_table(is_scd: bool) -> sa.Table:
         if not is_scd
         else ()
     )
-    return op.create_table(
+    return sa.Table(
         table_name,
+        sa.MetaData(),
         sa.Column(
             "vendor_id",
             sqlmodel.sql.sqltypes.AutoString(),
@@ -778,13 +785,7 @@ def create_storage_table(is_scd: bool) -> sa.Table:
         ),
         sa.Column(
             "storage_type",
-            sa.Enum(
-                "HDD",
-                "SSD",
-                "NVME_SSD",
-                "NETWORK",
-                name="storagetype",
-            ),
+            sa.Enum("HDD", "SSD", "NVME_SSD", "NETWORK", name="storagetype"),
             nullable=False,
             comment="High-level category of the storage, e.g. HDD or SDD.",
         ),
@@ -826,14 +827,22 @@ def create_storage_table(is_scd: bool) -> sa.Table:
         ),
         *foreign_key,
         sa.PrimaryKeyConstraint(*primary_key, name=op.f(f"pk_{table_name}")),
-        comment="SCD version of .tables.Storage."
-        if is_scd
-        else "Flexible storage options that can be attached to a Server.",
-        if_not_exists=True,
     )
 
 
-def create_vendor_compliance_link_table(is_scd: bool) -> sa.Table:
+def create_storage_table(is_scd: bool) -> sa.Table:
+    table = get_storage_table(is_scd)
+    comment = (
+        "SCD version of .tables.Storage."
+        if is_scd
+        else "Flexible storage options that can be attached to a Server."
+    )
+    return op.create_table(
+        table.name, *table.c, *table.constraints, comment=comment, if_not_exists=True
+    )
+
+
+def get_vendor_compliance_link_table(is_scd: bool) -> sa.Table:
     table_name = "vendor_compliance_link_scd" if is_scd else "vendor_compliance_link"
     primary_key = (
         ("vendor_id", "compliance_framework_id", "observed_at")
@@ -862,8 +871,9 @@ def create_vendor_compliance_link_table(is_scd: bool) -> sa.Table:
         if not is_scd
         else ()
     )
-    return op.create_table(
+    return sa.Table(
         table_name,
+        sa.MetaData(),
         sa.Column(
             "vendor_id",
             sqlmodel.sql.sqltypes.AutoString(),
@@ -896,23 +906,27 @@ def create_vendor_compliance_link_table(is_scd: bool) -> sa.Table:
         ),
         *foreign_key,
         sa.PrimaryKeyConstraint(*primary_key, name=op.f(f"pk_{table_name}")),
-        comment="SCD version of .tables.VendorComplianceLink."
-        if is_scd
-        else "List of known Compliance Frameworks paired with vendors.",
-        if_not_exists=True,
     )
 
 
-def create_zone_table(is_scd: bool) -> sa.Table:
+def create_vendor_compliance_link_table(is_scd: bool) -> sa.Table:
+    table = get_vendor_compliance_link_table(is_scd)
+    comment = (
+        "SCD version of .tables.VendorComplianceLink."
+        if is_scd
+        else "List of known Compliance Frameworks paired with vendors."
+    )
+    return op.create_table(
+        table.name, *table.c, *table.constraints, comment=comment, if_not_exists=True
+    )
+
+
+def get_zone_table(is_scd: bool) -> sa.Table:
     table_name = "zone_scd" if is_scd else "zone"
     primary_key = (
         ("vendor_id", "region_id", "zone_id", "observed_at")
         if is_scd
-        else (
-            "vendor_id",
-            "region_id",
-            "zone_id",
-        )
+        else ("vendor_id", "region_id", "zone_id")
     )
     vendor_table_name = "vendor_scd" if is_scd else "vendor"
     region_table_name = "region_scd" if is_scd else "region"
@@ -932,8 +946,9 @@ def create_zone_table(is_scd: bool) -> sa.Table:
         if not is_scd
         else ()
     )
-    return op.create_table(
+    return sa.Table(
         table_name,
+        sa.MetaData(),
         sa.Column(
             "vendor_id",
             sqlmodel.sql.sqltypes.AutoString(),
@@ -984,16 +999,20 @@ def create_zone_table(is_scd: bool) -> sa.Table:
         ),
         *foreign_key,
         sa.PrimaryKeyConstraint(*primary_key, name=op.f(f"pk_{table_name}")),
-        comment="SCD version of .tables.Zone."
-        if is_scd
-        else "Availability zones of Regions.",
-        if_not_exists=True,
     )
 
 
-def create_benchmark_score_table(is_scd: bool) -> sa.Table:
-    is_postgresql_migration = op.get_context().dialect.name == "postgresql"
-    json_type = JSONB if is_postgresql_migration else sa.JSON
+def create_zone_table(is_scd: bool) -> sa.Table:
+    table = get_zone_table(is_scd)
+    comment = (
+        "SCD version of .tables.Zone." if is_scd else "Availability zones of Regions."
+    )
+    return op.create_table(
+        table.name, *table.c, *table.constraints, comment=comment, if_not_exists=True
+    )
+
+
+def get_benchmark_score_table(is_scd: bool) -> sa.Table:
     table_name = "benchmark_score_scd" if is_scd else "benchmark_score"
     primary_key = (
         ("vendor_id", "server_id", "benchmark_id", "config", "observed_at")
@@ -1003,6 +1022,8 @@ def create_benchmark_score_table(is_scd: bool) -> sa.Table:
     vendor_table_name = "vendor_scd" if is_scd else "vendor"
     benchmark_table_name = "benchmark_scd" if is_scd else "benchmark"
     server_table_name = "server_scd" if is_scd else "server"
+    is_postgresql_migration = op.get_context().dialect.name == "postgresql"
+    json_type = JSONB if is_postgresql_migration else sa.JSON
     foreign_key = (
         (
             sa.ForeignKeyConstraint(
@@ -1024,8 +1045,9 @@ def create_benchmark_score_table(is_scd: bool) -> sa.Table:
         if not is_scd
         else ()
     )
-    return op.create_table(
+    return sa.Table(
         table_name,
+        sa.MetaData(),
         sa.Column(
             "vendor_id",
             sqlmodel.sql.sqltypes.AutoString(),
@@ -1076,14 +1098,22 @@ def create_benchmark_score_table(is_scd: bool) -> sa.Table:
         ),
         *foreign_key,
         sa.PrimaryKeyConstraint(*primary_key, name=op.f(f"pk_{table_name}")),
-        comment="SCD version of .tables.BenchmarkScore."
-        if is_scd
-        else "Results of running Benchmark scenarios on Servers.",
-        if_not_exists=True,
     )
 
 
-def create_ipv4_price_table(is_scd: bool) -> sa.Table:
+def create_benchmark_score_table(is_scd: bool) -> sa.Table:
+    table = get_benchmark_score_table(is_scd)
+    comment = (
+        "SCD version of .tables.BenchmarkScore."
+        if is_scd
+        else "Results of running Benchmark scenarios on Servers."
+    )
+    return op.create_table(
+        table.name, *table.c, *table.constraints, comment=comment, if_not_exists=True
+    )
+
+
+def get_ipv4_price_table(is_scd: bool) -> sa.Table:
     table_name = "ipv4_price_scd" if is_scd else "ipv4_price"
     primary_key = (
         ("vendor_id", "region_id", "observed_at")
@@ -1108,8 +1138,9 @@ def create_ipv4_price_table(is_scd: bool) -> sa.Table:
         if not is_scd
         else ()
     )
-    return op.create_table(
+    return sa.Table(
         table_name,
+        sa.MetaData(),
         sa.Column(
             "vendor_id",
             sqlmodel.sql.sqltypes.AutoString(),
@@ -1124,15 +1155,7 @@ def create_ipv4_price_table(is_scd: bool) -> sa.Table:
         ),
         sa.Column(
             "unit",
-            sa.Enum(
-                "YEAR",
-                "MONTH",
-                "HOUR",
-                "GIB",
-                "GB",
-                "GB_MONTH",
-                name="priceunit",
-            ),
+            sa.Enum("YEAR", "MONTH", "HOUR", "GIB", "GB", "GB_MONTH", name="priceunit"),
             nullable=False,
             comment="Billing unit of the pricing model.",
         ),
@@ -1174,14 +1197,22 @@ def create_ipv4_price_table(is_scd: bool) -> sa.Table:
         ),
         *foreign_key,
         sa.PrimaryKeyConstraint(*primary_key, name=op.f(f"pk_{table_name}")),
-        comment="SCD version of .tables.Ipv4Price."
-        if is_scd
-        else "Price of an IPv4 address in each Region.",
-        if_not_exists=True,
     )
 
 
-def create_server_price_table(is_scd: bool) -> sa.Table:
+def create_ipv4_price_table(is_scd: bool) -> sa.Table:
+    table = get_ipv4_price_table(is_scd)
+    comment = (
+        "SCD version of .tables.Ipv4Price."
+        if is_scd
+        else "Price of an IPv4 address in each Region."
+    )
+    return op.create_table(
+        table.name, *table.c, *table.constraints, comment=comment, if_not_exists=True
+    )
+
+
+def get_server_price_table(is_scd: bool) -> sa.Table:
     table_name = "server_price_scd" if is_scd else "server_price"
     primary_key = (
         ("vendor_id", "region_id", "zone_id", "server_id", "allocation", "observed_at")
@@ -1210,26 +1241,21 @@ def create_server_price_table(is_scd: bool) -> sa.Table:
             ),
             sa.ForeignKeyConstraint(
                 ["vendor_id", "region_id"],
-                [
-                    f"{region_table_name}.vendor_id",
-                    f"{region_table_name}.region_id",
-                ],
+                [f"{region_table_name}.vendor_id", f"{region_table_name}.region_id"],
                 name=op.f(f"fk_{table_name}_vendor_id_{region_table_name}"),
             ),
             sa.ForeignKeyConstraint(
                 ["vendor_id", "server_id"],
-                [
-                    f"{server_table_name}.vendor_id",
-                    f"{server_table_name}.server_id",
-                ],
+                [f"{server_table_name}.vendor_id", f"{server_table_name}.server_id"],
                 name=op.f(f"fk_{table_name}_vendor_id_{server_table_name}"),
             ),
         )
         if not is_scd
         else ()
     )
-    return op.create_table(
+    return sa.Table(
         table_name,
+        sa.MetaData(),
         sa.Column(
             "vendor_id",
             sqlmodel.sql.sqltypes.AutoString(),
@@ -1268,15 +1294,7 @@ def create_server_price_table(is_scd: bool) -> sa.Table:
         ),
         sa.Column(
             "unit",
-            sa.Enum(
-                "YEAR",
-                "MONTH",
-                "HOUR",
-                "GIB",
-                "GB",
-                "GB_MONTH",
-                name="priceunit",
-            ),
+            sa.Enum("YEAR", "MONTH", "HOUR", "GIB", "GB", "GB_MONTH", name="priceunit"),
             nullable=False,
             comment="Billing unit of the pricing model.",
         ),
@@ -1318,14 +1336,22 @@ def create_server_price_table(is_scd: bool) -> sa.Table:
         ),
         *foreign_key,
         sa.PrimaryKeyConstraint(*primary_key, name=op.f(f"pk_{table_name}")),
-        comment="SCD version of .tables.ServerPrice."
-        if is_scd
-        else "Server type prices per Region and Allocation method.",
-        if_not_exists=True,
     )
 
 
-def create_storage_price_table(is_scd: bool) -> sa.Table:
+def create_server_price_table(is_scd: bool) -> sa.Table:
+    table = get_server_price_table(is_scd)
+    comment = (
+        "SCD version of .tables.ServerPrice."
+        if is_scd
+        else "Server type prices per Region and Allocation method."
+    )
+    return op.create_table(
+        table.name, *table.c, *table.constraints, comment=comment, if_not_exists=True
+    )
+
+
+def get_storage_price_table(is_scd: bool) -> sa.Table:
     table_name = "storage_price_scd" if is_scd else "storage_price"
     primary_key = (
         ("vendor_id", "region_id", "storage_id", "observed_at")
@@ -1344,26 +1370,21 @@ def create_storage_price_table(is_scd: bool) -> sa.Table:
             ),
             sa.ForeignKeyConstraint(
                 ["vendor_id", "region_id"],
-                [
-                    f"{region_table_name}.vendor_id",
-                    f"{region_table_name}.region_id",
-                ],
+                [f"{region_table_name}.vendor_id", f"{region_table_name}.region_id"],
                 name=op.f(f"fk_{table_name}_vendor_id_{region_table_name}"),
             ),
             sa.ForeignKeyConstraint(
                 ["vendor_id", "storage_id"],
-                [
-                    f"{storage_table_name}.vendor_id",
-                    f"{storage_table_name}.storage_id",
-                ],
+                [f"{storage_table_name}.vendor_id", f"{storage_table_name}.storage_id"],
                 name=op.f(f"fk_{table_name}_vendor_id_{storage_table_name}"),
             ),
         )
         if not is_scd
         else ()
     )
-    return op.create_table(
+    return sa.Table(
         table_name,
+        sa.MetaData(),
         sa.Column(
             "vendor_id",
             sqlmodel.sql.sqltypes.AutoString(),
@@ -1384,15 +1405,7 @@ def create_storage_price_table(is_scd: bool) -> sa.Table:
         ),
         sa.Column(
             "unit",
-            sa.Enum(
-                "YEAR",
-                "MONTH",
-                "HOUR",
-                "GIB",
-                "GB",
-                "GB_MONTH",
-                name="priceunit",
-            ),
+            sa.Enum("YEAR", "MONTH", "HOUR", "GIB", "GB", "GB_MONTH", name="priceunit"),
             nullable=False,
             comment="Billing unit of the pricing model.",
         ),
@@ -1434,14 +1447,22 @@ def create_storage_price_table(is_scd: bool) -> sa.Table:
         ),
         *foreign_key,
         sa.PrimaryKeyConstraint(*primary_key, name=op.f(f"pk_{table_name}")),
-        comment="SCD version of .tables.StoragePrice."
-        if is_scd
-        else "Flexible Storage prices in each Region.",
-        if_not_exists=True,
     )
 
 
-def create_traffic_price_table(is_scd: bool) -> sa.Table:
+def create_storage_price_table(is_scd: bool) -> sa.Table:
+    table = get_storage_price_table(is_scd)
+    comment = (
+        "SCD version of .tables.StoragePrice."
+        if is_scd
+        else "Flexible Storage prices in each Region."
+    )
+    return op.create_table(
+        table.name, *table.c, *table.constraints, comment=comment, if_not_exists=True
+    )
+
+
+def get_traffic_price_table(is_scd: bool) -> sa.Table:
     table_name = "traffic_price_scd" if is_scd else "traffic_price"
     primary_key = (
         ("vendor_id", "region_id", "direction", "observed_at")
@@ -1466,8 +1487,9 @@ def create_traffic_price_table(is_scd: bool) -> sa.Table:
         if not is_scd
         else ()
     )
-    return op.create_table(
+    return sa.Table(
         table_name,
+        sa.MetaData(),
         sa.Column(
             "vendor_id",
             sqlmodel.sql.sqltypes.AutoString(),
@@ -1488,15 +1510,7 @@ def create_traffic_price_table(is_scd: bool) -> sa.Table:
         ),
         sa.Column(
             "unit",
-            sa.Enum(
-                "YEAR",
-                "MONTH",
-                "HOUR",
-                "GIB",
-                "GB",
-                "GB_MONTH",
-                name="priceunit",
-            ),
+            sa.Enum("YEAR", "MONTH", "HOUR", "GIB", "GB", "GB_MONTH", name="priceunit"),
             nullable=False,
             comment="Billing unit of the pricing model.",
         ),
@@ -1538,8 +1552,28 @@ def create_traffic_price_table(is_scd: bool) -> sa.Table:
         ),
         *foreign_key,
         sa.PrimaryKeyConstraint(*primary_key, name=op.f(f"pk_{table_name}")),
-        comment="SCD version of .tables.TrafficPrice."
-        if is_scd
-        else "Extra Traffic prices in each Region.",
-        if_not_exists=True,
     )
+
+
+def create_traffic_price_table(is_scd: bool) -> sa.Table:
+    table = get_traffic_price_table(is_scd)
+    comment = (
+        "SCD version of .tables.TrafficPrice."
+        if is_scd
+        else "Extra Traffic prices in each Region."
+    )
+    return op.create_table(
+        table.name, *table.c, *table.constraints, comment=comment, if_not_exists=True
+    )
+
+
+def _insert_column_after(table: sa.Table, new_col: sa.Column, after: str):
+    """Insert a column into a Table's column collection after the named column."""
+    cols = list(table.c)
+    idx = next(i for i, c in enumerate(cols) if c.name == after) + 1
+    tail = cols[idx:]
+    for c in tail:
+        table._columns.remove(c)
+    table.append_column(new_col)
+    for c in tail:
+        table.append_column(c)
