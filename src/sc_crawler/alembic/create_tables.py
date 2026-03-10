@@ -1,23 +1,7 @@
-"""v0.3.3 migration reset
-
-Revision ID: dad8a1f0f455
-Revises:
-Create Date: 2026-02-02 17:46:08.598626
-
-"""
-
-from typing import Sequence, Union
-
 import sqlalchemy as sa
 import sqlmodel
 from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB
-
-# revision identifiers, used by Alembic.
-revision: str = "dad8a1f0f455"
-down_revision: Union[str, None] = None
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
 
 
 def create_benchmark_table(is_scd: bool) -> sa.Table:
@@ -532,7 +516,12 @@ def create_server_table(is_scd: bool) -> sa.Table:
         ),
         sa.Column(
             "cpu_allocation",
-            sa.Enum("SHARED", "BURSTABLE", "DEDICATED", name="cpuallocation"),
+            sa.Enum(
+                "SHARED",
+                "BURSTABLE",
+                "DEDICATED",
+                name="cpuallocation",
+            ),
             nullable=False,
             comment="Allocation of CPU(s) to the server, e.g. shared, burstable or dedicated.",
         ),
@@ -680,7 +669,13 @@ def create_server_table(is_scd: bool) -> sa.Table:
         ),
         sa.Column(
             "storage_type",
-            sa.Enum("HDD", "SSD", "NVME_SSD", "NETWORK", name="storagetype"),
+            sa.Enum(
+                "HDD",
+                "SSD",
+                "NVME_SSD",
+                "NETWORK",
+                name="storagetype",
+            ),
             nullable=True,
             comment="Primary disk type, e.g. HDD, SSD, NVMe SSD, or network).",
         ),
@@ -783,7 +778,13 @@ def create_storage_table(is_scd: bool) -> sa.Table:
         ),
         sa.Column(
             "storage_type",
-            sa.Enum("HDD", "SSD", "NVME_SSD", "NETWORK", name="storagetype"),
+            sa.Enum(
+                "HDD",
+                "SSD",
+                "NVME_SSD",
+                "NETWORK",
+                name="storagetype",
+            ),
             nullable=False,
             comment="High-level category of the storage, e.g. HDD or SDD.",
         ),
@@ -1123,7 +1124,15 @@ def create_ipv4_price_table(is_scd: bool) -> sa.Table:
         ),
         sa.Column(
             "unit",
-            sa.Enum("YEAR", "MONTH", "HOUR", "GIB", "GB", "GB_MONTH", name="priceunit"),
+            sa.Enum(
+                "YEAR",
+                "MONTH",
+                "HOUR",
+                "GIB",
+                "GB",
+                "GB_MONTH",
+                name="priceunit",
+            ),
             nullable=False,
             comment="Billing unit of the pricing model.",
         ),
@@ -1259,7 +1268,15 @@ def create_server_price_table(is_scd: bool) -> sa.Table:
         ),
         sa.Column(
             "unit",
-            sa.Enum("YEAR", "MONTH", "HOUR", "GIB", "GB", "GB_MONTH", name="priceunit"),
+            sa.Enum(
+                "YEAR",
+                "MONTH",
+                "HOUR",
+                "GIB",
+                "GB",
+                "GB_MONTH",
+                name="priceunit",
+            ),
             nullable=False,
             comment="Billing unit of the pricing model.",
         ),
@@ -1367,7 +1384,15 @@ def create_storage_price_table(is_scd: bool) -> sa.Table:
         ),
         sa.Column(
             "unit",
-            sa.Enum("YEAR", "MONTH", "HOUR", "GIB", "GB", "GB_MONTH", name="priceunit"),
+            sa.Enum(
+                "YEAR",
+                "MONTH",
+                "HOUR",
+                "GIB",
+                "GB",
+                "GB_MONTH",
+                name="priceunit",
+            ),
             nullable=False,
             comment="Billing unit of the pricing model.",
         ),
@@ -1463,7 +1488,15 @@ def create_traffic_price_table(is_scd: bool) -> sa.Table:
         ),
         sa.Column(
             "unit",
-            sa.Enum("YEAR", "MONTH", "HOUR", "GIB", "GB", "GB_MONTH", name="priceunit"),
+            sa.Enum(
+                "YEAR",
+                "MONTH",
+                "HOUR",
+                "GIB",
+                "GB",
+                "GB_MONTH",
+                name="priceunit",
+            ),
             nullable=False,
             comment="Billing unit of the pricing model.",
         ),
@@ -1510,64 +1543,3 @@ def create_traffic_price_table(is_scd: bool) -> sa.Table:
         else "Extra Traffic prices in each Region.",
         if_not_exists=True,
     )
-
-
-def upgrade() -> None:
-    is_scd = bool(op.get_context().config.attributes.get("scd"))
-    create_benchmark_table(is_scd)
-    create_compliance_framework_table(is_scd)
-    create_country_table(is_scd)
-    create_vendor_table(is_scd)
-    create_region_table(is_scd)
-    create_server_table(is_scd)
-    create_storage_table(is_scd)
-    create_vendor_compliance_link_table(is_scd)
-    create_zone_table(is_scd)
-    create_benchmark_score_table(is_scd)
-    create_ipv4_price_table(is_scd)
-    create_server_price_table(is_scd)
-    create_storage_price_table(is_scd)
-    create_traffic_price_table(is_scd)
-
-
-def downgrade() -> None:
-    if op.get_context().config.attributes.get("scd"):
-        op.drop_table("traffic_price_scd")
-        op.drop_table("storage_price_scd")
-        op.drop_table("server_price_scd")
-        op.drop_table("ipv4_price_scd")
-        op.drop_table("benchmark_score_scd")
-        op.drop_table("zone_scd")
-        op.drop_table("vendor_compliance_link_scd")
-        op.drop_table("storage_scd")
-        op.drop_table("server_scd")
-        op.drop_table("region_scd")
-        op.drop_table("vendor_scd")
-        op.drop_table("country_scd")
-        op.drop_table("compliance_framework_scd")
-        op.drop_table("benchmark_scd")
-    else:
-        op.drop_table("traffic_price")
-        op.drop_table("storage_price")
-        op.drop_table("server_price")
-        op.drop_table("ipv4_price")
-        op.drop_table("benchmark_score")
-        op.drop_table("zone")
-        op.drop_table("vendor_compliance_link")
-        op.drop_table("storage")
-        op.drop_table("server")
-        op.drop_table("region")
-        op.drop_table("vendor")
-        op.drop_table("country")
-        op.drop_table("compliance_framework")
-        op.drop_table("benchmark")
-
-    if op.get_context().dialect.name == "postgresql":
-        op.execute("DROP TYPE IF EXISTS status")
-        op.execute("DROP TYPE IF EXISTS cpuallocation")
-        op.execute("DROP TYPE IF EXISTS cpuarchitecture")
-        op.execute("DROP TYPE IF EXISTS ddrgeneration")
-        op.execute("DROP TYPE IF EXISTS storagetype")
-        op.execute("DROP TYPE IF EXISTS priceunit")
-        op.execute("DROP TYPE IF EXISTS allocation")
-        op.execute("DROP TYPE IF EXISTS trafficdirection")

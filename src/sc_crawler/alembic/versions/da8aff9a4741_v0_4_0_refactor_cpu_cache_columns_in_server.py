@@ -12,6 +12,10 @@ import sqlalchemy as sa
 import sqlmodel
 from alembic import op
 
+from sc_crawler.alembic.create_tables import (
+    create_server_table,
+)
+
 # revision identifiers, used by Alembic.
 revision: str = "da8aff9a4741"
 down_revision: Union[str, None] = "aeae56af8ca6"
@@ -29,97 +33,23 @@ def scdize_suffix(table_name: str) -> str:
     return table_name
 
 
-# need to provide the table schema for offline mode support
-server_primary_key = (
-    ("vendor_id", "server_id", "observed_at")
-    if is_scd_migration()
-    else (
-        "vendor_id",
-        "server_id",
+def get_server_table_v034(scd: bool) -> sa.Table:
+    """Return server table as it exists after aeae56af8ca6 (v0.3.4)."""
+    table = create_server_table(scd)
+    gpu_col = table.c.gpu_count
+    new_col = sa.Column(
+        "gpu_count",
+        sa.Float(),
+        nullable=gpu_col.nullable,
+        comment=gpu_col.comment,
     )
-)
-server_foreign_key = (
-    (
-        sa.ForeignKeyConstraint(
-            ["vendor_id"],
-            [f"{scdize_suffix('vendor')}.vendor_id"],
-            name=op.f(
-                f"fk_{scdize_suffix('server')}_vendor_id_{scdize_suffix('vendor')}"
-            ),
-        ),
-    )
-    if not is_scd_migration()
-    else ()
-)
-server_table = sa.Table(
-    scdize_suffix("server"),
-    sa.MetaData(),
-    sa.Column("vendor_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-    sa.Column("server_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-    sa.Column("name", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-    sa.Column("api_reference", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-    sa.Column("display_name", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-    sa.Column("description", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-    sa.Column("family", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-    sa.Column("vcpus", sa.Integer(), nullable=False),
-    sa.Column("hypervisor", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-    sa.Column(
-        "cpu_allocation",
-        sa.Enum("SHARED", "BURSTABLE", "DEDICATED", name="cpuallocation"),
-        nullable=False,
-    ),
-    sa.Column("cpu_cores", sa.Integer(), nullable=True),
-    sa.Column("cpu_speed", sa.Float(), nullable=True),
-    sa.Column(
-        "cpu_architecture",
-        sa.Enum(
-            "ARM64", "ARM64_MAC", "I386", "X86_64", "X86_64_MAC", name="cpuarchitecture"
-        ),
-        nullable=False,
-    ),
-    sa.Column("cpu_manufacturer", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-    sa.Column("cpu_family", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-    sa.Column("cpu_model", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-    sa.Column("cpu_l1_cache", sa.Integer(), nullable=True),
-    sa.Column("cpu_l2_cache", sa.Integer(), nullable=True),
-    sa.Column("cpu_l3_cache", sa.Integer(), nullable=True),
-    sa.Column("cpu_flags", sa.JSON(), nullable=False),
-    sa.Column("cpus", sa.JSON(), nullable=False),
-    sa.Column("memory_amount", sa.Integer(), nullable=False),
-    sa.Column(
-        "memory_generation",
-        sa.Enum("DDR3", "DDR4", "DDR5", name="ddrgeneration"),
-        nullable=True,
-    ),
-    sa.Column("memory_speed", sa.Integer(), nullable=True),
-    sa.Column("memory_ecc", sa.Boolean(), nullable=True),
-    sa.Column("gpu_count", sa.Integer(), nullable=False),
-    sa.Column("gpu_memory_min", sa.Integer(), nullable=True),
-    sa.Column("gpu_memory_total", sa.Integer(), nullable=True),
-    sa.Column("gpu_manufacturer", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-    sa.Column("gpu_family", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-    sa.Column("gpu_model", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-    sa.Column("gpus", sa.JSON(), nullable=False),
-    sa.Column("storage_size", sa.Integer(), nullable=False),
-    sa.Column(
-        "storage_type",
-        sa.Enum("HDD", "SSD", "NVME_SSD", "NETWORK", name="storagetype"),
-        nullable=True,
-    ),
-    sa.Column("storages", sa.JSON(), nullable=False),
-    sa.Column("network_speed", sa.Float(), nullable=True),
-    sa.Column("inbound_traffic", sa.Float(), nullable=False),
-    sa.Column("outbound_traffic", sa.Float(), nullable=False),
-    sa.Column("ipv4", sa.Integer(), nullable=False),
-    sa.Column("status", sa.Enum("ACTIVE", "INACTIVE", name="status"), nullable=False),
-    sa.Column("observed_at", sa.DateTime(), nullable=False),
-    *server_foreign_key,
-    sa.PrimaryKeyConstraint(*server_primary_key),
-)
+    table._columns.replace(new_col)
+    return table
 
 
 def upgrade() -> None:
     server_table_name = scdize_suffix("server")
+    server_table = get_server_table_v034(is_scd_migration())
     do_recreate_tables = (
         op.get_context().dialect.name == "sqlite"
     ) or is_scd_migration()
@@ -163,6 +93,24 @@ def upgrade() -> None:
             op.add_column(
                 server_table_name,
                 sa.Column(col_name, sa.Integer(), nullable=True, comment=comment),
+            )
+        # Only convert if BigInteger (i.e. downgrade was run before re-upgrading)
+        conn = op.get_bind()
+        inspector = sa.inspect(conn)
+        cols = {c["name"]: c["type"] for c in inspector.get_columns(server_table_name)}
+        if isinstance(cols.get("cpu_l2_cache"), sa.BigInteger):
+            op.alter_column(
+                server_table_name,
+                "cpu_l2_cache",
+                existing_type=sa.BigInteger(),
+                type_=sa.Integer(),
+            )
+        if isinstance(cols.get("cpu_l3_cache"), sa.BigInteger):
+            op.alter_column(
+                server_table_name,
+                "cpu_l3_cache",
+                existing_type=sa.BigInteger(),
+                type_=sa.Integer(),
             )
 
     for col_name, _, _ in new_columns:
@@ -210,7 +158,9 @@ def upgrade() -> None:
     )
 
     if do_recreate_tables:
-        with op.batch_alter_table(server_table_name, schema=None) as batch_op:
+        with op.batch_alter_table(
+            server_table_name, schema=None, copy_from=server_table
+        ) as batch_op:
             batch_op.drop_column("cpu_l1_cache")
     else:
         op.drop_column(server_table_name, "cpu_l1_cache")
@@ -218,6 +168,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     server_table_name = scdize_suffix("server")
+    server_table = get_server_table_v034(is_scd_migration())
     do_recreate_tables = (
         op.get_context().dialect.name == "sqlite"
     ) or is_scd_migration()
@@ -239,21 +190,39 @@ def downgrade() -> None:
             batch_op.add_column(
                 sa.Column(
                     "cpu_l1_cache",
-                    sa.INTEGER(),
+                    sa.BigInteger(),
                     nullable=True,
                     comment="L1 cache size (bytes).",
                 ),
                 insert_after="cpu_model",
+            )
+            batch_op.alter_column(
+                "cpu_l2_cache", existing_type=sa.Integer(), type_=sa.BigInteger()
+            )
+            batch_op.alter_column(
+                "cpu_l3_cache", existing_type=sa.Integer(), type_=sa.BigInteger()
             )
     else:
         op.add_column(
             server_table_name,
             sa.Column(
                 "cpu_l1_cache",
-                sa.INTEGER(),
+                sa.BigInteger(),
                 nullable=True,
                 comment="L1 cache size (bytes).",
             ),
+        )
+        op.alter_column(
+            server_table_name,
+            "cpu_l2_cache",
+            existing_type=sa.Integer(),
+            type_=sa.BigInteger(),
+        )
+        op.alter_column(
+            server_table_name,
+            "cpu_l3_cache",
+            existing_type=sa.Integer(),
+            type_=sa.BigInteger(),
         )
 
     # Restore total bytes from _total KiB columns: total_bytes = total_KiB * 1024
