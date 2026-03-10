@@ -19,8 +19,12 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+def is_scd_migration() -> bool:
+    return op.get_context().config.attributes.get("scd")
+
+
 def scdize_suffix(table_name: str) -> str:
-    if op.get_context().config.attributes.get("scd"):
+    if is_scd_migration():
         return table_name + "_scd"
     return table_name
 
@@ -28,7 +32,7 @@ def scdize_suffix(table_name: str) -> str:
 # need to provide the table schema for offline mode support
 server_primary_key = (
     ("vendor_id", "server_id", "observed_at")
-    if op.get_context().config.attributes.get("scd")
+    if is_scd_migration()
     else (
         "vendor_id",
         "server_id",
@@ -44,7 +48,7 @@ server_foreign_key = (
             ),
         ),
     )
-    if not op.get_context().config.attributes.get("scd")
+    if not is_scd_migration()
     else ()
 )
 server_table = sa.Table(
@@ -118,7 +122,7 @@ def upgrade() -> None:
     server_table_name = scdize_suffix("server")
     do_recreate_tables = (
         op.get_context().dialect.name == "sqlite"
-    ) or op.get_context().config.attributes.get("scd")
+    ) or is_scd_migration()
 
     new_columns = [
         ("cpu_l1d_cache", "L1 data cache size (KiB).", "cpu_model"),
@@ -216,7 +220,7 @@ def downgrade() -> None:
     server_table_name = scdize_suffix("server")
     do_recreate_tables = (
         op.get_context().dialect.name == "sqlite"
-    ) or op.get_context().config.attributes.get("scd")
+    ) or is_scd_migration()
 
     for col_name in [
         "cpu_l1d_cache",
