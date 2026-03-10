@@ -12,7 +12,7 @@ import sqlalchemy as sa
 import sqlmodel
 from alembic import op
 
-from sc_crawler.alembic.create_tables import _insert_column_after, get_server_table
+from sc_crawler.alembic.table_helpers import _insert_column_after, get_server_table
 
 # revision identifiers, used by Alembic.
 revision: str = "da8aff9a4741"
@@ -22,7 +22,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def is_scd_migration() -> bool:
-    return op.get_context().config.attributes.get("scd")
+    return bool(op.get_context().config.attributes.get("scd"))
 
 
 def scdize_suffix(table_name: str) -> str:

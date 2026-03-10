@@ -11,7 +11,7 @@ from typing import Sequence, Union
 import sqlalchemy as sa
 from alembic import op
 
-from sc_crawler.alembic.create_tables import (
+from sc_crawler.alembic.table_helpers import (
     get_benchmark_table,
     get_compliance_framework_table,
     get_server_table,
@@ -26,7 +26,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def is_scd_migration() -> bool:
-    return op.get_context().config.attributes.get("scd")
+    return bool(op.get_context().config.attributes.get("scd"))
 
 
 def scdize_suffix(table_name: str) -> str:
