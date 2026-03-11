@@ -42,6 +42,7 @@ def _insert_column_after(table: sa.Table, new_col: sa.Column, after: str):
 
 
 def get_server_table(is_scd: bool) -> sa.Table:
+    is_postgresql = op.get_context().dialect.name == "postgresql"
     server_table = sa.Table(
         "server",
         sa.MetaData(),
@@ -101,7 +102,20 @@ def get_server_table(is_scd: bool) -> sa.Table:
         ),
         sa.Column(
             "cpu_allocation",
-            sa.Enum("SHARED", "BURSTABLE", "DEDICATED", name="cpuallocation"),
+            sa.dialects.postgresql.ENUM(
+                "SHARED",
+                "BURSTABLE",
+                "DEDICATED",
+                name="cpuallocation",
+                create_type=False,
+            )
+            if is_postgresql
+            else sa.Enum(
+                "SHARED",
+                "BURSTABLE",
+                "DEDICATED",
+                name="cpuallocation",
+            ),
             nullable=False,
             comment="Allocation of CPU(s) to the server, e.g. shared, burstable or dedicated.",
         ),
@@ -119,7 +133,17 @@ def get_server_table(is_scd: bool) -> sa.Table:
         ),
         sa.Column(
             "cpu_architecture",
-            sa.Enum(
+            sa.dialects.postgresql.ENUM(
+                "ARM64",
+                "ARM64_MAC",
+                "I386",
+                "X86_64",
+                "X86_64_MAC",
+                name="cpuarchitecture",
+                create_type=False,
+            )
+            if is_postgresql
+            else sa.Enum(
                 "ARM64",
                 "ARM64_MAC",
                 "I386",
@@ -183,7 +207,16 @@ def get_server_table(is_scd: bool) -> sa.Table:
         ),
         sa.Column(
             "memory_generation",
-            sa.Enum("DDR3", "DDR4", "DDR5", name="ddrgeneration"),
+            sa.dialects.postgresql.ENUM(
+                "DDR3", "DDR4", "DDR5", name="ddrgeneration", create_type=False
+            )
+            if is_postgresql
+            else sa.Enum(
+                "DDR3",
+                "DDR4",
+                "DDR5",
+                name="ddrgeneration",
+            ),
             nullable=True,
             comment="Generation of the DDR SDRAM, e.g. DDR4 or DDR5.",
         ),
@@ -249,7 +282,22 @@ def get_server_table(is_scd: bool) -> sa.Table:
         ),
         sa.Column(
             "storage_type",
-            sa.Enum("HDD", "SSD", "NVME_SSD", "NETWORK", name="storagetype"),
+            sa.dialects.postgresql.ENUM(
+                "HDD",
+                "SSD",
+                "NVME_SSD",
+                "NETWORK",
+                name="storagetype",
+                create_type=False,
+            )
+            if is_postgresql
+            else sa.Enum(
+                "HDD",
+                "SSD",
+                "NVME_SSD",
+                "NETWORK",
+                name="storagetype",
+            ),
             nullable=True,
             comment="Primary disk type, e.g. HDD, SSD, NVMe SSD, or network).",
         ),
@@ -285,7 +333,15 @@ def get_server_table(is_scd: bool) -> sa.Table:
         ),
         sa.Column(
             "status",
-            sa.Enum("ACTIVE", "INACTIVE", name="status"),
+            sa.dialects.postgresql.ENUM(
+                "ACTIVE", "INACTIVE", name="status", create_type=False
+            )
+            if is_postgresql
+            else sa.Enum(
+                "ACTIVE",
+                "INACTIVE",
+                name="status",
+            ),
             nullable=False,
             comment="Status of the resource (active or inactive).",
         ),
@@ -362,7 +418,20 @@ def get_server_table(is_scd: bool) -> sa.Table:
         ),
         sa.Column(
             "cpu_allocation",
-            sa.Enum("SHARED", "BURSTABLE", "DEDICATED", name="cpuallocation"),
+            sa.dialects.postgresql.ENUM(
+                "SHARED",
+                "BURSTABLE",
+                "DEDICATED",
+                name="cpuallocation",
+                create_type=False,
+            )
+            if is_postgresql
+            else sa.Enum(
+                "SHARED",
+                "BURSTABLE",
+                "DEDICATED",
+                name="cpuallocation",
+            ),
             nullable=False,
             comment="Allocation of CPU(s) to the server, e.g. shared, burstable or dedicated.",
         ),
@@ -380,7 +449,17 @@ def get_server_table(is_scd: bool) -> sa.Table:
         ),
         sa.Column(
             "cpu_architecture",
-            sa.Enum(
+            sa.dialects.postgresql.ENUM(
+                "ARM64",
+                "ARM64_MAC",
+                "I386",
+                "X86_64",
+                "X86_64_MAC",
+                name="cpuarchitecture",
+                create_type=False,
+            )
+            if is_postgresql
+            else sa.Enum(
                 "ARM64",
                 "ARM64_MAC",
                 "I386",
@@ -444,7 +523,16 @@ def get_server_table(is_scd: bool) -> sa.Table:
         ),
         sa.Column(
             "memory_generation",
-            sa.Enum("DDR3", "DDR4", "DDR5", name="ddrgeneration"),
+            sa.dialects.postgresql.ENUM(
+                "DDR3", "DDR4", "DDR5", name="ddrgeneration", create_type=False
+            )
+            if is_postgresql
+            else sa.Enum(
+                "DDR3",
+                "DDR4",
+                "DDR5",
+                name="ddrgeneration",
+            ),
             nullable=True,
             comment="Generation of the DDR SDRAM, e.g. DDR4 or DDR5.",
         ),
@@ -510,7 +598,22 @@ def get_server_table(is_scd: bool) -> sa.Table:
         ),
         sa.Column(
             "storage_type",
-            sa.Enum("HDD", "SSD", "NVME_SSD", "NETWORK", name="storagetype"),
+            sa.dialects.postgresql.ENUM(
+                "HDD",
+                "SSD",
+                "NVME_SSD",
+                "NETWORK",
+                name="storagetype",
+                create_type=False,
+            )
+            if is_postgresql
+            else sa.Enum(
+                "HDD",
+                "SSD",
+                "NVME_SSD",
+                "NETWORK",
+                name="storagetype",
+            ),
             nullable=True,
             comment="Primary disk type, e.g. HDD, SSD, NVMe SSD, or network).",
         ),
@@ -546,7 +649,11 @@ def get_server_table(is_scd: bool) -> sa.Table:
         ),
         sa.Column(
             "status",
-            sa.Enum("ACTIVE", "INACTIVE", name="status"),
+            sa.dialects.postgresql.ENUM(
+                "ACTIVE", "INACTIVE", name="status", create_type=False
+            )
+            if is_postgresql
+            else sa.Enum("ACTIVE", "INACTIVE", name="status"),
             nullable=False,
             comment="Status of the resource (active or inactive).",
         ),
