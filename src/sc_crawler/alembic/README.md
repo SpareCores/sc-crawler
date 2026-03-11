@@ -14,6 +14,9 @@ recreation is needed to achieve it. Because of that, new columns are added at th
 when foreign keys prevent recreation (i.e. on non-SCD databases that do not support table recreation,
 such as PostgreSQL).
 
+As a result, Alembic migrations for non-SCD databases currently support only SQLite and PostgreSQL;
+all other databases are **not supported**.
+
 ## Create Alembic Migration with New Table Columns
 
 1. Before table definition modification, run the following commands on an empty or non-existent database:
