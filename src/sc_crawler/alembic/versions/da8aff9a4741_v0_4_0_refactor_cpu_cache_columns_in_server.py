@@ -43,8 +43,25 @@ def _insert_column_after(table: sa.Table, new_col: sa.Column, after: str):
 
 def get_server_table(is_scd: bool) -> sa.Table:
     is_postgresql = op.get_context().dialect.name == "postgresql"
-    server_table = sa.Table(
-        "server",
+    table_name = scdize_suffix("server")
+    primary_key = (
+        ("vendor_id", "server_id", "observed_at")
+        if is_scd
+        else ("vendor_id", "server_id")
+    )
+    foreign_key = (
+        (
+            sa.ForeignKeyConstraint(
+                ["vendor_id"],
+                ["vendor.vendor_id"],
+                name=op.f("fk_server_vendor_id_vendor"),
+            ),
+        )
+        if not is_scd
+        else ()
+    )
+    return sa.Table(
+        table_name,
         sa.MetaData(),
         sa.Column(
             "vendor_id",
@@ -351,324 +368,10 @@ def get_server_table(is_scd: bool) -> sa.Table:
             nullable=False,
             comment="Timestamp of the last observation.",
         ),
-        sa.ForeignKeyConstraint(
-            ["vendor_id"],
-            ["vendor.vendor_id"],
-            name=op.f("fk_server_vendor_id_vendor"),
-        ),
-        sa.PrimaryKeyConstraint("vendor_id", "server_id", name=op.f("pk_server")),
-        comment="Server types.",
+        *foreign_key,
+        sa.PrimaryKeyConstraint(*primary_key, name=op.f(f"pk_{table_name}")),
+        comment="SCD version of .tables.Server." if is_scd else "Server types.",
     )
-    server_scd_table = sa.Table(
-        "server_scd",
-        sa.MetaData(),
-        sa.Column(
-            "vendor_id",
-            sqlmodel.sql.sqltypes.AutoString(),
-            nullable=False,
-            comment="Reference to the Vendor.",
-        ),
-        sa.Column(
-            "server_id",
-            sqlmodel.sql.sqltypes.AutoString(),
-            nullable=False,
-            comment="Unique identifier, as called at the Vendor.",
-        ),
-        sa.Column(
-            "name",
-            sqlmodel.sql.sqltypes.AutoString(),
-            nullable=False,
-            comment="Human-friendly name.",
-        ),
-        sa.Column(
-            "api_reference",
-            sqlmodel.sql.sqltypes.AutoString(),
-            nullable=False,
-            comment="How this resource is referenced in the vendor API calls. This is usually either the id or name of the resource, depending on the vendor and actual API endpoint.",
-        ),
-        sa.Column(
-            "display_name",
-            sqlmodel.sql.sqltypes.AutoString(),
-            nullable=False,
-            comment="Human-friendly reference (usually the id or name) of the resource.",
-        ),
-        sa.Column(
-            "description",
-            sqlmodel.sql.sqltypes.AutoString(),
-            nullable=True,
-            comment="Short description.",
-        ),
-        sa.Column(
-            "family",
-            sqlmodel.sql.sqltypes.AutoString(),
-            nullable=True,
-            comment="Server family, e.g. General-purpose machine (GCP), or M5g (AWS).",
-        ),
-        sa.Column(
-            "vcpus",
-            sa.Integer(),
-            nullable=False,
-            comment="Default number of virtual CPUs (vCPU) of the server.",
-        ),
-        sa.Column(
-            "hypervisor",
-            sqlmodel.sql.sqltypes.AutoString(),
-            nullable=True,
-            comment="Hypervisor of the virtual server, e.g. Xen, KVM, Nitro or Dedicated.",
-        ),
-        sa.Column(
-            "cpu_allocation",
-            sa.dialects.postgresql.ENUM(
-                "SHARED",
-                "BURSTABLE",
-                "DEDICATED",
-                name="cpuallocation",
-                create_type=False,
-            )
-            if is_postgresql
-            else sa.Enum(
-                "SHARED",
-                "BURSTABLE",
-                "DEDICATED",
-                name="cpuallocation",
-            ),
-            nullable=False,
-            comment="Allocation of CPU(s) to the server, e.g. shared, burstable or dedicated.",
-        ),
-        sa.Column(
-            "cpu_cores",
-            sa.Integer(),
-            nullable=True,
-            comment="Default number of CPU cores of the server. Equals to vCPUs when HyperThreading is disabled.",
-        ),
-        sa.Column(
-            "cpu_speed",
-            sa.Float(),
-            nullable=True,
-            comment="Vendor-reported maximum CPU clock speed (GHz).",
-        ),
-        sa.Column(
-            "cpu_architecture",
-            sa.dialects.postgresql.ENUM(
-                "ARM64",
-                "ARM64_MAC",
-                "I386",
-                "X86_64",
-                "X86_64_MAC",
-                name="cpuarchitecture",
-                create_type=False,
-            )
-            if is_postgresql
-            else sa.Enum(
-                "ARM64",
-                "ARM64_MAC",
-                "I386",
-                "X86_64",
-                "X86_64_MAC",
-                name="cpuarchitecture",
-            ),
-            nullable=False,
-            comment="CPU architecture (arm64, arm64_mac, i386, or x86_64).",
-        ),
-        sa.Column(
-            "cpu_manufacturer",
-            sqlmodel.sql.sqltypes.AutoString(),
-            nullable=True,
-            comment="The manufacturer of the primary processor, e.g. Intel or AMD.",
-        ),
-        sa.Column(
-            "cpu_family",
-            sqlmodel.sql.sqltypes.AutoString(),
-            nullable=True,
-            comment="The product line/family of the primary processor, e.g. Xeon, Core i7, Ryzen 9.",
-        ),
-        sa.Column(
-            "cpu_model",
-            sqlmodel.sql.sqltypes.AutoString(),
-            nullable=True,
-            comment="The model number of the primary processor, e.g. 9750H.",
-        ),
-        sa.Column(
-            "cpu_l1_cache",
-            sa.Integer(),
-            nullable=True,
-            comment="L1 cache size (byte).",
-        ),
-        sa.Column(
-            "cpu_l2_cache",
-            sa.Integer(),
-            nullable=True,
-            comment="L2 cache size (byte).",
-        ),
-        sa.Column(
-            "cpu_l3_cache",
-            sa.Integer(),
-            nullable=True,
-            comment="L3 cache size (byte).",
-        ),
-        sa.Column(
-            "cpu_flags", sa.JSON(), nullable=False, comment="CPU features/flags."
-        ),
-        sa.Column(
-            "cpus",
-            sa.JSON(),
-            nullable=False,
-            comment="JSON array of known CPU details, e.g. the manufacturer, family, model; L1/L2/L3 cache size; microcode version; feature flags; bugs etc.",
-        ),
-        sa.Column(
-            "memory_amount",
-            sa.Integer(),
-            nullable=False,
-            comment="RAM amount (MiB).",
-        ),
-        sa.Column(
-            "memory_generation",
-            sa.dialects.postgresql.ENUM(
-                "DDR3", "DDR4", "DDR5", name="ddrgeneration", create_type=False
-            )
-            if is_postgresql
-            else sa.Enum(
-                "DDR3",
-                "DDR4",
-                "DDR5",
-                name="ddrgeneration",
-            ),
-            nullable=True,
-            comment="Generation of the DDR SDRAM, e.g. DDR4 or DDR5.",
-        ),
-        sa.Column(
-            "memory_speed",
-            sa.Integer(),
-            nullable=True,
-            comment="DDR SDRAM clock rate (Mhz).",
-        ),
-        sa.Column(
-            "memory_ecc",
-            sa.Boolean(),
-            nullable=True,
-            comment="If the DDR SDRAM uses error correction code to detect and correct n-bit data corruption.",
-        ),
-        sa.Column(
-            "gpu_count",
-            sa.Float(),
-            nullable=False,
-            comment="Number of GPU accelerator(s).",
-        ),
-        sa.Column(
-            "gpu_memory_min",
-            sa.Integer(),
-            nullable=True,
-            comment="Memory (MiB) allocated to the lowest-end GPU accelerator.",
-        ),
-        sa.Column(
-            "gpu_memory_total",
-            sa.Integer(),
-            nullable=True,
-            comment="Overall memory (MiB) allocated to all the GPU accelerator(s).",
-        ),
-        sa.Column(
-            "gpu_manufacturer",
-            sqlmodel.sql.sqltypes.AutoString(),
-            nullable=True,
-            comment="The manufacturer of the primary GPU accelerator, e.g. Nvidia or AMD.",
-        ),
-        sa.Column(
-            "gpu_family",
-            sqlmodel.sql.sqltypes.AutoString(),
-            nullable=True,
-            comment="The product family of the primary GPU accelerator, e.g. Turing.",
-        ),
-        sa.Column(
-            "gpu_model",
-            sqlmodel.sql.sqltypes.AutoString(),
-            nullable=True,
-            comment="The model number of the primary GPU accelerator, e.g. Tesla T4.",
-        ),
-        sa.Column(
-            "gpus",
-            sa.JSON(),
-            nullable=False,
-            comment="JSON array of GPU accelerator details, including the manufacturer, name, and memory (MiB) of each GPU.",
-        ),
-        sa.Column(
-            "storage_size",
-            sa.Integer(),
-            nullable=False,
-            comment="Overall size (GB) of the disk(s).",
-        ),
-        sa.Column(
-            "storage_type",
-            sa.dialects.postgresql.ENUM(
-                "HDD",
-                "SSD",
-                "NVME_SSD",
-                "NETWORK",
-                name="storagetype",
-                create_type=False,
-            )
-            if is_postgresql
-            else sa.Enum(
-                "HDD",
-                "SSD",
-                "NVME_SSD",
-                "NETWORK",
-                name="storagetype",
-            ),
-            nullable=True,
-            comment="Primary disk type, e.g. HDD, SSD, NVMe SSD, or network).",
-        ),
-        sa.Column(
-            "storages",
-            sa.JSON(),
-            nullable=False,
-            comment="JSON array of disks attached to the server, including the size (MiB) and type of each disk.",
-        ),
-        sa.Column(
-            "network_speed",
-            sa.Float(),
-            nullable=True,
-            comment="The baseline network performance (Gbps) of the network card.",
-        ),
-        sa.Column(
-            "inbound_traffic",
-            sa.Float(),
-            nullable=False,
-            comment="Amount of complimentary inbound traffic (GB) per month.",
-        ),
-        sa.Column(
-            "outbound_traffic",
-            sa.Float(),
-            nullable=False,
-            comment="Amount of complimentary outbound traffic (GB) per month.",
-        ),
-        sa.Column(
-            "ipv4",
-            sa.Integer(),
-            nullable=False,
-            comment="Number of complimentary IPv4 address(es).",
-        ),
-        sa.Column(
-            "status",
-            sa.dialects.postgresql.ENUM(
-                "ACTIVE", "INACTIVE", name="status", create_type=False
-            )
-            if is_postgresql
-            else sa.Enum("ACTIVE", "INACTIVE", name="status"),
-            nullable=False,
-            comment="Status of the resource (active or inactive).",
-        ),
-        sa.Column(
-            "observed_at",
-            sa.DateTime(),
-            nullable=False,
-            comment="Timestamp of the last observation.",
-        ),
-        sa.PrimaryKeyConstraint(
-            "vendor_id", "server_id", "observed_at", name=op.f("pk_server_scd")
-        ),
-        comment="SCD version of .tables.Server.",
-    )
-    return server_scd_table if is_scd else server_table
 
 
 def upgrade() -> None:

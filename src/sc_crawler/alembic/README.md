@@ -11,11 +11,16 @@ This directory was deleted in commit `4d293b92`.
 
 The positioning of newly created columns is problematic because of foreign keys — table drop and
 recreation is needed to achieve it. Because of that, new columns are added at the end of the tables
-when foreign keys prevent recreation (i.e. on non-SCD databases that do not support table recreation,
-such as PostgreSQL).
+when foreign keys prevent recreation. We could resolve this by manually tracking the affected FKs and
+handling them, but it would be too tedious to be worth the effort, so we decided to support only the
+following scenarios:
 
-As a result, Alembic migrations for non-SCD databases currently support only SQLite and PostgreSQL;
-all other databases are **not supported**.
+- live migrations for SQLite
+- offline migrations for non-SCD PostgreSQL (new columns are added at the end of the tables if the affected
+  tables already exist)
+- offline migrations for SCD PostgreSQL
+
+Note: live migrations for PostgreSQL are theoretically possible, but have not been tested in production.
 
 ## Create Alembic Migration with New Table Columns
 
@@ -177,7 +182,9 @@ def downgrade() -> None:
 ```
 
 7. If the migration needs to modify existing data, you need to update the table definition and run the `update`
-   commands on the modified table:
+   commands on the modified table. This is required because, although we have already added the new columns to the
+   actual table in the batch operation, we also need to update the Alembic-internal table definition for any subsequent
+   operations on the table to work correctly:
 
 ```python
 import sqlalchemy as sa
