@@ -17,6 +17,7 @@ from zipfile import ZipFile
 from requests import get
 from yaml import safe_load as yaml_safe_load
 
+from .inspector_helpers import _get_cpu_cache_info
 from .logger import logger
 from .table_bases import ServerBase
 from .table_fields import DdrGeneration, Disk, StorageType
@@ -151,8 +152,12 @@ def _server_dmidecode_sections(server: "Server", section: str) -> dict:
     return [s["props"] for s in _server_dmidecode(server) if s["name"] == section]
 
 
-def _server_nvidiasmi(server: "Server") -> dict:
+def _server_nvidiasmi(server: "Server") -> xmltree.ElementTree:
     return xmltree.parse(_server_framework_path(server, "nvidia_smi", "stdout"))
+
+
+def _server_lstopo(server: "Server") -> xmltree.ElementTree:
+    return xmltree.parse(_server_framework_path(server, "lstopo", "stdout"))
 
 
 def _observed_at(server: "Server", framework: str) -> dict:
@@ -834,6 +839,7 @@ def _standardize_gpu_family(server):
     return family
 
 
+# TODO: deprecated, deletable once we successfully avoid corrupted lscpu cache data
 def _l123_cache(lscpu: dict, level: int):
     if level == 1:
         # don't include instruction cache
@@ -984,6 +990,7 @@ def inspect_update_server_dict(server: dict) -> dict:
         ),
         "lscpu": lambda: _server_lscpu(server_obj),
         "lshw": lambda: _server_lshw(server_obj),
+        "lstopo": lambda: _server_lstopo(server_obj),
         "nvidiasmi": lambda: _server_nvidiasmi(server_obj),
         "gpu": lambda: lookups["nvidiasmi"].find("gpu"),
         "gpus": lambda: lookups["nvidiasmi"].findall("gpu"),
@@ -1002,6 +1009,13 @@ def inspect_update_server_dict(server: dict) -> dict:
         {}
         if isinstance(lookups["lshw"], Exception)
         else _parse_lshw_storage_info(lookups["lshw"], server_obj)
+    )
+
+    # Parse CPU cache info once (empty dict if lscpu lookup failed)
+    cpu_cache_info = (
+        {}
+        if isinstance(lookups["lscpu"], Exception)
+        else _get_cpu_cache_info(lookups["lscpu"], lookups["lstopo"])
     )
 
     def get_cpu_speed():
@@ -1066,9 +1080,14 @@ def inspect_update_server_dict(server: dict) -> dict:
         "cpu_manufacturer": lambda: get_cpu_manufacturer(),
         "cpu_family": lambda: get_cpu_family(),
         "cpu_model": lambda: get_cpu_model(),
-        "cpu_l1_cache": lambda: _l123_cache(lookups["lscpu"], 1),
-        "cpu_l2_cache": lambda: _l123_cache(lookups["lscpu"], 2),
-        "cpu_l3_cache": lambda: _l123_cache(lookups["lscpu"], 3),
+        "cpu_l1d_cache": lambda: cpu_cache_info.get("L1d", {}).get("per_instance_KiB"),
+        "cpu_l1d_cache_total": lambda: cpu_cache_info.get("L1d", {}).get("total_KiB"),
+        "cpu_l1i_cache": lambda: cpu_cache_info.get("L1i", {}).get("per_instance_KiB"),
+        "cpu_l1i_cache_total": lambda: cpu_cache_info.get("L1i", {}).get("total_KiB"),
+        "cpu_l2_cache": lambda: cpu_cache_info.get("L2", {}).get("per_instance_KiB"),
+        "cpu_l2_cache_total": lambda: cpu_cache_info.get("L2", {}).get("total_KiB"),
+        "cpu_l3_cache": lambda: cpu_cache_info.get("L3", {}).get("per_instance_KiB"),
+        "cpu_l3_cache_total": lambda: cpu_cache_info.get("L3", {}).get("total_KiB"),
         "cpu_flags": lambda: lscpu_lookup("Flags:").split(" "),
         "memory_generation": lambda: DdrGeneration[lookups["dmidecode_memory"]["Type"]],
         # convert to Mhz

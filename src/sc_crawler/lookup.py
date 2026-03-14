@@ -17,6 +17,7 @@ country_continent_mapping = {
     "CL": "South America",
     "CN": "Asia",
     "DE": "Europe",
+    "DK": "Europe",
     "ES": "Europe",
     "FI": "Europe",
     "FR": "Europe",
