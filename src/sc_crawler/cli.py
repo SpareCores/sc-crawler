@@ -754,8 +754,12 @@ def pull(
 
         with Session(engine) as session:
             # reset status of static objects to phase out old records
-            for model in [ComplianceFramework, Country, Benchmark, Vendor]:
+            # these records can be set INACTIVE as will be all overwritten in the next lines
+            for model in [ComplianceFramework, Country, Benchmark]:
                 session.execute(update(model).values(status=Status.INACTIVE))
+            # we can only reset vendors in case of a full run
+            if len(vendors) == len(supported_vendors):
+                session.execute(update(Vendor).values(status=Status.INACTIVE))
             # add/merge static objects to database
             for compliance_framework in compliance_frameworks.values():
                 session.merge(compliance_framework)
