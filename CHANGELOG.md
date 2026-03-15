@@ -1,3 +1,9 @@
+## v0.4.x (development version)
+
+Fix(es):
+
+- Phase out old Benchmark records by marking as INACTIVE.
+
 ## v0.4.0 (Mar 14, 2026)
 
 New benchmark(s):
