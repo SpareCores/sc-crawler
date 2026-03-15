@@ -31,7 +31,7 @@ from rich.text import Text
 from sqlalchemy import create_mock_engine, text
 from sqlalchemy.engine.reflection import Inspector
 from sqlalchemy.sql import quoted_name
-from sqlmodel import Session, create_engine, select
+from sqlmodel import Session, create_engine, select, update
 from typing_extensions import Annotated
 
 from . import vendors as vendors_module
@@ -40,7 +40,7 @@ from .insert import insert_items
 from .logger import ProgressPanel, ScRichHandler, VendorProgressTracker, logger
 from .lookup import benchmarks, compliance_frameworks, countries
 from .table_fields import Status
-from .tables import Vendor, tables
+from .tables import Benchmark, ComplianceFramework, Country, Vendor, tables
 from .tables_scd import tables_scd
 from .utils import HashLevels, get_row_by_pk, hash_database, table_name_to_model
 
@@ -753,6 +753,9 @@ def pull(
             command.upgrade(alembic_cfg(connection, force_logging=False), "heads")
 
         with Session(engine) as session:
+            # reset status of static objects to phase out old records
+            for model in [ComplianceFramework, Country, Benchmark, Vendor]:
+                session.execute(update(model).values(status=Status.INACTIVE))
             # add/merge static objects to database
             for compliance_framework in compliance_frameworks.values():
                 session.merge(compliance_framework)
