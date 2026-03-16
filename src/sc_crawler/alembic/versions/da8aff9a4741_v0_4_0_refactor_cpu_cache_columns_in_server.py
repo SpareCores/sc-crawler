@@ -443,6 +443,7 @@ def upgrade() -> None:
         .where(
             server_table.c.cpu_l1_cache.isnot(None),
             server_table.c.cpu_cores.isnot(None),
+            server_table.c.cpu_cores > 0,
         )
         .values(
             cpu_l1d_cache=server_table.c.cpu_l1_cache / 1024 / server_table.c.cpu_cores
@@ -458,6 +459,7 @@ def upgrade() -> None:
         .where(
             server_table.c.cpu_l2_cache.isnot(None),
             server_table.c.cpu_cores.isnot(None),
+            server_table.c.cpu_cores > 0,
         )
         .values(
             cpu_l2_cache=server_table.c.cpu_l2_cache / 1024 / server_table.c.cpu_cores
