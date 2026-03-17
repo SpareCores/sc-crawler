@@ -27,6 +27,11 @@ class StorageInfo:
     storage_size: int = 0
     storages: List[Disk] = field(default_factory=list)
 
+    def __bool__(self):
+        return (
+            bool(self.storage_type) and bool(self.storage_size) and bool(self.storages)
+        )
+
 
 @dataclass
 class CpuCacheInfo:

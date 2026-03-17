@@ -909,22 +909,48 @@ def _gpu_most_common(gpus: List[dict], field: str) -> str:
     return mode([gpu[field] for gpu in gpus])
 
 
-def _parse_lsblk_storage_info(
+def _find_storage_disks_from_lsblk(
     lsblk_data: dict | Exception,
     lsblk_discard_data: dict | Exception,
     lsblk_topo_data: dict | Exception,
     server: ServerBase,
-) -> Optional[dict]:
-    """Parse lsblk JSON and extract storage information."""
+) -> List[Disk]:
+    """Find storage devices in lsblk JSON outputs."""
+
+    # Info from sc_runner/resources
+    _started_with_network_disk = {
+        "alicloud": True,
+        "aws": True,
+        "azure": True,
+        "gcp": True,
+        "hcloud": False,
+        "ovh": False,
+        "upcloud": True,
+    }
+
     if isinstance(lsblk_data, Exception):
-        return None
+        return []
+
+    disks: List[Disk] = []
+
     for d in lsblk_data["blockdevices"]:
         tran = d.get("tran")
         subsystems = d.get("subsystems")
         name = d.get("name")
+        size_bytes = d.get("size")
+        if server.vendor_id == "gcp" and _started_with_network_disk["gcp"]:
+            if tran == "nvme" and name and int(name[4]) > 0:
+                Disk(
+                    size=size_bytes // (1024**3),  # size in GiB
+                    storage_type=StorageType.NVME_SSD,
+                    description=None,
+                )
+    return disks
 
 
-def _find_storage_disks(node: dict, disks: List[Disk], server: ServerBase) -> None:
+def _find_storage_disks_from_lshw(
+    node: dict, disks: List[Disk], server: ServerBase
+) -> None:
     """Recursively find storage devices in lshw JSON output."""
     node_class = node.get("class", "")
 
@@ -946,7 +972,7 @@ def _find_storage_disks(node: dict, disks: List[Disk], server: ServerBase) -> No
 
     # Recurse into children
     for child in node.get("children", []):
-        _find_storage_disks(child, disks, server)
+        _find_storage_disks_from_lshw(child, disks, server)
 
 
 def _determine_storage_type(
@@ -972,7 +998,13 @@ def _determine_storage_type(
     return StorageType.SSD
 
 
-def _parse_storage_info(lshw_data: dict, server: ServerBase) -> StorageInfo:
+def _parse_storage_info(
+    lshw_data: dict | Exception,
+    lsblk_data: dict | Exception,
+    lsblk_discard_data: dict | Exception,
+    lsblk_topo_data: dict | Exception,
+    server: ServerBase,
+) -> StorageInfo:
     """Parse lsblk and lshw JSONs and extract storage information."""
 
     def sort_by_storage_product(d: Disk):
@@ -984,7 +1016,14 @@ def _parse_storage_info(lshw_data: dict, server: ServerBase) -> StorageInfo:
             return 1, 0, len(d.description), d.size
 
     storage_info = StorageInfo()
-    _find_storage_disks(lshw_data, storage_info.storages, server)
+
+    if not isinstance(lsblk_data, Exception):
+        storage_info.storages = _find_storage_disks_from_lsblk(
+            lsblk_data, lsblk_discard_data, lsblk_topo_data, server
+        )
+
+    if not isinstance(lshw_data, Exception) and not storage_info:
+        _find_storage_disks_from_lshw(lshw_data, storage_info.storages, server)
 
     if storage_info.storages:
         storage_info.storages.sort(key=sort_by_storage_product)
@@ -1031,11 +1070,13 @@ def inspect_update_server_dict(server: dict) -> dict:
     def lscpu_lookup(field: str):
         return _listsearch(lookups["lscpu"], "field", field)["data"]
 
-    # Parse lshw storage info once (empty dict if lshw lookup failed)
-    lshw_storage_info = (
-        StorageInfo()
-        if isinstance(lookups["lshw"], Exception)
-        else _parse_storage_info(lookups["lshw"], server_obj)
+    # Parse lsblk/lshw storage info once (default StorageInfo instance if lsblk/lshw lookup failed)
+    inspector_storage_info = _parse_storage_info(
+        lookups["lshw"],
+        lookups["lsblk"],
+        lookups["lsblk_discard"],
+        lookups["lsblk_topo"],
+        server_obj,
     )
 
     # Parse CPU cache info once (empty dict if lscpu lookup failed)
@@ -1128,9 +1169,9 @@ def inspect_update_server_dict(server: dict) -> dict:
         "gpu_memory_min": lambda: min([gpu["memory"] for gpu in server["gpus"]]),
         "gpu_memory_total": lambda: sum([gpu["memory"] for gpu in server["gpus"]]),
         # skip storage update if lshw parsing failed or API data is present
-        "storage_type": lambda: getattr(lshw_storage_info, "storage_type"),
-        "storage_size": lambda: getattr(lshw_storage_info, "storage_size"),
-        "storages": lambda: getattr(lshw_storage_info, "storages"),
+        "storage_type": lambda: getattr(inspector_storage_info, "storage_type"),
+        "storage_size": lambda: getattr(inspector_storage_info, "storage_size"),
+        "storages": lambda: getattr(inspector_storage_info, "storages"),
     }
 
     def override_mapping(server, field, inspector_data):
