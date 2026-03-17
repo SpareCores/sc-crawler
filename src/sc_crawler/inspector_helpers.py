@@ -1,7 +1,9 @@
 import re
 import xml.etree.ElementTree as xmltree
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
+
+from .table_fields import Disk, StorageType
 
 LSCPU_CACHE_FIELDS = {
     "L1d cache:": "L1d",
@@ -17,6 +19,13 @@ LSTOPO_CACHE_TYPES = {
     "L2": "L2Cache",
     "L3": "L3Cache",
 }
+
+
+@dataclass
+class StorageInfo:
+    storage_type: StorageType = None
+    storage_size: int = 0
+    storages: List[Disk] = field(default_factory=list)
 
 
 @dataclass
