@@ -3,6 +3,7 @@
 Fix(es):
 
 - Phase out old Benchmark records by marking as INACTIVE.
+- Use `lsblk` storage data for `GCP` and `OVH` servers, with `lshw` as a fallback.
 
 ## v0.4.0 (Mar 14, 2026)
 
