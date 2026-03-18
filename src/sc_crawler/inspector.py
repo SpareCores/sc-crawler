@@ -256,10 +256,11 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
         for algo, levels in algos.items():
             for level, datas in levels.items():
                 for data in datas:
+                    threads = data["threads"]
                     config = {
                         "algo": algo,
                         "compression_level": None if level == "null" else int(level),
-                        "threads": data["threads"],
+                        "multithread": False if threads == 1 else True,
                     }
                     if data.get("extra_args", {}).get("block_size"):
                         config["block_size"] = data["extra_args"]["block_size"]

@@ -166,7 +166,7 @@ benchmarks: List[Benchmark] = [
         config_fields={
             "algo": "Compression algorithm, e.g. brotli or bz2.",
             "compression_level": "Compression level/quality/level.",
-            "threads": "Number of threads/workers.",
+            "multithread": "Whether the compression uses multiple threads/workers.",
             "block_size": "Block size",
         },
         measurement="ratio",
@@ -180,7 +180,7 @@ benchmarks: List[Benchmark] = [
         config_fields={
             "algo": "Compression algorithm, e.g. brotli or bz2.",
             "compression_level": "Compression level/quality/level.",
-            "threads": "Number of threads/workers.",
+            "multithread": "Whether the compression uses multiple threads/workers.",
             "block_size": "Block size",
         },
         measurement="compress",
@@ -194,7 +194,7 @@ benchmarks: List[Benchmark] = [
         config_fields={
             "algo": "Compression algorithm, e.g. brotli or bz2.",
             "compression_level": "Compression level/quality/level.",
-            "threads": "Number of threads/workers.",
+            "multithread": "Whether the compression uses multiple threads/workers.",
             "block_size": "Block size",
         },
         measurement="decompress",
