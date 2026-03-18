@@ -11,7 +11,7 @@ from re import compile, match, search, sub
 from shutil import rmtree
 from statistics import mode
 from tempfile import mkdtemp
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, List
 from zipfile import ZipFile
 
 from requests import get
@@ -915,10 +915,17 @@ def _find_storage_disks_from_lsblk(
     lsblk_topo_data: dict | Exception,
     server: ServerBase,
 ) -> List[Disk]:
-    """Find storage devices in lsblk JSON outputs."""
+    """Find storage devices in lsblk JSON outputs.
+    Currently, lsblk_discard and lsblk_topo are not used; they are included here for future expansion if needed.
+    """
+
+    if isinstance(lsblk_data, Exception):
+        return []
+
+    disks: List[Disk] = []
 
     # Info from sc_runner/resources
-    _started_with_network_disk = {
+    _boot_from_attached_network_drive = {
         "alicloud": True,
         "aws": True,
         "azure": True,
@@ -928,23 +935,38 @@ def _find_storage_disks_from_lsblk(
         "upcloud": True,
     }
 
-    if isinstance(lsblk_data, Exception):
-        return []
-
-    disks: List[Disk] = []
-
-    for d in lsblk_data["blockdevices"]:
-        tran = d.get("tran")
-        subsystems = d.get("subsystems")
-        name = d.get("name")
-        size_bytes = d.get("size")
-        if server.vendor_id == "gcp" and _started_with_network_disk["gcp"]:
-            if tran == "nvme" and name and int(name[4]) > 0:
+    for d in lsblk_data.get("blockdevices", []):
+        subsystems = d.get("subsystems", "")
+        name = d.get("name", "")
+        size_bytes = d.get("size", 0)
+        size_gb = size_bytes // 1000**3
+        nvme_match = match(r"nvme(\d+)", name)
+        nvme_storage_count = int(nvme_match.group(1)) if nvme_match else -1
+        # attached boot network drive is always first
+        if nvme_storage_count >= (
+            1 if _boot_from_attached_network_drive[server.vendor_id] else 0
+        ):
+            disks.append(
                 Disk(
-                    size=size_bytes // (1024**3),  # size in GiB
+                    size=size_gb,
                     storage_type=StorageType.NVME_SSD,
-                    description=None,
+                    # description is only used for ordering drives
+                    description=str(nvme_storage_count),
                 )
+            )
+        # Hetzner/OVH virtio-scsi
+        if (
+            not _boot_from_attached_network_drive[server.vendor_id]
+            and name == "sda"
+            and subsystems == "block:scsi:virtio:pci"
+        ):
+            disks.append(
+                Disk(
+                    size=size_gb,
+                    storage_type=StorageType.NETWORK,
+                )
+            )
+
     return disks
 
 
@@ -1009,11 +1031,12 @@ def _parse_storage_info(
 
     def sort_by_storage_product(d: Disk):
         """Sort disks by storage product name characteristics and size."""
-        numbers = search(r"(\d+)", d.description)
+        numbers = search(r"(\d+)", d.description or "")
+        desc_length = len(d.description) if d.description else 0
         if numbers:
-            return 0, int(numbers.group(1)), len(d.description), d.size
+            return 0, int(numbers.group(1)), desc_length, d.size
         else:
-            return 1, 0, len(d.description), d.size
+            return 1, 0, desc_length, d.size
 
     storage_info = StorageInfo()
 
@@ -1189,12 +1212,14 @@ def inspect_update_server_dict(server: dict) -> dict:
         vendor_data = server.get(field)
 
         # TODO drop once we have full lsblk coverage
-        # always override GCP fields where vendor data is known to be missing
+        # always override GCP/OVH fields where vendor data is known to be missing
         storage_fields = ["storage_type", "storage_size", "storages"]
         if vendor_id == "gcp" and field in ["gpu_model", *storage_fields]:
             return inspector_data
+        if vendor_id == "ovh" and field in storage_fields:
+            return inspector_data
         # don't trust HDD/SSD inspection data at other vendors yet
-        if vendor_id != "gcp" and field in storage_fields:
+        if vendor_id not in ["gcp", "ovh"] and field in storage_fields:
             return vendor_data
 
         # keep inspector data for detailed fields that's not available from vendor API

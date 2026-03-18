@@ -28,9 +28,7 @@ class StorageInfo:
     storages: List[Disk] = field(default_factory=list)
 
     def __bool__(self):
-        return (
-            bool(self.storage_type) and bool(self.storage_size) and bool(self.storages)
-        )
+        return bool(self.storage_type) or bool(self.storage_size) or bool(self.storages)
 
 
 @dataclass
