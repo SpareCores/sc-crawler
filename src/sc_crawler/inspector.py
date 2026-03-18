@@ -979,14 +979,14 @@ def _find_storage_disks_from_lshw(
     if node_class == "storage":
         for child in node.get("children", []):
             if child.get("class") == "disk" and "size" in child:
-                size_bytes = child.get("size", 0)
+                size_gb = child.get("size", 0) // 1000**3
                 device_type = _determine_storage_type(node, child, server)
                 # GCP network disks are added manually, not bundled, so skip them
                 if server.vendor_id == "gcp" and device_type == StorageType.NETWORK:
                     continue
                 disks.append(
                     Disk(
-                        size=size_bytes // (1024**3),  # size in GiB
+                        size=size_gb,
                         storage_type=device_type,
                         description=node.get("product", "").lower(),
                     )
