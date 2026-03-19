@@ -3,7 +3,8 @@
 Fix(es):
 
 - Phase out old Benchmark records by marking as INACTIVE.
-- Refactor `threads` config field to a `multithread` bool in `compression_text` benchmark scores.
+- Refactor `threads` (int) config field to `cores` (`single` or `multi` enum) in `compression_text` benchmark scores.
+- Refactor `cores` (str) config field (`single` or `multi` enum) in `geekbench` benchmark scores.
 
 ## v0.4.0 (Mar 14, 2026)
 

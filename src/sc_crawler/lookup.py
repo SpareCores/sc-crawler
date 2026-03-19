@@ -116,7 +116,7 @@ def _geekbenchmark(name: str, description: str):
         ),
         framework="geekbench",
         config_fields={
-            "cores": "Single-Core or Multi-Core peformance tests.",
+            "cores": "Single-Core or Multi-Core performance tests.",
             "framework_version": "Version number of geekbench.",
         },
         measurement=measurement,
@@ -166,7 +166,7 @@ benchmarks: List[Benchmark] = [
         config_fields={
             "algo": "Compression algorithm, e.g. brotli or bz2.",
             "compression_level": "Compression level/quality/level.",
-            "multithread": "Whether the compression uses multiple threads/workers.",
+            "cores": "Single-Core or Multi-Core compression tests.",
             "block_size": "Block size",
         },
         measurement="ratio",
