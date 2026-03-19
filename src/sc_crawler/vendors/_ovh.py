@@ -633,14 +633,21 @@ def inventory_servers(vendor) -> list[dict]:
 
         storages: List[Disk] = []
         for disk in technical.get("nvme", {}).get("disks", []):
-            for i in range(disk.get("number", 1)):
+            capacity = disk.get("capacity", 0)
+            if not capacity:
+                continue
+            for _ in range(disk.get("number", 1)):
                 storages.append(
                     Disk(
-                        size=disk.get("capacity", 0),
+                        size=capacity,
                         storage_type=StorageType.NVME_SSD,
                     )
                 )
         for disk in technical.get("storage", {}).get("disks", []):
+            capacity = disk.get("capacity", 0)
+            if not capacity:
+                continue
+            # no number field here
             is_nvme = (
                 "nvme"
                 in disk.get("technology", "").lower()
@@ -649,7 +656,7 @@ def inventory_servers(vendor) -> list[dict]:
             storage_type = StorageType.NVME_SSD if is_nvme else StorageType.SSD
             storages.append(
                 Disk(
-                    size=disk.get("capacity", 0),
+                    size=capacity,
                     storage_type=storage_type,
                 )
             )
