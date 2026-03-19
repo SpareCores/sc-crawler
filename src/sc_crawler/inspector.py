@@ -1212,14 +1212,12 @@ def inspect_update_server_dict(server: dict) -> dict:
         vendor_data = server.get(field)
 
         # TODO drop once we have full lsblk coverage
-        # always override GCP/OVH fields where vendor data is known to be missing
+        # always override GCP fields where vendor data is known to be missing
         storage_fields = ["storage_type", "storage_size", "storages"]
         if vendor_id == "gcp" and field in ["gpu_model", *storage_fields]:
             return inspector_data
-        if vendor_id == "ovh" and field in storage_fields:
-            return inspector_data
         # don't trust HDD/SSD inspection data at other vendors yet
-        if vendor_id not in ["gcp", "ovh"] and field in storage_fields:
+        if vendor_id != "gcp" and field in storage_fields:
             return vendor_data
 
         # keep inspector data for detailed fields that's not available from vendor API
