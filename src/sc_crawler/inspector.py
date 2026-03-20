@@ -11,7 +11,7 @@ from re import compile, match, search, sub
 from shutil import rmtree
 from statistics import mode
 from tempfile import mkdtemp
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING, List, Optional
 from zipfile import ZipFile
 
 from requests import get
@@ -160,6 +160,16 @@ def _server_lstopo(server: "Server") -> xmltree.ElementTree:
     return xmltree.parse(_server_framework_path(server, "lstopo", "stdout"))
 
 
+def _server_geekbench(server: "Server") -> List[str]:
+    with open(_server_framework_path(server, "geekbench", "stdout"), "r") as fp:
+        return [line.strip() for line in fp.readlines()]
+
+
+def _server_passmark(server: "Server") -> List[str]:
+    with open(_server_framework_path(server, "passmark", "stdout"), "r") as fp:
+        return [line.strip() for line in fp.readlines()]
+
+
 def _observed_at(server: "Server", framework: str) -> dict:
     ts = _server_framework_meta(server, framework)["end"]
     assert ts is not None
@@ -185,6 +195,7 @@ def _benchmark_metafields(
     framework: str = None,
     benchmark_id: str = None,
     framework_version_override: str | dict = None,
+    kernel_version_override: str | dict = None,
 ) -> dict:
     if benchmark_id is None:
         if framework is None:
@@ -193,22 +204,29 @@ def _benchmark_metafields(
     if framework is None:
         framework = benchmark_id.split(":")[0]
     framework_version = _framework_version(server, framework)
-    if framework_version_override:
+    kernel_version = _kernel_version(server, framework)
+    if framework_version_override and not framework_version:
         framework_version = (
             {"framework_version": framework_version_override}
             if isinstance(framework_version_override, str)
             else framework_version_override
         )
+    if kernel_version_override and not kernel_version:
+        kernel_version = (
+            {"kernel_version": kernel_version_override}
+            if isinstance(kernel_version_override, str)
+            else kernel_version_override
+        )
     return {
         **_server_ids(server),
         **_observed_at(server, framework),
         **framework_version,
-        **_kernel_version(server, framework),
+        **kernel_version,
         "benchmark_id": benchmark_id,
     }
 
 
-def _extract_line_from_file(file_path: str | PathLike, pattern: str) -> str:
+def _extract_line_from_file(file_path: str | PathLike, pattern: str) -> Optional[str]:
     """Find the first line of a text file matching the regular expression."""
     regex = compile(pattern)
     with open(file_path, "r") as lines:
@@ -308,6 +326,11 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
     try:
         with open(_server_framework_path(server, framework, "results.json"), "r") as fp:
             scores = json.load(fp)
+        kernel_version = next(
+            line.split("Kernel")[1].strip()
+            for line in _server_geekbench(server)
+            if line.startswith("Kernel")
+        )
         for cores, workloads in scores.items():
             for workload, values in workloads.items():
                 workload_fields = {
@@ -323,6 +346,7 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                             benchmark_id=":".join(
                                 [framework, sub(r"\W+", "_", workload.lower())]
                             ),
+                            kernel_version_override=kernel_version,
                         ),
                         **workload_fields,
                     }
@@ -337,6 +361,11 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
         passmark_version = ".".join(
             [str(scores["Version"][i]) for i in ["Major", "Minor", "Build"]]
         )
+        kernel_version = next(
+            line.split("Kernel:")[1].strip()
+            for line in _server_passmark(server)
+            if line.startswith("Kernel:")
+        )
         for key, name in PASSMARK_MAPS.items():
             benchmarks.append(
                 {
@@ -346,6 +375,7 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                             [framework, sub(r"\W+", "_", name.lower())]
                         ),
                         framework_version_override=passmark_version,
+                        kernel_version_override=kernel_version,
                     ),
                     "score": float(scores["Results"][key]),
                 }
