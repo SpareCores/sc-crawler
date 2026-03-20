@@ -194,8 +194,8 @@ def _benchmark_metafields(
     server: "Server",
     framework: str = None,
     benchmark_id: str = None,
-    framework_version_override: str | dict = None,
-    kernel_version_override: str | dict = None,
+    framework_version_fallback: str | dict = None,
+    kernel_version_fallback: str | dict = None,
 ) -> dict:
     if benchmark_id is None:
         if framework is None:
@@ -205,17 +205,17 @@ def _benchmark_metafields(
         framework = benchmark_id.split(":")[0]
     framework_version = _framework_version(server, framework)
     kernel_version = _kernel_version(server, framework)
-    if framework_version_override and not framework_version:
+    if framework_version_fallback and not framework_version:
         framework_version = (
-            {"framework_version": framework_version_override}
-            if isinstance(framework_version_override, str)
-            else framework_version_override
+            {"framework_version": framework_version_fallback}
+            if isinstance(framework_version_fallback, str)
+            else framework_version_fallback
         )
-    if kernel_version_override and not kernel_version:
+    if kernel_version_fallback and not kernel_version:
         kernel_version = (
-            {"kernel_version": kernel_version_override}
-            if isinstance(kernel_version_override, str)
-            else kernel_version_override
+            {"kernel_version": kernel_version_fallback}
+            if isinstance(kernel_version_fallback, str)
+            else kernel_version_fallback
         )
     return {
         **_server_ids(server),
@@ -346,7 +346,7 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                             benchmark_id=":".join(
                                 [framework, sub(r"\W+", "_", workload.lower())]
                             ),
-                            kernel_version_override=kernel_version,
+                            kernel_version_fallback=kernel_version,
                         ),
                         **workload_fields,
                     }
@@ -374,8 +374,8 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                         benchmark_id=":".join(
                             [framework, sub(r"\W+", "_", name.lower())]
                         ),
-                        framework_version_override=passmark_version,
-                        kernel_version_override=kernel_version,
+                        framework_version_fallback=passmark_version,
+                        kernel_version_fallback=kernel_version,
                     ),
                     "score": float(scores["Results"][key]),
                 }
@@ -536,7 +536,7 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                                 server,
                                 framework=framework,
                                 benchmark_id=":".join([framework, measurement]),
-                                framework_version_override=versions,
+                                framework_version_fallback=versions,
                             ),
                             "config": {**{k: record[k] for k in keys}},
                             "score": score,
