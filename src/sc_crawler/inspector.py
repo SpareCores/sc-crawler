@@ -11,7 +11,7 @@ from re import compile, match, search, sub
 from shutil import rmtree
 from statistics import mode
 from tempfile import mkdtemp
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, List
 from zipfile import ZipFile
 
 from requests import get
@@ -192,10 +192,10 @@ def _kernel_version(server: "Server", framework: str) -> dict:
 
 def _benchmark_metafields(
     server: "Server",
-    framework: str = None,
-    benchmark_id: str = None,
-    framework_version_fallback: Optional[str | dict] = None,
-    kernel_version_fallback: Optional[str | dict] = None,
+    framework: str | None = None,
+    benchmark_id: str | None = None,
+    framework_version_fallback: str | dict | None = None,
+    kernel_version_fallback: str | dict | None = None,
 ) -> dict:
     if benchmark_id is None:
         if framework is None:
@@ -226,7 +226,7 @@ def _benchmark_metafields(
     }
 
 
-def _extract_line_from_file(file_path: str | PathLike, pattern: str) -> Optional[str]:
+def _extract_line_from_file(file_path: str | PathLike, pattern: str) -> str | None:
     """Find the first line of a text file matching the regular expression."""
     regex = compile(pattern)
     with open(file_path, "r") as lines:
