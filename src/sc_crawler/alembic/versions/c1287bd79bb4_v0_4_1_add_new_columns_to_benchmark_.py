@@ -100,7 +100,14 @@ def get_benchmark_score_table(is_scd: bool) -> sa.Table:
         ),
         sa.Column(
             "status",
-            sa.Enum("ACTIVE", "INACTIVE", name="status"),
+            sa.dialects.postgresql.ENUM(
+                "ACTIVE",
+                "INACTIVE",
+                name="status",
+                create_type=False,
+            )
+            if is_postgresql
+            else sa.Enum("ACTIVE", "INACTIVE", name="status"),
             nullable=False,
             comment="Status of the resource (active or inactive).",
         ),
