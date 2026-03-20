@@ -96,7 +96,7 @@ def _server_path(server: "Server") -> str | PathLike:
 
 
 def _server_framework_path(
-    server: "Server", framework: str, relpath: str = None
+        server: "Server", framework: str, relpath: str = None
 ) -> str | PathLike:
     path_parts = [_server_path(server), framework, relpath]
     path_parts = [path_part for path_part in path_parts if path_part is not None]
@@ -166,8 +166,25 @@ def _observed_at(server: "Server", framework: str) -> dict:
     return {"observed_at": ts}
 
 
+def _framework_version(server: "Server", framework: str) -> dict:
+    framework_version = _server_framework_meta(server, framework).get("version")
+    return (
+        {"framework_version": framework_version}
+        if framework_version is not None
+        else {}
+    )
+
+
+def _kernel_version(server: "Server", framework: str) -> dict:
+    kernel_version = _server_framework_meta(server, framework).get("kernel_version")
+    return {"kernel_version": kernel_version} if kernel_version is not None else {}
+
+
 def _benchmark_metafields(
-    server: "Server", framework: str = None, benchmark_id: str = None
+        server: "Server",
+        framework: str = None,
+        benchmark_id: str = None,
+        framework_version_override: str | dict = None,
 ) -> dict:
     if benchmark_id is None:
         if framework is None:
@@ -175,9 +192,18 @@ def _benchmark_metafields(
         benchmark_id = framework
     if framework is None:
         framework = benchmark_id.split(":")[0]
+    framework_version = _framework_version(server, framework)
+    if framework_version_override:
+        framework_version = (
+            {"framework_version": framework_version_override}
+            if isinstance(framework_version_override, str)
+            else framework_version_override
+        )
     return {
         **_server_ids(server),
         **_observed_at(server, framework),
+        **framework_version,
+        **_kernel_version(server, framework),
         "benchmark_id": benchmark_id,
     }
 
@@ -282,11 +308,10 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
     try:
         with open(_server_framework_path(server, framework, "results.json"), "r") as fp:
             scores = json.load(fp)
-        geekbench_version = _server_framework_meta(server, framework)["version"]
         for cores, workloads in scores.items():
             for workload, values in workloads.items():
                 workload_fields = {
-                    "config": {"cores": cores, "framework_version": geekbench_version},
+                    "config": {"cores": cores},
                     "score": float(values["score"]),
                 }
                 if values.get("description"):
@@ -320,8 +345,8 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                         benchmark_id=":".join(
                             [framework, sub(r"\W+", "_", name.lower())]
                         ),
+                        framework_version_override=passmark_version,
                     ),
-                    "config": {"framework_version": passmark_version},
                     "score": float(scores["Results"][key]),
                 }
             )
@@ -332,7 +357,6 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
     try:
         with open(_server_framework_path(server, framework, "parsed.json"), "r") as fp:
             workloads = json.load(fp)
-        openssl_version = _server_framework_meta(server, framework)["version"]
         for workload in workloads:
             benchmarks.append(
                 {
@@ -340,7 +364,6 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                     "config": {
                         "algo": workload["algo"],
                         "block_size": workload["block_size"],
-                        "framework_version": openssl_version,
                     },
                     "score": float(workload["speed"]),
                 }
@@ -353,7 +376,6 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
     try:
         cores_per_path = {"stressng": server.vcpus, "stressngsinglecore": 1}
         for cores_path in cores_per_path.keys():
-            stressng_version = _server_framework_meta(server, cores_path)["version"]
             line = _extract_line_from_file(
                 _server_framework_stderr_path(server, cores_path),
                 "bogo-ops-per-second-real-time",
@@ -365,10 +387,7 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                         framework=cores_path,
                         benchmark_id=":".join([framework, "cpu_all"]),
                     ),
-                    "config": {
-                        "cores": cores_per_path[cores_path],
-                        "framework_version": stressng_version,
-                    },
+                    "config": {"cores": cores_per_path[cores_path]},
                     "score": float(line.split(": ")[1]),
                 }
             )
@@ -377,15 +396,12 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
         try:
             records = []
             with open(
-                _server_framework_stdout_path(server, "stressngfull"), newline=""
+                    _server_framework_stdout_path(server, "stressngfull"), newline=""
             ) as f:
                 rows = csv.reader(f, quoting=csv.QUOTE_NONNUMERIC)
                 for row in rows:
                     records.append(row)
             for i in [0, len(records) - 1]:
-                stressng_version = _server_framework_meta(server, "stressngfull")[
-                    "version"
-                ]
                 benchmarks.append(
                     {
                         **_benchmark_metafields(
@@ -393,10 +409,7 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                             framework="stressngfull",
                             benchmark_id=":".join([framework, "cpu_all"]),
                         ),
-                        "config": {
-                            "cores": records[i][0],
-                            "framework_version": stressng_version,
-                        },
+                        "config": {"cores": records[i][0]},
                         "score": records[i][1],
                     }
                 )
@@ -407,13 +420,12 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
     try:
         records = []
         with open(
-            _server_framework_stdout_path(server, "stressngfull"), newline=""
+                _server_framework_stdout_path(server, "stressngfull"), newline=""
         ) as f:
             rows = csv.reader(f, quoting=csv.QUOTE_NONNUMERIC)
             for row in rows:
                 records.append(row)
         for record in records:
-            stressng_version = _server_framework_meta(server, "stressngfull")["version"]
             benchmarks.append(
                 {
                     **_benchmark_metafields(
@@ -421,10 +433,7 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                         framework="stressngfull",
                         benchmark_id=":".join([framework, workload]),
                     ),
-                    "config": {
-                        "cores": record[0],
-                        "framework_version": stressng_version,
-                    },
+                    "config": {"cores": record[0]},
                     "score": record[1],
                 }
             )
@@ -438,9 +447,6 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                         framework="stressngfull",
                         benchmark_id=":".join([framework, k]),
                     ),
-                    "config": {
-                        "framework_version": stressng_version,
-                    },
                     "score": v,
                 }
             )
@@ -456,7 +462,7 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
 
             records = []
             with open(
-                _server_framework_stdout_path(server, framework), newline=""
+                    _server_framework_stdout_path(server, framework), newline=""
             ) as f:
                 rows = csv.DictReader(f, quoting=csv.QUOTE_NONNUMERIC)
                 for row in rows:
@@ -500,11 +506,9 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                                 server,
                                 framework=framework,
                                 benchmark_id=":".join([framework, measurement]),
+                                framework_version_override=versions,
                             ),
-                            "config": {
-                                **{k: record[k] for k in keys},
-                                "framework_version": versions,
-                            },
+                            "config": {**{k: record[k] for k in keys}},
                             "score": score,
                             "note": note,
                         }
@@ -514,17 +518,12 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
 
     framework = "membench"
     try:
-        membench_meta = _server_framework_meta(server, framework)
-        membench_version = membench_meta["version"]
         with open(_server_framework_stdout_path(server, framework), newline="") as fp:
             reader = csv.DictReader(fp)
             for row in reader:
                 operation = row["operation"]
                 size_kb = int(float(row["size_kb"]))
-                config = {
-                    "size_kb": size_kb,
-                    "framework_version": membench_version,
-                }
+                config = {"size_kb": size_kb}
                 if operation == "latency":
                     score = float(row["latency_ns"])
                     if score == 0:
@@ -561,7 +560,6 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
     framework = "llm_speed"
     try:
         assert _server_framework_meta(server, "llm")["exit_code"] == 0
-        llm_speed_version = _server_framework_meta(server, "llm")["version"]
         with open(_server_framework_stdout_path(server, "llm"), "r") as fp:
             for line in fp:
                 record = json.loads(line)
@@ -573,7 +571,6 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                 config = {
                     "model": model_name,
                     "tokens": tokens,
-                    "framework_version": llm_speed_version,
                 }
                 benchmarks.append(
                     {
@@ -656,7 +653,7 @@ def _standardize_cpu_family(family):
         return None
     for prefix in ["Ampere "]:
         if family.startswith(prefix):
-            family = family[len(prefix) :].lstrip()
+            family = family[len(prefix):].lstrip()
     return family
 
 
@@ -711,7 +708,7 @@ def _standardize_cpu_model(model):
         "Gold",
     ]:
         if model.startswith(prefix):
-            model = model[len(prefix) :].lstrip()
+            model = model[len(prefix):].lstrip()
     # drop trailing "CPU @ 2.50GHz"
     model = sub(r"( CPU)? ?@ \d+\.\d+GHz$", "", model)
     # drop trailing "48-Core Processor" or "48-Core"
@@ -734,7 +731,7 @@ def _standardize_cpu_model(model):
 
 
 def _standardize_gpu_count(
-    gpu_model: str, gpu_count: int = 0, gpu_memory: int = 0
+        gpu_model: str, gpu_count: int = 0, gpu_memory: int = 0
 ) -> float:
     """Extract GPU count from model name suffixes.
 
@@ -791,7 +788,7 @@ def _standardize_gpu_model(model, server=None):
         "AMD ",
     ]:
         if model.startswith(prefix):
-            model = model[len(prefix) :].lstrip()
+            model = model[len(prefix):].lstrip()
     if model == "nvidia-a100-80gb":
         model = "A100-SXM4-80GB"
     if model == "nvidia-b200":
@@ -908,7 +905,7 @@ def _find_storage_disks(node: dict, disks: List[Disk], server: ServerBase) -> No
                     continue
                 disks.append(
                     Disk(
-                        size=size_bytes // (1024**3),  # size in GiB
+                        size=size_bytes // (1024 ** 3),  # size in GiB
                         storage_type=device_type,
                         description=node.get("product", "").lower(),
                     )
@@ -920,7 +917,7 @@ def _find_storage_disks(node: dict, disks: List[Disk], server: ServerBase) -> No
 
 
 def _determine_storage_type(
-    parent_node: dict, disk_node: dict, server: ServerBase
+        parent_node: dict, disk_node: dict, server: ServerBase
 ) -> StorageType:
     """Determine disk type based on parent controller and disk properties."""
     vendor_id = server.vendor_id
@@ -1074,7 +1071,7 @@ def inspect_update_server_dict(server: dict) -> dict:
     mappings = {
         "vcpus": lambda: lscpu_lookup("CPU(s):"),
         "cpu_cores": lambda: (
-            int(lscpu_lookup("Core(s) per socket:")) * int(lscpu_lookup("Socket(s):"))
+                int(lscpu_lookup("Core(s) per socket:")) * int(lscpu_lookup("Socket(s):"))
         ),
         "cpu_speed": lambda: get_cpu_speed(),
         "cpu_manufacturer": lambda: get_cpu_manufacturer(),
@@ -1131,11 +1128,11 @@ def inspect_update_server_dict(server: dict) -> dict:
 
         # keep inspector data for detailed fields that's not available from vendor API
         if (
-            field == "gpus"
-            and inspector_data
-            and isinstance(inspector_data, list)
-            and len(inspector_data) > 0
-            and inspector_data[0].get("bios_version")
+                field == "gpus"
+                and inspector_data
+                and isinstance(inspector_data, list)
+                and len(inspector_data) > 0
+                and inspector_data[0].get("bios_version")
         ):
             return inspector_data
         # never override vendor data with None
