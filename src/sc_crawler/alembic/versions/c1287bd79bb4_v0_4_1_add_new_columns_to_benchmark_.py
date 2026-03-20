@@ -128,18 +128,6 @@ def get_benchmark_score_table(is_scd: bool) -> sa.Table:
     )
 
 
-def _insert_column_after(table: sa.Table, new_col: sa.Column, after: str):
-    """Insert a column into a Table's column collection after the named column."""
-    cols = list(table.c)
-    idx = next(i for i, c in enumerate(cols) if c.name == after) + 1
-    tail = cols[idx:]
-    for c in tail:
-        table._columns.remove(c)
-    table.append_column(new_col)
-    for c in tail:
-        table.append_column(c)
-
-
 def upgrade() -> None:
     is_scd = is_scd_migration()
     benchmark_score_table_name = scdize_suffix("benchmark_score")

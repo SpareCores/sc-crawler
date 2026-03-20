@@ -194,8 +194,8 @@ def _benchmark_metafields(
     server: "Server",
     framework: str = None,
     benchmark_id: str = None,
-    framework_version_fallback: str | dict = None,
-    kernel_version_fallback: str | dict = None,
+    framework_version_fallback: Optional[str | dict] = None,
+    kernel_version_fallback: Optional[str | dict] = None,
 ) -> dict:
     if benchmark_id is None:
         if framework is None:
@@ -327,9 +327,12 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
         with open(_server_framework_path(server, framework, "results.json"), "r") as fp:
             scores = json.load(fp)
         kernel_version = next(
-            line.split("Kernel")[1].strip()
-            for line in _server_geekbench(server)
-            if line.startswith("Kernel")
+            (
+                line.split("Kernel")[1].strip()
+                for line in _server_geekbench(server)
+                if line.startswith("Kernel")
+            ),
+            None,
         )
         for cores, workloads in scores.items():
             for workload, values in workloads.items():
@@ -362,9 +365,12 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
             [str(scores["Version"][i]) for i in ["Major", "Minor", "Build"]]
         )
         kernel_version = next(
-            line.split("Kernel:")[1].strip()
-            for line in _server_passmark(server)
-            if line.startswith("Kernel:")
+            (
+                line.split("Kernel:")[1].strip()
+                for line in _server_passmark(server)
+                if line.startswith("Kernel:")
+            ),
+            None,
         )
         for key, name in PASSMARK_MAPS.items():
             benchmarks.append(
@@ -538,7 +544,7 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                                 benchmark_id=":".join([framework, measurement]),
                                 framework_version_fallback=versions,
                             ),
-                            "config": {**{k: record[k] for k in keys}},
+                            "config": {k: record[k] for k in keys},
                             "score": score,
                             "note": note,
                         }
