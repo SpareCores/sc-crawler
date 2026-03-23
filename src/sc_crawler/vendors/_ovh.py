@@ -1,6 +1,6 @@
 from functools import cache
 from os import environ, getenv
-from typing import Optional
+from typing import List, Optional
 
 from ovh import Client
 
@@ -9,6 +9,7 @@ from ..table_fields import (
     Allocation,
     CpuAllocation,
     CpuArchitecture,
+    Disk,
     PriceUnit,
     Status,
     StorageType,
@@ -630,17 +631,42 @@ def inventory_servers(vendor) -> list[dict]:
         )
         gpu_model = _gpu_model or gpu.get("model", None)
 
-        has_nvme = any(
-            "nvme"
-            in disk.get("technology", "").lower() + disk.get("interface", "").lower()
-            for disk in technical.get("storage", {}).get("disks", [])
+        storages: List[Disk] = []
+        for disk in technical.get("nvme", {}).get("disks", []):
+            capacity = disk.get("capacity", 0)
+            if not capacity:
+                continue
+            for _ in range(disk.get("number", 1)):
+                storages.append(
+                    Disk(
+                        size=capacity,
+                        storage_type=StorageType.NVME_SSD,
+                    )
+                )
+        for disk in technical.get("storage", {}).get("disks", []):
+            capacity = disk.get("capacity", 0)
+            if not capacity:
+                continue
+            # no number field here
+            is_nvme = (
+                "nvme"
+                in disk.get("technology", "").lower()
+                + disk.get("interface", "").lower()
+            )
+            storage_type = StorageType.NVME_SSD if is_nvme else StorageType.SSD
+            storages.append(
+                Disk(
+                    size=capacity,
+                    storage_type=storage_type,
+                )
+            )
+        storage_type = storages[0].storage_type if storages else None
+        storage_size = sum(disk.size for disk in storages)
+        nvme_size = sum(
+            disk.size for disk in storages if disk.storage_type == StorageType.NVME_SSD
         )
-        storage_type = StorageType.NVME_SSD if has_nvme else StorageType.SSD
-        storage_size = sum(
-            [
-                disk.get("number", 1) * disk.get("capacity", 0)
-                for disk in technical.get("storage", {}).get("disks", [])
-            ]
+        ssd_size = sum(
+            disk.size for disk in storages if disk.storage_type == StorageType.SSD
         )
 
         status = Status.ACTIVE if "active" in blobs.get("tags", []) else Status.INACTIVE
@@ -648,7 +674,8 @@ def inventory_servers(vendor) -> list[dict]:
         description_parts = [
             f"{vcpus} vCPUs",
             f"{memory_size_gb} GiB RAM",
-            f"{storage_size} GB {('NVMe' if has_nvme else 'SSD')} storage",
+            f"{nvme_size} GB NVMe" if nvme_size else None,
+            f"{ssd_size} GB SSD" if ssd_size else None,
             (
                 f"{gpu_count}x{gpu_model} {int(gpu_memory_per_gpu / MIB_PER_GIB)} GiB VRAM"
                 if gpu_count and gpu_model
@@ -692,7 +719,7 @@ def inventory_servers(vendor) -> list[dict]:
                 "gpus": [],  # TODO fill this array
                 "storage_size": storage_size,
                 "storage_type": storage_type,
-                "storages": [],
+                "storages": storages,
                 "network_speed": technical.get("bandwidth", {}).get("level", None),
                 # no bundled free traffic as all traffic is unmetered
                 # https://www.ovhcloud.com/en-ie/public-cloud/prices/
