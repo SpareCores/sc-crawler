@@ -328,9 +328,11 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
             scores = json.load(fp)
         kernel_version = next(
             (
-                line.split("Kernel")[1].strip()
+                m.group(1)
                 for line in _server_geekbench(server)
                 if line.startswith("Kernel")
+                for m in [search(r"(\d+\.\d+\.\d+\S*)", line)]
+                if m
             ),
             None,
         )
