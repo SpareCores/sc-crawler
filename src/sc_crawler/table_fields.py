@@ -120,7 +120,7 @@ class Disk(Json):
     """Disk definition based on size and storage type."""
 
     size: int = 0
-    """Storage size in GiB."""
+    """Storage size in GB."""
     storage_type: StorageType
     """[Type][sc_crawler.table_fields.StorageType] of the storage."""
     description: Optional[str] = None
