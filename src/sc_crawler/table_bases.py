@@ -692,7 +692,7 @@ class ServerFields(
         sa_type=JSON,
         description=(
             "JSON array of disks attached to the server, including "
-            "the size (MiB) and type of each disk."
+            "the size (GB) and type of each disk."
         ),
     )
     network_speed: Optional[float] = Field(
