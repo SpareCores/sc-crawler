@@ -211,6 +211,8 @@ def _benchmark_metafields(
     benchmark_id: str | None = None,
     framework_version_fallback: str | dict | None = None,
     kernel_version_fallback: str | dict | None = None,
+    override_framework_version: bool = False,
+    override_kernel_version: bool = False,
 ) -> dict:
     if benchmark_id is None:
         if framework is None:
@@ -220,13 +222,15 @@ def _benchmark_metafields(
         framework = benchmark_id.split(":")[0]
     framework_version = _framework_version(server, framework)
     kernel_version = _kernel_version(server, framework)
-    if framework_version_fallback and not framework_version:
+    if framework_version_fallback and (
+        override_framework_version or not framework_version
+    ):
         framework_version = (
             {"framework_version": framework_version_fallback}
             if isinstance(framework_version_fallback, str)
             else framework_version_fallback
         )
-    if kernel_version_fallback and not kernel_version:
+    if kernel_version_fallback and (override_kernel_version or not kernel_version):
         kernel_version = (
             {"kernel_version": kernel_version_fallback}
             if isinstance(kernel_version_fallback, str)
@@ -560,6 +564,7 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                                 framework=framework,
                                 benchmark_id=":".join([framework, measurement]),
                                 framework_version_fallback=versions,
+                                override_framework_version=True,
                             ),
                             "config": {k: record[k] for k in keys},
                             "score": score,
