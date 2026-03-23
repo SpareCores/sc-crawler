@@ -4,7 +4,7 @@ Fix(es):
 
 - Phase out old Benchmark records by marking as INACTIVE.
 - Use `lsblk` storage data for `GCP` servers, with `lshw` as a fallback.
-- Fix `OVH` storage info parsing from API data.
+- Extend `OVH` storage info parsing with NVMe devices from API data.
 
 ## v0.4.0 (Mar 14, 2026)
 
