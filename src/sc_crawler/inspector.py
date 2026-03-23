@@ -20,7 +20,7 @@ from yaml import safe_load as yaml_safe_load
 from .inspector_helpers import StorageInfo, _get_cpu_cache_info
 from .logger import logger
 from .table_bases import ServerBase
-from .table_fields import DdrGeneration, Disk, StorageType
+from .table_fields import DdrGeneration, Disk, Parallelism, StorageType
 
 if TYPE_CHECKING:
     from .tables import Server
@@ -271,10 +271,13 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
         for algo, levels in algos.items():
             for level, datas in levels.items():
                 for data in datas:
+                    threads = data["threads"]
                     config = {
                         "algo": algo,
                         "compression_level": None if level == "null" else int(level),
-                        "threads": data["threads"],
+                        "cores": (
+                            Parallelism.MULTI if threads > 1 else Parallelism.SINGLE
+                        ),
                     }
                     if data.get("extra_args", {}).get("block_size"):
                         config["block_size"] = data["extra_args"]["block_size"]
@@ -299,9 +302,17 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
             scores = json.load(fp)
         geekbench_version = _server_framework_meta(server, framework)["version"]
         for cores, workloads in scores.items():
+            parallelism = (
+                Parallelism.SINGLE
+                if cores == "Single-Core Performance"
+                else Parallelism.MULTI
+            )
             for workload, values in workloads.items():
                 workload_fields = {
-                    "config": {"cores": cores, "framework_version": geekbench_version},
+                    "config": {
+                        "cores": parallelism,
+                        "framework_version": geekbench_version,
+                    },
                     "score": float(values["score"]),
                 }
                 if values.get("description"):
