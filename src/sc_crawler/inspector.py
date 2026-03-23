@@ -260,9 +260,11 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                     config = {
                         "algo": algo,
                         "compression_level": None if level == "null" else int(level),
-                        "cores": Parallelism.MULTI
-                        if threads > 1
-                        else Parallelism.SINGLE,
+                        "cores": (
+                            Parallelism.MULTI
+                            if threads > 1
+                            else Parallelism.SINGLE
+                        ),
                     }
                     if data.get("extra_args", {}).get("block_size"):
                         config["block_size"] = data["extra_args"]["block_size"]
