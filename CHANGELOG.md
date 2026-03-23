@@ -1,10 +1,15 @@
-## v0.4.x (development version)
+## v0.4.1 (Mar 23, 2026)
 
 Fix(es):
 
 - Phase out old Benchmark records by marking as INACTIVE.
 - Use `lsblk` storage data for `GCP` servers, with `lshw` as a fallback.
 - Extend `OVH` storage info parsing with NVMe devices from API data.
+
+!!! Breaking changes:
+
+- Refactor benchmark_score table by adding `framework_version` and `kernel_version` columns, and modify `config_fields`
+  and `config` columns and benchmark data digest accordingly.
 
 ## v0.4.0 (Mar 14, 2026)
 
