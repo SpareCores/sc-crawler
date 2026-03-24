@@ -8,8 +8,11 @@ Fix(es):
 
 !!! Breaking changes:
 
-- Refactor benchmark_score table by adding `framework_version` and `kernel_version` columns, and modify `config_fields`
-  and `config` columns and benchmark data digest accordingly.
+- Refactor the `benchmark_score` table by adding `framework_version` and `kernel_version` columns, and updating the
+  `config_fields`, `config` columns, and benchmark data digest accordingly. Data migration from
+  `config.framework_version`
+  to the `framework_version` column is implemented for both PostgreSQL and SQLite, but in SQLite the `framework_version`
+  field is not removed from the config JSON.
 
 ## v0.4.0 (Mar 14, 2026)
 

@@ -603,7 +603,7 @@ def upgrade() -> None:
         op.execute(
             benchmark_score_table.update()
             .where(
-                benchmark_score_table.c.config.op("->")(
+                benchmark_score_table.c.config.op("->>")(
                     sa.literal("framework_version")
                 ).isnot(None)
             )
@@ -623,19 +623,6 @@ def upgrade() -> None:
             )
             .values(
                 framework_version=sqlmodel.func.json_extract(
-                    benchmark_score_table.c.config, "$.framework_version"
-                )
-            )
-        )
-        op.execute(
-            benchmark_score_table.update()
-            .where(
-                sqlmodel.func.json_extract(
-                    benchmark_score_table.c.config, "$.framework_version"
-                ).isnot(None)
-            )
-            .values(
-                config=sqlmodel.func.json_remove(
                     benchmark_score_table.c.config, "$.framework_version"
                 )
             )
