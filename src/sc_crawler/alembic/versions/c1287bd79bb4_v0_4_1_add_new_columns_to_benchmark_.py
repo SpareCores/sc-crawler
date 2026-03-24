@@ -29,6 +29,18 @@ def scdize_suffix(table_name: str) -> str:
     return table_name
 
 
+def _insert_column_after(table: sa.Table, new_col: sa.Column, after: str):
+    """Insert a column into a Table's column collection after the named column."""
+    cols = list(table.c)
+    idx = next(i for i, c in enumerate(cols) if c.name == after) + 1
+    tail = cols[idx:]
+    for c in tail:
+        table._columns.remove(c)
+    table.append_column(new_col)
+    for c in tail:
+        table.append_column(c)
+
+
 def get_benchmark_score_table(is_scd: bool) -> sa.Table:
     is_postgresql = op.get_context().dialect.name == "postgresql"
     table_name = scdize_suffix("benchmark_score")
@@ -487,6 +499,7 @@ def get_server_table(is_scd: bool) -> sa.Table:
 
 def upgrade() -> None:
     is_scd = is_scd_migration()
+    is_postgresql = op.get_context().dialect.name == "postgresql"
     benchmark_score_table_name = scdize_suffix("benchmark_score")
     benchmark_score_table = get_benchmark_score_table(is_scd)
     server_table_name = scdize_suffix("server")
@@ -551,10 +564,138 @@ def upgrade() -> None:
             comment="JSON array of disks attached to the server, including the size (GB) and type of each disk.",
         )
 
+    _insert_column_after(
+        benchmark_score_table,
+        sa.Column(
+            "framework_version",
+            sqlmodel.sql.sqltypes.AutoString(),
+            nullable=True,
+            comment="The version of the benchmark tool used.",
+        ),
+        "config",
+    )
+
+    _insert_column_after(
+        benchmark_score_table,
+        sa.Column(
+            "kernel_version",
+            sqlmodel.sql.sqltypes.AutoString(),
+            nullable=True,
+            comment="The kernel version of the server when the benchmark was run.",
+        ),
+        "framework_version",
+    )
+
+    if is_postgresql:
+        op.execute(
+            benchmark_score_table.update()
+            .where(
+                benchmark_score_table.c.config.op("->>")(
+                    sa.literal("framework_version")
+                ).isnot(None)
+            )
+            .values(
+                framework_version=benchmark_score_table.c.config.op("->>")(
+                    sa.literal("framework_version")
+                )
+            )
+        )
+        op.execute(
+            benchmark_score_table.update()
+            .where(
+                benchmark_score_table.c.config.op("->")(
+                    sa.literal("framework_version")
+                ).isnot(None)
+            )
+            .values(
+                config=benchmark_score_table.c.config.op("-")(
+                    sa.literal("framework_version")
+                )
+            )
+        )
+    else:
+        op.execute(
+            benchmark_score_table.update()
+            .where(
+                sqlmodel.func.json_extract(
+                    benchmark_score_table.c.config, "$.framework_version"
+                ).isnot(None)
+            )
+            .values(
+                framework_version=sqlmodel.func.json_extract(
+                    benchmark_score_table.c.config, "$.framework_version"
+                )
+            )
+        )
+        op.execute(
+            benchmark_score_table.update()
+            .where(
+                sqlmodel.func.json_extract(
+                    benchmark_score_table.c.config, "$.framework_version"
+                ).isnot(None)
+            )
+            .values(
+                config=sqlmodel.func.json_remove(
+                    benchmark_score_table.c.config, "$.framework_version"
+                )
+            )
+        )
+
 
 def downgrade() -> None:
+    is_scd = is_scd_migration()
+    is_postgresql = op.get_context().dialect.name == "postgresql"
     benchmark_score_table_name = scdize_suffix("benchmark_score")
     server_table_name = scdize_suffix("server")
+    benchmark_score_table = get_benchmark_score_table(is_scd)
+
+    # Add the new columns to the table object so they can be referenced in the UPDATE
+    _insert_column_after(
+        benchmark_score_table,
+        sa.Column(
+            "framework_version",
+            sqlmodel.sql.sqltypes.AutoString(),
+            nullable=True,
+        ),
+        "config",
+    )
+    _insert_column_after(
+        benchmark_score_table,
+        sa.Column(
+            "kernel_version",
+            sqlmodel.sql.sqltypes.AutoString(),
+            nullable=True,
+        ),
+        "framework_version",
+    )
+
+    # Copy framework_version back into the config JSON before dropping the column
+    if is_postgresql:
+        op.execute(
+            benchmark_score_table.update()
+            .where(benchmark_score_table.c.framework_version.isnot(None))
+            .values(
+                config=benchmark_score_table.c.config.op("||")(
+                    sqlmodel.func.jsonb_build_object(
+                        "framework_version",
+                        benchmark_score_table.c.framework_version,
+                    )
+                )
+            )
+        )
+    else:
+        op.execute(
+            benchmark_score_table.update()
+            .where(benchmark_score_table.c.framework_version.isnot(None))
+            .values(
+                config=sqlmodel.func.json_set(
+                    benchmark_score_table.c.config,
+                    "$.framework_version",
+                    benchmark_score_table.c.framework_version,
+                )
+            )
+        )
+
     with op.batch_alter_table(benchmark_score_table_name, schema=None) as batch_op:
         batch_op.drop_column("kernel_version")
         batch_op.drop_column("framework_version")
