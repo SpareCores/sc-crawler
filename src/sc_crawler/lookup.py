@@ -143,7 +143,7 @@ benchmarks: List[Benchmark] = [
     ),
     Benchmark(
         benchmark_id="bw_mem",
-        name="Memory bandwidth",
+        name="Memory bandwidth (bw_mem)",
         description="bw_mem allocates twice the specified amount of memory, zeros it, and then times the copying of the first half to the second half. Results are reported in megabytes moved per second (MB/sec). bw_mem is provided by lmbench. For more details, see the man pages.",
         framework="bw_mem",
         config_fields={
@@ -492,7 +492,7 @@ benchmarks: List[Benchmark] = [
     ),
     Benchmark(
         benchmark_id="membench:bandwidth_read",
-        name="Memory read bandwidth",
+        name="Memory read bandwidth (sc-membench)",
         description="Measures aggregate sequential read bandwidth across all threads using OpenMP parallelization.",
         framework="membench",
         measurement="memory_bandwidth",
@@ -501,7 +501,7 @@ benchmarks: List[Benchmark] = [
     ),
     Benchmark(
         benchmark_id="membench:bandwidth_write",
-        name="Memory write bandwidth",
+        name="Memory write bandwidth (sc-membench)",
         description="Measures aggregate sequential write bandwidth across all threads using OpenMP parallelization.",
         framework="membench",
         measurement="memory_bandwidth",
@@ -510,7 +510,7 @@ benchmarks: List[Benchmark] = [
     ),
     Benchmark(
         benchmark_id="membench:bandwidth_copy",
-        name="Memory copy bandwidth",
+        name="Memory copy bandwidth (sc-membench)",
         description="Measures aggregate memory copy bandwidth across all threads using OpenMP parallelization.",
         framework="membench",
         measurement="memory_bandwidth",
@@ -519,7 +519,7 @@ benchmarks: List[Benchmark] = [
     ),
     Benchmark(
         benchmark_id="membench:latency",
-        name="Memory latency",
+        name="Memory latency (sc-membench)",
         description="Measures median memory latency using pointer chasing with randomized access to defeat hardware prefetching.",
         framework="membench",
         measurement="memory_latency",
