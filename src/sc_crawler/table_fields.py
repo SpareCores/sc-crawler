@@ -231,3 +231,12 @@ class PriceTier(Json):
         if value == float("inf"):
             return "Infinity"
         return value
+
+
+class Parallelism(str, Enum):
+    """Parallelism mode of a benchmark run."""
+
+    SINGLE = "single"
+    """Benchmark run on a single core."""
+    MULTI = "multi"
+    """Benchmark run across multiple cores."""
