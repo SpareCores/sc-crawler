@@ -556,6 +556,13 @@ locations = {
         "country_id": "CN",
         "founding_year": 2020,
     },
+    "cn-zhongwei": {
+        "city": "Zhongwei",
+        "lat": 37.5000,
+        "lon": 105.1929,
+        "country_id": "CN",
+        "founding_year": 2026,
+    },
     # -------- Hong Kong --------
     "cn-hongkong": {
         "alias": ["cn-hongkong-am4-c04"],
