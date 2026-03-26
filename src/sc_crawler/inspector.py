@@ -327,7 +327,7 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                             Parallelism.MULTI if threads > 1 else Parallelism.SINGLE
                         ),
                     }
-                    if data.get("extra_args", {}).get("block_size"):
+                    if data.get("extra_args", {}).get("block_size") is not None:
                         config["block_size"] = data["extra_args"]["block_size"]
                     for measurement in ["ratio", "compress", "decompress"]:
                         if data[measurement]:
