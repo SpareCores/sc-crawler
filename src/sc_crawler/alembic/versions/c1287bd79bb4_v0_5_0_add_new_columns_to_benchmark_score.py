@@ -1,4 +1,4 @@
-"""v0.4.1 add new columns to benchmark_score
+"""v0.5.0 add new columns to benchmark_score
 
 Revision ID: c1287bd79bb4
 Revises: da8aff9a4741
