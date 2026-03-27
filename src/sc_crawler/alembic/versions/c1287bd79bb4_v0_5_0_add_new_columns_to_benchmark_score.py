@@ -516,8 +516,7 @@ def upgrade() -> None:
                 sa.Column(
                     "framework_version",
                     sqlmodel.sql.sqltypes.AutoString(),
-                    nullable=False,
-                    server_default="",
+                    nullable=True,
                     comment="The version of the benchmark tool used.",
                 ),
                 insert_after="config",
@@ -530,20 +529,6 @@ def upgrade() -> None:
                     comment="The kernel version of the server when the benchmark was run.",
                 ),
                 insert_after="framework_version",
-            )
-            batch_op.drop_constraint(
-                f"pk_{benchmark_score_table_name}",
-                type_="primary",
-            )
-            batch_op.create_primary_key(
-                op.f(f"pk_{benchmark_score_table_name}"),
-                [
-                    "vendor_id",
-                    "server_id",
-                    "benchmark_id",
-                    "config",
-                    "framework_version",
-                ],
             )
         with op.batch_alter_table(
             server_table_name,
@@ -560,8 +545,7 @@ def upgrade() -> None:
             sa.Column(
                 "framework_version",
                 sqlmodel.sql.sqltypes.AutoString(),
-                nullable=False,
-                server_default="",
+                nullable=True,
                 comment="The version of the benchmark tool used.",
             ),
         )
@@ -579,30 +563,13 @@ def upgrade() -> None:
             "storages",
             comment="JSON array of disks attached to the server, including the size (GB) and type of each disk.",
         )
-        op.drop_constraint(
-            f"pk_{benchmark_score_table_name}",
-            benchmark_score_table_name,
-            type_="primary",
-        )
-        op.create_primary_key(
-            op.f(f"pk_{benchmark_score_table_name}"),
-            benchmark_score_table_name,
-            [
-                "vendor_id",
-                "server_id",
-                "benchmark_id",
-                "config",
-                "framework_version",
-            ],
-        )
 
     _insert_column_after(
         benchmark_score_table,
         sa.Column(
             "framework_version",
             sqlmodel.sql.sqltypes.AutoString(),
-            nullable=False,
-            server_default="",
+            nullable=True,
             comment="The version of the benchmark tool used.",
         ),
         "config",
@@ -625,8 +592,7 @@ def upgrade() -> None:
             .where(
                 benchmark_score_table.c.config.op("->>")(
                     sa.literal("framework_version")
-                )
-                != ""
+                ).isnot(None)
             )
             .values(
                 framework_version=benchmark_score_table.c.config.op("->>")(
@@ -639,8 +605,7 @@ def upgrade() -> None:
             .where(
                 benchmark_score_table.c.config.op("->>")(
                     sa.literal("framework_version")
-                )
-                != ""
+                ).isnot(None)
             )
             .values(
                 config=benchmark_score_table.c.config.op("-")(
@@ -654,8 +619,7 @@ def upgrade() -> None:
             .where(
                 sqlmodel.func.json_extract(
                     benchmark_score_table.c.config, "$.framework_version"
-                )
-                != ""
+                ).isnot(None)
             )
             .values(
                 framework_version=sqlmodel.func.json_extract(
@@ -696,7 +660,7 @@ def downgrade() -> None:
     if is_postgresql:
         op.execute(
             benchmark_score_table.update()
-            .where(benchmark_score_table.c.framework_version != "")
+            .where(benchmark_score_table.c.framework_version.isnot(None))
             .values(
                 config=benchmark_score_table.c.config.op("||")(
                     sqlmodel.func.jsonb_build_object(
@@ -709,7 +673,7 @@ def downgrade() -> None:
     else:
         op.execute(
             benchmark_score_table.update()
-            .where(benchmark_score_table.c.framework_version != "")
+            .where(benchmark_score_table.c.framework_version.isnot(None))
             .values(
                 config=sqlmodel.func.json_set(
                     benchmark_score_table.c.config,
@@ -722,21 +686,6 @@ def downgrade() -> None:
     with op.batch_alter_table(benchmark_score_table_name, schema=None) as batch_op:
         batch_op.drop_column("kernel_version")
         batch_op.drop_column("framework_version")
-        op.drop_constraint(
-            f"pk_{benchmark_score_table_name}",
-            benchmark_score_table_name,
-            type_="primary",
-        )
-        op.create_primary_key(
-            op.f(f"pk_{benchmark_score_table_name}"),
-            benchmark_score_table_name,
-            [
-                "vendor_id",
-                "server_id",
-                "benchmark_id",
-                "config",
-            ],
-        )
     with op.batch_alter_table(server_table_name, schema=None) as batch_op:
         batch_op.alter_column(
             "storages",
