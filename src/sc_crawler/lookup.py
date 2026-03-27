@@ -115,10 +115,7 @@ def _geekbenchmark(name: str, description: str):
             + "The score is calibrated against a baseline score of 2,500 (Dell Precision 3460 with a Core i7-12700 processor) as per the Geekbench 6 Benchmark Internals."
         ),
         framework="geekbench",
-        config_fields={
-            "cores": "Single-Core or Multi-Core performance tests.",
-            "framework_version": "Version number of geekbench.",
-        },
+        config_fields={"cores": "Single-Core or Multi-Core peformance tests."},
         measurement=measurement,
     )
 
@@ -131,9 +128,6 @@ def _passmark(name: str, description: str, unit: str, higher_is_better: bool = T
         measurement=measurement,
         name="PassMark: " + name,
         description=description,
-        config_fields={
-            "framework_version": "Version and build number of PassMark.",
-        },
         unit=unit,
         higher_is_better=higher_is_better,
     )
@@ -276,7 +270,6 @@ benchmarks: List[Benchmark] = [
         config_fields={
             "algo": "Hash or block cipher algorithm, e.g. sha256 or aes-256-cbc.",
             "block_size": "Block size (byte).",
-            "framework_version": "Version number of OpenSSL.",
         },
         unit="Bytes per second (Bps)",
     ),
@@ -286,10 +279,7 @@ benchmarks: List[Benchmark] = [
         description="Stress the CPU with all available methods supported by stress-ng, and count the total bogo operations per second (in real time) based on wall clock run time. The stress methods include bit operations, recursive calculations, integer divisions, floating point operations, matrix multiplication, stats, trigonometric, and hash functions. Note that this is to be deprecated in favor of stress_ng:div16.",
         framework="stress_ng",
         measurement="cpu_all",
-        config_fields={
-            "cores": "Stressing a single core or all cores.",
-            "framework_version": "Version number of stress-ng.",
-        },
+        config_fields={"cores": "Stressing a single core or all cores."},
         unit="Bogo operations per second (ops/s)",
     ),
     Benchmark(
@@ -298,10 +288,7 @@ benchmarks: List[Benchmark] = [
         description="Stress the CPU with the div16 method of stress-ng using a varying number of vCPU cores, and count the measured maximum total bogo operations per second (in real time) based on wall clock run time.",
         framework="stress_ng",
         measurement="div16",
-        config_fields={
-            "cores": "Number of CPU cores stressed.",
-            "framework_version": "Version number of stress-ng.",
-        },
+        config_fields={"cores": "Number of CPU cores stressed."},
         unit="Bogo operations per second (ops/s)",
     ),
     Benchmark(
@@ -310,9 +297,6 @@ benchmarks: List[Benchmark] = [
         description="Stress a single vCPU core with the div16 method of stress-ng, and count the total bogo operations per second (in real time) based on wall clock run time.",
         framework="stress_ng",
         measurement="best1",
-        config_fields={
-            "framework_version": "Version number of stress-ng.",
-        },
         unit="Bogo operations per second (ops/s)",
     ),
     Benchmark(
@@ -321,9 +305,6 @@ benchmarks: List[Benchmark] = [
         description="Stress the CPU with the div16 method of stress-ng using a varying number of vCPU cores, and count the measured maximum total bogo operations per second (in real time) based on wall clock run time.",
         framework="stress_ng",
         measurement="bestn",
-        config_fields={
-            "framework_version": "Version number of stress-ng.",
-        },
         unit="Bogo operations per second (ops/s)",
     ),
     Benchmark(
@@ -335,7 +316,6 @@ benchmarks: List[Benchmark] = [
         config_fields={
             "size": "Served file size (kB).",
             "connections_per_vcpus": "Open HTTP connections per vCPU(s).",
-            "framework_version": "Version number of both binserve and wrk.",
         },
         unit="Requests per second (rps)",
     ),
@@ -348,7 +328,6 @@ benchmarks: List[Benchmark] = [
         config_fields={
             "size": "Served file size (kB).",
             "connections_per_vcpus": "Open HTTP connections per vCPU(s).",
-            "framework_version": "Version number of both binserve and wrk.",
         },
         unit="Requests per second (rps)",
     ),
@@ -361,7 +340,6 @@ benchmarks: List[Benchmark] = [
         config_fields={
             "size": "Served file size (kB).",
             "connections_per_vcpus": "Open HTTP connections per vCPU(s).",
-            "framework_version": "Version number of both binserve and wrk.",
         },
         unit="Bytes per second (Bps)",
     ),
@@ -374,7 +352,6 @@ benchmarks: List[Benchmark] = [
         config_fields={
             "size": "Served file size (kB).",
             "connections_per_vcpus": "Open HTTP connections per vCPU(s).",
-            "framework_version": "Version number of both binserve and wrk.",
         },
         unit="Bytes per second (Bps)",
     ),
@@ -387,7 +364,6 @@ benchmarks: List[Benchmark] = [
         config_fields={
             "size": "Served file size (kB).",
             "connections_per_vcpus": "Open HTTP connections per vCPU(s).",
-            "framework_version": "Version number of both binserve and wrk.",
         },
         unit="Seconds (sec)",
         higher_is_better=False,
@@ -401,7 +377,6 @@ benchmarks: List[Benchmark] = [
         config_fields={
             "operation": "Type of operation, e.g. SET or GET a key.",
             "pipeline": "The number of concurrent pipelined requests.",
-            "framework_version": "Redis server version number and build information.",
         },
         unit="Operations per second (ops/sec)",
     ),
@@ -414,7 +389,6 @@ benchmarks: List[Benchmark] = [
         config_fields={
             "operation": "Type of operation, e.g. SET or GET a key.",
             "pipeline": "The number of concurrent pipelined requests.",
-            "framework_version": "Redis server version number and build information.",
         },
         unit="Operations per second (ops/sec)",
     ),
@@ -427,7 +401,6 @@ benchmarks: List[Benchmark] = [
         config_fields={
             "operation": "Type of operation, e.g. SET or GET a key.",
             "pipeline": "The number of concurrent pipelined requests.",
-            "framework_version": "Redis server version number and build information.",
         },
         unit="Milliseconds (ms)",
         higher_is_better=False,
@@ -523,10 +496,7 @@ benchmarks: List[Benchmark] = [
         description="Measures aggregate sequential read bandwidth across all threads using OpenMP parallelization.",
         framework="membench",
         measurement="memory_bandwidth",
-        config_fields={
-            "size_kb": "Per-thread buffer size in KiB.",
-            "framework_version": "Version of membench.",
-        },
+        config_fields={"size_kb": "Per-thread buffer size in KiB."},
         unit="MB/s",
     ),
     Benchmark(
@@ -535,10 +505,7 @@ benchmarks: List[Benchmark] = [
         description="Measures aggregate sequential write bandwidth across all threads using OpenMP parallelization.",
         framework="membench",
         measurement="memory_bandwidth",
-        config_fields={
-            "size_kb": "Per-thread buffer size in KiB.",
-            "framework_version": "Version of membench.",
-        },
+        config_fields={"size_kb": "Per-thread buffer size in KiB."},
         unit="MB/s",
     ),
     Benchmark(
@@ -547,10 +514,7 @@ benchmarks: List[Benchmark] = [
         description="Measures aggregate memory copy bandwidth across all threads using OpenMP parallelization.",
         framework="membench",
         measurement="memory_bandwidth",
-        config_fields={
-            "size_kb": "Per-thread buffer size in KiB.",
-            "framework_version": "Version of membench.",
-        },
+        config_fields={"size_kb": "Per-thread buffer size in KiB."},
         unit="MB/s",
     ),
     Benchmark(
@@ -559,10 +523,7 @@ benchmarks: List[Benchmark] = [
         description="Measures median memory latency using pointer chasing with randomized access to defeat hardware prefetching.",
         framework="membench",
         measurement="memory_latency",
-        config_fields={
-            "size_kb": "Per-thread buffer size in KiB.",
-            "framework_version": "Version of membench.",
-        },
+        config_fields={"size_kb": "Per-thread buffer size in KiB."},
         unit="ns",
         higher_is_better=False,
     ),
@@ -575,7 +536,6 @@ benchmarks: List[Benchmark] = [
         config_fields={
             "model": "Name of the model file used.",
             "tokens": "Number of tokens processed in one run.",
-            "framework_version": "Git commit hash of llama.cpp",
         },
         unit="tokens/second (t/s)",
     ),
@@ -588,7 +548,6 @@ benchmarks: List[Benchmark] = [
         config_fields={
             "model": "Name of the model file used.",
             "tokens": "Number of tokens processed in one run.",
-            "framework_version": "Git commit hash of llama.cpp",
         },
         unit="tokens/second (t/s)",
     ),

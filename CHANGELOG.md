@@ -1,4 +1,4 @@
-## v0.4.x (development version)
+## v0.5.0 (Mar 23, 2026)
 
 Fix(es):
 
@@ -7,6 +7,13 @@ Fix(es):
 - Extend `OVH` storage info parsing with NVMe devices from API data.
 - Refactor `threads` config field to `cores` (`single/multi`) in `compression_text` benchmark scores.
 - Refactor `cores` config field to `single/multi` in `geekbench` benchmark scores.
+
+!!! Breaking changes:
+
+- Refactor the `benchmark_score` table by adding `framework_version` and `kernel_version` columns, and updating the
+  `config_fields`, `config` columns, and benchmark data digest accordingly. Data migration from
+  `config.framework_version` to the `framework_version` column is implemented for both PostgreSQL and SQLite, but in
+  SQLite the `framework_version` field is not removed from the config JSON.
 
 ## v0.4.0 (Mar 14, 2026)
 

@@ -852,6 +852,14 @@ class BenchmarkScoreFields(HasBenchmarkPKFK, HasServerPK, HasVendorPKFK):
         primary_key=True,
         description='Dictionary of config parameters of the specific benchmark, e.g. {"bandwidth": 4096}',
     )
+    framework_version: Optional[str] = Field(
+        default=None,
+        description="The version of the benchmark tool used.",
+    )
+    kernel_version: Optional[str] = Field(
+        default=None,
+        description="The kernel version of the server when the benchmark was run.",
+    )
     score: float = Field(
         description="The resulting score of the benchmark.",
     )
