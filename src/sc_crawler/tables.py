@@ -5,8 +5,9 @@ from importlib import import_module
 from types import ModuleType
 from typing import Callable, List, Optional
 
-from pydantic import ImportString, PrivateAttr
-from sqlalchemy import ForeignKeyConstraint, update
+from pydantic import PrivateAttr
+from pydantic._internal._model_construction import init_private_attributes
+from sqlalchemy import ForeignKeyConstraint, event, update
 from sqlmodel import Relationship, Session, SQLModel
 
 from .insert import insert_items
@@ -106,7 +107,7 @@ class Vendor(VendorBase, table=True):
     )
 
     # private attributes
-    _methods: Optional[ImportString[ModuleType]] = PrivateAttr(default=None)
+    _methods: Optional[ModuleType] = PrivateAttr(default=None)
     _session: Optional[Session] = PrivateAttr()
     _progress_tracker: Optional[VendorProgressTracker] = PrivateAttr(
         default=VoidProgressTracker()
@@ -126,14 +127,7 @@ class Vendor(VendorBase, table=True):
             raise ValueError("No vendor country provided")
 
     def _get_methods(self):
-        # private attributes are not (always) initialized correctly by SQLmodel
-        # e.g. the attribute is missing alltogether when loaded from DB
-        # https://github.com/tiangolo/sqlmodel/issues/149
-        try:
-            hasattr(self, "_methods")
-        except Exception:
-            self._methods = None
-        if not self._methods:
+        if not getattr(self, "_methods", None):
             vendor_module = ".".join(
                 [
                     __name__.split(".", maxsplit=1)[0],
@@ -185,7 +179,7 @@ class Vendor(VendorBase, table=True):
     @property
     def progress_tracker(self):
         """The [sc_crawler.logger.VendorProgressTracker][] to use for updating progress bars."""
-        return self._progress_tracker
+        return getattr(self, "_progress_tracker", None) or VoidProgressTracker()
 
     @progress_tracker.setter
     def progress_tracker(self, progress_tracker: VendorProgressTracker):
@@ -198,7 +192,7 @@ class Vendor(VendorBase, table=True):
     @property
     def tasks(self):
         """Reexport progress_tracker.tasks for easier access."""
-        return self._progress_tracker.tasks
+        return self.progress_tracker.tasks
 
     def log(self, message: str, level: int = logging.INFO):
         logger.log(level, self.name + ": " + message, stacklevel=2)
@@ -604,6 +598,15 @@ Region.model_rebuild()
 Zone.model_rebuild()
 Storage.model_rebuild()
 Server.model_rebuild()
+
+
+@event.listens_for(SQLModel, "load", propagate=True)
+def _init_private_attrs_on_load(target, context):
+    # When SQLAlchemy reconstructs a model instance from a DB query it bypasses
+    # __init__, leaving __pydantic_private__ = None instead of initializing it
+    # with the PrivateAttr defaults. This event listener fixes that.
+    # See: https://github.com/fastapi/sqlmodel/issues/149
+    init_private_attributes(target, None)
 
 
 def is_table(table):
