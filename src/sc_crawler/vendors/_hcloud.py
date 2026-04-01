@@ -307,7 +307,7 @@ def inventory_storages(vendor):
 def inventory_storage_prices(vendor):
     """Block storage volume pricing information collected manually.
 
-    Source: <https://www.hetzner.com/cloud/>
+    Source: <https://www.hetzner.com/cloud/block-storage/>
     """
     items = []
     for region in vendor.regions:
@@ -359,7 +359,7 @@ def inventory_traffic_prices(vendor):
 def inventory_ipv4_prices(vendor):
     """IPv4 price collected manually.
 
-    Source: <https://docs.hetzner.com/general/others/ipv4-pricing/#cloud>
+    Source: <https://docs.hetzner.com/cloud/servers/overview#network-options>
     """
     items = []
     for region in vendor.regions:

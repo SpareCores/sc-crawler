@@ -4,7 +4,7 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from itertools import chain, repeat
-from logging import DEBUG
+from logging import DEBUG, WARN
 from statistics import mode
 from typing import List, Optional, Tuple
 
@@ -861,16 +861,23 @@ def inventory_zones(vendor):
     def get_zones(region: Region, vendor: Vendor) -> List[dict]:
         new = []
         if region.status == "active":
-            for zone in _boto_describe_availability_zones(region.region_id):
-                new.append(
-                    {
-                        "zone_id": zone["ZoneId"],
-                        "name": zone["ZoneName"],
-                        "api_reference": zone["ZoneName"],
-                        "display_name": zone["ZoneName"],
-                        "region_id": region.region_id,
-                        "vendor_id": vendor.vendor_id,
-                    }
+            try:
+                for zone in _boto_describe_availability_zones(region.region_id):
+                    new.append(
+                        {
+                            "zone_id": zone["ZoneId"],
+                            "name": zone["ZoneName"],
+                            "api_reference": zone["ZoneName"],
+                            "display_name": zone["ZoneName"],
+                            "region_id": region.region_id,
+                            "vendor_id": vendor.vendor_id,
+                        }
+                    )
+            except Exception as e:
+                region.status = Status.INACTIVE
+                vendor.log(
+                    f"Marking region {region.region_id} as inactive due to error while fetching availability zones: {str(e)}",
+                    WARN,
                 )
         vendor.progress_tracker.advance_task()
         return new
