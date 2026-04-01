@@ -15,6 +15,7 @@ from cachier import cachier, set_global_params
 from ..inspector import _standardize_gpu_count
 from ..logger import logger
 from ..lookup import map_compliance_frameworks_to_vendor
+from ..sentry import sentry_capture_or_raise
 from ..str_utils import extract_last_number
 from ..table_fields import (
     Allocation,
@@ -861,7 +862,15 @@ def inventory_zones(vendor):
     def get_zones(region: Region, vendor: Vendor) -> List[dict]:
         new = []
         if region.status == "active":
-            try:
+            with sentry_capture_or_raise(
+                on_error=lambda e: (
+                    setattr(region, "status", Status.INACTIVE),
+                    vendor.log(
+                        f"Marking region {region.region_id} as inactive due to error while fetching availability zones: {str(e)}",
+                        WARN,
+                    ),
+                ),
+            ):
                 for zone in _boto_describe_availability_zones(region.region_id):
                     new.append(
                         {
@@ -873,12 +882,6 @@ def inventory_zones(vendor):
                             "vendor_id": vendor.vendor_id,
                         }
                     )
-            except Exception as e:
-                region.status = Status.INACTIVE
-                vendor.log(
-                    f"Marking region {region.region_id} as inactive due to error while fetching availability zones: {str(e)}",
-                    WARN,
-                )
         vendor.progress_tracker.advance_task()
         return new
 

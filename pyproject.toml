@@ -53,6 +53,7 @@ mkdocs = [
   #  "zensical"  # TODO: switch to zensical once it fully replaces mkdocs+mkdocs-material
 ]
 testing = ["pytest", "sparecores-crawler[mkdocs]"]
+apm = ["sentry-sdk"]
 aws = ["boto3"]
 hcloud = ["hcloud"]
 gcp = ["google-cloud", "google-cloud-compute", "google-cloud-billing"]
