@@ -491,6 +491,13 @@ locations = {
         "country_id": "CN",
         "founding_year": 2011,
     },
+    "cn-hangzhou-acdr-ut-3": {
+        "city": "Hangzhou",
+        "lat": 30.2741,
+        "lon": 120.1551,
+        "country_id": "CN",
+        "founding_year": 2026,
+    },
     "cn-shanghai": {
         "alias": ["cn-shanghai-eu13-a01"],
         "city": "Shanghai",
