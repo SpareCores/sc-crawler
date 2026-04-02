@@ -5,7 +5,7 @@ from importlib import import_module
 from types import ModuleType
 from typing import Callable, List, Optional
 
-from pydantic import ImportString, PrivateAttr
+from pydantic import PrivateAttr
 from sqlalchemy import ForeignKeyConstraint, update
 from sqlmodel import Relationship, Session, SQLModel
 
@@ -106,7 +106,7 @@ class Vendor(VendorBase, table=True):
     )
 
     # private attributes
-    _methods: Optional[ImportString[ModuleType]] = PrivateAttr(default=None)
+    _methods: Optional[ModuleType] = PrivateAttr(default=None)
     _session: Optional[Session] = PrivateAttr()
     _progress_tracker: Optional[VendorProgressTracker] = PrivateAttr(
         default=VoidProgressTracker()
@@ -126,14 +126,7 @@ class Vendor(VendorBase, table=True):
             raise ValueError("No vendor country provided")
 
     def _get_methods(self):
-        # private attributes are not (always) initialized correctly by SQLmodel
-        # e.g. the attribute is missing alltogether when loaded from DB
-        # https://github.com/tiangolo/sqlmodel/issues/149
-        try:
-            hasattr(self, "_methods")
-        except Exception:
-            self._methods = None
-        if not self._methods:
+        if not getattr(self, "_methods", None):
             vendor_module = ".".join(
                 [
                     __name__.split(".", maxsplit=1)[0],
