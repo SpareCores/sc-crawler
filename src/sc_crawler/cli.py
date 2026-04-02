@@ -8,9 +8,9 @@ from datetime import UTC, datetime, timedelta
 from enum import Enum
 from json import dump as json_dump
 from json import dumps, loads
+from os import environ
 from pathlib import Path
 from re import sub
-from os import environ
 from types import SimpleNamespace
 from typing import List, Optional
 
@@ -40,7 +40,7 @@ from .alembic_helpers import alembic_cfg, get_revision
 from .insert import insert_items
 from .logger import ProgressPanel, ScRichHandler, VendorProgressTracker, logger
 from .lookup import benchmarks, compliance_frameworks, countries
-from . import sentry as sentry_module
+from .sentry import before_send
 from .table_fields import Status
 from .tables import Benchmark, ComplianceFramework, Country, Vendor, tables
 from .tables_scd import tables_scd
@@ -99,6 +99,15 @@ options = SimpleNamespace(
         typer.Option(help="Dry-run, printing the SQL commands instead of running."),
     ],
 )
+
+if environ.get("SENTRY_DSN"):
+    import sentry_sdk
+
+    sentry_sdk.init(
+        traces_sample_rate=1.0,
+        profiles_sample_rate=1.0,
+        before_send=before_send,
+    )
 
 
 @alembic_app.command()
@@ -730,14 +739,6 @@ def pull(
 
     pbars = ProgressPanel()
     with Live(pbars.panels):
-        if environ.get("SENTRY_DSN"):
-            import sentry_sdk
-
-            sentry_sdk.init(
-                traces_sample_rate=1.0,
-                profiles_sample_rate=1.0,
-                before_send=sentry_module.before_send,
-            )
         # show CLI arguments in the Metadata panel
         pbars.metadata.append(Text("Data sources: ", style="bold"))
         pbars.metadata.append(Text(", ".join([x.vendor_id for x in vendors]) + " "))
@@ -818,18 +819,6 @@ def pull(
                 session.commit()
 
         pbars.metadata.append(Text(" - " + str(datetime.now())))
-
-        if environ.get("SENTRY_DSN") and sentry_module.captured_events > 0:
-            import sentry_sdk
-
-            client = sentry_sdk.get_client()
-            timeout = client.options.get("shutdown_timeout", 2)
-            logger.info(
-                "Sentry is attempting to send %d pending event(s), waiting up to %ds.",
-                sentry_module.captured_events,
-                timeout,
-            )
-            sentry_sdk.flush(timeout=timeout)
 
 
 if __name__ == "__main__":

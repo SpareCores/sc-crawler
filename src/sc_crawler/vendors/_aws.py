@@ -862,15 +862,16 @@ def inventory_zones(vendor):
     def get_zones(region: Region, vendor: Vendor) -> List[dict]:
         new = []
         if region.status == "active":
-            with sentry_capture_or_raise(
-                on_error=lambda e: (
-                    setattr(region, "status", Status.INACTIVE),
-                    vendor.log(
-                        f"Marking region {region.region_id} as inactive due to error while fetching availability zones: {str(e)}",
-                        WARN,
-                    ),
-                ),
-            ):
+
+            def on_error(e):
+                region.status = Status.INACTIVE
+                vendor.log(
+                    f"Marking region {region.region_id} as inactive due to error"
+                    f" while fetching availability zones: {e}",
+                    WARN,
+                )
+
+            with sentry_capture_or_raise(vendor=vendor, on_error=on_error):
                 for zone in _boto_describe_availability_zones(region.region_id):
                     new.append(
                         {
@@ -882,6 +883,7 @@ def inventory_zones(vendor):
                             "vendor_id": vendor.vendor_id,
                         }
                     )
+
         vendor.progress_tracker.advance_task()
         return new
 
