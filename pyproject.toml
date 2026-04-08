@@ -9,7 +9,7 @@ requires-python = ">= 3.11"
 dependencies = [
   "alembic",
   "cachier>=3.1.1",
-  "pydantic==2.9.2", # https://github.com/pydantic/pydantic/issues/10905
+  "pydantic",
   "pydantic_extra_types",
   "PyYAML",
   "requests",
