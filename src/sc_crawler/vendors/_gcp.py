@@ -10,6 +10,7 @@ from google.auth import default
 from google.cloud import billing_v1, compute_v1
 
 from ..lookup import map_compliance_frameworks_to_vendor
+from ..sentry import sentry_capture_or_raise
 from ..table_fields import (
     Allocation,
     CpuAllocation,
@@ -855,16 +856,17 @@ def inventory_regions(vendor):
     regions = _regions()
     items = []
     for region in regions:
-        if region.name not in manual_data:
-            raise KeyError(f"Unknown region metadata for {region.name}")
-        item = {
-            "vendor_id": vendor.vendor_id,
-            "region_id": str(region.id),
-            "name": region.name,
-        }
-        for k, v in manual_data[region.name].items():
-            item[k] = v
-        items.append(item)
+        with sentry_capture_or_raise(vendor=vendor):
+            if region.name not in manual_data:
+                raise KeyError(f"Unknown region metadata for {region.name}")
+            item = {
+                "vendor_id": vendor.vendor_id,
+                "region_id": str(region.id),
+                "name": region.name,
+            }
+            for k, v in manual_data[region.name].items():
+                item[k] = v
+            items.append(item)
     return items
 
 

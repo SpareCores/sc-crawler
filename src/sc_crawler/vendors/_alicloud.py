@@ -3,7 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from functools import cache
 from itertools import chain
-from logging import WARN, ERROR
+from logging import ERROR, WARN
 from os import environ
 from random import shuffle
 from time import time

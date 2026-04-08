@@ -4,6 +4,7 @@ from functools import cache
 from hcloud import Client
 
 from ..lookup import map_compliance_frameworks_to_vendor
+from ..sentry import sentry_capture_or_raise
 from ..table_fields import (
     Allocation,
     CpuAllocation,
@@ -128,28 +129,29 @@ def inventory_regions(vendor):
 
     items = []
     for region in _client().datacenters.get_all():
-        items.append(
-            {
-                "vendor_id": vendor.vendor_id,
-                "region_id": str(region.id),
-                "name": region.name,
-                "api_reference": region.name,
-                "display_name": (
-                    region.location.city + f" ({region.location.country})"
-                ),
-                # TODO add region.description
-                "aliases": [region.location.name],
-                "country_id": region.location.country,
-                "state": None,
-                "city": region.location.city,
-                "address_line": None,
-                "zip_code": None,
-                "lat": regions[str(region.id)]["lat"],
-                "lon": regions[str(region.id)]["lon"],
-                "founding_year": None,
-                "green_energy": True,
-            }
-        )
+        with sentry_capture_or_raise(vendor=vendor):
+            items.append(
+                {
+                    "vendor_id": vendor.vendor_id,
+                    "region_id": str(region.id),
+                    "name": region.name,
+                    "api_reference": region.name,
+                    "display_name": (
+                        region.location.city + f" ({region.location.country})"
+                    ),
+                    # TODO add region.description
+                    "aliases": [region.location.name],
+                    "country_id": region.location.country,
+                    "state": None,
+                    "city": region.location.city,
+                    "address_line": None,
+                    "zip_code": None,
+                    "lat": regions[str(region.id)]["lat"],
+                    "lon": regions[str(region.id)]["lon"],
+                    "founding_year": None,
+                    "green_energy": True,
+                }
+            )
     return items
 
 

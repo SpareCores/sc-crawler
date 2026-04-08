@@ -5,6 +5,7 @@ from re import compile as recompile
 from upcloud_api import CloudManager
 
 from ..lookup import map_compliance_frameworks_to_vendor
+from ..sentry import sentry_capture_or_raise
 from ..table_fields import (
     Allocation,
     CpuAllocation,
@@ -253,31 +254,32 @@ def inventory_regions(vendor):
     items = []
     regions = _client().get_zones()["zones"]["zone"]
     for region in regions:
-        if region["public"] == "yes":
-            if region["id"] not in manual_data:
-                raise ValueError(f"Missing manual data for {region['id']}")
-            region_data = manual_data[region["id"]]
-            items.append(
-                {
-                    "vendor_id": vendor.vendor_id,
-                    "region_id": region["id"],
-                    "name": region["description"],
-                    "api_reference": region["id"],
-                    "display_name": (
-                        region["description"] + f" ({region_data['country_id']})"
-                    ),
-                    "aliases": [],
-                    "country_id": region_data["country_id"],
-                    "state": region_data.get("state"),
-                    "city": region_data["city"],
-                    "address_line": None,
-                    "zip_code": None,
-                    "lon": region_data["lon"],
-                    "lat": region_data["lat"],
-                    "founding_year": region_data["founding_year"],
-                    "green_energy": region_data["green_energy"],
-                }
-            )
+        with sentry_capture_or_raise(vendor=vendor):
+            if region["public"] == "yes":
+                if region["id"] not in manual_data:
+                    raise ValueError(f"Missing manual data for {region['id']}")
+                region_data = manual_data[region["id"]]
+                items.append(
+                    {
+                        "vendor_id": vendor.vendor_id,
+                        "region_id": region["id"],
+                        "name": region["description"],
+                        "api_reference": region["id"],
+                        "display_name": (
+                            region["description"] + f" ({region_data['country_id']})"
+                        ),
+                        "aliases": [],
+                        "country_id": region_data["country_id"],
+                        "state": region_data.get("state"),
+                        "city": region_data["city"],
+                        "address_line": None,
+                        "zip_code": None,
+                        "lon": region_data["lon"],
+                        "lat": region_data["lat"],
+                        "founding_year": region_data["founding_year"],
+                        "green_energy": region_data["green_energy"],
+                    }
+                )
     return items
 
 
