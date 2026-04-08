@@ -3,7 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from functools import cache
 from itertools import chain
-from logging import WARN
+from logging import WARN, ERROR
 from os import environ
 from random import shuffle
 from time import time
@@ -762,10 +762,15 @@ def inventory_zones(vendor):
     @cachier(hash_func=jsoned_hash, separate_files=True)
     def fetch_zones_for_region(region_id):
         """Worker function to fetch zones for a single region."""
-        request = DescribeZonesRequest(region_id=region_id, accept_language="en-US")
-        try:
+        zone_items = []
+        with sentry_capture_or_raise(
+            vendor=vendor,
+            on_error=lambda e: vendor.log(
+                f"Failed to get zones for region {region_id}: {e}", ERROR
+            ),
+        ):
+            request = DescribeZonesRequest(region_id=region_id, accept_language="en-US")
             response = clients[region_id].describe_zones(request)
-            zone_items = []
             for zone in response.body.to_map()["Zones"]["Zone"]:
                 zone_items.append(
                     {
@@ -777,12 +782,8 @@ def inventory_zones(vendor):
                         "display_name": zone.get("LocalName"),
                     }
                 )
-            return zone_items
-        except Exception as e:
-            logger.error(f"Failed to get zones for region {region_id}: {e}")
-            return []
-        finally:
-            vendor.progress_tracker.advance_task()
+        vendor.progress_tracker.advance_task()
+        return zone_items
 
     with ThreadPoolExecutor(max_workers=8) as executor:
         items = executor.map(
