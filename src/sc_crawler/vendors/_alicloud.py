@@ -37,6 +37,7 @@ from ..inspector import (
 )
 from ..logger import logger
 from ..lookup import map_compliance_frameworks_to_vendor
+from ..sentry import sentry_capture_or_raise
 from ..table_fields import (
     Allocation,
     CpuAllocation,
@@ -718,28 +719,29 @@ def inventory_regions(vendor):
 
     items = []
     for region in regions:
-        location = locations[region.get("RegionId")]
-        items.append(
-            {
-                "vendor_id": vendor.vendor_id,
-                "region_id": region.get("RegionId"),
-                "name": region.get("LocalName"),
-                "api_reference": region.get("RegionId"),
-                "display_name": f"{location['city']} ({location['country_id']})",
-                "aliases": location.get("alias", []),
-                "country_id": location.get("country_id"),
-                "state": None,  # not available
-                "city": location.get("city"),
-                "address_line": None,  # not available
-                "zip_code": None,  # not available
-                "lon": location.get("lon"),
-                "lat": location.get("lat"),
-                "founding_year": location.get("founding_year"),
-                # "Clean electricity accounted for 56.0% of the total electricity consumption at Alibaba Cloud's self-built data centers"
-                # https://www.alibabagroup.com/en-US/esg?spm=a3c0i.28208492.4078276800.1.3ee123b78lagGT
-                "green_energy": None,
-            }
-        )
+        with sentry_capture_or_raise(vendor=vendor):
+            location = locations[region.get("RegionId")]
+            items.append(
+                {
+                    "vendor_id": vendor.vendor_id,
+                    "region_id": region.get("RegionId"),
+                    "name": region.get("LocalName"),
+                    "api_reference": region.get("RegionId"),
+                    "display_name": f"{location['city']} ({location['country_id']})",
+                    "aliases": location.get("alias", []),
+                    "country_id": location.get("country_id"),
+                    "state": None,  # not available
+                    "city": location.get("city"),
+                    "address_line": None,  # not available
+                    "zip_code": None,  # not available
+                    "lon": location.get("lon"),
+                    "lat": location.get("lat"),
+                    "founding_year": location.get("founding_year"),
+                    # "Clean electricity accounted for 56.0% of the total electricity consumption at Alibaba Cloud's self-built data centers"
+                    # https://www.alibabagroup.com/en-US/esg?spm=a3c0i.28208492.4078276800.1.3ee123b78lagGT
+                    "green_energy": None,
+                }
+            )
     return items
 
 
