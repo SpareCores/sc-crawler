@@ -829,13 +829,16 @@ def inventory_regions(vendor):
 
     # look for undocumented (new) regions in AWS
     supported_regions = [d["region_id"] for d in regions]
-    available_regions = _boto_describe_regions()
+    available_regions = []
+    with sentry_capture_or_raise(vendor=vendor):
+        available_regions = _boto_describe_regions()
     for available_region in available_regions:
-        region_name = available_region["RegionName"]
-        if "gov" in region_name:
-            next()
-        if region_name not in supported_regions:
-            raise NotImplementedError(f"Unsupported AWS region: {region_name}")
+        with sentry_capture_or_raise(vendor=vendor):
+            region_name = available_region["RegionName"]
+            if "gov" in region_name:
+                next()
+            if region_name not in supported_regions:
+                raise NotImplementedError(f"Unsupported AWS region: {region_name}")
 
     # mark inactive regions
     active_regions = [region["RegionName"] for region in available_regions]
@@ -863,11 +866,11 @@ def inventory_zones(vendor):
         new = []
         if region.status == "active":
 
-            def on_error(e):
+            def on_error():
                 region.status = Status.INACTIVE
                 vendor.log(
-                    f"Marking region {region.region_id} as inactive due to error"
-                    f" while fetching availability zones: {e}",
+                    f"Marking region {region.region_id} as inactive due to error "
+                    "while fetching availability zones.",
                     WARN,
                 )
 
@@ -899,10 +902,13 @@ def inventory_servers(vendor):
     # TODO consider dropping this in favor of pricing.get_products, as
     #      it has info e.g. on instanceFamily although other fields
     #      are messier (e.g. extract memory from string)
-    servers = parallel_fetch_servers(
-        vendor, _boto_describe_instance_types, "InstanceType", "regions"
-    )
-    servers = preprocess_servers(servers, vendor, _make_server_from_instance_type)
+    servers = []
+    with sentry_capture_or_raise(vendor=vendor):
+        servers = parallel_fetch_servers(
+            vendor, _boto_describe_instance_types, "InstanceType", "regions"
+        )
+    if servers:
+        servers = preprocess_servers(servers, vendor, _make_server_from_instance_type)
     return servers
 
 
@@ -940,13 +946,15 @@ def inventory_server_prices(vendor):
         name="Look up supported server types in all ACTIVE regions/zones",
         total=len(active_region_ids),
     )
-    with ThreadPoolExecutor(max_workers=8) as executor:
-        regions_servers = executor.map(
-            _describe_instance_type_offerings_per_zone_with_progress,
-            active_region_ids,
-            repeat(vendor),
-        )
-    regions_servers = dict(zip(active_region_ids, regions_servers))
+    regions_servers = {}
+    with sentry_capture_or_raise(vendor=vendor):
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            regions_servers = executor.map(
+                _describe_instance_type_offerings_per_zone_with_progress,
+                active_region_ids,
+                repeat(vendor),
+            )
+        regions_servers = dict(zip(active_region_ids, regions_servers))
     vendor.progress_tracker.hide_task()
 
     server_prices = []
@@ -1013,17 +1021,22 @@ def inventory_server_prices_spot(vendor):
         vendor.progress_tracker.advance_task()
         return new
 
-    with ThreadPoolExecutor(max_workers=8) as executor:
-        products = executor.map(get_spot_prices, vendor.regions, repeat(vendor))
-    products = list(chain.from_iterable(products))
-    vendor.log(f"{len(products)} spot server_price(s) found.")
+    products = []
+    with sentry_capture_or_raise(vendor=vendor):
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            products = executor.map(get_spot_prices, vendor.regions, repeat(vendor))
+        products = list(chain.from_iterable(products))
+        vendor.log(f"{len(products)} spot server_price(s) found.")
     vendor.progress_tracker.hide_task()
+
+    server_prices = []
+    if not products:
+        return server_prices
 
     # lookup tables
     zones = scmodels_to_dict(vendor.zones, keys=["name"])
     servers = scmodels_to_dict(vendor.servers, keys=["server_id"])
 
-    server_prices = []
     vendor.progress_tracker.start_task(
         name="Preprocess spot server_price(s)", total=len(products)
     )
@@ -1122,18 +1135,23 @@ def inventory_storages(vendor):
         name="Searching for storages", total=len(storage_manual_data)
     )
 
-    # look up all volume types in us-east-1
-    with ThreadPoolExecutor(max_workers=8) as executor:
-        products = executor.map(
-            _search_storage,
-            storage_types,
-            repeat(vendor),
-            repeat("US East (N. Virginia)"),
-        )
-    products = list(chain.from_iterable(products))
+    products = []
+    with sentry_capture_or_raise(vendor=vendor):
+        # look up all volume types in us-east-1
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            products = executor.map(
+                _search_storage,
+                storage_types,
+                repeat(vendor),
+                repeat("US East (N. Virginia)"),
+            )
+        products = list(chain.from_iterable(products))
     vendor.progress_tracker.hide_task()
 
     storages = []
+    if not products:
+        return storages
+
     for product in products:
         attributes = product["product"]["attributes"]
         product_id = attributes["volumeApiName"]
@@ -1173,15 +1191,21 @@ def inventory_storage_prices(vendor):
     vendor.progress_tracker.start_task(
         name="Searching for storage_price(s)", total=len(storage_manual_data)
     )
-    with ThreadPoolExecutor(max_workers=8) as executor:
-        products = executor.map(
-            _search_storage,
-            storage_types,
-            repeat(vendor),
-        )
-    products = list(chain.from_iterable(products))
+    products = []
+    with sentry_capture_or_raise(vendor=vendor):
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            products = executor.map(
+                _search_storage,
+                storage_types,
+                repeat(vendor),
+            )
+        products = list(chain.from_iterable(products))
     vendor.progress_tracker.hide_task()
     vendor.log(f"Found {len(products)} storage_price(s).")
+
+    prices = []
+    if not products:
+        return prices
 
     # lookup tables
     regions = scmodels_to_dict(vendor.regions, keys=["name", "aliases"])
@@ -1189,7 +1213,6 @@ def inventory_storage_prices(vendor):
     vendor.progress_tracker.start_task(
         name="Preprocessing storage_price(s)", total=len(products)
     )
-    prices = []
     for product in products:
         try:
             attributes = product["product"]["attributes"]
@@ -1223,12 +1246,14 @@ def inventory_traffic_prices(vendor):
         vendor.progress_tracker.start_task(
             name=f"Searching for {direction.value} traffic_price(s)", total=None
         )
-        products = _boto_get_products(
-            service_code="AWSDataTransfer",
-            filters={
-                "transferType": "AWS " + direction.value.title(),
-            },
-        )
+        products = []
+        with sentry_capture_or_raise(vendor=vendor):
+            products = _boto_get_products(
+                service_code="AWSDataTransfer",
+                filters={
+                    "transferType": "AWS " + direction.value.title(),
+                },
+            )
         vendor.log(f"Found {len(products)} {direction.value} traffic_price(s).")
         vendor.progress_tracker.update_task(
             description=f"Syncing {direction.value} traffic_price(s)",
@@ -1261,13 +1286,15 @@ def inventory_traffic_prices(vendor):
 def inventory_ipv4_prices(vendor):
     """List IPV4 prices in all regions via `boto3` calls."""
     vendor.progress_tracker.start_task(name="Searching for ipv4_price(s)", total=None)
-    products = _boto_get_products(
-        service_code="AmazonVPC",
-        filters={
-            "group": "VPCPublicIPv4Address",
-            "groupDescription": "Hourly charge for In-use Public IPv4 Addresses",
-        },
-    )
+    products = []
+    with sentry_capture_or_raise(vendor=vendor):
+        products = _boto_get_products(
+            service_code="AmazonVPC",
+            filters={
+                "group": "VPCPublicIPv4Address",
+                "groupDescription": "Hourly charge for In-use Public IPv4 Addresses",
+            },
+        )
     vendor.log(f"Found {len(products)} ipv4_price(s).")
     vendor.progress_tracker.update_task(
         description="Syncing ipv4_price(s)", total=len(products)
