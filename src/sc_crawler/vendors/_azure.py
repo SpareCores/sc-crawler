@@ -24,7 +24,7 @@ from ..table_fields import (
     StorageType,
     TrafficDirection,
 )
-from ..tables import ServerPrice, Vendor
+from ..tables import Vendor
 from ..utils import convert_gb_to_mib, list_search, scmodels_to_dict
 from ..vendor_helpers import preprocess_servers
 
