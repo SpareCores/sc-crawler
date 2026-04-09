@@ -1,6 +1,8 @@
 from asyncio import CancelledError
 from contextlib import contextmanager
+from logging import ERROR
 from os import environ
+from typing import Callable
 
 from .tables import Vendor
 
@@ -25,7 +27,7 @@ def before_send(event, hint):
 
 
 @contextmanager
-def sentry_capture_or_raise(vendor: Vendor, on_error=None):
+def sentry_capture_or_raise(vendor: Vendor, on_error: Callable = None):
     """Capture exception with Sentry and continue if configured, otherwise re-raise.
 
     Args:
@@ -37,16 +39,14 @@ def sentry_capture_or_raise(vendor: Vendor, on_error=None):
         yield
     except Exception as e:
         if on_error:
-            on_error(e)
+            on_error()
         if environ.get("SENTRY_DSN"):
             import sentry_sdk
 
             sentry_sdk.capture_exception(e)
             client = sentry_sdk.get_client()
             timeout = client.options.get("shutdown_timeout", 2)
-            vendor.log(
-                f"Sentry is attempting to send {captured_events} pending event(s), waiting up to {timeout}s."
-            )
+            vendor.log(str(e), ERROR)
             sentry_sdk.flush(timeout=timeout)
         else:
             raise

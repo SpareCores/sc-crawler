@@ -128,7 +128,10 @@ def inventory_regions(vendor):
     }
 
     items = []
-    for region in _client().datacenters.get_all():
+    regions = []
+    with sentry_capture_or_raise(vendor=vendor):
+        regions = _client().datacenters.get_all()
+    for region in regions:
         with sentry_capture_or_raise(vendor=vendor):
             items.append(
                 {

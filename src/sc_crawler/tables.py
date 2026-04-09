@@ -230,8 +230,10 @@ class Vendor(VendorBase, table=True):
 
     def _inventory(self, table: ScModel, inventory: Callable):
         """Mark all rows in a table inactive, then insert new/updated items."""
-        self.set_table_rows_inactive(table)
-        insert_items(table, inventory(self), self)
+        new_records = inventory(self)
+        if new_records:
+            self.set_table_rows_inactive(table)
+            insert_items(table, new_records, self)
 
     def _inventory_price_rounding(
         self,
@@ -248,11 +250,12 @@ class Vendor(VendorBase, table=True):
             *filters: Optional filter expressions to apply when marking rows inactive.
             prefix: Optional prefix for progress tracking.
         """
-        self.set_table_rows_inactive(table, *filters)
-        items = inventory(self)
-        for item in items:
-            item["price"] = round(float(item["price"]), 4)
-        insert_items(table, items, self, prefix=prefix)
+        new_records = inventory(self)
+        if new_records:
+            self.set_table_rows_inactive(table, *filters)
+            for item in new_records:
+                item["price"] = round(float(item["price"]), 4)
+            insert_items(table, new_records, self, prefix=prefix)
 
     @log_start_end
     def inventory_compliance_frameworks(self):
