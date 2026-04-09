@@ -70,7 +70,7 @@ vendors = [
   "sparecores-crawler[ovh]",
   "sparecores-crawler[alicloud]",
 ]
-all = ["sparecores-crawler[testing]", "sparecores-crawler[vendors]"]
+all = ["sparecores-crawler[testing]", "sparecores-crawler[vendors]", "sparecores-crawler[apm]"]
 
 [project.scripts]
 sc-crawler = "sc_crawler.cli:cli"
