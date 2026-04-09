@@ -890,9 +890,11 @@ def inventory_zones(vendor):
         vendor.progress_tracker.advance_task()
         return new
 
-    with ThreadPoolExecutor(max_workers=8) as executor:
-        zones = executor.map(get_zones, vendor.regions, repeat(vendor))
-    zones = list(chain.from_iterable(zones))
+    zones = []
+    with sentry_capture_or_raise(vendor=vendor):
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            zones = executor.map(get_zones, vendor.regions, repeat(vendor))
+        zones = list(chain.from_iterable(zones))
     vendor.progress_tracker.hide_task()
     return zones
 
