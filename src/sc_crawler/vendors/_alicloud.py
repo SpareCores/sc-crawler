@@ -939,17 +939,15 @@ def inventory_server_prices(vendor):
 
     Alternative approach could be looking at <https://g.alicdn.com/aliyun/ecs-price-info-intl/2.0.375/price/download/instancePrice.json>.
     """
-    skus = []
-    with sentry_capture_or_raise(vendor=vendor):
-        skus = _get_sku_prices(
-            sku_type="server",
-            extra_request_params={
-                "price_entity_code": "instance_type",
-                # filter for Linux prices only for now
-                "price_factor_condition_map": {"vm_os_kind": ["linux"]},
-            },
-            vendor=vendor,
-        )
+    skus = _get_sku_prices(
+        sku_type="server",
+        extra_request_params={
+            "price_entity_code": "instance_type",
+            # filter for Linux prices only for now
+            "price_factor_condition_map": {"vm_os_kind": ["linux"]},
+        },
+        vendor=vendor,
+    )
 
     items = []
     unsupported_regions = set()
@@ -1216,13 +1214,11 @@ def inventory_storages(vendor):
 
 def inventory_storage_prices(vendor):
     """Fetch server prices using the `QuerySkuPriceListRequest` API endpoint."""
-    skus = []
-    with sentry_capture_or_raise(vendor=vendor):
-        skus = _get_sku_prices(
-            sku_type="storage",
-            extra_request_params={"price_entity_code": "datadisk"},
-            vendor=vendor,
-        )
+    skus = _get_sku_prices(
+        sku_type="storage",
+        extra_request_params={"price_entity_code": "datadisk"},
+        vendor=vendor,
+    )
 
     items = []
     unsupported_regions = set()
@@ -1267,13 +1263,11 @@ def inventory_traffic_prices(vendor):
     Account level tiering information can be found at <https://www.alibabacloud.com/help/en/cdt/internet-data-transfers/#4a98c9ee8eemn>.
     """
     items = []
-    skus = []
-    with sentry_capture_or_raise(vendor=vendor):
-        skus = _get_sku_prices(
-            sku_type="traffic",
-            extra_request_params={"price_entity_code": "vm_flow_out"},
-            # vendor=vendor,
-        )
+    skus = _get_sku_prices(
+        sku_type="traffic",
+        extra_request_params={"price_entity_code": "vm_flow_out"},
+        # vendor=vendor,
+    )
     unsupported_regions = set()
     for sku in skus:
         region_id = sku["SkuFactorMap"]["vm_region_no"]

@@ -888,11 +888,9 @@ def inventory_zones(vendor):
         vendor.progress_tracker.advance_task()
         return new
 
-    zones = []
-    with sentry_capture_or_raise(vendor=vendor):
-        with ThreadPoolExecutor(max_workers=8) as executor:
-            zones = executor.map(get_zones, vendor.regions, repeat(vendor))
-        zones = list(chain.from_iterable(zones))
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        zones = executor.map(get_zones, vendor.regions, repeat(vendor))
+    zones = list(chain.from_iterable(zones))
     vendor.progress_tracker.hide_task()
     return zones
 
@@ -1022,14 +1020,11 @@ def inventory_server_prices_spot(vendor):
     vendor.log(f"{len(products)} spot server_price(s) found.")
     vendor.progress_tracker.hide_task()
 
-    server_prices = []
-    if not products:
-        return server_prices
-
     # lookup tables
     zones = scmodels_to_dict(vendor.zones, keys=["name"])
     servers = scmodels_to_dict(vendor.servers, keys=["server_id"])
 
+    server_prices = []
     vendor.progress_tracker.start_task(
         name="Preprocess spot server_price(s)", total=len(products)
     )
@@ -1140,8 +1135,6 @@ def inventory_storages(vendor):
     vendor.progress_tracker.hide_task()
 
     storages = []
-    if not products:
-        return storages
 
     for product in products:
         attributes = product["product"]["attributes"]
@@ -1192,14 +1185,13 @@ def inventory_storage_prices(vendor):
     vendor.progress_tracker.hide_task()
     vendor.log(f"Found {len(products)} storage_price(s).")
 
-    prices = []
-
     # lookup tables
     regions = scmodels_to_dict(vendor.regions, keys=["name", "aliases"])
 
     vendor.progress_tracker.start_task(
         name="Preprocessing storage_price(s)", total=len(products)
     )
+    prices = []
     for product in products:
         try:
             attributes = product["product"]["attributes"]

@@ -958,7 +958,6 @@ def inventory_storage_prices(vendor):
     regions = scmodels_to_dict(vendor.regions, keys=["name"])
     skus = _skus_dict()
     items = []
-
     for storage in vendor.storages:
         storage_regions = skus["storage"][storage.name].keys()
         for storage_region in storage_regions:
