@@ -359,11 +359,7 @@ def inventory_servers(vendor):
 
 def inventory_server_prices(vendor):
     items = []
-    prices = []
-    with sentry_capture_or_raise(vendor=vendor):
-        prices = _client().get_prices()
-    if not prices:
-        return items
+    prices = _client().get_prices()
     for zone_prices in prices["prices"]["zone"]:
         for k, v in zone_prices.items():
             if not k.startswith("server_plan"):

@@ -768,6 +768,11 @@ def inventory_zones(vendor):
 
         def on_error():
             region.status = Status.INACTIVE
+            vendor.log(
+                f"Marking region {region.region_id} as inactive due to error "
+                "while fetching availability zones.",
+                WARN,
+            )
 
         with sentry_capture_or_raise(vendor=vendor, on_error=on_error):
             request = DescribeZonesRequest(

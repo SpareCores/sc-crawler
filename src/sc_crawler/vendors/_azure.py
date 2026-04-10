@@ -466,11 +466,9 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
     #   - not(contains(meterName, 'Low Priority'))
     #   - not(endswith(productName, 'Windows'))
     #   - not(endswith(productName, 'CloudServices'))
-    retail_prices = []
-    with sentry_capture_or_raise(vendor=vendor):
-        retail_prices = _prices(
-            "$filter=serviceName eq 'Virtual Machines' and priceType eq 'Consumption'"
-        )
+    retail_prices = _prices(
+        "$filter=serviceName eq 'Virtual Machines' and priceType eq 'Consumption'"
+    )
     vendor.progress_tracker.hide_task()
 
     vendor.progress_tracker.start_task(
@@ -1159,8 +1157,7 @@ def inventory_storage_prices(vendor):
     vendor.progress_tracker.start_task(
         name="Fetching list of storage resources", total=None
     )
-    with sentry_capture_or_raise(vendor=vendor):
-        retail_prices = _prices("$filter=serviceName eq 'Storage'")
+    retail_prices = _prices("$filter=serviceName eq 'Storage'")
     vendor.progress_tracker.hide_task()
 
     regions = scmodels_to_dict(vendor.regions, keys=["region_id"])
@@ -1215,15 +1212,14 @@ def inventory_traffic_prices(vendor):
     vendor.progress_tracker.start_task(
         name="Fetching list of traffic prices", total=None
     )
-    with sentry_capture_or_raise(vendor=vendor):
-        inbound_prices = _prices(
-            "$filter=serviceFamily eq 'Networking' and meterName eq 'Standard Data Transfer In'"
-        )
-        outbound_prices = _prices(
-            "$filter=serviceFamily eq 'Networking' and "
-            "meterName eq 'Standard Data Transfer Out' and "
-            "productName eq 'Bandwidth - Routing Preference: Internet'"
-        )
+    inbound_prices = _prices(
+        "$filter=serviceFamily eq 'Networking' and meterName eq 'Standard Data Transfer In'"
+    )
+    outbound_prices = _prices(
+        "$filter=serviceFamily eq 'Networking' and "
+        "meterName eq 'Standard Data Transfer Out' and "
+        "productName eq 'Bandwidth - Routing Preference: Internet'"
+    )
     vendor.progress_tracker.hide_task()
 
     items = []
@@ -1260,13 +1256,11 @@ def inventory_ipv4_prices(vendor):
     vendor.progress_tracker.start_task(
         name="Fetching list of traffic prices", total=None
     )
-    prices = []
-    with sentry_capture_or_raise(vendor=vendor):
-        prices = _prices(
-            "$filter=serviceFamily eq 'Networking' and "
-            "meterName eq 'Basic IPv4 Dynamic Public IP' and "
-            "type eq 'Consumption'"
-        )
+    prices = _prices(
+        "$filter=serviceFamily eq 'Networking' and "
+        "meterName eq 'Basic IPv4 Dynamic Public IP' and "
+        "type eq 'Consumption'"
+    )
     vendor.progress_tracker.hide_task()
 
     items = []

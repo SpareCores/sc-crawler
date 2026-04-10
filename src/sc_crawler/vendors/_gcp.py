@@ -339,13 +339,8 @@ def _search_servers(zone_name: str) -> List[dict]:
 
 def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dict]:
     regions = scmodels_to_dict(vendor.regions, keys=["name"])
-    skus = {}
-    with sentry_capture_or_raise(vendor=vendor):
-        skus = _skus_dict()
+    skus = _skus_dict()
     items = []
-
-    if not skus:
-        return items
 
     for server in vendor.servers:
         try:
@@ -922,10 +917,7 @@ def inventory_storages(vendor):
 
     def search_storages(zone: Zone, vendor: Vendor) -> List[dict]:
         zone_storages = []
-        storages_by_zone = []
-        with sentry_capture_or_raise(vendor=vendor):
-            storages_by_zone = _storages(zone.name)
-        for storage in storages_by_zone:
+        for storage in _storages(zone.name):
             valid_sizes = storage.valid_disk_size.replace("GB", "").split("-")
             zone_storages.append(
                 {
@@ -964,13 +956,8 @@ def inventory_storages(vendor):
 def inventory_storage_prices(vendor):
     """List all available GCP disk storage prices in all regions."""
     regions = scmodels_to_dict(vendor.regions, keys=["name"])
-    skus = {}
-    with sentry_capture_or_raise(vendor=vendor):
-        skus = _skus_dict()
+    skus = _skus_dict()
     items = []
-
-    if not skus:
-        return items
 
     for storage in vendor.storages:
         storage_regions = skus["storage"][storage.name].keys()
