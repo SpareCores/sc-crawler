@@ -760,28 +760,30 @@ def inventory_zones(vendor):
     clients = _ecs_clients(vendor)
 
     @cachier(hash_func=jsoned_hash, separate_files=True)
-    def fetch_zones_for_region(region):
+    def fetch_zones_for_region(region_id):
         """Worker function to fetch zones for a single region."""
         zone_items = []
 
         def on_error():
-            region.status = Status.INACTIVE
-            vendor.log(
-                f"Marking region {region.region_id} as inactive due to error "
-                "while fetching availability zones.",
-                WARN,
+            region_to_set_inactive = next(
+                vendor.regions.filter(lambda r: r.region_id == region_id), None
             )
+            if region_to_set_inactive:
+                region_to_set_inactive.status = Status.INACTIVE
+                vendor.log(
+                    f"Marking region {region_id} as inactive due to error "
+                    "while fetching availability zones.",
+                    WARN,
+                )
 
         with sentry_capture_or_raise(vendor=vendor, on_error=on_error):
-            request = DescribeZonesRequest(
-                region_id=region.region_id, accept_language="en-US"
-            )
-            response = clients[region.region_id].describe_zones(request)
+            request = DescribeZonesRequest(region_id=region_id, accept_language="en-US")
+            response = clients[region_id].describe_zones(request)
             for zone in response.body.to_map()["Zones"]["Zone"]:
                 zone_items.append(
                     {
                         "vendor_id": vendor.vendor_id,
-                        "region_id": region.region_id,
+                        "region_id": region_id,
                         "zone_id": zone.get("ZoneId"),
                         "name": zone.get("LocalName"),
                         "api_reference": zone.get("ZoneId"),
@@ -792,7 +794,9 @@ def inventory_zones(vendor):
         return zone_items
 
     with ThreadPoolExecutor(max_workers=8) as executor:
-        items = executor.map(fetch_zones_for_region, vendor.regions)
+        items = executor.map(
+            fetch_zones_for_region, [r.region_id for r in vendor.regions]
+        )
     items = list(chain.from_iterable(items))
     vendor.progress_tracker.hide_task()
     return items
