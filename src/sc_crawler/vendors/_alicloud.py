@@ -721,10 +721,8 @@ def inventory_regions(vendor):
     - Aliases (old region names) collected from <https://help.aliyun.com/zh/user-center/product-overview/regional-name-change-announcement>
     """
     request = DescribeRegionsRequest(accept_language="en-US")
-    regions = []
-    with sentry_capture_or_raise(vendor=vendor):
-        response = _ecs_client().describe_regions(request)
-        regions = [region.to_map() for region in response.body.regions.region]
+    response = _ecs_client().describe_regions(request)
+    regions = [region.to_map() for region in response.body.regions.region]
 
     items = []
     for region in regions:
