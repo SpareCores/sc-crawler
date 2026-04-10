@@ -383,7 +383,9 @@ def inventory_regions(vendor) -> list[dict]:
     - Google Maps search for the datacenter location or city-level coordinates
     """
     items = []
-    regions = _get_regions()
+    regions = []
+    with sentry_capture_or_raise(vendor=vendor):
+        regions = _get_regions()
     datacenters = {
         # Europe (EMEA)
         "SBG": {

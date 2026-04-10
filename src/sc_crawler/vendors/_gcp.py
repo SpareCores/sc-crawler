@@ -922,7 +922,10 @@ def inventory_storages(vendor):
 
     def search_storages(zone: Zone, vendor: Vendor) -> List[dict]:
         zone_storages = []
-        for storage in _storages(zone.name):
+        storages_by_zone = []
+        with sentry_capture_or_raise(vendor=vendor):
+            storages_by_zone = _storages(zone.name)
+        for storage in storages_by_zone:
             valid_sizes = storage.valid_disk_size.replace("GB", "").split("-")
             zone_storages.append(
                 {

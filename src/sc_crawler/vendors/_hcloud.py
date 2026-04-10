@@ -235,7 +235,8 @@ def inventory_servers(vendor):
                 # https://docs.hetzner.com/cloud/billing/faq/#how-do-you-bill-for-traffic
                 "inbound_traffic": 0,  # free
                 "outbound_traffic": (
-                    max([region.get("included_traffic") for region in server.prices])
+                    # handle max() arg is an empty sequence with 0 default
+                    max([region.get("included_traffic", 0) for region in server.prices])
                     / (1024**3)
                 ),
                 "ipv4": 0,
