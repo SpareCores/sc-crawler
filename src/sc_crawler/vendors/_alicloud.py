@@ -721,8 +721,10 @@ def inventory_regions(vendor):
     - Aliases (old region names) collected from <https://help.aliyun.com/zh/user-center/product-overview/regional-name-change-announcement>
     """
     request = DescribeRegionsRequest(accept_language="en-US")
-    response = _ecs_client().describe_regions(request)
-    regions = [region.to_map() for region in response.body.regions.region]
+    regions = []
+    with sentry_capture_or_raise(vendor=vendor):
+        response = _ecs_client().describe_regions(request)
+        regions = [region.to_map() for region in response.body.regions.region]
 
     items = []
     for region in regions:
@@ -760,22 +762,23 @@ def inventory_zones(vendor):
     clients = _ecs_clients(vendor)
 
     @cachier(hash_func=jsoned_hash, separate_files=True)
-    def fetch_zones_for_region(region_id):
+    def fetch_zones_for_region(region):
         """Worker function to fetch zones for a single region."""
         zone_items = []
-        with sentry_capture_or_raise(
-            vendor=vendor,
-            on_error=lambda: vendor.log(
-                f"Failed to get zones for region {region_id}", WARN
-            ),
-        ):
-            request = DescribeZonesRequest(region_id=region_id, accept_language="en-US")
-            response = clients[region_id].describe_zones(request)
+
+        def on_error():
+            region.status = Status.INACTIVE
+
+        with sentry_capture_or_raise(vendor=vendor, on_error=on_error):
+            request = DescribeZonesRequest(
+                region_id=region.region_id, accept_language="en-US"
+            )
+            response = clients[region.region_id].describe_zones(request)
             for zone in response.body.to_map()["Zones"]["Zone"]:
                 zone_items.append(
                     {
                         "vendor_id": vendor.vendor_id,
-                        "region_id": region_id,
+                        "region_id": region.region_id,
                         "zone_id": zone.get("ZoneId"),
                         "name": zone.get("LocalName"),
                         "api_reference": zone.get("ZoneId"),
@@ -786,9 +789,7 @@ def inventory_zones(vendor):
         return zone_items
 
     with ThreadPoolExecutor(max_workers=8) as executor:
-        items = executor.map(
-            fetch_zones_for_region, [r.region_id for r in vendor.regions]
-        )
+        items = executor.map(fetch_zones_for_region, vendor.regions)
     items = list(chain.from_iterable(items))
     vendor.progress_tracker.hide_task()
     return items
