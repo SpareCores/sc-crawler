@@ -765,9 +765,7 @@ def inventory_zones(vendor):
         zone_items = []
 
         def on_error():
-            region_to_set_inactive = next(
-                vendor.regions.filter(lambda r: r.region_id == region_id), None
-            )
+            region_to_set_inactive = get_region_by_id(region_id, vendor)
             if region_to_set_inactive:
                 region_to_set_inactive.status = Status.INACTIVE
                 vendor.log(
