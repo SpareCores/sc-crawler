@@ -128,8 +128,7 @@ def inventory_regions(vendor):
     }
 
     items = []
-    regions = _client().datacenters.get_all()
-    for region in regions:
+    for region in _client().datacenters.get_all():
         with sentry_capture_or_raise(vendor=vendor):
             items.append(
                 {
@@ -234,7 +233,10 @@ def inventory_servers(vendor):
                 "inbound_traffic": 0,  # free
                 "outbound_traffic": (
                     # handle max() arg is an empty sequence with 0 default
-                    max([region.get("included_traffic", 0) for region in server.prices])
+                    max(
+                        [region.get("included_traffic", 0) for region in server.prices],
+                        default=0,
+                    )
                     / (1024**3)
                 ),
                 "ipv4": 0,

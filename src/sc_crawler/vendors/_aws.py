@@ -834,7 +834,7 @@ def inventory_regions(vendor):
         with sentry_capture_or_raise(vendor=vendor):
             region_name = available_region["RegionName"]
             if "gov" in region_name:
-                next()
+                continue
             if region_name not in supported_regions:
                 raise NotImplementedError(f"Unsupported AWS region: {region_name}")
 

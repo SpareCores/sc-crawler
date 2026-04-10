@@ -412,7 +412,7 @@ def _get_instance_price(
             elif "InvalidInstanceType.ValueNotSupported" in str(e):
                 return None
             else:
-                logger.error(
+                logger.warning(
                     f"Failed to get price for {instance_type} in {region_id}/{zone_id}: {e}"
                 )
                 return None

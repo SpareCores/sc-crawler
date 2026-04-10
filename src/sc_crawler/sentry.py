@@ -2,7 +2,7 @@ from asyncio import CancelledError
 from contextlib import contextmanager
 from logging import ERROR
 from os import environ
-from typing import Callable
+from typing import Callable, Optional
 
 from .tables import Vendor
 
@@ -27,13 +27,13 @@ def before_send(event, hint):
 
 
 @contextmanager
-def sentry_capture_or_raise(vendor: Vendor, on_error: Callable = None):
+def sentry_capture_or_raise(vendor: Vendor, on_error: Optional[Callable] = None):
     """Capture exception with Sentry and continue if configured, otherwise re-raise.
 
     Args:
         vendor (Vendor): Vendor to use for logging and progress bar updates.
-        on_error: Optional callable that receives the exception and is always
-            called before capturing or re-raising (e.g. for logging or state updates).
+        on_error: Optional zero-argument callable, invoked before capturing or
+            re-raising (e.g. for logging or state updates).
     """
     try:
         yield
