@@ -39,7 +39,13 @@ def sentry_capture_or_raise(vendor: Vendor, on_error: Optional[Callable] = None)
         yield
     except Exception as e:
         if on_error:
-            on_error()
+            try:
+                on_error()
+            except Exception as callback_error:
+                vendor.log(
+                    f"on_error callback failed while handling {type(e).__name__}: {callback_error}",
+                    ERROR,
+                )
         if environ.get("SENTRY_DSN"):
             import sentry_sdk
 
