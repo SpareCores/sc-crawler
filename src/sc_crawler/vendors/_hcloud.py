@@ -187,62 +187,63 @@ def inventory_servers(vendor):
         # CPU info not available via the API,
         # collected from https://www.hetzner.com/cloud/
         cpu = _server_cpu(server.name)
-        items.append(
-            {
-                "vendor_id": vendor.vendor_id,
-                "server_id": str(server.id),
-                "name": server.name,
-                "api_reference": server.name,
-                "display_name": server.name,
-                "description": server.description,
-                "family": server.name.rstrip("0123456789"),
-                "vcpus": server.cores,
-                "hypervisor": "QEMU",
-                "cpu_allocation": (
-                    CpuAllocation.SHARED
-                    if server.cpu_type == "shared"
-                    else CpuAllocation.DEDICATED
-                ),
-                "cpu_cores": None,
-                "cpu_speed": None,
-                "cpu_architecture": (
-                    CpuArchitecture.ARM64
-                    if server.architecture == "arm"
-                    else CpuArchitecture.X86_64
-                ),
-                "cpu_manufacturer": cpu[0],
-                "cpu_family": cpu[1],
-                "cpu_model": cpu[2],
-                "cpus": [],
-                "memory_amount": server.memory * 1024,
-                "gpu_count": 0,
-                "gpu_memory_min": None,
-                "gpu_memory_total": None,
-                "gpu_manufacturer": None,
-                "gpu_model": None,
-                "gpus": [],
-                "storage_size": server.disk,
-                "storage_type": (
-                    StorageType.SSD
-                    if server.storage_type == "local"
-                    else StorageType.NETWORK
-                ),
-                "storages": [],
-                "network_speed": None,
-                # https://docs.hetzner.com/cloud/billing/faq/#how-do-you-bill-for-traffic
-                "inbound_traffic": 0,  # free
-                "outbound_traffic": (
-                    # handle max() arg is an empty sequence with 0 default
-                    max(
-                        [region.get("included_traffic", 0) for region in server.prices],
-                        default=0,
-                    )
-                    / (1024**3)
-                ),
-                "ipv4": 0,
-                "status": Status.ACTIVE if not server.deprecation else Status.INACTIVE,
-            }
-        )
+        with sentry_capture_or_raise(vendor=vendor):
+            items.append(
+                {
+                    "vendor_id": vendor.vendor_id,
+                    "server_id": str(server.id),
+                    "name": server.name,
+                    "api_reference": server.name,
+                    "display_name": server.name,
+                    "description": server.description,
+                    "family": server.name.rstrip("0123456789"),
+                    "vcpus": server.cores,
+                    "hypervisor": "QEMU",
+                    "cpu_allocation": (
+                        CpuAllocation.SHARED
+                        if server.cpu_type == "shared"
+                        else CpuAllocation.DEDICATED
+                    ),
+                    "cpu_cores": None,
+                    "cpu_speed": None,
+                    "cpu_architecture": (
+                        CpuArchitecture.ARM64
+                        if server.architecture == "arm"
+                        else CpuArchitecture.X86_64
+                    ),
+                    "cpu_manufacturer": cpu[0],
+                    "cpu_family": cpu[1],
+                    "cpu_model": cpu[2],
+                    "cpus": [],
+                    "memory_amount": server.memory * 1024,
+                    "gpu_count": 0,
+                    "gpu_memory_min": None,
+                    "gpu_memory_total": None,
+                    "gpu_manufacturer": None,
+                    "gpu_model": None,
+                    "gpus": [],
+                    "storage_size": server.disk,
+                    "storage_type": (
+                        StorageType.SSD
+                        if server.storage_type == "local"
+                        else StorageType.NETWORK
+                    ),
+                    "storages": [],
+                    "network_speed": None,
+                    # https://docs.hetzner.com/cloud/billing/faq/#how-do-you-bill-for-traffic
+                    "inbound_traffic": 0,  # free
+                    "outbound_traffic": (
+                        max(
+                            [region.get("included_traffic") for region in server.prices]
+                        )
+                        / (1024**3)
+                    ),
+                    "ipv4": 0,
+                    "status": Status.ACTIVE
+                    if not server.deprecation
+                    else Status.INACTIVE,
+                }
+            )
     return items
 
 
