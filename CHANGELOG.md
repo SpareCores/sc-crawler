@@ -1,3 +1,10 @@
+## v0.5.x (Apr 1, 2026)
+
+Fix(es):
+
+- Add Python 3.14 support by unpinning the `pydantic` dependency and replacing `pydantic.ImportString` with a standard
+  Python alternative in table definitions.
+
 ## v0.5.0 (Mar 23, 2026)
 
 Fix(es):
