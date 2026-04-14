@@ -43,6 +43,7 @@ from .table_fields import Status
 from .tables import Benchmark, ComplianceFramework, Country, Vendor, tables
 from .tables_scd import tables_scd
 from .utils import HashLevels, get_row_by_pk, hash_database, table_name_to_model
+from .workload_profile_scores import recompute_workload_profiles
 
 supported_vendors = [
     vendor[1]
@@ -806,6 +807,15 @@ def pull(
                 vendor.progress_tracker.update_vendor(step="✔")
                 session.merge(vendor)
                 session.commit()
+
+            if Records.servers in records:
+                task_id = pbars.tasks.add_task(
+                    "Computing workload profile scores", total=None
+                )
+                n = recompute_workload_profiles(session)
+                session.commit()
+                pbars.tasks.update(task_id, visible=False)
+                logger.info("%d Workload profile score(s) computed and inserted." % n)
 
         pbars.metadata.append(Text(" - " + str(datetime.now())))
 
