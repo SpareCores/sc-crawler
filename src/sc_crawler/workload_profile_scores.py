@@ -91,6 +91,9 @@ def _load_scores(
 
     For each (server, entry) pair, keeps the best score according to
     higher_is_better when multiple rows match the same config filter.
+    The global (min, max) range per entry is derived in a second pass from
+    the finalised best scores, so intermediate values from duplicate raw rows
+    never skew normalisation.
     """
     if not benchmark_ids:
         return {}, {}
@@ -122,7 +125,6 @@ def _load_scores(
         bid_to_entries[e.benchmark_id].append(idx)
 
     per_server: dict[tuple[str, str], dict] = {}
-    entry_minmax: dict[int, tuple[float, float]] = {}
 
     for vendor_id, vendor_name, server_id, server_name, b_id, config, score in rows:
         if b_id not in bid_to_entries:
@@ -155,7 +157,9 @@ def _load_scores(
                     max(prev, score_val) if higher else min(prev, score_val)
                 )
 
-            val = srv["scores"][entry_idx]
+    entry_minmax: dict[int, tuple[float, float]] = {}
+    for server_data in per_server.values():
+        for entry_idx, val in server_data["scores"].items():
             if entry_idx not in entry_minmax:
                 entry_minmax[entry_idx] = (val, val)
             else:
