@@ -295,7 +295,7 @@ WORKLOADS: dict[str, Workload] = {
             Build performance is driven by single-thread speed (many build tools are serial or poorly parallelised),
             multi-core compilation throughput, compression and archiving for packaging, and text/scripting processing.
             Geekbench Clang directly compiles the Lua interpreter, providing a strong proxy for real CI workloads.
-            Research shows modern CI runners are 1.5–2× faster with higher single-thread clocks, motivating the chosen weights.
+            Research shows modern CI runners are 1.5-2x faster with higher single-thread clocks, motivating the chosen weights.
             """
         ),
         benchmarks=[
