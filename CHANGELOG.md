@@ -1,5 +1,11 @@
 ## v0.5.x (Apr 1, 2026)
 
+New feature(s):
+
+- Add workload profile scores: precomputed composite `BenchmarkScore` rows that combine multiple raw benchmark results
+  into a single normalised score per server for five predefined workload profiles (`web`, `compute`, `cache`, `ml`,
+  `cicd`), each using a weighted mix of benchmark components.
+
 Fix(es):
 
 - Add Python 3.14 support by unpinning the `pydantic` dependency and replacing `pydantic.ImportString` with a standard
