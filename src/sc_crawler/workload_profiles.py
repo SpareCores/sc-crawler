@@ -81,13 +81,13 @@ WORKLOADS: dict[str, Workload] = {
                 benchmark_id="geekbench:html5_browser",
                 weight=0.10,
                 label="Geekbench HTML5 browser (multi-core)",
-                config_filter={"cores": "Multi-Core Performance"},
+                config_filter={"cores": "multi"},
             ),
             BenchmarkEntry(
                 benchmark_id="geekbench:text_processing",
                 weight=0.05,
                 label="Geekbench text processing (multi-core)",
-                config_filter={"cores": "Multi-Core Performance"},
+                config_filter={"cores": "multi"},
             ),
             # SSL termination
             BenchmarkEntry(
@@ -140,7 +140,7 @@ WORKLOADS: dict[str, Workload] = {
                 benchmark_id="geekbench:score",
                 weight=0.20,
                 label="Geekbench score (multi-core)",
-                config_filter={"cores": "Multi-Core Performance"},
+                config_filter={"cores": "multi"},
             ),
             # memory performance
             BenchmarkEntry(
@@ -272,19 +272,19 @@ WORKLOADS: dict[str, Workload] = {
                 benchmark_id="geekbench:object_detection",
                 weight=0.10,
                 label="Geekbench object detection (multi-core)",
-                config_filter={"cores": "Multi-Core Performance"},
+                config_filter={"cores": "multi"},
             ),
             BenchmarkEntry(
                 benchmark_id="geekbench:background_blur",
                 weight=0.05,
                 label="Geekbench background blur (multi-core)",
-                config_filter={"cores": "Multi-Core Performance"},
+                config_filter={"cores": "multi"},
             ),
             BenchmarkEntry(
                 benchmark_id="geekbench:structure_from_motion",
                 weight=0.05,
                 label="Geekbench structure-from-motion (multi-core)",
-                config_filter={"cores": "Multi-Core Performance"},
+                config_filter={"cores": "multi"},
             ),
         ],
     ),
@@ -304,13 +304,13 @@ WORKLOADS: dict[str, Workload] = {
                 benchmark_id="geekbench:clang",
                 weight=0.25,
                 label="Geekbench Clang compilation (multi-core)",
-                config_filter={"cores": "Multi-Core Performance"},
+                config_filter={"cores": "multi"},
             ),
             BenchmarkEntry(
                 benchmark_id="geekbench:clang",
                 weight=0.10,
                 label="Geekbench Clang compilation (single-core)",
-                config_filter={"cores": "Single-Core Performance"},
+                config_filter={"cores": "single"},
             ),
             # single-core and general CPU performance
             BenchmarkEntry(
@@ -332,7 +332,7 @@ WORKLOADS: dict[str, Workload] = {
                 benchmark_id="geekbench:text_processing",
                 weight=0.10,
                 label="Geekbench text processing (multi-core)",
-                config_filter={"cores": "Multi-Core Performance"},
+                config_filter={"cores": "multi"},
             ),
             BenchmarkEntry(
                 benchmark_id="stress_ng:bestn",
@@ -344,13 +344,17 @@ WORKLOADS: dict[str, Workload] = {
                 benchmark_id="geekbench:file_compression",
                 weight=0.05,
                 label="Geekbench file compression (multi-core)",
-                config_filter={"cores": "Multi-Core Performance"},
+                config_filter={"cores": "multi"},
             ),
             BenchmarkEntry(
                 benchmark_id="compression_text:compress",
                 weight=0.05,
                 label="Brotli compression (single-thread, level 0)",
-                config_filter={"algo": "brotli", "compression_level": 0, "threads": 1},
+                config_filter={
+                    "algo": "brotli",
+                    "compression_level": 0,
+                    "cores": "single",
+                },
             ),
             # text processing/scripting
             BenchmarkEntry(
