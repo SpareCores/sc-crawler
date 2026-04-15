@@ -1,4 +1,4 @@
-## v0.5.x (Apr 1, 2026)
+## v0.5.x (development version)
 
 New feature(s):
 
