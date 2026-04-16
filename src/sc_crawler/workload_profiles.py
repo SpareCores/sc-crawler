@@ -54,13 +54,13 @@ WORKLOADS: dict[str, Workload] = {
             # direct web server benchmarks
             BenchmarkEntry(
                 benchmark_id="static_web:rps-extrapolated",
-                weight=0.20,
+                weight=0.25,
                 label="Static web RPS (1 kB, 8 conn/vCPU)",
                 config_filter={"size": "1k", "connections_per_vcpus": 8.0},
             ),
             BenchmarkEntry(
                 benchmark_id="static_web:rps-extrapolated",
-                weight=0.10,
+                weight=0.15,
                 label="Static web RPS (64 kB, 8 conn/vCPU)",
                 config_filter={"size": "64k", "connections_per_vcpus": 8.0},
             ),
@@ -69,12 +69,6 @@ WORKLOADS: dict[str, Workload] = {
                 weight=0.15,
                 label="Static web throughput (256 kB, 8 conn/vCPU)",
                 config_filter={"size": "256k", "connections_per_vcpus": 8.0},
-            ),
-            BenchmarkEntry(
-                benchmark_id="static_web:latency",
-                weight=0.10,
-                label="Static web latency (1 kB, 1 conn/vCPU)",
-                config_filter={"size": "1k", "connections_per_vcpus": 1.0},
             ),
             # web rendering proxies
             BenchmarkEntry(
