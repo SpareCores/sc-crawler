@@ -120,28 +120,55 @@ WORKLOADS: dict[str, Workload] = {
         benchmarks=[
             # raw CPU performance
             BenchmarkEntry(
+                benchmark_id="stress_ng:bestn",
+                weight=0.15,
+                label="stress-ng div16 best-N cores",
+            ),
+            BenchmarkEntry(
                 benchmark_id="stress_ng:best1",
-                weight=0.25,
+                weight=0.10,
                 label="stress-ng div16 single core",
             ),
             # general CPU performance
             BenchmarkEntry(
                 benchmark_id="passmark:cpu_mark",
-                weight=0.35,
+                weight=0.10,
                 label="PassMark CPU Mark (composite)",
             ),
             BenchmarkEntry(
                 benchmark_id="geekbench:score",
-                weight=0.20,
+                weight=0.10,
                 label="Geekbench score (multi-core)",
-                config_filter={"cores": "multi"},
+                config_filter={"cores": "Multi-Core Performance"},
             ),
             # memory performance
             BenchmarkEntry(
-                benchmark_id="membench:bandwidth_read",
-                weight=0.20,
+                benchmark_id="bw_mem",
+                weight=0.10,
                 label="Memory bandwidth (read, 64 MB)",
-                config_filter={"size_kb": 64 * 1024},
+                config_filter={"operation": "rd", "size": 64.0},
+            ),
+            # math performance
+            BenchmarkEntry(
+                benchmark_id="passmark:cpu_floating_point_maths_test",
+                weight=0.15,
+                label="PassMark floating point",
+            ),
+            BenchmarkEntry(
+                benchmark_id="passmark:cpu_extended_instructions_test",
+                weight=0.15,
+                label="PassMark AVX/SSE/FMA (SIMD)",
+            ),
+            BenchmarkEntry(
+                benchmark_id="passmark:cpu_integer_maths_test",
+                weight=0.10,
+                label="PassMark integer math",
+            ),
+            # potential HPC workloads
+            BenchmarkEntry(
+                benchmark_id="passmark:cpu_physics_test",
+                weight=0.05,
+                label="PassMark physics simulation",
             ),
         ],
     ),
