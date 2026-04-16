@@ -9,7 +9,6 @@ Weights within each workload sum to 1.0.
 
 from __future__ import annotations
 
-from textwrap import dedent
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict
@@ -44,12 +43,7 @@ class Workload(BaseModel):
 WORKLOADS: dict[str, Workload] = {
     "web": Workload(
         name="Web server",
-        rationale=dedent(
-            """
-            Primary drivers: HTTP throughput, latency, TLS termination, and request-processing CPU cost.
-            NGINX research shows CPU (TLS, compression), network I/O, and memory as the three hardware axes.
-            We lean heavily on the direct static_web benchmarks and supplement with crypto, web-rendering proxies, and string handling."""
-        ),
+        rationale="Primary workloads drivers are HTTP serving speed and throughput, HTML and text processing, TLS termination, and asset compression.",
         benchmarks=[
             # direct web server benchmarks
             BenchmarkEntry(
@@ -111,12 +105,7 @@ WORKLOADS: dict[str, Workload] = {
     ),
     "compute": Workload(
         name="Compute heavy",
-        rationale=dedent(
-            """
-            HPC and number-crunching workloads stress floating point, integer, SIMD (AVX/SSE/FMA), and memory bandwidth.
-            SPEChpc research shows memory bandwidth is the bottleneck for many compute-bound codes; AVX-512 effectiveness varies by CPU generation.
-            We therefore use a broad mix of synthetic (PassMark, stress-ng) and semi-real (Geekbench ray-tracer, physics) benchmarks.""",
-        ),
+        rationale="Number-crunching workload augmenting raw CPU performance stressing, general CPU performance benchmarks, memory bandwidth, and pure math computation speed like floating point, integer, SIMD (AVX/SSE/FMA) operations.",
         benchmarks=[
             # raw CPU performance
             BenchmarkEntry(
@@ -174,13 +163,7 @@ WORKLOADS: dict[str, Workload] = {
     ),
     "cache": Workload(
         name="Cache intensive",
-        rationale=dedent(
-            """
-            Redis/Valkey is single-threaded, so single-core CPU speed and memory subsystem (latency, bandwidth, cached reads) are dominant.
-            Direct Redis benchmarks provide the strongest signal: pipeline=1 for individual ops, pipeline=16 for batching.
-            PassMark memory_latency is lower-is-better and directly predicts per-op latency.
-            """
-        ),
+        rationale="In-memory key-value store workload, mixing direct Redis performance metrics with memory speed and latency benchmarks, and single-core CPU performance profiles.",
         benchmarks=[
             # direct Redis benchmarks
             BenchmarkEntry(
@@ -236,15 +219,9 @@ WORKLOADS: dict[str, Workload] = {
             ),
         ],
     ),
-    "ml": Workload(
-        name="ML inference",
-        rationale=dedent(
-            """
-            We use direct llm_speed benchmarks at two model sizes (llama-7b for realistic production proxy, gemma-2b for a smaller model) and supplement with raw memory bandwidth, SIMD, and Geekbench vision workloads that exercise ML-style pipelines.
-            CPU-based LLM inference is *memory-bandwidth-bound*: throughput ≈ bandwidth / model_size.
-            AVX/SIMD matters for matrix operations.
-            """
-        ),
+    "llm": Workload(
+        name="LLM inference",
+        rationale="VRAM and memory-bandwidth-bound LLM inference workload, using direct LLM speed benchmarks at two model sizes, and supplementing with raw memory bandwidth, SIMD, and Geekbench vision workloads that exercise ML-style pipelines.",
         benchmarks=[
             # direct LLM speed benchmarks
             BenchmarkEntry(
@@ -311,14 +288,7 @@ WORKLOADS: dict[str, Workload] = {
     ),
     "cicd": Workload(
         name="CI/CD build",
-        rationale=dedent(
-            """
-            Build performance is driven by single-thread speed (many build tools are serial or poorly parallelised),
-            multi-core compilation throughput, compression and archiving for packaging, and text/scripting processing.
-            Geekbench Clang directly compiles the Lua interpreter, providing a strong proxy for real CI workloads.
-            Research shows modern CI runners are 1.5-2x faster with higher single-thread clocks, motivating the chosen weights.
-            """
-        ),
+        rationale="Build performance is driven by single- and multi-core compilation throughput, single-core CPU performance, multi-core compression and text/scripting processing.",
         benchmarks=[
             # compiling software
             BenchmarkEntry(
