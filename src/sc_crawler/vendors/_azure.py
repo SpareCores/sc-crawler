@@ -178,6 +178,21 @@ STORAGE_METER_MAPPING = {
 }
 """Map Storage price meter names to the Storage name and the related disk's size."""
 
+_HOURS_PER_MONTH = 730
+"""Approximate number of hours in a month used for hourly-to-monthly price conversions."""
+
+_GIB_TO_GB = 1000 / 1024
+"""Conversion factor from GiB-denominated price to GB-denominated price."""
+
+STORAGE_PRICE_UNIT_MAPPING: dict[str, float | None] = {
+    "1/Month": None,  # per whole disk — handled separately via STORAGE_METER_MAPPING
+    "1 GiB/Month": _GIB_TO_GB,
+    "1 GB/Month": 1.0,
+    "1 GiB/Hour": _HOURS_PER_MONTH * _GIB_TO_GB,
+    "1 GB/Hour": float(_HOURS_PER_MONTH),
+}
+"""Storage capacity units → multiplier to convert the raw API price to $/GB/month."""
+
 
 def _parse_server_name(name):
     """Extract information from the server name/size.
@@ -1164,21 +1179,33 @@ def inventory_storage_prices(vendor):
     items = []
     for p in retail_prices:
         mapping = STORAGE_METER_MAPPING.get(p["meterName"])
-        if (
+        if not (
             mapping
             and mapping[0] in storages.keys()
             and p["armRegionName"] in regions.keys()
         ):
-            items.append(
-                {
-                    "vendor_id": vendor.vendor_id,
-                    "region_id": p["armRegionName"],
-                    "storage_id": mapping[0],
-                    "unit": PriceUnit.GB_MONTH,
-                    "price": p["retailPrice"] / mapping[1],
-                    "currency": p["currencyCode"],
-                }
-            )
+            continue
+
+        unit = p.get("unitOfMeasure", "")
+        if unit == "1/Month":
+            # Price is per whole disk; divide by disk size (GB).
+            price = p["retailPrice"] / mapping[1]
+        else:
+            multiplier = STORAGE_PRICE_UNIT_MAPPING.get(unit)
+            if multiplier is None:
+                continue  # not a storage capacity unit
+            price = p["retailPrice"] * multiplier
+
+        items.append(
+            {
+                "vendor_id": vendor.vendor_id,
+                "region_id": p["armRegionName"],
+                "storage_id": mapping[0],
+                "unit": PriceUnit.GB_MONTH,
+                "price": price,
+                "currency": p["currencyCode"],
+            }
+        )
     return items
 
 
