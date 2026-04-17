@@ -20,8 +20,8 @@ from ..table_fields import (
     CpuAllocation,
     CpuArchitecture,
     Disk,
-    PriceUnit,
     PriceTier,
+    PriceUnit,
     StorageType,
     TrafficDirection,
 )
