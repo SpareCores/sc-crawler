@@ -551,4 +551,103 @@ benchmarks: List[Benchmark] = [
         },
         unit="tokens/second (t/s)",
     ),
+    # synthetic compound scores
+    Benchmark(
+        benchmark_id="workload_profile:web",
+        name="Workload profile: Web server",
+        description=(
+            "Precomputed compound score for web server workloads. "
+            "A weighted average of normalised scores, each normalised to [0, 1] across all servers in the dataset. "
+            "Component weights: "
+            "20% static web RPS (1 kB, 8 conn/vCPU), "
+            "15% static web throughput (256 kB, 8 conn/vCPU), "
+            "10% static web RPS (64 kB, 8 conn/vCPU), "
+            "10% static web latency (1 kB, 1 conn/vCPU), "
+            "10% Geekbench HTML5 browser (multi-core), "
+            "10% OpenSSL AES-256-CBC (16 kB blocks), "
+            "10% PassMark encryption (AES/SHA/ECDSA), "
+            "5% Geekbench text processing (multi-core), "
+            "5% PassMark string sorting, "
+            "5% PassMark cached memory reads."
+        ),
+        framework="workload_profile",
+        measurement="score",
+    ),
+    Benchmark(
+        benchmark_id="workload_profile:compute",
+        name="Workload profile: Compute heavy",
+        description=(
+            "Precomputed compound score for compute-heavy (HPC/number-crunching) workloads. "
+            "A weighted average of normalised scores, each normalised to [0, 1] across all servers in the dataset. "
+            "Component weights: "
+            "35% PassMark CPU Mark (composite), "
+            "25% stress-ng div16 single core, "
+            "20% Geekbench score (multi-core), "
+            "20% memory read bandwidth (64 MB, sc-membench)."
+        ),
+        framework="workload_profile",
+        measurement="score",
+    ),
+    Benchmark(
+        benchmark_id="workload_profile:cache",
+        name="Workload profile: Cache intensive",
+        description=(
+            "Precomputed compound score for cache/in-memory workloads (e.g. Redis/Valkey). "
+            "A weighted average of normalised scores, each normalised to [0, 1] across all servers in the dataset. "
+            "Component weights: "
+            "25% Redis RPS (pipeline=1, SET), "
+            "10% Redis RPS (pipeline=16, SET), "
+            "10% Redis latency (pipeline=1, SET), "
+            "10% PassMark memory latency (512 MB), "
+            "10% PassMark Memory Mark (composite), "
+            "10% PassMark cached memory reads, "
+            "10% memory bandwidth read (16 MB ≈ L3, bw_mem), "
+            "10% PassMark single-thread CPU, "
+            "5% PassMark in-memory DB operations."
+        ),
+        framework="workload_profile",
+        measurement="score",
+    ),
+    Benchmark(
+        benchmark_id="workload_profile:ml",
+        name="Workload profile: ML inference",
+        description=(
+            "Precomputed compound score for CPU-based machine-learning inference workloads. "
+            "A weighted average of normalised scores, each normalised to [0, 1] across all servers in the dataset. "
+            "Component weights: "
+            "20% LLM text generation (llama-7b, 128 tokens), "
+            "15% memory bandwidth read (256 MB, bw_mem), "
+            "10% LLM prompt processing (llama-7b, 512 tokens), "
+            "10% LLM text generation (gemma-2b, 128 tokens), "
+            "10% PassMark Memory Mark (composite), "
+            "10% PassMark AVX/SSE/FMA (SIMD), "
+            "10% Geekbench object detection (multi-core), "
+            "5% PassMark floating point, "
+            "5% Geekbench background blur (multi-core), "
+            "5% Geekbench structure-from-motion (multi-core)."
+        ),
+        framework="workload_profile",
+        measurement="score",
+    ),
+    Benchmark(
+        benchmark_id="workload_profile:cicd",
+        name="Workload profile: CI/CD build",
+        description=(
+            "Precomputed compound score for CI/CD build workloads. "
+            "A weighted average of normalised scores, each normalised to [0, 1] across all servers in the dataset. "
+            "Component weights: "
+            "25% Geekbench Clang compilation (multi-core), "
+            "15% PassMark single-thread CPU, "
+            "10% Geekbench Clang compilation (single-core), "
+            "10% PassMark compression, "
+            "10% PassMark integer math, "
+            "10% Geekbench text processing (multi-core), "
+            "5% stress-ng div16 best-N cores, "
+            "5% Geekbench file compression (multi-core), "
+            "5% Brotli compression (single-thread, level 0), "
+            "5% PassMark string sorting."
+        ),
+        framework="workload_profile",
+        measurement="score",
+    ),
 ]
