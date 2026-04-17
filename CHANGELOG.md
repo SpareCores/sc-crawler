@@ -4,6 +4,8 @@ Fix(es):
 
 - Add Python 3.14 support by unpinning the `pydantic` dependency and replacing `pydantic.ImportString` with a standard
   Python alternative in table definitions.
+- Fix `Alibaba Cloud` storage price ingestion by converting hourly-rated prices to monthly.
+- Fix `Azure` storage price unit conversions to correctly produce $/GB/month values for all supported unit types.
 
 ## v0.5.0 (Mar 23, 2026)
 
