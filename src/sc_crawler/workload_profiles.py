@@ -132,7 +132,7 @@ WORKLOADS: dict[str, Workload] = {
                 benchmark_id="geekbench:score",
                 weight=0.10,
                 label="Geekbench score (multi-core)",
-                config_filter={"cores": "Multi-Core Performance"},
+                config_filter={"cores": "multi"},
             ),
             # memory performance
             BenchmarkEntry(
@@ -208,7 +208,7 @@ WORKLOADS: dict[str, Workload] = {
             BenchmarkEntry(
                 benchmark_id="bw_mem",
                 weight=0.10,
-                label="Memory bandwidth (read, 16 MB ≈ L3)",
+                label="Memory bandwidth (read, 16 MB ~ L3)",
                 config_filter={"operation": "rd", "size": 16.0},
             ),
             # CPU performance benchmarks
