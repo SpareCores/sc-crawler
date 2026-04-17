@@ -168,20 +168,114 @@ ARCHITECTURE_MAPPING = {
 }
 
 STORAGE_METER_MAPPING = {
-    "P2 LRS Disk Mount": ("PremiumV2_LRS", 1),
+    # Premium SSD (P-series) — unit: 1/Month, price per whole disk
     "P1 LRS Disk": ("Premium_LRS", 4),
+    "P2 LRS Disk": ("Premium_LRS", 8),
+    "P3 LRS Disk": ("Premium_LRS", 16),
+    "P4 LRS Disk": ("Premium_LRS", 32),
+    "P6 LRS Disk": ("Premium_LRS", 64),
+    "P10 LRS Disk": ("Premium_LRS", 128),
+    "P15 LRS Disk": ("Premium_LRS", 256),
+    "P20 LRS Disk": ("Premium_LRS", 512),
+    "P30 LRS Disk": ("Premium_LRS", 1024),
+    "P40 LRS Disk": ("Premium_LRS", 2048),
+    "P50 LRS Disk": ("Premium_LRS", 4096),
+    "P60 LRS Disk": ("Premium_LRS", 8192),
+    "P70 LRS Disk": ("Premium_LRS", 16384),
+    "P80 LRS Disk": ("Premium_LRS", 32767),
+    # Premium SSD ZRS (P-series) — unit: 1/Month, price per whole disk
     "P1 ZRS Disk": ("Premium_ZRS", 4),
+    "P2 ZRS Disk": ("Premium_ZRS", 8),
+    "P3 ZRS Disk": ("Premium_ZRS", 16),
+    "P4 ZRS Disk": ("Premium_ZRS", 32),
+    "P6 ZRS Disk": ("Premium_ZRS", 64),
+    "P10 ZRS Disk": ("Premium_ZRS", 128),
+    "P15 ZRS Disk": ("Premium_ZRS", 256),
+    "P20 ZRS Disk": ("Premium_ZRS", 512),
+    "P30 ZRS Disk": ("Premium_ZRS", 1024),
+    "P40 ZRS Disk": ("Premium_ZRS", 2048),
+    "P50 ZRS Disk": ("Premium_ZRS", 4096),
+    "P60 ZRS Disk": ("Premium_ZRS", 8192),
+    "P70 ZRS Disk": ("Premium_ZRS", 16384),
+    "P80 ZRS Disk": ("Premium_ZRS", 32767),
+    # Standard SSD (E-series) LRS — unit: 1/Month, price per whole disk
     "E1 LRS Disk": ("StandardSSD_LRS", 4),
+    "E2 LRS Disk": ("StandardSSD_LRS", 8),
+    "E3 LRS Disk": ("StandardSSD_LRS", 16),
+    "E4 LRS Disk": ("StandardSSD_LRS", 32),
+    "E6 LRS Disk": ("StandardSSD_LRS", 64),
+    "E10 LRS Disk": ("StandardSSD_LRS", 128),
+    "E15 LRS Disk": ("StandardSSD_LRS", 256),
+    "E20 LRS Disk": ("StandardSSD_LRS", 512),
+    "E30 LRS Disk": ("StandardSSD_LRS", 1024),
+    "E40 LRS Disk": ("StandardSSD_LRS", 2048),
+    "E50 LRS Disk": ("StandardSSD_LRS", 4096),
+    "E60 LRS Disk": ("StandardSSD_LRS", 8192),
+    "E70 LRS Disk": ("StandardSSD_LRS", 16384),
+    "E80 LRS Disk": ("StandardSSD_LRS", 32767),
+    # Standard SSD ZRS (E-series) — unit: 1/Month, price per whole disk
     "E1 ZRS Disk": ("StandardSSD_ZRS", 4),
+    "E2 ZRS Disk": ("StandardSSD_ZRS", 8),
+    "E3 ZRS Disk": ("StandardSSD_ZRS", 16),
+    "E4 ZRS Disk": ("StandardSSD_ZRS", 32),
+    "E6 ZRS Disk": ("StandardSSD_ZRS", 64),
+    "E10 ZRS Disk": ("StandardSSD_ZRS", 128),
+    "E15 ZRS Disk": ("StandardSSD_ZRS", 256),
+    "E20 ZRS Disk": ("StandardSSD_ZRS", 512),
+    "E30 ZRS Disk": ("StandardSSD_ZRS", 1024),
+    "E40 ZRS Disk": ("StandardSSD_ZRS", 2048),
+    "E50 ZRS Disk": ("StandardSSD_ZRS", 4096),
+    "E60 ZRS Disk": ("StandardSSD_ZRS", 8192),
+    "E70 ZRS Disk": ("StandardSSD_ZRS", 16384),
+    "E80 ZRS Disk": ("StandardSSD_ZRS", 32767),
+    # Standard HDD (S-series) LRS — unit: 1/Month, price per whole disk
+    # (Standard HDD ZRS is not offered as per-disk pricing)
     "S4 LRS Disk": ("Standard_LRS", 32),
+    "S6 LRS Disk": ("Standard_LRS", 64),
+    "S10 LRS Disk": ("Standard_LRS", 128),
+    "S15 LRS Disk": ("Standard_LRS", 256),
+    "S20 LRS Disk": ("Standard_LRS", 512),
+    "S30 LRS Disk": ("Standard_LRS", 1024),
+    "S40 LRS Disk": ("Standard_LRS", 2048),
+    "S50 LRS Disk": ("Standard_LRS", 4096),
+    "S60 LRS Disk": ("Standard_LRS", 8192),
+    "S70 LRS Disk": ("Standard_LRS", 16384),
+    "S80 LRS Disk": ("Standard_LRS", 32767),
+    # Ultra SSD LRS — unit: 1 GiB/Hour, price per GiB per hour (disk size divisor = 1)
     "Ultra LRS Provisioned Capacity": ("UltraSSD_LRS", 1),
+    # Premium SSD v2 LRS — unit: 1 GiB/Hour, price per GiB per hour (disk size divisor = 1)
+    "Premium LRS Provisioned Capacity": ("PremiumV2_LRS", 1),
 }
-"""Map Storage price meter names to the Storage name and the related disk's size."""
+"""Map Storage price meter names to the storage type ID and the disk size in GiB.
+
+Disk sizes sourced from the Azure Managed Disks pricing page:
+<https://azure.microsoft.com/en-us/pricing/details/managed-disks/>
+
+Meter names sourced from the Azure Retail Prices API:
+<https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices>
+
+The disk size (second tuple element) is used to convert per-disk (``1/Month``) prices
+to $/GiB/month by dividing the retail price by this value.  For provisioned-capacity
+meters (``1 GiB/Hour``) the divisor is 1 because the price is already expressed per GiB.
+
+The following meter categories are intentionally **not** included:
+
+- ``* Disk Mount`` — the extra monthly fee charged per VM when a disk is attached to
+  more than one VM simultaneously (Azure Shared Disks feature).  This is an access/
+  attach charge, not a storage-capacity charge.
+- ``Confidential Compute Encryption * Provisioned Capacity`` — surcharge for
+  customer-managed key (CMK) encryption on confidential VMs.
+- ``LRS/ZRS Burst Enablement`` — monthly fee to permanently enable burst IOPS on
+  Premium SSD disks.
+- ``* Disk - Free`` / ``SAP Special *`` — zero-price promotional entries.
+- ``Instant Access Snapshots`` — snapshot restore-access fee.
+- Standard HDD ZRS is not offered as per-disk pricing (only as per-GiB/month).
+"""
 
 _HOURS_PER_MONTH = 730
 """Approximate number of hours in a month used for hourly-to-monthly price conversions."""
 
-_GIB_TO_GB = 1000 / 1024
+_GIB_TO_GB = (1000**3) / (1024**3)
 """Conversion factor from GiB-denominated price to GB-denominated price."""
 
 STORAGE_PRICE_UNIT_MAPPING: dict[str, float | None] = {
@@ -1186,10 +1280,10 @@ def inventory_storage_prices(vendor):
         ):
             continue
 
-        unit = p.get("unitOfMeasure", "")
+        unit = p.get("unitOfMeasure")
         if unit == "1/Month":
-            # Price is per whole disk; divide by disk size (GB).
-            price = p["retailPrice"] / mapping[1]
+            # mapping[1] is disk size in GiB, convert to $/GB/month.
+            price = p["retailPrice"] / mapping[1] * _GIB_TO_GB
         else:
             multiplier = STORAGE_PRICE_UNIT_MAPPING.get(unit)
             if multiplier is None:
