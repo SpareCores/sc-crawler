@@ -240,6 +240,7 @@ def _compute_workload_score_rows(
                     "server_id": server_data["server_id"],
                     "benchmark_id": f"workload_profile:{workload_key}",
                     "config": {},
+                    "framework_version": w_def.version,
                     "score": score,
                     "note": note,
                 }

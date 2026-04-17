@@ -34,6 +34,8 @@ class Workload(BaseModel):
 
     name: str
     """Short human-readable name, e.g. 'Web server'."""
+    version: str
+    """Workload profile version."""
     rationale: str
     """Explanation of which benchmarks were chosen and why."""
     benchmarks: list[BenchmarkEntry]
@@ -43,6 +45,7 @@ class Workload(BaseModel):
 WORKLOADS: dict[str, Workload] = {
     "web": Workload(
         name="Web server",
+        version="1.0",
         rationale="Primary workloads drivers are HTTP serving speed and throughput, HTML and text processing, TLS termination, and asset compression.",
         benchmarks=[
             # direct web server benchmarks
@@ -105,6 +108,7 @@ WORKLOADS: dict[str, Workload] = {
     ),
     "compute": Workload(
         name="Compute heavy",
+        version="1.0",
         rationale="Number-crunching workload augmenting raw CPU performance stressing, general CPU performance benchmarks, memory bandwidth, and pure math computation speed like floating point, integer, SIMD (AVX/SSE/FMA) operations.",
         benchmarks=[
             # raw CPU performance
@@ -163,6 +167,7 @@ WORKLOADS: dict[str, Workload] = {
     ),
     "cache": Workload(
         name="Cache intensive",
+        version="1.0",
         rationale="In-memory key-value store workload, mixing direct Redis performance metrics with memory speed and latency benchmarks, and single-core CPU performance profiles.",
         benchmarks=[
             # direct Redis benchmarks
@@ -221,6 +226,7 @@ WORKLOADS: dict[str, Workload] = {
     ),
     "llm": Workload(
         name="LLM inference",
+        version="1.0",
         rationale="VRAM and memory-bandwidth-bound LLM inference workload, using direct LLM speed benchmarks at two model sizes, and supplementing with raw memory bandwidth, SIMD, and Geekbench vision workloads that exercise ML-style pipelines.",
         benchmarks=[
             # direct LLM speed benchmarks
@@ -288,6 +294,7 @@ WORKLOADS: dict[str, Workload] = {
     ),
     "cicd": Workload(
         name="CI/CD build",
+        version="1.0",
         rationale="Build performance is driven by single- and multi-core compilation throughput, single-core CPU performance, multi-core compression and text/scripting processing.",
         benchmarks=[
             # compiling software
