@@ -1,3 +1,4 @@
+from collections import defaultdict
 from functools import cache
 from os import environ
 from re import compile as recompile
@@ -20,6 +21,7 @@ from ..table_fields import (
     CpuArchitecture,
     Disk,
     PriceUnit,
+    PriceTier,
     StorageType,
     TrafficDirection,
 )
@@ -1270,7 +1272,7 @@ def inventory_storage_prices(vendor):
     regions = scmodels_to_dict(vendor.regions, keys=["region_id"])
     storages = scmodels_to_dict(vendor.storages, keys=["storage_id"])
 
-    items = []
+    prices = defaultdict(list)
     for p in retail_prices:
         mapping = STORAGE_METER_MAPPING.get(p["meterName"])
         if not (
@@ -1284,22 +1286,62 @@ def inventory_storage_prices(vendor):
         if unit == "1/Month":
             # mapping[1] is disk size in GiB, convert to $/GB/month.
             price = p["retailPrice"] / mapping[1] * _GIB_TO_GB
+            prices[
+                (
+                    vendor.vendor_id,
+                    p["armRegionName"],
+                    mapping[0],
+                    PriceUnit.GB_MONTH,
+                    p["currencyCode"],
+                )
+            ].append(
+                PriceTier(
+                    lower=0,
+                    upper=round(mapping[1] * _GIB_TO_GB, 4),
+                    price=round(price, 4),
+                )
+            )
         else:
             multiplier = STORAGE_PRICE_UNIT_MAPPING.get(unit)
             if multiplier is None:
                 continue  # not a storage capacity unit
             price = p["retailPrice"] * multiplier
+            prices[
+                (
+                    vendor.vendor_id,
+                    p["armRegionName"],
+                    mapping[0],
+                    PriceUnit.GB_MONTH,
+                    p["currencyCode"],
+                )
+            ].append(PriceTier(lower=0, upper=float("inf"), price=round(price, 4)))
+
+    items = []
+    for key, price_tiered in prices.items():
+        vendor_id, region_id, storage_id, unit, currency = key
+        if len(price_tiered) == 1:
+            price = price_tiered[0].price
+            price_tiered = []
+        else:
+            price_tiered.sort(key=lambda x: x.upper)
+            lower = 0
+            for price_tier in price_tiered:
+                price_tier.lower = lower
+                lower = price_tier.upper
+            price = price_tiered[0].price  # use the price of the lowest tier
 
         items.append(
             {
-                "vendor_id": vendor.vendor_id,
-                "region_id": p["armRegionName"],
-                "storage_id": mapping[0],
-                "unit": PriceUnit.GB_MONTH,
+                "vendor_id": vendor_id,
+                "region_id": region_id,
+                "storage_id": storage_id,
+                "unit": unit,
                 "price": price,
-                "currency": p["currencyCode"],
+                "price_tiered": price_tiered,
+                "currency": currency,
             }
         )
+
     return items
 
 
