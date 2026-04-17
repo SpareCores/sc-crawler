@@ -9,6 +9,7 @@ Each file in the [`src/sc_crawler/vendors`](https://github.com/SpareCores/sc-cra
 3. Update `src/sc_crawler/vendors/__init__.py` to include the new vendor.
 4. Update `docs/add_vendor.md` with the credential requirements for the new vendor.
 5. Implement the `inventory` methods.
+6. Preferably also implement the related cloud-discovery tool in the `resource-tracker` package.
 
 ## Inventory methods
 
