@@ -1230,13 +1230,17 @@ def inventory_storage_prices(vendor):
         if not region:
             unsupported_regions.add(region_id)
             continue
+        storage_price = float(sku["CskuPriceList"][0]["Price"])
+        price_type = sku["CskuPriceList"][0]["PriceType"]
+        if price_type == "hourPrice":
+            storage_price = storage_price * 730  # convert to monthly price
         items.append(
             {
                 "vendor_id": vendor.vendor_id,
                 "region_id": region.region_id,
                 "storage_id": storage_id,
                 "unit": PriceUnit.GB_MONTH,
-                "price": float(sku["CskuPriceList"][0]["Price"]),
+                "price": storage_price,
                 "currency": sku["CskuPriceList"][0]["Currency"],
             }
         )
