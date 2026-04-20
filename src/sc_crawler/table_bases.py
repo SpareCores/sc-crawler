@@ -262,6 +262,10 @@ class HasName(ScModel):
     name: str = Field(description="Human-friendly name.")
 
 
+class HasCategory(ScModel):
+    category: Optional[str] = Field(description="Category of the resource.")
+
+
 class HasDescription(ScModel):
     description: Optional[str] = Field(description="Short description.")
 
@@ -804,7 +808,7 @@ class Ipv4PriceBase(HasPriceFields, HasRegionPK, HasVendorPKFK):
     pass
 
 
-class BenchmarkFields(HasDescription, HasName, HasBenchmarkIdPK):
+class BenchmarkFields(HasDescription, HasName, HasCategory, HasBenchmarkIdPK):
     framework: str = Field(
         description="The name of the benchmark framework/software/tool used.",
     )
