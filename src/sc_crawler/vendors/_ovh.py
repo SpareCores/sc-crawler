@@ -5,6 +5,7 @@ from typing import List, Optional
 from ovh import Client
 
 from ..lookup import map_compliance_frameworks_to_vendor
+from ..sentry import sentry_capture_or_raise
 from ..table_fields import (
     Allocation,
     CpuAllocation,
@@ -510,29 +511,32 @@ def inventory_regions(vendor) -> list[dict]:
 
     vendor.progress_tracker.start_task(name="Fetching regions", total=len(regions))
     for region in regions:
-        datacenter = _get_region(region)["datacenterLocation"]
-        lookup = datacenters[datacenter]
-        items.append(
-            {
-                "vendor_id": vendor.vendor_id,
-                "region_id": region,
-                "name": region,
-                "api_reference": region,
-                "display_name": f"{region} ({lookup['country_id']})",
-                "aliases": [],
-                "country_id": lookup["country_id"],
-                "state": lookup.get("state"),
-                "city": lookup.get("city"),
-                "address_line": lookup.get("address_line"),
-                "zip_code": lookup.get("zip_code"),
-                "lon": lookup.get("lon"),
-                "lat": lookup.get("lat"),
-                # OVHcloud region page confirms Frankfurt (Limburg), Warsaw (Ożarów), London (Erith)
-                # as specific datacenter locations opened in 2016
-                "founding_year": 2016 if datacenter in ["DE", "WAW", "UK"] else None,
-                "green_energy": None,
-            }
-        )
+        with sentry_capture_or_raise(vendor=vendor):
+            datacenter = _get_region(region)["datacenterLocation"]
+            lookup = datacenters[datacenter]
+            items.append(
+                {
+                    "vendor_id": vendor.vendor_id,
+                    "region_id": region,
+                    "name": region,
+                    "api_reference": region,
+                    "display_name": f"{region} ({lookup['country_id']})",
+                    "aliases": [],
+                    "country_id": lookup["country_id"],
+                    "state": lookup.get("state"),
+                    "city": lookup.get("city"),
+                    "address_line": lookup.get("address_line"),
+                    "zip_code": lookup.get("zip_code"),
+                    "lon": lookup.get("lon"),
+                    "lat": lookup.get("lat"),
+                    # OVHcloud region page confirms Frankfurt (Limburg), Warsaw (Ożarów), London (Erith)
+                    # as specific datacenter locations opened in 2016
+                    "founding_year": 2016
+                    if datacenter in ["DE", "WAW", "UK"]
+                    else None,
+                    "green_energy": None,
+                }
+            )
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
 

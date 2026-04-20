@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 from enum import Enum
 from json import dump as json_dump
 from json import dumps, loads
+from os import environ
 from pathlib import Path
 from re import sub
 from types import SimpleNamespace
@@ -39,6 +40,7 @@ from .alembic_helpers import alembic_cfg, get_revision
 from .insert import insert_items
 from .logger import ProgressPanel, ScRichHandler, VendorProgressTracker, logger
 from .lookup import benchmarks, compliance_frameworks, countries
+from .sentry import before_send
 from .table_fields import Status
 from .tables import Benchmark, ComplianceFramework, Country, Vendor, tables
 from .tables_scd import tables_scd
@@ -98,6 +100,15 @@ options = SimpleNamespace(
         typer.Option(help="Dry-run, printing the SQL commands instead of running."),
     ],
 )
+
+if environ.get("SENTRY_DSN"):
+    import sentry_sdk
+
+    sentry_sdk.init(
+        traces_sample_rate=1.0,
+        profiles_sample_rate=1.0,
+        before_send=before_send,
+    )
 
 
 @alembic_app.command()

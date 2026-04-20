@@ -15,6 +15,7 @@ from requests import Session as request_session
 
 from ..logger import logger
 from ..lookup import map_compliance_frameworks_to_vendor
+from ..sentry import sentry_capture_or_raise
 from ..table_fields import (
     Allocation,
     CpuAllocation,
@@ -576,10 +577,15 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
     #   - not(contains(meterName, 'Low Priority'))
     #   - not(endswith(productName, 'Windows'))
     #   - not(endswith(productName, 'CloudServices'))
-    retail_prices = _prices(
-        "$filter=serviceName eq 'Virtual Machines' and priceType eq 'Consumption'"
-    )
+    retail_prices = []
+    with sentry_capture_or_raise(vendor=vendor):
+        retail_prices = _prices(
+            "$filter=serviceName eq 'Virtual Machines' and priceType eq 'Consumption'"
+        )
     vendor.progress_tracker.hide_task()
+
+    if not retail_prices:
+        return []
 
     vendor.progress_tracker.start_task(
         name="Preprocess ondemand server_price(s)", total=len(retail_prices)
@@ -1086,51 +1092,52 @@ def inventory_regions(vendor):
 
     items = []
     for region in _regions():
-        # TODO drop this once the metadata field doesn't show up randomly anymore
-        # as the non-metadata responses do not seem to have these logical regions anymore
-        if region.get("metadata", {}).get("region_type", "Physical") != "Physical":
-            continue
-        # no idea what are these
-        if region["name"].endswith("stg"):
-            continue
-        # not production region?
-        # https://github.com/Azure/azure-dev/issues/2165#issuecomment-1542948509
-        if region["name"] == "brazilus":
-            continue
-        # exclude for now as this new region is popping up and being removed
-        # from their API response randomly, so messing with git history
-        if region["name"] == "newzealandnorth":
-            continue
-        manual_data = manual_datas.get(region["name"])
-        if not manual_data:
-            raise KeyError(f"No manual data found for {region['name']}.")
-        items.append(
-            {
-                "vendor_id": vendor.vendor_id,
-                "region_id": region["name"],
-                "name": region["display_name"],
-                "api_reference": region["name"],
-                "display_name": (
-                    region["display_name"] + " (" + manual_data["country_id"] + ")"
-                ),
-                "country_id": manual_data["country_id"],
-                "state": manual_data.get("state"),
-                "city": manual_data.get("city"),
-                "address_line": None,
-                "zip_code": None,
-                # sometimes the API passes "metadata" and the lat/long nested, sometimes it's not
-                # TODO revisit after a few days passed since this change:
-                # https://github.com/Azure/azure-sdk-for-python/blob/azure-mgmt-resource_25.0.0/sdk/resources/azure-mgmt-resource/CHANGELOG.md#2500-2026-02-04
-                "lat": region.get("metadata", {}).get(
-                    "latitude", region.get("latitude")
-                ),
-                "lon": region.get("metadata", {}).get(
-                    "longitude", region.get("longitude")
-                ),
-                "founding_year": manual_data.get("founding_year"),
-                "green_energy": manual_data.get("green_energy"),
-            }
-        )
+        with sentry_capture_or_raise(vendor=vendor):
+            # TODO drop this once the metadata field doesn't show up randomly anymore
+            # as the non-metadata responses do not seem to have these logical regions anymore
+            if region.get("metadata", {}).get("region_type", "Physical") != "Physical":
+                continue
+            # no idea what are these
+            if region["name"].endswith("stg"):
+                continue
+            # not production region?
+            # https://github.com/Azure/azure-dev/issues/2165#issuecomment-1542948509
+            if region["name"] == "brazilus":
+                continue
+            # exclude for now as this new region is popping up and being removed
+            # from their API response randomly, so messing with git history
+            if region["name"] == "newzealandnorth":
+                continue
+            manual_data = manual_datas.get(region["name"])
+            if not manual_data:
+                raise KeyError(f"No manual data found for {region['name']}.")
+            items.append(
+                {
+                    "vendor_id": vendor.vendor_id,
+                    "region_id": region["name"],
+                    "name": region["display_name"],
+                    "api_reference": region["name"],
+                    "display_name": (
+                        region["display_name"] + " (" + manual_data["country_id"] + ")"
+                    ),
+                    "country_id": manual_data["country_id"],
+                    "state": manual_data.get("state"),
+                    "city": manual_data.get("city"),
+                    "address_line": None,
+                    "zip_code": None,
+                    # sometimes the API passes "metadata" and the lat/long nested, sometimes it's not
+                    # TODO revisit after a few days passed since this change:
+                    # https://github.com/Azure/azure-sdk-for-python/blob/azure-mgmt-resource_25.0.0/sdk/resources/azure-mgmt-resource/CHANGELOG.md#2500-2026-02-04
+                    "lat": region.get("metadata", {}).get(
+                        "latitude", region.get("latitude")
+                    ),
+                    "lon": region.get("metadata", {}).get(
+                        "longitude", region.get("longitude")
+                    ),
+                    "founding_year": manual_data.get("founding_year"),
+                    "green_energy": manual_data.get("green_energy"),
+                }
+            )
     return items
 
 
@@ -1266,8 +1273,13 @@ def inventory_storage_prices(vendor):
     vendor.progress_tracker.start_task(
         name="Fetching list of storage resources", total=None
     )
-    retail_prices = _prices("$filter=serviceName eq 'Storage'")
+    retail_prices = []
+    with sentry_capture_or_raise(vendor=vendor):
+        retail_prices = _prices("$filter=serviceName eq 'Storage'")
     vendor.progress_tracker.hide_task()
+
+    if not retail_prices:
+        return []
 
     regions = scmodels_to_dict(vendor.regions, keys=["region_id"])
     storages = scmodels_to_dict(vendor.storages, keys=["storage_id"])
@@ -1373,15 +1385,21 @@ def inventory_traffic_prices(vendor):
     vendor.progress_tracker.start_task(
         name="Fetching list of traffic prices", total=None
     )
-    inbound_prices = _prices(
-        "$filter=serviceFamily eq 'Networking' and meterName eq 'Standard Data Transfer In'"
-    )
-    outbound_prices = _prices(
-        "$filter=serviceFamily eq 'Networking' and "
-        "meterName eq 'Standard Data Transfer Out' and "
-        "productName eq 'Bandwidth - Routing Preference: Internet'"
-    )
+    inbound_prices = []
+    outbound_prices = []
+    with sentry_capture_or_raise(vendor=vendor):
+        inbound_prices = _prices(
+            "$filter=serviceFamily eq 'Networking' and meterName eq 'Standard Data Transfer In'"
+        )
+        outbound_prices = _prices(
+            "$filter=serviceFamily eq 'Networking' and "
+            "meterName eq 'Standard Data Transfer Out' and "
+            "productName eq 'Bandwidth - Routing Preference: Internet'"
+        )
     vendor.progress_tracker.hide_task()
+
+    if not inbound_prices and not outbound_prices:
+        return []
 
     items = []
     regions = scmodels_to_dict(vendor.regions, keys=["api_reference"])
@@ -1417,12 +1435,17 @@ def inventory_ipv4_prices(vendor):
     vendor.progress_tracker.start_task(
         name="Fetching list of traffic prices", total=None
     )
-    prices = _prices(
-        "$filter=serviceFamily eq 'Networking' and "
-        "meterName eq 'Basic IPv4 Dynamic Public IP' and "
-        "type eq 'Consumption'"
-    )
+    prices = []
+    with sentry_capture_or_raise(vendor=vendor):
+        prices = _prices(
+            "$filter=serviceFamily eq 'Networking' and "
+            "meterName eq 'Basic IPv4 Dynamic Public IP' and "
+            "type eq 'Consumption'"
+        )
     vendor.progress_tracker.hide_task()
+
+    if not prices:
+        return []
 
     items = []
     regions = scmodels_to_dict(vendor.regions, keys=["api_reference"])

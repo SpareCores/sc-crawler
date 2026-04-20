@@ -15,6 +15,7 @@ from cachier import cachier, set_global_params
 from ..inspector import _standardize_gpu_count
 from ..logger import logger
 from ..lookup import map_compliance_frameworks_to_vendor
+from ..sentry import sentry_capture_or_raise
 from ..str_utils import extract_last_number
 from ..table_fields import (
     Allocation,
@@ -830,11 +831,12 @@ def inventory_regions(vendor):
     supported_regions = [d["region_id"] for d in regions]
     available_regions = _boto_describe_regions()
     for available_region in available_regions:
-        region_name = available_region["RegionName"]
-        if "gov" in region_name:
-            next()
-        if region_name not in supported_regions:
-            raise NotImplementedError(f"Unsupported AWS region: {region_name}")
+        with sentry_capture_or_raise(vendor=vendor):
+            region_name = available_region["RegionName"]
+            if "gov" in region_name:
+                continue
+            if region_name not in supported_regions:
+                raise NotImplementedError(f"Unsupported AWS region: {region_name}")
 
     # mark inactive regions
     active_regions = [region["RegionName"] for region in available_regions]
@@ -861,7 +863,16 @@ def inventory_zones(vendor):
     def get_zones(region: Region, vendor: Vendor) -> List[dict]:
         new = []
         if region.status == "active":
-            try:
+
+            def on_error():
+                region.status = Status.INACTIVE
+                vendor.log(
+                    f"Marking region {region.region_id} as inactive due to error "
+                    "while fetching availability zones.",
+                    WARN,
+                )
+
+            with sentry_capture_or_raise(vendor=vendor, on_error=on_error):
                 for zone in _boto_describe_availability_zones(region.region_id):
                     new.append(
                         {
@@ -873,12 +884,7 @@ def inventory_zones(vendor):
                             "vendor_id": vendor.vendor_id,
                         }
                     )
-            except Exception as e:
-                region.status = Status.INACTIVE
-                vendor.log(
-                    f"Marking region {region.region_id} as inactive due to error while fetching availability zones: {str(e)}",
-                    WARN,
-                )
+
         vendor.progress_tracker.advance_task()
         return new
 
@@ -1129,6 +1135,7 @@ def inventory_storages(vendor):
     vendor.progress_tracker.hide_task()
 
     storages = []
+
     for product in products:
         attributes = product["product"]["attributes"]
         product_id = attributes["volumeApiName"]

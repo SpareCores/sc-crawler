@@ -37,6 +37,7 @@ from ..inspector import (
 )
 from ..logger import logger
 from ..lookup import map_compliance_frameworks_to_vendor
+from ..sentry import sentry_capture_or_raise
 from ..table_fields import (
     Allocation,
     CpuAllocation,
@@ -411,7 +412,7 @@ def _get_instance_price(
             elif "InvalidInstanceType.ValueNotSupported" in str(e):
                 return None
             else:
-                logger.error(
+                logger.warning(
                     f"Failed to get price for {instance_type} in {region_id}/{zone_id}: {e}"
                 )
                 return None
@@ -725,28 +726,29 @@ def inventory_regions(vendor):
 
     items = []
     for region in regions:
-        location = locations[region.get("RegionId")]
-        items.append(
-            {
-                "vendor_id": vendor.vendor_id,
-                "region_id": region.get("RegionId"),
-                "name": region.get("LocalName"),
-                "api_reference": region.get("RegionId"),
-                "display_name": f"{location['city']} ({location['country_id']})",
-                "aliases": location.get("alias", []),
-                "country_id": location.get("country_id"),
-                "state": None,  # not available
-                "city": location.get("city"),
-                "address_line": None,  # not available
-                "zip_code": None,  # not available
-                "lon": location.get("lon"),
-                "lat": location.get("lat"),
-                "founding_year": location.get("founding_year"),
-                # "Clean electricity accounted for 56.0% of the total electricity consumption at Alibaba Cloud's self-built data centers"
-                # https://www.alibabagroup.com/en-US/esg?spm=a3c0i.28208492.4078276800.1.3ee123b78lagGT
-                "green_energy": None,
-            }
-        )
+        with sentry_capture_or_raise(vendor=vendor):
+            location = locations[region.get("RegionId")]
+            items.append(
+                {
+                    "vendor_id": vendor.vendor_id,
+                    "region_id": region.get("RegionId"),
+                    "name": region.get("LocalName"),
+                    "api_reference": region.get("RegionId"),
+                    "display_name": f"{location['city']} ({location['country_id']})",
+                    "aliases": location.get("alias", []),
+                    "country_id": location.get("country_id"),
+                    "state": None,  # not available
+                    "city": location.get("city"),
+                    "address_line": None,  # not available
+                    "zip_code": None,  # not available
+                    "lon": location.get("lon"),
+                    "lat": location.get("lat"),
+                    "founding_year": location.get("founding_year"),
+                    # "Clean electricity accounted for 56.0% of the total electricity consumption at Alibaba Cloud's self-built data centers"
+                    # https://www.alibabagroup.com/en-US/esg?spm=a3c0i.28208492.4078276800.1.3ee123b78lagGT
+                    "green_energy": None,
+                }
+            )
     return items
 
 
@@ -760,10 +762,21 @@ def inventory_zones(vendor):
     @cachier(hash_func=jsoned_hash, separate_files=True)
     def fetch_zones_for_region(region_id):
         """Worker function to fetch zones for a single region."""
-        request = DescribeZonesRequest(region_id=region_id, accept_language="en-US")
-        try:
+        zone_items = []
+
+        def on_error():
+            region_to_set_inactive = get_region_by_id(region_id, vendor)
+            if region_to_set_inactive:
+                region_to_set_inactive.status = Status.INACTIVE
+                vendor.log(
+                    f"Marking region {region_id} as inactive due to error "
+                    "while fetching availability zones.",
+                    WARN,
+                )
+
+        with sentry_capture_or_raise(vendor=vendor, on_error=on_error):
+            request = DescribeZonesRequest(region_id=region_id, accept_language="en-US")
             response = clients[region_id].describe_zones(request)
-            zone_items = []
             for zone in response.body.to_map()["Zones"]["Zone"]:
                 zone_items.append(
                     {
@@ -775,12 +788,8 @@ def inventory_zones(vendor):
                         "display_name": zone.get("LocalName"),
                     }
                 )
-            return zone_items
-        except Exception as e:
-            logger.error(f"Failed to get zones for region {region_id}: {e}")
-            return []
-        finally:
-            vendor.progress_tracker.advance_task()
+        vendor.progress_tracker.advance_task()
+        return zone_items
 
     with ThreadPoolExecutor(max_workers=8) as executor:
         items = executor.map(
