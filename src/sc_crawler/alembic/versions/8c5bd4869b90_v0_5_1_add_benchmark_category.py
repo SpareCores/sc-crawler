@@ -145,6 +145,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    benchmark_score_table_name = scdize_suffix("benchmark")
-    with op.batch_alter_table(benchmark_score_table_name, schema=None) as batch_op:
+    benchmark_table_name = scdize_suffix("benchmark")
+    with op.batch_alter_table(benchmark_table_name, schema=None) as batch_op:
         batch_op.drop_column("category")
