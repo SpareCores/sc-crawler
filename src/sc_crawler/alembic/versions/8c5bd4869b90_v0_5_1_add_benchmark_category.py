@@ -12,7 +12,6 @@ import sqlalchemy as sa
 import sqlmodel
 from alembic import op
 
-
 # revision identifiers, used by Alembic.
 revision: str = "8c5bd4869b90"
 down_revision: Union[str, None] = "c1287bd79bb4"
@@ -28,18 +27,6 @@ def scdize_suffix(table_name: str) -> str:
     if is_scd_migration():
         return table_name + "_scd"
     return table_name
-
-
-def _insert_column_after(table: sa.Table, new_col: sa.Column, after: str):
-    """Insert a column into a Table's column collection after the named column."""
-    cols = list(table.c)
-    idx = next(i for i, c in enumerate(cols) if c.name == after) + 1
-    tail = cols[idx:]
-    for c in tail:
-        table._columns.remove(c)
-    table.append_column(new_col)
-    for c in tail:
-        table.append_column(c)
 
 
 def get_benchmark_table(is_scd: bool) -> sa.Table:
