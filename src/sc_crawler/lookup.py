@@ -1,5 +1,6 @@
 from re import sub
 from typing import List
+from unicodedata import category
 
 from .tables import Benchmark, ComplianceFramework, Country
 
@@ -110,6 +111,7 @@ def _geekbenchmark(name: str, description: str):
     return Benchmark(
         benchmark_id="geekbench:" + measurement,
         name="Geekbench: " + name,
+        category="Geekbench",
         description=(
             description
             + "The score is calibrated against a baseline score of 2,500 (Dell Precision 3460 with a Core i7-12700 processor) as per the Geekbench 6 Benchmark Internals."
@@ -127,6 +129,7 @@ def _passmark(name: str, description: str, unit: str, higher_is_better: bool = T
         framework="passmark",
         measurement=measurement,
         name="PassMark: " + name,
+        category="Passmark",
         description=description,
         unit=unit,
         higher_is_better=higher_is_better,
@@ -137,6 +140,7 @@ benchmarks: List[Benchmark] = [
     Benchmark(
         benchmark_id="bogomips",
         name="BogoMips",
+        category="Other",
         description='A crude measurement of CPU speed by the Linux kernel. This is NOT usable for performance comparisons among different CPUs, but might be useful to check if a processor is in the range of similar processors. As often quoted, BogoMips measures "the number of million times per second a processor can do absolutely nothing".',
         framework="bogomips",
         unit="Millions of instructions per second (MIPS)",
@@ -144,6 +148,7 @@ benchmarks: List[Benchmark] = [
     Benchmark(
         benchmark_id="bw_mem",
         name="Memory bandwidth (bw_mem)",
+        category="Memory bandwidth",
         description="bw_mem allocates twice the specified amount of memory, zeros it, and then times the copying of the first half to the second half. Results are reported in megabytes moved per second (MB/sec). bw_mem is provided by lmbench. For more details, see the man pages.",
         framework="bw_mem",
         config_fields={
@@ -155,6 +160,7 @@ benchmarks: List[Benchmark] = [
     Benchmark(
         benchmark_id="compression_text:ratio",
         name="Compression ratio",
+        category="Compression algos",
         description="Measures the compression ratio while compressing the dickens.txt of the Silesia corpus (10 MB uncompressed) using various algorithms, compressions levels and other extra arguments.",
         framework="compression_text",
         config_fields={
@@ -169,6 +175,7 @@ benchmarks: List[Benchmark] = [
     Benchmark(
         benchmark_id="compression_text:compress",
         name="Compression bandwidth",
+        category="Compression algos",
         description="Measures the compression bandwidth (bytes/second) on the dickens.txt of the Silesia corpus (10 MB uncompressed) using various algorithms, compressions levels and other extra arguments.",
         framework="compression_text",
         config_fields={
@@ -183,6 +190,7 @@ benchmarks: List[Benchmark] = [
     Benchmark(
         benchmark_id="compression_text:decompress",
         name="Decompression bandwidth",
+        category="Compression algos",
         description="Measures the decompression bandwidth (bytes/second) on the compressed dickens.txt of the Silesia corpus (10 MB uncompressed) using various algorithms, compressions levels and other extra arguments.",
         framework="compression_text",
         config_fields={
@@ -265,6 +273,7 @@ benchmarks: List[Benchmark] = [
     Benchmark(
         benchmark_id="openssl",
         name="OpenSSL speed",
+        category="OpenSSL",
         description="Measures the performance of OpenSSL's selected hash functions and block ciphers with different block sizes of data.",
         framework="openssl",
         config_fields={
@@ -276,6 +285,7 @@ benchmarks: List[Benchmark] = [
     Benchmark(
         benchmark_id="stress_ng:cpu_all",
         name="stress-ng CPU all",
+        category="stress-ng",
         description="Stress the CPU with all available methods supported by stress-ng, and count the total bogo operations per second (in real time) based on wall clock run time. The stress methods include bit operations, recursive calculations, integer divisions, floating point operations, matrix multiplication, stats, trigonometric, and hash functions. Note that this is to be deprecated in favor of stress_ng:div16.",
         framework="stress_ng",
         measurement="cpu_all",
@@ -285,6 +295,7 @@ benchmarks: List[Benchmark] = [
     Benchmark(
         benchmark_id="stress_ng:div16",
         name="stress-ng div16",
+        category="stress-ng",
         description="Stress the CPU with the div16 method of stress-ng using a varying number of vCPU cores, and count the measured maximum total bogo operations per second (in real time) based on wall clock run time.",
         framework="stress_ng",
         measurement="div16",
@@ -294,6 +305,7 @@ benchmarks: List[Benchmark] = [
     Benchmark(
         benchmark_id="stress_ng:best1",
         name="stress-ng div16 single-core",
+        category="stress-ng",
         description="Stress a single vCPU core with the div16 method of stress-ng, and count the total bogo operations per second (in real time) based on wall clock run time.",
         framework="stress_ng",
         measurement="best1",
@@ -302,6 +314,7 @@ benchmarks: List[Benchmark] = [
     Benchmark(
         benchmark_id="stress_ng:bestn",
         name="stress-ng div16 multi-core",
+        category="stress-ng",
         description="Stress the CPU with the div16 method of stress-ng using a varying number of vCPU cores, and count the measured maximum total bogo operations per second (in real time) based on wall clock run time.",
         framework="stress_ng",
         measurement="bestn",
@@ -310,6 +323,7 @@ benchmarks: List[Benchmark] = [
     Benchmark(
         benchmark_id="static_web:rps",
         name="Static web server+client speed",
+        category="Static web server",
         description="Serving smaller (1-65 kB) and larger (256-512 kB) files using a static HTTP server (binserve), and benchmarking each workload (wrk) using variable number of threads (and keeping the threads with the maximum performance) and connections (recorded after divided by the number of vCPUs to make it comparable with other servers with different vCPU count) on the same server. The measured RPS is not the maximum expected server speed, as the server shared CPU with the client.",
         framework="static_web",
         measurement="rps",
@@ -322,6 +336,7 @@ benchmarks: List[Benchmark] = [
     Benchmark(
         benchmark_id="static_web:rps-extrapolated",
         name="Static web server (extrapolated) speed",
+        category="Static web server",
         description="Serving smaller (1-65 kB) and larger (256-512 kB) files using a static HTTP server (binserve), and benchmarking each workload (wrk) using variable number of threads (and keeping the threads with the maximum performance) and connections (recorded after divided by the number of vCPUs to make it comparable with other servers with different vCPU count) on the same server. The extrapolated RPS is based on the measured RPS adjusted by the server's and client's time spent executing in user/system mode, so trying to control for the client resource usage.",
         framework="static_web",
         measurement="rps-extrapolated",
@@ -334,6 +349,7 @@ benchmarks: List[Benchmark] = [
     Benchmark(
         benchmark_id="static_web:throughput",
         name="Static web server+client throughput",
+        category="Static web server",
         description="Serving smaller (1-65 kB) and larger (256-512 kB) files using a static HTTP server (binserve), and benchmarking each workload (wrk) using variable number of threads (and keeping the threads with the maximum performance) and connections (recorded after divided by the number of vCPUs to make it comparable with other servers with different vCPU count) on the same server. Throughput is calculated by multiplying the RPS with the served file size. The measured RPS is not the maximum expected server speed, as the server shared CPU with the client.",
         framework="static_web",
         measurement="throughput",
@@ -346,6 +362,7 @@ benchmarks: List[Benchmark] = [
     Benchmark(
         benchmark_id="static_web:throughput-extrapolated",
         name="Static web server (extrapolated) throughput",
+        category="Static web server",
         description="Serving smaller (1-65 kB) and larger (256-512 kB) files using a static HTTP server (binserve), and benchmarking each workload (wrk) using variable number of threads (and keeping the threads with the maximum performance) and connections (recorded after divided by the number of vCPUs to make it comparable with other servers with different vCPU count) on the same server. Extrapolated throughput is calculated by multiplying the exrapolated RPS with the served file size. The extrapolated RPS is based on the measured RPS adjusted by the server's and client's time spent executing in user/system mode, so trying to control for the client resource usage.",
         framework="static_web",
         measurement="throughput-extrapolated",
@@ -358,6 +375,7 @@ benchmarks: List[Benchmark] = [
     Benchmark(
         benchmark_id="static_web:latency",
         name="Static web server latency",
+        category="Static web server",
         description="Serving smaller (1-65 kB) and larger (256-512 kB) files using a static HTTP server (binserve), and benchmarking each workload (wrk) using variable number of threads (and keeping the threads with the maximum performance) and connections (recorded after divided by the number of vCPUs to make it comparable with other servers with different vCPU count) on the same server. The average latency reported by wrk.",
         framework="static_web",
         measurement="latency",
@@ -371,6 +389,7 @@ benchmarks: List[Benchmark] = [
     Benchmark(
         benchmark_id="redis:rps",
         name="Redis server+client speed",
+        category="Redis",
         description="Running a pair of redis server and benchmarking client (memtier_benchmark) on each vCPU to evaluate the performance of SET operations, using different number of concurrent pipelined requests. The measured RPS (ops/sec) is the sum of RPS measured in all parallel processes, but is not the maximum expected redis server speed, as the server(s) shared CPU with the client(s).",
         framework="redis",
         measurement="rps",
@@ -383,6 +402,7 @@ benchmarks: List[Benchmark] = [
     Benchmark(
         benchmark_id="redis:rps-extrapolated",
         name="Redis server (extrapolated) speed",
+        category="Redis",
         description="Running a pair of redis server and benchmarking client (memtier_benchmark) on each vCPU to evaluate the performance of SET operations, using different number of concurrent pipelined requests. The extrapolated server speed is based on the measured speed adjusted by the server's and client's time spent executing in user/system mode, so trying to control for the client resource usage.",
         framework="redis",
         measurement="rps-extrapolated",
@@ -395,6 +415,7 @@ benchmarks: List[Benchmark] = [
     Benchmark(
         benchmark_id="redis:latency",
         name="Redis latency",
+        category="Redis",
         description="Running a pair of redis server and benchmarking client (memtier_benchmark) on each vCPU to evaluate the performance of SET operations, using different number of concurrent pipelined requests. The average latency reported by memtier_benchmark.",
         framework="redis",
         measurement="latency",
@@ -493,6 +514,7 @@ benchmarks: List[Benchmark] = [
     Benchmark(
         benchmark_id="membench:bandwidth_read",
         name="Memory read bandwidth (sc-membench)",
+        category="Memory bandwidth",
         description="Measures aggregate sequential read bandwidth across all threads using OpenMP parallelization.",
         framework="membench",
         measurement="memory_bandwidth",
@@ -502,6 +524,7 @@ benchmarks: List[Benchmark] = [
     Benchmark(
         benchmark_id="membench:bandwidth_write",
         name="Memory write bandwidth (sc-membench)",
+        category="Memory bandwidth",
         description="Measures aggregate sequential write bandwidth across all threads using OpenMP parallelization.",
         framework="membench",
         measurement="memory_bandwidth",
@@ -511,6 +534,7 @@ benchmarks: List[Benchmark] = [
     Benchmark(
         benchmark_id="membench:bandwidth_copy",
         name="Memory copy bandwidth (sc-membench)",
+        category="Memory bandwidth",
         description="Measures aggregate memory copy bandwidth across all threads using OpenMP parallelization.",
         framework="membench",
         measurement="memory_bandwidth",
@@ -520,6 +544,7 @@ benchmarks: List[Benchmark] = [
     Benchmark(
         benchmark_id="membench:latency",
         name="Memory latency (sc-membench)",
+        category="Memory latency",
         description="Measures median memory latency using pointer chasing with randomized access to defeat hardware prefetching.",
         framework="membench",
         measurement="memory_latency",
@@ -530,6 +555,7 @@ benchmarks: List[Benchmark] = [
     Benchmark(
         benchmark_id="llm_speed:text_generation",
         name="LLM inference speed for text generation",
+        category="LLM inference speed",
         description="Running llama-bench from llama.cpp using various quantized model files to measure the speed of generating 16 to 4k tokens.",
         framework="llm_speed",
         measurement="text_generation",
@@ -542,6 +568,7 @@ benchmarks: List[Benchmark] = [
     Benchmark(
         benchmark_id="llm_speed:prompt_processing",
         name="LLM inference speed for prompt processing",
+        category="LLM inference speed",
         description="Running llama-bench from llama.cpp using various quantized model files to measure the speed of processing 16 to 16k tokens.",
         framework="llm_speed",
         measurement="prompt_processing",
@@ -555,6 +582,7 @@ benchmarks: List[Benchmark] = [
     Benchmark(
         benchmark_id="workload_profile:web",
         name="Workload profile: Web server",
+        category="Workload profile",
         description=(
             "Precomputed compound score for web server workloads. "
             "A weighted average of normalised scores, each normalised to [0, 1] across all servers in the dataset. "
@@ -576,6 +604,7 @@ benchmarks: List[Benchmark] = [
     Benchmark(
         benchmark_id="workload_profile:compute",
         name="Workload profile: Compute heavy",
+        category="Workload profile",
         description=(
             "Precomputed compound score for compute-heavy (HPC/number-crunching) workloads. "
             "A weighted average of normalised scores, each normalised to [0, 1] across all servers in the dataset. "
@@ -591,6 +620,7 @@ benchmarks: List[Benchmark] = [
     Benchmark(
         benchmark_id="workload_profile:cache",
         name="Workload profile: Cache intensive",
+        category="Workload profile",
         description=(
             "Precomputed compound score for cache/in-memory workloads (e.g. Redis/Valkey). "
             "A weighted average of normalised scores, each normalised to [0, 1] across all servers in the dataset. "
@@ -611,6 +641,7 @@ benchmarks: List[Benchmark] = [
     Benchmark(
         benchmark_id="workload_profile:ml",
         name="Workload profile: ML inference",
+        category="Workload profile",
         description=(
             "Precomputed compound score for CPU-based machine-learning inference workloads. "
             "A weighted average of normalised scores, each normalised to [0, 1] across all servers in the dataset. "
@@ -632,6 +663,7 @@ benchmarks: List[Benchmark] = [
     Benchmark(
         benchmark_id="workload_profile:cicd",
         name="Workload profile: CI/CD build",
+        category="Workload profile",
         description=(
             "Precomputed compound score for CI/CD build workloads. "
             "A weighted average of normalised scores, each normalised to [0, 1] across all servers in the dataset. "
