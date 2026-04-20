@@ -1,6 +1,5 @@
 from re import sub
 from typing import List
-from unicodedata import category
 
 from .tables import Benchmark, ComplianceFramework, Country
 
