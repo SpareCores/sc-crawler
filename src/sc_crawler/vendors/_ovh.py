@@ -16,11 +16,12 @@ from ..table_fields import (
     StorageType,
     TrafficDirection,
 )
-from ..utils import scmodels_to_dict
-
-HOURS_PER_MONTH = 730
-MICROCENTS_PER_CURRENCY_UNIT = 100_000_000
-MIB_PER_GIB = 1024
+from ..utils import (
+    _HOURS_PER_MONTH,
+    _MIB_PER_GIB,
+    _MICROCENTS_PER_CURRENCY_UNIT,
+    scmodels_to_dict,
+)
 
 
 @cache
@@ -206,7 +207,7 @@ def _get_gpu_info(
         try:
             size = int(name_lower.split("-")[1])
             gpu_count = size // 380
-            return gpu_count, gpu_count * 80 * MIB_PER_GIB, "NVIDIA", "Hopper", "H100"
+            return gpu_count, gpu_count * 80 * _MIB_PER_GIB, "NVIDIA", "Hopper", "H100"
         except (IndexError, ValueError):
             return 0, None, None, None, None
 
@@ -218,7 +219,7 @@ def _get_gpu_info(
         try:
             size = int(name_lower.split("-")[1])
             gpu_count = size // 180
-            return gpu_count, gpu_count * 80 * MIB_PER_GIB, "NVIDIA", "Ampere", "A100"
+            return gpu_count, gpu_count * 80 * _MIB_PER_GIB, "NVIDIA", "Ampere", "A100"
         except (IndexError, ValueError):
             return 0, None, None, None, None
 
@@ -231,7 +232,7 @@ def _get_gpu_info(
         try:
             size = int(name_lower.split("-")[1])
             gpu_count = size // 45
-            return gpu_count, gpu_count * 24 * MIB_PER_GIB, "NVIDIA", "Ampere", "A10"
+            return gpu_count, gpu_count * 24 * _MIB_PER_GIB, "NVIDIA", "Ampere", "A10"
         except (IndexError, ValueError):
             return 0, None, None, None, None
 
@@ -246,7 +247,7 @@ def _get_gpu_info(
             gpu_count = size // 90
             return (
                 gpu_count,
-                gpu_count * 48 * MIB_PER_GIB,
+                gpu_count * 48 * _MIB_PER_GIB,
                 "NVIDIA",
                 "Ada Lovelace",
                 "L40S",
@@ -265,7 +266,7 @@ def _get_gpu_info(
             gpu_count = size // 90
             return (
                 gpu_count,
-                gpu_count * 24 * MIB_PER_GIB,
+                gpu_count * 24 * _MIB_PER_GIB,
                 "NVIDIA",
                 "Ada Lovelace",
                 "L4",
@@ -288,7 +289,7 @@ def _get_gpu_info(
             parts = name_lower.split("-")
             size = int(parts[-1])
             gpu_count = size // 45
-            return gpu_count, gpu_count * 32 * MIB_PER_GIB, "NVIDIA", "Volta", "V100S"
+            return gpu_count, gpu_count * 32 * _MIB_PER_GIB, "NVIDIA", "Volta", "V100S"
         except (IndexError, ValueError):
             return 0, None, None, None, None
 
@@ -307,7 +308,7 @@ def _get_gpu_info(
             parts = name_lower.split("-")
             size = int(parts[-1])
             gpu_count = size // 45
-            return gpu_count, gpu_count * 16 * MIB_PER_GIB, "NVIDIA", "Volta", "V100"
+            return gpu_count, gpu_count * 16 * _MIB_PER_GIB, "NVIDIA", "Volta", "V100"
         except (IndexError, ValueError):
             return 0, None, None, None, None
 
@@ -322,7 +323,7 @@ def _get_gpu_info(
             gpu_count = size // 28
             return (
                 gpu_count,
-                gpu_count * 16 * MIB_PER_GIB,
+                gpu_count * 16 * _MIB_PER_GIB,
                 "NVIDIA",
                 "Turing",
                 "Quadro RTX 5000",
@@ -618,7 +619,7 @@ def inventory_servers(vendor) -> list[dict]:
 
         memory = technical.get("memory", {})
         memory_size_gb = memory.get("size", None)
-        memory_size = memory_size_gb * MIB_PER_GIB if memory_size_gb else None
+        memory_size = memory_size_gb * _MIB_PER_GIB if memory_size_gb else None
 
         _gpu_count, _gpu_memory_total, gpu_manufacturer, gpu_family, _gpu_model = (
             _get_gpu_info(server_id)
@@ -626,7 +627,7 @@ def inventory_servers(vendor) -> list[dict]:
         gpu = technical.get("gpu", {})
         gpu_count = _gpu_count or gpu.get("number", 0)
         gpu_memory_per_gpu = (
-            gpu.get("memory").get("size", 0) * MIB_PER_GIB
+            gpu.get("memory").get("size", 0) * _MIB_PER_GIB
             if gpu.get("memory")
             else None
         )
@@ -681,7 +682,7 @@ def inventory_servers(vendor) -> list[dict]:
             f"{nvme_size} GB NVMe" if nvme_size else None,
             f"{ssd_size} GB SSD" if ssd_size else None,
             (
-                f"{gpu_count}x{gpu_model} {int(gpu_memory_per_gpu / MIB_PER_GIB)} GiB VRAM"
+                f"{gpu_count}x{gpu_model} {int(gpu_memory_per_gpu / _MIB_PER_GIB)} GiB VRAM"
                 if gpu_count and gpu_model
                 else None
             ),
@@ -776,7 +777,7 @@ def inventory_server_prices(vendor) -> list[dict]:
                     # we already filtered for hourly plan
                     "unit": PriceUnit.HOUR,
                     "price": (
-                        addon["pricings"][0]["price"] / MICROCENTS_PER_CURRENCY_UNIT
+                        addon["pricings"][0]["price"] / _MICROCENTS_PER_CURRENCY_UNIT
                     ),
                     "price_upfront": 0,
                     "price_tiered": [],
@@ -800,7 +801,11 @@ def inventory_storages(vendor) -> list[dict]:
     Data sources:
 
     - <https://www.ovhcloud.com/en-ie/public-cloud/block-storage/>
+    - <https://www.ovhcloud.com/en-ie/public-cloud/prices/>
     - API endpoint: `/order/catalog/public/cloud` with `publiccloud-volume-classic` product name
+
+    Sizes are in GB (decimal) and throughput values are in MB/s as per the documentation.
+    Maximum volume size is 12 TB (12,000 GB) as stated on the product page.
     """
     items = [
         {
@@ -813,7 +818,7 @@ def inventory_storages(vendor) -> list[dict]:
             "max_iops": 500,
             "max_throughput": 64,
             "min_size": 10,
-            "max_size": 12_288,
+            "max_size": 12_000,
         },
         {
             "storage_id": "high-speed",
@@ -825,7 +830,7 @@ def inventory_storages(vendor) -> list[dict]:
             "max_iops": 3_000,
             "max_throughput": 128,
             "min_size": 10,
-            "max_size": 12_288,
+            "max_size": 12_000,
         },
         {
             "storage_id": "high-speed-gen2",
@@ -837,7 +842,7 @@ def inventory_storages(vendor) -> list[dict]:
             "max_iops": 20_000,
             "max_throughput": 320,
             "min_size": 10,
-            "max_size": 12_288,
+            "max_size": 12_000,
         },
     ]
     return items
@@ -860,14 +865,14 @@ def inventory_storage_prices(vendor) -> list[dict]:
             if len(region.zones) > 1:
                 addon_name += ".3AZ"
             addon = addons[addon_name]
-            price = addon["pricings"][0]["price"] / MICROCENTS_PER_CURRENCY_UNIT
+            price = addon["pricings"][0]["price"] / _MICROCENTS_PER_CURRENCY_UNIT
             items.append(
                 {
                     "vendor_id": vendor.vendor_id,
                     "region_id": region.region_id,
                     "storage_id": storage.storage_id,
                     "unit": PriceUnit.GB_MONTH,
-                    "price": price * HOURS_PER_MONTH,
+                    "price": price * _HOURS_PER_MONTH,
                     "currency": catalog["locale"]["currencyCode"],
                 }
             )

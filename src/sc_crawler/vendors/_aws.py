@@ -32,7 +32,13 @@ from ..tables import (
     Region,
     Vendor,
 )
-from ..utils import float_inf_to_str, jsoned_hash, scmodels_to_dict
+from ..utils import (
+    _GIB_TO_GB,
+    _MIB_TO_MB,
+    float_inf_to_str,
+    jsoned_hash,
+    scmodels_to_dict,
+)
 from ..vendor_helpers import parallel_fetch_servers, preprocess_servers
 
 # disable caching by default
@@ -1161,9 +1167,9 @@ def inventory_storages(vendor):
                 "description": attributes["storageMedia"],
                 "storage_type": storage_type,
                 "max_iops": get_attr("maxIopsvolume"),
-                "max_throughput": get_attr("maxThroughputvolume"),
-                "min_size": get_attr("minVolumeSize") * 1024,
-                "max_size": get_attr("maxVolumeSize") * 1024,
+                "max_throughput": get_attr("maxThroughputvolume") * _MIB_TO_MB,
+                "min_size": get_attr("minVolumeSize") * 1024 * _GIB_TO_GB,
+                "max_size": get_attr("maxVolumeSize") * 1024 * _GIB_TO_GB,
             }
         )
 

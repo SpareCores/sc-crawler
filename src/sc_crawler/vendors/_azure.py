@@ -27,7 +27,15 @@ from ..table_fields import (
     TrafficDirection,
 )
 from ..tables import Vendor
-from ..utils import convert_gb_to_mib, list_search, scmodels_to_dict
+from ..utils import (
+    _GIB_TO_GB,
+    _HOURS_PER_MONTH,
+    _MIB_TO_MB,
+    _PRICE_PER_GIB_TO_PER_GB,
+    convert_gb_to_mib,
+    list_search,
+    scmodels_to_dict,
+)
 from ..vendor_helpers import preprocess_servers
 
 credential = DefaultAzureCredential()
@@ -275,18 +283,12 @@ The following meter categories are intentionally **not** included:
 - Standard HDD ZRS is not offered as per-disk pricing (only as per-GiB/month).
 """
 
-_HOURS_PER_MONTH = 730
-"""Approximate number of hours in a month used for hourly-to-monthly price conversions."""
-
-_GIB_TO_GB = (1000**3) / (1024**3)
-"""Conversion factor from GiB-denominated price to GB-denominated price."""
-
 STORAGE_PRICE_UNIT_MAPPING: dict[str, float | None] = {
     "1/Month": None,  # per whole disk — handled separately via STORAGE_METER_MAPPING
-    "1 GiB/Month": _GIB_TO_GB,
+    "1 GiB/Month": _PRICE_PER_GIB_TO_PER_GB,
     "1 GB/Month": 1.0,
-    "1 GiB/Hour": _HOURS_PER_MONTH * _GIB_TO_GB,
-    "1 GB/Hour": float(_HOURS_PER_MONTH),
+    "1 GiB/Hour": _HOURS_PER_MONTH * _PRICE_PER_GIB_TO_PER_GB,
+    "1 GB/Hour": _HOURS_PER_MONTH,
 }
 """Storage capacity units → multiplier to convert the raw API price to $/GB/month."""
 
@@ -1265,11 +1267,12 @@ def inventory_storages(vendor):
                 "description": description,
                 "storage_type": storage_type,
                 "max_iops": _search(["MaxIOpsReadWrite", "MaxIOps"]),
-                "max_throughput": _search(
-                    ["MaxBandwidthMBpsReadWrite", "MaxBandwidthMBps"]
+                "max_throughput": round(
+                    _search(["MaxBandwidthMBpsReadWrite", "MaxBandwidthMBps"])
+                    * _MIB_TO_MB
                 ),
-                "min_size": min_size,
-                "max_size": max_size,
+                "min_size": round(min_size * _GIB_TO_GB),
+                "max_size": round(max_size * _GIB_TO_GB),
             }
         )
     return items
@@ -1307,7 +1310,7 @@ def inventory_storage_prices(vendor):
         unit = p.get("unitOfMeasure")
         if unit == "1/Month":
             # mapping[1] is disk size in GiB, convert to $/GB/month.
-            price = p["retailPrice"] / mapping[1] * _GIB_TO_GB
+            price = p["retailPrice"] / mapping[1] * _PRICE_PER_GIB_TO_PER_GB
             prices[
                 (
                     vendor.vendor_id,
