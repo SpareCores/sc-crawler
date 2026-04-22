@@ -1269,8 +1269,8 @@ def inventory_storages(vendor):
                 "max_throughput": _search(
                     ["MaxBandwidthMBpsReadWrite", "MaxBandwidthMBps"]
                 ),
-                "min_size": round(min_size * _GIB_TO_GB),
-                "max_size": round(max_size * _GIB_TO_GB),
+                "min_size": round(int(min_size) * _GIB_TO_GB),
+                "max_size": round(int(max_size) * _GIB_TO_GB),
             }
         )
     return items
