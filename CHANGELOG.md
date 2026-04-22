@@ -1,4 +1,4 @@
-## v0.5.x (development version)
+## v0.5.1 (Apr 22, 2026)
 
 New feature(s):
 
@@ -16,6 +16,8 @@ Fix(es):
 - Fix `Azure` storage price unit conversions to correctly produce $/GB/month values for all supported unit types, and
   extend the storage meter mapping to cover all P1–P80, E1–E80, and S4–S80 disk sizes across LRS and ZRS redundancy
   tiers.
+- Update `min_size`, `max_size`, and `max_throughput` column descriptions in the `storage` table to reflect units in GB
+  and MB/s.
 
 ## v0.5.0 (Mar 23, 2026)
 

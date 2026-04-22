@@ -533,13 +533,13 @@ class StorageFields(HasDescription, HasName, HasStorageIdPK, HasVendorPKFK):
         default=None, description="Maximum Input/Output Operations Per Second."
     )
     max_throughput: Optional[int] = Field(
-        default=None, description="Maximum Throughput (MiB/s)."
+        default=None, description="Maximum Throughput (MB/s)."
     )
     min_size: Optional[int] = Field(
-        default=None, description="Minimum required size (GiB)."
+        default=None, description="Minimum required size (GB)."
     )
     max_size: Optional[int] = Field(
-        default=None, description="Maximum possible size (GiB)."
+        default=None, description="Maximum possible size (GB)."
     )
 
 
