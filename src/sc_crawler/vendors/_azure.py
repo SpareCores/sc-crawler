@@ -1245,6 +1245,17 @@ def inventory_storages(vendor):
             else "Zone-Redundant Storage"
         )
         description = f"{disk['tier']} tier {storage_type.name} ({redundancy_type})"
+        storage_sizes = [
+            storage[1]
+            for storage in STORAGE_METER_MAPPING.values()
+            if storage[0] == disk["name"]
+        ]
+        min_size = (
+            min(storage_sizes) if len(storage_sizes) > 1 else _search("MinSizeGiB")
+        )
+        max_size = (
+            max(storage_sizes) if len(storage_sizes) > 1 else _search("MaxSizeGiB")
+        )
 
         items.append(
             {
@@ -1257,9 +1268,8 @@ def inventory_storages(vendor):
                 "max_throughput": _search(
                     ["MaxBandwidthMBpsReadWrite", "MaxBandwidthMBps"]
                 ),
-                # NOTE this is 16TB for most drives?!
-                "min_size": _search("MinSizeGiB"),
-                "max_size": _search("MaxSizeGiB"),
+                "min_size": min_size,
+                "max_size": max_size,
             }
         )
     return items
