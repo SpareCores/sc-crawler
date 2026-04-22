@@ -5,9 +5,6 @@ from unittest.mock import Mock, patch
 import pytest
 
 from sc_crawler.vendors._ovh import (
-    HOURS_PER_MONTH,
-    MIB_PER_GIB,
-    MICROCENTS_PER_CURRENCY_UNIT,
     _client,
     _get_catalog,
     _get_gpu_info,
@@ -18,6 +15,8 @@ from sc_crawler.vendors._ovh import (
     inventory_compliance_frameworks,
     inventory_regions,
 )
+
+_MIB_PER_GIB = 1024
 
 
 @pytest.fixture(autouse=True)
@@ -86,13 +85,6 @@ def test_mock_ovh_client():
     assert len(_get_region("AP-SOUTH-MUM")["availabilityZones"]) == 1
 
 
-def test_constants_values():
-    """Test that constants have expected values."""
-    assert HOURS_PER_MONTH == 730
-    assert MICROCENTS_PER_CURRENCY_UNIT == 100_000_000
-    assert MIB_PER_GIB == 1024
-
-
 class TestGetServerFamily:
     """Tests for _get_server_family function."""
 
@@ -145,20 +137,20 @@ class TestGetGpuInfo:
         """Test H100 GPU instances."""
         count, memory, mfr, family, model = _get_gpu_info("h100-380")
         assert count == 1
-        assert memory == 80 * MIB_PER_GIB
+        assert memory == 80 * _MIB_PER_GIB
         assert mfr == "NVIDIA"
         assert family == "Hopper"
         assert model == "H100"
 
         count, memory, _, _, _ = _get_gpu_info("h100-760")
         assert count == 2
-        assert memory == 160 * MIB_PER_GIB
+        assert memory == 160 * _MIB_PER_GIB
 
     def test_a100_instances(self):
         """Test A100 GPU instances."""
         count, memory, mfr, family, model = _get_gpu_info("a100-180")
         assert count == 1
-        assert memory == 80 * MIB_PER_GIB
+        assert memory == 80 * _MIB_PER_GIB
         assert mfr == "NVIDIA"
         assert family == "Ampere"
         assert model == "A100"
@@ -167,20 +159,20 @@ class TestGetGpuInfo:
         """Test A10 GPU instances."""
         count, memory, mfr, family, model = _get_gpu_info("a10-45")
         assert count == 1
-        assert memory == 24 * MIB_PER_GIB
+        assert memory == 24 * _MIB_PER_GIB
         assert mfr == "NVIDIA"
         assert family == "Ampere"
         assert model == "A10"
 
         count, memory, _, _, _ = _get_gpu_info("a10-180")
         assert count == 4
-        assert memory == 96 * MIB_PER_GIB
+        assert memory == 96 * _MIB_PER_GIB
 
     def test_l40s_instances(self):
         """Test L40S GPU instances."""
         count, memory, mfr, family, model = _get_gpu_info("l40s-90")
         assert count == 1
-        assert memory == 48 * MIB_PER_GIB
+        assert memory == 48 * _MIB_PER_GIB
         assert mfr == "NVIDIA"
         assert family == "Ada Lovelace"
         assert model == "L40S"
@@ -189,7 +181,7 @@ class TestGetGpuInfo:
         """Test L4 GPU instances."""
         count, memory, mfr, family, model = _get_gpu_info("l4-90")
         assert count == 1
-        assert memory == 24 * MIB_PER_GIB
+        assert memory == 24 * _MIB_PER_GIB
         assert mfr == "NVIDIA"
         assert family == "Ada Lovelace"
         assert model == "L4"
@@ -198,7 +190,7 @@ class TestGetGpuInfo:
         """Test V100S GPU instances."""
         count, memory, mfr, family, model = _get_gpu_info("t2-45")
         assert count == 1
-        assert memory == 32 * MIB_PER_GIB
+        assert memory == 32 * _MIB_PER_GIB
         assert mfr == "NVIDIA"
         assert family == "Volta"
         assert model == "V100S"
@@ -206,13 +198,13 @@ class TestGetGpuInfo:
         # Test LE variant
         count, memory, _, _, _ = _get_gpu_info("t2-le-90")
         assert count == 2
-        assert memory == 64 * MIB_PER_GIB
+        assert memory == 64 * _MIB_PER_GIB
 
     def test_v100_instances(self):
         """Test V100 GPU instances."""
         count, memory, mfr, family, model = _get_gpu_info("t1-45")
         assert count == 1
-        assert memory == 16 * MIB_PER_GIB
+        assert memory == 16 * _MIB_PER_GIB
         assert mfr == "NVIDIA"
         assert family == "Volta"
         assert model == "V100"
@@ -220,20 +212,20 @@ class TestGetGpuInfo:
         # Test LE variant
         count, memory, _, _, _ = _get_gpu_info("t1-le-180")
         assert count == 4
-        assert memory == 64 * MIB_PER_GIB
+        assert memory == 64 * _MIB_PER_GIB
 
     def test_rtx5000_instances(self):
         """Test RTX 5000 GPU instances."""
         count, memory, mfr, family, model = _get_gpu_info("rtx5000-28")
         assert count == 1
-        assert memory == 16 * MIB_PER_GIB
+        assert memory == 16 * _MIB_PER_GIB
         assert mfr == "NVIDIA"
         assert family == "Turing"
         assert model == "Quadro RTX 5000"
 
         count, memory, _, _, _ = _get_gpu_info("rtx5000-84")
         assert count == 3
-        assert memory == 48 * MIB_PER_GIB
+        assert memory == 48 * _MIB_PER_GIB
 
     def test_non_gpu_instance(self):
         """Test non-GPU instance returns zeros and None."""
