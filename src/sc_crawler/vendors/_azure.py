@@ -30,7 +30,6 @@ from ..tables import Vendor
 from ..utils import (
     _GIB_TO_GB,
     _HOURS_PER_MONTH,
-    _MIB_TO_MB,
     _PRICE_PER_GIB_TO_PER_GB,
     convert_gb_to_mib,
     list_search,
