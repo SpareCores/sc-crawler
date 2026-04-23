@@ -8,11 +8,11 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6.0.2
       - name: Install DBML CLI and dbdocs
         run: sudo npm install -g @dbml/cli@6.2.1 dbdocs
       - name: Setup Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v6.2.0
         with:
           python-version: 3.11
       - name: Install local pkg
@@ -28,7 +28,7 @@ jobs:
           DBDOCS_TOKEN: ${{ secrets.DBDOCS_TOKEN }}
         run: dbdocs build ./schema.dbml --project sc-crawler
       - name: Archive SQL and DBML schemas
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: schemas
           path: schema.*
