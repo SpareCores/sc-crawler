@@ -305,7 +305,7 @@ def inventory_storages(vendor):
             "max_iops": None,
             "max_throughput": None,
             "min_size": 10,
-            "max_size": 10240,
+            "max_size": 10000,
         }
     ]
     return items

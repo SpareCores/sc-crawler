@@ -10,6 +10,21 @@ from sqlmodel import Session, create_engine, select
 
 from .table_bases import ScModel
 
+_HOURS_PER_MONTH = 730
+"""Approximate number of hours in a month used for hourly-to-monthly price conversions."""
+
+_GIB_TO_GB = (1024**3) / (1000**3)
+"""Conversion factor from a size in GiB to a size in GB."""
+
+_MIB_TO_MB = (1024**2) / (1000**2)
+"""Conversion factor from MiB to MB (also applies to MiB/s to MB/s)."""
+
+_MIB_PER_GIB = 1024
+"""Number of mebibytes (MiB) in one gibibyte (GiB)."""
+
+_MICROCENTS_PER_CURRENCY_UNIT = 100_000_000
+"""Number of microcents in one currency unit (e.g. 1 USD = 100,000,000 microcents)."""
+
 
 def jsoned_hash(*args, **kwargs):
     """Hash the JSON-dump of all positional and keyword arguments.

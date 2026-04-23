@@ -32,7 +32,13 @@ from ..tables import (
     Region,
     Vendor,
 )
-from ..utils import float_inf_to_str, jsoned_hash, scmodels_to_dict
+from ..utils import (
+    _GIB_TO_GB,
+    _MIB_TO_MB,
+    float_inf_to_str,
+    jsoned_hash,
+    scmodels_to_dict,
+)
 from ..vendor_helpers import parallel_fetch_servers, preprocess_servers
 
 # disable caching by default
@@ -1075,43 +1081,43 @@ storage_manual_data = {
     "standard": {
         "maxIopsvolume": 200,
         "maxThroughputvolume": 90,
-        "minVolumeSize": 1 / 1024,
+        "minVolumeSize": 1,
         "maxVolumeSize": 1,
     },
     "gp2": {
         "maxIopsvolume": 16_000,
         "maxThroughputvolume": 250,
-        "minVolumeSize": 1 / 1024,
+        "minVolumeSize": 1,
         "maxVolumeSize": 16,
     },
     "gp3": {
         "maxIopsvolume": 80_000,
         "maxThroughputvolume": 2_000,
-        "minVolumeSize": 1 / 1024,
+        "minVolumeSize": 1,
         "maxVolumeSize": 64,
     },
     "st1": {
         "maxIopsvolume": 500,
         "maxThroughputvolume": 500,
-        "minVolumeSize": 125 / 1024,
+        "minVolumeSize": 125,
         "maxVolumeSize": 16,
     },
     "sc1": {
         "maxIopsvolume": 250,
         "maxThroughputvolume": 250,
-        "minVolumeSize": 125 / 1024,
+        "minVolumeSize": 125,
         "maxVolumeSize": 16,
     },
     "io1": {
         "maxIopsvolume": 64_000,
         "maxThroughputvolume": 1_000,
-        "minVolumeSize": 4 / 1024,
+        "minVolumeSize": 4,
         "maxVolumeSize": 16,
     },
     "io2": {
         "maxIopsvolume": 256_000,
         "maxThroughputvolume": 4_000,
-        "minVolumeSize": 4 / 1024,
+        "minVolumeSize": 4,
         "maxVolumeSize": 64,
     },
 }
@@ -1161,9 +1167,9 @@ def inventory_storages(vendor):
                 "description": attributes["storageMedia"],
                 "storage_type": storage_type,
                 "max_iops": get_attr("maxIopsvolume"),
-                "max_throughput": get_attr("maxThroughputvolume"),
-                "min_size": get_attr("minVolumeSize") * 1024,
-                "max_size": get_attr("maxVolumeSize") * 1024,
+                "max_throughput": round(get_attr("maxThroughputvolume") * _MIB_TO_MB),
+                "min_size": round(get_attr("minVolumeSize") * _GIB_TO_GB),
+                "max_size": round(get_attr("maxVolumeSize") * 1024 * _GIB_TO_GB),
             }
         )
 
