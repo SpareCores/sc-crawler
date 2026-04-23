@@ -48,7 +48,7 @@ from ..table_fields import (
     TrafficDirection,
 )
 from ..tables import ServerPrice, Vendor
-from ..utils import jsoned_hash
+from ..utils import _GIB_TO_GB, _HOURS_PER_MONTH, jsoned_hash
 from ..vendor_helpers import get_region_by_id
 
 # ##############################################################################
@@ -1129,6 +1129,10 @@ def inventory_storages(vendor):
 
     - <https://www.alibabacloud.com/help/en/ecs/user-guide/essds>
     - <https://www.alibabacloud.com/help/en/ecs/developer-reference/api-ecs-2014-05-26-createdisk>
+    - <https://www.alibabacloud.com/help/en/ecs/user-guide/block-storage-performance>
+
+    Capacity ranges are specified in GiB in the Alibaba Cloud documentation and are
+    converted to GB here. Throughput values are in MB/s as per the documentation.
     """
     disk_info = [
         # NOTE there's only a single `cloud_essd` ID at Alibaba Cloud,
@@ -1139,7 +1143,7 @@ def inventory_storages(vendor):
             "min_size": 1,
             "max_size": 65536,
             "max_iops": 10000,
-            "max_tp": 1440,
+            "max_tp": 180,
             "info": "Enterprise SSD with performance level 0.",
         },
         {
@@ -1147,7 +1151,7 @@ def inventory_storages(vendor):
             "min_size": 20,
             "max_size": 65536,
             "max_iops": 50000,
-            "max_tp": 2800,
+            "max_tp": 350,
             "info": "Enterprise SSD with performance level 1.",
         },
         {
@@ -1155,7 +1159,7 @@ def inventory_storages(vendor):
             "min_size": 461,
             "max_size": 65536,
             "max_iops": 100000,
-            "max_tp": 6000,
+            "max_tp": 750,
             "info": "Enterprise SSD with performance level 2.",
         },
         {
@@ -1163,23 +1167,23 @@ def inventory_storages(vendor):
             "min_size": 1261,
             "max_size": 65536,
             "max_iops": 1000000,
-            "max_tp": 32000,
+            "max_tp": 4000,
             "info": "Enterprise SSD with performance level 3.",
         },
         {
             "name": "cloud_ssd",
             "min_size": 20,
             "max_size": 32768,
-            "max_iops": 20000,
-            "max_tp": 256,
+            "max_iops": 25000,
+            "max_tp": 300,
             "info": "Standard SSD.",
         },
         {
             "name": "cloud_efficiency",
             "min_size": 20,
             "max_size": 32768,
-            "max_iops": 3000,
-            "max_tp": 80,
+            "max_iops": 5000,
+            "max_tp": 140,
             "info": "Ultra Disk, older generation.",
         },
         {
@@ -1205,8 +1209,8 @@ def inventory_storages(vendor):
                 ),
                 "max_iops": disk.get("max_iops"),
                 "max_throughput": disk.get("max_tp"),
-                "min_size": disk.get("min_size"),
-                "max_size": disk.get("max_size"),
+                "min_size": round(disk["min_size"] * _GIB_TO_GB),
+                "max_size": round(disk["max_size"] * _GIB_TO_GB),
             }
         )
     return items
@@ -1242,7 +1246,7 @@ def inventory_storage_prices(vendor):
         storage_price = float(sku["CskuPriceList"][0]["Price"])
         price_type = sku["CskuPriceList"][0]["PriceType"]
         if price_type == "hourPrice":
-            storage_price = storage_price * 730  # convert to monthly price
+            storage_price = storage_price * _HOURS_PER_MONTH
         items.append(
             {
                 "vendor_id": vendor.vendor_id,
