@@ -13,9 +13,6 @@ from .table_bases import ScModel
 _HOURS_PER_MONTH = 730
 """Approximate number of hours in a month used for hourly-to-monthly price conversions."""
 
-_PRICE_PER_GIB_TO_PER_GB = (1000**3) / (1024**3)
-"""Conversion factor from a price per GiB to a price per GB."""
-
 _GIB_TO_GB = (1024**3) / (1000**3)
 """Conversion factor from a size in GiB to a size in GB."""
 

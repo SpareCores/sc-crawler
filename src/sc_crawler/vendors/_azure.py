@@ -30,7 +30,6 @@ from ..tables import Vendor
 from ..utils import (
     _GIB_TO_GB,
     _HOURS_PER_MONTH,
-    _PRICE_PER_GIB_TO_PER_GB,
     convert_gb_to_mib,
     list_search,
     scmodels_to_dict,
@@ -284,9 +283,9 @@ The following meter categories are intentionally **not** included:
 
 STORAGE_PRICE_UNIT_MAPPING: dict[str, float | None] = {
     "1/Month": None,  # per whole disk — handled separately via STORAGE_METER_MAPPING
-    "1 GiB/Month": _PRICE_PER_GIB_TO_PER_GB,
+    "1 GiB/Month": 1 / _GIB_TO_GB,
     "1 GB/Month": 1.0,
-    "1 GiB/Hour": _HOURS_PER_MONTH * _PRICE_PER_GIB_TO_PER_GB,
+    "1 GiB/Hour": _HOURS_PER_MONTH / _GIB_TO_GB,
     "1 GB/Hour": _HOURS_PER_MONTH,
 }
 """Storage capacity units → multiplier to convert the raw API price to $/GB/month."""
@@ -1308,7 +1307,7 @@ def inventory_storage_prices(vendor):
         unit = p.get("unitOfMeasure")
         if unit == "1/Month":
             # mapping[1] is disk size in GiB, convert to $/GB/month.
-            price = p["retailPrice"] / mapping[1] * _PRICE_PER_GIB_TO_PER_GB
+            price = p["retailPrice"] / mapping[1] / _GIB_TO_GB
             prices[
                 (
                     vendor.vendor_id,
