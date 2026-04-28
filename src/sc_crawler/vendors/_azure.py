@@ -125,8 +125,7 @@ def _prices(url_params: Optional[str] = None) -> List[dict]:
             ratelimit_reached += 1
             if ratelimit_reached > 5:
                 raise HttpResponseError(
-                    "Retail Prices API rate limit reached 5 times, giving up: "
-                    + response.content.decode("utf-8")
+                    "Retail Prices API rate limit reached 5 times, giving up."
                 )
             logger.info("Retail Prices API rate limit reached, sleep for 60 seconds.")
             sleep(60 + 5)

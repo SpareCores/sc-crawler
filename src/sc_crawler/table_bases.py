@@ -262,6 +262,10 @@ class HasName(ScModel):
     name: str = Field(description="Human-friendly name.")
 
 
+class HasCategory(ScModel):
+    category: Optional[str] = Field(description="Category of the resource.")
+
+
 class HasDescription(ScModel):
     description: Optional[str] = Field(description="Short description.")
 
@@ -529,13 +533,13 @@ class StorageFields(HasDescription, HasName, HasStorageIdPK, HasVendorPKFK):
         default=None, description="Maximum Input/Output Operations Per Second."
     )
     max_throughput: Optional[int] = Field(
-        default=None, description="Maximum Throughput (MiB/s)."
+        default=None, description="Maximum Throughput (MB/s)."
     )
     min_size: Optional[int] = Field(
-        default=None, description="Minimum required size (GiB)."
+        default=None, description="Minimum required size (GB)."
     )
     max_size: Optional[int] = Field(
-        default=None, description="Maximum possible size (GiB)."
+        default=None, description="Maximum possible size (GB)."
     )
 
 
@@ -804,7 +808,7 @@ class Ipv4PriceBase(HasPriceFields, HasRegionPK, HasVendorPKFK):
     pass
 
 
-class BenchmarkFields(HasDescription, HasName, HasBenchmarkIdPK):
+class BenchmarkFields(HasDescription, HasName, HasCategory, HasBenchmarkIdPK):
     framework: str = Field(
         description="The name of the benchmark framework/software/tool used.",
     )

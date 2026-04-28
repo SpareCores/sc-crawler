@@ -1,10 +1,11 @@
-## v0.5.x (development version)
+## v0.5.1 (Apr 22, 2026)
 
 New feature(s):
 
 - Add workload profile scores: precomputed composite `BenchmarkScore` rows that combine multiple raw benchmark results
   into a single normalised score per server for five predefined workload profiles (`web`, `compute`, `cache`, `ml`,
   `cicd`), each using a weighted mix of benchmark components.
+- Add `category` field to `Benchmark` table and fill it for existing benchmarks with appropriate categories.
 
 Fix(es):
 
@@ -15,7 +16,8 @@ Fix(es):
 - Fix `Azure` storage price unit conversions to correctly produce $/GB/month values for all supported unit types, and
   extend the storage meter mapping to cover all P1–P80, E1–E80, and S4–S80 disk sizes across LRS and ZRS redundancy
   tiers.
-- Review `min_size`, `max_size` and `max_throughput` calculations for the `Storage` table in vendor modules.
+- Update `min_size`, `max_size`, and `max_throughput` calculations in vendor modules and column descriptions in the 
+  `Storage` table to reflect units in GB and MB/s.
 
 ## v0.5.0 (Mar 23, 2026)
 
