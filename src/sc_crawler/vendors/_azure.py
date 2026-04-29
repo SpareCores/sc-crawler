@@ -100,7 +100,7 @@ def _compute_resources() -> List[dict]:
 @cachier()
 def _servers() -> List[dict]:
     servers = [
-        s for s in _compute_resources() if s["resource_type"] == "virtualMachines"
+        s for s in _compute_resources() if s["resourceType"] == "virtualMachines"
     ]
     # dedupe same servers in different regions
     servers = {s["name"]: s for s in servers}
@@ -448,13 +448,13 @@ def _parse_server_name(name):
 def _standardize_server(server: dict, vendor) -> dict:
     # example server dict:
     # {
-    #     'resource_type': 'virtualMachines',
+    #     'resourceType': 'virtualMachines',
     #     'name': 'Standard_L80as_v3',
     #     'tier': 'Standard',
     #     'size': 'L80as_v3',
     #     'family': 'standardLASv3Family',
     #     'locations': ['WestUS3'],
-    #     'location_info': [{'location': 'WestUS3', 'zones': ['1', '3', '2'], 'zone_details': [{'capabilities': [{'name': 'UltraSSDAvailable', 'value': 'True'}]}]}],
+    #     'locationInfo': [{'location': 'WestUS3', 'zones': ['1', '3', '2'], 'zoneDetails': [{'capabilities': [{'name': 'UltraSSDAvailable', 'value': 'True'}]}]}],
     #     'capabilities': [
     #         {'name': 'MaxResourceVolumeMB', 'value': '819200'},
     #         {'name': 'OSVhdSizeMB', 'value': '1047552'},
@@ -485,8 +485,8 @@ def _standardize_server(server: dict, vendor) -> dict:
     #         {'name': 'MaxNetworkInterfaces', 'value': '8'}
     #     ],
     #     'restrictions': [
-    #         {'type': 'Location', 'values': ['WestUS3'], 'restriction_info': {'locations': ['WestUS3']}, 'reason_code': 'NotAvailableForSubscription'},
-    #         {'type': 'Zone', 'values': ['WestUS3'], 'restriction_info': {'locations': ['WestUS3'], 'zones': ['1', '2', '3']}, 'reason_code': 'NotAvailableForSubscription'}
+    #         {'type': 'Location', 'values': ['WestUS3'], 'restrictionInfo': {'locations': ['WestUS3']}, 'reasonCode': 'NotAvailableForSubscription'},
+    #         {'type': 'Zone', 'values': ['WestUS3'], 'restrictionInfo': {'locations': ['WestUS3'], 'zones': ['1', '2', '3']}, 'reasonCode': 'NotAvailableForSubscription'}
     #     ]
     # }
     family, features, gpus, gpu_model, gpu_memory = _parse_server_name(server["name"])
@@ -1221,7 +1221,7 @@ def inventory_storages(vendor):
 
     disks = []
     for resource in _compute_resources():
-        if resource["resource_type"] == "disks":
+        if resource["resourceType"] == "disks":
             disks.append(resource)
 
     disks = list({d["name"]: d for d in disks}.values())
