@@ -668,6 +668,13 @@ locations = {
         "country_id": "GB",
         "founding_year": 2018,
     },
+    "eu-west-2": {
+        "city": "Paris",
+        "lat": 48.8566,
+        "lon": 2.3522,
+        "country_id": "FR",
+        "founding_year": 2026,
+    },
     "eu-central-1": {
         "alias": ["eu-central-de46-a01"],
         "city": "Frankfurt",
