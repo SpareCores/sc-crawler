@@ -689,6 +689,9 @@ def inventory_servers(vendor) -> list[dict]:
         ]
         description = f"{family} ({', '.join(filter(None, description_parts))})"
 
+        network_speed = technical.get("bandwidth", {}).get("level", None)
+        network_speed_gbps = network_speed / 1000 if network_speed else None
+
         items.append(
             {
                 "vendor_id": vendor.vendor_id,
@@ -725,7 +728,7 @@ def inventory_servers(vendor) -> list[dict]:
                 "storage_size": storage_size,
                 "storage_type": storage_type,
                 "storages": storages,
-                "network_speed": technical.get("bandwidth", {}).get("level", None),
+                "network_speed": network_speed_gbps,
                 # no bundled free traffic as all traffic is unmetered
                 # https://www.ovhcloud.com/en-ie/public-cloud/prices/
                 "inbound_traffic": 0,
