@@ -593,7 +593,7 @@ for workload_name, workload in WORKLOADS.items():
                 "Component weights: "
                 + ", ".join(
                     [
-                        f"{benchmark.weight * 100}% {benchmark.label}"
+                        f"{int(benchmark.weight * 100)}% {benchmark.label}"
                         for benchmark in workload.benchmarks
                     ]
                 )
