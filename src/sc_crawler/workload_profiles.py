@@ -287,7 +287,6 @@ WORKLOADS: dict[str, Workload] = {
             ),
         ],
     ),
-
     "llm": Workload(
         name="Multimodal LLM Inference",
         version="1.0",
