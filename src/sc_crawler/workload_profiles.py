@@ -136,6 +136,7 @@ WORKLOADS: dict[str, Workload] = {
             ),
             # memory performance
             BenchmarkEntry(
+                # TODO migrate to membench with scope:RAM
                 benchmark_id="bw_mem",
                 weight=0.10,
                 label="Memory bandwidth (read, 64 MB)",
@@ -206,6 +207,7 @@ WORKLOADS: dict[str, Workload] = {
                 label="PassMark cached memory reads",
             ),
             BenchmarkEntry(
+                # TODO migrate to membench with scope:RAM
                 benchmark_id="bw_mem",
                 weight=0.10,
                 label="Memory bandwidth (read, 16 MB ~ L3)",
@@ -255,6 +257,7 @@ WORKLOADS: dict[str, Workload] = {
                 label="PassMark Memory Mark (composite)",
             ),
             BenchmarkEntry(
+                # TODO migrate to membench with scope:RAM
                 benchmark_id="bw_mem",
                 weight=0.15,
                 label="Memory bandwidth (read, 256 MB)",
@@ -272,6 +275,7 @@ WORKLOADS: dict[str, Workload] = {
                 label="PassMark floating point",
             ),
             # specific ML workloads
+            # TODO split this into Comptuer Vision workload
             BenchmarkEntry(
                 benchmark_id="geekbench:object_detection",
                 weight=0.10,
