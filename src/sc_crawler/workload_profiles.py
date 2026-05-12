@@ -44,7 +44,7 @@ class Workload(BaseModel):
 
 WORKLOADS: dict[str, Workload] = {
     "web": Workload(
-        name="Web server",
+        name="Web Server",
         version="1.0",
         rationale="Primary workloads drivers are HTTP serving speed and throughput, HTML and text processing, TLS termination, and asset compression.",
         benchmarks=[
@@ -107,7 +107,7 @@ WORKLOADS: dict[str, Workload] = {
         ],
     ),
     "compute": Workload(
-        name="Compute heavy",
+        name="Compute Heavy Applications",
         version="1.0",
         rationale="Number-crunching workload augmenting raw CPU performance stressing, general CPU performance benchmarks, memory bandwidth, and pure math computation speed like floating point, integer, SIMD (AVX/SSE/FMA) operations.",
         benchmarks=[
@@ -166,7 +166,7 @@ WORKLOADS: dict[str, Workload] = {
         ],
     ),
     "cache": Workload(
-        name="Cache intensive",
+        name="Cache Intensive",
         version="1.0",
         rationale="In-memory key-value store workload, mixing direct Redis performance metrics with memory speed and latency benchmarks, and single-core CPU performance profiles.",
         benchmarks=[
@@ -293,7 +293,7 @@ WORKLOADS: dict[str, Workload] = {
         ],
     ),
     "cicd": Workload(
-        name="CI/CD build",
+        name="CI/CD Build",
         version="1.0",
         rationale="Build performance is driven by single- and multi-core compilation throughput, single-core CPU performance, multi-core compression and text/scripting processing.",
         benchmarks=[
