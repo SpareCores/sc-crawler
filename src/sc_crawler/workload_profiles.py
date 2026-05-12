@@ -227,9 +227,9 @@ WORKLOADS: dict[str, Workload] = {
         ],
     ),
     "llm": Workload(
-        name="LLM inference",
+        name="Multimodal LLM Inference",
         version="1.0",
-        rationale="VRAM and memory-bandwidth-bound LLM inference workload, using direct LLM speed benchmarks at two model sizes, and supplementing with raw memory bandwidth, SIMD, and Geekbench vision workloads that exercise ML-style pipelines.",
+        rationale="VRAM and memory-bandwidth-bound LLM inference workload, using direct LLM speed benchmarks at two model sizes, and supplementing with raw memory bandwidth, SIMD, and Geekbench computer vision workloads that exercise ML-style pipelines.",
         benchmarks=[
             # direct LLM speed benchmarks
             BenchmarkEntry(
