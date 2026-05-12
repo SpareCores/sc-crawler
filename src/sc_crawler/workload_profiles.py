@@ -226,6 +226,68 @@ WORKLOADS: dict[str, Workload] = {
             ),
         ],
     ),
+    "database": Workload(
+        name="Relational Database",
+        version="1.0",
+        rationale="Relational database workload (PostgreSQL, MySQL, transactional OLTP). Direct DB operation throughput is the primary driver, followed by memory latency for index lookups and buffer pool access, memory subsystem performance for working-set throughput, and single-thread CPU for query execution.",
+        benchmarks=[
+            BenchmarkEntry(
+                benchmark_id="passmark:database_operations",
+                weight=0.35,
+                label="PassMark in-memory DB operations",
+            ),
+            BenchmarkEntry(
+                benchmark_id="passmark:memory_latency",
+                weight=0.30,
+                label="PassMark memory latency (512 MB)",
+            ),
+            BenchmarkEntry(
+                benchmark_id="passmark:memory_mark",
+                weight=0.20,
+                label="PassMark Memory Mark (composite)",
+            ),
+            BenchmarkEntry(
+                benchmark_id="passmark:cpu_single_threaded_test",
+                weight=0.15,
+                label="PassMark single-thread CPU",
+            ),
+        ],
+    ),
+    "data_analysis": Workload(
+        name="Data Analysis",
+        version="1.0",
+        rationale="Data analysis and ETL workloads are memory-bandwidth-bound and CPU-throughput-driven. The profile combines general CPU performance and memory bandwidth/latency as the primary drivers, supplemented by single-core compression speed as a proxy for serialisation-heavy ETL tasks.",
+        benchmarks=[
+            BenchmarkEntry(
+                benchmark_id="passmark:cpu_mark",
+                weight=0.30,
+                label="PassMark CPU Mark (composite)",
+            ),
+            BenchmarkEntry(
+                # TODO migrate to membench with scope:RAM
+                benchmark_id="bw_mem",
+                weight=0.30,
+                label="Memory bandwidth (read, 64 MB)",
+                config_filter={"operation": "rd", "size": 64.0},
+            ),
+            BenchmarkEntry(
+                benchmark_id="passmark:memory_mark",
+                weight=0.25,
+                label="PassMark Memory Mark (composite)",
+            ),
+            BenchmarkEntry(
+                benchmark_id="compression_text:compress",
+                weight=0.15,
+                label="Gzip compression (single-thread, level 5)",
+                config_filter={
+                    "algo": "gzip",
+                    "compression_level": 5,
+                    "cores": "single",
+                },
+            ),
+        ],
+    ),
+
     "llm": Workload(
         name="Multimodal LLM Inference",
         version="1.0",
