@@ -44,7 +44,7 @@ class Workload(BaseModel):
 
 WORKLOADS: dict[str, Workload] = {
     "web": Workload(
-        name="Web server",
+        name="Web Server",
         version="1.0",
         rationale="Primary workloads drivers are HTTP serving speed and throughput, HTML and text processing, TLS termination, and asset compression.",
         benchmarks=[
@@ -107,7 +107,7 @@ WORKLOADS: dict[str, Workload] = {
         ],
     ),
     "compute": Workload(
-        name="Compute heavy",
+        name="Compute Heavy Applications",
         version="1.0",
         rationale="Number-crunching workload augmenting raw CPU performance stressing, general CPU performance benchmarks, memory bandwidth, and pure math computation speed like floating point, integer, SIMD (AVX/SSE/FMA) operations.",
         benchmarks=[
@@ -136,6 +136,7 @@ WORKLOADS: dict[str, Workload] = {
             ),
             # memory performance
             BenchmarkEntry(
+                # TODO migrate to membench with scope:RAM
                 benchmark_id="bw_mem",
                 weight=0.10,
                 label="Memory bandwidth (read, 64 MB)",
@@ -166,7 +167,7 @@ WORKLOADS: dict[str, Workload] = {
         ],
     ),
     "cache": Workload(
-        name="Cache intensive",
+        name="Cache Intensive",
         version="1.0",
         rationale="In-memory key-value store workload, mixing direct Redis performance metrics with memory speed and latency benchmarks, and single-core CPU performance profiles.",
         benchmarks=[
@@ -206,6 +207,7 @@ WORKLOADS: dict[str, Workload] = {
                 label="PassMark cached memory reads",
             ),
             BenchmarkEntry(
+                # TODO migrate to membench with scope:RAM
                 benchmark_id="bw_mem",
                 weight=0.10,
                 label="Memory bandwidth (read, 16 MB ~ L3)",
@@ -224,10 +226,71 @@ WORKLOADS: dict[str, Workload] = {
             ),
         ],
     ),
-    "llm": Workload(
-        name="LLM inference",
+    "database": Workload(
+        name="Relational Database",
         version="1.0",
-        rationale="VRAM and memory-bandwidth-bound LLM inference workload, using direct LLM speed benchmarks at two model sizes, and supplementing with raw memory bandwidth, SIMD, and Geekbench vision workloads that exercise ML-style pipelines.",
+        rationale="Relational database workload (PostgreSQL, MySQL, transactional OLTP). Direct DB operation throughput is the primary driver, followed by memory latency for index lookups and buffer pool access, memory subsystem performance for working-set throughput, and single-thread CPU for query execution.",
+        benchmarks=[
+            BenchmarkEntry(
+                benchmark_id="passmark:database_operations",
+                weight=0.35,
+                label="PassMark in-memory DB operations",
+            ),
+            BenchmarkEntry(
+                benchmark_id="passmark:memory_latency",
+                weight=0.30,
+                label="PassMark memory latency (512 MB)",
+            ),
+            BenchmarkEntry(
+                benchmark_id="passmark:memory_mark",
+                weight=0.20,
+                label="PassMark Memory Mark (composite)",
+            ),
+            BenchmarkEntry(
+                benchmark_id="passmark:cpu_single_threaded_test",
+                weight=0.15,
+                label="PassMark single-thread CPU",
+            ),
+        ],
+    ),
+    "data_analysis": Workload(
+        name="Data Analysis",
+        version="1.0",
+        rationale="Data analysis and ETL workloads are memory-bandwidth-bound and CPU-throughput-driven. The profile combines general CPU performance and memory bandwidth/latency as the primary drivers, supplemented by single-core compression speed as a proxy for serialisation-heavy ETL tasks.",
+        benchmarks=[
+            BenchmarkEntry(
+                benchmark_id="passmark:cpu_mark",
+                weight=0.30,
+                label="PassMark CPU Mark (composite)",
+            ),
+            BenchmarkEntry(
+                # TODO migrate to membench with scope:RAM
+                benchmark_id="bw_mem",
+                weight=0.30,
+                label="Memory bandwidth (read, 64 MB)",
+                config_filter={"operation": "rd", "size": 64.0},
+            ),
+            BenchmarkEntry(
+                benchmark_id="passmark:memory_mark",
+                weight=0.25,
+                label="PassMark Memory Mark (composite)",
+            ),
+            BenchmarkEntry(
+                benchmark_id="compression_text:compress",
+                weight=0.15,
+                label="Gzip compression (single-thread, level 5)",
+                config_filter={
+                    "algo": "gzip",
+                    "compression_level": 5,
+                    "cores": "single",
+                },
+            ),
+        ],
+    ),
+    "llm": Workload(
+        name="Multimodal LLM Inference",
+        version="1.0",
+        rationale="VRAM and memory-bandwidth-bound LLM inference workload, using direct LLM speed benchmarks at two model sizes, and supplementing with raw memory bandwidth, SIMD, and Geekbench computer vision workloads that exercise ML-style pipelines.",
         benchmarks=[
             # direct LLM speed benchmarks
             BenchmarkEntry(
@@ -255,6 +318,7 @@ WORKLOADS: dict[str, Workload] = {
                 label="PassMark Memory Mark (composite)",
             ),
             BenchmarkEntry(
+                # TODO migrate to membench with scope:RAM
                 benchmark_id="bw_mem",
                 weight=0.15,
                 label="Memory bandwidth (read, 256 MB)",
@@ -272,6 +336,7 @@ WORKLOADS: dict[str, Workload] = {
                 label="PassMark floating point",
             ),
             # specific ML workloads
+            # TODO split this into Comptuer Vision workload
             BenchmarkEntry(
                 benchmark_id="geekbench:object_detection",
                 weight=0.10,
@@ -293,7 +358,7 @@ WORKLOADS: dict[str, Workload] = {
         ],
     ),
     "cicd": Workload(
-        name="CI/CD build",
+        name="CI/CD Build",
         version="1.0",
         rationale="Build performance is driven by single- and multi-core compilation throughput, single-core CPU performance, multi-core compression and text/scripting processing.",
         benchmarks=[
