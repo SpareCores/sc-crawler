@@ -11,7 +11,6 @@ from json import dumps, loads
 from os import environ
 from pathlib import Path
 from re import sub
-from shlex import split as shlex_split
 from types import SimpleNamespace
 from typing import List, Optional
 
@@ -236,24 +235,19 @@ def autogenerate(
 
 @metadata_app.command(name="set")
 def metadata_set(
-    connection_string: options.connection_string = "sqlite:///sc-data-all.db",
     entries: Annotated[
         Optional[List[str]],
-        typer.Option(
-            "--entry",
-            help=(
-                "Metadata as key=value pair(s). Can be repeated, or pass multiple "
-                "space-separated pairs in one value (quote values that contain spaces), "
-                "e.g. --entry publisher='Spare Cores' --entry 'license=BSL change_license=CC-BY-4.0'."
-            ),
+        typer.Argument(
+            help="Metadata as key=value pairs, e.g. publisher='Spare Cores' license=BSL.",
         ),
     ] = None,
+    connection_string: options.connection_string = "sqlite:///sc-data-all.db",
 ):
     """Write metadata key/value pairs into the database.
 
     Always sets `sc_crawler_version` and `published_at`. When running in a GitHub
     Actions workflow, also sets `published_by` to the GitHub Actions run URL.
-    Additional key/value pairs can be passed via `--entry key=value`.
+    Additional key/value pairs can be passed as positional arguments.
     """
     engine = create_engine(connection_string)
     Metadata.metadata.create_all(engine, tables=[Metadata.__table__])
@@ -270,10 +264,9 @@ def metadata_set(
                 value="{}/{}/actions/runs/{}".format(*[environ[v] for v in gh_vars]),
             )
         )
-    for entry in entries or []:
-        for item in shlex_split(entry):
-            key, _, value = item.partition("=")
-            rows.append(Metadata(key=key.strip(), value=value.strip()))
+    for item in entries or []:
+        key, _, value = item.partition("=")
+        rows.append(Metadata(key=key.strip(), value=value.strip()))
     with Session(engine) as session:
         for row in rows:
             session.merge(row)
@@ -296,16 +289,17 @@ def metadata_get(
 
 @metadata_app.command(name="delete")
 def metadata_delete(
-    key: Annotated[str, typer.Argument(help="Metadata key to delete.")],
+    keys: Annotated[List[str], typer.Argument(help="Metadata key(s) to delete.")],
     connection_string: options.connection_string = "sqlite:///sc-data-all.db",
 ):
-    """Delete a single metadata entry by key."""
+    """Delete one or more metadata entries by key."""
     engine = create_engine(connection_string)
     with Session(engine) as session:
-        row = session.get(Metadata, key)
-        if row is None:
-            raise typer.BadParameter(f"Key {key!r} not found in metadata.")
-        session.delete(row)
+        for key in keys:
+            row = session.get(Metadata, key)
+            if row is None:
+                raise typer.BadParameter(f"Key {key!r} not found in metadata.")
+            session.delete(row)
         session.commit()
 
 
