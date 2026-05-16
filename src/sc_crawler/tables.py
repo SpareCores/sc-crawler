@@ -611,3 +611,14 @@ def is_table(table):
 
 tables: List[SQLModel] = [o for o in globals().values() if is_table(o)]
 """List of all SQLModel (table) models."""
+
+
+from sqlmodel import Field  # noqa: E402
+
+
+class Metadata(SQLModel, table=True):
+    """Key/value metadata table for database release information."""
+
+    __tablename__ = "_metadata"
+    key: str = Field(primary_key=True)
+    value: str

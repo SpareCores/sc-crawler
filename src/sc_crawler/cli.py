@@ -35,6 +35,7 @@ from sqlalchemy.sql import quoted_name
 from sqlmodel import Session, create_engine, select, update
 from typing_extensions import Annotated
 
+from . import __version__
 from . import vendors as vendors_module
 from .alembic_helpers import alembic_cfg, get_revision
 from .insert import insert_items
@@ -42,7 +43,7 @@ from .logger import ProgressPanel, ScRichHandler, VendorProgressTracker, logger
 from .lookup import benchmarks, compliance_frameworks, countries
 from .sentry import before_send
 from .table_fields import Status
-from .tables import Benchmark, ComplianceFramework, Country, Vendor, tables
+from .tables import Benchmark, ComplianceFramework, Country, Metadata, Vendor, tables
 from .tables_scd import tables_scd
 from .utils import HashLevels, get_row_by_pk, hash_database, table_name_to_model
 from .workload_profile_scores import recompute_workload_profiles
@@ -227,6 +228,47 @@ def autogenerate(
         command.revision(
             alembic_cfg(connection=connection), autogenerate=True, message=message
         )
+
+
+@alembic_app.command()
+def release(
+    connection_string: options.connection_string = "sqlite:///sc-data-all.db",
+    set_metadata: Annotated[
+        Optional[List[str]],
+        typer.Option(
+            "--set",
+            help="Additional metadata as key=value pairs, e.g. --set publisher='Spare Cores Kft'.",
+        ),
+    ] = None,
+):
+    """Inject a _metadata table to the database with optional key/value pairs.
+
+    By default, it will set the sc-crawler version and published_at date.
+    When running in a GitHub Actions workflow, it will also set the published_by to the GitHub Actions run URL.
+    Additional key/value pairs can be passed via --set key=value.
+    """
+    engine = create_engine(connection_string)
+    Metadata.metadata.create_all(engine, tables=[Metadata.__table__])
+    now = datetime.now(UTC)
+    rows = [
+        Metadata(key="sc_crawler_version", value=__version__),
+        Metadata(key="published_at", value=str(now)),
+    ]
+    gh_vars = ("GITHUB_SERVER_URL", "GITHUB_REPOSITORY", "GITHUB_RUN_ID")
+    if all(v in environ for v in gh_vars):
+        rows.append(
+            Metadata(
+                key="published_by",
+                value="{}/{}/actions/runs/{}".format(*[environ[v] for v in gh_vars]),
+            )
+        )
+    for item in set_metadata or []:
+        key, _, value = item.partition("=")
+        rows.append(Metadata(key=key.strip(), value=value.strip()))
+    with Session(engine) as session:
+        for row in rows:
+            session.merge(row)
+        session.commit()
 
 
 @cli.command(name="hash")
