@@ -11,6 +11,7 @@ from json import dumps, loads
 from os import environ
 from pathlib import Path
 from re import sub
+from shlex import split as shlex_split
 from types import SimpleNamespace
 from typing import List, Optional
 
@@ -81,6 +82,9 @@ alembic_app = typer.Typer()
 cli.add_typer(
     alembic_app, name="schemas", help="Database migration utilities using Alembic."
 )
+
+metadata_app = typer.Typer()
+cli.add_typer(metadata_app, name="metadata", help="Read and write database metadata.")
 
 options = SimpleNamespace(
     connection_string=Annotated[
@@ -230,22 +234,26 @@ def autogenerate(
         )
 
 
-@alembic_app.command()
-def release(
+@metadata_app.command(name="set")
+def metadata_set(
     connection_string: options.connection_string = "sqlite:///sc-data-all.db",
-    set_metadata: Annotated[
+    entries: Annotated[
         Optional[List[str]],
         typer.Option(
-            "--set",
-            help="Additional metadata as key=value pairs, e.g. --set publisher='Spare Cores Kft'.",
+            "--entry",
+            help=(
+                "Metadata as key=value pair(s). Can be repeated, or pass multiple "
+                "space-separated pairs in one value (quote values that contain spaces), "
+                "e.g. --entry publisher='Spare Cores' --entry 'license=BSL change_license=CC-BY-4.0'."
+            ),
         ),
     ] = None,
 ):
-    """Inject a _metadata table to the database with optional key/value pairs.
+    """Write metadata key/value pairs into the database.
 
-    By default, it will set the sc-crawler version and published_at date.
-    When running in a GitHub Actions workflow, it will also set the published_by to the GitHub Actions run URL.
-    Additional key/value pairs can be passed via --set key=value.
+    Always sets `sc_crawler_version` and `published_at`. When running in a GitHub
+    Actions workflow, also sets `published_by` to the GitHub Actions run URL.
+    Additional key/value pairs can be passed via `--entry key=value`.
     """
     engine = create_engine(connection_string)
     Metadata.metadata.create_all(engine, tables=[Metadata.__table__])
@@ -262,12 +270,42 @@ def release(
                 value="{}/{}/actions/runs/{}".format(*[environ[v] for v in gh_vars]),
             )
         )
-    for item in set_metadata or []:
-        key, _, value = item.partition("=")
-        rows.append(Metadata(key=key.strip(), value=value.strip()))
+    for entry in entries or []:
+        for item in shlex_split(entry):
+            key, _, value = item.partition("=")
+            rows.append(Metadata(key=key.strip(), value=value.strip()))
     with Session(engine) as session:
         for row in rows:
             session.merge(row)
+        session.commit()
+
+
+@metadata_app.command(name="get")
+def metadata_get(
+    connection_string: options.connection_string = "sqlite:///sc-data-all.db",
+):
+    """Print all metadata key/value pairs stored in the database."""
+    engine = create_engine(connection_string)
+    with Session(engine) as session:
+        rows = session.exec(select(Metadata)).all()
+    table = Table("Key", "Value")
+    for row in rows:
+        table.add_row(row.key, row.value)
+    Console().print(table)
+
+
+@metadata_app.command(name="delete")
+def metadata_delete(
+    key: Annotated[str, typer.Argument(help="Metadata key to delete.")],
+    connection_string: options.connection_string = "sqlite:///sc-data-all.db",
+):
+    """Delete a single metadata entry by key."""
+    engine = create_engine(connection_string)
+    with Session(engine) as session:
+        row = session.get(Metadata, key)
+        if row is None:
+            raise typer.BadParameter(f"Key {key!r} not found in metadata.")
+        session.delete(row)
         session.commit()
 
 
