@@ -29,7 +29,7 @@ from rich.progress import (
 )
 from rich.table import Table
 from rich.text import Text
-from sqlalchemy import create_mock_engine, text
+from sqlalchemy import Engine, create_mock_engine, inspect, text
 from sqlalchemy.engine.reflection import Inspector
 from sqlalchemy.sql import quoted_name
 from sqlmodel import Session, create_engine, select, update
@@ -273,12 +273,21 @@ def metadata_set(
         session.commit()
 
 
+def _assert_metadata(engine: Engine):
+    """Assert that the metadata table exists in the database."""
+    if not inspect(engine).has_table("_metadata"):
+        print("Metadata table not found in database.")
+        raise typer.Exit(code=1)
+    return True
+
+
 @metadata_app.command(name="get")
 def metadata_get(
     connection_string: options.connection_string = "sqlite:///sc-data-all.db",
 ):
     """Print all metadata key/value pairs stored in the database."""
     engine = create_engine(connection_string)
+    _assert_metadata(engine)
     with Session(engine) as session:
         rows = session.exec(select(Metadata)).all()
     table = Table("Key", "Value")
@@ -294,6 +303,7 @@ def metadata_delete(
 ):
     """Delete one or more metadata entries by key."""
     engine = create_engine(connection_string)
+    _assert_metadata(engine)
     with Session(engine) as session:
         for key in keys:
             row = session.get(Metadata, key)
