@@ -29,12 +29,13 @@ from rich.progress import (
 )
 from rich.table import Table
 from rich.text import Text
-from sqlalchemy import create_mock_engine, text
+from sqlalchemy import Engine, create_mock_engine, inspect, text
 from sqlalchemy.engine.reflection import Inspector
 from sqlalchemy.sql import quoted_name
 from sqlmodel import Session, create_engine, select, update
 from typing_extensions import Annotated
 
+from . import __version__
 from . import vendors as vendors_module
 from .alembic_helpers import alembic_cfg, get_revision
 from .insert import insert_items
@@ -42,7 +43,7 @@ from .logger import ProgressPanel, ScRichHandler, VendorProgressTracker, logger
 from .lookup import benchmarks, compliance_frameworks, countries
 from .sentry import before_send
 from .table_fields import Status
-from .tables import Benchmark, ComplianceFramework, Country, Vendor, tables
+from .tables import Benchmark, ComplianceFramework, Country, Metadata, Vendor, tables
 from .tables_scd import tables_scd
 from .utils import HashLevels, get_row_by_pk, hash_database, table_name_to_model
 from .workload_profile_scores import recompute_workload_profiles
@@ -80,6 +81,9 @@ alembic_app = typer.Typer()
 cli.add_typer(
     alembic_app, name="schemas", help="Database migration utilities using Alembic."
 )
+
+metadata_app = typer.Typer()
+cli.add_typer(metadata_app, name="metadata", help="Read and write database metadata.")
 
 options = SimpleNamespace(
     connection_string=Annotated[
@@ -227,6 +231,86 @@ def autogenerate(
         command.revision(
             alembic_cfg(connection=connection), autogenerate=True, message=message
         )
+
+
+@metadata_app.command(name="set")
+def metadata_set(
+    entries: Annotated[
+        Optional[List[str]],
+        typer.Argument(
+            help="Metadata as key=value pairs, e.g. publisher='Spare Cores' license=BSL.",
+        ),
+    ] = None,
+    connection_string: options.connection_string = "sqlite:///sc-data-all.db",
+):
+    """Write metadata key/value pairs into the database.
+
+    Always sets `sc_crawler_version` and `published_at`. When running in a GitHub
+    Actions workflow, also sets `published_by` to the GitHub Actions run URL.
+    Additional key/value pairs can be passed as positional arguments.
+    """
+    engine = create_engine(connection_string)
+    Metadata.metadata.create_all(engine, tables=[Metadata.__table__])
+    now = datetime.now(UTC)
+    rows = [
+        Metadata(key="sc_crawler_version", value=__version__),
+        Metadata(key="published_at", value=str(now)),
+    ]
+    gh_vars = ("GITHUB_SERVER_URL", "GITHUB_REPOSITORY", "GITHUB_RUN_ID")
+    if all(v in environ for v in gh_vars):
+        rows.append(
+            Metadata(
+                key="published_by",
+                value="{}/{}/actions/runs/{}".format(*[environ[v] for v in gh_vars]),
+            )
+        )
+    for item in entries or []:
+        key, _, value = item.partition("=")
+        rows.append(Metadata(key=key.strip(), value=value.strip()))
+    with Session(engine) as session:
+        for row in rows:
+            session.merge(row)
+        session.commit()
+
+
+def _assert_metadata(engine: Engine):
+    """Assert that the metadata table exists in the database."""
+    if not inspect(engine).has_table("_metadata"):
+        print("Metadata table not found in database.")
+        raise typer.Exit(code=1)
+    return True
+
+
+@metadata_app.command(name="get")
+def metadata_get(
+    connection_string: options.connection_string = "sqlite:///sc-data-all.db",
+):
+    """Print all metadata key/value pairs stored in the database."""
+    engine = create_engine(connection_string)
+    _assert_metadata(engine)
+    with Session(engine) as session:
+        rows = session.exec(select(Metadata)).all()
+    table = Table("Key", "Value")
+    for row in rows:
+        table.add_row(row.key, row.value)
+    Console().print(table)
+
+
+@metadata_app.command(name="delete")
+def metadata_delete(
+    keys: Annotated[List[str], typer.Argument(help="Metadata key(s) to delete.")],
+    connection_string: options.connection_string = "sqlite:///sc-data-all.db",
+):
+    """Delete one or more metadata entries by key."""
+    engine = create_engine(connection_string)
+    _assert_metadata(engine)
+    with Session(engine) as session:
+        for key in keys:
+            row = session.get(Metadata, key)
+            if row is None:
+                raise typer.BadParameter(f"Key {key!r} not found in metadata.")
+            session.delete(row)
+        session.commit()
 
 
 @cli.command(name="hash")

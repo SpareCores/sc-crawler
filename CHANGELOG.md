@@ -1,3 +1,9 @@
+## v0.5.x (development)
+
+New feature(s):
+
+- Add `metadata` command to read and write database metadata.
+
 ## v0.5.1 (Apr 22, 2026)
 
 New feature(s):
