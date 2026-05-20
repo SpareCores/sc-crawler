@@ -634,6 +634,13 @@ locations = {
         "country_id": "TH",
         "founding_year": 2022,
     },
+    "ap-southeast-8": {
+        "city": "Johor",
+        "lat": 1.4927,
+        "lon": 103.7414,
+        "country_id": "MY",
+        "founding_year": 2025,
+    },
     # -------- United States --------
     "us-east-1": {
         "alias": ["us-east-us44-a01"],

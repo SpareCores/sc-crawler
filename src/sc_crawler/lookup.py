@@ -518,7 +518,10 @@ benchmarks: List[Benchmark] = [
         description="Measures aggregate sequential read bandwidth across all threads using OpenMP parallelization.",
         framework="membench",
         measurement="memory_bandwidth",
-        config_fields={"size_kb": "Per-thread buffer size in KiB."},
+        config_fields={
+            "size_kb": "Per-thread buffer size in KiB.",
+            "scope": "RAM: working set exceeds total CPU cache (L3, else L2, else L1d).",
+        },
         unit="MB/s",
     ),
     Benchmark(
@@ -528,7 +531,10 @@ benchmarks: List[Benchmark] = [
         description="Measures aggregate sequential write bandwidth across all threads using OpenMP parallelization.",
         framework="membench",
         measurement="memory_bandwidth",
-        config_fields={"size_kb": "Per-thread buffer size in KiB."},
+        config_fields={
+            "size_kb": "Per-thread buffer size in KiB.",
+            "scope": "RAM: working set exceeds total CPU cache (L3, else L2, else L1d).",
+        },
         unit="MB/s",
     ),
     Benchmark(
@@ -538,7 +544,10 @@ benchmarks: List[Benchmark] = [
         description="Measures aggregate memory copy bandwidth across all threads using OpenMP parallelization.",
         framework="membench",
         measurement="memory_bandwidth",
-        config_fields={"size_kb": "Per-thread buffer size in KiB."},
+        config_fields={
+            "size_kb": "Per-thread buffer size in KiB.",
+            "scope": "RAM: working set exceeds total CPU cache (L3, else L2, else L1d).",
+        },
         unit="MB/s",
     ),
     Benchmark(
@@ -548,7 +557,10 @@ benchmarks: List[Benchmark] = [
         description="Measures median memory latency using pointer chasing with randomized access to defeat hardware prefetching.",
         framework="membench",
         measurement="memory_latency",
-        config_fields={"size_kb": "Per-thread buffer size in KiB."},
+        config_fields={
+            "size_kb": "Per-thread buffer size in KiB.",
+            "scope": "RAM: working set exceeds total CPU cache (L3, else L2, else L1d).",
+        },
         unit="ns",
         higher_is_better=False,
     ),
