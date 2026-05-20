@@ -612,7 +612,8 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                         }
                     )
                     if (
-                        size_kb > server.cpu_l3_cache_total
+                        server.cpu_l3_cache_total is not None
+                        and size_kb > server.cpu_l3_cache_total
                         and not ram_scope_dict[operation]
                     ):
                         ram_scope_dict[operation] = True
@@ -643,7 +644,8 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                         }
                     )
                     if (
-                        size_kb > server.cpu_l3_cache_total
+                        server.cpu_l3_cache_total is not None
+                        and size_kb > server.cpu_l3_cache_total
                         and not ram_scope_dict[operation]
                     ):
                         ram_scope_dict[operation] = True
