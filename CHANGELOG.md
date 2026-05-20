@@ -3,7 +3,7 @@
 New feature(s):
 
 - Add `metadata` command to read and write database metadata.
-- Add `membench` benchmark scores with `scope: RAM` config for the first working set size per operation that exceeds total L3 cache.
+- Add `membench` benchmark scores with `scope: RAM` config for the first working set size per operation that exceeds total CPU cache (L3, else L2, else L1d).
 
 ## v0.5.1 (Apr 22, 2026)
 

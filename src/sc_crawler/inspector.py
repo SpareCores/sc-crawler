@@ -592,6 +592,7 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                 "copy": False,
                 "latency": False,
             }
+            cpu_cache_total_kib = _first_cpu_cache_total_kib(server)
             for row in reader:
                 operation = row["operation"]
                 size_kb = int(float(row["size_kb"]))
@@ -612,8 +613,8 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                         }
                     )
                     if (
-                        server.cpu_l3_cache_total is not None
-                        and size_kb > server.cpu_l3_cache_total
+                        cpu_cache_total_kib is not None
+                        and size_kb > cpu_cache_total_kib
                         and not ram_scope_dict[operation]
                     ):
                         ram_scope_dict[operation] = True
@@ -644,8 +645,8 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                         }
                     )
                     if (
-                        server.cpu_l3_cache_total is not None
-                        and size_kb > server.cpu_l3_cache_total
+                        cpu_cache_total_kib is not None
+                        and size_kb > cpu_cache_total_kib
                         and not ram_scope_dict[operation]
                     ):
                         ram_scope_dict[operation] = True
@@ -962,6 +963,18 @@ def _l123_cache(lscpu: dict, level: int):
         return cache
     else:
         raise ValueError("Not known cache level.")
+
+
+def _first_cpu_cache_total_kib(server: "Server") -> int | None:
+    """First available total cache size in KiB (L3, then L2, then L1d)."""
+    for cache_total in (
+        server.cpu_l3_cache_total,
+        server.cpu_l2_cache_total,
+        server.cpu_l1d_cache_total,
+    ):
+        if cache_total is not None:
+            return cache_total
+    return None
 
 
 def _dropna(text: str) -> str:
