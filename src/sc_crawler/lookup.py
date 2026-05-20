@@ -520,7 +520,7 @@ benchmarks: List[Benchmark] = [
         measurement="memory_bandwidth",
         config_fields={
             "size_kb": "Per-thread buffer size in KiB.",
-            "scope": "RAM: working set exceeds L3 cache.",
+            "scope": "RAM: working set exceeds total CPU cache (L3, else L2, else L1d).",
         },
         unit="MB/s",
     ),
@@ -533,7 +533,7 @@ benchmarks: List[Benchmark] = [
         measurement="memory_bandwidth",
         config_fields={
             "size_kb": "Per-thread buffer size in KiB.",
-            "scope": "RAM: working set exceeds L3 cache.",
+            "scope": "RAM: working set exceeds total CPU cache (L3, else L2, else L1d).",
         },
         unit="MB/s",
     ),
@@ -546,7 +546,7 @@ benchmarks: List[Benchmark] = [
         measurement="memory_bandwidth",
         config_fields={
             "size_kb": "Per-thread buffer size in KiB.",
-            "scope": "RAM: working set exceeds L3 cache.",
+            "scope": "RAM: working set exceeds total CPU cache (L3, else L2, else L1d).",
         },
         unit="MB/s",
     ),
@@ -559,7 +559,7 @@ benchmarks: List[Benchmark] = [
         measurement="memory_latency",
         config_fields={
             "size_kb": "Per-thread buffer size in KiB.",
-            "scope": "RAM: working set exceeds L3 cache.",
+            "scope": "RAM: working set exceeds total CPU cache (L3, else L2, else L1d).",
         },
         unit="ns",
         higher_is_better=False,
