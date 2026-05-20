@@ -586,6 +586,12 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
     try:
         with open(_server_framework_stdout_path(server, framework), newline="") as fp:
             reader = csv.DictReader(fp)
+            ram_scope_dict = {
+                "read": False,
+                "write": False,
+                "copy": False,
+                "latency": False,
+            }
             for row in reader:
                 operation = row["operation"]
                 size_kb = int(float(row["size_kb"]))
@@ -605,6 +611,22 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                             "score": score,
                         }
                     )
+                    if (
+                        size_kb > server.cpu_l3_cache_total
+                        and not ram_scope_dict[operation]
+                    ):
+                        ram_scope_dict[operation] = True
+                        benchmarks.append(
+                            {
+                                **_benchmark_metafields(
+                                    server,
+                                    framework=framework,
+                                    benchmark_id="membench:latency",
+                                ),
+                                "config": {"scope": "RAM"},
+                                "score": score,
+                            }
+                        )
                 elif operation in ("read", "write", "copy"):
                     score = float(row["bandwidth_mb_s"])
                     if score == 0:
@@ -620,6 +642,22 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                             "score": score,
                         }
                     )
+                    if (
+                        size_kb > server.cpu_l3_cache_total
+                        and not ram_scope_dict[operation]
+                    ):
+                        ram_scope_dict[operation] = True
+                        benchmarks.append(
+                            {
+                                **_benchmark_metafields(
+                                    server,
+                                    framework=framework,
+                                    benchmark_id=f"membench:bandwidth_{operation}",
+                                ),
+                                "config": {"scope": "RAM"},
+                                "score": score,
+                            }
+                        )
     except Exception as e:
         _log_cannot_load_benchmarks(server, framework, e, True)
 
