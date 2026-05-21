@@ -4,6 +4,7 @@ from re import compile as recompile
 
 from upcloud_api import CloudManager
 
+from ..inspector import _standardize_gpu_family, _standardize_gpu_model
 from ..lookup import map_compliance_frameworks_to_vendor
 from ..sentry import sentry_capture_or_raise
 from ..table_fields import (
@@ -14,6 +15,7 @@ from ..table_fields import (
     StorageType,
     TrafficDirection,
 )
+from ..utils import _MIB_PER_GIB
 
 # ##############################################################################
 # Cached client wrappers
@@ -90,6 +92,55 @@ def _parse_server_name(name):
         f"{data['family']} ({data['vcpus']} vCPUs, {data['memory']} GiB RAM)"
     )
     return data
+
+
+_UPCLOUD_GPU_MEMORY_MIB = {
+    "L4": 24 * _MIB_PER_GIB,
+    "L40S": 48 * _MIB_PER_GIB,
+    "H100": 80 * _MIB_PER_GIB,
+    "B200": 192 * _MIB_PER_GIB,
+}
+
+_UPCLOUD_GPU_FAMILY = {
+    "L4": "Ada Lovelace",
+    "L40S": "Ada Lovelace",
+    "H100": "Hopper",
+    "B200": "Blackwell",
+}
+
+
+def _parse_gpu_model(gpu_model: str | None, gpu_count: float = 0) -> dict:
+    """Derive GPU inventory fields from the UpCloud gpu_model string."""
+    empty = {
+        "gpu_memory_min": None,
+        "gpu_memory_total": None,
+        "gpu_manufacturer": None,
+        "gpu_family": None,
+        "gpu_model": None,
+    }
+    if not gpu_model:
+        return empty
+
+    model = _standardize_gpu_model(gpu_model.strip())
+    if not model:
+        return empty
+
+    memory_per_gpu = _UPCLOUD_GPU_MEMORY_MIB.get(model)
+    manufacturer = "NVIDIA" if gpu_model.strip().upper().startswith("NVIDIA") else None
+    family = _standardize_gpu_family({"gpu_model": model}) or _UPCLOUD_GPU_FAMILY.get(
+        model
+    )
+    gpu_memory_total = (
+        int(gpu_count * memory_per_gpu) if memory_per_gpu and gpu_count else None
+    )
+
+    return {
+        "gpu_memory_min": memory_per_gpu,
+        "gpu_memory_total": gpu_memory_total,
+        "gpu_manufacturer": manufacturer,
+        "gpu_family": family,
+        "gpu_model": model,
+    }
 
 
 # ##############################################################################
@@ -310,6 +361,8 @@ def inventory_servers(vendor):
     items = []
     for server in servers:
         server_data = _parse_server_name(server["name"])
+        gpu_count = server.get("gpu_amount", 0)
+        gpu_fields = _parse_gpu_model(server.get("gpu_model"), gpu_count)
         items.append(
             {
                 "vendor_id": vendor.vendor_id,
@@ -337,13 +390,8 @@ def inventory_servers(vendor):
                 "memory_generation": None,
                 "memory_speed": None,
                 "memory_ecc": None,
-                # no GPU options
-                "gpu_count": 0,
-                "gpu_memory_min": None,
-                "gpu_memory_total": None,
-                "gpu_manufacturer": None,
-                "gpu_family": None,
-                "gpu_model": None,
+                "gpu_count": gpu_count,
+                **gpu_fields,
                 "gpus": [],
                 "storage_size": server["storage_size"],
                 "storage_type": (StorageType.SSD if server["storage_tier"] else None),
