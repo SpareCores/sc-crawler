@@ -19,6 +19,10 @@ aws = Vendor(
     zip_code="98109",
     founding_year=2002,
     status_page="https://health.aws.amazon.com/health/status",
+    stopped_server_charged=False,
+    billing_increment_seconds=1,
+    minimum_billing_seconds=60,
+    comment="Stopped: no compute bill, EBS and EIP continue.",
 )
 """Amazon Web Services."""
 
@@ -34,6 +38,10 @@ gcp = Vendor(
     zip_code="94043",
     founding_year=2008,
     status_page="https://status.cloud.google.com/",
+    stopped_server_charged=False,
+    billing_increment_seconds=1,
+    minimum_billing_seconds=60,
+    comment="Stopped: no compute bill, disks and IPs continue.",
 )
 """Google Cloud Platform."""
 
@@ -49,6 +57,10 @@ hcloud = Vendor(
     zip_code="91710",
     founding_year=2018,
     status_page="https://status.hetzner.com/",
+    stopped_server_charged=True,
+    billing_increment_seconds=3600,
+    minimum_billing_seconds=3600,
+    comment="Billed until deleted regardless of power state.",
 )
 """Hetzner Cloud."""
 
@@ -64,6 +76,10 @@ azure = Vendor(
     zip_code="98052",
     founding_year=2010,
     status_page="https://azure.status.microsoft.com",
+    stopped_server_charged=True,
+    billing_increment_seconds=1,
+    minimum_billing_seconds=300,
+    comment="Allocated stopped bills compute; deallocated does not. Per-minute usage within an hour. Min 300 seconds; verify current policy.",
 )
 """Microsoft Azure."""
 
@@ -79,6 +95,10 @@ upcloud = Vendor(
     zip_code="00100",
     founding_year=2012,
     status_page="https://status.upcloud.com",
+    stopped_server_charged=True,
+    billing_increment_seconds=3600,
+    minimum_billing_seconds=3600,
+    comment="Developer and General Purpose bill while stopped; Cloud Native only when powered on.",
 )
 """UpCloud."""
 
@@ -94,6 +114,10 @@ alicloud = Vendor(
     zip_code="311121",
     founding_year=2009,
     status_page="https://status.alibabacloud.com/",
+    stopped_server_charged=True,
+    billing_increment_seconds=1,
+    minimum_billing_seconds=600,
+    comment="Standard stopped bills compute; Economical does not except disks and EIPs. Min billing 600, 300, or 120 seconds by vCPU.",
 )
 """Alibaba Cloud."""
 
@@ -109,5 +133,9 @@ ovh = Vendor(
     zip_code="59100",
     founding_year=1999,
     status_page="https://www.status-ovhcloud.com",
+    stopped_server_charged=False,
+    billing_increment_seconds=3600,
+    minimum_billing_seconds=3600,
+    comment="Shelve: no compute bill, snapshots bill. Suspend and Pause bill like running.",
 )
 """OVHcloud."""

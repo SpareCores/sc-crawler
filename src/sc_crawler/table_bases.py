@@ -445,6 +445,21 @@ class VendorFields(HasName, HasVendorIdPK):
         description="Public status page of the Vendor.",
     )
 
+    stopped_server_charged: Optional[bool] = Field(
+        default=None,
+        description="If the Vendor charges for stopped servers.",
+    )
+
+    billing_increment_seconds: Optional[int] = Field(
+        default=None,
+        description="The smallest increment of time for which the Vendor bills for.",
+    )
+
+    minimum_billing_seconds: Optional[int] = Field(
+        default=None,
+        description="The minimum amount of time for which the Vendor bills for.",
+    )
+
 
 class VendorBase(MetaColumns, VendorFields):
     pass
