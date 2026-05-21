@@ -460,6 +460,11 @@ class VendorFields(HasName, HasVendorIdPK):
         description="The minimum amount of time for which the Vendor bills for.",
     )
 
+    comment: Optional[str] = Field(
+        default=None,
+        description="Comment on the Vendor's billing.",
+    )
+
 
 class VendorBase(MetaColumns, VendorFields):
     pass
