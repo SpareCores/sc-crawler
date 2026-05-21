@@ -1,9 +1,11 @@
-## v0.5.x (development)
+## v0.5.2 (May 21, 2026)
 
 New feature(s):
 
 - Add `metadata` command to read and write database metadata.
 - Add `membench` benchmark scores with `scope: RAM` config for the first working set size per operation that exceeds total CPU cache (L3, else L2, else L1d).
+- Add `stopped_server_charged`, `billing_increment_seconds`,  `minimum_billing_seconds` and `comment` columns to `Vendor` table, and
+fill up these columns with proper info.
 
 ## v0.5.1 (Apr 22, 2026)
 
