@@ -181,7 +181,7 @@ def upgrade() -> None:
             )
             batch_op.add_column(
                 sa.Column(
-                    "comment",
+                    "billing_comment",
                     sqlmodel.sql.sqltypes.AutoString(),
                     nullable=True,
                     comment="Comment on the Vendor's billing.",
@@ -219,7 +219,7 @@ def upgrade() -> None:
         op.add_column(
             vendor_table_name,
             sa.Column(
-                "comment",
+                "billing_comment",
                 sqlmodel.sql.sqltypes.AutoString(),
                 nullable=True,
                 comment="Comment on the Vendor's billing.",
@@ -233,4 +233,4 @@ def downgrade() -> None:
         batch_op.drop_column("minimum_billing_seconds")
         batch_op.drop_column("billing_increment_seconds")
         batch_op.drop_column("stopped_server_charged")
-        batch_op.drop_column("comment")
+        batch_op.drop_column("billing_comment")

@@ -22,7 +22,6 @@ aws = Vendor(
     stopped_server_charged=False,
     billing_increment_seconds=1,
     minimum_billing_seconds=60,
-    comment="Stopped: no compute bill, EBS and EIP continue.",
 )
 """Amazon Web Services."""
 
@@ -41,7 +40,6 @@ gcp = Vendor(
     stopped_server_charged=False,
     billing_increment_seconds=1,
     minimum_billing_seconds=60,
-    comment="Stopped: no compute bill, disks and IPs continue.",
 )
 """Google Cloud Platform."""
 
@@ -60,7 +58,6 @@ hcloud = Vendor(
     stopped_server_charged=True,
     billing_increment_seconds=3600,
     minimum_billing_seconds=3600,
-    comment="Billed until deleted regardless of power state.",
 )
 """Hetzner Cloud."""
 
@@ -79,7 +76,7 @@ azure = Vendor(
     stopped_server_charged=True,
     billing_increment_seconds=1,
     minimum_billing_seconds=300,
-    comment="Allocated stopped bills compute; deallocated does not. Per-minute usage within an hour. Min 300 seconds; verify current policy.",
+    billing_comment="Billing of stopped server depends on allocation status.",
 )
 """Microsoft Azure."""
 
@@ -98,7 +95,7 @@ upcloud = Vendor(
     stopped_server_charged=True,
     billing_increment_seconds=3600,
     minimum_billing_seconds=3600,
-    comment="Developer and General Purpose bill while stopped; Cloud Native only when powered on.",
+    billing_comment="Developer and General Purpose bill while stopped; Cloud Native only when powered on.",
 )
 """UpCloud."""
 
@@ -117,7 +114,7 @@ alicloud = Vendor(
     stopped_server_charged=True,
     billing_increment_seconds=1,
     minimum_billing_seconds=600,
-    comment="Standard stopped bills compute; Economical does not except disks and EIPs. Min billing 600, 300, or 120 seconds by vCPU.",
+    billing_comment="Billing of stopped server depends on Standard or Economical plan. Min billing 600, 300, or 120 seconds by vCPU.",
 )
 """Alibaba Cloud."""
 
@@ -136,6 +133,6 @@ ovh = Vendor(
     stopped_server_charged=False,
     billing_increment_seconds=3600,
     minimum_billing_seconds=3600,
-    comment="Shelve: no compute bill, snapshots bill. Suspend and Pause bill like running.",
+    billing_comment="Billing for stopped servers depends on status: shelved, snapshots only; suspended or paused, billed like running.",
 )
 """OVHcloud."""
