@@ -392,7 +392,7 @@ def inventory_servers(vendor):
                 "memory_ecc": None,
                 "gpu_count": gpu_count,
                 **gpu_fields,
-                "gpus": [],
+                "gpus": [], # TODO fill this array
                 "storage_size": server["storage_size"],
                 "storage_type": (StorageType.SSD if server["storage_tier"] else None),
                 "storages": [],
