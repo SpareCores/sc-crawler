@@ -8,6 +8,7 @@ build/
 dist/
 *.egg-info/
 .python-version
+uv.lock
 
 # Installer logs
 pip-log.txt
@@ -22,6 +23,7 @@ coverage.xml
 
 # Sphinx documentation
 docs/_build/
+docs/reference/
 
 # Temp linters
 flycheck_*
@@ -33,3 +35,15 @@ sc-data-all.db
 # IDE
 .vscode/
 .idea/
+
+# Test artifacts
+*.txt
+*.json
+*.sql
+*.log
+
+# Documentation
+site/
+
+# MacOS
+.DS_Store
