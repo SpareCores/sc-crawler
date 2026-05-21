@@ -95,7 +95,7 @@ upcloud = Vendor(
     stopped_server_charged=True,
     billing_increment_seconds=3600,
     minimum_billing_seconds=3600,
-    billing_comment="Developer and General Purpose bill while stopped; Cloud Native only when powered on.",
+    billing_comment="Billing of stopped servers depends on plan: Developer and General Purpose when stopped; Cloud Native when powered on.",
 )
 """UpCloud."""
 
@@ -114,7 +114,7 @@ alicloud = Vendor(
     stopped_server_charged=True,
     billing_increment_seconds=1,
     minimum_billing_seconds=600,
-    billing_comment="Billing of stopped server depends on Standard or Economical plan. Min billing 600, 300, or 120 seconds by vCPU.",
+    billing_comment="Billing of stopped server depends on stop mode: Standard or Economical. Min billing 600, 300, or 120 seconds by vCPU.",
 )
 """Alibaba Cloud."""
 
