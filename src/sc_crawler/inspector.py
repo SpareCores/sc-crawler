@@ -185,6 +185,11 @@ def _server_passmark(server: "Server") -> List[str]:
         return [line.strip() for line in fp.readlines()]
 
 
+def _server_virtualization(server: "Server") -> dict:
+    with open(_server_framework_path(server, "virtualization", "stdout"), "r") as fp:
+        return json.load(fp)
+
+
 def _observed_at(server: "Server", framework: str) -> dict:
     ts = _server_framework_meta(server, framework)["end"]
     assert ts is not None
@@ -1174,6 +1179,7 @@ def inspect_update_server_dict(server: dict) -> dict:
         "lsblk_discard": lambda: _server_lsblk_discard(server_obj),
         "lsblk_topo": lambda: _server_lsblk_topo(server_obj),
         "nvidiasmi": lambda: _server_nvidiasmi(server_obj),
+        "virtualization": lambda: _server_virtualization(server_obj),
         "gpu": lambda: lookups["nvidiasmi"].find("gpu"),
         "gpus": lambda: lookups["nvidiasmi"].findall("gpu"),
     }
@@ -1273,6 +1279,7 @@ def inspect_update_server_dict(server: dict) -> dict:
         "cpu_l3_cache": lambda: cpu_cache_info.get("L3", {}).get("per_instance_KiB"),
         "cpu_l3_cache_total": lambda: cpu_cache_info.get("L3", {}).get("total_KiB"),
         "cpu_flags": lambda: lscpu_lookup("Flags:").split(" "),
+        "hw_virt": lambda: lookups["virtualization"].get("kvm", None),
         "memory_generation": lambda: DdrGeneration[lookups["dmidecode_memory"]["Type"]],
         # convert to Mhz
         "memory_speed": lambda: int(lookups["dmidecode_memory"]["Speed"]) / 1e6,
@@ -1334,7 +1341,7 @@ def inspect_update_server_dict(server: dict) -> dict:
     for k, f in mappings.items():
         try:
             newval = f()
-            if newval:
+            if newval is not None:
                 server[k] = override_mapping(server, k, newval)
         except Exception as e:
             _log_cannot_update_server(server_obj, k, e)
