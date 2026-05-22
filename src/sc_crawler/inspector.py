@@ -194,6 +194,14 @@ def _server_virtualization(server: "Server") -> dict:
         return json.load(fp)
 
 
+def _server_stressngfull(server: "Server") -> List[tuple[int, float]]:
+    with open(_server_framework_stdout_path(server, "stressngfull"), newline="") as f:
+        return [
+            (int(row[0]), float(row[1]))
+            for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC)
+        ]
+
+
 def _observed_at(server: "Server", framework: str) -> dict:
     ts = _server_framework_meta(server, framework)["end"]
     assert ts is not None
@@ -1184,6 +1192,7 @@ def inspect_update_server_dict(server: dict) -> dict:
         "lsblk_topo": lambda: _server_lsblk_topo(server_obj),
         "nvidiasmi": lambda: _server_nvidiasmi(server_obj),
         "virtualization": lambda: _server_virtualization(server_obj),
+        "stressngfull": lambda: _server_stressngfull(server_obj),
         "gpu": lambda: lookups["nvidiasmi"].find("gpu"),
         "gpus": lambda: lookups["nvidiasmi"].findall("gpu"),
     }
@@ -1265,15 +1274,44 @@ def inspect_update_server_dict(server: dict) -> dict:
             return _standardize_cpu_model(lookups["dmidecode_cpu"]["Version"])
         return None
 
+    def get_cpu_cores():
+        """Extract CPU cores from lscpu."""
+        with suppress(Exception):
+            return int(lscpu_lookup("Core(s) per socket:")) * int(
+                lscpu_lookup("Socket(s):")
+            )
+        return None
+
+    _cpu_cores: int | None = get_cpu_cores()
+
+    def calculate_ecpus_and_scalability() -> tuple[float | None, float | None]:
+        """Calculate ecpus and scalability from stressngfull."""
+        stressngfull = lookups.get("stressngfull")
+        if (
+            isinstance(stressngfull, Exception)
+            or not isinstance(stressngfull, list)
+            or not stressngfull
+        ):
+            return None, None
+        with suppress(Exception):
+            best1_score = stressngfull[0][1]
+            bestn_score = max(score for _, score in stressngfull)
+            ecpus = round(bestn_score / best1_score, 1)
+            if not _cpu_cores:
+                return ecpus, None
+            scalability = round(ecpus / _cpu_cores * 100, 2)
+            return ecpus, scalability
+        return None, None
+
+    _ecpus_scalability = calculate_ecpus_and_scalability()
+
     mappings = {
         "vcpus": lambda: lscpu_lookup("CPU(s):"),
-        "cpu_cores": lambda: (
-            int(lscpu_lookup("Core(s) per socket:")) * int(lscpu_lookup("Socket(s):"))
-        ),
-        "cpu_speed": lambda: get_cpu_speed(),
-        "cpu_manufacturer": lambda: get_cpu_manufacturer(),
-        "cpu_family": lambda: get_cpu_family(),
-        "cpu_model": lambda: get_cpu_model(),
+        "cpu_cores": lambda: _cpu_cores,
+        "cpu_speed": get_cpu_speed,
+        "cpu_manufacturer": get_cpu_manufacturer,
+        "cpu_family": get_cpu_family,
+        "cpu_model": get_cpu_model,
         "cpu_l1d_cache": lambda: cpu_cache_info.get("L1d", {}).get("per_instance_KiB"),
         "cpu_l1d_cache_total": lambda: cpu_cache_info.get("L1d", {}).get("total_KiB"),
         "cpu_l1i_cache": lambda: cpu_cache_info.get("L1i", {}).get("per_instance_KiB"),
@@ -1283,6 +1321,8 @@ def inspect_update_server_dict(server: dict) -> dict:
         "cpu_l3_cache": lambda: cpu_cache_info.get("L3", {}).get("per_instance_KiB"),
         "cpu_l3_cache_total": lambda: cpu_cache_info.get("L3", {}).get("total_KiB"),
         "cpu_flags": lambda: lscpu_lookup("Flags:").split(" "),
+        "ecpus": lambda: _ecpus_scalability[0],
+        "scalability": lambda: _ecpus_scalability[1],
         "hw_virt": lambda: lookups["virtualization"].get("kvm", None),
         "memory_amount_actual": lambda: _parse_lstopo_memory_amount_mib(
             lookups["lstopo"]
