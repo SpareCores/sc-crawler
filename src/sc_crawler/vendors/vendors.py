@@ -95,7 +95,7 @@ upcloud = Vendor(
     stopped_server_charged=True,
     billing_increment_seconds=3600,
     minimum_billing_seconds=3600,
-    billing_comment="Billing of stopped servers depends on plan: Developer and General Purpose when stopped; Cloud Native when powered on.",
+    billing_comment="Billing of stopped servers depends on the instance family: Developer and General Purpose instances are billed, while Cloud Native instances are not.",
 )
 """UpCloud."""
 
