@@ -657,9 +657,28 @@ class ServerFields(
             "L1/L2/L3 cache size; microcode version; feature flags; bugs etc."
         ),
     )
+    ecpus: Optional[float] = Field(
+        default=None,
+        description='The effective "real-world" core count, calculated by dividing the maximum multi-core SCore by the single-core SCore.',
+    )
+    scalability: Optional[float] = Field(
+        default=None,
+        description=(
+            "Measures how efficiently the server scales from a single core performance to using multiple cores. "
+            "A score of 100% means perfect linear scaling with zero performance loss.",
+        ),
+    )
+    hw_virt: Optional[bool] = Field(
+        default=None,
+        description="If nested hardware virtualization is exposed to the guest.",
+    )
     memory_amount: int = Field(
         default=None,
-        description="RAM amount (MiB).",
+        description="RAM amount (MiB) reported by the vendor.",
+    )
+    memory_amount_actual: Optional[int] = Field(
+        default=None,
+        description="Actual RAM amount (MiB) reported by lstopo or similar tool.",
     )
     memory_generation: Optional[DdrGeneration] = Field(
         default=None, description="Generation of the DDR SDRAM, e.g. DDR4 or DDR5."
@@ -719,9 +738,21 @@ class ServerFields(
             "the size (GB) and type of each disk."
         ),
     )
-    network_speed: Optional[float] = Field(
+    network_speed_baseline: Optional[float] = Field(
         default=None,
         description="The baseline network performance (Gbps) of the network card.",
+    )
+    network_speed_max: Optional[float] = Field(
+        default=None,
+        description="The maximum network performance (Gbps) of the network card.",
+    )
+    network_storage_speed_baseline: Optional[float] = Field(
+        default=None,
+        description="The baseline network-attached storage performance (Gbps) of the network card.",
+    )
+    network_storage_speed_max: Optional[float] = Field(
+        default=None,
+        description="The maximum network-attached storage performance (Gbps) of the network card.",
     )
     inbound_traffic: float = Field(
         default=0,
