@@ -670,7 +670,7 @@ class ServerFields(
     )
     hw_virt: Optional[bool] = Field(
         default=None,
-        description="If nested hardware virtualization is exposed to the guest.",
+        description="If hardware virtualization (e.g. KVM) is supported.",
     )
     memory_amount: int = Field(
         default=None,
@@ -678,7 +678,7 @@ class ServerFields(
     )
     memory_amount_actual: Optional[int] = Field(
         default=None,
-        description="Actual RAM amount (MiB) reported by lstopo or similar tool.",
+        description="Actual RAM amount (MiB) measured on the instance via lstopo or other tool. This amount might not match the vendor-reported memory due to the BIOS or the hypervisor reserving a small percentage.",
     )
     memory_generation: Optional[DdrGeneration] = Field(
         default=None, description="Generation of the DDR SDRAM, e.g. DDR4 or DDR5."
@@ -748,11 +748,11 @@ class ServerFields(
     )
     network_storage_speed_baseline: Optional[float] = Field(
         default=None,
-        description="The baseline network-attached storage performance (Gbps) of the network card.",
+        description="The baseline bandwidth performance of network-attached storage (Gbps).",
     )
     network_storage_speed_max: Optional[float] = Field(
         default=None,
-        description="The maximum network-attached storage performance (Gbps) of the network card.",
+        description="The maximum bandwidth performance of network-attached storage (Gbps).",
     )
     inbound_traffic: float = Field(
         default=0,
