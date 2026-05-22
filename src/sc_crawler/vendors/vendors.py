@@ -133,6 +133,6 @@ ovh = Vendor(
     stopped_server_charged=False,
     billing_increment_seconds=3600,
     minimum_billing_seconds=3600,
-    billing_comment="Billing for stopped servers depends on status: shelved, snapshots only; suspended or paused, billed like running.",
+    billing_comment="Billing for stopped servers depends on status: suspended or paused is billed, while shelved is not.",
 )
 """OVHcloud."""
