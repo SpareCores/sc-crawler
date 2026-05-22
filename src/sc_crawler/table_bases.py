@@ -457,7 +457,7 @@ class VendorFields(HasName, HasVendorIdPK):
 
     minimum_billing_seconds: Optional[int] = Field(
         default=None,
-        description="The minimum amount of time for which the Vendor bills for.",
+        description="The minimum amount of time for which the Vendor bills for. In case it depends on the instance type or other context, this field reports the worst case.",
     )
 
     billing_comment: Optional[str] = Field(
