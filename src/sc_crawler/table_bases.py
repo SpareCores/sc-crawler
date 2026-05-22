@@ -447,7 +447,7 @@ class VendorFields(HasName, HasVendorIdPK):
 
     stopped_server_charged: Optional[bool] = Field(
         default=None,
-        description="If the Vendor charges for stopped servers.",
+        description="If the Vendor charges for stopped servers. In case it depends on the instance type or different versions of stopped states, this field reports the worst case.",
     )
 
     billing_increment_seconds: Optional[int] = Field(
