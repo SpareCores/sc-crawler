@@ -385,7 +385,6 @@ def get_server_table(is_scd: bool) -> sa.Table:
 
 def upgrade() -> None:
     is_scd = is_scd_migration()
-    is_postgresql = op.get_context().dialect.name == "postgresql"
     server_table_name = scdize_suffix("server")
     server_table = get_server_table(is_scd)
     do_recreate_tables = (op.get_context().dialect.name == "sqlite") or is_scd
@@ -438,19 +437,16 @@ def upgrade() -> None:
             )
             batch_op.add_column(
                 sa.Column(
-                    "network_speed_baseline",
-                    sa.Float(),
-                    nullable=True,
-                    comment="The baseline network performance (Gbps) of the network card.",
-                )
-            )
-            batch_op.add_column(
-                sa.Column(
                     "network_speed_max",
                     sa.Float(),
                     nullable=True,
                     comment="The maximum network performance (Gbps) of the network card.",
-                )
+                ),
+                insert_after="network_speed",
+            )
+            batch_op.alter_column(
+                "network_speed",
+                new_column_name="network_speed_baseline",
             )
             batch_op.add_column(
                 sa.Column(
@@ -458,7 +454,8 @@ def upgrade() -> None:
                     sa.Float(),
                     nullable=True,
                     comment="The baseline network-attached storage performance (Gbps) of the network card.",
-                )
+                ),
+                insert_after="network_speed_max",
             )
             batch_op.add_column(
                 sa.Column(
@@ -466,19 +463,100 @@ def upgrade() -> None:
                     sa.Float(),
                     nullable=True,
                     comment="The maximum network-attached storage performance (Gbps) of the network card.",
-                )
+                ),
+                insert_after="network_storage_speed_baseline",
             )
-            batch_op.drop_column("network_speed")
+    else:
+        op.add_column(
+            server_table_name,
+            sa.Column(
+                "ecpus",
+                sa.Float(),
+                nullable=True,
+                comment='The effective "real-world" core count, calculated by dividing the maximum multi-core SCore by the single-core SCore.',
+            ),
+        )
+        op.add_column(
+            server_table_name,
+            sa.Column(
+                "scalability",
+                sa.Float(),
+                nullable=True,
+                comment="Measures how efficiently the server scales from a single core performance to using multiple cores. A score of 100% means perfect linear scaling with zero performance loss.",
+            ),
+        )
+        op.add_column(
+            server_table_name,
+            sa.Column(
+                "hw_virt",
+                sa.Boolean(),
+                nullable=True,
+                comment="If nested hardware virtualization is exposed to the guest.",
+            ),
+        )
+        op.alter_column(
+            server_table_name,
+            "memory_amount",
+            comment="RAM amount (MiB) reported by the vendor.",
+        )
+        op.add_column(
+            server_table_name,
+            sa.Column(
+                "memory_amount_actual",
+                sa.Integer(),
+                nullable=True,
+                comment="Actual RAM amount (MiB) reported by lstopo or similar tool.",
+            ),
+        )
+        op.add_column(
+            server_table_name,
+            sa.Column(
+                "network_speed_max",
+                sa.Float(),
+                nullable=True,
+                comment="The maximum network performance (Gbps) of the network card.",
+            ),
+        )
+        op.alter_column(
+            server_table_name,
+            "network_speed",
+            new_column_name="network_speed_baseline",
+        )
+        op.add_column(
+            server_table_name,
+            sa.Column(
+                "network_storage_speed_baseline",
+                sa.Float(),
+                nullable=True,
+                comment="The baseline network-attached storage performance (Gbps) of the network card.",
+            ),
+        )
+        op.add_column(
+            server_table_name,
+            sa.Column(
+                "network_storage_speed_max",
+                sa.Float(),
+                nullable=True,
+                comment="The maximum network-attached storage performance (Gbps) of the network card.",
+            ),
+        )
 
 
 def downgrade() -> None:
-    with op.batch_alter_table("server", schema=None) as batch_op:
-        batch_op.add_column(sa.Column("network_speed", sa.FLOAT(), nullable=True))
+    server_table_name = scdize_suffix("server")
+    with op.batch_alter_table(server_table_name, schema=None) as batch_op:
         batch_op.drop_column("network_storage_speed_max")
         batch_op.drop_column("network_storage_speed_baseline")
+        batch_op.alter_column(
+            "network_speed_baseline",
+            new_column_name="network_speed",
+        )
         batch_op.drop_column("network_speed_max")
-        batch_op.drop_column("network_speed_baseline")
         batch_op.drop_column("memory_amount_actual")
+        batch_op.alter_column(
+            "memory_amount",
+            comment="RAM amount (MiB).",
+        )
         batch_op.drop_column("hw_virt")
         batch_op.drop_column("scalability")
         batch_op.drop_column("ecpus")
