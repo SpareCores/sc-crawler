@@ -17,7 +17,11 @@ from zipfile import ZipFile
 from requests import get
 from yaml import safe_load as yaml_safe_load
 
-from .inspector_helpers import StorageInfo, _get_cpu_cache_info
+from .inspector_helpers import (
+    StorageInfo,
+    _get_cpu_cache_info,
+    _parse_lstopo_memory_amount_mib,
+)
 from .logger import logger
 from .table_bases import ServerBase
 from .table_fields import DdrGeneration, Disk, Parallelism, StorageType
@@ -1280,6 +1284,9 @@ def inspect_update_server_dict(server: dict) -> dict:
         "cpu_l3_cache_total": lambda: cpu_cache_info.get("L3", {}).get("total_KiB"),
         "cpu_flags": lambda: lscpu_lookup("Flags:").split(" "),
         "hw_virt": lambda: lookups["virtualization"].get("kvm", None),
+        "memory_amount_actual": lambda: _parse_lstopo_memory_amount_mib(
+            lookups["lstopo"]
+        ),
         "memory_generation": lambda: DdrGeneration[lookups["dmidecode_memory"]["Type"]],
         # convert to Mhz
         "memory_speed": lambda: int(lookups["dmidecode_memory"]["Speed"]) / 1e6,

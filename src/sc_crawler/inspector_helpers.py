@@ -82,6 +82,44 @@ def _parse_cache_data_string(data: str) -> Tuple[int, int]:
     return total_bytes, instances
 
 
+def _lstopo_info_value(element: xmltree.Element, name: str) -> Optional[str]:
+    for info in element.findall("info"):
+        if info.get("name") == name:
+            return info.get("value")
+    return None
+
+
+def _parse_lstopo_memory_amount_mib(
+    lstopo_obj: xmltree.ElementTree,
+) -> Optional[int]:
+    """
+    Sum RAM from lstopo MemoryModule objects (hwloc Misc subtype MemoryModule).
+
+    The ``Size`` info value is in KiB; returns total MiB for the machine.
+    """
+    if not lstopo_obj or isinstance(lstopo_obj, Exception):
+        return None
+
+    total_kib = 0
+    for elem in lstopo_obj.getroot().iter():
+        if elem.get("type") != "Misc" or elem.get("subtype") != "MemoryModule":
+            continue
+        mem_type = _lstopo_info_value(elem, "Type")
+        if mem_type is not None and mem_type != "RAM":
+            continue
+        size_str = _lstopo_info_value(elem, "Size")
+        if not size_str:
+            continue
+        try:
+            total_kib += int(size_str)
+        except ValueError:
+            continue
+
+    if total_kib <= 0:
+        return None
+    return total_kib // 1024
+
+
 def _count_cores_under(element: xmltree.Element) -> int:
     """Count Core elements that are descendants of this element."""
     count = 0
