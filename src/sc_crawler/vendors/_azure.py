@@ -1094,7 +1094,7 @@ def inventory_regions(vendor):
         with sentry_capture_or_raise(vendor=vendor):
             # TODO drop this once the metadata field doesn't show up randomly anymore
             # as the non-metadata responses do not seem to have these logical regions anymore
-            if region.get("metadata", {}).get("region_type", "Physical") != "Physical":
+            if region.get("metadata", {}).get("regionType", "Physical") != "Physical":
                 continue
             # no idea what are these
             if region["name"].endswith("stg"):
@@ -1114,10 +1114,10 @@ def inventory_regions(vendor):
                 {
                     "vendor_id": vendor.vendor_id,
                     "region_id": region["name"],
-                    "name": region["display_name"],
+                    "name": region["displayName"],
                     "api_reference": region["name"],
                     "display_name": (
-                        region["display_name"] + " (" + manual_data["country_id"] + ")"
+                        region["displayName"] + " (" + manual_data["country_id"] + ")"
                     ),
                     "country_id": manual_data["country_id"],
                     "state": manual_data.get("state"),
