@@ -409,7 +409,10 @@ def upgrade() -> None:
                     "scalability",
                     sa.Float(),
                     nullable=True,
-                    comment="Measures how efficiently the server scales from a single core performance to using multiple cores. A score of 100% means perfect linear scaling with zero performance loss.",
+                    comment=(
+                        "Measures how efficiently the server scales from a single core performance to using multiple cores. "
+                        "A score of 100% means perfect linear scaling with zero performance loss."
+                    ),
                 ),
                 insert_after="ecpus",
             )
@@ -418,7 +421,7 @@ def upgrade() -> None:
                     "hw_virt",
                     sa.Boolean(),
                     nullable=True,
-                    comment="If nested hardware virtualization is exposed to the guest.",
+                    comment="If hardware virtualization (e.g. KVM) is supported.",
                 ),
                 insert_after="scalability",
             )
@@ -431,7 +434,10 @@ def upgrade() -> None:
                     "memory_amount_actual",
                     sa.Integer(),
                     nullable=True,
-                    comment="Actual RAM amount (MiB) reported by lstopo or similar tool.",
+                    comment=(
+                        "Actual RAM amount (MiB) measured on the instance via lstopo or other tool. "
+                        "This amount might not match the vendor-reported memory due to the BIOS or the hypervisor reserving a small percentage."
+                    ),
                 ),
                 insert_after="memory_amount",
             )
@@ -453,7 +459,7 @@ def upgrade() -> None:
                     "network_storage_speed_baseline",
                     sa.Float(),
                     nullable=True,
-                    comment="The baseline network-attached storage performance (Gbps) of the network card.",
+                    comment="The baseline bandwidth performance of network-attached storage (Gbps).",
                 ),
                 insert_after="network_speed_max",
             )
@@ -462,7 +468,7 @@ def upgrade() -> None:
                     "network_storage_speed_max",
                     sa.Float(),
                     nullable=True,
-                    comment="The maximum network-attached storage performance (Gbps) of the network card.",
+                    comment="The maximum bandwidth performance of network-attached storage (Gbps).",
                 ),
                 insert_after="network_storage_speed_baseline",
             )
@@ -482,7 +488,10 @@ def upgrade() -> None:
                 "scalability",
                 sa.Float(),
                 nullable=True,
-                comment="Measures how efficiently the server scales from a single core performance to using multiple cores. A score of 100% means perfect linear scaling with zero performance loss.",
+                comment=(
+                    "Measures how efficiently the server scales from a single core performance to using multiple cores. "
+                    "A score of 100% means perfect linear scaling with zero performance loss."
+                ),
             ),
         )
         op.add_column(
@@ -491,7 +500,7 @@ def upgrade() -> None:
                 "hw_virt",
                 sa.Boolean(),
                 nullable=True,
-                comment="If nested hardware virtualization is exposed to the guest.",
+                comment="If hardware virtualization (e.g. KVM) is supported.",
             ),
         )
         op.alter_column(
@@ -505,7 +514,10 @@ def upgrade() -> None:
                 "memory_amount_actual",
                 sa.Integer(),
                 nullable=True,
-                comment="Actual RAM amount (MiB) reported by lstopo or similar tool.",
+                comment=(
+                    "Actual RAM amount (MiB) measured on the instance via lstopo or other tool. "
+                    "This amount might not match the vendor-reported memory due to the BIOS or the hypervisor reserving a small percentage."
+                ),
             ),
         )
         op.add_column(
@@ -528,7 +540,7 @@ def upgrade() -> None:
                 "network_storage_speed_baseline",
                 sa.Float(),
                 nullable=True,
-                comment="The baseline network-attached storage performance (Gbps) of the network card.",
+                comment="The baseline bandwidth performance of network-attached storage (Gbps).",
             ),
         )
         op.add_column(
@@ -537,7 +549,7 @@ def upgrade() -> None:
                 "network_storage_speed_max",
                 sa.Float(),
                 nullable=True,
-                comment="The maximum network-attached storage performance (Gbps) of the network card.",
+                comment="The maximum bandwidth performance of network-attached storage (Gbps).",
             ),
         )
 

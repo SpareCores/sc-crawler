@@ -665,7 +665,7 @@ class ServerFields(
         default=None,
         description=(
             "Measures how efficiently the server scales from a single core performance to using multiple cores. "
-            "A score of 100% means perfect linear scaling with zero performance loss.",
+            "A score of 100% means perfect linear scaling with zero performance loss."
         ),
     )
     hw_virt: Optional[bool] = Field(
@@ -678,7 +678,10 @@ class ServerFields(
     )
     memory_amount_actual: Optional[int] = Field(
         default=None,
-        description="Actual RAM amount (MiB) measured on the instance via lstopo or other tool. This amount might not match the vendor-reported memory due to the BIOS or the hypervisor reserving a small percentage.",
+        description=(
+            "Actual RAM amount (MiB) measured on the instance via lstopo or other tool. "
+            "This amount might not match the vendor-reported memory due to the BIOS or the hypervisor reserving a small percentage."
+        ),
     )
     memory_generation: Optional[DdrGeneration] = Field(
         default=None, description="Generation of the DDR SDRAM, e.g. DDR4 or DDR5."
