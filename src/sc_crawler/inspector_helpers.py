@@ -120,6 +120,57 @@ def _parse_lstopo_memory_amount_mib(
     return total_kib // 1024
 
 
+def _parse_lshw_memory_amount_mib(lshw_obj) -> Optional[int]:
+    """
+    Find memory size in lshw JSON output.
+    """
+    if not lshw_obj or isinstance(lshw_obj, Exception):
+        return None
+
+    if isinstance(lshw_obj, list):
+        for entry in lshw_obj:
+            root_value = _parse_lshw_memory_amount_mib(entry)
+            if root_value is not None:
+                return root_value
+        return None
+
+    if not isinstance(lshw_obj, dict):
+        return None
+
+    if lshw_obj.get("id", "").lower().startswith("memory"):
+        size_bytes = lshw_obj.get("size")
+        if isinstance(size_bytes, int) and size_bytes > 0:
+            return size_bytes // 1024**2
+
+        total_bank_bytes = 0
+        for child in lshw_obj.get("children", []) or []:
+            if not isinstance(child, dict):
+                continue
+            if not child.get("id", "").lower().startswith("bank"):
+                continue
+            bank_size_bytes = child.get("size")
+            if isinstance(bank_size_bytes, int) and bank_size_bytes > 0:
+                total_bank_bytes += bank_size_bytes
+        if total_bank_bytes > 0:
+            return total_bank_bytes // 1024**2
+
+    for child in lshw_obj.get("children", []) or []:
+        child_value = _parse_lshw_memory_amount_mib(child)
+        if child_value is not None:
+            return child_value
+    return None
+
+
+def _parse_dmidecode_memory_amount_mib(
+    dmidecode_objs: List[dict],
+) -> Optional[int]:
+    """
+    Sum memory sizes from dmidecode JSON output.
+    """
+    memory_sizes = sum(d.get("Size", 0) for d in dmidecode_objs)
+    return memory_sizes // 1024**2 if memory_sizes > 0 else None
+
+
 def _count_cores_under(element: xmltree.Element) -> int:
     """Count Core elements that are descendants of this element."""
     count = 0

@@ -20,6 +20,8 @@ from yaml import safe_load as yaml_safe_load
 from .inspector_helpers import (
     StorageInfo,
     _get_cpu_cache_info,
+    _parse_dmidecode_memory_amount_mib,
+    _parse_lshw_memory_amount_mib,
     _parse_lstopo_memory_amount_mib,
 )
 from .logger import logger
@@ -152,7 +154,7 @@ def _server_dmidecode_section(server: "Server", section: str) -> dict:
     return _listsearch(_server_dmidecode(server), "name", section)["props"]
 
 
-def _server_dmidecode_sections(server: "Server", section: str) -> dict:
+def _server_dmidecode_sections(server: "Server", section: str) -> List[dict]:
     return [s["props"] for s in _server_dmidecode(server) if s["name"] == section]
 
 
@@ -1184,6 +1186,9 @@ def inspect_update_server_dict(server: dict) -> dict:
         "dmidecode_memory": lambda: _server_dmidecode_section(
             server_obj, "Memory Device"
         ),
+        "dmidecode_memory_devices": lambda: _server_dmidecode_sections(
+            server_obj, "Memory Device"
+        ),
         "lscpu": lambda: _server_lscpu(server_obj),
         "lshw": lambda: _server_lshw(server_obj),
         "lstopo": lambda: _server_lstopo(server_obj),
@@ -1289,6 +1294,15 @@ def inspect_update_server_dict(server: dict) -> dict:
             return round(bestn_score / best1_score, 1)
         return None
 
+    def get_memory_amount_actual():
+        """Extract memory amount from lstopo, lshw or dmidecode."""
+        return (
+            _parse_lstopo_memory_amount_mib(lookups["lstopo"])
+            or _parse_lshw_memory_amount_mib(lookups["lshw"])
+            or _parse_dmidecode_memory_amount_mib(lookups["dmidecode_memory_devices"])
+            or None
+        )
+
     mappings = {
         "vcpus": lambda: lscpu_lookup("CPU(s):"),
         "cpu_cores": lambda: (
@@ -1314,9 +1328,7 @@ def inspect_update_server_dict(server: dict) -> dict:
             else None
         ),
         "hw_virt": lambda: lookups["virtualization"].get("kvm", None),
-        "memory_amount_actual": lambda: _parse_lstopo_memory_amount_mib(
-            lookups["lstopo"]
-        ),
+        "memory_amount_actual": get_memory_amount_actual,
         "memory_generation": lambda: DdrGeneration[lookups["dmidecode_memory"]["Type"]],
         # convert to Mhz
         "memory_speed": lambda: int(lookups["dmidecode_memory"]["Speed"]) / 1e6,
