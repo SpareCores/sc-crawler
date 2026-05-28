@@ -1274,40 +1274,26 @@ def inspect_update_server_dict(server: dict) -> dict:
             return _standardize_cpu_model(lookups["dmidecode_cpu"]["Version"])
         return None
 
-    def get_cpu_cores():
-        """Extract CPU cores from lscpu."""
-        with suppress(Exception):
-            return int(lscpu_lookup("Core(s) per socket:")) * int(
-                lscpu_lookup("Socket(s):")
-            )
-        return None
-
-    _cpu_cores: int | None = get_cpu_cores()
-
-    def calculate_ecpus_and_scalability() -> tuple[float | None, float | None]:
-        """Calculate ecpus and scalability from stressngfull."""
+    def calculate_ecpus():
+        """Calculate ecpus from stressngfull."""
         stressngfull = lookups.get("stressngfull")
         if (
             isinstance(stressngfull, Exception)
             or not isinstance(stressngfull, list)
             or not stressngfull
         ):
-            return None, None
+            return None
         with suppress(Exception):
             best1_score = stressngfull[0][1]
             bestn_score = max(score for _, score in stressngfull)
-            ecpus = round(bestn_score / best1_score, 1)
-            if not _cpu_cores:
-                return ecpus, None
-            scalability = round(ecpus / _cpu_cores * 100, 2)
-            return ecpus, scalability
-        return None, None
-
-    _ecpus_scalability = calculate_ecpus_and_scalability()
+            return round(bestn_score / best1_score, 1)
+        return None
 
     mappings = {
         "vcpus": lambda: lscpu_lookup("CPU(s):"),
-        "cpu_cores": lambda: _cpu_cores,
+        "cpu_cores": lambda: (
+            int(lscpu_lookup("Core(s) per socket:")) * int(lscpu_lookup("Socket(s):"))
+        ),
         "cpu_speed": get_cpu_speed,
         "cpu_manufacturer": get_cpu_manufacturer,
         "cpu_family": get_cpu_family,
@@ -1321,8 +1307,12 @@ def inspect_update_server_dict(server: dict) -> dict:
         "cpu_l3_cache": lambda: cpu_cache_info.get("L3", {}).get("per_instance_KiB"),
         "cpu_l3_cache_total": lambda: cpu_cache_info.get("L3", {}).get("total_KiB"),
         "cpu_flags": lambda: lscpu_lookup("Flags:").split(" "),
-        "ecpus": lambda: _ecpus_scalability[0],
-        "scalability": lambda: _ecpus_scalability[1],
+        "ecpus": calculate_ecpus,
+        "scalability": lambda: (
+            round(server["ecpus"] / server["cpu_cores"] * 100, 2)
+            if server.get("ecpus") is not None and server.get("cpu_cores") is not None
+            else None
+        ),
         "hw_virt": lambda: lookups["virtualization"].get("kvm", None),
         "memory_amount_actual": lambda: _parse_lstopo_memory_amount_mib(
             lookups["lstopo"]
