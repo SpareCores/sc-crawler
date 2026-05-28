@@ -229,7 +229,11 @@ def inventory_servers(vendor):
                         else StorageType.NETWORK
                     ),
                     "storages": [],
-                    "network_speed": None,
+                    # TODO: have to implement manual mapping for network_speed related fields
+                    "network_speed_baseline": None,
+                    "network_speed_max": None,
+                    "network_storage_speed_baseline": None,
+                    "network_storage_speed_max": None,
                     # https://docs.hetzner.com/cloud/billing/faq/#how-do-you-bill-for-traffic
                     "inbound_traffic": 0,  # free
                     "outbound_traffic": (
