@@ -9,6 +9,7 @@ from statistics import mode
 from typing import List, Optional, Tuple
 
 import boto3
+from botocore.config import Config
 from botocore.exceptions import ClientError
 from cachier import cachier, set_global_params
 
@@ -64,7 +65,17 @@ def _boto_describe_regions():
 
 @cachier()
 def _boto_describe_availability_zones(region):
-    ec2 = boto3.client("ec2", region_name=region)
+    ec2 = boto3.client(
+        "ec2",
+        region_name=region,
+        config=Config(
+            connect_timeout=5,
+            read_timeout=10,
+            retries={
+                "max_attempts": 2,
+            },
+        ),
+    )
     zones = ec2.describe_availability_zones(
         Filters=[
             {"Name": "zone-type", "Values": ["availability-zone"]},
@@ -873,10 +884,7 @@ def inventory_regions(vendor):
     # mark inactive regions
     active_regions = [region["RegionName"] for region in available_regions]
     for region in regions:
-        # TODO Bahrain region is unreachable, have to delete this once it is available
-        if region["region_id"] == "me-south-1":
-            region["status"] = "inactive"
-        elif region["region_id"] in active_regions:
+        if region["region_id"] in active_regions:
             region["status"] = "active"
         else:
             region["status"] = "inactive"
