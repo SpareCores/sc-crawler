@@ -136,3 +136,22 @@ ovh = Vendor(
     billing_comment="Billing for stopped servers depends on status: suspended or paused is billed, while shelved is not.",
 )
 """OVHcloud."""
+
+vultr = Vendor(
+    vendor_id="vultr",
+    name="Vultr",
+    logo="https://sparecores.com/assets/images/vendors/vultr.svg",
+    homepage="https://www.vultr.com",
+    country=countries["US"],
+    state="California",
+    city="San Francisco",
+    address_line="123 Main St",
+    zip_code="94101",
+    founding_year=2010,
+    status_page="https://status.vultr.com",
+    stopped_server_charged=True,
+    billing_increment_seconds=3600,
+    minimum_billing_seconds=3600,
+    billing_comment="Billing for stopped servers depends on status: suspended or paused is billed, while shelved is not.",
+)
+"""Vultr."""
