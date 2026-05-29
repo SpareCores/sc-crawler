@@ -215,7 +215,7 @@ def inventory_servers(vendor):
                     "cpu_family": cpu[1],
                     "cpu_model": cpu[2],
                     "cpus": [],
-                    "memory_amount": server.memory * 1024,
+                    "memory_amount": server.memory * 1000,
                     "gpu_count": 0,
                     "gpu_memory_min": None,
                     "gpu_memory_total": None,
