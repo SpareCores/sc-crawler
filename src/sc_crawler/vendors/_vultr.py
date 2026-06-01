@@ -312,6 +312,8 @@ def inventory_servers(vendor):
         cpu_architecture = (
             CpuArchitecture.ARM64 if cpu_family == "Grace" else CpuArchitecture.X86_64
         )
+        cpu_speed_mhz = server.get("cpu_mhz")
+        cpu_speed_ghz = cpu_speed_mhz / 1000 if cpu_speed_mhz else None
 
         # GPU
         gpu_brand = server.get("gpu_brand", "")
@@ -350,7 +352,7 @@ def inventory_servers(vendor):
                 "hypervisor": None,
                 "cpu_allocation": cpu_allocation,
                 "cpu_cores": vcpus or cpu_count,
-                "cpu_speed": None,
+                "cpu_speed": cpu_speed_ghz,
                 "cpu_architecture": cpu_architecture,
                 "cpu_manufacturer": cpu_manufacturer,
                 "cpu_family": cpu_family,
@@ -401,7 +403,8 @@ def inventory_server_prices(vendor):
     for server in plans + plans_metal:
         for region_id in server.get("locations", []):
             location_cost = server.get("location_cost", {})
-            price_unit = PriceUnit.HOUR
+            invoice_type = server.get("invoice_type")
+            price_unit = PriceUnit.HOUR if invoice_type == "hourly" else PriceUnit.MONTH
             if server["deploy_ondemand"]:
                 price = server[price_unit_keys[price_unit]]
                 if location_cost.get(region_id):
@@ -437,7 +440,8 @@ def inventory_server_prices_spot(vendor):
     for server in plans + plans_metal:
         for region_id in server.get("locations", []):
             location_cost = server.get("location_cost", {})
-            price_unit = PriceUnit.HOUR
+            invoice_type = server.get("invoice_type")
+            price_unit = PriceUnit.HOUR if invoice_type == "hourly" else PriceUnit.MONTH
             if server["deploy_preemptible"]:
                 price = server[price_unit_keys[price_unit]]
                 if location_cost.get(region_id):
