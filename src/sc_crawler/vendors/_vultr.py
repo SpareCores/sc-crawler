@@ -394,21 +394,17 @@ def inventory_server_prices(vendor):
     plans = _get_plans()
     plans_metal = _get_plans_metal()
 
-    price_unit_keys = {
-        PriceUnit.HOUR: "hourly_cost",
-        PriceUnit.MONTH: "monthly_cost",
-    }
-
     items = []
     for server in plans + plans_metal:
         for region_id in server.get("locations", []):
-            location_cost = server.get("location_cost", {})
-            invoice_type = server.get("invoice_type")
-            price_unit = PriceUnit.HOUR if invoice_type == "hourly" else PriceUnit.MONTH
             if server["deploy_ondemand"]:
-                price = server[price_unit_keys[price_unit]]
+                location_cost = server.get("location_cost", {})
+                hourly_price = server.get("hourly_cost")
+                monthly_price = server.get("monthly_cost")
                 if location_cost.get(region_id):
-                    price = location_cost[region_id][price_unit_keys[price_unit]]
+                    hourly_price = location_cost[region_id].get("hourly_cost")
+                    monthly_price = location_cost[region_id].get("monthly_cost")
+                monthly_cap = int(monthly_price / hourly_price)
                 items.append(
                     {
                         "vendor_id": vendor.vendor_id,
@@ -417,10 +413,13 @@ def inventory_server_prices(vendor):
                         "server_id": server["id"],
                         "operating_system": "Linux",
                         "allocation": Allocation.ONDEMAND,
-                        "unit": price_unit,
-                        "price": price,
+                        "unit": PriceUnit.HOUR,
+                        "price": hourly_price,
                         "price_upfront": 0,
-                        "price_tiered": [],
+                        "price_tiered": [
+                            {"lower": 0, "upper": monthly_cap, "price": hourly_price},
+                            {"lower": monthly_cap + 1, "upper": "Infinity", "price": 0},
+                        ],
                         "currency": "USD",
                     }
                 )
@@ -431,21 +430,21 @@ def inventory_server_prices_spot(vendor):
     plans = _get_plans()
     plans_metal = _get_plans_metal()
 
-    price_unit_keys = {
-        PriceUnit.HOUR: "hourly_cost_preemptible",
-        PriceUnit.MONTH: "monthly_cost_preemptible",
-    }
-
     items = []
     for server in plans + plans_metal:
         for region_id in server.get("locations", []):
-            location_cost = server.get("location_cost", {})
-            invoice_type = server.get("invoice_type")
-            price_unit = PriceUnit.HOUR if invoice_type == "hourly" else PriceUnit.MONTH
             if server["deploy_preemptible"]:
-                price = server[price_unit_keys[price_unit]]
+                location_cost = server.get("location_cost", {})
+                hourly_price = server.get("hourly_cost_preemptible")
+                monthly_price = server.get("monthly_cost_preemptible")
                 if location_cost.get(region_id):
-                    price = location_cost[region_id][price_unit_keys[price_unit]]
+                    hourly_price = location_cost[region_id].get(
+                        "hourly_cost_preemptible"
+                    )
+                    monthly_price = location_cost[region_id].get(
+                        "monthly_cost_preemptible"
+                    )
+                monthly_cap = int(monthly_price / hourly_price)
                 items.append(
                     {
                         "vendor_id": vendor.vendor_id,
@@ -454,10 +453,13 @@ def inventory_server_prices_spot(vendor):
                         "server_id": server["id"],
                         "operating_system": "Linux",
                         "allocation": Allocation.SPOT,
-                        "unit": price_unit,
-                        "price": price,
+                        "unit": PriceUnit.HOUR,
+                        "price": hourly_price,
                         "price_upfront": 0,
-                        "price_tiered": [],
+                        "price_tiered": [
+                            {"lower": 0, "upper": monthly_cap, "price": hourly_price},
+                            {"lower": monthly_cap + 1, "upper": "Infinity", "price": 0},
+                        ],
                         "currency": "USD",
                     }
                 )
