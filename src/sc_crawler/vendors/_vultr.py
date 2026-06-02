@@ -300,9 +300,7 @@ def inventory_servers(vendor):
     for server in plans + plans_metal:
         # CPU
         cpu_model_raw = server.get("cpu_model", "")
-        cpu_manufacturer = server.get("cpu_vendor") or server.get(
-            "cpu_manufacturer", ""
-        )
+        cpu_manufacturer = server.get("cpu_vendor") or server.get("cpu_manufacturer")
         cpu_family = _extract_cpu_family(cpu_model_raw)
         cpu_model = _standardize_cpu_model(cpu_model_raw)
         vcpus = server.get("vcpu_count")
@@ -404,7 +402,14 @@ def inventory_server_prices(vendor):
                 if location_cost.get(region_id):
                     hourly_price = location_cost[region_id].get("hourly_cost")
                     monthly_price = location_cost[region_id].get("monthly_cost")
-                monthly_cap = int(monthly_price / hourly_price)
+                if hourly_price == 0:
+                    price_tiered = []
+                else:
+                    monthly_cap = int(monthly_price / hourly_price)
+                    price_tiered = [
+                        {"lower": 0, "upper": monthly_cap, "price": hourly_price},
+                        {"lower": monthly_cap + 1, "upper": "Infinity", "price": 0},
+                    ]
                 items.append(
                     {
                         "vendor_id": vendor.vendor_id,
@@ -416,10 +421,7 @@ def inventory_server_prices(vendor):
                         "unit": PriceUnit.HOUR,
                         "price": hourly_price,
                         "price_upfront": 0,
-                        "price_tiered": [
-                            {"lower": 0, "upper": monthly_cap, "price": hourly_price},
-                            {"lower": monthly_cap + 1, "upper": "Infinity", "price": 0},
-                        ],
+                        "price_tiered": price_tiered,
                         "currency": "USD",
                     }
                 )
@@ -444,7 +446,14 @@ def inventory_server_prices_spot(vendor):
                     monthly_price = location_cost[region_id].get(
                         "monthly_cost_preemptible"
                     )
-                monthly_cap = int(monthly_price / hourly_price)
+                if hourly_price == 0:
+                    price_tiered = []
+                else:
+                    monthly_cap = int(monthly_price / hourly_price)
+                    price_tiered = [
+                        {"lower": 0, "upper": monthly_cap, "price": hourly_price},
+                        {"lower": monthly_cap + 1, "upper": "Infinity", "price": 0},
+                    ]
                 items.append(
                     {
                         "vendor_id": vendor.vendor_id,
@@ -456,10 +465,7 @@ def inventory_server_prices_spot(vendor):
                         "unit": PriceUnit.HOUR,
                         "price": hourly_price,
                         "price_upfront": 0,
-                        "price_tiered": [
-                            {"lower": 0, "upper": monthly_cap, "price": hourly_price},
-                            {"lower": monthly_cap + 1, "upper": "Infinity", "price": 0},
-                        ],
+                        "price_tiered": price_tiered,
                         "currency": "USD",
                     }
                 )
