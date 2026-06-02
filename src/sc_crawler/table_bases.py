@@ -768,6 +768,10 @@ class ServerFields(
     ipv4: int = Field(
         default=0, description="Number of complimentary IPv4 address(es)."
     )
+    average_time_to_start: Optional[int] = Field(
+        default=None,
+        description="Average time to start the server (seconds).",
+    )
 
     @field_validator("cpus", mode="before")
     @classmethod

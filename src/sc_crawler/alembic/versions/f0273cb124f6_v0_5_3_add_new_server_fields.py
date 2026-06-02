@@ -472,6 +472,15 @@ def upgrade() -> None:
                 ),
                 insert_after="network_storage_speed_baseline",
             )
+            batch_op.add_column(
+                sa.Column(
+                    "average_time_to_start",
+                    sa.Integer(),
+                    nullable=True,
+                    comment="Average time to start the server (seconds).",
+                ),
+                insert_after="ipv4",
+            )
     else:
         op.add_column(
             server_table_name,
@@ -552,11 +561,21 @@ def upgrade() -> None:
                 comment="The maximum bandwidth performance of network-attached storage (Gbps).",
             ),
         )
+        op.add_column(
+            server_table_name,
+            sa.Column(
+                "average_time_to_start",
+                sa.Integer(),
+                nullable=True,
+                comment="Average time to start the server (seconds).",
+            ),
+        )
 
 
 def downgrade() -> None:
     server_table_name = scdize_suffix("server")
     with op.batch_alter_table(server_table_name, schema=None) as batch_op:
+        batch_op.drop_column("average_time_to_start")
         batch_op.drop_column("network_storage_speed_max")
         batch_op.drop_column("network_storage_speed_baseline")
         batch_op.alter_column(
