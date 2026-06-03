@@ -17,7 +17,13 @@ from zipfile import ZipFile
 from requests import get
 from yaml import safe_load as yaml_safe_load
 
-from .inspector_helpers import StorageInfo, _get_cpu_cache_info
+from .inspector_helpers import (
+    StorageInfo,
+    _get_cpu_cache_info,
+    _parse_dmidecode_memory_amount_mib,
+    _parse_lshw_memory_amount_mib,
+    _parse_lstopo_memory_amount_mib,
+)
 from .logger import logger
 from .table_bases import ServerBase
 from .table_fields import DdrGeneration, Disk, Parallelism, StorageType
@@ -148,7 +154,7 @@ def _server_dmidecode_section(server: "Server", section: str) -> dict:
     return _listsearch(_server_dmidecode(server), "name", section)["props"]
 
 
-def _server_dmidecode_sections(server: "Server", section: str) -> dict:
+def _server_dmidecode_sections(server: "Server", section: str) -> List[dict]:
     return [s["props"] for s in _server_dmidecode(server) if s["name"] == section]
 
 
@@ -183,6 +189,19 @@ def _server_geekbench(server: "Server") -> List[str]:
 def _server_passmark(server: "Server") -> List[str]:
     with open(_server_framework_path(server, "passmark", "stdout"), "r") as fp:
         return [line.strip() for line in fp.readlines()]
+
+
+def _server_virtualization(server: "Server") -> dict:
+    with open(_server_framework_path(server, "virtualization", "stdout"), "r") as fp:
+        return json.load(fp)
+
+
+def _server_stressngfull(server: "Server") -> List[tuple[int, float]]:
+    with open(_server_framework_stdout_path(server, "stressngfull"), newline="") as f:
+        return [
+            (int(row[0]), float(row[1]))
+            for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC)
+        ]
 
 
 def _observed_at(server: "Server", framework: str) -> dict:
@@ -1167,6 +1186,9 @@ def inspect_update_server_dict(server: dict) -> dict:
         "dmidecode_memory": lambda: _server_dmidecode_section(
             server_obj, "Memory Device"
         ),
+        "dmidecode_memory_devices": lambda: _server_dmidecode_sections(
+            server_obj, "Memory Device"
+        ),
         "lscpu": lambda: _server_lscpu(server_obj),
         "lshw": lambda: _server_lshw(server_obj),
         "lstopo": lambda: _server_lstopo(server_obj),
@@ -1174,6 +1196,8 @@ def inspect_update_server_dict(server: dict) -> dict:
         "lsblk_discard": lambda: _server_lsblk_discard(server_obj),
         "lsblk_topo": lambda: _server_lsblk_topo(server_obj),
         "nvidiasmi": lambda: _server_nvidiasmi(server_obj),
+        "virtualization": lambda: _server_virtualization(server_obj),
+        "stressngfull": lambda: _server_stressngfull(server_obj),
         "gpu": lambda: lookups["nvidiasmi"].find("gpu"),
         "gpus": lambda: lookups["nvidiasmi"].findall("gpu"),
     }
@@ -1255,15 +1279,39 @@ def inspect_update_server_dict(server: dict) -> dict:
             return _standardize_cpu_model(lookups["dmidecode_cpu"]["Version"])
         return None
 
+    def calculate_ecpus():
+        """Calculate ecpus from stressngfull."""
+        stressngfull = lookups.get("stressngfull")
+        if (
+            isinstance(stressngfull, Exception)
+            or not isinstance(stressngfull, list)
+            or not stressngfull
+        ):
+            return None
+        with suppress(Exception):
+            best1_score = stressngfull[0][1]
+            bestn_score = max(score for _, score in stressngfull)
+            return round(bestn_score / best1_score, 1)
+        return None
+
+    def get_memory_amount_actual():
+        """Extract memory amount from lstopo, lshw or dmidecode."""
+        return (
+            _parse_lstopo_memory_amount_mib(lookups["lstopo"])
+            or _parse_lshw_memory_amount_mib(lookups["lshw"])
+            or _parse_dmidecode_memory_amount_mib(lookups["dmidecode_memory_devices"])
+            or None
+        )
+
     mappings = {
         "vcpus": lambda: lscpu_lookup("CPU(s):"),
         "cpu_cores": lambda: (
             int(lscpu_lookup("Core(s) per socket:")) * int(lscpu_lookup("Socket(s):"))
         ),
-        "cpu_speed": lambda: get_cpu_speed(),
-        "cpu_manufacturer": lambda: get_cpu_manufacturer(),
-        "cpu_family": lambda: get_cpu_family(),
-        "cpu_model": lambda: get_cpu_model(),
+        "cpu_speed": get_cpu_speed,
+        "cpu_manufacturer": get_cpu_manufacturer,
+        "cpu_family": get_cpu_family,
+        "cpu_model": get_cpu_model,
         "cpu_l1d_cache": lambda: cpu_cache_info.get("L1d", {}).get("per_instance_KiB"),
         "cpu_l1d_cache_total": lambda: cpu_cache_info.get("L1d", {}).get("total_KiB"),
         "cpu_l1i_cache": lambda: cpu_cache_info.get("L1i", {}).get("per_instance_KiB"),
@@ -1273,6 +1321,14 @@ def inspect_update_server_dict(server: dict) -> dict:
         "cpu_l3_cache": lambda: cpu_cache_info.get("L3", {}).get("per_instance_KiB"),
         "cpu_l3_cache_total": lambda: cpu_cache_info.get("L3", {}).get("total_KiB"),
         "cpu_flags": lambda: lscpu_lookup("Flags:").split(" "),
+        "ecpus": calculate_ecpus,
+        "scalability": lambda: (
+            round(server["ecpus"] / server["cpu_cores"] * 100, 2)
+            if server.get("ecpus") is not None and server.get("cpu_cores") is not None
+            else None
+        ),
+        "hw_virt": lambda: lookups["virtualization"].get("kvm", None),
+        "memory_amount_actual": get_memory_amount_actual,
         "memory_generation": lambda: DdrGeneration[lookups["dmidecode_memory"]["Type"]],
         # convert to Mhz
         "memory_speed": lambda: int(lookups["dmidecode_memory"]["Speed"]) / 1e6,
@@ -1334,7 +1390,7 @@ def inspect_update_server_dict(server: dict) -> dict:
     for k, f in mappings.items():
         try:
             newval = f()
-            if newval:
+            if newval is not None:
                 server[k] = override_mapping(server, k, newval)
         except Exception as e:
             _log_cannot_update_server(server_obj, k, e)

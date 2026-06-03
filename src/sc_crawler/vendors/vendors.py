@@ -19,6 +19,9 @@ aws = Vendor(
     zip_code="98109",
     founding_year=2002,
     status_page="https://health.aws.amazon.com/health/status",
+    stopped_server_charged=False,
+    billing_increment_seconds=1,
+    minimum_billing_seconds=60,
 )
 """Amazon Web Services."""
 
@@ -34,6 +37,9 @@ gcp = Vendor(
     zip_code="94043",
     founding_year=2008,
     status_page="https://status.cloud.google.com/",
+    stopped_server_charged=False,
+    billing_increment_seconds=1,
+    minimum_billing_seconds=60,
 )
 """Google Cloud Platform."""
 
@@ -49,6 +55,9 @@ hcloud = Vendor(
     zip_code="91710",
     founding_year=2018,
     status_page="https://status.hetzner.com/",
+    stopped_server_charged=True,
+    billing_increment_seconds=3600,
+    minimum_billing_seconds=3600,
 )
 """Hetzner Cloud."""
 
@@ -64,6 +73,10 @@ azure = Vendor(
     zip_code="98052",
     founding_year=2010,
     status_page="https://azure.status.microsoft.com",
+    stopped_server_charged=True,
+    billing_increment_seconds=1,
+    minimum_billing_seconds=300,
+    billing_comment="Billing of stopped server depends on allocation status.",
 )
 """Microsoft Azure."""
 
@@ -79,6 +92,10 @@ upcloud = Vendor(
     zip_code="00100",
     founding_year=2012,
     status_page="https://status.upcloud.com",
+    stopped_server_charged=True,
+    billing_increment_seconds=3600,
+    minimum_billing_seconds=3600,
+    billing_comment="Billing of stopped servers depends on the instance family: Developer and General Purpose instances are billed, while Cloud Native instances are not.",
 )
 """UpCloud."""
 
@@ -94,6 +111,10 @@ alicloud = Vendor(
     zip_code="311121",
     founding_year=2009,
     status_page="https://status.alibabacloud.com/",
+    stopped_server_charged=True,
+    billing_increment_seconds=1,
+    minimum_billing_seconds=600,
+    billing_comment="Billing of stopped server depends on stop mode: Standard or Economical. Min billing 600, 300, or 120 seconds by vCPU.",
 )
 """Alibaba Cloud."""
 
@@ -109,5 +130,9 @@ ovh = Vendor(
     zip_code="59100",
     founding_year=1999,
     status_page="https://www.status-ovhcloud.com",
+    stopped_server_charged=False,
+    billing_increment_seconds=3600,
+    minimum_billing_seconds=3600,
+    billing_comment="Billing for stopped servers depends on status: suspended or paused is billed, while shelved is not.",
 )
 """OVHcloud."""

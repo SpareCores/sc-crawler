@@ -9,6 +9,7 @@ from statistics import mode
 from typing import List, Optional, Tuple
 
 import boto3
+from botocore.config import Config
 from botocore.exceptions import ClientError
 from cachier import cachier, set_global_params
 
@@ -64,7 +65,17 @@ def _boto_describe_regions():
 
 @cachier()
 def _boto_describe_availability_zones(region):
-    ec2 = boto3.client("ec2", region_name=region)
+    ec2 = boto3.client(
+        "ec2",
+        region_name=region,
+        config=Config(
+            connect_timeout=5,
+            read_timeout=10,
+            retries={
+                "max_attempts": 2,
+            },
+        ),
+    )
     zones = ec2.describe_availability_zones(
         Filters=[
             {"Name": "zone-type", "Values": ["availability-zone"]},
@@ -250,6 +261,28 @@ def _get_storage_of_instance_type(instance_type, nvme=False):
     return (storage_size, storage_type)
 
 
+def _get_ebs_network_speed_gbps(
+    instance_type,
+) -> Tuple[Optional[float], Optional[float]]:
+    """Get EBS (network-attached storage) bandwidth from describe_instance_types."""
+    ebs_info = instance_type.get("EbsInfo") or {}
+    optimized = ebs_info.get("EbsOptimizedInfo") or {}
+    cards = ebs_info.get("EbsCards") or []
+
+    baseline_mbps = optimized.get("BaselineBandwidthInMbps")
+    maximum_mbps = optimized.get("MaximumBandwidthInMbps")
+
+    if baseline_mbps is None and cards:
+        baseline_mbps = sum(c.get("BaselineBandwidthInMbps", 0) for c in cards) or None
+    if maximum_mbps is None and cards:
+        maximum_mbps = sum(c.get("MaximumBandwidthInMbps", 0) for c in cards) or None
+
+    return (
+        baseline_mbps / 1000 if baseline_mbps is not None else None,
+        maximum_mbps / 1000 if maximum_mbps is not None else None,
+    )
+
+
 def _array_expand_by_count(array):
     """Expand an array with its items Count field."""
     array = [[a] * a["Count"] for a in array]
@@ -320,6 +353,7 @@ def _make_server_from_instance_type(instance_type, vendor) -> dict:
     gpu_info = _get_gpu_of_instance_type(instance_type)
     storage_info = _get_storage_of_instance_type(instance_type)
     network_card = instance_type["NetworkInfo"]["NetworkCards"][0]
+    ebs_baseline_gbps, ebs_max_gbps = _get_ebs_network_speed_gbps(instance_type)
     return {
         "server_id": it,
         "vendor_id": vendor.vendor_id,
@@ -345,7 +379,10 @@ def _make_server_from_instance_type(instance_type, vendor) -> dict:
         "storage_size": storage_info[0],
         "storage_type": storage_info[1],
         "storages": _get_storages_of_instance_type(instance_type),
-        "network_speed": network_card["BaselineBandwidthInGbps"],
+        "network_speed_baseline": network_card["BaselineBandwidthInGbps"],
+        "network_speed_max": network_card["PeakBandwidthInGbps"],
+        "network_storage_speed_baseline": ebs_baseline_gbps,
+        "network_storage_speed_max": ebs_max_gbps,
     }
 
 

@@ -1,13 +1,17 @@
-## v0.5.x (development)
+## v0.6.0 (June 3, 2026)
 
 New feature(s):
 
 - Add `metadata` command to read and write database metadata.
 - Add `membench` benchmark scores with `scope: RAM` config for the first working set size per operation that exceeds total CPU cache (L3, else L2, else L1d).
+- Add `stopped_server_charged`, `billing_increment_seconds`,  `minimum_billing_seconds` and `billing_comment` columns to `Vendor` table, and
+fill up these columns with proper info.
+- Add `ecpus`, `scalability`, `hw_virt`, `memory_amount_actual`, `network_speed_max`, `network_storage_speed_baseline`, `network_storage_speed_max`, `average_time_to_start` columns to `Server` table, and fill up these columns with proper info (best effort for network speed related fields).
 
 Fix(es):
 
 - Add missing GPU-related data to UpCloud GPU family server instances.
+- Rename `network_speed` column to `network_speed_baseline` in `Server` table.
 
 ## v0.5.1 (Apr 22, 2026)
 
