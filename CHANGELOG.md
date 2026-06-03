@@ -1,5 +1,9 @@
 ## v0.6.0 (June 3, 2026)
 
+New vendor(s):
+
+- Vultr
+
 New feature(s):
 
 - Add `metadata` command to read and write database metadata.
