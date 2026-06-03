@@ -880,11 +880,11 @@ def inventory_servers(vendor):
                 )
             if weighting_info.get("EbsBandwidth"):
                 network_storage_speeds.append(
-                    weighting_info.get("EbsBandwidth") / 1_000_000
+                    weighting_info.get("EbsBandwidth") * 8 / 1_000_000  # Bps -> Gbps
                 )
             if weighting_info.get("EbsBurstBandwidth"):
                 network_storage_speeds.append(
-                    weighting_info.get("EbsBurstBandwidth") / 1_000_000
+                    weighting_info.get("EbsBurstBandwidth") * 8 / 1_000_000  # Bps -> Gbps
                 )
         network_fields["network_speed_max"] = (
             max(network_speeds) if network_speeds else None
