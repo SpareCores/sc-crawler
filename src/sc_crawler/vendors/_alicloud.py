@@ -884,7 +884,9 @@ def inventory_servers(vendor):
                 )
             if weighting_info.get("EbsBurstBandwidth"):
                 network_storage_speeds.append(
-                    weighting_info.get("EbsBurstBandwidth") * 8 / 1_000_000  # Bps -> Gbps
+                    weighting_info.get("EbsBurstBandwidth")
+                    * 8
+                    / 1_000_000  # Bps -> Gbps
                 )
         network_fields["network_speed_max"] = (
             max(network_speeds) if network_speeds else None
@@ -986,9 +988,8 @@ def inventory_servers(vendor):
                 "storage_size": storage_size,
                 "storage_type": storage_type,
                 "storages": [],
-                # TODO: incosistencies about network_storage_speed_baseline and network_storage_speed_max
-                # VpcBandwidth and VpcBurstBandwidth don't correlate with Disk baseline/burst bandwidth in docs
-                # have to implement manual mapping here too
+                # TODO: have to implement manual mapping here too, no detailed
+                # network info available for every instance type in API response
                 **_parse_network_fields(instance_type),
                 "inbound_traffic": 0,
                 "outbound_traffic": 0,
