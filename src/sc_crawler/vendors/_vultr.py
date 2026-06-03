@@ -10,6 +10,7 @@ from ..table_fields import (
     CpuArchitecture,
     PriceUnit,
     StorageType,
+    TrafficDirection,
 )
 
 _REGION_LOCATIONS: dict[str, dict] = {
@@ -122,6 +123,27 @@ _PLAN_TYPES: dict[str, str] = {
     "NVMe": "Bare Metal NVMe",
 }
 
+_CPU_MODEL_PREFIXES: tuple[str, ...] = (
+    "EPYC ",
+    "Grace ",
+    "Platinum ",
+    "Gold ",
+    "E3-",
+    "E-",
+)
+
+_DISK_TYPES: dict[str, StorageType] = {
+    "SSD": StorageType.SSD,
+    "HIGHFREQUENCY": StorageType.NVME_SSD,
+    "AMDHIGHPERF": StorageType.NVME_SSD,
+    "INTELHIGHPERF": StorageType.NVME_SSD,
+    "DEDICATEDOPTIMIZED": StorageType.NVME_SSD,
+    "CLOUDGPU": StorageType.NVME_SSD,
+    "DEDICATEDMETAL": StorageType.NVME_SSD,
+    "VX": StorageType.NETWORK,
+    "NVMe": StorageType.NVME_SSD,
+}
+
 # Vultr gpu_type → per-GPU VRAM (GiB) and architecture family.
 # https://www.nvidia.com/en-us/data-center/ / https://www.amd.com/en/products/accelerators/instinct/
 _GPU_TYPES: dict[str, dict[str, int | str]] = {
@@ -138,27 +160,31 @@ _GPU_TYPES: dict[str, dict[str, int | str]] = {
     "AMD_MI355X": {"vram_gb": 288, "family": "CDNA4"},
 }
 
-_DISK_TYPES: dict[str, StorageType] = {
-    "SSD": StorageType.SSD,
-    "HIGHFREQUENCY": StorageType.NVME_SSD,
-    "AMDHIGHPERF": StorageType.NVME_SSD,
-    "INTELHIGHPERF": StorageType.NVME_SSD,
-    "DEDICATEDOPTIMIZED": StorageType.NVME_SSD,
-    "CLOUDGPU": StorageType.NVME_SSD,
-    "DEDICATEDMETAL": StorageType.NVME_SSD,
-    "VX": StorageType.NETWORK,
-    "NVMe": StorageType.NVME_SSD,
+# Vultr Block Storage (VBS) catalog — keys match GET /v2/regions ``options``.
+# Performance: https://docs.vultr.com/support/products/storage/what-are-the-performance-expectations-for-block-storage
+# VKE CSI: https://docs.vultr.com/how-to-provision-persistent-volume-claims-on-vultr-kubernetes-engine
+_BLOCK_STORAGE: dict[str, dict] = {
+    "block_storage_high_perf": {
+        "name": "NVMe Block Storage",
+        "description": "VBS high_perf (CSI vultr-block-storage).",
+        "storage_type": StorageType.NVME_SSD,
+        "min_size": 10,
+        "max_size": 10_000,
+        "max_iops": 10_000,
+        "max_throughput": 400,
+        "price_gb_month": 0.10,
+    },
+    "block_storage_storage_opt": {
+        "name": "HDD Block Storage",
+        "description": "VBS storage_opt (CSI vultr-block-storage-hdd).",
+        "storage_type": StorageType.HDD,
+        "min_size": 40,
+        "max_size": 40_000,
+        "max_iops": 500,
+        "max_throughput": 100,
+        "price_gb_month": 0.025,
+    },
 }
-
-
-_CPU_MODEL_PREFIXES: tuple[str, ...] = (
-    "EPYC ",
-    "Grace ",
-    "Platinum ",
-    "Gold ",
-    "E3-",
-    "E-",
-)
 
 
 def _standardize_cpu_model(cpu_model: str | None) -> str | None:
@@ -380,6 +406,9 @@ def inventory_servers(vendor):
                 "storage_type": storage_type,
                 "storages": [],
                 "network_speed_baseline": None,
+                "network_speed_max": None,
+                "network_storage_speed_baseline": None,
+                "network_storage_speed_max": None,
                 "inbound_traffic": 0,
                 "outbound_traffic": server.get("bandwidth", 0),
                 "ipv4": 0,
@@ -474,66 +503,98 @@ def inventory_server_prices_spot(vendor):
 
 def inventory_storages(vendor):
     items = []
-    # for storage in []:
-    #     items.append(
-    #         {
-    #             "storage_id": ,
-    #             "vendor_id": vendor.vendor_id,
-    #             "name": ,
-    #             "description": None,
-    #             "storage_type": StorageType....,
-    #             "max_iops": None,
-    #             "max_throughput": None,
-    #             "min_size": None,
-    #             "max_size": None,
-    #         }
-    #     )
+    for storage_id, spec in _BLOCK_STORAGE.items():
+        items.append(
+            {
+                "storage_id": storage_id,
+                "vendor_id": vendor.vendor_id,
+                "name": spec["name"],
+                "description": spec["description"],
+                "storage_type": spec["storage_type"],
+                "max_iops": spec["max_iops"],
+                "max_throughput": spec["max_throughput"],
+                "min_size": spec["min_size"],
+                "max_size": spec["max_size"],
+            }
+        )
     return items
 
 
 def inventory_storage_prices(vendor):
     items = []
-    # for price in []:
-    #     items.append(
-    #         {
-    #             "vendor_id": vendor.vendor_id,
-    #             "region_id": ,
-    #             "storage_id": ,
-    #             "unit": PriceUnit.GB_MONTH,
-    #             "price": ,
-    #             "currency": "USD",
-    #         }
-    #     )
+    regions = _get_regions()
+    for region in regions:
+        options = region.get("options", [])
+        for storage_id in _BLOCK_STORAGE.keys():
+            if storage_id not in options:
+                continue
+            items.append(
+                {
+                    "vendor_id": vendor.vendor_id,
+                    "region_id": region["id"],
+                    "storage_id": storage_id,
+                    "unit": PriceUnit.GB_MONTH,
+                    "price": _BLOCK_STORAGE[storage_id]["price_gb_month"],
+                    "currency": "USD",
+                }
+            )
     return items
 
 
 def inventory_traffic_prices(vendor):
+    """Public network traffic rates (flat worldwide).
+
+    Ingress is free. Outbound overage beyond pooled plan + account quota is
+    billed per GB; included allowances are on each server plan ``bandwidth`` field.
+
+    Source: <https://docs.vultr.com/support/platform/billing/what-is-the-bandwidth-overage-rate>
+    """
     items = []
-    # for price in []:
-    #     items.append(
-    #         {
-    #             "vendor_id": vendor.vendor_id,
-    #             "region_id": ,
-    #             "price": ,
-    #             "price_tiered": [],
-    #             "currency": "USD",
-    #             "unit": PriceUnit.GB_MONTH,
-    #             "direction": TrafficDirection....,
-    #         }
-    #     )
+    regions = _get_regions()
+    for region in regions:
+        items.append(
+            {
+                "vendor_id": vendor.vendor_id,
+                "region_id": region["id"],
+                "price": 0,
+                "price_tiered": [],
+                "currency": "USD",
+                "unit": PriceUnit.GB_MONTH,
+                "direction": TrafficDirection.IN,
+            }
+        )
+        items.append(
+            {
+                "vendor_id": vendor.vendor_id,
+                "region_id": region["id"],
+                "price": 0.01,
+                "price_tiered": [],
+                "currency": "USD",
+                "unit": PriceUnit.GB_MONTH,
+                "direction": TrafficDirection.OUT,
+            }
+        )
     return items
 
 
 def inventory_ipv4_prices(vendor):
+    """Reserved / additional public IPv4 (flat worldwide).
+
+    Primary instance IPv4 is included in compute pricing; this is the published
+    rate for reserved IPs (also used for extra addresses).
+
+    Source: <https://docs.vultr.com/support/products/network/are-reserved-ips-free>
+    """
     items = []
-    # for price in []:
-    #     items.append(
-    #         {
-    #             "vendor_id": vendor.vendor_id,
-    #             "region_id": ,
-    #             "price": ,
-    #             "currency": "USD",
-    #             "unit": PriceUnit.MONTH,
-    #         }
-    #     )
+    regions = _get_regions()
+    for region in regions:
+        items.append(
+            {
+                "vendor_id": vendor.vendor_id,
+                "region_id": region["id"],
+                "price": 3.0,
+                "currency": "USD",
+                "unit": PriceUnit.MONTH,
+            }
+        )
     return items
