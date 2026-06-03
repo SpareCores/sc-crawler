@@ -475,7 +475,7 @@ def upgrade() -> None:
             batch_op.add_column(
                 sa.Column(
                     "average_time_to_start",
-                    sa.Integer(),
+                    sa.Float(),
                     nullable=True,
                     comment="Average time to start the server (seconds).",
                 ),
@@ -565,7 +565,7 @@ def upgrade() -> None:
             server_table_name,
             sa.Column(
                 "average_time_to_start",
-                sa.Integer(),
+                sa.Float(),
                 nullable=True,
                 comment="Average time to start the server (seconds).",
             ),
