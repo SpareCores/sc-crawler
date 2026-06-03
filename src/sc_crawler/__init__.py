@@ -1,4 +1,4 @@
 """Spare Cores crawler: collect and standardize cloud server offerings data."""
 
-__version__ = "0.5.3"
+__version__ = "0.6.0"
 __version_info__ = tuple(int(x) for x in __version__.split(".")[:3])
