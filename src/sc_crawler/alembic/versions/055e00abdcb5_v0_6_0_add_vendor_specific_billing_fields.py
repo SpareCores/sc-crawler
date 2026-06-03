@@ -1,4 +1,4 @@
-"""v0.5.2 add vendor-specific billing fields
+"""v0.6.0 add vendor-specific billing fields
 
 Revision ID: 055e00abdcb5
 Revises: 8c5bd4869b90
