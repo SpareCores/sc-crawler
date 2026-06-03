@@ -1,4 +1,4 @@
-"""v0.5.3 add new server fields
+"""v0.6.0 add new server fields
 
 Revision ID: f0273cb124f6
 Revises: 055e00abdcb5
