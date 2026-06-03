@@ -1,4 +1,4 @@
-"""v0.5.3 add new server fields
+"""v0.6.0 add new server fields
 
 Revision ID: f0273cb124f6
 Revises: 055e00abdcb5
@@ -475,7 +475,7 @@ def upgrade() -> None:
             batch_op.add_column(
                 sa.Column(
                     "average_time_to_start",
-                    sa.Integer(),
+                    sa.Float(),
                     nullable=True,
                     comment="Average time to start the server (seconds).",
                 ),
@@ -565,7 +565,7 @@ def upgrade() -> None:
             server_table_name,
             sa.Column(
                 "average_time_to_start",
-                sa.Integer(),
+                sa.Float(),
                 nullable=True,
                 comment="Average time to start the server (seconds).",
             ),
