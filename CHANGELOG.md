@@ -1,4 +1,4 @@
-## v0.5.2 (May 21, 2026)
+## v0.6.0 (June 3, 2026)
 
 New feature(s):
 
@@ -6,7 +6,7 @@ New feature(s):
 - Add `membench` benchmark scores with `scope: RAM` config for the first working set size per operation that exceeds total CPU cache (L3, else L2, else L1d).
 - Add `stopped_server_charged`, `billing_increment_seconds`,  `minimum_billing_seconds` and `billing_comment` columns to `Vendor` table, and
 fill up these columns with proper info.
-- Add `ecpus`, `scalability`, `hw_virt`, `memory_amount_actual`, `network_speed_max`, `network_storage_speed_baseline`, `network_storage_speed_max` columns to `Server` table, and fill up these columns with proper info (best effort for network speed related fields).
+- Add `ecpus`, `scalability`, `hw_virt`, `memory_amount_actual`, `network_speed_max`, `network_storage_speed_baseline`, `network_storage_speed_max`, `average_time_to_start` columns to `Server` table, and fill up these columns with proper info (best effort for network speed related fields).
 
 Fix(es):
 
