@@ -325,7 +325,11 @@ def _search_servers(zone_name: str) -> List[dict]:
                 "storage_size": 0,
                 "storage_type": None,
                 "storages": [],
-                "network_speed": None,
+                # TODO: have to implement manual mapping for network_speed related fields
+                "network_speed_baseline": None,
+                "network_speed_max": None,
+                "network_storage_speed_baseline": None,
+                "network_storage_speed_max": None,
                 "inbound_traffic": 0,
                 "outbound_traffic": 0,
                 "ipv4": 0,

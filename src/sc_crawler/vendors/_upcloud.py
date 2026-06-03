@@ -396,7 +396,11 @@ def inventory_servers(vendor):
                 "storage_size": server["storage_size"],
                 "storage_type": (StorageType.SSD if server["storage_tier"] else None),
                 "storages": [],
-                "network_speed": None,
+                # TODO: have to implement manual mapping for network_speed related fields
+                "network_speed_baseline": None,
+                "network_speed_max": None,
+                "network_storage_speed_baseline": None,
+                "network_storage_speed_max": None,
                 "inbound_traffic": 0,
                 "outbound_traffic": server["public_traffic_out"],
                 "ipv4": 0 if server_data["family"] == "CLOUDNATIVE" else 1,

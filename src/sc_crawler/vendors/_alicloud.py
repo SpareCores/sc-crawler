@@ -817,7 +817,10 @@ def inventory_zones(vendor):
 def inventory_servers(vendor):
     """List all server types at Alibaba Cloud using the `DescribeInstanceTypes` API endpoint."""
     client = _ecs_client()
-    request = DescribeInstanceTypesRequest(max_results=1000)
+    additional_attributes = ["NetworkInfo.BandwidthWeighting"]
+    request = DescribeInstanceTypesRequest(
+        max_results=1000, additional_attributes=additional_attributes
+    )
     response = client.describe_instance_types(request)
     instance_types = [
         instance_type.to_map()
@@ -825,7 +828,9 @@ def inventory_servers(vendor):
     ]
     while response.body.next_token:
         request = DescribeInstanceTypesRequest(
-            max_results=1000, next_token=response.body.next_token
+            max_results=1000,
+            additional_attributes=additional_attributes,
+            next_token=response.body.next_token,
         )
         response = client.describe_instance_types(request)
         for instance_type in response.body.instance_types.instance_type:
@@ -846,6 +851,56 @@ def inventory_servers(vendor):
         return None if x == 0 else x
 
     items = []
+
+    def _parse_network_fields(instance_type: dict) -> dict:
+        network_fields = {
+            "network_speed_baseline": drop_zero_value(
+                instance_type.get("InstanceBandwidthRx", 0) / 1024 / 1000
+            ),
+            "network_speed_max": None,
+            "network_storage_speed_baseline": None,
+            "network_storage_speed_max": None,
+        }
+        if not instance_type.get("NetworkInfo", {}).get("BandwidthWeighting"):
+            return network_fields
+        weighting_infos = (
+            instance_type.get("NetworkInfo", {})
+            .get("BandwidthWeighting", {})
+            .get("WeightingInfos", {})
+            .get("WeightingInfo", [])
+        )
+        network_speeds = []
+        network_storage_speeds = []
+        for weighting_info in weighting_infos:
+            if weighting_info.get("VpcBandwidth"):
+                network_speeds.append(weighting_info.get("VpcBandwidth") / 1024 / 1000)
+            if weighting_info.get("VpcBurstBandwidth"):
+                network_speeds.append(
+                    weighting_info.get("VpcBurstBandwidth") / 1024 / 1000
+                )
+            if weighting_info.get("EbsBandwidth"):
+                network_storage_speeds.append(
+                    round(
+                        weighting_info.get("EbsBandwidth") * 8 / 1_000_000
+                    )  # Bps -> Gbps
+                )
+            if weighting_info.get("EbsBurstBandwidth"):
+                network_storage_speeds.append(
+                    round(
+                        weighting_info.get("EbsBurstBandwidth") * 8 / 1_000_000
+                    )  # Bps -> Gbps
+                )
+        network_fields["network_speed_max"] = (
+            max(network_speeds) if network_speeds else None
+        )
+        network_fields["network_storage_speed_baseline"] = (
+            min(network_storage_speeds) if network_storage_speeds else None
+        )
+        network_fields["network_storage_speed_max"] = (
+            max(network_storage_speeds) if network_storage_speeds else None
+        )
+        return network_fields
+
     for instance_type in instance_types:
         family = instance_type.get("InstanceTypeFamily")
         vcpus = instance_type.get("CpuCoreCount")
@@ -935,9 +990,9 @@ def inventory_servers(vendor):
                 "storage_size": storage_size,
                 "storage_type": storage_type,
                 "storages": [],
-                "network_speed": drop_zero_value(
-                    instance_type.get("InstanceBandwidthRx", 0) / 1024 / 1000
-                ),
+                # TODO: have to implement manual mapping here too, no detailed
+                # network info available for every instance type in API response
+                **_parse_network_fields(instance_type),
                 "inbound_traffic": 0,
                 "outbound_traffic": 0,
                 "ipv4": 0,

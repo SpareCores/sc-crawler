@@ -29,6 +29,7 @@ docs/reference/
 flycheck_*
 
 # dev
+.env
 .venv/
 sc-data-all.db
 

@@ -691,6 +691,8 @@ def inventory_servers(vendor) -> list[dict]:
 
         network_speed = technical.get("bandwidth", {}).get("level", None)
         network_speed_gbps = network_speed / 1000 if network_speed else None
+        network_speed_max = technical.get("vrack", {}).get("level", None)
+        network_speed_max_gbps = network_speed_max / 1000 if network_speed_max else None
 
         items.append(
             {
@@ -728,7 +730,11 @@ def inventory_servers(vendor) -> list[dict]:
                 "storage_size": storage_size,
                 "storage_type": storage_type,
                 "storages": storages,
-                "network_speed": network_speed_gbps,
+                "network_speed_baseline": network_speed_gbps,
+                "network_speed_max": network_speed_max_gbps,
+                # TODO: have to implement manual mapping for network_storage_speed related fields
+                "network_storage_speed_baseline": None,
+                "network_storage_speed_max": None,
                 # no bundled free traffic as all traffic is unmetered
                 # https://www.ovhcloud.com/en-ie/public-cloud/prices/
                 "inbound_traffic": 0,

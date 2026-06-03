@@ -560,6 +560,11 @@ def _standardize_server(server: dict, vendor) -> dict:
         "gpu_memory_total": int(gpu_memory * gpus) if gpus and gpu_memory else None,
         "storage_size": round(sum([s.size for s in storages])),  # int GB
         "storages": storages,
+        # TODO: have to implement manual mapping for network_speed related fields
+        "network_speed_baseline": None,
+        "network_speed_max": None,
+        "network_storage_speed_baseline": None,
+        "network_storage_speed_max": None,
         "inbound_traffic": 0,
         "outbound_traffic": 0,
         "ipv4": 0,
