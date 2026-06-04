@@ -411,7 +411,7 @@ def inventory_servers(vendor):
                 "network_storage_speed_max": None,
                 "inbound_traffic": 0,
                 "outbound_traffic": server.get("bandwidth", 0),
-                "ipv4": 0,
+                "ipv4": 1,
             }
         )
     return items
