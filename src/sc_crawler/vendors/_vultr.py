@@ -238,19 +238,25 @@ def _storage_type_from_plan(plan: dict) -> StorageType:
 
 @cachier(separate_files=True)
 def _get_regions():
-    response = get("https://api.vultr.com/v2/regions", params={"per_page": 500})
+    response = get(
+        "https://api.vultr.com/v2/regions", params={"per_page": 500}, timeout=10
+    )
     return response.json()["regions"]
 
 
 @cachier(separate_files=True)
 def _get_plans():
-    response = get("https://api.vultr.com/v2/plans", params={"per_page": 500})
+    response = get(
+        "https://api.vultr.com/v2/plans", params={"per_page": 500}, timeout=10
+    )
     return response.json()["plans"]
 
 
 @cachier(separate_files=True)
 def _get_plans_metal():
-    response = get("https://api.vultr.com/v2/plans-metal", params={"per_page": 500})
+    response = get(
+        "https://api.vultr.com/v2/plans-metal", params={"per_page": 500}, timeout=10
+    )
     return response.json()["plans_metal"]
 
 
