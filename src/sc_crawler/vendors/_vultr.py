@@ -12,6 +12,7 @@ from ..table_fields import (
     StorageType,
     TrafficDirection,
 )
+from ..utils import _MIB_PER_GIB
 
 _REGION_LOCATIONS: dict[str, dict] = {
     "ams": {"lat": 52.3676, "lon": 4.9041},
@@ -357,7 +358,7 @@ def inventory_servers(vendor):
         gpu_family = gpu_profile.get("family")
         gpu_vram_total_gb = server.get("gpu_vram_gb", 0)
         gpu_memory_min = (
-            min(gpu_vram_gb, gpu_vram_total_gb)
+            int(min(gpu_vram_gb, gpu_vram_total_gb) * _MIB_PER_GIB)
             if gpu_vram_gb and gpu_vram_total_gb
             else None
         )
@@ -403,7 +404,9 @@ def inventory_servers(vendor):
                 "memory_ecc": None,
                 "gpu_count": gpu_count,
                 "gpu_memory_min": gpu_memory_min,
-                "gpu_memory_total": gpu_vram_total_gb,
+                "gpu_memory_total": (
+                    int(gpu_vram_total_gb * _MIB_PER_GIB) if gpu_vram_total_gb else None
+                ),
                 "gpu_manufacturer": gpu_manufacturer,
                 "gpu_family": gpu_family,
                 "gpu_model": gpu_model,
