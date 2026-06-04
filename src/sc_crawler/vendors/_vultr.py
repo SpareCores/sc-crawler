@@ -275,8 +275,8 @@ def inventory_regions(vendor):
     """List all regions from Vultr API."""
     items = []
     regions = _get_regions()
-    with sentry_capture_or_raise(vendor=vendor):
-        for region in regions:
+    for region in regions:
+        with sentry_capture_or_raise(vendor=vendor):
             location = _REGION_LOCATIONS.get(region["id"], {})
             items.append(
                 {
@@ -303,7 +303,7 @@ def inventory_regions(vendor):
 def inventory_zones(vendor):
     """List all regions as availability zones.
 
-    There is no concept of having multiple availability zones withing
+    There is no concept of having multiple availability zones within
     a region (virtual datacenter) at Vultr, so creating 1-1
     dummy Zones reusing the Region id and name.
 
