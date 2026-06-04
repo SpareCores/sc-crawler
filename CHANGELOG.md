@@ -1,8 +1,10 @@
-## v0.6.0 (June 3, 2026)
+## v0.6.x (development)
 
 New vendor(s):
 
 - Vultr
+
+## v0.6.0 (June 3, 2026)
 
 New feature(s):
 
