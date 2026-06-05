@@ -331,6 +331,10 @@ def inventory_servers(vendor):
 
     items = []
     for server in plans + plans_metal:
+        # exclude limited plans not generally available without scale
+        if server["id"] == "vc2-1c-0.5gb-free":
+            continue
+
         # CPU
         cpu_model_raw = server.get("cpu_model", "")
         cpu_manufacturer = server.get("cpu_vendor") or server.get("cpu_manufacturer")
