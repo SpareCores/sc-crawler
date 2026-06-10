@@ -160,33 +160,40 @@ _VLLM_SERVING_CONFIG = {
 }
 
 
+_VLLM_SERVING_LATENCY_MEASUREMENTS = (
+    ("ttft", "vLLM time to first token", "TTFT from GuideLLM against a vLLM server."),
+    ("tpot", "vLLM time per output token", "TPOT from GuideLLM."),
+    ("itl", "vLLM inter-token latency", "Inter-token latency from GuideLLM."),
+    ("e2el", "vLLM end-to-end latency", "End-to-end request latency from GuideLLM."),
+)
+_VLLM_SERVING_THROUGHPUT_MEASUREMENTS = (
+    (
+        "output_throughput",
+        "vLLM output token throughput",
+        "Mean output tokens per second.",
+        "tokens/sec",
+    ),
+    (
+        "total_throughput",
+        "vLLM total token throughput",
+        "Mean total tokens per second (input + output).",
+        "tokens/sec",
+    ),
+    (
+        "request_throughput",
+        "vLLM request throughput",
+        "Mean completed requests per second.",
+        "requests/sec",
+    ),
+)
+VLLM_SERVING_MEASUREMENTS = frozenset(
+    m[0] for m in _VLLM_SERVING_LATENCY_MEASUREMENTS + _VLLM_SERVING_THROUGHPUT_MEASUREMENTS
+)
+
+
 def _vllm_serving_benchmarks() -> list[Benchmark]:
-    latency = [
-        ("ttft", "vLLM time to first token", "TTFT from GuideLLM against a vLLM server."),
-        ("tpot", "vLLM time per output token", "TPOT from GuideLLM."),
-        ("itl", "vLLM inter-token latency", "Inter-token latency from GuideLLM."),
-        ("e2el", "vLLM end-to-end latency", "End-to-end request latency from GuideLLM."),
-    ]
-    throughput = [
-        (
-            "output_throughput",
-            "vLLM output token throughput",
-            "Mean output tokens per second.",
-            "tokens/sec",
-        ),
-        (
-            "total_throughput",
-            "vLLM total token throughput",
-            "Mean total tokens per second (input + output).",
-            "tokens/sec",
-        ),
-        (
-            "request_throughput",
-            "vLLM request throughput",
-            "Mean completed requests per second.",
-            "requests/sec",
-        ),
-    ]
+    latency = _VLLM_SERVING_LATENCY_MEASUREMENTS
+    throughput = _VLLM_SERVING_THROUGHPUT_MEASUREMENTS
     rows: list[Benchmark] = []
     for measurement, name, description in latency:
         rows.append(

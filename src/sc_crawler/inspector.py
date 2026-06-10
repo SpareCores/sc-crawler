@@ -750,6 +750,8 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
         _log_cannot_load_benchmarks(server, framework, e, True)
 
     try:
+        from .lookup import VLLM_SERVING_MEASUREMENTS
+
         assert _server_framework_meta(server, _VLLM_TASK)["exit_code"] == 0
         with open(_server_framework_stdout_path(server, _VLLM_TASK), "r") as fp:
             for line in fp:
@@ -761,6 +763,14 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                     continue
                 measurement = record.get("measurement")
                 if not measurement:
+                    continue
+                if measurement not in VLLM_SERVING_MEASUREMENTS:
+                    logger.debug(
+                        "Skipping unknown vllm_serving measurement %r for %s/%s",
+                        measurement,
+                        server.vendor_id,
+                        server.api_reference,
+                    )
                     continue
                 benchmarks.append(
                     {
