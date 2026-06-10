@@ -416,7 +416,7 @@ def inventory_servers(vendor):
         if gpu_count_from_api:
             if isinstance(gpu_count_from_api, str) and "/" in gpu_count_from_api:
                 num, den = gpu_count_from_api.split("/", 1)
-                gpu_count = int(num) / int(den)
+                gpu_count = round(int(num) / int(den), 4)
             else:
                 gpu_count = gpu_count_from_api
         if gpu_count is None:
