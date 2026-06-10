@@ -152,6 +152,7 @@ _GPU_TYPES: dict[str, dict[str, int | str]] = {
     "NVIDIA_A40": {"vram_gb": 48, "family": "Ampere"},
     "NVIDIA_L40S": {"vram_gb": 48, "family": "Ada Lovelace"},
     "NVIDIA_A100": {"vram_gb": 40, "family": "Ampere"},
+    "NVIDIA_A100_PCIE": {"vram_gb": 80, "family": "Ampere"},
     "NVIDIA_A100_SXM": {"vram_gb": 80, "family": "Ampere"},
     "NVIDIA_H100": {"vram_gb": 80, "family": "Hopper"},
     "NVIDIA_B200": {"vram_gb": 192, "family": "Blackwell"},
@@ -159,6 +160,41 @@ _GPU_TYPES: dict[str, dict[str, int | str]] = {
     "AMD_MI300X": {"vram_gb": 192, "family": "CDNA3"},
     "AMD_MI325X": {"vram_gb": 256, "family": "CDNA3"},
     "AMD_MI355X": {"vram_gb": 288, "family": "CDNA4"},
+}
+
+# Dedicated Metal GPU (vdm) plans omit gpu_type / gpu_vram_gb / gpu_count in GET /v2/plans.
+# https://www.vultr.com/pricing/ https://www.vultr.com/products/bare-metal/
+_DEDICATED_METAL_GPU_PLANS: dict[str, dict[str, int | str]] = {
+    "vcg-a16-96c-878g-256vram": {
+        "gpu_type": "NVIDIA_A16",
+        "gpu_count": 16,
+        "gpu_vram_total_gb": 256,
+    },
+    "vcg-a100-96c-896g-320vram": {
+        "gpu_type": "NVIDIA_A100_PCIE",
+        "gpu_count": 4,
+        "gpu_vram_total_gb": 320,
+    },
+    "vcg-h100-216c-1914gb-640vram": {
+        "gpu_type": "NVIDIA_H100",
+        "gpu_count": 8,
+        "gpu_vram_total_gb": 640,
+    },
+    "vcg-b200-248c-2826g-1536vram": {
+        "gpu_type": "NVIDIA_B200",
+        "gpu_count": 8,
+        "gpu_vram_total_gb": 1536,
+    },
+    "vcg-mi325x-252c-2872g-1536vram": {
+        "gpu_type": "AMD_MI325X",
+        "gpu_count": 6,
+        "gpu_vram_total_gb": 1536,
+    },
+    "vcg-mi355x-252c-2872g-2304vram": {
+        "gpu_type": "AMD_MI355X",
+        "gpu_count": 8,
+        "gpu_vram_total_gb": 2304,
+    },
 }
 
 # Vultr Block Storage (VBS) catalog — keys match GET /v2/regions ``options``.
@@ -353,6 +389,17 @@ def inventory_servers(vendor):
         # GPU
         gpu_brand = server.get("gpu_brand", "")
         gpu_type = server.get("gpu_type")
+        gpu_vram_total_gb = server.get("gpu_vram_gb") or 0
+        gpu_count_from_api = server.get("gpu_count")
+        gpu_fallback = _DEDICATED_METAL_GPU_PLANS.get(server["id"])
+        if gpu_fallback:
+            gpu_type = gpu_type or gpu_fallback.get("gpu_type")
+            gpu_vram_total_gb = gpu_vram_total_gb or gpu_fallback.get(
+                "gpu_vram_total_gb", 0
+            )
+            gpu_count_from_api = gpu_count_from_api or gpu_fallback.get("gpu_count")
+            if not gpu_brand and gpu_type:
+                gpu_brand = str(gpu_type).split("_", 1)[0]
         gpu_manufacturer_from_type = gpu_type.split("_")[0] if gpu_type else ""
         gpu_manufacturer = _extract_manufacturer(gpu_brand) or _extract_manufacturer(
             gpu_manufacturer_from_type
@@ -360,13 +407,24 @@ def inventory_servers(vendor):
         gpu_profile = _GPU_TYPES.get(gpu_type, {})
         gpu_vram_gb = gpu_profile.get("vram_gb")
         gpu_family = gpu_profile.get("family")
-        gpu_vram_total_gb = server.get("gpu_vram_gb", 0)
         gpu_memory_min = (
             int(min(gpu_vram_gb, gpu_vram_total_gb) * _MIB_PER_GIB)
             if gpu_vram_gb and gpu_vram_total_gb
             else None
         )
-        gpu_count = round(gpu_vram_total_gb / gpu_vram_gb, 4) if gpu_vram_gb else 0
+        gpu_count = None
+        if gpu_count_from_api:
+            if isinstance(gpu_count_from_api, str) and "/" in gpu_count_from_api:
+                num, den = gpu_count_from_api.split("/", 1)
+                gpu_count = int(num) / int(den)
+            else:
+                gpu_count = gpu_count_from_api
+        if gpu_count is None:
+            gpu_count = (
+                round(gpu_vram_total_gb / gpu_vram_gb, 4)
+                if gpu_vram_gb and gpu_vram_total_gb
+                else 0
+            )
         gpu_model = " ".join(gpu_type.split("_")[1:]) if gpu_type else None
 
         # Storage
