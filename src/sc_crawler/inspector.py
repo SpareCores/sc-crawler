@@ -274,6 +274,39 @@ def _extract_line_from_file(file_path: str | PathLike, pattern: str) -> str | No
     return None
 
 
+_VLLM_TASK = "vllm"
+_VLLM_BENCHMARK_FRAMEWORK = "vllm_serving"
+_VLLM_SERVING_CONFIG_KEYS = (
+    "model",
+    "model_id",
+    "workload",
+    "prompt_tokens",
+    "output_tokens",
+    "profile",
+    "strategy",
+    "target_rate",
+    "concurrency",
+    "mode",
+    "arch",
+    "avx512",
+    "avx2_only_image",
+    "tensor_parallel",
+    "gpu_count",
+    "gpu_model",
+    "total_vram_gb",
+    "vllm_version",
+    "guidellm_version",
+)
+
+
+def _vllm_serving_config(record: dict) -> dict:
+    config = {key: record[key] for key in _VLLM_SERVING_CONFIG_KEYS if key in record}
+    percentile = record.get("percentile")
+    if percentile is not None:
+        config["percentile"] = percentile
+    return config
+
+
 def _log_cannot_load_benchmarks(server: "Server", benchmark_id, e, exc_info=False):
     logger.debug(
         "%s benchmark(s) not loaded for %s/%s: %s",
@@ -715,6 +748,33 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                 )
     except Exception as e:
         _log_cannot_load_benchmarks(server, framework, e, True)
+
+    try:
+        assert _server_framework_meta(server, _VLLM_TASK)["exit_code"] == 0
+        with open(_server_framework_stdout_path(server, _VLLM_TASK), "r") as fp:
+            for line in fp:
+                line = line.strip()
+                if not line:
+                    continue
+                record = json.loads(line)
+                if record.get("benchmark") != _VLLM_BENCHMARK_FRAMEWORK:
+                    continue
+                measurement = record.get("measurement")
+                if not measurement:
+                    continue
+                benchmarks.append(
+                    {
+                        **_benchmark_metafields(
+                            server,
+                            framework=_VLLM_TASK,
+                            benchmark_id=f"{_VLLM_BENCHMARK_FRAMEWORK}:{measurement}",
+                        ),
+                        "config": _vllm_serving_config(record),
+                        "score": float(record["score"]),
+                    }
+                )
+    except Exception as e:
+        _log_cannot_load_benchmarks(server, _VLLM_BENCHMARK_FRAMEWORK, e, True)
 
     return benchmarks
 
