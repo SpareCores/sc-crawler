@@ -160,6 +160,7 @@ SERVER_FEATURES = {
     "i": "Isolated",
     "l": "Low Memory",
     "m": "Memory Intensive",
+    "n": "Network Optimized",
     "t": "Tiny Memory",
     "s": "Premium Storage capable",
     # not part of the official docs, searched at random places
