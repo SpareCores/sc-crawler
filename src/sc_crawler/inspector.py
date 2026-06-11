@@ -112,7 +112,9 @@ def _get_server_framework_run_ids(server: "Server", framework: str) -> List[str]
 
 
 def _server_framework_path(
-    server: "Server", framework: str, relpath: str | list[str] = None
+def _server_framework_path(
+    server: "Server", framework: str, relpath: str | list[str] | None = None
+) -> str | PathLike:
 ) -> str | PathLike:
     path_parts = (
         [_server_path(server), framework, *relpath]
