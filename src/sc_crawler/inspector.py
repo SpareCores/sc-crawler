@@ -1045,6 +1045,7 @@ def _find_storage_disks_from_lsblk(
         "hcloud": False,
         "ovh": False,
         "upcloud": True,
+        "vultr": False,
     }
 
     for d in lsblk_data.get("blockdevices", []):
