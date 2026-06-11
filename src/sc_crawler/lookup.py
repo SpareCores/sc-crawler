@@ -156,6 +156,8 @@ _VLLM_SERVING_CONFIG = {
     "total_vram_gb": "Total VRAM (GiB) when mode=gpu.",
     "vllm_version": "vLLM version from the benchmark image.",
     "guidellm_version": "GuideLLM version from the benchmark image.",
+    "max_model_len": "vLLM --max-model-len for this workload/server start.",
+    "tuning_version": "Harness autoconfig revision (0=legacy static knobs).",
     "percentile": "Latency percentile (p50, p95, p99, mean); omitted for throughput rows.",
 }
 

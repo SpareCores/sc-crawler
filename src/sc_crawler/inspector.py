@@ -296,11 +296,18 @@ _VLLM_SERVING_CONFIG_KEYS = (
     "total_vram_gb",
     "vllm_version",
     "guidellm_version",
+    "max_model_len",
+    "tuning_version",
 )
 
 
 def _vllm_serving_config(record: dict) -> dict:
     config = {key: record[key] for key in _VLLM_SERVING_CONFIG_KEYS if key in record}
+    tuning = record.get("tuning")
+    if isinstance(tuning, dict):
+        config["tuning"] = tuning
+        if "tuning_version" not in config and "tuning_version" in tuning:
+            config["tuning_version"] = tuning["tuning_version"]
     percentile = record.get("percentile")
     if percentile is not None:
         config["percentile"] = percentile
