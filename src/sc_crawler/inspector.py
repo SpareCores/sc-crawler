@@ -220,7 +220,7 @@ def _server_stressngfull(server: "Server") -> List[tuple[int, float]]:
 
 def _server_timing_value(server: "Server", run_id: str, key: str) -> datetime:
     with open(_server_framework_path(server, "timing", [run_id, key]), "r") as fp:
-        return datetime.fromisoformat(fp.read())
+        return datetime.fromisoformat(fp.read().strip())
 
 
 def _server_average_time_to_start(server: "Server") -> float:
@@ -232,7 +232,7 @@ def _server_average_time_to_start(server: "Server") -> float:
         ).total_seconds()
         for run_id in run_ids
     ]
-    return sum(average_time_to_start) / len(average_time_to_start)
+    return round(sum(average_time_to_start) / len(average_time_to_start), 2)
 
 
 def _observed_at(server: "Server", framework: str) -> dict:
