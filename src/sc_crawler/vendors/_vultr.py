@@ -171,7 +171,7 @@ _DEDICATED_METAL_GPU_PLANS: dict[str, dict[str, int | str]] = {
         "gpu_vram_total_gb": 256,
     },
     "vcg-a100-96c-896g-320vram": {
-        "gpu_type": "NVIDIA_A100_PCIE",
+        "gpu_type": "NVIDIA_A100",
         "gpu_count": 4,
         "gpu_vram_total_gb": 320,
     },
@@ -315,25 +315,23 @@ def inventory_regions(vendor):
     for region in regions:
         with sentry_capture_or_raise(vendor=vendor):
             location = _REGION_LOCATIONS.get(region["id"], {})
-            items.append(
-                {
-                    "vendor_id": vendor.vendor_id,
-                    "region_id": region["id"],
-                    "name": region["city"],
-                    "api_reference": region["id"],
-                    "display_name": f"{region['city']} ({region['country']})",
-                    "aliases": [],
-                    "country_id": region["country"],
-                    "state": location.get("state"),
-                    "city": region["city"],
-                    "address_line": None,
-                    "zip_code": None,
-                    "lon": location.get("lon"),
-                    "lat": location.get("lat"),
-                    "founding_year": location.get("founding_year"),
-                    "green_energy": location.get("green_energy"),
-                }
-            )
+            items.append({
+                "vendor_id": vendor.vendor_id,
+                "region_id": region["id"],
+                "name": region["city"],
+                "api_reference": region["id"],
+                "display_name": f"{region['city']} ({region['country']})",
+                "aliases": [],
+                "country_id": region["country"],
+                "state": location.get("state"),
+                "city": region["city"],
+                "address_line": None,
+                "zip_code": None,
+                "lon": location.get("lon"),
+                "lat": location.get("lat"),
+                "founding_year": location.get("founding_year"),
+                "green_energy": location.get("green_energy"),
+            })
     return items
 
 
@@ -347,16 +345,14 @@ def inventory_zones(vendor):
     """
     items = []
     for region in vendor.regions:
-        items.append(
-            {
-                "vendor_id": vendor.vendor_id,
-                "region_id": region.region_id,
-                "zone_id": region.region_id,
-                "name": region.name,
-                "api_reference": region.name,
-                "display_name": region.name,
-            }
-        )
+        items.append({
+            "vendor_id": vendor.vendor_id,
+            "region_id": region.region_id,
+            "zone_id": region.region_id,
+            "name": region.name,
+            "api_reference": region.name,
+            "display_name": region.name,
+        })
     return items
 
 
@@ -399,7 +395,7 @@ def inventory_servers(vendor):
             )
             gpu_count_from_api = gpu_count_from_api or gpu_fallback.get("gpu_count")
             if not gpu_brand and gpu_type:
-                gpu_brand = str(gpu_type).split("_", 1)[0]
+                gpu_brand = gpu_type.split("_")[0]
         gpu_manufacturer_from_type = gpu_type.split("_")[0] if gpu_type else ""
         gpu_manufacturer = _extract_manufacturer(gpu_brand) or _extract_manufacturer(
             gpu_manufacturer_from_type
@@ -425,67 +421,72 @@ def inventory_servers(vendor):
                 if gpu_vram_gb and gpu_vram_total_gb
                 else 0
             )
-        gpu_model = " ".join(gpu_type.split("_")[1:]) if gpu_type else None
+        if gpu_type:
+            gpu_model_parts = gpu_type.split("_")
+            if len(gpu_model_parts) > 1:
+                gpu_model = gpu_model_parts[1]
+            else:
+                gpu_model = gpu_type
+        else:
+            gpu_model = None
 
         # Storage
         storage_size_per_disk = server.get("disk")
         storage_type = _storage_type_from_plan(server)
         storage_size = storage_size_per_disk * server.get("disk_count", 1)
 
-        items.append(
-            {
-                "vendor_id": vendor.vendor_id,
-                "server_id": server["id"],
-                "name": server["id"],
-                "api_reference": server["id"],
-                "display_name": server["id"],
-                "description": None,
-                "family": _PLAN_TYPES.get(server["type"]),
-                "vcpus": vcpus or cpu_threads,
-                "hypervisor": None,
-                "cpu_allocation": cpu_allocation,
-                "cpu_cores": vcpus or cpu_count,
-                "cpu_speed": cpu_speed_ghz,
-                "cpu_architecture": cpu_architecture,
-                "cpu_manufacturer": cpu_manufacturer,
-                "cpu_family": cpu_family,
-                "cpu_model": cpu_model,
-                "cpu_l1d_cache": None,
-                "cpu_l1d_cache_total": None,
-                "cpu_l1i_cache": None,
-                "cpu_l1i_cache_total": None,
-                "cpu_l2_cache": None,
-                "cpu_l2_cache_total": None,
-                "cpu_l3_cache": None,
-                "cpu_l3_cache_total": None,
-                "cpu_flags": [],
-                "cpus": [],
-                "memory_amount": server["ram"],
-                "memory_generation": None,
-                "memory_speed": None,
-                "memory_ecc": None,
-                "gpu_count": gpu_count,
-                "gpu_memory_min": gpu_memory_min,
-                "gpu_memory_total": (
-                    int(gpu_vram_total_gb * _MIB_PER_GIB) if gpu_vram_total_gb else None
-                ),
-                "gpu_manufacturer": gpu_manufacturer,
-                "gpu_family": gpu_family,
-                "gpu_model": gpu_model,
-                "gpus": [],
-                "storage_size": storage_size,
-                "storage_type": storage_type,
-                "storages": [],
-                "network_speed_baseline": None,
-                "network_speed_max": None,
-                "network_storage_speed_baseline": None,
-                "network_storage_speed_max": None,
-                "inbound_traffic": 0,
-                "outbound_traffic": server.get("bandwidth", 0),
-                # the smallest plan is IPv6-only
-                "ipv4": 0 if server["id"] == "vc2-1c-0.5gb-v6" else 1,
-            }
-        )
+        items.append({
+            "vendor_id": vendor.vendor_id,
+            "server_id": server["id"],
+            "name": server["id"],
+            "api_reference": server["id"],
+            "display_name": server["id"],
+            "description": None,
+            "family": _PLAN_TYPES.get(server["type"]),
+            "vcpus": vcpus or cpu_threads,
+            "hypervisor": None,
+            "cpu_allocation": cpu_allocation,
+            "cpu_cores": vcpus or cpu_count,
+            "cpu_speed": cpu_speed_ghz,
+            "cpu_architecture": cpu_architecture,
+            "cpu_manufacturer": cpu_manufacturer,
+            "cpu_family": cpu_family,
+            "cpu_model": cpu_model,
+            "cpu_l1d_cache": None,
+            "cpu_l1d_cache_total": None,
+            "cpu_l1i_cache": None,
+            "cpu_l1i_cache_total": None,
+            "cpu_l2_cache": None,
+            "cpu_l2_cache_total": None,
+            "cpu_l3_cache": None,
+            "cpu_l3_cache_total": None,
+            "cpu_flags": [],
+            "cpus": [],
+            "memory_amount": server["ram"],
+            "memory_generation": None,
+            "memory_speed": None,
+            "memory_ecc": None,
+            "gpu_count": gpu_count,
+            "gpu_memory_min": gpu_memory_min,
+            "gpu_memory_total": (
+                int(gpu_vram_total_gb * _MIB_PER_GIB) if gpu_vram_total_gb else None
+            ),
+            "gpu_manufacturer": gpu_manufacturer,
+            "gpu_family": gpu_family,
+            "gpu_model": gpu_model,
+            "gpus": [],
+            "storage_size": storage_size,
+            "storage_type": storage_type,
+            "storages": [],
+            "network_speed_baseline": None,
+            "network_speed_max": None,
+            "network_storage_speed_baseline": None,
+            "network_storage_speed_max": None,
+            "inbound_traffic": 0,
+            "outbound_traffic": server.get("bandwidth", 0),
+            # the smallest plan is IPv6-only
+            "ipv4": 0 if server["id"] == "vc2-1c-0.5gb-v6" else 1,
+        })
     return items
 
 
@@ -511,21 +512,19 @@ def inventory_server_prices(vendor):
                         {"lower": 0, "upper": monthly_cap, "price": hourly_price},
                         {"lower": monthly_cap + 1, "upper": "Infinity", "price": 0},
                     ]
-                items.append(
-                    {
-                        "vendor_id": vendor.vendor_id,
-                        "region_id": region_id,
-                        "zone_id": region_id,
-                        "server_id": server["id"],
-                        "operating_system": "Linux",
-                        "allocation": Allocation.ONDEMAND,
-                        "unit": PriceUnit.HOUR,
-                        "price": hourly_price,
-                        "price_upfront": 0,
-                        "price_tiered": price_tiered,
-                        "currency": "USD",
-                    }
-                )
+                items.append({
+                    "vendor_id": vendor.vendor_id,
+                    "region_id": region_id,
+                    "zone_id": region_id,
+                    "server_id": server["id"],
+                    "operating_system": "Linux",
+                    "allocation": Allocation.ONDEMAND,
+                    "unit": PriceUnit.HOUR,
+                    "price": hourly_price,
+                    "price_upfront": 0,
+                    "price_tiered": price_tiered,
+                    "currency": "USD",
+                })
     return items
 
 
@@ -555,40 +554,36 @@ def inventory_server_prices_spot(vendor):
                         {"lower": 0, "upper": monthly_cap, "price": hourly_price},
                         {"lower": monthly_cap + 1, "upper": "Infinity", "price": 0},
                     ]
-                items.append(
-                    {
-                        "vendor_id": vendor.vendor_id,
-                        "region_id": region_id,
-                        "zone_id": region_id,
-                        "server_id": server["id"],
-                        "operating_system": "Linux",
-                        "allocation": Allocation.SPOT,
-                        "unit": PriceUnit.HOUR,
-                        "price": hourly_price,
-                        "price_upfront": 0,
-                        "price_tiered": price_tiered,
-                        "currency": "USD",
-                    }
-                )
+                items.append({
+                    "vendor_id": vendor.vendor_id,
+                    "region_id": region_id,
+                    "zone_id": region_id,
+                    "server_id": server["id"],
+                    "operating_system": "Linux",
+                    "allocation": Allocation.SPOT,
+                    "unit": PriceUnit.HOUR,
+                    "price": hourly_price,
+                    "price_upfront": 0,
+                    "price_tiered": price_tiered,
+                    "currency": "USD",
+                })
     return items
 
 
 def inventory_storages(vendor):
     items = []
     for storage_id, spec in _BLOCK_STORAGE.items():
-        items.append(
-            {
-                "storage_id": storage_id,
-                "vendor_id": vendor.vendor_id,
-                "name": spec["name"],
-                "description": spec["description"],
-                "storage_type": spec["storage_type"],
-                "max_iops": spec["max_iops"],
-                "max_throughput": spec["max_throughput"],
-                "min_size": spec["min_size"],
-                "max_size": spec["max_size"],
-            }
-        )
+        items.append({
+            "storage_id": storage_id,
+            "vendor_id": vendor.vendor_id,
+            "name": spec["name"],
+            "description": spec["description"],
+            "storage_type": spec["storage_type"],
+            "max_iops": spec["max_iops"],
+            "max_throughput": spec["max_throughput"],
+            "min_size": spec["min_size"],
+            "max_size": spec["max_size"],
+        })
     return items
 
 
@@ -600,16 +595,14 @@ def inventory_storage_prices(vendor):
         for storage_id in _BLOCK_STORAGE.keys():
             if storage_id not in options:
                 continue
-            items.append(
-                {
-                    "vendor_id": vendor.vendor_id,
-                    "region_id": region["id"],
-                    "storage_id": storage_id,
-                    "unit": PriceUnit.GB_MONTH,
-                    "price": _BLOCK_STORAGE[storage_id]["price_gb_month"],
-                    "currency": "USD",
-                }
-            )
+            items.append({
+                "vendor_id": vendor.vendor_id,
+                "region_id": region["id"],
+                "storage_id": storage_id,
+                "unit": PriceUnit.GB_MONTH,
+                "price": _BLOCK_STORAGE[storage_id]["price_gb_month"],
+                "currency": "USD",
+            })
     return items
 
 
@@ -624,28 +617,24 @@ def inventory_traffic_prices(vendor):
     items = []
     regions = _get_regions()
     for region in regions:
-        items.append(
-            {
-                "vendor_id": vendor.vendor_id,
-                "region_id": region["id"],
-                "price": 0,
-                "price_tiered": [],
-                "currency": "USD",
-                "unit": PriceUnit.GB_MONTH,
-                "direction": TrafficDirection.IN,
-            }
-        )
-        items.append(
-            {
-                "vendor_id": vendor.vendor_id,
-                "region_id": region["id"],
-                "price": 0.01,
-                "price_tiered": [],
-                "currency": "USD",
-                "unit": PriceUnit.GB_MONTH,
-                "direction": TrafficDirection.OUT,
-            }
-        )
+        items.append({
+            "vendor_id": vendor.vendor_id,
+            "region_id": region["id"],
+            "price": 0,
+            "price_tiered": [],
+            "currency": "USD",
+            "unit": PriceUnit.GB_MONTH,
+            "direction": TrafficDirection.IN,
+        })
+        items.append({
+            "vendor_id": vendor.vendor_id,
+            "region_id": region["id"],
+            "price": 0.01,
+            "price_tiered": [],
+            "currency": "USD",
+            "unit": PriceUnit.GB_MONTH,
+            "direction": TrafficDirection.OUT,
+        })
     return items
 
 
@@ -660,13 +649,11 @@ def inventory_ipv4_prices(vendor):
     items = []
     regions = _get_regions()
     for region in regions:
-        items.append(
-            {
-                "vendor_id": vendor.vendor_id,
-                "region_id": region["id"],
-                "price": 3.0,
-                "currency": "USD",
-                "unit": PriceUnit.MONTH,
-            }
-        )
+        items.append({
+            "vendor_id": vendor.vendor_id,
+            "region_id": region["id"],
+            "price": 3.0,
+            "currency": "USD",
+            "unit": PriceUnit.MONTH,
+        })
     return items
