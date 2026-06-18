@@ -928,6 +928,31 @@ def inventory_servers(vendor):
             gpu_count * gpu_memory_per_gpu if gpu_count >= 1 else gpu_memory_per_gpu
         )
         gpu_model = _standardize_gpu_model(instance_type["GPUSpec"])
+        gpu_family = None
+        gpu_manufacturer = None
+        if gpu_model:
+            # AliCloud uses some internal GPU model names in GPUSpec (e.g. G49/G49E, GPU H/H-e, L20N).
+            # https://help.aliyun.com/zh/functioncompute/fc/support/some-gpu-card-types-do-not-provide-sla-commitment-statement
+            if gpu_model.startswith("G49"):
+                gpu_model = None
+                gpu_family = "Ada Lovelace"
+                gpu_manufacturer = "NVIDIA"
+            # these instances maybe use Hopper GPUs, but we have no proof yet
+            elif gpu_model.startswith("GPU H"):
+                gpu_model = None
+            elif gpu_model == "L20":
+                gpu_family = "Ada Lovelace"
+                gpu_manufacturer = "NVIDIA"
+            # https://www.alibabacloud.com/help/en/ecs/user-guide/elastic-bare-metal-server-overview
+            elif gpu_model == "L20N":
+                gpu_model = None
+                gpu_family = "Blackwell"
+                gpu_manufacturer = "NVIDIA"
+            # https://www.alibabacloud.com/help/en/ecs/user-guide/gpu-accelerated-compute-optimized-and-vgpu-accelerated-instance-families-1
+            elif gpu_model == "vGPU8":
+                gpu_model = None
+                gpu_family = "Ada Lovelace"
+                gpu_manufacturer = "NVIDIA"
         description_parts = [
             f"{vcpus} vCPUs",
             f"{memory_size_gb} GiB RAM",
@@ -983,8 +1008,8 @@ def inventory_servers(vendor):
                 "gpu_memory_min": drop_zero_value(int(gpu_memory_per_gpu)),
                 "gpu_memory_total": drop_zero_value(int(gpu_memory_total)),
                 # TODO fill in from GPUSpec? or just let the inspector fill it in?
-                "gpu_manufacturer": None,
-                "gpu_family": None,
+                "gpu_manufacturer": gpu_manufacturer,
+                "gpu_family": gpu_family,
                 "gpu_model": gpu_model,
                 "gpus": [],
                 "storage_size": storage_size,

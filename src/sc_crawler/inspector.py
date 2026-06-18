@@ -965,6 +965,8 @@ def _standardize_gpu_model(model, server=None):
         model = "H200"
     if model == "nvidia-rtx-pro-6000":
         model = "RTX Pro 6000"
+    if model == "nvidia-gb200":
+        model = "GB200"
     if server and server["vendor_id"] and server["server_id"] == "p4de.24xlarge":
         model = "A100-SXM4-40GB"
     if model in ["RTX 5880 Ada", "RTX5880"]:

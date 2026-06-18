@@ -171,7 +171,7 @@ _DEDICATED_METAL_GPU_PLANS: dict[str, dict[str, int | str]] = {
         "gpu_vram_total_gb": 256,
     },
     "vcg-a100-96c-896g-320vram": {
-        "gpu_type": "NVIDIA_A100_PCIE",
+        "gpu_type": "NVIDIA_A100",
         "gpu_count": 4,
         "gpu_vram_total_gb": 320,
     },
@@ -399,7 +399,7 @@ def inventory_servers(vendor):
             )
             gpu_count_from_api = gpu_count_from_api or gpu_fallback.get("gpu_count")
             if not gpu_brand and gpu_type:
-                gpu_brand = str(gpu_type).split("_", 1)[0]
+                gpu_brand = gpu_type.split("_")[0]
         gpu_manufacturer_from_type = gpu_type.split("_")[0] if gpu_type else ""
         gpu_manufacturer = _extract_manufacturer(gpu_brand) or _extract_manufacturer(
             gpu_manufacturer_from_type
@@ -425,7 +425,14 @@ def inventory_servers(vendor):
                 if gpu_vram_gb and gpu_vram_total_gb
                 else 0
             )
-        gpu_model = " ".join(gpu_type.split("_")[1:]) if gpu_type else None
+        if gpu_type:
+            gpu_model_parts = gpu_type.split("_")
+            if len(gpu_model_parts) > 1:
+                gpu_model = gpu_model_parts[1]
+            else:
+                gpu_model = gpu_type
+        else:
+            gpu_model = None
 
         # Storage
         storage_size_per_disk = server.get("disk")
