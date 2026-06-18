@@ -104,11 +104,14 @@ def _server_path(server: "Server") -> str | PathLike:
 
 
 def _get_server_framework_run_ids(server: "Server", framework: str) -> List[str]:
-    return [
-        p.name
-        for p in Path(_server_framework_path(server, framework)).iterdir()
-        if p.is_dir()
-    ]
+    try:
+        return [
+            p.name
+            for p in Path(_server_framework_path(server, framework)).iterdir()
+            if p.is_dir()
+        ]
+    except FileNotFoundError:
+        return []
 
 
 def _server_framework_path(
