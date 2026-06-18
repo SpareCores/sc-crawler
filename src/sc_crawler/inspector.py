@@ -3,10 +3,12 @@ import json
 import xml.etree.ElementTree as xmltree
 from atexit import register
 from contextlib import suppress
+from datetime import datetime
 from functools import cache
 from itertools import groupby
 from operator import itemgetter
 from os import PathLike, getenv, makedirs, path
+from pathlib import Path
 from re import compile, match, search, sub
 from shutil import rmtree
 from statistics import mode
@@ -101,10 +103,25 @@ def _server_path(server: "Server") -> str | PathLike:
     return path.join(inspector_data_path(), server.vendor_id, server.api_reference)
 
 
+def _get_server_framework_run_ids(server: "Server", framework: str) -> List[str]:
+    try:
+        return [
+            p.name
+            for p in Path(_server_framework_path(server, framework)).iterdir()
+            if p.is_dir()
+        ]
+    except FileNotFoundError:
+        return []
+
+
 def _server_framework_path(
-    server: "Server", framework: str, relpath: str = None
+    server: "Server", framework: str, relpath: str | list[str] | None = None
 ) -> str | PathLike:
-    path_parts = [_server_path(server), framework, relpath]
+    path_parts = (
+        [_server_path(server), framework, *relpath]
+        if isinstance(relpath, list)
+        else [_server_path(server), framework, relpath]
+    )
     path_parts = [path_part for path_part in path_parts if path_part is not None]
     return path.join(*path_parts)
 
@@ -202,6 +219,27 @@ def _server_stressngfull(server: "Server") -> List[tuple[int, float]]:
             (int(row[0]), float(row[1]))
             for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC)
         ]
+
+
+def _server_timing_value(server: "Server", run_id: str, key: str) -> datetime | None:
+    try:
+        with open(_server_framework_path(server, "timing", [run_id, key]), "r") as fp:
+            return datetime.fromisoformat(fp.read().strip())
+    except (FileNotFoundError, ValueError):
+        return None
+
+
+def _server_average_time_to_start(server: "Server") -> float | None:
+    durations = []
+    for run_id in _get_server_framework_run_ids(server, "timing"):
+        api_start = _server_timing_value(server, run_id, "api_start")
+        machine_start = _server_timing_value(server, run_id, "machine_start")
+        if api_start is None or machine_start is None:
+            continue
+        average_time_to_start = (machine_start - api_start).total_seconds()
+        if average_time_to_start > 0:
+            durations.append(average_time_to_start)
+    return round(sum(durations) / len(durations), 2) if durations else None
 
 
 def _observed_at(server: "Server", framework: str) -> dict:
@@ -1347,6 +1385,7 @@ def inspect_update_server_dict(server: dict) -> dict:
         "storage_type": lambda: getattr(inspector_storage_info, "storage_type"),
         "storage_size": lambda: getattr(inspector_storage_info, "storage_size"),
         "storages": lambda: getattr(inspector_storage_info, "storages"),
+        "average_time_to_start": lambda: _server_average_time_to_start(server_obj),
     }
 
     def override_mapping(server, field, inspector_data):

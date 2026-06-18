@@ -310,7 +310,7 @@ def _get_storages_of_instance_type(instance_type):
 def _get_gpu_of_instance_type(instance_type):
     """Get overall GPU count, min and total memory, and manufacturer, name."""
     if "GpuInfo" not in instance_type:
-        return (0, None, None, None, None)
+        return (0, 0, 0, None, None)
     info = instance_type["GpuInfo"]
     memory_min = min([gpu["MemoryInfo"]["SizeInMiB"] for gpu in info["Gpus"]])
     memory_total = info["TotalGpuMemoryInMiB"]

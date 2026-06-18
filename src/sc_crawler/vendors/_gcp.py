@@ -312,8 +312,8 @@ def _search_servers(zone_name: str) -> List[dict]:
                     if server.accelerators
                     else 0
                 ),
-                "gpu_memory_min": None,
-                "gpu_memory_total": None,
+                "gpu_memory_min": 0 if not server.accelerators else None,
+                "gpu_memory_total": 0 if not server.accelerators else None,
                 "gpu_manufacturer": None,
                 "gpu_model": (
                     server.accelerators[0].guest_accelerator_type

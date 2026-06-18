@@ -4,6 +4,11 @@ New vendor(s):
 
 - Vultr
 
+Fix(es):
+
+- Implement `average_time_to_start` data harvesting for the `Server` table.
+- Fix NULL/0 handling for `gpu_memory_min` and `gpu_memory_total` in vendor scripts.
+
 ## v0.6.0 (June 3, 2026)
 
 New feature(s):

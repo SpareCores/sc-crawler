@@ -112,8 +112,8 @@ _UPCLOUD_GPU_FAMILY = {
 def _parse_gpu_model(gpu_model: str | None, gpu_count: float = 0) -> dict:
     """Derive GPU inventory fields from the UpCloud gpu_model string."""
     empty = {
-        "gpu_memory_min": None,
-        "gpu_memory_total": None,
+        "gpu_memory_min": 0,
+        "gpu_memory_total": 0,
         "gpu_manufacturer": None,
         "gpu_family": None,
         "gpu_model": None,
