@@ -627,9 +627,7 @@ def inventory_servers(vendor) -> list[dict]:
         gpu = technical.get("gpu", {})
         gpu_count = _gpu_count or gpu.get("number", 0)
         gpu_memory_per_gpu = (
-            gpu.get("memory").get("size", 0) * _MIB_PER_GIB
-            if gpu.get("memory")
-            else 0
+            gpu.get("memory").get("size", 0) * _MIB_PER_GIB if gpu.get("memory") else 0
         )
         gpu_memory_total = _gpu_memory_total or (
             gpu_memory_per_gpu * gpu_count if gpu_memory_per_gpu and gpu_count else 0
