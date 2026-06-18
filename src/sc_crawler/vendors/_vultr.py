@@ -410,7 +410,7 @@ def inventory_servers(vendor):
         gpu_memory_min = (
             int(min(gpu_vram_gb, gpu_vram_total_gb) * _MIB_PER_GIB)
             if gpu_vram_gb and gpu_vram_total_gb
-            else None
+            else 0
         )
         gpu_count = None
         if gpu_count_from_api:
@@ -474,7 +474,7 @@ def inventory_servers(vendor):
                 "gpu_count": gpu_count,
                 "gpu_memory_min": gpu_memory_min,
                 "gpu_memory_total": (
-                    int(gpu_vram_total_gb * _MIB_PER_GIB) if gpu_vram_total_gb else None
+                    int(gpu_vram_total_gb * _MIB_PER_GIB) if gpu_vram_total_gb else 0
                 ),
                 "gpu_manufacturer": gpu_manufacturer,
                 "gpu_family": gpu_family,

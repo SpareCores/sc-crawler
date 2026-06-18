@@ -554,13 +554,13 @@ def _standardize_server(server: dict, vendor) -> dict:
         "gpu_count": round(gpus, 4),
         "gpu_model": gpu_model,
         "gpu_memory_min": (
-            None
+            0
             if not (gpus and gpu_memory)
             else int(gpu_memory * gpus)
             if gpus <= 1
             else int(gpu_memory)
         ),
-        "gpu_memory_total": int(gpu_memory * gpus) if gpus and gpu_memory else None,
+        "gpu_memory_total": int(gpu_memory * gpus) if gpus and gpu_memory else 0,
         "storage_size": round(sum([s.size for s in storages])),  # int GB
         "storages": storages,
         # TODO: have to implement manual mapping for network_speed related fields

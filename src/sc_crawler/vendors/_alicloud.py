@@ -1005,8 +1005,8 @@ def inventory_servers(vendor):
                 "memory_speed": None,
                 "memory_ecc": None,
                 "gpu_count": gpu_count,
-                "gpu_memory_min": drop_zero_value(int(gpu_memory_per_gpu)),
-                "gpu_memory_total": drop_zero_value(int(gpu_memory_total)),
+                "gpu_memory_min": gpu_memory_per_gpu,
+                "gpu_memory_total": gpu_memory_total,
                 # TODO fill in from GPUSpec? or just let the inspector fill it in?
                 "gpu_manufacturer": gpu_manufacturer,
                 "gpu_family": gpu_family,
