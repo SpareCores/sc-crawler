@@ -492,7 +492,9 @@ def _standardize_server(server: dict, vendor) -> dict:
     # }
     family, features, gpus, gpu_model, gpu_memory = _parse_server_name(server["name"])
     # override family from SKU listing
-    family = server["family"].removeprefix("standard").removesuffix("Family")
+    family = recompile(r"(?i)family$").sub(
+        "", recompile(r"(?i)^standard").sub("", server["family"])
+    )
 
     def capability(name: str, default=None) -> str:
         try:
