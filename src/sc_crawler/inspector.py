@@ -221,21 +221,25 @@ def _server_stressngfull(server: "Server") -> List[tuple[int, float]]:
         ]
 
 
-def _server_timing_value(server: "Server", run_id: str, key: str) -> datetime:
-    with open(_server_framework_path(server, "timing", [run_id, key]), "r") as fp:
-        return datetime.fromisoformat(fp.read().strip())
+def _server_timing_value(server: "Server", run_id: str, key: str) -> datetime | None:
+    try:
+        with open(_server_framework_path(server, "timing", [run_id, key]), "r") as fp:
+            return datetime.fromisoformat(fp.read().strip())
+    except (FileNotFoundError, ValueError):
+        return None
 
 
-def _server_average_time_to_start(server: "Server") -> float:
-    run_ids = _get_server_framework_run_ids(server, "timing")
-    average_time_to_start = [
-        (
-            _server_timing_value(server, run_id, "machine_start")
-            - _server_timing_value(server, run_id, "api_start")
-        ).total_seconds()
-        for run_id in run_ids
-    ]
-    return round(sum(average_time_to_start) / len(average_time_to_start), 2)
+def _server_average_time_to_start(server: "Server") -> float | None:
+    durations = []
+    for run_id in _get_server_framework_run_ids(server, "timing"):
+        api_start = _server_timing_value(server, run_id, "api_start")
+        machine_start = _server_timing_value(server, run_id, "machine_start")
+        if api_start is None or machine_start is None:
+            continue
+        average_time_to_start = (machine_start - api_start).total_seconds()
+        if average_time_to_start > 0:
+            durations.append(average_time_to_start)
+    return round(sum(durations) / len(durations), 2) if durations else None
 
 
 def _observed_at(server: "Server", framework: str) -> dict:
