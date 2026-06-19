@@ -240,3 +240,14 @@ class Parallelism(str, Enum):
     """Benchmark run on a single core."""
     MULTI = "multi"
     """Benchmark run across multiple cores."""
+
+
+class Category(str, Enum):
+    """Workload category for a cloud server type."""
+
+    GENERAL_PURPOSE = "General Purpose"
+    COMPUTE_OPTIMIZED = "Compute Optimized"
+    MEMORY_OPTIMIZED = "Memory Optimized"
+    STORAGE_AND_DATABASE = "Storage & Database"
+    GPU_ACCELERATED = "GPU Accelerated"
+    BURSTABLE_AND_BUDGET = "Burstable & Budget"

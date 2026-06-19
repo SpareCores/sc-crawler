@@ -25,6 +25,7 @@ from .table_bases import (
     RegionBase,
     ScModel,
     ServerBase,
+    ServerDescriptionBase,
     ServerPriceBase,
     StorageBase,
     StoragePriceBase,
@@ -478,6 +479,17 @@ class ServerPrice(ServerPriceBase, table=True):
             ),
             "overlaps": "vendor,region,zone",
         },
+    )
+
+
+class ServerDescription(ServerDescriptionBase, table=True):
+    """Structured summary fields from the LLM."""
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["vendor_id", "server_id"],
+            ["server.vendor_id", "server.server_id"],
+        ),
     )
 
 
