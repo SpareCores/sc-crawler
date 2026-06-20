@@ -601,7 +601,12 @@ for workload_name, workload in WORKLOADS.items():
             category="Workload profile",
             description=(
                 f"Precomputed compound score for {workload.name} workloads. "
-                "A weighted average of normalised scores, each normalised to [0, 1] across all servers in the dataset. "
+                "A weighted average (geometric mean) of benchmark scores compared to "
+                "their medians: score = ∏ (x_i / m_i)^(w_i / Σw). "
+                "The score of 1.0 represents a synthetic baseline server with the median "
+                "performance of each component benchmark; 0.5 means roughly half the "
+                "performance; and 2.0 means twice the performance of that reference "
+                "profile. "
                 "Component weights: "
                 + ", ".join(
                     [

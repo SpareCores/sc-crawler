@@ -1,8 +1,10 @@
 """Workload profile definitions for compound benchmark scoring.
 
 Each workload profile is a weighted combination of benchmark scores that
-represents a specific real-world usage pattern. Scores are normalised to [0, 1]
-across all servers and aggregated as a weighted mean.
+represents a specific real-world usage pattern. Scores are aggregated as a
+weighted average (geometric mean) of benchmark scores compared to their
+medians. A score of 1.0 represents a synthetic baseline server with the
+median performance of each component benchmark.
 
 Weights within each workload sum to 1.0.
 """
@@ -45,7 +47,7 @@ class Workload(BaseModel):
 WORKLOADS: dict[str, Workload] = {
     "web": Workload(
         name="Web Server",
-        version="1.0",
+        version="2.0",
         rationale="Primary workloads drivers are HTTP serving speed and throughput, HTML and text processing, TLS termination, and asset compression.",
         benchmarks=[
             # direct web server benchmarks
@@ -108,7 +110,7 @@ WORKLOADS: dict[str, Workload] = {
     ),
     "compute": Workload(
         name="Compute Heavy Applications",
-        version="1.0",
+        version="2.0",
         rationale="Number-crunching workload augmenting raw CPU performance stressing, general CPU performance benchmarks, memory bandwidth, and pure math computation speed like floating point, integer, SIMD (AVX/SSE/FMA) operations.",
         benchmarks=[
             # raw CPU performance
@@ -168,7 +170,7 @@ WORKLOADS: dict[str, Workload] = {
     ),
     "cache": Workload(
         name="Cache Intensive",
-        version="1.0",
+        version="2.0",
         rationale="In-memory key-value store workload, mixing direct Redis performance metrics with memory speed and latency benchmarks, and single-core CPU performance profiles.",
         benchmarks=[
             # direct Redis benchmarks
@@ -228,7 +230,7 @@ WORKLOADS: dict[str, Workload] = {
     ),
     "database": Workload(
         name="Relational Database",
-        version="1.0",
+        version="2.0",
         rationale="Relational database workload (PostgreSQL, MySQL, transactional OLTP). Direct DB operation throughput is the primary driver, followed by memory latency for index lookups and buffer pool access, memory subsystem performance for working-set throughput, and single-thread CPU for query execution.",
         benchmarks=[
             BenchmarkEntry(
@@ -255,7 +257,7 @@ WORKLOADS: dict[str, Workload] = {
     ),
     "data_analysis": Workload(
         name="Data Analysis",
-        version="1.0",
+        version="2.0",
         rationale="Data analysis and ETL workloads are memory-bandwidth-bound and CPU-throughput-driven. The profile combines general CPU performance and memory bandwidth/latency as the primary drivers, supplemented by single-core compression speed as a proxy for serialisation-heavy ETL tasks.",
         benchmarks=[
             BenchmarkEntry(
@@ -289,7 +291,7 @@ WORKLOADS: dict[str, Workload] = {
     ),
     "llm": Workload(
         name="Multimodal LLM Inference",
-        version="1.0",
+        version="2.0",
         rationale="VRAM and memory-bandwidth-bound LLM inference workload, using direct LLM speed benchmarks at two model sizes, and supplementing with raw memory bandwidth, SIMD, and Geekbench computer vision workloads that exercise ML-style pipelines.",
         benchmarks=[
             # direct LLM speed benchmarks
@@ -359,7 +361,7 @@ WORKLOADS: dict[str, Workload] = {
     ),
     "cicd": Workload(
         name="CI/CD Build",
-        version="1.0",
+        version="2.0",
         rationale="Build performance is driven by single- and multi-core compilation throughput, single-core CPU performance, multi-core compression and text/scripting processing.",
         benchmarks=[
             # compiling software
