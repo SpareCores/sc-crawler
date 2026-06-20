@@ -219,14 +219,6 @@ class MetaColumns(ScModel):
     )
 
 
-class HasObservedAt(ScModel):
-    observed_at: datetime = Field(
-        default_factory=lambda: datetime.now(UTC),
-        sa_column_kwargs={"onupdate": lambda: datetime.now(UTC)},
-        description="Timestamp of the last observation.",
-    )
-
-
 class HasComplianceFrameworkIdPK(ScModel):
     compliance_framework_id: str = Field(
         primary_key=True, description="Unique identifier."
@@ -898,7 +890,7 @@ class BenchmarkFields(HasDescription, HasName, HasCategory, HasBenchmarkIdPK):
     )
 
 
-class ServerDescriptionFields(HasVendorPKFK, HasServerIdPK):
+class ServerDescriptionFields(HasServerIdPK, HasVendorPKFK):
     page: List[str] = Field(
         default=[],
         sa_type=JSON,
@@ -999,7 +991,7 @@ class ServerDescriptionFields(HasVendorPKFK, HasServerIdPK):
         return v
 
 
-class ServerDescriptionBase(HasObservedAt, ServerDescriptionFields):
+class ServerDescriptionBase(MetaColumns, ServerDescriptionFields):
     pass
 
 
