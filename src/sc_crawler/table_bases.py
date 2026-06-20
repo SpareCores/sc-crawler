@@ -892,7 +892,6 @@ class BenchmarkFields(HasDescription, HasName, HasCategory, HasBenchmarkIdPK):
 
 class ServerDescriptionFields(HasServerIdPK, HasVendorPKFK):
     page: List[str] = Field(
-        default=[],
         sa_type=JSON,
         description=(
             "Up to 500 words total across multiple paragraphs when warranted; "
@@ -924,7 +923,6 @@ class ServerDescriptionFields(HasServerIdPK, HasVendorPKFK):
         )
     )
     bullet_points: List[str] = Field(
-        default=[],
         sa_type=JSON,
         description=(
             "4-6 concise bullet points highlighting key features "
@@ -932,7 +930,6 @@ class ServerDescriptionFields(HasServerIdPK, HasVendorPKFK):
         ),
     )
     categories: List[Category] = Field(
-        default=[],
         sa_type=JSON,
         description=(
             "One or more workload categories for this server type, "
@@ -943,51 +940,61 @@ class ServerDescriptionFields(HasServerIdPK, HasVendorPKFK):
     @field_validator("page")
     @classmethod
     def validate_page(cls, v: list[str]) -> list[str]:
-        assert len(v) >= 1, "page must have at least one paragraph"
-        assert all(p.strip() for p in v), "page paragraphs must not be empty"
+        if len(v) < 1:
+            raise ValueError("page must have at least one paragraph")
+        if not all(p.strip() for p in v):
+            raise ValueError("page paragraphs must not be empty")
         n = sum(len(p.strip().split()) for p in v)
-        assert n <= 500, f"page must be at most 500 words, got {n}"
+        if n > 500:
+            raise ValueError(f"page must be at most 500 words, got {n}")
         return v
 
     @field_validator("description")
     @classmethod
     def validate_description(cls, v: str) -> str:
         n = len(v.strip().split())
-        assert n <= 175, f"description must be at most 175 words, got {n}"
+        if n > 175:
+            raise ValueError(f"description must be at most 175 words, got {n}")
         return v
 
     @field_validator("og_description")
     @classmethod
     def validate_og_description(cls, v: str) -> str:
         n = len(v.strip())
-        assert 175 <= n <= 225, f"og_description must be 175-225 characters, got {n}"
+        if n < 175 or n > 225:
+            raise ValueError(f"og_description must be 175-225 characters, got {n}")
         return v
 
     @field_validator("meta_description")
     @classmethod
     def validate_meta_description(cls, v: str) -> str:
         n = len(v.strip())
-        assert 125 <= n <= 175, f"meta_description must be 125-175 characters, got {n}"
+        if n < 125 or n > 175:
+            raise ValueError(f"meta_description must be 125-175 characters, got {n}")
         return v
 
     @field_validator("tagline")
     @classmethod
     def validate_tagline(cls, v: str) -> str:
         n = len(v.strip().split())
-        assert 15 <= n <= 25, f"tagline must be 15-25 words, got {n}"
+        if n < 15 or n > 25:
+            raise ValueError(f"tagline must be 15-25 words, got {n}")
         return v
 
     @field_validator("bullet_points")
     @classmethod
     def validate_bullet_points(cls, v: list[str]) -> list[str]:
-        assert 4 <= len(v) <= 6, f"bullet_points must have 4-6 items, got {len(v)}"
+        if len(v) < 4 or len(v) > 6:
+            raise ValueError(f"bullet_points must have 4-6 items, got {len(v)}")
         return v
 
     @field_validator("categories")
     @classmethod
     def validate_categories(cls, v: list[Category]) -> list[Category]:
-        assert 1 <= len(v) <= 3, f"categories must have 1-3 items, got {len(v)}"
-        assert len(v) == len(set(v)), "categories must not contain duplicates"
+        if len(v) < 1 or len(v) > 3:
+            raise ValueError(f"categories must have 1-3 items, got {len(v)}")
+        if len(v) != len(set(v)):
+            raise ValueError("categories must not contain duplicates")
         return v
 
 
