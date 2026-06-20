@@ -6,8 +6,8 @@ across all vendors and stores them as synthetic BenchmarkScore rows.
 
 from __future__ import annotations
 
-from math import log2
 from collections import defaultdict
+from math import log2
 from statistics import median
 from typing import TYPE_CHECKING, Any
 
@@ -170,9 +170,7 @@ def _load_scores(
     return per_server, entry_medians
 
 
-def _normalise(
-    raw: float, fleet_median: float, higher_is_better: bool
-) -> float | None:
+def _normalise(raw: float, fleet_median: float, higher_is_better: bool) -> float | None:
     """Normalise *raw* to a log2 ratio to the per-benchmark median, or None if invalid."""
     if raw <= 0 or fleet_median <= 0:
         return None
