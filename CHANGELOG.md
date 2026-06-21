@@ -6,7 +6,7 @@ New vendor(s):
 
 New feature(s):
 
-- Add `ServerDescription` table.
+- Add `ServerDescription` table and ingest generated descriptions from `sc-navigator-descriptions` during server inventory.
 
 Fix(es):
 

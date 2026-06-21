@@ -9,6 +9,10 @@ from pydantic import PrivateAttr
 from sqlalchemy import ForeignKeyConstraint, update
 from sqlmodel import Relationship, Session, SQLModel
 
+from .description_ingestor import (
+    descriptions_data_path,
+    ingest_server_description,
+)
 from .insert import insert_items
 from .inspector import (
     inspect_server_benchmarks,
@@ -302,6 +306,25 @@ class Vendor(VendorBase, table=True):
             BenchmarkScore, BenchmarkScore.vendor_id == self.vendor_id
         )
         insert_items(BenchmarkScore, benchmarks, self)
+        self.progress_tracker.start_task(
+            name="Downloading sc-navigator-descriptions", total=None
+        )
+        descriptions_data_path()
+        self.progress_tracker.hide_task()
+        descriptions = []
+        self.progress_tracker.start_task(
+            name="Loading server description(s)", total=len(self.servers)
+        )
+        for server in self.servers:
+            description = ingest_server_description(server)
+            if description is not None:
+                descriptions.append(description)
+            self.progress_tracker.advance_task()
+        self.progress_tracker.hide_task()
+        self.set_table_rows_inactive(
+            ServerDescription, ServerDescription.vendor_id == self.vendor_id
+        )
+        insert_items(ServerDescription, descriptions, self)
 
     @log_start_end
     def inventory_server_prices(self):
