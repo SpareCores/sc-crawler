@@ -72,31 +72,31 @@ def upgrade() -> None:
             "page",
             json_type,
             nullable=False,
-            comment="Up to 500 words total across multiple paragraphs when warranted; each list item is one paragraph. Simple servers may use fewer words. Avoid repetition across paragraphs.",
+            comment="Detailed server description with up to 500 words total across multiple paragraphs on hardware specs, benchmark-relative performance, qualitative cost efficiency, tradeoffs, and workload fit.",
         ),
         sa.Column(
             "description",
             sqlmodel.sql.sqltypes.AutoString(),
             nullable=False,
-            comment="Around 150 words, up to 175, single paragraph, technical overview.",
+            comment="Dense and technical server description using around 150 words in a single paragraph.",
         ),
         sa.Column(
             "og_description",
             sqlmodel.sql.sqltypes.AutoString(),
             nullable=False,
-            comment="Around 200 characters, longer factual summary in encyclopedia style; include vendor and server name. No CTAs or reader invitations.",
+            comment="200 character server description explicitly including vendor and server name.",
         ),
         sa.Column(
             "meta_description",
             sqlmodel.sql.sqltypes.AutoString(),
             nullable=False,
-            comment="Around 150 characters, factual HTML meta summary in encyclopedia style; include vendor and server name. No CTAs or reader invitations.",
+            comment="150 character server description explicitly including vendor and server name.",
         ),
         sa.Column(
             "tagline",
             sqlmodel.sql.sqltypes.AutoString(),
             nullable=False,
-            comment="Around 20 words, readable tagline, without mentioning vendor or server name.",
+            comment="20-word tagline on server positioning and key differentiators without the vendor or server name.",
         ),
         sa.Column(
             "bullet_points",
@@ -108,7 +108,7 @@ def upgrade() -> None:
             "categories",
             json_type,
             nullable=False,
-            comment="One or more workload categories for this server type, ordered by relevance (most fitting first).",
+            comment="One or more workload categories best fitting the server.",
         ),
         sa.Column(
             "status",
@@ -132,7 +132,7 @@ def upgrade() -> None:
         ),
         *foreign_keys,
         sa.PrimaryKeyConstraint(*primary_key, name=op.f(f"pk_{table_name}")),
-        comment="Structured summary fields from the LLM."
+        comment="Variable length, plain English descriptions of Server hardware specs, performance, cost-efficiency, and workflow fit."
         if not is_scd_migration()
         else "SCD version of .tables.ServerDescription.",
     )

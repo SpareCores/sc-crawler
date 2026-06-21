@@ -890,7 +890,7 @@ class BenchmarkFields(HasDescription, HasName, HasCategory, HasBenchmarkIdPK):
     )
 
 
-class ServerDescriptionFields(HasServerIdPK, HasVendorPKFK):
+class ServerDescriptionFields(ScModel):
     page: List[str] = Field(
         sa_type=JSON,
         description=(
@@ -920,15 +920,12 @@ class ServerDescriptionFields(HasServerIdPK, HasVendorPKFK):
     bullet_points: List[str] = Field(
         sa_type=JSON,
         description=(
-            "4-6 concise bullet points highlighting key features "
-            "and best-fit workloads."
+            "4-6 concise bullet points highlighting key features and best-fit workloads."
         ),
     )
     categories: List[Category] = Field(
         sa_type=JSON,
-        description=(
-            "One or more workload categories best fitting the server."
-        ),
+        description="One or more workload categories best fitting the server.",
     )
 
     @field_validator("page")
@@ -992,7 +989,9 @@ class ServerDescriptionFields(HasServerIdPK, HasVendorPKFK):
         return v
 
 
-class ServerDescriptionBase(MetaColumns, ServerDescriptionFields):
+class ServerDescriptionBase(
+    HasServerIdPK, HasVendorPKFK, MetaColumns, ServerDescriptionFields
+):
     pass
 
 
