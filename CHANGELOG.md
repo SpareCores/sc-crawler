@@ -1,8 +1,12 @@
-## v0.6.x (development)
+## v0.7.0 (June 22, 2026)
 
 New vendor(s):
 
 - Vultr
+
+New feature(s):
+
+- Add `ServerDescription` table and ingest generated descriptions from `sc-navigator-descriptions` during server inventory.
 
 Fix(es):
 
