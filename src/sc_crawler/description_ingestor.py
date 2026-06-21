@@ -33,7 +33,8 @@ def descriptions_data_path() -> str | PathLike:
         register(rmtree, temp_dir)
     zip_path = path.join(temp_dir, "downloaded.zip")
     if not path.exists(zip_path):
-        response = get(DESCRIPTIONS_ZIP_URL)
+        response = get(DESCRIPTIONS_ZIP_URL, timeout=60)
+        response.raise_for_status()
         with open(zip_path, "wb") as f:
             f.write(response.content)
         with ZipFile(zip_path, "r") as zip_ref:
