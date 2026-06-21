@@ -894,32 +894,27 @@ class ServerDescriptionFields(HasServerIdPK, HasVendorPKFK):
     page: List[str] = Field(
         sa_type=JSON,
         description=(
-            "Up to 500 words total across multiple paragraphs when warranted; "
-            "each list item is one paragraph. "
-            "Simple servers may use fewer words. Avoid repetition across paragraphs."
+            "Detailed server description with up to 500 words total across multiple paragraphs on hardware specs, benchmark-relative performance, qualitative cost efficiency, tradeoffs, and workload fit."
         ),
     )
     description: str = Field(
         description=(
-            "Around 150 words, up to 175, single paragraph, technical overview."
+            "Dense and technical server description using around 150 words in a single paragraph."
         )
     )
     og_description: str = Field(
         description=(
-            "Around 200 characters, longer factual summary in encyclopedia style; "
-            "include vendor and server name. No CTAs or reader invitations."
+            "200 character server description explicitly including vendor and server name."
         )
     )
     meta_description: str = Field(
         description=(
-            "Around 150 characters, factual HTML meta summary in encyclopedia style; "
-            "include vendor and server name. No CTAs or reader invitations."
+            "150 character server description explicitly including vendor and server name."
         )
     )
     tagline: str = Field(
         description=(
-            "Around 20 words, readable tagline, "
-            "without mentioning vendor or server name."
+            "20-word tagline on server positioning and key differentiators without the vendor or server name."
         )
     )
     bullet_points: List[str] = Field(
@@ -932,8 +927,7 @@ class ServerDescriptionFields(HasServerIdPK, HasVendorPKFK):
     categories: List[Category] = Field(
         sa_type=JSON,
         description=(
-            "One or more workload categories for this server type, "
-            "ordered by relevance (most fitting first)."
+            "One or more workload categories best fitting the server."
         ),
     )
 

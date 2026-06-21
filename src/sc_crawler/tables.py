@@ -483,7 +483,7 @@ class ServerPrice(ServerPriceBase, table=True):
 
 
 class ServerDescription(ServerDescriptionBase, table=True):
-    """Structured summary fields from the LLM."""
+    """Variable length, plain English descriptions of Server hardware specs, performance, cost-efficiency, and workflow fit."""
 
     __table_args__ = (
         ForeignKeyConstraint(
