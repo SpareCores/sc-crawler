@@ -5,9 +5,9 @@ from os import PathLike, getenv, makedirs, path
 from shutil import rmtree
 from tempfile import mkdtemp
 from typing import TYPE_CHECKING, List
+from zipfile import ZipFile
 
 from requests import get
-from zipfile import ZipFile
 
 from .logger import logger
 from .table_bases import ServerDescriptionFields
@@ -15,9 +15,7 @@ from .table_bases import ServerDescriptionFields
 if TYPE_CHECKING:
     from .tables import Server
 
-DESCRIPTIONS_ZIP_URL = (
-    "https://github.com/SpareCores/sc-navigator-descriptions/archive/refs/heads/main.zip"
-)
+DESCRIPTIONS_ZIP_URL = "https://github.com/SpareCores/sc-navigator-descriptions/archive/refs/heads/main.zip"
 
 
 @cache
