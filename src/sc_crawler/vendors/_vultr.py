@@ -467,11 +467,11 @@ def inventory_servers(vendor):
         storage_type = _storage_type_from_plan(server)
         storage_size = storage_size_per_disk * server.get("disk_count", 1)
         family = _PLAN_TYPES.get(server["type"])
-        effective_vcpus = vcpus or cpu_threads
+        vcpus = vcpus or cpu_threads
         memory_amount = server["ram"]
         description = _server_description(
             family,
-            effective_vcpus,
+            vcpus,
             memory_amount,
             storage_size,
             storage_type,
@@ -489,7 +489,7 @@ def inventory_servers(vendor):
                 "display_name": server["id"],
                 "description": description,
                 "family": family,
-                "vcpus": effective_vcpus,
+                "vcpus": vcpus,
                 "hypervisor": None,
                 "cpu_allocation": cpu_allocation,
                 "cpu_cores": vcpus or cpu_count,
