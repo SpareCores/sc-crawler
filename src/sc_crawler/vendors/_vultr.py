@@ -273,6 +273,34 @@ def _storage_type_from_plan(plan: dict) -> StorageType:
     return _DISK_TYPES.get(plan.get("type"))
 
 
+def _server_description(
+    family: str | None,
+    vcpus: int | None,
+    memory_amount_mib: int | None,
+    storage_size: int | None,
+    storage_type: StorageType | None,
+    gpu_count: int | float | None = None,
+    gpu_model: str | None = None,
+    gpu_vram_gb: int | None = None,
+) -> str:
+    nvme_size = storage_size if storage_type == StorageType.NVME_SSD else 0
+    ssd_size = storage_size if storage_type == StorageType.SSD else 0
+    memory_size_gb = memory_amount_mib / _MIB_PER_GIB if memory_amount_mib else None
+    description_parts = [
+        f"{vcpus} vCPUs" if vcpus else None,
+        f"{memory_size_gb} GiB RAM" if memory_size_gb else None,
+        f"{nvme_size} GB NVMe" if nvme_size else None,
+        f"{ssd_size} GB SSD" if ssd_size else None,
+        (
+            f"{gpu_count}x{gpu_model} {gpu_vram_gb} GiB VRAM"
+            if gpu_count and gpu_model and gpu_vram_gb
+            else None
+        ),
+    ]
+    description_parts_str = ", ".join(filter(None, description_parts))
+    return f"{family} ({description_parts_str})" if family else description_parts_str
+
+
 @cachier(separate_files=True)
 def _get_regions():
     response = get(
@@ -438,6 +466,19 @@ def inventory_servers(vendor):
         storage_size_per_disk = server.get("disk")
         storage_type = _storage_type_from_plan(server)
         storage_size = storage_size_per_disk * server.get("disk_count", 1)
+        family = _PLAN_TYPES.get(server["type"])
+        vcpus = vcpus or cpu_threads
+        memory_amount = server["ram"]
+        description = _server_description(
+            family,
+            vcpus,
+            memory_amount,
+            storage_size,
+            storage_type,
+            gpu_count,
+            gpu_model,
+            gpu_vram_gb,
+        )
 
         items.append(
             {
@@ -446,9 +487,9 @@ def inventory_servers(vendor):
                 "name": server["id"],
                 "api_reference": server["id"],
                 "display_name": server["id"],
-                "description": None,
-                "family": _PLAN_TYPES.get(server["type"]),
-                "vcpus": vcpus or cpu_threads,
+                "description": description,
+                "family": family,
+                "vcpus": vcpus,
                 "hypervisor": None,
                 "cpu_allocation": cpu_allocation,
                 "cpu_cores": vcpus or cpu_count,
@@ -467,7 +508,7 @@ def inventory_servers(vendor):
                 "cpu_l3_cache_total": None,
                 "cpu_flags": [],
                 "cpus": [],
-                "memory_amount": server["ram"],
+                "memory_amount": memory_amount,
                 "memory_generation": None,
                 "memory_speed": None,
                 "memory_ecc": None,
