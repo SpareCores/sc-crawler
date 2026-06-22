@@ -685,7 +685,10 @@ def inventory_servers(vendor) -> list[dict]:
                 else None
             ),
         ]
-        description = f"{family} ({', '.join(filter(None, description_parts))})"
+        description_parts_str = ", ".join(filter(None, description_parts))
+        description = (
+            f"{family} ({description_parts_str})" if family else description_parts_str
+        )
 
         network_speed = technical.get("bandwidth", {}).get("level", None)
         network_speed_gbps = network_speed / 1000 if network_speed else None

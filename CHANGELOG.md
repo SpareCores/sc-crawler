@@ -1,3 +1,9 @@
+## v0.7.x (DEVELOPMENT)
+
+Fix(es):
+
+- Populate and correct `description` fields in the `Server` table for `Vultr` and `OVH` servers.
+
 ## v0.7.0 (June 22, 2026)
 
 New vendor(s):
