@@ -1159,8 +1159,8 @@ def inventory_zones(vendor):
     """
     items = []
     resources = _resources("Microsoft.Compute")
-    locations = [i for i in resources if i["resource_type"] == "virtualMachines"][0]
-    locations = {item["location"]: item["zones"] for item in locations["zone_mappings"]}
+    locations = [i for i in resources if i["resourceType"] == "virtualMachines"][0]
+    locations = {item["location"]: item["zones"] for item in locations["zoneMappings"]}
     for region in vendor.regions:
         # default to zone with 0 ID if there are no real availability zones
         region_zones = locations.get(region.name, ["0"])
