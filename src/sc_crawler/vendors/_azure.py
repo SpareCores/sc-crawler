@@ -8,7 +8,7 @@ from typing import List, Optional
 from azure.core.exceptions import HttpResponseError
 from azure.identity import DefaultAzureCredential
 from azure.mgmt.compute import ComputeManagementClient
-from azure.mgmt.resource import ResourceManagementClient
+from azure.mgmt.resource.resources import ResourceManagementClient
 from azure.mgmt.resource.subscriptions import SubscriptionClient
 from cachier import cachier
 from requests import Session as request_session
@@ -1124,10 +1124,10 @@ def inventory_regions(vendor):
                 {
                     "vendor_id": vendor.vendor_id,
                     "region_id": region["name"],
-                    "name": region["displayName"],
+                    "name": region["display_name"],
                     "api_reference": region["name"],
                     "display_name": (
-                        region["displayName"] + " (" + manual_data["country_id"] + ")"
+                        region["display_name"] + " (" + manual_data["country_id"] + ")"
                     ),
                     "country_id": manual_data["country_id"],
                     "state": manual_data.get("state"),
