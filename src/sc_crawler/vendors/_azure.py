@@ -1120,14 +1120,19 @@ def inventory_regions(vendor):
             manual_data = manual_datas.get(region["name"])
             if not manual_data:
                 raise KeyError(f"No manual data found for {region['name']}.")
+            # azure-mgmt-resource 25+ as_dict() uses camelCase keys (displayName)
+            region_name = next(
+                (region[k] for k in ("display_name", "displayName") if region.get(k)),
+                region["name"],
+            )
             items.append(
                 {
                     "vendor_id": vendor.vendor_id,
                     "region_id": region["name"],
-                    "name": region["display_name"],
+                    "name": region_name,
                     "api_reference": region["name"],
                     "display_name": (
-                        region["display_name"] + " (" + manual_data["country_id"] + ")"
+                        region_name + " (" + manual_data["country_id"] + ")"
                     ),
                     "country_id": manual_data["country_id"],
                     "state": manual_data.get("state"),
