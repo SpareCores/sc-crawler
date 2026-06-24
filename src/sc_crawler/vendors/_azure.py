@@ -1107,6 +1107,8 @@ def inventory_regions(vendor):
             # no idea what are these
             if region["name"].endswith("stg"):
                 continue
+            if region["name"].endswith("stage"):
+                continue
             # not production region?
             # https://github.com/Azure/azure-dev/issues/2165#issuecomment-1542948509
             if region["name"] == "brazilus":
