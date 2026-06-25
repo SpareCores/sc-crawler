@@ -25,6 +25,7 @@ class HashableJSON(TypeDecorator):
     """Alternative JSON SQLAlchemy column representation, which can be hashed."""
 
     impl = JSON
+    cache_ok = True
 
     def process_result_value(self, value: str, dialect: Any) -> Any:
         if value is None:

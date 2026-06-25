@@ -1102,7 +1102,11 @@ def inventory_regions(vendor):
         with sentry_capture_or_raise(vendor=vendor):
             # TODO drop this once the metadata field doesn't show up randomly anymore
             # as the non-metadata responses do not seem to have these logical regions anymore
-            if region.get("metadata", {}).get("regionType", "Physical") != "Physical":
+            metadata = region.get("metadata", {})
+            region_type = metadata.get("regionType") or metadata.get(
+                "region_type", "Physical"
+            )
+            if region_type != "Physical":
                 continue
             # no idea what are these
             if region["name"].endswith("stg"):
@@ -1164,8 +1168,14 @@ def inventory_zones(vendor):
     """
     items = []
     resources = _resources("Microsoft.Compute")
-    locations = [i for i in resources if i["resourceType"] == "virtualMachines"][0]
-    locations = {item["location"]: item["zones"] for item in locations["zoneMappings"]}
+    locations = [
+        i
+        for i in resources
+        if i.get("resource_type") == "virtualMachines"
+        or i.get("resourceType") == "virtualMachines"
+    ][0]
+    zone_mappings = locations.get("zone_mappings", locations.get("zoneMappings", []))
+    locations = {item["location"]: item["zones"] for item in zone_mappings}
     for region in vendor.regions:
         # default to zone with 0 ID if there are no real availability zones
         region_zones = locations.get(region.name, ["0"])

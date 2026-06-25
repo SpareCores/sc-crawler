@@ -890,6 +890,12 @@ class BenchmarkFields(HasDescription, HasName, HasCategory, HasBenchmarkIdPK):
     )
 
 
+def _coerce_categories(value) -> list[Category]:
+    if not value:
+        return []
+    return [Category(item) if isinstance(item, str) else item for item in value]
+
+
 class ServerDescriptionFields(ScModel):
     page: List[str] = Field(
         sa_type=JSON,
@@ -979,14 +985,19 @@ class ServerDescriptionFields(ScModel):
             raise ValueError(f"bullet_points must have 4-6 items, got {len(v)}")
         return v
 
-    @field_validator("categories")
+    @field_validator("categories", mode="before")
     @classmethod
-    def validate_categories(cls, v: list[Category]) -> list[Category]:
-        if len(v) < 1 or len(v) > 3:
-            raise ValueError(f"categories must have 1-3 items, got {len(v)}")
-        if len(v) != len(set(v)):
+    def validate_categories(cls, v):
+        categories = _coerce_categories(v)
+        if len(categories) < 1 or len(categories) > 3:
+            raise ValueError(f"categories must have 1-3 items, got {len(categories)}")
+        if len(categories) != len(set(categories)):
             raise ValueError("categories must not contain duplicates")
-        return v
+        return categories
+
+    @reconstructor
+    def _reconstruct_categories(self):
+        self.categories = _coerce_categories(self.categories)
 
 
 class ServerDescriptionBase(
