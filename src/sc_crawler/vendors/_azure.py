@@ -1168,12 +1168,15 @@ def inventory_zones(vendor):
     """
     items = []
     resources = _resources("Microsoft.Compute")
-    locations = [
-        i
-        for i in resources
-        if i.get("resource_type") == "virtualMachines"
-        or i.get("resourceType") == "virtualMachines"
-    ][0]
+    locations = next(
+        (
+            i
+            for i in resources
+            if i.get("resource_type") == "virtualMachines"
+            or i.get("resourceType") == "virtualMachines"
+        ),
+        {},
+    )
     zone_mappings = locations.get("zone_mappings", locations.get("zoneMappings", []))
     locations = {item["location"]: item["zones"] for item in zone_mappings}
     for region in vendor.regions:
