@@ -75,7 +75,7 @@ def ingest_server_description(server: "Server") -> dict | None:
     try:
         output = _load_server_description_output(server)
         fields = ServerDescriptionFields.model_validate(output)
-        return {**_server_ids(server), **fields.model_dump()}
+        return {**_server_ids(server), **fields.model_dump(mode="json")}
     except Exception as e:
         _log_cannot_load_description(server, e)
         return None

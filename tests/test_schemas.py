@@ -1,7 +1,10 @@
+import warnings
+
 import pytest
 
-from sc_crawler.table_bases import ServerBase, StoragePriceBase
+from sc_crawler.table_bases import ServerBase, ServerDescriptionFields, StoragePriceBase
 from sc_crawler.table_fields import (
+    Category,
     Cpu,
     Disk,
     Gpu,
@@ -285,6 +288,48 @@ def test_storage_price_tiered_validator_with_empty_list():
 
     # Verify that empty list is preserved
     assert storage_price.price_tiered == []
+
+
+def test_server_description_categories_validator_with_strings():
+    """Test that categories field validator converts strings to Category instances."""
+    description = ServerDescriptionFields(
+        page=["word " * 50],
+        description="word " * 100,
+        og_description="x" * 200,
+        meta_description="x" * 150,
+        tagline="word " * 20,
+        bullet_points=["a", "b", "c", "d"],
+        categories=["General Purpose", "Compute Optimized"],
+    )
+
+    assert len(description.categories) == 2
+    assert all(isinstance(category, Category) for category in description.categories)
+    assert description.categories[0] == Category.GENERAL_PURPOSE
+    assert description.categories[1] == Category.COMPUTE_OPTIMIZED
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        dumped = description.model_dump()
+        assert dumped["categories"] == [
+            Category.GENERAL_PURPOSE,
+            Category.COMPUTE_OPTIMIZED,
+        ]
+        assert not caught
+
+    reconstructed = ServerDescriptionFields.model_construct(
+        page=description.page,
+        description=description.description,
+        og_description=description.og_description,
+        meta_description=description.meta_description,
+        tagline=description.tagline,
+        bullet_points=description.bullet_points,
+        categories=["General Purpose", "Compute Optimized"],
+    )
+    reconstructed._reconstruct_categories()
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        reconstructed.model_dump()
+        assert not caught
 
 
 def test_storage_price_tiered_validator_with_mixed_bounds():
