@@ -136,6 +136,99 @@ def _passmark(name: str, description: str, unit: str, higher_is_better: bool = T
     )
 
 
+_VLLM_SERVING_CONFIG = {
+    "model": "Ladder short id (e.g. smol-135m, llama-8b).",
+    "model_id": "Full Hugging Face model id (e.g. meta-llama/Llama-3.1-8B-Instruct).",
+    "workload": "Synthetic workload: chat, rag, or long (long is GPU-only).",
+    "prompt_tokens": "Synthetic prompt length for the workload.",
+    "output_tokens": "Synthetic output length for the workload.",
+    "profile": "GuideLLM profile (default sweep with sync, throughput, and constant steps).",
+    "strategy": "GuideLLM scheduler strategy (synchronous, throughput, or constant).",
+    "target_rate": "Target request rate for constant-rate steps (req/s); null otherwise.",
+    "concurrency": "Mean concurrent requests during the GuideLLM step.",
+    "mode": "Serving backend: cpu or gpu.",
+    "arch": "Host architecture (amd64 or arm64).",
+    "avx512": "Whether AVX-512 was available on amd64 CPU runs.",
+    "avx2_only_image": "Whether the AVX2-only CPU image was used.",
+    "tensor_parallel": "Tensor-parallel size used for GPU serving (0 on CPU).",
+    "gpu_count": "Visible GPU count during the run (0 on CPU).",
+    "gpu_model": "GPU product name when mode=gpu.",
+    "total_vram_gb": "Total VRAM (GiB) when mode=gpu.",
+    "vllm_version": "vLLM version from the benchmark image.",
+    "guidellm_version": "GuideLLM version from the benchmark image.",
+    "max_model_len": "vLLM --max-model-len for this workload/server start.",
+    "tuning_version": "Harness autoconfig revision (0=legacy static knobs).",
+    "percentile": "Latency percentile (p50, p95, p99, mean); omitted for throughput rows.",
+}
+
+
+_VLLM_SERVING_LATENCY_MEASUREMENTS = (
+    ("ttft", "vLLM time to first token", "TTFT from GuideLLM against a vLLM server."),
+    ("tpot", "vLLM time per output token", "TPOT from GuideLLM."),
+    ("itl", "vLLM inter-token latency", "Inter-token latency from GuideLLM."),
+    ("e2el", "vLLM end-to-end latency", "End-to-end request latency from GuideLLM."),
+)
+_VLLM_SERVING_THROUGHPUT_MEASUREMENTS = (
+    (
+        "output_throughput",
+        "vLLM output token throughput",
+        "Mean output tokens per second.",
+        "tokens/sec",
+    ),
+    (
+        "total_throughput",
+        "vLLM total token throughput",
+        "Mean total tokens per second (input + output).",
+        "tokens/sec",
+    ),
+    (
+        "request_throughput",
+        "vLLM request throughput",
+        "Mean completed requests per second.",
+        "requests/sec",
+    ),
+)
+VLLM_SERVING_MEASUREMENTS = frozenset(
+    m[0] for m in _VLLM_SERVING_LATENCY_MEASUREMENTS + _VLLM_SERVING_THROUGHPUT_MEASUREMENTS
+)
+
+
+def _vllm_serving_benchmarks() -> list[Benchmark]:
+    latency = _VLLM_SERVING_LATENCY_MEASUREMENTS
+    throughput = _VLLM_SERVING_THROUGHPUT_MEASUREMENTS
+    rows: list[Benchmark] = []
+    for measurement, name, description in latency:
+        rows.append(
+            Benchmark(
+                benchmark_id=f"vllm_serving:{measurement}",
+                name=name,
+                category="LLM serving",
+                description=description,
+                framework="vllm_serving",
+                measurement=measurement,
+                config_fields=_VLLM_SERVING_CONFIG,
+                unit="ms",
+                higher_is_better=False,
+            )
+        )
+    for measurement, name, description, unit in throughput:
+        rows.append(
+            Benchmark(
+                benchmark_id=f"vllm_serving:{measurement}",
+                name=name,
+                category="LLM serving",
+                description=description,
+                framework="vllm_serving",
+                measurement=measurement,
+                config_fields={
+                    k: v for k, v in _VLLM_SERVING_CONFIG.items() if k != "percentile"
+                },
+                unit=unit,
+            )
+        )
+    return rows
+
+
 benchmarks: List[Benchmark] = [
     Benchmark(
         benchmark_id="bogomips",
@@ -590,6 +683,7 @@ benchmarks: List[Benchmark] = [
         },
         unit="tokens/second (t/s)",
     ),
+    *_vllm_serving_benchmarks(),
 ]
 
 # dynamically add synthetic compound/augmented workloads
