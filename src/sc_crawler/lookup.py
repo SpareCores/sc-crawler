@@ -76,7 +76,7 @@ compliance_frameworks: dict = {
         compliance_framework_id="iso27001",
         name="ISO/IEC 27001",
         abbreviation="ISO 27001",
-        description="ISO 27001 is standard for information security management systems.",  # noqa: E501
+        description="ISO 27001 is a standard for information security management systems.",  # noqa: E501
         homepage="https://www.iso.org/standard/27001",  # noqa: E501
     ),
 }
@@ -93,7 +93,7 @@ def map_compliance_frameworks_to_vendor(
         compliance_framework_ids: identifier(s) of [`ComplianceFramework`][sc_crawler.tables.ComplianceFramework]
 
     Returns:
-        Array of dictionaroes that can be passed to [sc_crawler.insert.insert_items][].
+        Array of dictionaries that can be passed to [sc_crawler.insert.insert_items][].
     """
     items = []
     for compliance_framework_id in compliance_framework_ids:
@@ -117,7 +117,7 @@ def _geekbenchmark(name: str, description: str):
             + "The score is calibrated against a baseline score of 2,500 (Dell Precision 3460 with a Core i7-12700 processor) as per the Geekbench 6 Benchmark Internals."
         ),
         framework="geekbench",
-        config_fields={"cores": "Single-Core or Multi-Core peformance tests."},
+        config_fields={"cores": "Single-Core or Multi-Core performance tests."},
         measurement=measurement,
     )
 
@@ -161,7 +161,7 @@ benchmarks: List[Benchmark] = [
         benchmark_id="compression_text:ratio",
         name="Compression ratio",
         category="Compression algos",
-        description="Measures the compression ratio while compressing the dickens.txt of the Silesia corpus (10 MB uncompressed) using various algorithms, compressions levels and other extra arguments.",
+        description="Measures the compression ratio while compressing the dickens.txt of the Silesia corpus (10 MB uncompressed) using various algorithms, compression levels and other extra arguments.",
         framework="compression_text",
         config_fields={
             "algo": "Compression algorithm, e.g. brotli or bz2.",
@@ -176,7 +176,7 @@ benchmarks: List[Benchmark] = [
         benchmark_id="compression_text:compress",
         name="Compression bandwidth",
         category="Compression algos",
-        description="Measures the compression bandwidth (bytes/second) on the dickens.txt of the Silesia corpus (10 MB uncompressed) using various algorithms, compressions levels and other extra arguments.",
+        description="Measures the compression bandwidth (bytes/second) on the dickens.txt of the Silesia corpus (10 MB uncompressed) using various algorithms, compression levels and other extra arguments.",
         framework="compression_text",
         config_fields={
             "algo": "Compression algorithm, e.g. brotli or bz2.",
@@ -191,7 +191,7 @@ benchmarks: List[Benchmark] = [
         benchmark_id="compression_text:decompress",
         name="Decompression bandwidth",
         category="Compression algos",
-        description="Measures the decompression bandwidth (bytes/second) on the compressed dickens.txt of the Silesia corpus (10 MB uncompressed) using various algorithms, compressions levels and other extra arguments.",
+        description="Measures the decompression bandwidth (bytes/second) on the compressed dickens.txt of the Silesia corpus (10 MB uncompressed) using various algorithms, compression levels and other extra arguments.",
         framework="compression_text",
         config_fields={
             "algo": "Compression algorithm, e.g. brotli or bz2.",
@@ -260,7 +260,7 @@ benchmarks: List[Benchmark] = [
     ),
     _geekbenchmark(
         "Photo Filter",
-        "Applies colour and blur filters, level adjustments, cropping, scaling, and image compositing filters to 10 photos range in size from 3 MP to 15 MP.",
+        "Applies colour and blur filters, level adjustments, cropping, scaling, and image compositing filters to 10 photos that range in size from 3 MP to 15 MP.",
     ),
     _geekbenchmark(
         "Ray Tracer",
@@ -324,7 +324,7 @@ benchmarks: List[Benchmark] = [
         benchmark_id="static_web:rps",
         name="Static web server+client speed",
         category="Static web server",
-        description="Serving smaller (1-65 kB) and larger (256-512 kB) files using a static HTTP server (binserve), and benchmarking each workload (wrk) using variable number of threads (and keeping the threads with the maximum performance) and connections (recorded after divided by the number of vCPUs to make it comparable with other servers with different vCPU count) on the same server. The measured RPS is not the maximum expected server speed, as the server shared CPU with the client.",
+        description="Serving smaller (1-65 kB) and larger (256-512 kB) files using a static HTTP server (binserve) as a single process (listener bottleneck on large instances), and benchmarking each workload (wrk) using variable number of threads (and keeping the threads with the maximum performance) and connections (recorded after divided by the number of vCPUs to make it comparable with other servers with different vCPU count) on the same server. The measured RPS is not the maximum expected server speed, as the server shares CPU with the client.",
         framework="static_web",
         measurement="rps",
         config_fields={
@@ -337,7 +337,7 @@ benchmarks: List[Benchmark] = [
         benchmark_id="static_web:rps-extrapolated",
         name="Static web server (extrapolated) speed",
         category="Static web server",
-        description="Serving smaller (1-65 kB) and larger (256-512 kB) files using a static HTTP server (binserve), and benchmarking each workload (wrk) using variable number of threads (and keeping the threads with the maximum performance) and connections (recorded after divided by the number of vCPUs to make it comparable with other servers with different vCPU count) on the same server. The extrapolated RPS is based on the measured RPS adjusted by the server's and client's time spent executing in user/system mode, so trying to control for the client resource usage.",
+        description="Serving smaller (1-65 kB) and larger (256-512 kB) files using a static HTTP server (binserve) as a single process (listener bottleneck on large instances), and benchmarking each workload (wrk) using variable number of threads (and keeping the threads with the maximum performance) and connections (recorded after divided by the number of vCPUs to make it comparable with other servers with different vCPU count) on the same server. The extrapolated RPS is based on the measured RPS adjusted by the server's and client's time spent executing in user/system mode, so trying to control for the client resource usage.",
         framework="static_web",
         measurement="rps-extrapolated",
         config_fields={
@@ -350,7 +350,7 @@ benchmarks: List[Benchmark] = [
         benchmark_id="static_web:throughput",
         name="Static web server+client throughput",
         category="Static web server",
-        description="Serving smaller (1-65 kB) and larger (256-512 kB) files using a static HTTP server (binserve), and benchmarking each workload (wrk) using variable number of threads (and keeping the threads with the maximum performance) and connections (recorded after divided by the number of vCPUs to make it comparable with other servers with different vCPU count) on the same server. Throughput is calculated by multiplying the RPS with the served file size. The measured RPS is not the maximum expected server speed, as the server shared CPU with the client.",
+        description="Serving smaller (1-65 kB) and larger (256-512 kB) files using a static HTTP server (binserve) as a single process (listener bottleneck on large instances), and benchmarking each workload (wrk) using variable number of threads (and keeping the threads with the maximum performance) and connections (recorded after divided by the number of vCPUs to make it comparable with other servers with different vCPU count) on the same server. Throughput is calculated by multiplying the RPS with the served file size. The measured RPS is not the maximum expected server speed, as the server shares CPU with the client.",
         framework="static_web",
         measurement="throughput",
         config_fields={
@@ -363,7 +363,7 @@ benchmarks: List[Benchmark] = [
         benchmark_id="static_web:throughput-extrapolated",
         name="Static web server (extrapolated) throughput",
         category="Static web server",
-        description="Serving smaller (1-65 kB) and larger (256-512 kB) files using a static HTTP server (binserve), and benchmarking each workload (wrk) using variable number of threads (and keeping the threads with the maximum performance) and connections (recorded after divided by the number of vCPUs to make it comparable with other servers with different vCPU count) on the same server. Extrapolated throughput is calculated by multiplying the exrapolated RPS with the served file size. The extrapolated RPS is based on the measured RPS adjusted by the server's and client's time spent executing in user/system mode, so trying to control for the client resource usage.",
+        description="Serving smaller (1-65 kB) and larger (256-512 kB) files using a static HTTP server (binserve) as a single process (listener bottleneck on large instances), and benchmarking each workload (wrk) using variable number of threads (and keeping the threads with the maximum performance) and connections (recorded after divided by the number of vCPUs to make it comparable with other servers with different vCPU count) on the same server. Extrapolated throughput is calculated by multiplying the extrapolated RPS with the served file size. The extrapolated RPS is based on the measured RPS adjusted by the server's and client's time spent executing in user/system mode, so trying to control for the client resource usage.",
         framework="static_web",
         measurement="throughput-extrapolated",
         config_fields={
@@ -376,7 +376,7 @@ benchmarks: List[Benchmark] = [
         benchmark_id="static_web:latency",
         name="Static web server latency",
         category="Static web server",
-        description="Serving smaller (1-65 kB) and larger (256-512 kB) files using a static HTTP server (binserve), and benchmarking each workload (wrk) using variable number of threads (and keeping the threads with the maximum performance) and connections (recorded after divided by the number of vCPUs to make it comparable with other servers with different vCPU count) on the same server. The average latency reported by wrk.",
+        description="Serving smaller (1-65 kB) and larger (256-512 kB) files using a static HTTP server (binserve) as a single process (listener bottleneck on large instances), and benchmarking each workload (wrk) using variable number of threads (and keeping the threads with the maximum performance) and connections (recorded after divided by the number of vCPUs to make it comparable with other servers with different vCPU count) on the same server. The average latency reported by wrk.",
         framework="static_web",
         measurement="latency",
         config_fields={
@@ -390,7 +390,7 @@ benchmarks: List[Benchmark] = [
         benchmark_id="redis:rps",
         name="Redis server+client speed",
         category="Redis",
-        description="Running a pair of redis server and benchmarking client (memtier_benchmark) on each vCPU to evaluate the performance of SET operations, using different number of concurrent pipelined requests. The measured RPS (ops/sec) is the sum of RPS measured in all parallel processes, but is not the maximum expected redis server speed, as the server(s) shared CPU with the client(s).",
+        description="Running a pair of redis server and benchmarking client (memtier_benchmark) on each vCPU to evaluate the performance of SET operations, using different number of concurrent pipelined requests. The measured RPS (ops/sec) is the sum of RPS measured in all parallel processes, but is not the maximum expected redis server speed, as the server(s) share CPU with the client(s).",
         framework="redis",
         measurement="rps",
         config_fields={
