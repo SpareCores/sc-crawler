@@ -25,6 +25,7 @@ class HashableJSON(TypeDecorator):
     """Alternative JSON SQLAlchemy column representation, which can be hashed."""
 
     impl = JSON
+    cache_ok = True
 
     def process_result_value(self, value: str, dialect: Any) -> Any:
         if value is None:
@@ -240,3 +241,20 @@ class Parallelism(str, Enum):
     """Benchmark run on a single core."""
     MULTI = "multi"
     """Benchmark run across multiple cores."""
+
+
+class Category(str, Enum):
+    """Workload category for a cloud server type."""
+
+    GENERAL_PURPOSE = "General Purpose"
+    """General-purpose server."""
+    COMPUTE_OPTIMIZED = "Compute Optimized"
+    """Compute-optimized server."""
+    MEMORY_OPTIMIZED = "Memory Optimized"
+    """Memory-optimized server."""
+    STORAGE_AND_DATABASE = "Storage & Database"
+    """Storage- and database-optimized server."""
+    GPU_ACCELERATED = "GPU Accelerated"
+    """GPU-accelerated server."""
+    BURSTABLE_AND_BUDGET = "Burstable & Budget"
+    """Burstable and budget-friendly server."""

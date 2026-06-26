@@ -8,7 +8,7 @@ from typing import List, Optional
 from azure.core.exceptions import HttpResponseError
 from azure.identity import DefaultAzureCredential
 from azure.mgmt.compute import ComputeManagementClient
-from azure.mgmt.resource import ResourceManagementClient
+from azure.mgmt.resource.resources import ResourceManagementClient
 from azure.mgmt.resource.subscriptions import SubscriptionClient
 from cachier import cachier
 from requests import Session as request_session
@@ -1102,10 +1102,16 @@ def inventory_regions(vendor):
         with sentry_capture_or_raise(vendor=vendor):
             # TODO drop this once the metadata field doesn't show up randomly anymore
             # as the non-metadata responses do not seem to have these logical regions anymore
-            if region.get("metadata", {}).get("regionType", "Physical") != "Physical":
+            metadata = region.get("metadata", {})
+            region_type = metadata.get("regionType") or metadata.get(
+                "region_type", "Physical"
+            )
+            if region_type != "Physical":
                 continue
             # no idea what are these
             if region["name"].endswith("stg"):
+                continue
+            if region["name"].endswith("stage"):
                 continue
             # not production region?
             # https://github.com/Azure/azure-dev/issues/2165#issuecomment-1542948509
@@ -1118,14 +1124,19 @@ def inventory_regions(vendor):
             manual_data = manual_datas.get(region["name"])
             if not manual_data:
                 raise KeyError(f"No manual data found for {region['name']}.")
+            # azure-mgmt-resource 25+ as_dict() uses camelCase keys (displayName)
+            region_name = next(
+                (region[k] for k in ("display_name", "displayName") if region.get(k)),
+                region["name"],
+            )
             items.append(
                 {
                     "vendor_id": vendor.vendor_id,
                     "region_id": region["name"],
-                    "name": region["displayName"],
+                    "name": region_name,
                     "api_reference": region["name"],
                     "display_name": (
-                        region["displayName"] + " (" + manual_data["country_id"] + ")"
+                        region_name + " (" + manual_data["country_id"] + ")"
                     ),
                     "country_id": manual_data["country_id"],
                     "state": manual_data.get("state"),
@@ -1157,8 +1168,17 @@ def inventory_zones(vendor):
     """
     items = []
     resources = _resources("Microsoft.Compute")
-    locations = [i for i in resources if i["resource_type"] == "virtualMachines"][0]
-    locations = {item["location"]: item["zones"] for item in locations["zone_mappings"]}
+    locations = next(
+        (
+            i
+            for i in resources
+            if i.get("resource_type") == "virtualMachines"
+            or i.get("resourceType") == "virtualMachines"
+        ),
+        {},
+    )
+    zone_mappings = locations.get("zone_mappings", locations.get("zoneMappings", []))
+    locations = {item["location"]: item["zones"] for item in zone_mappings}
     for region in vendor.regions:
         # default to zone with 0 ID if there are no real availability zones
         region_zones = locations.get(region.name, ["0"])

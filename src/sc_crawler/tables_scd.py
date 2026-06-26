@@ -14,6 +14,7 @@ from .table_bases import (
     RegionBase,
     ScModel,
     ServerBase,
+    ServerDescriptionBase,
     ServerPriceBase,
     StorageBase,
     StoragePriceBase,
@@ -122,6 +123,15 @@ class ServerScd(Scd, ServerBase, table=True):
 
 class ServerPriceScd(Scd, ServerPriceBase, table=True):
     """SCD version of .tables.ServerPrice."""
+
+    vendor_id: str = Field(
+        primary_key=True,
+        description="Reference to the Vendor.",
+    )
+
+
+class ServerDescriptionScd(Scd, ServerDescriptionBase, table=True):
+    """SCD version of .tables.ServerDescription."""
 
     vendor_id: str = Field(
         primary_key=True,

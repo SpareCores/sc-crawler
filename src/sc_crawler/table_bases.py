@@ -14,6 +14,7 @@ from sqlmodel import JSON, Field, Session, SQLModel, select
 from .str_utils import snake_case
 from .table_fields import (
     Allocation,
+    Category,
     Cpu,
     CpuAllocation,
     CpuArchitecture,
@@ -887,6 +888,122 @@ class BenchmarkFields(HasDescription, HasName, HasCategory, HasBenchmarkIdPK):
         default=True,
         description="If higher benchmark score means better performance, or vica versa.",
     )
+
+
+def _coerce_categories(value) -> list[Category]:
+    if not value:
+        return []
+    return [Category(item) if isinstance(item, str) else item for item in value]
+
+
+class ServerDescriptionFields(ScModel):
+    page: List[str] = Field(
+        sa_type=JSON,
+        description=(
+            "Detailed server description with up to 500 words total across multiple paragraphs on hardware specs, benchmark-relative performance, qualitative cost efficiency, tradeoffs, and workload fit."
+        ),
+    )
+    description: str = Field(
+        description=(
+            "Dense and technical server description using around 150 words in a single paragraph."
+        )
+    )
+    og_description: str = Field(
+        description=(
+            "200 character server description explicitly including vendor and server name."
+        )
+    )
+    meta_description: str = Field(
+        description=(
+            "150 character server description explicitly including vendor and server name."
+        )
+    )
+    tagline: str = Field(
+        description=(
+            "20-word tagline on server positioning and key differentiators without the vendor or server name."
+        )
+    )
+    bullet_points: List[str] = Field(
+        sa_type=JSON,
+        description=(
+            "4-6 concise bullet points highlighting key features and best-fit workloads."
+        ),
+    )
+    categories: List[Category] = Field(
+        sa_type=JSON,
+        description="One or more workload categories best fitting the server.",
+    )
+
+    @field_validator("page")
+    @classmethod
+    def validate_page(cls, v: list[str]) -> list[str]:
+        if len(v) < 1:
+            raise ValueError("page must have at least one paragraph")
+        if not all(p.strip() for p in v):
+            raise ValueError("page paragraphs must not be empty")
+        n = sum(len(p.strip().split()) for p in v)
+        if n > 500:
+            raise ValueError(f"page must be at most 500 words, got {n}")
+        return v
+
+    @field_validator("description")
+    @classmethod
+    def validate_description(cls, v: str) -> str:
+        n = len(v.strip().split())
+        if n > 175:
+            raise ValueError(f"description must be at most 175 words, got {n}")
+        return v
+
+    @field_validator("og_description")
+    @classmethod
+    def validate_og_description(cls, v: str) -> str:
+        n = len(v.strip())
+        if n < 175 or n > 225:
+            raise ValueError(f"og_description must be 175-225 characters, got {n}")
+        return v
+
+    @field_validator("meta_description")
+    @classmethod
+    def validate_meta_description(cls, v: str) -> str:
+        n = len(v.strip())
+        if n < 125 or n > 175:
+            raise ValueError(f"meta_description must be 125-175 characters, got {n}")
+        return v
+
+    @field_validator("tagline")
+    @classmethod
+    def validate_tagline(cls, v: str) -> str:
+        n = len(v.strip().split())
+        if n < 15 or n > 25:
+            raise ValueError(f"tagline must be 15-25 words, got {n}")
+        return v
+
+    @field_validator("bullet_points")
+    @classmethod
+    def validate_bullet_points(cls, v: list[str]) -> list[str]:
+        if len(v) < 4 or len(v) > 6:
+            raise ValueError(f"bullet_points must have 4-6 items, got {len(v)}")
+        return v
+
+    @field_validator("categories", mode="before")
+    @classmethod
+    def validate_categories(cls, v):
+        categories = _coerce_categories(v)
+        if len(categories) < 1 or len(categories) > 3:
+            raise ValueError(f"categories must have 1-3 items, got {len(categories)}")
+        if len(categories) != len(set(categories)):
+            raise ValueError("categories must not contain duplicates")
+        return categories
+
+    @reconstructor
+    def _reconstruct_categories(self):
+        self.categories = _coerce_categories(self.categories)
+
+
+class ServerDescriptionBase(
+    HasServerIdPK, HasVendorPKFK, MetaColumns, ServerDescriptionFields
+):
+    pass
 
 
 class BenchmarkBase(MetaColumns, BenchmarkFields):

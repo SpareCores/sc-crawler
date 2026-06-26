@@ -10,7 +10,7 @@ Each file in the [`src/sc_crawler/vendors`](https://github.com/SpareCores/sc-cra
 4. Update `docs/add_vendor.md` with the credential requirements for the new vendor.
 5. Implement the `inventory` methods.
 6. Preferably also implement the related cloud-discovery tool in the `resource-tracker` package.
-7. Add the new vendor to `_boot_from_attached_network_drive` in [`_find_storage_disks_from_lsblk`][sc_crawler.inspector._find_storage_disks_from_lsblk] ([`src/sc_crawler/inspector.py`](../src/sc_crawler/inspector.py)). The value (`True` or `False`) must match whether the vendor's Pulumi provisioning script in the [sc-runner](https://github.com/SpareCores/sc-runner) repo attaches a network block volume as the boot drive: check `src/sc_runner/resources/<vendor_id>.py`.
+7. Add the new vendor to `_boot_from_attached_network_drive` in [`_find_storage_disks_from_lsblk`](https://github.com/SpareCores/sc-crawler/blob/main/src/sc_crawler/inspector.py#L1064-L1089) ([`src/sc_crawler/inspector.py`](https://github.com/SpareCores/sc-crawler/blob/main/src/sc_crawler/inspector.py)). The value (`True` or `False`) must match whether the vendor's Pulumi provisioning script in the [sc-runner](https://github.com/SpareCores/sc-runner) repo attaches a network block volume as the boot drive: check `src/sc_runner/resources/<vendor_id>.py`.
 
 ## Inventory methods
 
