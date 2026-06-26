@@ -3,6 +3,9 @@
 Fix(es):
 
 - Populate and correct `description` fields in the `Server` table for `Vultr` and `OVH` servers.
+- Update normalization of benchmark scores for the workload profiles (v2) to use median ratios instead of min-max scaling.
+- Update the weighted average computation of workload profile (v2) scores to use geometric mean instead of arithmetic mean.
+- Remove benchmark components that don't scale well on 32+ vCPUs from workload profile (v2) scores: `geekbench`, `passmark:database_operations`, `passmark:memory_latency`.
 
 ## v0.7.0 (June 22, 2026)
 
@@ -18,8 +21,6 @@ Fix(es):
 
 - Implement `average_time_to_start` data harvesting for the `Server` table.
 - Fix NULL/0 handling for `gpu_memory_min` and `gpu_memory_total` in vendor scripts.
-- Update normalization of benchmark scores for the workload profiles to use median ratios instead of min-max scaling.
-- Update the weighted average computation of workload profile scores to use geometric mean instead of arithmetic mean.
 
 ## v0.6.0 (June 3, 2026)
 
