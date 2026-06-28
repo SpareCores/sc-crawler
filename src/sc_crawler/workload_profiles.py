@@ -22,7 +22,6 @@ from .table_fields import (
     Json,
 )
 
-
 _DEFAULT_COMPONENT_PENALTY = 1e-4
 
 
@@ -46,11 +45,7 @@ class BenchmarkEntry(BaseModel):
 
     def effective_penalty(self) -> float:
         """Return the penalty floor used when on_missing is PENALIZE."""
-        return (
-            self.penalty
-            if self.penalty is not None
-            else _DEFAULT_COMPONENT_PENALTY
-        )
+        return self.penalty if self.penalty is not None else _DEFAULT_COMPONENT_PENALTY
 
     def __json__(self):
         data = dict(sorted(self.model_dump(mode="json").items()))
@@ -321,46 +316,58 @@ WORKLOADS: dict[str, Workload] = {
         version="2.0",
         rationale="VRAM and memory-bandwidth-bound LLM inference workload, using direct LLM speed benchmarks at two model sizes, and supplementing with raw memory bandwidth, SIMD, and Geekbench computer vision workloads that exercise ML-style pipelines.",
         benchmarks=[
-            # direct LLM speed benchmarks
+            # direct LLM speed benchmarks from smallest model (to make sure we managed to run at least one model)
+            BenchmarkEntry(
+                benchmark_id="llm_speed:text_generation",
+                weight=0.10,
+                label="LLM text generation (SmolLM-135M, 128 tok)",
+                config_filter={"model": "SmolLM-135M.Q4_K_M.gguf", "tokens": 128},
+                on_missing=BenchmarkComponentMissingPolicy.REQUIRE,
+            ),
+            BenchmarkEntry(
+                benchmark_id="llm_speed:prompt_processing",
+                weight=0.10,
+                label="LLM prompt processing (SmolLM-135M, 512 tok)",
+                config_filter={"model": "SmolLM-135M.Q4_K_M.gguf", "tokens": 512},
+                on_missing=BenchmarkComponentMissingPolicy.REQUIRE,
+            ),
             BenchmarkEntry(
                 benchmark_id="llm_speed:text_generation",
                 weight=0.10,
                 label="LLM text generation (Llama 7B, 128 tok)",
                 config_filter={"model": "llama-7b.Q4_K_M.gguf", "tokens": 128},
-                on_missing=BenchmarkComponentMissingPolicy.REQUIRE,
+                on_missing=BenchmarkComponentMissingPolicy.PENALIZE,
+                penalty=1e-4,
             ),
             BenchmarkEntry(
                 benchmark_id="llm_speed:prompt_processing",
                 weight=0.10,
                 label="LLM prompt processing (Llama 7B, 512 tok)",
                 config_filter={"model": "llama-7b.Q4_K_M.gguf", "tokens": 512},
-                on_missing=BenchmarkComponentMissingPolicy.REQUIRE,
-            ),
-            BenchmarkEntry(
-                benchmark_id="llm_speed:text_generation",
-                weight=0.10,
-                label="LLM text generation (Gemma 2B, 128 tok)",
-                config_filter={"model": "gemma-2b.Q4_K_M.gguf", "tokens": 128},
-            ),
-            BenchmarkEntry(
-                benchmark_id="llm_speed:text_generation",
-                weight=0.10,
-                label="LLM text generation (Gemma 2B, 512 tok)",
-                config_filter={"model": "gemma-2b.Q4_K_M.gguf", "tokens": 512},
+                on_missing=BenchmarkComponentMissingPolicy.PENALIZE,
+                penalty=1e-4,
             ),
             BenchmarkEntry(
                 benchmark_id="llm_speed:text_generation",
                 weight=0.10,
                 label="LLM text generation (Llama-3.3 70B, 128 tok)",
-                config_filter={"model": "llama-3.3-70b.Q4_K_M.gguf", "tokens": 128},
+                config_filter={
+                    "model": "Llama-3.3-70B-Instruct-Q4_K_M.gguf",
+                    "tokens": 128,
+                },
                 on_missing=BenchmarkComponentMissingPolicy.PENALIZE,
+                penalty=1e-2,
             ),
             BenchmarkEntry(
-                benchmark_id="llm_speed:text_generation",
+                benchmark_id="llm_speed:prompt_processing",
                 weight=0.10,
-                label="LLM text generation (Llama-3.3 70B, 512 tok)",
-                config_filter={"model": "llama-3.3-70b.Q4_K_M.gguf", "tokens": 512},
+                label="LLM prompt processing (Llama-3.3 70B, 512 tok)",
+                config_filter={
+                    "model": "Llama-3.3-70B-Instruct-Q4_K_M.gguf",
+                    "tokens": 512,
+                },
                 on_missing=BenchmarkComponentMissingPolicy.PENALIZE,
+                penalty=1e-2,
             ),
             # memory performance benchmarks
             BenchmarkEntry(
