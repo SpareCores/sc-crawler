@@ -7,7 +7,7 @@ from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from enum import Enum
 from json import dump as json_dump
-from json import dumps, loads
+from json import loads
 from os import environ
 from pathlib import Path
 from re import sub
@@ -45,7 +45,13 @@ from .sentry import before_send
 from .table_fields import Status
 from .tables import Benchmark, ComplianceFramework, Country, Metadata, Vendor, tables
 from .tables_scd import tables_scd
-from .utils import HashLevels, get_row_by_pk, hash_database, table_name_to_model
+from .utils import (
+    HashLevels,
+    create_sc_engine,
+    get_row_by_pk,
+    hash_database,
+    table_name_to_model,
+)
 from .workload_profile_scores import recompute_workload_profiles
 
 supported_vendors = [
@@ -339,7 +345,7 @@ def copy(
     """Copy the standard SC Crawler tables of a database into a blank database."""
 
     source_engine = create_engine(source, pool_pre_ping=True)
-    target_engine = create_engine(target, pool_pre_ping=True)
+    target_engine = create_sc_engine(target, pool_pre_ping=True)
 
     for table in tables:
         table.__table__.create(target_engine)
@@ -421,7 +427,7 @@ def sync(
     """
 
     source_engine = create_engine(source, pool_pre_ping=True)
-    target_engine = create_engine(target, pool_pre_ping=True)
+    target_engine = create_sc_engine(target, pool_pre_ping=True)
 
     # compare source and target database revisions, halt if not matching
     with source_engine.connect() as connection:
@@ -791,10 +797,6 @@ def pull(
     Vendor API calls are optionally cached as Pickle objects in `~/.cachier`.
     """
 
-    def custom_serializer(x):
-        """Use JSON serializer defined in custom objects."""
-        return dumps(x, default=lambda x: x.__json__(), allow_nan=False)
-
     # enable caching
     if cache:
         set_global_params(
@@ -840,11 +842,7 @@ def pull(
         pbars.metadata.append(Text(str(datetime.now())))
 
         # alembic upgrade to ensure using the most recent version of the schemas
-        engine = create_engine(
-            connection_string,
-            json_serializer=custom_serializer,
-            pool_pre_ping=True,
-        )
+        engine = create_sc_engine(connection_string, pool_pre_ping=True)
         with engine.begin() as connection:
             command.upgrade(alembic_cfg(connection, force_logging=False), "heads")
 

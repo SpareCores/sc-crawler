@@ -47,7 +47,7 @@ def validate_items(
             name=f"Validating {space_after(prefix)}{model_name}(s)", total=len(items)
         )
     for i, item in enumerate(items):
-        items[i] = schema.model_validate(item).model_dump()
+        items[i] = schema.model_validate(item).model_dump(mode="json")
         if vendor:
             vendor.progress_tracker.advance_task()
     if vendor:

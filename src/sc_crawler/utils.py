@@ -48,6 +48,17 @@ class HashLevels(Enum):
     ROW = "row"
 
 
+def sc_json_serializer(x):
+    """JSON serializer for SQLAlchemy engines writing SC Crawler JSON columns."""
+    return dumps(x, default=lambda o: o.__json__(), allow_nan=False)
+
+
+def create_sc_engine(connection_string: str, **kwargs):
+    """Create a SQLAlchemy engine that can persist typed JSON model fields."""
+    kwargs.setdefault("json_serializer", sc_json_serializer)
+    return create_engine(connection_string, **kwargs)
+
+
 def hash_database(
     connection_string: str,
     level: HashLevels = HashLevels.DATABASE,

@@ -5,7 +5,13 @@ from hashlib import sha1
 from json import dumps
 from typing import List, Optional, Union
 
-from pydantic import ConfigDict, TypeAdapter, field_validator, model_validator
+from pydantic import (
+    ConfigDict,
+    TypeAdapter,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
 from rich.progress import Progress
 from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import declared_attr, reconstructor
@@ -916,6 +922,14 @@ class BenchmarkFields(HasBenchmarkIdPK):
         description="If higher benchmark score means better performance, or vica versa.",
     )
 
+    @field_serializer("source")
+    def _serialize_source(self, value: BenchmarkSource):
+        if isinstance(value, dict):
+            return value
+        if hasattr(value, "__json__"):
+            return value.__json__()
+        return value
+
     @field_validator("source", mode="before")
     @classmethod
     def _deserialize_source(cls, value):
@@ -1098,6 +1112,14 @@ class BenchmarkScoreFields(HasBenchmarkPKFK, HasServerPK, HasVendorPKFK):
         default=None,
         description="Optional note, comment or context on the benchmark score.",
     )
+
+    @field_serializer("score_breakdown")
+    def _serialize_score_breakdown(self, value: Optional[WorkloadScoreBreakdown]):
+        if value is None or isinstance(value, dict):
+            return value
+        if hasattr(value, "__json__"):
+            return value.__json__()
+        return value
 
     @field_validator("score_breakdown", mode="before")
     @classmethod
