@@ -314,26 +314,26 @@ WORKLOADS: dict[str, Workload] = {
     "llm": Workload(
         name="LLM Inference",
         version="2.0",
-        rationale="VRAM and memory-bandwidth-bound LLM inference workload, using direct LLM speed benchmarks at two model sizes, and supplementing with raw memory bandwidth, SIMD, and Geekbench computer vision workloads that exercise ML-style pipelines.",
+        rationale="VRAM and memory-bandwidth-bound LLM inference workload, using direct LLM speed benchmarks at three model sizes, and supplementing with raw memory bandwidth and SIMD performance benchmarks.",
         benchmarks=[
             # direct LLM speed benchmarks from smallest model (to make sure we managed to run at least one model)
             BenchmarkEntry(
                 benchmark_id="llm_speed:text_generation",
-                weight=0.10,
+                weight=0.15,
                 label="LLM text generation (SmolLM-135M, 128 tok)",
                 config_filter={"model": "SmolLM-135M.Q4_K_M.gguf", "tokens": 128},
                 on_missing=BenchmarkComponentMissingPolicy.REQUIRE,
             ),
             BenchmarkEntry(
                 benchmark_id="llm_speed:prompt_processing",
-                weight=0.10,
+                weight=0.15,
                 label="LLM prompt processing (SmolLM-135M, 512 tok)",
                 config_filter={"model": "SmolLM-135M.Q4_K_M.gguf", "tokens": 512},
                 on_missing=BenchmarkComponentMissingPolicy.REQUIRE,
             ),
             BenchmarkEntry(
                 benchmark_id="llm_speed:text_generation",
-                weight=0.10,
+                weight=0.15,
                 label="LLM text generation (Llama 7B, 128 tok)",
                 config_filter={"model": "llama-7b.Q4_K_M.gguf", "tokens": 128},
                 on_missing=BenchmarkComponentMissingPolicy.PENALIZE,
@@ -341,7 +341,7 @@ WORKLOADS: dict[str, Workload] = {
             ),
             BenchmarkEntry(
                 benchmark_id="llm_speed:prompt_processing",
-                weight=0.10,
+                weight=0.15,
                 label="LLM prompt processing (Llama 7B, 512 tok)",
                 config_filter={"model": "llama-7b.Q4_K_M.gguf", "tokens": 512},
                 on_missing=BenchmarkComponentMissingPolicy.PENALIZE,
@@ -349,7 +349,7 @@ WORKLOADS: dict[str, Workload] = {
             ),
             BenchmarkEntry(
                 benchmark_id="llm_speed:text_generation",
-                weight=0.10,
+                weight=0.15,
                 label="LLM text generation (Llama-3.3 70B, 128 tok)",
                 config_filter={
                     "model": "Llama-3.3-70B-Instruct-Q4_K_M.gguf",
@@ -360,7 +360,7 @@ WORKLOADS: dict[str, Workload] = {
             ),
             BenchmarkEntry(
                 benchmark_id="llm_speed:prompt_processing",
-                weight=0.10,
+                weight=0.15,
                 label="LLM prompt processing (Llama-3.3 70B, 512 tok)",
                 config_filter={
                     "model": "Llama-3.3-70B-Instruct-Q4_K_M.gguf",
@@ -371,26 +371,21 @@ WORKLOADS: dict[str, Workload] = {
             ),
             # memory performance benchmarks
             BenchmarkEntry(
-                benchmark_id="passmark:memory_mark",
-                weight=0.10,
-                label="PassMark Memory Mark (composite)",
-            ),
-            BenchmarkEntry(
                 # TODO migrate to membench with scope:RAM
                 benchmark_id="bw_mem",
-                weight=0.15,
+                weight=0.05,
                 label="Memory bandwidth (read, 256 MB)",
                 config_filter={"operation": "rd", "size": 256.0},
             ),
             # vector/matrix performance benchmarks
             BenchmarkEntry(
                 benchmark_id="passmark:cpu_extended_instructions_test",
-                weight=0.10,
+                weight=0.025,
                 label="PassMark AVX/SSE/FMA (SIMD)",
             ),
             BenchmarkEntry(
                 benchmark_id="passmark:cpu_floating_point_maths_test",
-                weight=0.05,
+                weight=0.025,
                 label="PassMark floating point",
             ),
         ],

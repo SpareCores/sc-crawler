@@ -18,12 +18,18 @@ New feature(s):
 
 Fix(es):
 
-- Update normalization of benchmark scores for the workload profiles (v2) to use median ratios instead of min-max scaling.
-- Update the weighted average computation of workload profile (v2) scores to use geometric mean instead of arithmetic mean.
-- Remove benchmark components that don't scale well on 32+ vCPUs from workload profile (v2) scores: `geekbench`,
-  `passmark:database_operations`, `passmark:memory_latency`.
+- Update normalization of benchmark scores for the workload profiles (v2) to use
+  median ratios instead of min-max scaling.
+- Update the weighted average computation of workload profile (v2) scores to use
+  geometric mean instead of arithmetic mean.
+- Remove benchmark components that don't scale well on 32+ vCPUs from workload
+  profile (v2) scores: `geekbench`, `passmark:database_operations`,
+  `passmark:memory_latency`.
+- Remove computer vision and memory latency benchmarks from the mixed inference
+  workload to provide an LLM-focused, much more useful and fairer score.
 - Move static web scaling caveat from benchmark descriptions into the `note` field.
-- Populate and correct `description` fields in the `Server` table for `Vultr` and `OVH` servers.
+- Populate and correct `description` fields in the `Server` table for `Vultr`
+  and `OVH` servers.
 
 ## v0.7.0 (June 22, 2026)
 
