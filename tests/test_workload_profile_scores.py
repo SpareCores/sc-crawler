@@ -3,7 +3,10 @@ import math
 import pytest
 
 from sc_crawler.lookup import benchmarks
-from sc_crawler.table_fields import BenchmarkComponentMissingPolicy, WorkloadScoreBreakdown
+from sc_crawler.table_fields import (
+    BenchmarkComponentMissingPolicy,
+    WorkloadScoreBreakdown,
+)
 from sc_crawler.workload_profile_scores import (
     _compute_workload_score_rows,
     _normalise,
