@@ -1,8 +1,16 @@
 from re import sub
 from typing import List
 
+from .table_fields import (
+    BenchmarkComponentAggregationMethod,
+    BenchmarkComponentNormalizationMethod,
+)
 from .tables import Benchmark, ComplianceFramework, Country
-from .workload_profiles import WORKLOADS
+from .workload_profiles import (
+    WORKLOADS,
+    CompoundSource,
+    ExtrapolatedSource,
+)
 
 # country codes: https://en.wikipedia.org/wiki/ISO_3166-1#Codes
 # mapping: https://github.com/manumanoj0010/countrydetails/blob/master/Countrydetails/data/continents.json  # noqa: E501
@@ -324,7 +332,7 @@ benchmarks: List[Benchmark] = [
         benchmark_id="static_web:rps",
         name="Static web server+client speed",
         category="Static web server",
-        description="Serving smaller (1-65 kB) and larger (256-512 kB) files using a static HTTP server (binserve) as a single process (listener bottleneck on large instances), and benchmarking each workload (wrk) using variable number of threads (and keeping the threads with the maximum performance) and connections (recorded after divided by the number of vCPUs to make it comparable with other servers with different vCPU count) on the same server. The measured RPS is not the maximum expected server speed, as the server shares CPU with the client.",
+        description="Serving smaller (1-65 kB) and larger (256-512 kB) files using a static HTTP server (binserve) as a single process, and benchmarking each workload (wrk) using variable number of threads (and keeping the threads with the maximum performance) and connections (recorded after divided by the number of vCPUs to make it comparable with other servers with different vCPU count) on the same server. The measured RPS is not the maximum expected server speed, as the server shares CPU with the client.",
         framework="static_web",
         measurement="rps",
         config_fields={
@@ -332,12 +340,16 @@ benchmarks: List[Benchmark] = [
             "connections_per_vcpus": "Open HTTP connections per vCPU(s).",
         },
         unit="Requests per second (rps)",
+        note=(
+            "This benchmark does not scale well on large instances (100+ vCPUs) "
+            "due to a listener bottleneck in the single-process HTTP server."
+        ),
     ),
     Benchmark(
         benchmark_id="static_web:rps-extrapolated",
         name="Static web server (extrapolated) speed",
         category="Static web server",
-        description="Serving smaller (1-65 kB) and larger (256-512 kB) files using a static HTTP server (binserve) as a single process (listener bottleneck on large instances), and benchmarking each workload (wrk) using variable number of threads (and keeping the threads with the maximum performance) and connections (recorded after divided by the number of vCPUs to make it comparable with other servers with different vCPU count) on the same server. The extrapolated RPS is based on the measured RPS adjusted by the server's and client's time spent executing in user/system mode, so trying to control for the client resource usage.",
+        description="Serving smaller (1-65 kB) and larger (256-512 kB) files using a static HTTP server (binserve) as a single process, and benchmarking each workload (wrk) using variable number of threads (and keeping the threads with the maximum performance) and connections (recorded after divided by the number of vCPUs to make it comparable with other servers with different vCPU count) on the same server. The extrapolated RPS is based on the measured RPS adjusted by the server's and client's time spent executing in user/system mode, so trying to control for the client resource usage.",
         framework="static_web",
         measurement="rps-extrapolated",
         config_fields={
@@ -345,12 +357,23 @@ benchmarks: List[Benchmark] = [
             "connections_per_vcpus": "Open HTTP connections per vCPU(s).",
         },
         unit="Requests per second (rps)",
+        note=(
+            "This benchmark does not scale well on large instances (100+ vCPUs) "
+            "due to a listener bottleneck in the single-process HTTP server."
+        ),
+        source=ExtrapolatedSource(
+            derived_from=["static_web:rps"],
+            note=(
+                "Measured RPS adjusted by server/client user+system CPU time "
+                "to control for client resource usage"
+            ),
+        ),
     ),
     Benchmark(
         benchmark_id="static_web:throughput",
         name="Static web server+client throughput",
         category="Static web server",
-        description="Serving smaller (1-65 kB) and larger (256-512 kB) files using a static HTTP server (binserve) as a single process (listener bottleneck on large instances), and benchmarking each workload (wrk) using variable number of threads (and keeping the threads with the maximum performance) and connections (recorded after divided by the number of vCPUs to make it comparable with other servers with different vCPU count) on the same server. Throughput is calculated by multiplying the RPS with the served file size. The measured RPS is not the maximum expected server speed, as the server shares CPU with the client.",
+        description="Serving smaller (1-65 kB) and larger (256-512 kB) files using a static HTTP server (binserve) as a single process, and benchmarking each workload (wrk) using variable number of threads (and keeping the threads with the maximum performance) and connections (recorded after divided by the number of vCPUs to make it comparable with other servers with different vCPU count) on the same server. Throughput is calculated by multiplying the RPS with the served file size. The measured RPS is not the maximum expected server speed, as the server shares CPU with the client.",
         framework="static_web",
         measurement="throughput",
         config_fields={
@@ -358,12 +381,16 @@ benchmarks: List[Benchmark] = [
             "connections_per_vcpus": "Open HTTP connections per vCPU(s).",
         },
         unit="Bytes per second (Bps)",
+        note=(
+            "This benchmark does not scale well on large instances (100+ vCPUs) "
+            "due to a listener bottleneck in the single-process HTTP server."
+        ),
     ),
     Benchmark(
         benchmark_id="static_web:throughput-extrapolated",
         name="Static web server (extrapolated) throughput",
         category="Static web server",
-        description="Serving smaller (1-65 kB) and larger (256-512 kB) files using a static HTTP server (binserve) as a single process (listener bottleneck on large instances), and benchmarking each workload (wrk) using variable number of threads (and keeping the threads with the maximum performance) and connections (recorded after divided by the number of vCPUs to make it comparable with other servers with different vCPU count) on the same server. Extrapolated throughput is calculated by multiplying the extrapolated RPS with the served file size. The extrapolated RPS is based on the measured RPS adjusted by the server's and client's time spent executing in user/system mode, so trying to control for the client resource usage.",
+        description="Serving smaller (1-65 kB) and larger (256-512 kB) files using a static HTTP server (binserve) as a single process, and benchmarking each workload (wrk) using variable number of threads (and keeping the threads with the maximum performance) and connections (recorded after divided by the number of vCPUs to make it comparable with other servers with different vCPU count) on the same server. Extrapolated throughput is calculated by multiplying the extrapolated RPS with the served file size. The extrapolated RPS is based on the measured RPS adjusted by the server's and client's time spent executing in user/system mode, so trying to control for the client resource usage.",
         framework="static_web",
         measurement="throughput-extrapolated",
         config_fields={
@@ -371,12 +398,23 @@ benchmarks: List[Benchmark] = [
             "connections_per_vcpus": "Open HTTP connections per vCPU(s).",
         },
         unit="Bytes per second (Bps)",
+        note=(
+            "This benchmark does not scale well on large instances (100+ vCPUs) "
+            "due to a listener bottleneck in the single-process HTTP server."
+        ),
+        source=ExtrapolatedSource(
+            derived_from=["static_web:throughput"],
+            note=(
+                "Measured throughput adjusted by server/client user+system CPU time "
+                "to control for client resource usage"
+            ),
+        ),
     ),
     Benchmark(
         benchmark_id="static_web:latency",
         name="Static web server latency",
         category="Static web server",
-        description="Serving smaller (1-65 kB) and larger (256-512 kB) files using a static HTTP server (binserve) as a single process (listener bottleneck on large instances), and benchmarking each workload (wrk) using variable number of threads (and keeping the threads with the maximum performance) and connections (recorded after divided by the number of vCPUs to make it comparable with other servers with different vCPU count) on the same server. The average latency reported by wrk.",
+        description="Serving smaller (1-65 kB) and larger (256-512 kB) files using a static HTTP server (binserve) as a single process, and benchmarking each workload (wrk) using variable number of threads (and keeping the threads with the maximum performance) and connections (recorded after divided by the number of vCPUs to make it comparable with other servers with different vCPU count) on the same server. The average latency reported by wrk.",
         framework="static_web",
         measurement="latency",
         config_fields={
@@ -385,6 +423,10 @@ benchmarks: List[Benchmark] = [
         },
         unit="Seconds (sec)",
         higher_is_better=False,
+        note=(
+            "This benchmark does not scale well on large instances (100+ vCPUs) "
+            "due to a listener bottleneck in the single-process HTTP server."
+        ),
     ),
     Benchmark(
         benchmark_id="redis:rps",
@@ -411,6 +453,13 @@ benchmarks: List[Benchmark] = [
             "pipeline": "The number of concurrent pipelined requests.",
         },
         unit="Operations per second (ops/sec)",
+        source=ExtrapolatedSource(
+            derived_from=["redis:rps"],
+            note=(
+                "Measured RPS adjusted by server/client user+system CPU time "
+                "to control for client resource usage"
+            ),
+        ),
     ),
     Benchmark(
         benchmark_id="redis:latency",
@@ -619,5 +668,10 @@ for workload_name, workload in WORKLOADS.items():
             ),
             framework="workload_profile",
             measurement="score",
+            source=CompoundSource(
+                aggregation=BenchmarkComponentAggregationMethod.WEIGHTED_GEOMETRIC_MEAN,
+                normalization=BenchmarkComponentNormalizationMethod.MEDIAN_RATIO,
+                components=list(workload.benchmarks),
+            ),
         )
     )

@@ -11,9 +11,16 @@ Weights within each workload sum to 1.0.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any, Literal, Union
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+
+from .table_fields import (
+    BenchmarkComponentAggregationMethod,
+    BenchmarkComponentMissingPolicy,
+    BenchmarkComponentNormalizationMethod,
+    Json,
+)
 
 
 class BenchmarkEntry(BaseModel):
@@ -27,8 +34,35 @@ class BenchmarkEntry(BaseModel):
     """Human-readable description of what this component measures."""
     config_filter: dict[str, Any] | None = None
     """Optional filter applied to the benchmark's config JSON column."""
+    on_missing: BenchmarkComponentMissingPolicy = BenchmarkComponentMissingPolicy.IGNORE
+    """How to handle a missing or invalid measurement for this component."""
+    penalty: float = 1e-4
+    """Substituted normalized ratio when on_missing is PENALIZE."""
 
     model_config = ConfigDict(frozen=True)
+
+
+class MeasuredSource(Json):
+    kind: Literal["measured"] = "measured"
+
+
+class ExtrapolatedSource(Json):
+    kind: Literal["extrapolated"] = "extrapolated"
+    derived_from: list[str]
+    note: str | None = None
+
+
+class CompoundSource(Json):
+    kind: Literal["compound"] = "compound"
+    aggregation: BenchmarkComponentAggregationMethod
+    normalization: BenchmarkComponentNormalizationMethod
+    components: list[BenchmarkEntry]
+
+
+BenchmarkSource = Annotated[
+    Union[MeasuredSource, ExtrapolatedSource, CompoundSource],
+    Field(discriminator="kind"),
+]
 
 
 class Workload(BaseModel):
@@ -189,6 +223,7 @@ WORKLOADS: dict[str, Workload] = {
             ),
         ],
     ),
+    # TODO add a status to Workload?
     # "database": Workload(
     #     name="Relational Database",
     #     version="2.0",
@@ -267,12 +302,14 @@ WORKLOADS: dict[str, Workload] = {
                 weight=0.10,
                 label="LLM text generation (Llama 7B, 128 tok)",
                 config_filter={"model": "llama-7b.Q4_K_M.gguf", "tokens": 128},
+    on_missing=BenchmarkComponentMissingPolicy.REQUIRE,
             ),
             BenchmarkEntry(
                 benchmark_id="llm_speed:prompt_processing",
                 weight=0.10,
                 label="LLM prompt processing (Llama 7B, 512 tok)",
                 config_filter={"model": "llama-7b.Q4_K_M.gguf", "tokens": 512},
+                on_missing=BenchmarkComponentMissingPolicy.REQUIRE,
             ),
             BenchmarkEntry(
                 benchmark_id="llm_speed:text_generation",
@@ -286,18 +323,19 @@ WORKLOADS: dict[str, Workload] = {
                 label="LLM text generation (Gemma 2B, 512 tok)",
                 config_filter={"model": "gemma-2b.Q4_K_M.gguf", "tokens": 512},
             ),
-            # TODO mark the below two as 0.0001 when not available?
             BenchmarkEntry(
                 benchmark_id="llm_speed:text_generation",
                 weight=0.10,
                 label="LLM text generation (Llama-3.3 70B, 128 tok)",
-                config_filter={"model": "llama-7b.Q4_K_M.gguf", "tokens": 128},
+                config_filter={"model": "llama-3.3-70b.Q4_K_M.gguf", "tokens": 128},
+                on_missing=BenchmarkComponentMissingPolicy.PENALIZE,
             ),
             BenchmarkEntry(
                 benchmark_id="llm_speed:text_generation",
                 weight=0.10,
                 label="LLM text generation (Llama-3.3 70B, 512 tok)",
-                config_filter={"model": "llama-7b.Q4_K_M.gguf", "tokens": 128},
+                config_filter={"model": "llama-3.3-70b.Q4_K_M.gguf", "tokens": 512},
+                on_missing=BenchmarkComponentMissingPolicy.PENALIZE,
             ),
             # memory performance benchmarks
             BenchmarkEntry(

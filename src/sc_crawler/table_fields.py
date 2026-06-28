@@ -243,6 +243,63 @@ class Parallelism(str, Enum):
     """Benchmark run across multiple cores."""
 
 
+class BenchmarkComponentAggregationMethod(str, Enum):
+    """How component benchmark scores are combined into one composite score."""
+
+    WEIGHTED_GEOMETRIC_MEAN = "weighted_geometric_mean"
+    """Weighted geometric mean: 2 ** (Σ wᵢ·log2(normalizedᵢ) / Σ wᵢ). Preserves
+    ratio/percentage linearity and is robust to outliers."""
+
+
+class BenchmarkComponentNormalizationMethod(str, Enum):
+    """How each raw benchmark value is scaled to be comparable across benchmarks."""
+
+    MEDIAN_RATIO = "median_ratio"
+    """Oriented ratio to the fleet median for that benchmark: raw/median when
+    higher-is-better, median/raw otherwise. 1.0 == the fleet median."""
+
+
+class BenchmarkComponentMissingPolicy(str, Enum):
+    """What to do when a component has no usable measurement for a server."""
+
+    IGNORE = "ignore"
+    """Omit the component and renormalize weights over the rest (default).
+    Use when the metric is genuinely optional"""
+
+    PENALIZE = "penalize"
+    """Substitute the component's `penalty` floor as the normalized value and keep
+    its full weight, so the composite collapses toward zero. Use when missing means
+    failure (e.g. a benchmark that timed out / could not complete)."""
+
+    REQUIRE = "require"
+    """Suppress the whole compound score for that server if the component is
+    missing. Use when the component is load-bearing for the profile's meaning."""
+
+
+class ScoreComponent(Json):
+    """One component's contribution to a composite workload profile score."""
+
+    label: str
+    benchmark_id: str
+    config_filter: dict[str, Any] | None = None
+    weight: float
+    weight_share: float
+    raw: float | None = None
+    reference: float | None = None
+    normalized: float | None = None
+    higher_is_better: bool = True
+    note: str | None = None
+
+
+class WorkloadScoreBreakdown(Json):
+    """Per-server realized calculation of a composite workload profile score."""
+
+    aggregation: BenchmarkComponentAggregationMethod
+    normalization: BenchmarkComponentNormalizationMethod
+    coverage: float
+    components: list[ScoreComponent]
+
+
 class Category(str, Enum):
     """Workload category for a cloud server type."""
 

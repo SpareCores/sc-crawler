@@ -15,12 +15,22 @@ from sqlalchemy import update
 from sqlmodel import Session, select
 
 from .insert import insert_items
-from .table_fields import Status
+from .table_fields import (
+    BenchmarkComponentAggregationMethod,
+    BenchmarkComponentMissingPolicy,
+    BenchmarkComponentNormalizationMethod,
+    ScoreComponent,
+    Status,
+    WorkloadScoreBreakdown,
+)
 from .tables import Benchmark, BenchmarkScore, Server, Vendor
 from .workload_profiles import WORKLOADS, BenchmarkEntry, Workload
 
 if TYPE_CHECKING:
     pass
+
+_AGGREGATION = BenchmarkComponentAggregationMethod.WEIGHTED_GEOMETRIC_MEAN
+_NORMALIZATION = BenchmarkComponentNormalizationMethod.MEDIAN_RATIO
 
 
 def _config_matches(row_config: dict, filter_cfg: dict[str, Any] | None) -> bool:
@@ -178,6 +188,12 @@ def _normalise(raw: float, fleet_median: float, higher_is_better: bool) -> float
     return log2(ratio)
 
 
+def _component_note_for_invalid(raw: float | None) -> str | None:
+    if raw is None:
+        return None
+    return f"invalid value: {raw}"
+
+
 def _compute_workload_score_rows(
     per_server: dict[tuple[str, str], dict],
     entry_medians: dict[int, float],
@@ -207,26 +223,105 @@ def _compute_workload_score_rows(
             log_weighted_sum = 0.0
             total_weight = 0.0
             missing_labels: list[str] = []
+            suppressed = False
+            breakdown_components: list[ScoreComponent] = []
 
             for local_i, global_i in enumerate(w_entry_indices):
                 entry = w_entries[local_i]
                 raw = server_data["scores"].get(global_i)
                 fleet_median = entry_medians.get(global_i)
-                if raw is None or fleet_median is None:
-                    missing_labels.append(entry.label)
-                    continue
-
                 higher = benchmark_meta.get(entry.benchmark_id, True)
-                norm = _normalise(raw, fleet_median, higher)
-                if norm is None:
-                    missing_labels.append(entry.label)
+
+                norm: float | None = None
+                component_note: str | None = None
+
+                if raw is not None and fleet_median is not None:
+                    norm = _normalise(raw, fleet_median, higher)
+                    if norm is None:
+                        component_note = _component_note_for_invalid(raw)
+
+                if norm is not None:
+                    log_weighted_sum += norm * entry.weight
+                    total_weight += entry.weight
+                    normalized = 2**norm
+                    breakdown_components.append(
+                        ScoreComponent(
+                            label=entry.label,
+                            benchmark_id=entry.benchmark_id,
+                            config_filter=entry.config_filter,
+                            weight=entry.weight,
+                            weight_share=0.0,  # filled after total_weight known
+                            raw=raw,
+                            reference=fleet_median,
+                            normalized=normalized,
+                            higher_is_better=higher,
+                            note=None,
+                        )
+                    )
                     continue
 
-                log_weighted_sum += norm * entry.weight
-                total_weight += entry.weight
+                policy = entry.on_missing
+                if policy == BenchmarkComponentMissingPolicy.REQUIRE:
+                    suppressed = True
+                    breakdown_components.append(
+                        ScoreComponent(
+                            label=entry.label,
+                            benchmark_id=entry.benchmark_id,
+                            config_filter=entry.config_filter,
+                            weight=entry.weight,
+                            weight_share=0.0,
+                            raw=raw,
+                            reference=fleet_median,
+                            normalized=None,
+                            higher_is_better=higher,
+                            note="required component missing",
+                        )
+                    )
+                    break
 
-            if total_weight <= 0:
+                if policy == BenchmarkComponentMissingPolicy.PENALIZE:
+                    norm = log2(entry.penalty)
+                    log_weighted_sum += norm * entry.weight
+                    total_weight += entry.weight
+                    breakdown_components.append(
+                        ScoreComponent(
+                            label=entry.label,
+                            benchmark_id=entry.benchmark_id,
+                            config_filter=entry.config_filter,
+                            weight=entry.weight,
+                            weight_share=0.0,
+                            raw=raw,
+                            reference=fleet_median,
+                            normalized=entry.penalty,
+                            higher_is_better=higher,
+                            note="penalized: no usable measurement",
+                        )
+                    )
+                    continue
+
+                # IGNORE (default)
+                missing_labels.append(entry.label)
+                breakdown_components.append(
+                    ScoreComponent(
+                        label=entry.label,
+                        benchmark_id=entry.benchmark_id,
+                        config_filter=entry.config_filter,
+                        weight=entry.weight,
+                        weight_share=0.0,
+                        raw=raw,
+                        reference=fleet_median,
+                        normalized=None,
+                        higher_is_better=higher,
+                        note=component_note,
+                    )
+                )
+
+            if suppressed or total_weight <= 0:
                 continue
+
+            for component in breakdown_components:
+                if component.normalized is not None:
+                    component.weight_share = component.weight / total_weight
 
             score = 2 ** (log_weighted_sum / total_weight)
 
@@ -247,6 +342,12 @@ def _compute_workload_score_rows(
                     "framework_version": w_def.version,
                     "score": score,
                     "note": note,
+                    "score_breakdown": WorkloadScoreBreakdown(
+                        aggregation=_AGGREGATION,
+                        normalization=_NORMALIZATION,
+                        coverage=total_weight,
+                        components=breakdown_components,
+                    ),
                 }
             )
 
