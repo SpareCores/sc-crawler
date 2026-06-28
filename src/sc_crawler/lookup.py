@@ -114,7 +114,64 @@ def map_compliance_frameworks_to_vendor(
     return items
 
 
-def _geekbenchmark(name: str, description: str):
+def _benchmark_plateau_note(vcpus: int) -> str:
+    return (
+        "This benchmark does not scale well on instances with more than "
+        f"{vcpus} vCPUs. Empirical data shows measured scores plateau and "
+        "may even degrade as vCPU count increases, so it is not recommended "
+        "for evaluating larger instance sizes."
+    )
+
+
+def _benchmark_fixed_workload_note(vcpus: int) -> str:
+    return (
+        "This benchmark uses a fixed workload size and does not scale with "
+        f"vCPU count beyond {vcpus} vCPUs, so it is not recommended for "
+        "evaluating larger instance sizes."
+    )
+
+
+_BENCHMARK_FAMILY_INDEPENDENT_NOTE = (
+    "This benchmark score is largely independent of vCPU count within an "
+    "instance family and mainly reflects hardware generation and memory "
+    "characteristics, not instance size."
+)
+
+_BENCHMARK_SINGLE_THREAD_NOTE = (
+    "This benchmark measures single-threaded CPU performance only, so scores "
+    "do not increase with vCPU count beyond one core."
+)
+
+
+def _benchmark_throughput_latency_note(throughput_benchmark_id: str) -> str:
+    return (
+        "Latency is recorded during the "
+        f"{throughput_benchmark_id} run, not as a standalone benchmark. "
+        "As it reflects a characteristic of that throughput measurement, "
+        "it is not recommended for comparing instances on its own; use it "
+        "instead as a filter when interpreting the related throughput scores."
+    )
+
+
+_BENCHMARK_PSEUDO_BENCHMARK_NOTE = (
+    "This is a pseudo-benchmark: BogoMips is a kernel-derived timing "
+    "calibration value, not a measure of real workload performance. "
+    "Scores do not correlate with application throughput and are not "
+    "recommended for comparing instances or CPU generations."
+)
+
+_BENCHMARK_LLM_SPEED_NOTE = (
+    "Throughput depends on model size and hardware. On CPU, smaller models "
+    "often top out around 96 vCPUs; larger models hit memory limits sooner. "
+    "GPUs are much faster than CPUs for this workload. llama.cpp only uses "
+    "multiple GPUs when one card cannot hold the model weights. Extra GPUs "
+    "are for fitting the model, not for serving more requests in parallel. "
+    "These runs target single-user, low-concurrency inference. For high "
+    "concurrency, use the vLLM benchmarks."
+)
+
+
+def _geekbenchmark(name: str, description: str, note: str | None = None):
     measurement = sub(r"\W+", "_", name.lower())
     return Benchmark(
         benchmark_id="geekbench:" + measurement,
@@ -127,10 +184,17 @@ def _geekbenchmark(name: str, description: str):
         framework="geekbench",
         config_fields={"cores": "Single-Core or Multi-Core performance tests."},
         measurement=measurement,
+        note=note,
     )
 
 
-def _passmark(name: str, description: str, unit: str, higher_is_better: bool = True):
+def _passmark(
+    name: str,
+    description: str,
+    unit: str,
+    higher_is_better: bool = True,
+    note: str | None = None,
+):
     measurement = sub(r"\W+", "_", name.lower())
     return Benchmark(
         benchmark_id="passmark:" + measurement,
@@ -141,6 +205,7 @@ def _passmark(name: str, description: str, unit: str, higher_is_better: bool = T
         description=description,
         unit=unit,
         higher_is_better=higher_is_better,
+        note=note,
     )
 
 
@@ -152,6 +217,7 @@ benchmarks: List[Benchmark] = [
         description='A crude measurement of CPU speed by the Linux kernel. This is NOT usable for performance comparisons among different CPUs, but might be useful to check if a processor is in the range of similar processors. As often quoted, BogoMips measures "the number of million times per second a processor can do absolutely nothing".',
         framework="bogomips",
         unit="Millions of instructions per second (MIPS)",
+        note=_BENCHMARK_PSEUDO_BENCHMARK_NOTE,
     ),
     Benchmark(
         benchmark_id="bw_mem",
@@ -213,22 +279,27 @@ benchmarks: List[Benchmark] = [
     _geekbenchmark(
         "Score",
         "Composite score using the weighted arithmetic mean of the subsection scores, which are computed using the geometric mean of the related scores.",
+        note=_benchmark_plateau_note(64),
     ),
     _geekbenchmark(
         "File Compression",
         "Compresses and decompresses the Ruby 3.1.2 source archive (a 75 MB archive with 9841 files) using LZ4 and ZSTD on an in-memory encrypted file system. It also verifies the files using SHA1.",
+        note=_benchmark_plateau_note(32),
     ),
     _geekbenchmark(
         "Navigation",
         "Generates 24 different routes between a sequence of locations on two OpenStreetMap maps (one for a small city, one for a large city) using Dijkstra's algorithm.",
+        note=_benchmark_plateau_note(32),
     ),
     _geekbenchmark(
         "HTML5 Browser",
         "Opens and renders web pages (8 in single-core mode, 32 in multi-core mode) using a headless web browser.",
+        note=_benchmark_plateau_note(32),
     ),
     _geekbenchmark(
         "PDF Renderer",
         "Opens complex PDF documents (4 in single-core mode, 16 in multi-core mode) of park maps from the American National Park Service (sizes from 897 kB to 1.5 MB) with large vector images, lines and text.",
+        note=_benchmark_plateau_note(32),
     ),
     _geekbenchmark(
         "Photo Library",
@@ -241,6 +312,7 @@ benchmarks: List[Benchmark] = [
     _geekbenchmark(
         "Text Processing",
         "Loads 190 markdown files, parses the contents using regular expressions, stores metadata in a SQLite database, and exports the content to a different format on an in-memory encrypted file system, using a mix of C++ and Python.",
+        note=_benchmark_fixed_workload_note(4),
     ),
     _geekbenchmark(
         "Asset Compression",
@@ -249,10 +321,12 @@ benchmarks: List[Benchmark] = [
     _geekbenchmark(
         "Object Detection",
         "Detects and classifies objects in 300x300 pixel photos (16 in single-core mode, 64 in multi-core mode) using the MobileNet v1 SSD convolutional neural network.",
+        note=_benchmark_plateau_note(32),
     ),
     _geekbenchmark(
         "Background Blur",
         "Separates and blurs the background of 10 frames in a 1080p video, using DeepLabV3+.",
+        note=_benchmark_plateau_note(32),
     ),
     _geekbenchmark(
         "Horizon Detection",
@@ -261,6 +335,7 @@ benchmarks: List[Benchmark] = [
     _geekbenchmark(
         "Object Remover",
         "Removes an object (using a mask) from a 3MP photo, and fills in the gap left behind using the iterative PatchMatch Inpainting approach (Barnes et al. 2009).",
+        note=_benchmark_plateau_note(32),
     ),
     _geekbenchmark(
         "HDR",
@@ -269,6 +344,7 @@ benchmarks: List[Benchmark] = [
     _geekbenchmark(
         "Photo Filter",
         "Applies colour and blur filters, level adjustments, cropping, scaling, and image compositing filters to 10 photos that range in size from 3 MP to 15 MP.",
+        note=_benchmark_plateau_note(32),
     ),
     _geekbenchmark(
         "Ray Tracer",
@@ -318,6 +394,7 @@ benchmarks: List[Benchmark] = [
         framework="stress_ng",
         measurement="best1",
         unit="Bogo operations per second (ops/s)",
+        note=_BENCHMARK_SINGLE_THREAD_NOTE,
     ),
     Benchmark(
         benchmark_id="stress_ng:bestn",
@@ -423,10 +500,7 @@ benchmarks: List[Benchmark] = [
         },
         unit="Seconds (sec)",
         higher_is_better=False,
-        note=(
-            "This benchmark does not scale well on large instances (100+ vCPUs) "
-            "due to a listener bottleneck in the single-process HTTP server."
-        ),
+        note=_benchmark_throughput_latency_note("static_web:rps"),
     ),
     Benchmark(
         benchmark_id="redis:rps",
@@ -474,6 +548,7 @@ benchmarks: List[Benchmark] = [
         },
         unit="Milliseconds (ms)",
         higher_is_better=False,
+        note=_benchmark_throughput_latency_note("redis:rps"),
     ),
     # https://www.cpubenchmark.net/cpu_test_info.html
     _passmark(
@@ -515,6 +590,7 @@ benchmarks: List[Benchmark] = [
         name="CPU Single Threaded Test",
         description="Using a single logical core for a mixture of floating point, string sorting and data compression tests.",
         unit="Millions of operations per second (Mops/s)",
+        note=_BENCHMARK_SINGLE_THREAD_NOTE,
     ),
     _passmark(
         name="CPU Physics Test",
@@ -531,34 +607,40 @@ benchmarks: List[Benchmark] = [
         name="Memory Mark",
         description="A composite score of PassMark's Database and Memory test cases",
         unit=None,
+        note=_benchmark_plateau_note(16),
     ),
     _passmark(
         name="Database Operations",
         # https://www.databasebenchmarks.net/chart-notes.html
         description="Single threaded and multi-threaded CRUD operations, such as INSERT (40%), SELECT (26%), UPDATE (24%), and DELETE (10%) on a relational database with 4 tables and 1k rows per table.",
         unit="Thousands of operations per second (Kops/s)",
+        note=_benchmark_plateau_note(32),
     ),
     # https://www.memorybenchmark.net/graph_notes.html
     _passmark(
         name="Memory Read Cached",
         description="Read a combination of 32-bit and 64-bit data from memory.",
         unit="Megabytes per second (MB/s)",
+        note=_BENCHMARK_FAMILY_INDEPENDENT_NOTE,
     ),
     _passmark(
         name="Memory Read Uncached",
         description="Read a combination of 32-bit and 64-bit data from memory using a 512 MB block size.",
         unit="Megabytes per second (MB/s)",
+        note=_BENCHMARK_FAMILY_INDEPENDENT_NOTE,
     ),
     _passmark(
         name="Memory Write",
         description="Write a combination of 32-bit and 64-bit data to the memory using a 512 MB block size.",
         unit="Megabytes per second (MB/s)",
+        note=_BENCHMARK_FAMILY_INDEPENDENT_NOTE,
     ),
     _passmark(
         name="Memory Latency",
         description="Measuring the time it takes for a single byte of memory to be transferred to the CPU for processing. A 512 MB buffer is allocated and then filled with pointers to other locations in the buffer, looping through a linked list.",
         unit="Nanoseconds (ns)",
         higher_is_better=False,
+        note=_BENCHMARK_FAMILY_INDEPENDENT_NOTE,
     ),
     Benchmark(
         benchmark_id="membench:bandwidth_read",
@@ -625,6 +707,7 @@ benchmarks: List[Benchmark] = [
             "tokens": "Number of tokens processed in one run.",
         },
         unit="tokens/second (t/s)",
+        note=_BENCHMARK_LLM_SPEED_NOTE,
     ),
     Benchmark(
         benchmark_id="llm_speed:prompt_processing",
@@ -638,6 +721,7 @@ benchmarks: List[Benchmark] = [
             "tokens": "Number of tokens processed in one run.",
         },
         unit="tokens/second (t/s)",
+        note=_BENCHMARK_LLM_SPEED_NOTE,
     ),
 ]
 
