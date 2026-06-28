@@ -351,22 +351,33 @@ def test_benchmark_entry_json_omits_penalty_unless_penalized():
     assert serialized["penalty"] == 1e-4
 
 
-def test_benchmark_merge_backfills_null_measured_source():
-    from json import dumps
-
+def test_create_sc_engine_serializes_typed_json_on_merge():
     from alembic import command
-    from sqlalchemy import create_engine, text
     from sqlmodel import Session
 
     from sc_crawler.alembic_helpers import alembic_cfg
+    from sc_crawler.lookup import benchmarks
+    from sc_crawler.utils import create_sc_engine
 
-    def custom_serializer(x):
-        return dumps(x, default=lambda o: o.__json__(), allow_nan=False)
+    engine = create_sc_engine("sqlite:////tmp/test-sc-engine-merge.db")
+    with engine.begin() as conn:
+        command.upgrade(alembic_cfg(conn, force_logging=False), "heads")
 
-    engine = create_engine(
-        "sqlite:////tmp/test-benchmark-source-merge.db",
-        json_serializer=custom_serializer,
-    )
+    benchmark = next(b for b in benchmarks if b.benchmark_id == "workload_profile:web")
+    with Session(engine) as session:
+        session.merge(benchmark)
+        session.commit()
+
+
+def test_benchmark_merge_backfills_null_measured_source():
+    from alembic import command
+    from sqlalchemy import text
+    from sqlmodel import Session
+
+    from sc_crawler.alembic_helpers import alembic_cfg
+    from sc_crawler.utils import create_sc_engine
+
+    engine = create_sc_engine("sqlite:////tmp/test-benchmark-source-merge.db")
     with engine.begin() as conn:
         command.upgrade(alembic_cfg(conn, force_logging=False), "heads")
 
@@ -406,8 +417,13 @@ def test_llm_workload_missing_policies():
         if e.on_missing == BenchmarkComponentMissingPolicy.PENALIZE
     ]
     assert len(required) == 2
-    assert all("Llama 7B" in e.label for e in required)
-    assert len(penalized) == 2
-    assert all("70B" in e.label for e in penalized)
-    for entry in penalized:
-        assert "llama-3.3-70b" in entry.config_filter["model"]
+    assert all("SmolLM-135M" in e.label for e in required)
+    assert len(penalized) == 4
+    llama_7b = [e for e in penalized if "Llama 7B" in e.label]
+    llama_70b = [e for e in penalized if "70B" in e.label]
+    assert len(llama_7b) == 2
+    assert len(llama_70b) == 2
+    for entry in llama_7b:
+        assert "llama-7b" in entry.config_filter["model"]
+    for entry in llama_70b:
+        assert "Llama-3.3-70B" in entry.config_filter["model"]
