@@ -137,7 +137,7 @@ WORKLOADS: dict[str, Workload] = {
                 label="Gzip compression (multi-core, level 5)",
                 config_filter={
                     "algo": "gzip",
-                    "compression_level": 1,
+                    "compression_level": 5,
                     "cores": "multi",
                 },
             ),
