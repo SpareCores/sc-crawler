@@ -29,6 +29,18 @@ def scdize_suffix(table_name: str) -> str:
     return table_name
 
 
+def _insert_column_after(table: sa.Table, new_col: sa.Column, after: str):
+    """Insert a column into a Table's column collection after the named column."""
+    cols = list(table.c)
+    idx = next(i for i, c in enumerate(cols) if c.name == after) + 1
+    tail = cols[idx:]
+    for c in tail:
+        table._columns.remove(c)
+    table.append_column(new_col)
+    for c in tail:
+        table.append_column(c)
+
+
 def get_benchmark_table(is_scd: bool) -> sa.Table:
     is_postgresql = op.get_context().dialect.name == "postgresql"
     table_name = scdize_suffix("benchmark")
@@ -328,10 +340,28 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     is_scd = is_scd_migration()
+    is_postgresql = op.get_context().dialect.name == "postgresql"
+    json_type = sa.dialects.postgresql.JSONB if is_postgresql else sa.JSON
     benchmark_table_name = scdize_suffix("benchmark")
     benchmark_table = get_benchmark_table(is_scd)
     benchmark_score_table_name = scdize_suffix("benchmark_score")
     benchmark_score_table = get_benchmark_score_table(is_scd)
+
+    _insert_column_after(
+        benchmark_table,
+        sa.Column("source", json_type(), nullable=True),
+        "category",
+    )
+    _insert_column_after(
+        benchmark_table,
+        sa.Column("note", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        "description",
+    )
+    _insert_column_after(
+        benchmark_score_table,
+        sa.Column("score_breakdown", json_type(), nullable=True),
+        "score",
+    )
 
     with op.batch_alter_table(
         benchmark_table_name, schema=None, copy_from=benchmark_table
