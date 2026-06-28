@@ -929,9 +929,7 @@ class BenchmarkFields(HasBenchmarkIdPK):
     @reconstructor
     def _reconstruct_source(self):
         """Re-coerce source from the dict returned by a DB load."""
-        if self.source is None:
-            self.source = MeasuredSource()
-        elif isinstance(self.source, dict):
+        if isinstance(self.source, dict):
             self.source = _BENCHMARK_SOURCE_ADAPTER.validate_python(self.source)
 
 

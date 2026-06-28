@@ -280,7 +280,8 @@ def _compute_workload_score_rows(
                     break
 
                 if policy == BenchmarkComponentMissingPolicy.PENALIZE:
-                    norm = log2(entry.penalty)
+                    penalty = entry.effective_penalty()
+                    norm = log2(penalty)
                     log_weighted_sum += norm * entry.weight
                     total_weight += entry.weight
                     breakdown_components.append(
@@ -292,7 +293,7 @@ def _compute_workload_score_rows(
                             weight_share=0.0,
                             raw=raw,
                             reference=fleet_median,
-                            normalized=entry.penalty,
+                            normalized=penalty,
                             higher_is_better=higher,
                             note="penalized: no usable measurement",
                         )

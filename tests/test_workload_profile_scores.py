@@ -329,6 +329,70 @@ def test_benchmark_source_descriptors():
     assert by_id["static_web:rps"].note is not None
 
 
+def test_benchmark_entry_json_omits_penalty_unless_penalized():
+    ignore = BenchmarkEntry(benchmark_id="bench:a", weight=0.5, label="metric-a")
+    penalized = BenchmarkEntry(
+        benchmark_id="bench:b",
+        weight=0.5,
+        label="metric-b",
+        on_missing=BenchmarkComponentMissingPolicy.PENALIZE,
+    )
+
+    assert "penalty" not in ignore.__json__()
+    assert penalized.__json__()["penalty"] == 1e-4
+
+    llm = next(
+        e
+        for e in WORKLOADS["llm"].benchmarks
+        if e.on_missing == BenchmarkComponentMissingPolicy.PENALIZE
+    )
+    serialized = llm.__json__()
+    assert serialized["on_missing"] == "penalize"
+    assert serialized["penalty"] == 1e-4
+
+
+def test_benchmark_merge_backfills_null_measured_source():
+    from json import dumps
+
+    from alembic import command
+    from sqlalchemy import create_engine, text
+    from sqlmodel import Session
+
+    from sc_crawler.alembic_helpers import alembic_cfg
+
+    def custom_serializer(x):
+        return dumps(x, default=lambda o: o.__json__(), allow_nan=False)
+
+    engine = create_engine(
+        "sqlite:////tmp/test-benchmark-source-merge.db",
+        json_serializer=custom_serializer,
+    )
+    with engine.begin() as conn:
+        command.upgrade(alembic_cfg(conn, force_logging=False), "heads")
+
+    with Session(engine) as session:
+        benchmark = next(b for b in benchmarks if b.benchmark_id == "bogomips")
+        session.merge(benchmark)
+        session.commit()
+
+    with engine.connect() as conn:
+        conn.execute(
+            text("UPDATE benchmark SET source = NULL WHERE benchmark_id='bogomips'")
+        )
+        conn.commit()
+
+    with Session(engine) as session:
+        benchmark = next(b for b in benchmarks if b.benchmark_id == "bogomips")
+        session.merge(benchmark)
+        session.commit()
+
+    with engine.connect() as conn:
+        source = conn.execute(
+            text("SELECT source FROM benchmark WHERE benchmark_id='bogomips'")
+        ).scalar()
+        assert source == '{"kind": "measured"}'
+
+
 def test_llm_workload_missing_policies():
     llm = WORKLOADS["llm"]
     required = [

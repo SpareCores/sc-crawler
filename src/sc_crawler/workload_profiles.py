@@ -23,6 +23,9 @@ from .table_fields import (
 )
 
 
+_DEFAULT_COMPONENT_PENALTY = 1e-4
+
+
 class BenchmarkEntry(BaseModel):
     """A single benchmark component contributing to a workload profile score."""
 
@@ -36,10 +39,27 @@ class BenchmarkEntry(BaseModel):
     """Optional filter applied to the benchmark's config JSON column."""
     on_missing: BenchmarkComponentMissingPolicy = BenchmarkComponentMissingPolicy.IGNORE
     """How to handle a missing or invalid measurement for this component."""
-    penalty: float = 1e-4
+    penalty: float | None = None
     """Substituted normalized ratio when on_missing is PENALIZE."""
 
     model_config = ConfigDict(frozen=True)
+
+    def effective_penalty(self) -> float:
+        """Return the penalty floor used when on_missing is PENALIZE."""
+        return (
+            self.penalty
+            if self.penalty is not None
+            else _DEFAULT_COMPONENT_PENALTY
+        )
+
+    def __json__(self):
+        data = dict(sorted(self.model_dump(mode="json").items()))
+        if data.get("on_missing") == BenchmarkComponentMissingPolicy.PENALIZE.value:
+            if data.get("penalty") is None:
+                data["penalty"] = _DEFAULT_COMPONENT_PENALTY
+        else:
+            data.pop("penalty", None)
+        return data
 
 
 class MeasuredSource(Json):
@@ -57,6 +77,11 @@ class CompoundSource(Json):
     aggregation: BenchmarkComponentAggregationMethod
     normalization: BenchmarkComponentNormalizationMethod
     components: list[BenchmarkEntry]
+
+    def __json__(self):
+        data = dict(sorted(self.model_dump(mode="json").items()))
+        data["components"] = [component.__json__() for component in self.components]
+        return data
 
 
 BenchmarkSource = Annotated[
