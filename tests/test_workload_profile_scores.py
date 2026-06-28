@@ -3,12 +3,29 @@ import math
 import pytest
 
 from sc_crawler.lookup import benchmarks
-from sc_crawler.table_fields import BenchmarkComponentMissingPolicy
+from sc_crawler.table_fields import BenchmarkComponentMissingPolicy, WorkloadScoreBreakdown
 from sc_crawler.workload_profile_scores import (
     _compute_workload_score_rows,
     _normalise,
 )
 from sc_crawler.workload_profiles import WORKLOADS, BenchmarkEntry, Workload
+
+
+def _reconstruct_score_from_breakdown(breakdown: WorkloadScoreBreakdown) -> float:
+    """Rebuild the composite score using the same log-ratio aggregation as production."""
+    log_weighted_sum = 0.0
+    for component in breakdown.components:
+        if component.normalized is None:
+            continue
+        if component.raw is not None and component.reference is not None:
+            norm = _normalise(
+                component.raw, component.reference, component.higher_is_better
+            )
+            assert norm is not None
+        else:
+            norm = math.log2(component.normalized)
+        log_weighted_sum += norm * component.weight
+    return 2 ** (log_weighted_sum / breakdown.coverage)
 
 
 @pytest.fixture
@@ -218,11 +235,9 @@ def test_compute_workload_score_rows_weighted_geometric_mean(monkeypatch):
     expected_log_avg = (0.75 * math.log2(2.0) + 0.25 * math.log2(1.0)) / 1.0
     assert rows[0]["score"] == pytest.approx(2**expected_log_avg)
     breakdown = rows[0]["score_breakdown"]
-    product = 1.0
-    for c in breakdown.components:
-        if c.normalized is not None:
-            product *= c.normalized**c.weight_share
-    assert product == pytest.approx(rows[0]["score"], rel=1e-6)
+    assert _reconstruct_score_from_breakdown(breakdown) == pytest.approx(
+        rows[0]["score"], rel=1e-6
+    )
 
 
 def test_compute_workload_score_rows_penalize(monkeypatch):
@@ -268,6 +283,46 @@ def test_compute_workload_score_rows_penalize(monkeypatch):
     assert penalized.note == "penalized: no usable measurement"
     assert rows[0]["note"] is None
     assert rows[0]["score"] < 2.0
+    assert _reconstruct_score_from_breakdown(breakdown) == pytest.approx(
+        rows[0]["score"], rel=1e-6
+    )
+
+
+def test_compute_workload_score_rows_lower_is_better_reconstruction(monkeypatch):
+    monkeypatch.setitem(
+        WORKLOADS,
+        "test",
+        Workload(
+            name="Test",
+            version="2.0",
+            rationale="test",
+            benchmarks=[
+                BenchmarkEntry(benchmark_id="bench:a", weight=1.0, label="latency"),
+            ],
+        ),
+    )
+    per_server = {
+        ("v1", "s1"): {
+            "vendor_id": "v1",
+            "server_id": "s1",
+            "scores": {0: 50.0},
+        }
+    }
+    rows = _compute_workload_score_rows(
+        per_server,
+        {0: 100.0},
+        {"bench:a": False},
+        ["test"],
+    )
+
+    breakdown = rows[0]["score_breakdown"]
+    component = breakdown.components[0]
+    assert component.higher_is_better is False
+    assert component.normalized == pytest.approx(2.0)
+    assert rows[0]["score"] == pytest.approx(2.0)
+    assert _reconstruct_score_from_breakdown(breakdown) == pytest.approx(
+        rows[0]["score"], rel=1e-6
+    )
 
 
 def test_compute_workload_score_rows_require_suppresses_row(monkeypatch):
