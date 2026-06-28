@@ -221,7 +221,7 @@ def test_compute_workload_score_rows_weighted_geometric_mean(monkeypatch):
     product = 1.0
     for c in breakdown.components:
         if c.normalized is not None:
-            product *= c.normalized ** c.weight_share
+            product *= c.normalized**c.weight_share
     assert product == pytest.approx(rows[0]["score"], rel=1e-6)
 
 

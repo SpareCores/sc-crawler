@@ -302,7 +302,7 @@ WORKLOADS: dict[str, Workload] = {
                 weight=0.10,
                 label="LLM text generation (Llama 7B, 128 tok)",
                 config_filter={"model": "llama-7b.Q4_K_M.gguf", "tokens": 128},
-    on_missing=BenchmarkComponentMissingPolicy.REQUIRE,
+                on_missing=BenchmarkComponentMissingPolicy.REQUIRE,
             ),
             BenchmarkEntry(
                 benchmark_id="llm_speed:prompt_processing",
