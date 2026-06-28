@@ -359,3 +359,36 @@ def test_storage_price_tiered_validator_with_mixed_bounds():
     assert storage_price.price_tiered[1].upper == 200.0
     assert storage_price.price_tiered[2].lower == 200.0
     assert storage_price.price_tiered[2].upper == float("inf")
+
+
+def test_validate_items_keeps_datetime_objects():
+    from datetime import UTC, datetime
+
+    from sc_crawler.insert import validate_items
+    from sc_crawler.tables import Server
+
+    observed_at = datetime.now(UTC)
+    validated = validate_items(
+        Server,
+        [
+            {
+                "vendor_id": "aws",
+                "server_id": "t3.small",
+                "name": "t3.small",
+                "api_reference": "t3.small",
+                "display_name": "t3.small",
+                "description": "test",
+                "family": "t3",
+                "vcpus": 2,
+                "cpus": [],
+                "gpus": [],
+                "storages": [],
+                "cpu_flags": [],
+                "status": Status.ACTIVE,
+                "observed_at": observed_at,
+            }
+        ],
+    )[0]
+
+    assert isinstance(validated["observed_at"], datetime)
+    assert validated["observed_at"] == observed_at
