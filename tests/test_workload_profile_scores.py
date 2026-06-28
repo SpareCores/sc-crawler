@@ -406,7 +406,7 @@ def test_benchmark_entry_json_omits_penalty_unless_penalized():
     assert serialized["penalty"] == 1e-4
 
 
-def test_create_sc_engine_serializes_typed_json_on_merge():
+def test_create_sc_engine_serializes_typed_json_on_merge(tmp_path):
     from alembic import command
     from sqlmodel import Session
 
@@ -414,7 +414,7 @@ def test_create_sc_engine_serializes_typed_json_on_merge():
     from sc_crawler.lookup import benchmarks
     from sc_crawler.utils import create_sc_engine
 
-    engine = create_sc_engine("sqlite:////tmp/test-sc-engine-merge.db")
+    engine = create_sc_engine(f"sqlite:///{tmp_path / 'sc-engine-merge.db'}")
     with engine.begin() as conn:
         command.upgrade(alembic_cfg(conn, force_logging=False), "heads")
 
@@ -424,7 +424,7 @@ def test_create_sc_engine_serializes_typed_json_on_merge():
         session.commit()
 
 
-def test_benchmark_merge_backfills_null_measured_source():
+def test_benchmark_merge_backfills_null_measured_source(tmp_path):
     from alembic import command
     from sqlalchemy import text
     from sqlmodel import Session
@@ -432,7 +432,7 @@ def test_benchmark_merge_backfills_null_measured_source():
     from sc_crawler.alembic_helpers import alembic_cfg
     from sc_crawler.utils import create_sc_engine
 
-    engine = create_sc_engine("sqlite:////tmp/test-benchmark-source-merge.db")
+    engine = create_sc_engine(f"sqlite:///{tmp_path / 'benchmark-source-merge.db'}")
     with engine.begin() as conn:
         command.upgrade(alembic_cfg(conn, force_logging=False), "heads")
 
