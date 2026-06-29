@@ -577,13 +577,13 @@ class StorageBase(MetaColumns, StorageFields):
 
 
 class ServerFields(
-    HasDescription,
     HasDisplayName,
     HasApiReference,
     HasName,
     HasServerIdPK,
     HasVendorPKFK,
 ):
+    description: str = Field(description="Short description.", nullable=False)
     family: Optional[str] = Field(
         default=None,
         description="Server family, e.g. General-purpose machine (GCP), or M5g (AWS).",

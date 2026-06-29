@@ -9,6 +9,7 @@ from ..table_fields import (
     CpuAllocation,
     CpuArchitecture,
     PriceUnit,
+    Status,
     StorageType,
     TrafficDirection,
 )
@@ -395,10 +396,6 @@ def inventory_servers(vendor):
 
     items = []
     for server in plans + plans_metal:
-        # exclude limited plans not generally available without scale
-        if server["id"] == "vc2-1c-0.5gb-free":
-            continue
-
         # CPU
         cpu_model_raw = server.get("cpu_model", "")
         cpu_manufacturer = server.get("cpu_vendor") or server.get("cpu_manufacturer")
@@ -480,60 +477,64 @@ def inventory_servers(vendor):
             gpu_vram_gb,
         )
 
-        items.append(
-            {
-                "vendor_id": vendor.vendor_id,
-                "server_id": server["id"],
-                "name": server["id"],
-                "api_reference": server["id"],
-                "display_name": server["id"],
-                "description": description,
-                "family": family,
-                "vcpus": vcpus,
-                "hypervisor": None,
-                "cpu_allocation": cpu_allocation,
-                "cpu_cores": vcpus or cpu_count,
-                "cpu_speed": cpu_speed_ghz,
-                "cpu_architecture": cpu_architecture,
-                "cpu_manufacturer": cpu_manufacturer,
-                "cpu_family": cpu_family,
-                "cpu_model": cpu_model,
-                "cpu_l1d_cache": None,
-                "cpu_l1d_cache_total": None,
-                "cpu_l1i_cache": None,
-                "cpu_l1i_cache_total": None,
-                "cpu_l2_cache": None,
-                "cpu_l2_cache_total": None,
-                "cpu_l3_cache": None,
-                "cpu_l3_cache_total": None,
-                "cpu_flags": [],
-                "cpus": [],
-                "memory_amount": memory_amount,
-                "memory_generation": None,
-                "memory_speed": None,
-                "memory_ecc": None,
-                "gpu_count": gpu_count,
-                "gpu_memory_min": gpu_memory_min,
-                "gpu_memory_total": (
-                    int(gpu_vram_total_gb * _MIB_PER_GIB) if gpu_vram_total_gb else 0
-                ),
-                "gpu_manufacturer": gpu_manufacturer,
-                "gpu_family": gpu_family,
-                "gpu_model": gpu_model,
-                "gpus": [],
-                "storage_size": storage_size,
-                "storage_type": storage_type,
-                "storages": [],
-                "network_speed_baseline": None,
-                "network_speed_max": None,
-                "network_storage_speed_baseline": None,
-                "network_storage_speed_max": None,
-                "inbound_traffic": 0,
-                "outbound_traffic": server.get("bandwidth", 0),
-                # the smallest plan is IPv6-only
-                "ipv4": 0 if server["id"] == "vc2-1c-0.5gb-v6" else 1,
-            }
-        )
+        item = {
+            "vendor_id": vendor.vendor_id,
+            "server_id": server["id"],
+            "name": server["id"],
+            "api_reference": server["id"],
+            "display_name": server["id"],
+            "description": description,
+            "family": family,
+            "vcpus": vcpus,
+            "hypervisor": None,
+            "cpu_allocation": cpu_allocation,
+            "cpu_cores": vcpus or cpu_count,
+            "cpu_speed": cpu_speed_ghz,
+            "cpu_architecture": cpu_architecture,
+            "cpu_manufacturer": cpu_manufacturer,
+            "cpu_family": cpu_family,
+            "cpu_model": cpu_model,
+            "cpu_l1d_cache": None,
+            "cpu_l1d_cache_total": None,
+            "cpu_l1i_cache": None,
+            "cpu_l1i_cache_total": None,
+            "cpu_l2_cache": None,
+            "cpu_l2_cache_total": None,
+            "cpu_l3_cache": None,
+            "cpu_l3_cache_total": None,
+            "cpu_flags": [],
+            "cpus": [],
+            "memory_amount": memory_amount,
+            "memory_generation": None,
+            "memory_speed": None,
+            "memory_ecc": None,
+            "gpu_count": gpu_count,
+            "gpu_memory_min": gpu_memory_min,
+            "gpu_memory_total": (
+                int(gpu_vram_total_gb * _MIB_PER_GIB) if gpu_vram_total_gb else 0
+            ),
+            "gpu_manufacturer": gpu_manufacturer,
+            "gpu_family": gpu_family,
+            "gpu_model": gpu_model,
+            "gpus": [],
+            "storage_size": storage_size,
+            "storage_type": storage_type,
+            "storages": [],
+            "network_speed_baseline": None,
+            "network_speed_max": None,
+            "network_storage_speed_baseline": None,
+            "network_storage_speed_max": None,
+            "inbound_traffic": 0,
+            "outbound_traffic": server.get("bandwidth", 0),
+            # the smallest plan is IPv6-only
+            "ipv4": 0 if server["id"] == "vc2-1c-0.5gb-v6" else 1,
+        }
+
+        # exclude limited plans not generally available without scale
+        if item["server_id"] == "vc2-1c-0.5gb-free":
+            item["status"] = Status.INACTIVE
+
+        items.append(item)
     return items
 
 
