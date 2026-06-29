@@ -1,4 +1,5 @@
 from collections import defaultdict
+from json import dumps
 from logging import DEBUG
 from typing import TYPE_CHECKING, List, Optional
 
@@ -18,6 +19,57 @@ if TYPE_CHECKING:
 def can_bulk_insert(session: Session) -> bool:
     """Checks if bulk insert is supported for the engine dialect of a SQLModel session."""
     return is_sqlite(session) or is_postgresql(session)
+
+
+def _primary_key_tuple(item: dict, primary_keys: list[str]) -> tuple[str, ...]:
+    """Build a stable hashable key for deduplicating rows by primary key."""
+    parts: list[str] = []
+    for pk in primary_keys:
+        value = item.get(pk)
+        if isinstance(value, dict):
+            parts.append(dumps(value, sort_keys=True))
+        else:
+            parts.append(str(value))
+    return tuple(parts)
+
+
+def _dedupe_items(
+    items: List[dict],
+    primary_keys: list[str],
+    vendor: Optional["Vendor"] = None,
+    model_name: str = "",
+    prefix: str = "",
+) -> List[dict]:
+    """Deduplicate items by primary key, keeping the last occurrence."""
+    seen = defaultdict(list)
+    item_keys = []
+    for item in items:
+        key = _primary_key_tuple(item, primary_keys)
+        item_keys.append(key)
+        seen[key].append(item)
+
+    duplicates_found = False
+    for occurrences in seen.values():
+        if len(occurrences) > 1:
+            if not duplicates_found:
+                if vendor:
+                    duplicates_count = sum(
+                        len(v) - 1 for v in seen.values() if len(v) > 1
+                    )
+                    vendor.log(
+                        f"Found {duplicates_count} duplicate(s) in {space_after(prefix)}{model_name} items",
+                    )
+                duplicates_found = True
+
+    unique_items = []
+    seen_keys = set()
+    for key, item in reversed(list(zip(item_keys, items))):
+        if key not in seen_keys:
+            seen_keys.add(key)
+            unique_items.append(item)
+
+    unique_items.reverse()
+    return unique_items
 
 
 def validate_items(
@@ -105,7 +157,7 @@ def bulk_insert_items(
                 "Unsupported database engine dialect for bulk inserts."
             )
         query = query.on_conflict_do_update(
-            index_elements=[getattr(model, c) for c in columns["primary_keys"]],
+            constraint=model.__table__.primary_key,
             set_={c: query.excluded[c] for c in columns["attributes"]},
         )
         session.execute(query)
@@ -144,44 +196,15 @@ def insert_items(
             raise TypeError("At least one of `session` or `vendor` is required.")
         session = vendor.session
     model_name = model.get_table_name()
-
-    # Deduplicate items based on primary keys to avoid ON CONFLICT errors in PostgreSQL
     columns = model.get_columns()
     primary_keys = columns["primary_keys"]
 
-    seen = defaultdict(list)
-    item_keys = []
-    for item in items:
-        # all primary keys are nullable=False, so can safely convert to string for hashing
-        key = tuple(str(item.get(pk)) for pk in primary_keys)
-        item_keys.append(key)
-        seen[key].append(item)
-
-    duplicates_found = False
-    for occurrences in seen.values():
-        if len(occurrences) > 1:
-            if not duplicates_found:
-                if vendor:
-                    duplicates_count = sum(
-                        len(v) - 1 for v in seen.values() if len(v) > 1
-                    )
-                    vendor.log(
-                        f"Found {duplicates_count} duplicate(s) in {space_after(prefix)}{model_name} items",
-                    )
-                duplicates_found = True
-
-    unique_items = []
-    seen_keys = set()
-    for key, item in reversed(list(zip(item_keys, items))):
-        if key not in seen_keys:
-            seen_keys.add(key)
-            unique_items.append(item)
-
-    unique_items.reverse()
-    items = unique_items
+    # Validate first so JSON primary-key columns (e.g. BenchmarkScore.config)
+    # are canonicalized before deduplication.
+    items = validate_items(model, items, vendor, prefix)
+    items = _dedupe_items(items, primary_keys, vendor, model_name, prefix)
 
     if can_bulk_insert(session):
-        items = validate_items(model, items, vendor, prefix)
         bulk_insert_items(model, items, vendor, session, progress, prefix)
     else:
         if vendor:
