@@ -1,4 +1,10 @@
-## v0.8.x (DEVELOPMENT)
+## v0.8.1 (June 30, 2026)
+
+Fix(es):
+
+- Make the `description` field in the `Server` table non-nullable.
+
+## v0.8.0 (June 29, 2026)
 
 New feature(s):
 
