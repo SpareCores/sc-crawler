@@ -1,8 +1,35 @@
-## v0.7.x (DEVELOPMENT)
+## v0.8.x (DEVELOPMENT)
+
+New feature(s):
+
+- Add `source` JSON column to `Benchmark` table: discriminated provenance
+  descriptor (`measured`, `extrapolated`, or `compound`) describing how each
+  benchmark score is produced, including component recipes and
+  aggregation/normalization methods for workload profiles.
+- Add `note` column to `Benchmark` table for optional interpretation caveats
+  (warning/info badges), e.g. scaling limits on high-vCPU instances.
+- Add `score_breakdown` JSON column to `BenchmarkScore` table: per-server
+  structured derivation of composite workload profile scores (component raw
+  values, fleet medians, normalized ratios, weights, and coverage).
+- Add declarative per-component missing-data policies (`ignore`, `penalize`,
+  `require`) on workload profile definitions, with `penalty` floor for penalized
+  components; apply `require`/`penalize` rules to LLM inference workload
+  entries.
 
 Fix(es):
 
-- Populate and correct `description` fields in the `Server` table for `Vultr` and `OVH` servers.
+- Update normalization of benchmark scores for the workload profiles (v2) to use
+  median ratios instead of min-max scaling.
+- Update the weighted average computation of workload profile (v2) scores to use
+  geometric mean instead of arithmetic mean.
+- Remove benchmark components that don't scale well on 32+ vCPUs from workload
+  profile (v2) scores: `geekbench`, `passmark:database_operations`,
+  `passmark:memory_latency`.
+- Remove computer vision and memory latency benchmarks from the mixed inference
+  workload to provide an LLM-focused, much more useful and fairer score.
+- Move static web scaling caveat from benchmark descriptions into the `note` field.
+- Populate and correct `description` fields in the `Server` table for `Vultr`
+  and `OVH` servers.
 
 ## v0.7.0 (June 22, 2026)
 

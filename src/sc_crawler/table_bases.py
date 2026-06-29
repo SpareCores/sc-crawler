@@ -5,7 +5,13 @@ from hashlib import sha1
 from json import dumps
 from typing import List, Optional, Union
 
-from pydantic import ConfigDict, field_validator, model_validator
+from pydantic import (
+    ConfigDict,
+    TypeAdapter,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
 from rich.progress import Progress
 from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import declared_attr, reconstructor
@@ -28,7 +34,9 @@ from .table_fields import (
     Status,
     StorageType,
     TrafficDirection,
+    WorkloadScoreBreakdown,
 )
+from .workload_profiles import BenchmarkSource, MeasuredSource
 
 
 class ScMetaModel(SQLModel.__class__):
@@ -867,7 +875,32 @@ class Ipv4PriceBase(HasPriceFields, HasRegionPK, HasVendorPKFK):
     pass
 
 
-class BenchmarkFields(HasDescription, HasName, HasCategory, HasBenchmarkIdPK):
+_BENCHMARK_SOURCE_ADAPTER = TypeAdapter(BenchmarkSource)
+
+
+class BenchmarkFields(HasBenchmarkIdPK):
+    category: Optional[str] = Field(description="Category of the resource.")
+    source: BenchmarkSource = Field(
+        default_factory=MeasuredSource,
+        sa_type=JSON,
+        description=(
+            "How the benchmark score is produced. A discriminated object keyed by "
+            "'kind': 'measured' (directly observed), 'extrapolated' (derived from this "
+            "server's own measurements; carries 'derived_from' + 'note'), or 'compound' "
+            "(aggregated across component benchmarks; carries 'aggregation', "
+            "'normalization', and the 'components' recipe)."
+        ),
+    )
+    name: str = Field(description="Human-friendly name.")
+    description: Optional[str] = Field(description="Short description.")
+    note: Optional[str] = Field(
+        default=None,
+        description=(
+            "Optional caveat/comment on how to interpret the metric, surfaced as a "
+            "warning/info badge (e.g. limited scaling on high vCPU counts, or "
+            "independence from vCPU count). Null when there is nothing to flag."
+        ),
+    )
     framework: str = Field(
         description="The name of the benchmark framework/software/tool used.",
     )
@@ -888,6 +921,30 @@ class BenchmarkFields(HasDescription, HasName, HasCategory, HasBenchmarkIdPK):
         default=True,
         description="If higher benchmark score means better performance, or vica versa.",
     )
+
+    @field_serializer("source")
+    def _serialize_source(self, value: BenchmarkSource):
+        if isinstance(value, dict):
+            return value
+        if hasattr(value, "__json__"):
+            return value.__json__()
+        return value
+
+    @field_validator("source", mode="before")
+    @classmethod
+    def _deserialize_source(cls, value):
+        """Coerce a dict to the right BenchmarkSource variant on construction."""
+        if value is None:
+            return MeasuredSource()
+        if isinstance(value, dict):
+            return _BENCHMARK_SOURCE_ADAPTER.validate_python(value)
+        return value
+
+    @reconstructor
+    def _reconstruct_source(self):
+        """Re-coerce source from the dict returned by a DB load."""
+        if isinstance(self.source, dict):
+            self.source = _BENCHMARK_SOURCE_ADAPTER.validate_python(self.source)
 
 
 def _coerce_categories(value) -> list[Category]:
@@ -1042,10 +1099,39 @@ class BenchmarkScoreFields(HasBenchmarkPKFK, HasServerPK, HasVendorPKFK):
     score: float = Field(
         description="The resulting score of the benchmark.",
     )
+    score_breakdown: Optional[WorkloadScoreBreakdown] = Field(
+        default=None,
+        sa_type=JSON,
+        description=(
+            "Structured derivation of composite scores (e.g. workload profiles): "
+            "per-component raw values, references, normalized values, weights, and "
+            "coverage. Null for simple benchmark scores."
+        ),
+    )
     note: Optional[str] = Field(
         default=None,
         description="Optional note, comment or context on the benchmark score.",
     )
+
+    @field_serializer("score_breakdown")
+    def _serialize_score_breakdown(self, value: Optional[WorkloadScoreBreakdown]):
+        if value is None or isinstance(value, dict):
+            return value
+        if hasattr(value, "__json__"):
+            return value.__json__()
+        return value
+
+    @field_validator("score_breakdown", mode="before")
+    @classmethod
+    def _deserialize_score_breakdown(cls, value):
+        """Coerce a dict to WorkloadScoreBreakdown on construction."""
+        return WorkloadScoreBreakdown(**value) if isinstance(value, dict) else value
+
+    @reconstructor
+    def _reconstruct_score_breakdown(self):
+        """Re-coerce score_breakdown from the dict returned by a DB load."""
+        if isinstance(self.score_breakdown, dict):
+            self.score_breakdown = WorkloadScoreBreakdown(**self.score_breakdown)
 
 
 class BenchmarkScoreBase(MetaColumns, BenchmarkScoreFields):

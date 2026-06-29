@@ -215,7 +215,7 @@ class Vendor(VendorBase, table=True):
             query = update(model).where(model.vendor_id == self.vendor_id)
             for arg in args:
                 query = query.where(arg)
-            self.session.execute(query.values(status=Status.INACTIVE))
+            self.session.exec(query.values(status=Status.INACTIVE))
 
     def set_table_rows_active(self, model: str, *args) -> None:
         """Set this vendor's records to [ACTIVE][sc_crawler.table_fields.Status] in a table.
@@ -231,7 +231,7 @@ class Vendor(VendorBase, table=True):
             query = update(model).where(model.vendor_id == self.vendor_id)
             for arg in args:
                 query = query.where(arg)
-            self.session.execute(query.values(status=Status.ACTIVE))
+            self.session.exec(query.values(status=Status.ACTIVE))
 
     def _inventory(self, table: ScModel, inventory: Callable):
         """Mark all rows in a table inactive, then insert new/updated items."""

@@ -7,18 +7,30 @@ across all vendors and stores them as synthetic BenchmarkScore rows.
 from __future__ import annotations
 
 from collections import defaultdict
+from math import log2
+from statistics import median
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import update
 from sqlmodel import Session, select
 
 from .insert import insert_items
-from .table_fields import Status
+from .table_fields import (
+    BenchmarkComponentAggregationMethod,
+    BenchmarkComponentMissingPolicy,
+    BenchmarkComponentNormalizationMethod,
+    ScoreComponent,
+    Status,
+    WorkloadScoreBreakdown,
+)
 from .tables import Benchmark, BenchmarkScore, Server, Vendor
 from .workload_profiles import WORKLOADS, BenchmarkEntry, Workload
 
 if TYPE_CHECKING:
     pass
+
+_AGGREGATION = BenchmarkComponentAggregationMethod.WEIGHTED_GEOMETRIC_MEAN
+_NORMALIZATION = BenchmarkComponentNormalizationMethod.MEDIAN_RATIO
 
 
 def _config_matches(row_config: dict, filter_cfg: dict[str, Any] | None) -> bool:
@@ -58,9 +70,9 @@ def _collect_benchmark_ids(workload_keys: list[str]) -> list[str]:
 def _collect_entries(workload_keys: list[str]) -> list[BenchmarkEntry]:
     """Return a flat list of all BenchmarkEntry objects across the given workloads.
 
-    The ordering is significant: `compute_workload_scores` uses the list index
-    as a stable global entry index for min/max tracking and must receive this
-    list in the same order.
+    The ordering is significant: scoring uses the list index as a stable global
+    entry index for per-benchmark median tracking and must receive this list in the
+    same order.
     """
     entries: list[BenchmarkEntry] = []
     for w in workload_keys:
@@ -85,15 +97,15 @@ def _load_scores(
     benchmark_meta: dict[str, bool],
 ) -> tuple[
     dict[tuple[str, str], dict],  # per-server data keyed by (vendor_id, server_id)
-    dict[int, tuple[float, float]],  # global (min, max) per entry index
+    dict[int, float],  # per-benchmark median per entry index
 ]:
     """Load raw benchmark scores from the DB and build per-server structures.
 
     For each (server, entry) pair, keeps the best score according to
     higher_is_better when multiple rows match the same config filter.
-    The global (min, max) range per entry is derived in a second pass from
-    the finalised best scores, so intermediate values from duplicate raw rows
-    never skew normalisation.
+    Fleet medians per entry are derived in a second pass from the finalised
+    best scores, so intermediate values from duplicate raw rows never skew
+    the reference baseline.
     """
     if not benchmark_ids:
         return {}, {}
@@ -157,30 +169,34 @@ def _load_scores(
                     max(prev, score_val) if higher else min(prev, score_val)
                 )
 
-    entry_minmax: dict[int, tuple[float, float]] = {}
+    values_by_entry: dict[int, list[float]] = defaultdict(list)
     for server_data in per_server.values():
         for entry_idx, val in server_data["scores"].items():
-            if entry_idx not in entry_minmax:
-                entry_minmax[entry_idx] = (val, val)
-            else:
-                lo, hi = entry_minmax[entry_idx]
-                entry_minmax[entry_idx] = (min(lo, val), max(hi, val))
+            values_by_entry[entry_idx].append(val)
 
-    return per_server, entry_minmax
+    entry_medians = {
+        entry_idx: median(values) for entry_idx, values in values_by_entry.items()
+    }
+    return per_server, entry_medians
 
 
-def _normalise(raw: float, lo: float, hi: float, higher_is_better: bool) -> float:
-    """Normalise *raw* to a [0, 1] scale given the observed global range."""
-    if hi == lo:
-        return 1.0
-    dividend = (raw - lo) if higher_is_better else (hi - raw)
-    return dividend / (hi - lo)
+def _normalise(raw: float, fleet_median: float, higher_is_better: bool) -> float | None:
+    """Normalise *raw* to a log2 ratio to the per-benchmark median, or None if invalid."""
+    if raw <= 0 or fleet_median <= 0:
+        return None
+    ratio = raw / fleet_median if higher_is_better else fleet_median / raw
+    return log2(ratio)
+
+
+def _component_note_for_invalid(raw: float | None) -> str | None:
+    if raw is None:
+        return None
+    return f"invalid value: {raw}"
 
 
 def _compute_workload_score_rows(
     per_server: dict[tuple[str, str], dict],
-    entry_minmax: dict[int, tuple[float, float]],
-    entries: list[BenchmarkEntry],
+    entry_medians: dict[int, float],
     benchmark_meta: dict[str, bool],
     workload_keys: list[str],
 ) -> list[dict]:
@@ -203,28 +219,112 @@ def _compute_workload_score_rows(
 
         w_entry_indices = list(range(global_start, global_start + len(w_entries)))
 
-        for server_key, server_data in per_server.items():
-            weighted_sum = 0.0
+        for server_data in per_server.values():
+            log_weighted_sum = 0.0
             total_weight = 0.0
             missing_labels: list[str] = []
+            suppressed = False
+            breakdown_components: list[ScoreComponent] = []
 
             for local_i, global_i in enumerate(w_entry_indices):
                 entry = w_entries[local_i]
                 raw = server_data["scores"].get(global_i)
-                if raw is None or global_i not in entry_minmax:
-                    missing_labels.append(entry.label)
+                fleet_median = entry_medians.get(global_i)
+                higher = benchmark_meta.get(entry.benchmark_id, True)
+
+                norm: float | None = None
+                component_note: str | None = None
+
+                if raw is not None and fleet_median is not None:
+                    norm = _normalise(raw, fleet_median, higher)
+                    if norm is None:
+                        component_note = _component_note_for_invalid(raw)
+
+                if norm is not None:
+                    log_weighted_sum += norm * entry.weight
+                    total_weight += entry.weight
+                    normalized = 2**norm
+                    breakdown_components.append(
+                        ScoreComponent(
+                            label=entry.label,
+                            benchmark_id=entry.benchmark_id,
+                            config_filter=entry.config_filter,
+                            weight=entry.weight,
+                            weight_share=0.0,  # filled after total_weight known
+                            raw=raw,
+                            reference=fleet_median,
+                            normalized=normalized,
+                            higher_is_better=higher,
+                            note=None,
+                        )
+                    )
                     continue
 
-                lo, hi = entry_minmax[global_i]
-                higher = benchmark_meta.get(entry.benchmark_id, True)
-                norm = _normalise(raw, lo, hi, higher)
-                weighted_sum += norm * entry.weight
-                total_weight += entry.weight
+                policy = entry.on_missing
+                if policy == BenchmarkComponentMissingPolicy.REQUIRE:
+                    suppressed = True
+                    breakdown_components.append(
+                        ScoreComponent(
+                            label=entry.label,
+                            benchmark_id=entry.benchmark_id,
+                            config_filter=entry.config_filter,
+                            weight=entry.weight,
+                            weight_share=0.0,
+                            raw=raw,
+                            reference=fleet_median,
+                            normalized=None,
+                            higher_is_better=higher,
+                            note="required component missing",
+                        )
+                    )
+                    break
 
-            if total_weight <= 0:
+                if policy == BenchmarkComponentMissingPolicy.PENALIZE:
+                    penalty = entry.effective_penalty()
+                    norm = log2(penalty)
+                    log_weighted_sum += norm * entry.weight
+                    total_weight += entry.weight
+                    breakdown_components.append(
+                        ScoreComponent(
+                            label=entry.label,
+                            benchmark_id=entry.benchmark_id,
+                            config_filter=entry.config_filter,
+                            weight=entry.weight,
+                            weight_share=0.0,
+                            raw=raw,
+                            reference=fleet_median,
+                            normalized=penalty,
+                            higher_is_better=higher,
+                            note="penalized: no usable measurement",
+                        )
+                    )
+                    continue
+
+                # IGNORE (default)
+                missing_labels.append(entry.label)
+                breakdown_components.append(
+                    ScoreComponent(
+                        label=entry.label,
+                        benchmark_id=entry.benchmark_id,
+                        config_filter=entry.config_filter,
+                        weight=entry.weight,
+                        weight_share=0.0,
+                        raw=raw,
+                        reference=fleet_median,
+                        normalized=None,
+                        higher_is_better=higher,
+                        note=component_note,
+                    )
+                )
+
+            if suppressed or total_weight <= 0:
                 continue
 
-            score = weighted_sum / total_weight
+            for component in breakdown_components:
+                if component.normalized is not None:
+                    component.weight_share = component.weight / total_weight
+
+            score = 2 ** (log_weighted_sum / total_weight)
 
             note: str | None = None
             if missing_labels:
@@ -243,6 +343,12 @@ def _compute_workload_score_rows(
                     "framework_version": w_def.version,
                     "score": score,
                     "note": note,
+                    "score_breakdown": WorkloadScoreBreakdown(
+                        aggregation=_AGGREGATION,
+                        normalization=_NORMALIZATION,
+                        coverage=total_weight,
+                        components=breakdown_components,
+                    ),
                 }
             )
 
@@ -254,8 +360,8 @@ def recompute_workload_profiles(session: Session) -> int:
 
     Marks all existing workload-profile BenchmarkScore rows inactive, then
     loads all active raw benchmark scores from the database (excluding
-    workload-profile rows to avoid circularity), computes normalised composite
-    scores across all vendors, and inserts fresh rows.
+    workload-profile rows to avoid circularity), computes composite scores vs
+    per-benchmark medians across all vendors, and inserts fresh rows.
 
     Args:
         session: Active SQLModel session connected to the crawler database.
@@ -268,7 +374,7 @@ def recompute_workload_profiles(session: Session) -> int:
     entries = _collect_entries(workload_keys)
 
     benchmark_meta = _load_benchmark_metadata(session)
-    per_server, entry_minmax = _load_scores(
+    per_server, entry_medians = _load_scores(
         session, benchmark_ids, entries, benchmark_meta
     )
 
@@ -276,13 +382,13 @@ def recompute_workload_profiles(session: Session) -> int:
         return 0
 
     profile_rows = _compute_workload_score_rows(
-        per_server, entry_minmax, entries, benchmark_meta, workload_keys
+        per_server, entry_medians, benchmark_meta, workload_keys
     )
 
     if not profile_rows:
         return 0
 
-    session.execute(
+    session.exec(
         update(BenchmarkScore)
         .where(BenchmarkScore.benchmark_id.like("workload_profile:%"))
         .values(status=Status.INACTIVE)

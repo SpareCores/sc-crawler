@@ -1,17 +1,28 @@
 """Workload profile definitions for compound benchmark scoring.
 
 Each workload profile is a weighted combination of benchmark scores that
-represents a specific real-world usage pattern. Scores are normalised to [0, 1]
-across all servers and aggregated as a weighted mean.
+represents a specific real-world usage pattern. Scores are aggregated as a
+weighted average (geometric mean) of benchmark scores compared to their
+medians. A score of 1.0 represents a synthetic baseline server with the
+median performance of each component benchmark.
 
 Weights within each workload sum to 1.0.
 """
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any, Literal, Union
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+
+from .table_fields import (
+    BenchmarkComponentAggregationMethod,
+    BenchmarkComponentMissingPolicy,
+    BenchmarkComponentNormalizationMethod,
+    Json,
+)
+
+_DEFAULT_COMPONENT_PENALTY = 1e-4
 
 
 class BenchmarkEntry(BaseModel):
@@ -25,8 +36,53 @@ class BenchmarkEntry(BaseModel):
     """Human-readable description of what this component measures."""
     config_filter: dict[str, Any] | None = None
     """Optional filter applied to the benchmark's config JSON column."""
+    on_missing: BenchmarkComponentMissingPolicy = BenchmarkComponentMissingPolicy.IGNORE
+    """How to handle a missing or invalid measurement for this component."""
+    penalty: float | None = None
+    """Substituted normalized ratio when on_missing is PENALIZE."""
 
     model_config = ConfigDict(frozen=True)
+
+    def effective_penalty(self) -> float:
+        """Return the penalty floor used when on_missing is PENALIZE."""
+        return self.penalty if self.penalty is not None else _DEFAULT_COMPONENT_PENALTY
+
+    def __json__(self):
+        data = dict(sorted(self.model_dump(mode="json").items()))
+        if data.get("on_missing") == BenchmarkComponentMissingPolicy.PENALIZE.value:
+            if data.get("penalty") is None:
+                data["penalty"] = _DEFAULT_COMPONENT_PENALTY
+        else:
+            data.pop("penalty", None)
+        return data
+
+
+class MeasuredSource(Json):
+    kind: Literal["measured"] = "measured"
+
+
+class ExtrapolatedSource(Json):
+    kind: Literal["extrapolated"] = "extrapolated"
+    derived_from: list[str]
+    note: str | None = None
+
+
+class CompoundSource(Json):
+    kind: Literal["compound"] = "compound"
+    aggregation: BenchmarkComponentAggregationMethod
+    normalization: BenchmarkComponentNormalizationMethod
+    components: list[BenchmarkEntry]
+
+    def __json__(self):
+        data = dict(sorted(self.model_dump(mode="json").items()))
+        data["components"] = [component.__json__() for component in self.components]
+        return data
+
+
+BenchmarkSource = Annotated[
+    Union[MeasuredSource, ExtrapolatedSource, CompoundSource],
+    Field(discriminator="kind"),
+]
 
 
 class Workload(BaseModel):
@@ -45,53 +101,45 @@ class Workload(BaseModel):
 WORKLOADS: dict[str, Workload] = {
     "web": Workload(
         name="Web Server",
-        version="1.0",
-        rationale="Primary workloads drivers are HTTP serving speed and throughput, HTML and text processing, TLS termination, and asset compression.",
+        version="2.0",
+        rationale="Primary workloads drivers are single-process static HTTP serving speed and throughput, text processing, TLS termination, and asset compression.",
         benchmarks=[
-            # direct web server benchmarks
+            # direct measurements on static web serving
             BenchmarkEntry(
                 benchmark_id="static_web:rps-extrapolated",
-                weight=0.25,
+                weight=0.30,
                 label="Static web RPS (1 kB, 8 conn/vCPU)",
                 config_filter={"size": "1k", "connections_per_vcpus": 8.0},
             ),
             BenchmarkEntry(
                 benchmark_id="static_web:rps-extrapolated",
-                weight=0.15,
+                weight=0.20,
                 label="Static web RPS (64 kB, 8 conn/vCPU)",
                 config_filter={"size": "64k", "connections_per_vcpus": 8.0},
             ),
             BenchmarkEntry(
                 benchmark_id="static_web:throughput-extrapolated",
-                weight=0.15,
+                weight=0.20,
                 label="Static web throughput (256 kB, 8 conn/vCPU)",
                 config_filter={"size": "256k", "connections_per_vcpus": 8.0},
-            ),
-            # web rendering proxies
-            BenchmarkEntry(
-                benchmark_id="geekbench:html5_browser",
-                weight=0.10,
-                label="Geekbench HTML5 browser (multi-core)",
-                config_filter={"cores": "multi"},
-            ),
-            BenchmarkEntry(
-                benchmark_id="geekbench:text_processing",
-                weight=0.05,
-                label="Geekbench text processing (multi-core)",
-                config_filter={"cores": "multi"},
             ),
             # SSL termination
             BenchmarkEntry(
                 benchmark_id="openssl",
-                weight=0.10,
+                weight=0.20,
                 label="OpenSSL AES-256-CBC (16 kB blocks)",
                 config_filter={"algo": "AES-256-CBC", "block_size": 16384},
             ),
             # asset compression
             BenchmarkEntry(
-                benchmark_id="passmark:cpu_encryption_test",
-                weight=0.10,
-                label="PassMark encryption (AES/SHA/ECDSA)",
+                benchmark_id="compression_text:compress",
+                weight=0.05,
+                label="Gzip compression (multi-core, level 5)",
+                config_filter={
+                    "algo": "gzip",
+                    "compression_level": 5,
+                    "cores": "multi",
+                },
             ),
             # string handling
             BenchmarkEntry(
@@ -99,16 +147,11 @@ WORKLOADS: dict[str, Workload] = {
                 weight=0.05,
                 label="PassMark string sorting",
             ),
-            BenchmarkEntry(
-                benchmark_id="passmark:memory_read_cached",
-                weight=0.05,
-                label="PassMark cached memory reads",
-            ),
         ],
     ),
     "compute": Workload(
         name="Compute Heavy Applications",
-        version="1.0",
+        version="2.0",
         rationale="Number-crunching workload augmenting raw CPU performance stressing, general CPU performance benchmarks, memory bandwidth, and pure math computation speed like floating point, integer, SIMD (AVX/SSE/FMA) operations.",
         benchmarks=[
             # raw CPU performance
@@ -125,14 +168,8 @@ WORKLOADS: dict[str, Workload] = {
             # general CPU performance
             BenchmarkEntry(
                 benchmark_id="passmark:cpu_mark",
-                weight=0.10,
+                weight=0.20,
                 label="PassMark CPU Mark (composite)",
-            ),
-            BenchmarkEntry(
-                benchmark_id="geekbench:score",
-                weight=0.10,
-                label="Geekbench score (multi-core)",
-                config_filter={"cores": "multi"},
             ),
             # memory performance
             BenchmarkEntry(
@@ -168,43 +205,28 @@ WORKLOADS: dict[str, Workload] = {
     ),
     "cache": Workload(
         name="Cache Intensive",
-        version="1.0",
+        version="2.0",
         rationale="In-memory key-value store workload, mixing direct Redis performance metrics with memory speed and latency benchmarks, and single-core CPU performance profiles.",
         benchmarks=[
             # direct Redis benchmarks
             BenchmarkEntry(
                 benchmark_id="redis:rps-extrapolated",
-                weight=0.25,
+                weight=0.50,
                 label="Redis RPS (pipeline=1, SET)",
                 config_filter={"operation": "SET", "pipeline": 1.0},
             ),
             BenchmarkEntry(
                 benchmark_id="redis:rps-extrapolated",
-                weight=0.10,
+                weight=0.20,
                 label="Redis RPS (pipeline=16, SET)",
                 config_filter={"operation": "SET", "pipeline": 16.0},
             ),
-            BenchmarkEntry(
-                benchmark_id="redis:latency",
-                weight=0.10,
-                label="Redis latency (pipeline=1, SET)",
-                config_filter={"operation": "SET", "pipeline": 1.0},
-            ),
             # memory performance benchmarks
             BenchmarkEntry(
-                benchmark_id="passmark:memory_latency",
-                weight=0.10,
-                label="PassMark memory latency (512 MB)",
-            ),
-            BenchmarkEntry(
+                # NOTE this depends more on the instance family/generation than the size (vCPUs or memory amount)
                 benchmark_id="passmark:memory_mark",
                 weight=0.10,
                 label="PassMark Memory Mark (composite)",
-            ),
-            BenchmarkEntry(
-                benchmark_id="passmark:memory_read_cached",
-                weight=0.10,
-                label="PassMark cached memory reads",
             ),
             BenchmarkEntry(
                 # TODO migrate to membench with scope:RAM
@@ -219,153 +241,164 @@ WORKLOADS: dict[str, Workload] = {
                 weight=0.10,
                 label="PassMark single-thread CPU",
             ),
-            BenchmarkEntry(
-                benchmark_id="passmark:database_operations",
-                weight=0.05,
-                label="PassMark in-memory DB operations",
-            ),
         ],
     ),
-    "database": Workload(
-        name="Relational Database",
-        version="1.0",
-        rationale="Relational database workload (PostgreSQL, MySQL, transactional OLTP). Direct DB operation throughput is the primary driver, followed by memory latency for index lookups and buffer pool access, memory subsystem performance for working-set throughput, and single-thread CPU for query execution.",
-        benchmarks=[
-            BenchmarkEntry(
-                benchmark_id="passmark:database_operations",
-                weight=0.35,
-                label="PassMark in-memory DB operations",
-            ),
-            BenchmarkEntry(
-                benchmark_id="passmark:memory_latency",
-                weight=0.30,
-                label="PassMark memory latency (512 MB)",
-            ),
-            BenchmarkEntry(
-                benchmark_id="passmark:memory_mark",
-                weight=0.20,
-                label="PassMark Memory Mark (composite)",
-            ),
-            BenchmarkEntry(
-                benchmark_id="passmark:cpu_single_threaded_test",
-                weight=0.15,
-                label="PassMark single-thread CPU",
-            ),
-        ],
-    ),
+    # TODO add a status to Workload?
+    # "database": Workload(
+    #     name="Relational Database",
+    #     version="2.0",
+    #     rationale="Relational database workload (PostgreSQL, MySQL, transactional OLTP). Direct DB operation throughput is the primary driver, followed by memory latency for index lookups and buffer pool access, memory subsystem performance for working-set throughput, and single-thread CPU for query execution.",
+    #     benchmarks=[
+    #         # TODO extend with Postgres measurements
+    #         # NOTE none of the below benchmarks scale well on 32+ vCPUs and
+    #         #      rather depends on the instance family/generation than the size (vCPUs or memory amount)
+    #         BenchmarkEntry(
+    #             # NOTE doesn't scale well on 32+ vCPUs
+    #             benchmark_id="passmark:database_operations",
+    #             weight=0.35,
+    #             label="PassMark in-memory DB operations",
+    #         ),
+    #         BenchmarkEntry(
+    #             benchmark_id="passmark:memory_latency",
+    #             weight=0.30,
+    #             label="PassMark memory latency (512 MB)",
+    #         ),
+    #         BenchmarkEntry(
+    #             benchmark_id="passmark:memory_mark",
+    #             weight=0.20,
+    #             label="PassMark Memory Mark (composite)",
+    #         ),
+    #         BenchmarkEntry(
+    #             benchmark_id="passmark:cpu_single_threaded_test",
+    #             weight=0.15,
+    #             label="PassMark single-thread CPU",
+    #         ),
+    #     ],
+    # ),
     "data_analysis": Workload(
         name="Data Analysis",
-        version="1.0",
+        version="2.0",
         rationale="Data analysis and ETL workloads are memory-bandwidth-bound and CPU-throughput-driven. The profile combines general CPU performance and memory bandwidth/latency as the primary drivers, supplemented by single-core compression speed as a proxy for serialisation-heavy ETL tasks.",
         benchmarks=[
             BenchmarkEntry(
                 benchmark_id="passmark:cpu_mark",
-                weight=0.30,
+                weight=0.70,
                 label="PassMark CPU Mark (composite)",
             ),
             BenchmarkEntry(
-                # TODO migrate to membench with scope:RAM
-                benchmark_id="bw_mem",
-                weight=0.30,
-                label="Memory bandwidth (read, 64 MB)",
-                config_filter={"operation": "rd", "size": 64.0},
-            ),
-            BenchmarkEntry(
-                benchmark_id="passmark:memory_mark",
-                weight=0.25,
-                label="PassMark Memory Mark (composite)",
-            ),
-            BenchmarkEntry(
+                # NOTE this is more on the instance family/generation than the size (vCPUs or memory amount)
                 benchmark_id="compression_text:compress",
-                weight=0.15,
-                label="Gzip compression (single-thread, level 5)",
+                weight=0.10,
+                label="Gzip compression (single-core, level 5)",
                 config_filter={
                     "algo": "gzip",
                     "compression_level": 5,
                     "cores": "single",
                 },
             ),
-        ],
-    ),
-    "llm": Workload(
-        name="Multimodal LLM Inference",
-        version="1.0",
-        rationale="VRAM and memory-bandwidth-bound LLM inference workload, using direct LLM speed benchmarks at two model sizes, and supplementing with raw memory bandwidth, SIMD, and Geekbench computer vision workloads that exercise ML-style pipelines.",
-        benchmarks=[
-            # direct LLM speed benchmarks
             BenchmarkEntry(
-                benchmark_id="llm_speed:text_generation",
-                weight=0.20,
-                label="LLM text generation (llama-7b, 128 tok)",
-                config_filter={"model": "llama-7b.Q4_K_M.gguf", "tokens": 128},
-            ),
-            BenchmarkEntry(
-                benchmark_id="llm_speed:prompt_processing",
+                # TODO migrate to membench with scope:RAM
+                benchmark_id="bw_mem",
                 weight=0.10,
-                label="LLM prompt processing (llama-7b, 512 tok)",
-                config_filter={"model": "llama-7b.Q4_K_M.gguf", "tokens": 512},
+                label="Memory bandwidth (read, 64 MB)",
+                config_filter={"operation": "rd", "size": 64.0},
             ),
-            BenchmarkEntry(
-                benchmark_id="llm_speed:text_generation",
-                weight=0.10,
-                label="LLM text generation (gemma-2b, 128 tok)",
-                config_filter={"model": "gemma-2b.Q4_K_M.gguf", "tokens": 128},
-            ),
-            # memory performance benchmarks
+            # NOTE this depends more on the instance family/generation than the size (vCPUs or memory amount)
             BenchmarkEntry(
                 benchmark_id="passmark:memory_mark",
                 weight=0.10,
                 label="PassMark Memory Mark (composite)",
             ),
+        ],
+    ),
+    "llm": Workload(
+        name="LLM Inference",
+        version="2.0",
+        rationale="VRAM and memory-bandwidth-bound LLM inference workload, using direct LLM speed benchmarks at three model sizes, and supplementing with raw memory bandwidth and SIMD performance benchmarks.",
+        benchmarks=[
+            # direct LLM speed benchmarks from smallest model (to make sure we managed to run at least one model)
+            BenchmarkEntry(
+                benchmark_id="llm_speed:text_generation",
+                weight=0.15,
+                label="LLM text generation (SmolLM-135M, 128 tok)",
+                config_filter={"model": "SmolLM-135M.Q4_K_M.gguf", "tokens": 128},
+                on_missing=BenchmarkComponentMissingPolicy.REQUIRE,
+            ),
+            BenchmarkEntry(
+                benchmark_id="llm_speed:prompt_processing",
+                weight=0.15,
+                label="LLM prompt processing (SmolLM-135M, 512 tok)",
+                config_filter={"model": "SmolLM-135M.Q4_K_M.gguf", "tokens": 512},
+                on_missing=BenchmarkComponentMissingPolicy.REQUIRE,
+            ),
+            BenchmarkEntry(
+                benchmark_id="llm_speed:text_generation",
+                weight=0.15,
+                label="LLM text generation (Llama 7B, 128 tok)",
+                config_filter={"model": "llama-7b.Q4_K_M.gguf", "tokens": 128},
+                on_missing=BenchmarkComponentMissingPolicy.PENALIZE,
+                penalty=1e-4,
+            ),
+            BenchmarkEntry(
+                benchmark_id="llm_speed:prompt_processing",
+                weight=0.15,
+                label="LLM prompt processing (Llama 7B, 512 tok)",
+                config_filter={"model": "llama-7b.Q4_K_M.gguf", "tokens": 512},
+                on_missing=BenchmarkComponentMissingPolicy.PENALIZE,
+                penalty=1e-4,
+            ),
+            BenchmarkEntry(
+                benchmark_id="llm_speed:text_generation",
+                weight=0.15,
+                label="LLM text generation (Llama-3.3 70B, 128 tok)",
+                config_filter={
+                    "model": "Llama-3.3-70B-Instruct-Q4_K_M.gguf",
+                    "tokens": 128,
+                },
+                on_missing=BenchmarkComponentMissingPolicy.PENALIZE,
+                penalty=1e-2,
+            ),
+            BenchmarkEntry(
+                benchmark_id="llm_speed:prompt_processing",
+                weight=0.15,
+                label="LLM prompt processing (Llama-3.3 70B, 512 tok)",
+                config_filter={
+                    "model": "Llama-3.3-70B-Instruct-Q4_K_M.gguf",
+                    "tokens": 512,
+                },
+                on_missing=BenchmarkComponentMissingPolicy.PENALIZE,
+                penalty=1e-2,
+            ),
+            # memory performance benchmarks
             BenchmarkEntry(
                 # TODO migrate to membench with scope:RAM
                 benchmark_id="bw_mem",
-                weight=0.15,
+                weight=0.05,
                 label="Memory bandwidth (read, 256 MB)",
                 config_filter={"operation": "rd", "size": 256.0},
             ),
             # vector/matrix performance benchmarks
             BenchmarkEntry(
                 benchmark_id="passmark:cpu_extended_instructions_test",
-                weight=0.10,
+                weight=0.025,
                 label="PassMark AVX/SSE/FMA (SIMD)",
             ),
             BenchmarkEntry(
                 benchmark_id="passmark:cpu_floating_point_maths_test",
-                weight=0.05,
+                weight=0.025,
                 label="PassMark floating point",
-            ),
-            # specific ML workloads
-            # TODO split this into Comptuer Vision workload
-            BenchmarkEntry(
-                benchmark_id="geekbench:object_detection",
-                weight=0.10,
-                label="Geekbench object detection (multi-core)",
-                config_filter={"cores": "multi"},
-            ),
-            BenchmarkEntry(
-                benchmark_id="geekbench:background_blur",
-                weight=0.05,
-                label="Geekbench background blur (multi-core)",
-                config_filter={"cores": "multi"},
-            ),
-            BenchmarkEntry(
-                benchmark_id="geekbench:structure_from_motion",
-                weight=0.05,
-                label="Geekbench structure-from-motion (multi-core)",
-                config_filter={"cores": "multi"},
             ),
         ],
     ),
     "cicd": Workload(
         name="CI/CD Build",
-        version="1.0",
-        rationale="Build performance is driven by single- and multi-core compilation throughput, single-core CPU performance, multi-core compression and text/scripting processing.",
+        version="2.0",
+        rationale="Build performance is mainly driven by multi-core compilation throughput, but also bundles single-core compilation speed and general CPU performance, multi-core compression and text/scripting processing.",
         benchmarks=[
             # compiling software
             BenchmarkEntry(
                 benchmark_id="geekbench:clang",
-                weight=0.25,
+                weight=0.50,
                 label="Geekbench Clang compilation (multi-core)",
                 config_filter={"cores": "multi"},
             ),
@@ -375,44 +408,27 @@ WORKLOADS: dict[str, Workload] = {
                 label="Geekbench Clang compilation (single-core)",
                 config_filter={"cores": "single"},
             ),
-            # single-core and general CPU performance
+            # general CPU performance
             BenchmarkEntry(
-                benchmark_id="passmark:cpu_single_threaded_test",
-                weight=0.15,
-                label="PassMark single-thread CPU",
-            ),
-            BenchmarkEntry(
-                benchmark_id="passmark:cpu_compression_test",
-                weight=0.10,
-                label="PassMark compression",
+                benchmark_id="stress_ng:bestn",
+                weight=0.20,
+                label="stress-ng div16 best-N cores",
             ),
             BenchmarkEntry(
                 benchmark_id="passmark:cpu_integer_maths_test",
-                weight=0.10,
-                label="PassMark integer math",
-            ),
-            BenchmarkEntry(
-                benchmark_id="geekbench:text_processing",
-                weight=0.10,
-                label="Geekbench text processing (multi-core)",
-                config_filter={"cores": "multi"},
-            ),
-            BenchmarkEntry(
-                benchmark_id="stress_ng:bestn",
                 weight=0.05,
-                label="stress-ng div16 best-N cores",
+                label="PassMark integer math",
             ),
             # asset compression
             BenchmarkEntry(
-                benchmark_id="geekbench:file_compression",
+                benchmark_id="passmark:cpu_compression_test",
                 weight=0.05,
-                label="Geekbench file compression (multi-core)",
-                config_filter={"cores": "multi"},
+                label="PassMark compression",
             ),
             BenchmarkEntry(
                 benchmark_id="compression_text:compress",
                 weight=0.05,
-                label="Brotli compression (single-thread, level 0)",
+                label="Brotli compression (multi-core, level 0)",
                 config_filter={
                     "algo": "brotli",
                     "compression_level": 0,
