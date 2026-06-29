@@ -134,7 +134,7 @@ def get_benchmark_score_table(is_scd: bool) -> sa.Table:
     table_name = scdize_suffix("benchmark_score")
     json_type = sa.dialects.postgresql.JSONB if is_postgresql else sa.JSON
     primary_keys = (
-        ("server_id", "benchmark_id", "config", "observed_at", "vendor_id")
+        ("vendor_id", "server_id", "benchmark_id", "config", "observed_at")
         if is_scd
         else ("vendor_id", "server_id", "benchmark_id", "config")
     )
