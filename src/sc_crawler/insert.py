@@ -164,7 +164,7 @@ def bulk_insert_items(
             raise NotImplementedError(
                 "Unsupported database engine dialect for bulk inserts."
             )
-        session.execute(query)
+        session.exec(query)
         if progress:
             progress.update(pid, advance=len(chunk))
 

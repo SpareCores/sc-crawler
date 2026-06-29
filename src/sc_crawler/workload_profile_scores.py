@@ -388,7 +388,7 @@ def recompute_workload_profiles(session: Session) -> int:
     if not profile_rows:
         return 0
 
-    session.execute(
+    session.exec(
         update(BenchmarkScore)
         .where(BenchmarkScore.benchmark_id.like("workload_profile:%"))
         .values(status=Status.INACTIVE)
