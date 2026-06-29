@@ -150,16 +150,20 @@ def bulk_insert_items(
     for chunk in chunk_list(items, 100):
         if is_sqlite(session):
             query = insert_sqlite(model).values(chunk)
+            query = query.on_conflict_do_update(
+                index_elements=[getattr(model, c) for c in columns["primary_keys"]],
+                set_={c: query.excluded[c] for c in columns["attributes"]},
+            )
         elif is_postgresql(session):
             query = insert_postgresql(model).values(chunk)
+            query = query.on_conflict_do_update(
+                constraint=model.__table__.primary_key,
+                set_={c: query.excluded[c] for c in columns["attributes"]},
+            )
         else:
             raise NotImplementedError(
                 "Unsupported database engine dialect for bulk inserts."
             )
-        query = query.on_conflict_do_update(
-            constraint=model.__table__.primary_key,
-            set_={c: query.excluded[c] for c in columns["attributes"]},
-        )
         session.execute(query)
         if progress:
             progress.update(pid, advance=len(chunk))
