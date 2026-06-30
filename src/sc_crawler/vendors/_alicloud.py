@@ -56,6 +56,29 @@ from ..vendor_helpers import get_region_by_id
 
 
 @cache
+def _cred_client() -> CredClient:
+    """Shared credentials client for the default Alibaba provider chain."""
+    return CredClient()
+
+
+def _alibabacloud_config(region_id: str) -> Config:
+    """Build SDK config, avoiding one CredClient (and background scheduler) per region."""
+    access_key_id = environ.get("ALIBABA_CLOUD_ACCESS_KEY_ID")
+    access_key_secret = environ.get("ALIBABA_CLOUD_ACCESS_KEY_SECRET")
+    if access_key_id and access_key_secret:
+        config = Config(
+            access_key_id=access_key_id,
+            access_key_secret=access_key_secret,
+            region_id=region_id,
+        )
+        security_token = environ.get("ALIBABA_CLOUD_SECURITY_TOKEN")
+        if security_token:
+            config.security_token = security_token
+        return config
+    return Config(credential=_cred_client(), region_id=region_id)
+
+
+@cache
 def _ecs_client(
     region_id: str = environ.get("ALIBABA_CLOUD_REGION_ID", "eu-central-1"),
 ) -> EcsClient:
@@ -68,9 +91,7 @@ def _ecs_client(
     - `ALIBABA_CLOUD_ACCESS_KEY_ID`: The Alibaba Cloud access key ID.
     - `ALIBABA_CLOUD_ACCESS_KEY_SECRET`: The Alibaba Cloud access key secret.
     """
-    cred = CredClient()
-    config = Config(credential=cred, region_id=region_id)
-    return EcsClient(config)
+    return EcsClient(_alibabacloud_config(region_id))
 
 
 def _ecs_clients(vendor: Vendor) -> dict[str, EcsClient]:
@@ -98,9 +119,7 @@ def _bss_client(
     region_id: str = environ.get("ALIBABA_CLOUD_REGION_ID", "eu-central-1"),
 ) -> BssClient:
     """Create an Alibaba Cloud BSS client using the default credentials chain."""
-    cred = CredClient()
-    config = Config(credential=cred, region_id=region_id)
-    return BssClient(config)
+    return BssClient(_alibabacloud_config(region_id))
 
 
 def _get_sku_prices(
