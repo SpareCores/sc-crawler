@@ -268,9 +268,10 @@ def test_compute_workload_score_rows_weighted_geometric_mean(monkeypatch):
     expected_score = _round_sigfigs(2**expected_log_avg, sig=3)
     assert rows[0]["score"] == expected_score
     breakdown = rows[0]["score_breakdown"]
-    assert _round_sigfigs(
-        _reconstruct_score_from_breakdown(breakdown), sig=3
-    ) == rows[0]["score"]
+    assert (
+        _round_sigfigs(_reconstruct_score_from_breakdown(breakdown), sig=3)
+        == rows[0]["score"]
+    )
     for component in breakdown.components:
         if component.normalized is not None and component.weight_share > 0:
             raw_impact = (component.normalized**component.weight_share - 1) * 100
@@ -322,9 +323,10 @@ def test_compute_workload_score_rows_penalize(monkeypatch):
     assert penalized.note == "penalized: no usable measurement"
     assert rows[0]["note"] is None
     assert rows[0]["score"] < 2.0
-    assert _round_sigfigs(
-        _reconstruct_score_from_breakdown(breakdown), sig=3
-    ) == rows[0]["score"]
+    assert (
+        _round_sigfigs(_reconstruct_score_from_breakdown(breakdown), sig=3)
+        == rows[0]["score"]
+    )
 
 
 def test_compute_workload_score_rows_lower_is_better_reconstruction(monkeypatch):
@@ -359,9 +361,10 @@ def test_compute_workload_score_rows_lower_is_better_reconstruction(monkeypatch)
     assert component.higher_is_better is False
     assert component.normalized == pytest.approx(2.0)
     assert rows[0]["score"] == pytest.approx(2.0)
-    assert _round_sigfigs(
-        _reconstruct_score_from_breakdown(breakdown), sig=3
-    ) == rows[0]["score"]
+    assert (
+        _round_sigfigs(_reconstruct_score_from_breakdown(breakdown), sig=3)
+        == rows[0]["score"]
+    )
 
 
 def test_compute_workload_score_rows_require_suppresses_row(monkeypatch):
