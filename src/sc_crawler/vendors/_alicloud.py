@@ -3,7 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from functools import cache
 from itertools import chain
-from logging import WARN
+from logging import INFO, WARN
 from os import environ
 from random import shuffle
 from time import time
@@ -222,13 +222,12 @@ def _get_region_availability_info(
             )
             runtime = RuntimeOptions()
             response = client.describe_available_resource_with_options(request, runtime)
-            if response.body:
-                available_zones = response.body.available_zones
-                if available_zones and available_zones.available_zone:
-                    resources = [
-                        resource.to_map()
-                        for resource in response.body.available_zones.available_zone
-                    ]
+            available_zones = response.body.available_zones
+            if available_zones and available_zones.available_zone:
+                resources = [
+                    resource.to_map()
+                    for resource in response.body.available_zones.available_zone
+                ]
             return region_id, resources
         except Exception as e:
             logger.error(f"Failed to get availability info for region {region_id}: {e}")
@@ -1102,6 +1101,11 @@ def inventory_server_prices(vendor):
             )
     for unsupported_region in unsupported_regions:
         vendor.log(f"Found non-supported region: {unsupported_region}", level=WARN)
+    active_items = [item for item in items if item["status"] == Status.ACTIVE]
+    vendor.log(
+        f"Found {len(active_items)} ACTIVE and {len(items) - len(active_items)} INACTIVE server prices",
+        level=INFO,
+    )
     return items
 
 
