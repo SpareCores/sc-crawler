@@ -1,4 +1,4 @@
-from collections import defaultdict
+from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from functools import cache
@@ -55,14 +55,8 @@ from ..vendor_helpers import get_region_by_id
 # Internal helpers
 
 
-@cache
-def _cred_client() -> CredClient:
-    """Shared credentials client for the default Alibaba provider chain."""
-    return CredClient()
-
-
 def _alibabacloud_config(region_id: str) -> Config:
-    """Build SDK config, avoiding one CredClient (and background scheduler) per region."""
+    """Build SDK config with direct credentials, avoiding DefaultCredentialsProvider with unnecessary background scheduler."""
     access_key_id = environ.get("ALIBABA_CLOUD_ACCESS_KEY_ID")
     access_key_secret = environ.get("ALIBABA_CLOUD_ACCESS_KEY_SECRET")
     if access_key_id and access_key_secret:
@@ -75,7 +69,7 @@ def _alibabacloud_config(region_id: str) -> Config:
         if security_token:
             config.security_token = security_token
         return config
-    return Config(credential=_cred_client(), region_id=region_id)
+    return Config(credential=CredClient(), region_id=region_id)
 
 
 @cache
@@ -1101,9 +1095,22 @@ def inventory_server_prices(vendor):
             )
     for unsupported_region in unsupported_regions:
         vendor.log(f"Found non-supported region: {unsupported_region}", level=WARN)
-    active_items = [item for item in items if item["status"] == Status.ACTIVE]
+    overall = Counter()
+    status_by_region: dict[str, Counter] = defaultdict(Counter)
+    for item in items:
+        status = item["status"]
+        status_by_region[item["region_id"]][status] += 1
+        overall[status] += 1
+    for region_id in sorted(status_by_region):
+        counts = status_by_region[region_id]
+        vendor.log(
+            f"{region_id}: Found {counts[Status.ACTIVE]} ACTIVE and "
+            f"{counts[Status.INACTIVE]} INACTIVE server prices",
+            level=INFO,
+        )
     vendor.log(
-        f"Found {len(active_items)} ACTIVE and {len(items) - len(active_items)} INACTIVE server prices",
+        f"OVERALL: Found {overall[Status.ACTIVE]} ACTIVE and "
+        f"{overall[Status.INACTIVE]} INACTIVE server prices",
         level=INFO,
     )
     return items
