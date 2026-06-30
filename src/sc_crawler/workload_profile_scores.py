@@ -29,8 +29,28 @@ from .workload_profiles import WORKLOADS, BenchmarkEntry, Workload
 if TYPE_CHECKING:
     pass
 
+# the only supported aggregation and normalization methods right now
 _AGGREGATION = BenchmarkComponentAggregationMethod.WEIGHTED_GEOMETRIC_MEAN
 _NORMALIZATION = BenchmarkComponentNormalizationMethod.MEDIAN_RATIO
+
+
+def _component_impact_pct(
+    component: ScoreComponent,
+    aggregation: BenchmarkComponentAggregationMethod,
+    normalization: BenchmarkComponentNormalizationMethod,
+) -> float | None:
+    """Return approximate per-component impact on the workload score, in percent."""
+    if component.normalized is None or component.weight_share <= 0:
+        return None
+    if (
+        aggregation == BenchmarkComponentAggregationMethod.WEIGHTED_GEOMETRIC_MEAN
+        and normalization == BenchmarkComponentNormalizationMethod.MEDIAN_RATIO
+    ):
+        return (component.normalized**component.weight_share - 1) * 100
+    raise NotImplementedError(
+        "component impact not implemented for "
+        f"aggregation={aggregation!r}, normalization={normalization!r}"
+    )
 
 
 def _config_matches(row_config: dict, filter_cfg: dict[str, Any] | None) -> bool:
@@ -323,6 +343,11 @@ def _compute_workload_score_rows(
             for component in breakdown_components:
                 if component.normalized is not None:
                     component.weight_share = component.weight / total_weight
+                    component.impact = _component_impact_pct(
+                        component,
+                        _AGGREGATION,
+                        _NORMALIZATION,
+                    )
 
             score = 2 ** (log_weighted_sum / total_weight)
 

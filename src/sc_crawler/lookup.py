@@ -10,6 +10,7 @@ from .workload_profiles import (
     WORKLOADS,
     CompoundSource,
     ExtrapolatedSource,
+    _impact_tooltip,
 )
 
 # country codes: https://en.wikipedia.org/wiki/ISO_3166-1#Codes
@@ -756,6 +757,10 @@ for workload_name, workload in WORKLOADS.items():
                 aggregation=BenchmarkComponentAggregationMethod.WEIGHTED_GEOMETRIC_MEAN,
                 normalization=BenchmarkComponentNormalizationMethod.MEDIAN_RATIO,
                 components=list(workload.benchmarks),
+                impact_formula=_impact_tooltip(
+                    BenchmarkComponentAggregationMethod.WEIGHTED_GEOMETRIC_MEAN,
+                    BenchmarkComponentNormalizationMethod.MEDIAN_RATIO,
+                ),
             ),
         )
     )

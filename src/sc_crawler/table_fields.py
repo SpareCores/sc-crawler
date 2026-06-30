@@ -280,24 +280,40 @@ class ScoreComponent(Json):
     """One component's contribution to a composite workload profile score."""
 
     label: str
+    """Human-readable, concise description of what the component measures."""
     benchmark_id: str
+    """The benchmark ID of a BenchmarkScore."""
     config_filter: dict[str, Any] | None = None
+    """Optional filter applied to the benchmark's config JSON column."""
     weight: float
+    """Relative weight of this component. Weights within a workload sum to 1.0."""
     weight_share: float
+    """The weight of this component as a share of the total weight (0.0 for ignored components)."""
     raw: float | None = None
+    """The raw benchmark value."""
     reference: float | None = None
+    """The reference benchmark value, e.g. the fleet median."""
     normalized: float | None = None
+    """The normalized benchmark value, e.g. the ratio of the raw value to the reference value."""
     higher_is_better: bool = True
+    """Whether a higher value is better."""
     note: str | None = None
+    """Optional note about this component."""
+    impact: float | None = None
+    """How much this benchmark component raised or lowered the overall workload score. Values are approximate percentages (positive helps, negative hurts the final score), do not add up to the total score, and actual formula depends on the workload's aggregation and normalization methods."""
 
 
 class WorkloadScoreBreakdown(Json):
     """Per-server realized calculation of a composite workload profile score."""
 
     aggregation: BenchmarkComponentAggregationMethod
+    """How the component benchmark scores are combined into one composite score."""
     normalization: BenchmarkComponentNormalizationMethod
+    """How each raw benchmark value is scaled to be comparable across benchmarks."""
     coverage: float
+    """The total weight of the components."""
     components: list[ScoreComponent]
+    """The components of the workload profile."""
 
 
 class Category(str, Enum):
