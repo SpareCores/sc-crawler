@@ -13,6 +13,7 @@ from sc_crawler.workload_profile_scores import (
     _component_impact_pct,
     _compute_workload_score_rows,
     _normalise,
+    _round_measurement,
     _round_sigfigs,
 )
 from sc_crawler.workload_profiles import (
@@ -53,6 +54,25 @@ def test_workload(monkeypatch):
     )
     monkeypatch.setitem(WORKLOADS, "test", workload)
     return workload
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (251400.0, 251400),
+        (251435.6789, 251436),
+        (957000.0, 957000),
+        (0.0004, 0.0004),
+        (12.3456789, 12.35),
+        (None, None),
+    ],
+)
+def test_round_measurement(value, expected):
+    assert _round_measurement(value) == expected
+
+
+def test_round_sigfigs_compound_score():
+    assert _round_sigfigs(0.206903896916275, sig=3) == 0.207
 
 
 def test_normalise_higher_is_better():

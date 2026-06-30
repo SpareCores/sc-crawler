@@ -34,8 +34,24 @@ _AGGREGATION = BenchmarkComponentAggregationMethod.WEIGHTED_GEOMETRIC_MEAN
 _NORMALIZATION = BenchmarkComponentNormalizationMethod.MEDIAN_RATIO
 
 
+def _round_measurement(
+    value: float | None, *, sig: int = 4, integer_at: float = 1000
+) -> int | float | None:
+    """Round a benchmark measurement for score-breakdown storage.
+
+    Large values (|x| >= integer_at) are rounded to whole numbers so magnitudes
+    like 251435 are not zeroed out by significant-figure rounding. Smaller
+    values use significant figures so tiny scores (e.g. 0.0004) stay meaningful.
+    """
+    if value is None:
+        return None
+    if abs(value) >= integer_at:
+        return round(value)
+    return float(f"{value:.{sig}g}")
+
+
 def _round_sigfigs(value: float | None, *, sig: int) -> float | None:
-    """Round *value* to *sig* significant figures."""
+    """Round unitless ratios to *sig* significant figures."""
     if value is None:
         return None
     return float(f"{value:.{sig}g}")
@@ -276,8 +292,8 @@ def _compute_workload_score_rows(
                             label=entry.label,
                             weight=entry.weight,
                             weight_share=0.0,  # filled after total_weight known
-                            raw=_round_sigfigs(raw, sig=4),
-                            reference=_round_sigfigs(fleet_median, sig=4),
+                            raw=_round_measurement(raw),
+                            reference=_round_measurement(fleet_median),
                             normalized=_round_sigfigs(normalized, sig=3),
                             higher_is_better=higher,
                             note=None,
@@ -293,8 +309,8 @@ def _compute_workload_score_rows(
                             label=entry.label,
                             weight=entry.weight,
                             weight_share=0.0,
-                            raw=_round_sigfigs(raw, sig=4),
-                            reference=_round_sigfigs(fleet_median, sig=4),
+                            raw=_round_measurement(raw),
+                            reference=_round_measurement(fleet_median),
                             normalized=None,
                             higher_is_better=higher,
                             note="required component missing",
@@ -312,8 +328,8 @@ def _compute_workload_score_rows(
                             label=entry.label,
                             weight=entry.weight,
                             weight_share=0.0,
-                            raw=_round_sigfigs(raw, sig=4),
-                            reference=_round_sigfigs(fleet_median, sig=4),
+                            raw=_round_measurement(raw),
+                            reference=_round_measurement(fleet_median),
                             normalized=_round_sigfigs(penalty, sig=3),
                             higher_is_better=higher,
                             note="penalized: no usable measurement",
@@ -328,8 +344,8 @@ def _compute_workload_score_rows(
                         label=entry.label,
                         weight=entry.weight,
                         weight_share=0.0,
-                        raw=_round_sigfigs(raw, sig=4),
-                        reference=_round_sigfigs(fleet_median, sig=4),
+                        raw=_round_measurement(raw),
+                        reference=_round_measurement(fleet_median),
                         normalized=None,
                         higher_is_better=higher,
                         note=component_note,
@@ -341,7 +357,9 @@ def _compute_workload_score_rows(
 
             for component in breakdown_components:
                 if component.normalized is not None:
-                    component.weight_share = component.weight / total_weight
+                    component.weight_share = _round_sigfigs(
+                        component.weight / total_weight, sig=3
+                    )
                     component.impact = _round_sigfigs(
                         _component_impact_pct(
                             component,

@@ -285,9 +285,9 @@ class ScoreComponent(Json):
     """Relative weight of this component. Weights within a workload sum to 1.0."""
     weight_share: float
     """The weight of this component as a share of the total weight (0.0 for ignored components)."""
-    raw: float | None = None
+    raw: int | float | None = None
     """The raw benchmark value."""
-    reference: float | None = None
+    reference: int | float | None = None
     """The reference benchmark value, e.g. the fleet median."""
     normalized: float | None = None
     """The normalized benchmark value, e.g. the ratio of the raw value to the reference value."""
