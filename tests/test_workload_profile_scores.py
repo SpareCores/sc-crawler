@@ -13,6 +13,7 @@ from sc_crawler.workload_profile_scores import (
     _component_impact_pct,
     _compute_workload_score_rows,
     _normalise,
+    _round_sigfigs,
 )
 from sc_crawler.workload_profiles import (
     WORKLOADS,
@@ -244,17 +245,16 @@ def test_compute_workload_score_rows_weighted_geometric_mean(monkeypatch):
     )
 
     expected_log_avg = (0.75 * math.log2(2.0) + 0.25 * math.log2(1.0)) / 1.0
-    assert rows[0]["score"] == pytest.approx(2**expected_log_avg)
+    expected_score = _round_sigfigs(2**expected_log_avg, sig=3)
+    assert rows[0]["score"] == expected_score
     breakdown = rows[0]["score_breakdown"]
-    assert _reconstruct_score_from_breakdown(breakdown) == pytest.approx(
-        rows[0]["score"], rel=1e-6
-    )
+    assert _round_sigfigs(
+        _reconstruct_score_from_breakdown(breakdown), sig=3
+    ) == rows[0]["score"]
     for component in breakdown.components:
         if component.normalized is not None and component.weight_share > 0:
-            assert component.impact == pytest.approx(
-                (component.normalized**component.weight_share - 1) * 100,
-                rel=1e-6,
-            )
+            raw_impact = (component.normalized**component.weight_share - 1) * 100
+            assert component.impact == float(f"{raw_impact:.3g}")
         else:
             assert component.impact is None
 
@@ -302,9 +302,9 @@ def test_compute_workload_score_rows_penalize(monkeypatch):
     assert penalized.note == "penalized: no usable measurement"
     assert rows[0]["note"] is None
     assert rows[0]["score"] < 2.0
-    assert _reconstruct_score_from_breakdown(breakdown) == pytest.approx(
-        rows[0]["score"], rel=1e-6
-    )
+    assert _round_sigfigs(
+        _reconstruct_score_from_breakdown(breakdown), sig=3
+    ) == rows[0]["score"]
 
 
 def test_compute_workload_score_rows_lower_is_better_reconstruction(monkeypatch):
@@ -339,9 +339,9 @@ def test_compute_workload_score_rows_lower_is_better_reconstruction(monkeypatch)
     assert component.higher_is_better is False
     assert component.normalized == pytest.approx(2.0)
     assert rows[0]["score"] == pytest.approx(2.0)
-    assert _reconstruct_score_from_breakdown(breakdown) == pytest.approx(
-        rows[0]["score"], rel=1e-6
-    )
+    assert _round_sigfigs(
+        _reconstruct_score_from_breakdown(breakdown), sig=3
+    ) == rows[0]["score"]
 
 
 def test_compute_workload_score_rows_require_suppresses_row(monkeypatch):

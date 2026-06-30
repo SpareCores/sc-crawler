@@ -34,6 +34,13 @@ _AGGREGATION = BenchmarkComponentAggregationMethod.WEIGHTED_GEOMETRIC_MEAN
 _NORMALIZATION = BenchmarkComponentNormalizationMethod.MEDIAN_RATIO
 
 
+def _round_sigfigs(value: float | None, *, sig: int) -> float | None:
+    """Round *value* to *sig* significant figures."""
+    if value is None:
+        return None
+    return float(f"{value:.{sig}g}")
+
+
 def _component_impact_pct(
     component: ScoreComponent,
     aggregation: BenchmarkComponentAggregationMethod,
@@ -269,9 +276,9 @@ def _compute_workload_score_rows(
                             label=entry.label,
                             weight=entry.weight,
                             weight_share=0.0,  # filled after total_weight known
-                            raw=raw,
-                            reference=fleet_median,
-                            normalized=normalized,
+                            raw=_round_sigfigs(raw, sig=4),
+                            reference=_round_sigfigs(fleet_median, sig=4),
+                            normalized=_round_sigfigs(normalized, sig=3),
                             higher_is_better=higher,
                             note=None,
                         )
@@ -286,8 +293,8 @@ def _compute_workload_score_rows(
                             label=entry.label,
                             weight=entry.weight,
                             weight_share=0.0,
-                            raw=raw,
-                            reference=fleet_median,
+                            raw=_round_sigfigs(raw, sig=4),
+                            reference=_round_sigfigs(fleet_median, sig=4),
                             normalized=None,
                             higher_is_better=higher,
                             note="required component missing",
@@ -305,9 +312,9 @@ def _compute_workload_score_rows(
                             label=entry.label,
                             weight=entry.weight,
                             weight_share=0.0,
-                            raw=raw,
-                            reference=fleet_median,
-                            normalized=penalty,
+                            raw=_round_sigfigs(raw, sig=4),
+                            reference=_round_sigfigs(fleet_median, sig=4),
+                            normalized=_round_sigfigs(penalty, sig=3),
                             higher_is_better=higher,
                             note="penalized: no usable measurement",
                         )
@@ -321,8 +328,8 @@ def _compute_workload_score_rows(
                         label=entry.label,
                         weight=entry.weight,
                         weight_share=0.0,
-                        raw=raw,
-                        reference=fleet_median,
+                        raw=_round_sigfigs(raw, sig=4),
+                        reference=_round_sigfigs(fleet_median, sig=4),
                         normalized=None,
                         higher_is_better=higher,
                         note=component_note,
@@ -335,13 +342,16 @@ def _compute_workload_score_rows(
             for component in breakdown_components:
                 if component.normalized is not None:
                     component.weight_share = component.weight / total_weight
-                    component.impact = _component_impact_pct(
-                        component,
-                        _AGGREGATION,
-                        _NORMALIZATION,
+                    component.impact = _round_sigfigs(
+                        _component_impact_pct(
+                            component,
+                            _AGGREGATION,
+                            _NORMALIZATION,
+                        ),
+                        sig=3,
                     )
 
-            score = 2 ** (log_weighted_sum / total_weight)
+            score = _round_sigfigs(2 ** (log_weighted_sum / total_weight), sig=3)
 
             note: str | None = None
             if missing_labels:
