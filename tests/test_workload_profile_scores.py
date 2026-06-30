@@ -521,7 +521,6 @@ def test_component_impact_pct_geomean_median_ratio():
 
     component = ScoreComponent(
         label="metric-a",
-        benchmark_id="bench:a",
         weight=0.1,
         weight_share=0.1,
         normalized=3.0,
@@ -535,7 +534,6 @@ def test_component_impact_pct_geomean_median_ratio():
         _component_impact_pct(
             ScoreComponent(
                 label="metric-b",
-                benchmark_id="bench:b",
                 weight=0.1,
                 weight_share=0.1,
                 normalized=None,
@@ -564,7 +562,6 @@ def test_impact_unsupported_method_pair_raises():
         _component_impact_pct(
             ScoreComponent(
                 label="metric-a",
-                benchmark_id="bench:a",
                 weight=0.5,
                 weight_share=0.5,
                 normalized=2.0,

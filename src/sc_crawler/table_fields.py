@@ -281,10 +281,6 @@ class ScoreComponent(Json):
 
     label: str
     """Human-readable, concise description of what the component measures."""
-    benchmark_id: str
-    """The benchmark ID of a BenchmarkScore."""
-    config_filter: dict[str, Any] | None = None
-    """Optional filter applied to the benchmark's config JSON column."""
     weight: float
     """Relative weight of this component. Weights within a workload sum to 1.0."""
     weight_share: float

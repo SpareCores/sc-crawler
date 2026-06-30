@@ -267,8 +267,6 @@ def _compute_workload_score_rows(
                     breakdown_components.append(
                         ScoreComponent(
                             label=entry.label,
-                            benchmark_id=entry.benchmark_id,
-                            config_filter=entry.config_filter,
                             weight=entry.weight,
                             weight_share=0.0,  # filled after total_weight known
                             raw=raw,
@@ -286,8 +284,6 @@ def _compute_workload_score_rows(
                     breakdown_components.append(
                         ScoreComponent(
                             label=entry.label,
-                            benchmark_id=entry.benchmark_id,
-                            config_filter=entry.config_filter,
                             weight=entry.weight,
                             weight_share=0.0,
                             raw=raw,
@@ -307,8 +303,6 @@ def _compute_workload_score_rows(
                     breakdown_components.append(
                         ScoreComponent(
                             label=entry.label,
-                            benchmark_id=entry.benchmark_id,
-                            config_filter=entry.config_filter,
                             weight=entry.weight,
                             weight_share=0.0,
                             raw=raw,
@@ -325,8 +319,6 @@ def _compute_workload_score_rows(
                 breakdown_components.append(
                     ScoreComponent(
                         label=entry.label,
-                        benchmark_id=entry.benchmark_id,
-                        config_filter=entry.config_filter,
                         weight=entry.weight,
                         weight_share=0.0,
                         raw=raw,
