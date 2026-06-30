@@ -1,4 +1,13 @@
-## v0.8.1 (June 30, 2026)
+## v0.8.2 (June 30, 2026)
+
+Maintenance update:
+
+- Add `impact_formula` field to the `CompoundSource` of the `Benchmark.source` model: a human-friendly explanation of the formula used to calculate the impact of the benchmark components on the overall workload score.
+- Add `impact` field to the `ScoreComponent` of the `BenchmarkScore.score_breakdown` model: how much a benchmark component raised or lowered the overall workload score.
+- Drop redundant `benchmark_id` and `config_filter` fields from the `ScoreComponent` of the `BenchmarkScore.score_breakdown` model, as can be derived from the `Benchmark.source` model.
+- Round raw, normalized, and impact scores.
+
+## v0.8.1 (June 29, 2026)
 
 Fix(es):
 
