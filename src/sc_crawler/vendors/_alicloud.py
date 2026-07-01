@@ -1,9 +1,9 @@
-from collections import defaultdict
+from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from functools import cache
 from itertools import chain
-from logging import WARN
+from logging import INFO, WARN
 from os import environ
 from random import shuffle
 from time import time
@@ -55,6 +55,23 @@ from ..vendor_helpers import get_region_by_id
 # Internal helpers
 
 
+def _alibabacloud_config(region_id: str) -> Config:
+    """Build SDK config with direct credentials, avoiding DefaultCredentialsProvider with unnecessary background scheduler."""
+    access_key_id = environ.get("ALIBABA_CLOUD_ACCESS_KEY_ID")
+    access_key_secret = environ.get("ALIBABA_CLOUD_ACCESS_KEY_SECRET")
+    if access_key_id and access_key_secret:
+        config = Config(
+            access_key_id=access_key_id,
+            access_key_secret=access_key_secret,
+            region_id=region_id,
+        )
+        security_token = environ.get("ALIBABA_CLOUD_SECURITY_TOKEN")
+        if security_token:
+            config.security_token = security_token
+        return config
+    return Config(credential=CredClient(), region_id=region_id)
+
+
 @cache
 def _ecs_client(
     region_id: str = environ.get("ALIBABA_CLOUD_REGION_ID", "eu-central-1"),
@@ -68,9 +85,7 @@ def _ecs_client(
     - `ALIBABA_CLOUD_ACCESS_KEY_ID`: The Alibaba Cloud access key ID.
     - `ALIBABA_CLOUD_ACCESS_KEY_SECRET`: The Alibaba Cloud access key secret.
     """
-    cred = CredClient()
-    config = Config(credential=cred, region_id=region_id)
-    return EcsClient(config)
+    return EcsClient(_alibabacloud_config(region_id))
 
 
 def _ecs_clients(vendor: Vendor) -> dict[str, EcsClient]:
@@ -98,9 +113,7 @@ def _bss_client(
     region_id: str = environ.get("ALIBABA_CLOUD_REGION_ID", "eu-central-1"),
 ) -> BssClient:
     """Create an Alibaba Cloud BSS client using the default credentials chain."""
-    cred = CredClient()
-    config = Config(credential=cred, region_id=region_id)
-    return BssClient(config)
+    return BssClient(_alibabacloud_config(region_id))
 
 
 def _get_sku_prices(
@@ -203,13 +216,12 @@ def _get_region_availability_info(
             )
             runtime = RuntimeOptions()
             response = client.describe_available_resource_with_options(request, runtime)
-            if response.body:
-                available_zones = response.body.available_zones
-                if available_zones and available_zones.available_zone:
-                    resources = [
-                        resource.to_map()
-                        for resource in response.body.available_zones.available_zone
-                    ]
+            available_zones = response.body.available_zones
+            if available_zones and available_zones.available_zone:
+                resources = [
+                    resource.to_map()
+                    for resource in response.body.available_zones.available_zone
+                ]
             return region_id, resources
         except Exception as e:
             logger.error(f"Failed to get availability info for region {region_id}: {e}")
@@ -1083,6 +1095,24 @@ def inventory_server_prices(vendor):
             )
     for unsupported_region in unsupported_regions:
         vendor.log(f"Found non-supported region: {unsupported_region}", level=WARN)
+    overall = Counter()
+    status_by_region: dict[str, Counter] = defaultdict(Counter)
+    for item in items:
+        status = item["status"]
+        status_by_region[item["region_id"]][status] += 1
+        overall[status] += 1
+    for region_id in sorted(status_by_region):
+        counts = status_by_region[region_id]
+        vendor.log(
+            f"{region_id}: Found {counts[Status.ACTIVE]} ACTIVE and "
+            f"{counts[Status.INACTIVE]} INACTIVE server prices",
+            level=INFO,
+        )
+    vendor.log(
+        f"OVERALL: Found {overall[Status.ACTIVE]} ACTIVE and "
+        f"{overall[Status.INACTIVE]} INACTIVE server prices",
+        level=INFO,
+    )
     return items
 
 
