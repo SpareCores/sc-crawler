@@ -401,15 +401,17 @@ def inventory_servers(vendor):
         cpu_manufacturer = server.get("cpu_vendor") or server.get("cpu_manufacturer")
         cpu_family = _extract_cpu_family(cpu_model_raw)
         cpu_model = _standardize_cpu_model(cpu_model_raw)
-        vcpus = server.get("vcpu_count")
-        cpu_count = server.get("cpu_count")
-        cpu_threads = server.get("cpu_threads", 0)
+        vcpus = server.get("vcpu_count") or server.get("cpu_threads")
+        cpu_cores = server.get("cpu_count")
         cpu_allocation = CpuAllocation.SHARED if vcpus else CpuAllocation.DEDICATED
         cpu_architecture = (
             CpuArchitecture.ARM64 if cpu_family == "Grace" else CpuArchitecture.X86_64
         )
         cpu_speed_mhz = server.get("cpu_mhz")
         cpu_speed_ghz = cpu_speed_mhz / 1000 if cpu_speed_mhz else None
+
+        # Memory
+        memory_amount = server["ram"]
 
         # GPU
         gpu_brand = server.get("gpu_brand", "")
@@ -464,8 +466,7 @@ def inventory_servers(vendor):
         storage_type = _storage_type_from_plan(server)
         storage_size = storage_size_per_disk * server.get("disk_count", 1)
         family = _PLAN_TYPES.get(server["type"])
-        vcpus = vcpus or cpu_threads
-        memory_amount = server["ram"]
+
         description = _server_description(
             family,
             vcpus,
@@ -488,7 +489,7 @@ def inventory_servers(vendor):
             "vcpus": vcpus,
             "hypervisor": None,
             "cpu_allocation": cpu_allocation,
-            "cpu_cores": vcpus or cpu_count,
+            "cpu_cores": cpu_cores,
             "cpu_speed": cpu_speed_ghz,
             "cpu_architecture": cpu_architecture,
             "cpu_manufacturer": cpu_manufacturer,
