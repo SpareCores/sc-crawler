@@ -70,13 +70,37 @@ class ExtrapolatedSource(Json):
 class CompoundSource(Json):
     kind: Literal["compound"] = "compound"
     aggregation: BenchmarkComponentAggregationMethod
+    """How component benchmark scores are combined into one composite score."""
     normalization: BenchmarkComponentNormalizationMethod
+    """How each raw benchmark value is scaled to be comparable across benchmarks."""
     components: list[BenchmarkEntry]
+    """The components of the workload profile."""
+    impact_formula: str | None = None
+    """Human-friendly explanation of how to read per-component ``impact`` on scores."""
 
     def __json__(self):
         data = dict(sorted(self.model_dump(mode="json").items()))
         data["components"] = [component.__json__() for component in self.components]
         return data
+
+
+def _impact_tooltip(
+    aggregation: BenchmarkComponentAggregationMethod,
+    normalization: BenchmarkComponentNormalizationMethod,
+) -> str:
+    """Return user-facing copy explaining per-component ``impact`` values."""
+    if (
+        aggregation == BenchmarkComponentAggregationMethod.WEIGHTED_GEOMETRIC_MEAN
+        and normalization == BenchmarkComponentNormalizationMethod.MEDIAN_RATIO
+    ):
+        return (
+            "How much this benchmark raised or lowered the overall workload score "
+            "(1.0 = median on all parts). Effects multiply, they don't add."
+        )
+    raise NotImplementedError(
+        "impact tooltip not implemented for "
+        f"aggregation={aggregation!r}, normalization={normalization!r}"
+    )
 
 
 BenchmarkSource = Annotated[

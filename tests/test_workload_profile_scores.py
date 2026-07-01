@@ -4,14 +4,24 @@ import pytest
 
 from sc_crawler.lookup import benchmarks
 from sc_crawler.table_fields import (
+    BenchmarkComponentAggregationMethod,
     BenchmarkComponentMissingPolicy,
+    BenchmarkComponentNormalizationMethod,
     WorkloadScoreBreakdown,
 )
 from sc_crawler.workload_profile_scores import (
+    _component_impact_pct,
     _compute_workload_score_rows,
     _normalise,
+    _round_measurement,
+    _round_sigfigs,
 )
-from sc_crawler.workload_profiles import WORKLOADS, BenchmarkEntry, Workload
+from sc_crawler.workload_profiles import (
+    WORKLOADS,
+    BenchmarkEntry,
+    Workload,
+    _impact_tooltip,
+)
 
 
 def _reconstruct_score_from_breakdown(breakdown: WorkloadScoreBreakdown) -> float:
@@ -44,6 +54,25 @@ def test_workload(monkeypatch):
     )
     monkeypatch.setitem(WORKLOADS, "test", workload)
     return workload
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (251400.0, 251400),
+        (251435.6789, 251436),
+        (957000.0, 957000),
+        (0.0004, 0.0004),
+        (12.3456789, 12.35),
+        (None, None),
+    ],
+)
+def test_round_measurement(value, expected):
+    assert _round_measurement(value) == expected
+
+
+def test_round_sigfigs_compound_score():
+    assert _round_sigfigs(0.206903896916275, sig=3) == 0.207
 
 
 def test_normalise_higher_is_better():
@@ -236,11 +265,19 @@ def test_compute_workload_score_rows_weighted_geometric_mean(monkeypatch):
     )
 
     expected_log_avg = (0.75 * math.log2(2.0) + 0.25 * math.log2(1.0)) / 1.0
-    assert rows[0]["score"] == pytest.approx(2**expected_log_avg)
+    expected_score = _round_sigfigs(2**expected_log_avg, sig=3)
+    assert rows[0]["score"] == expected_score
     breakdown = rows[0]["score_breakdown"]
-    assert _reconstruct_score_from_breakdown(breakdown) == pytest.approx(
-        rows[0]["score"], rel=1e-6
+    assert (
+        _round_sigfigs(_reconstruct_score_from_breakdown(breakdown), sig=3)
+        == rows[0]["score"]
     )
+    for component in breakdown.components:
+        if component.normalized is not None and component.weight_share > 0:
+            raw_impact = (component.normalized**component.weight_share - 1) * 100
+            assert component.impact == float(f"{raw_impact:.3g}")
+        else:
+            assert component.impact is None
 
 
 def test_compute_workload_score_rows_penalize(monkeypatch):
@@ -286,8 +323,9 @@ def test_compute_workload_score_rows_penalize(monkeypatch):
     assert penalized.note == "penalized: no usable measurement"
     assert rows[0]["note"] is None
     assert rows[0]["score"] < 2.0
-    assert _reconstruct_score_from_breakdown(breakdown) == pytest.approx(
-        rows[0]["score"], rel=1e-6
+    assert (
+        _round_sigfigs(_reconstruct_score_from_breakdown(breakdown), sig=3)
+        == rows[0]["score"]
     )
 
 
@@ -323,8 +361,9 @@ def test_compute_workload_score_rows_lower_is_better_reconstruction(monkeypatch)
     assert component.higher_is_better is False
     assert component.normalized == pytest.approx(2.0)
     assert rows[0]["score"] == pytest.approx(2.0)
-    assert _reconstruct_score_from_breakdown(breakdown) == pytest.approx(
-        rows[0]["score"], rel=1e-6
+    assert (
+        _round_sigfigs(_reconstruct_score_from_breakdown(breakdown), sig=3)
+        == rows[0]["score"]
     )
 
 
@@ -373,6 +412,10 @@ def test_benchmark_source_descriptors():
         assert bench.source.aggregation.value == "weighted_geometric_mean"
         assert bench.source.normalization.value == "median_ratio"
         assert len(bench.source.components) == len(workload.benchmarks)
+        assert bench.source.impact_formula == _impact_tooltip(
+            bench.source.aggregation,
+            bench.source.normalization,
+        )
 
     for bid in (
         "static_web:rps-extrapolated",
@@ -485,3 +528,67 @@ def test_llm_workload_missing_policies():
         assert "llama-7b" in entry.config_filter["model"]
     for entry in llama_70b:
         assert "Llama-3.3-70B" in entry.config_filter["model"]
+
+
+def test_impact_tooltip_geomean_median_ratio():
+    tooltip = _impact_tooltip(
+        BenchmarkComponentAggregationMethod.WEIGHTED_GEOMETRIC_MEAN,
+        BenchmarkComponentNormalizationMethod.MEDIAN_RATIO,
+    )
+    assert "median on all parts" in tooltip
+    assert "don't add" in tooltip
+
+
+def test_component_impact_pct_geomean_median_ratio():
+    from sc_crawler.table_fields import ScoreComponent
+
+    component = ScoreComponent(
+        label="metric-a",
+        weight=0.1,
+        weight_share=0.1,
+        normalized=3.0,
+    )
+    assert _component_impact_pct(
+        component,
+        BenchmarkComponentAggregationMethod.WEIGHTED_GEOMETRIC_MEAN,
+        BenchmarkComponentNormalizationMethod.MEDIAN_RATIO,
+    ) == pytest.approx((3.0**0.1 - 1) * 100, rel=1e-6)
+    assert (
+        _component_impact_pct(
+            ScoreComponent(
+                label="metric-b",
+                weight=0.1,
+                weight_share=0.1,
+                normalized=None,
+            ),
+            BenchmarkComponentAggregationMethod.WEIGHTED_GEOMETRIC_MEAN,
+            BenchmarkComponentNormalizationMethod.MEDIAN_RATIO,
+        )
+        is None
+    )
+
+
+def test_impact_unsupported_method_pair_raises():
+    from sc_crawler.table_fields import ScoreComponent
+
+    class _Unsupported:
+        def __repr__(self) -> str:
+            return "unsupported"
+
+    unsupported = _Unsupported()
+    with pytest.raises(NotImplementedError, match="impact tooltip not implemented"):
+        _impact_tooltip(
+            unsupported,  # type: ignore[arg-type]
+            BenchmarkComponentNormalizationMethod.MEDIAN_RATIO,
+        )
+    with pytest.raises(NotImplementedError, match="component impact not implemented"):
+        _component_impact_pct(
+            ScoreComponent(
+                label="metric-a",
+                weight=0.5,
+                weight_share=0.5,
+                normalized=2.0,
+            ),
+            unsupported,  # type: ignore[arg-type]
+            BenchmarkComponentNormalizationMethod.MEDIAN_RATIO,
+        )
