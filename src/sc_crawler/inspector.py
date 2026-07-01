@@ -848,6 +848,7 @@ def _standardize_cpu_model(model):
         "XEON",
         "EPYC ",
         "EPYC™ ",
+        "EPYC-",
         "AWS ",
         "(R)",
         "™",
@@ -855,8 +856,11 @@ def _standardize_cpu_model(model):
         "PLATINUM",
         "Gold",
         "CPU",
+        "Core Processor ",
         "Processor",
+        "(Broadwell, no TSX, IBRS)",
         "(Ice Lake)",
+        "(Cascadelake)",
         "(Cascade Lake)",
         "(Skylake)",
         "(Skylake, IBRS)",
@@ -869,11 +873,13 @@ def _standardize_cpu_model(model):
         "EMR ",
         "Genoa",
         "Milan",
+        "Rome",
         "ROME",
         "Turin-C",
         "Turin",
         "Platinum",
         "Gold",
+        "Processor",
     ]:
         if model.startswith(prefix):
             model = model[len(prefix) :].lstrip()
