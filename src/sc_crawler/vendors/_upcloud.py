@@ -371,6 +371,8 @@ def inventory_servers(vendor):
     for server in servers:
         with sentry_capture_or_raise(vendor=vendor):
             server_data = _parse_server_name(server["name"])
+            if server_data.get("spot"):
+                continue
             gpu_count = server.get("gpu_amount", 0)
             gpu_fields = _parse_gpu_model(server.get("gpu_model"), gpu_count)
             items.append(
@@ -429,9 +431,10 @@ def inventory_server_prices(vendor):
             if not k.startswith("server_plan"):
                 continue
             server_plan = k[len("server_plan_") :]
-            allocation = (
-                Allocation.SPOT if "SPOT" in server_plan else Allocation.ONDEMAND
-            )
+            allocation = Allocation.ONDEMAND
+            if "SPOT" in server_plan:
+                allocation = Allocation.SPOT
+                server_plan = server_plan.replace("SPOT-", "")
             items.append(
                 {
                     "vendor_id": vendor.vendor_id,
