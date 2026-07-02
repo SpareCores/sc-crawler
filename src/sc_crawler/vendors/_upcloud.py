@@ -74,8 +74,12 @@ UPCLOUD_STORAGES = [
 def _parse_server_name(name):
     """Extract server family and description from the server id."""
     name_pattern = recompile(
-        # optional leading ALLCAPS chars are the family name
-        r"((?P<family>[A-Z]*)-)?" r"(?P<vcpus>[0-9]+)xCPU-" r"(?P<memory>[0-9]+)GB"
+        r"^(?:(?P<family>[A-Z]+)-)?"
+        r"(?:(?P<spot>SPOT)-)?"
+        r"(?P<vcpus>[0-9]+)xCPU-"
+        r"(?P<memory>[0-9]+)GB"
+        r"(?:-(?P<gpu_count>[0-9]+)x(?P<gpu_model>[A-Z][A-Z0-9]*))?"
+        r"(?:-(?P<storage_suffix>[0-9]+)GB)?$"
     )
     name_match = name_pattern.match(name)
     if not name_match:
@@ -86,11 +90,16 @@ def _parse_server_name(name):
         "DEV": "Developer",
         "HICPU": "High CPU",
         "HIMEM": "High Memory",
+        "GPU": "GPU",
+        "STARTER": "Starter",
+        "CLOUDNATIVE": "Cloud Native",
+        "PREMIUM": "Premium",
     }
     data["family"] = family_mapping.get(data["family"], data["family"])
-    data["description"] = (
-        f"{data['family']} ({data['vcpus']} vCPUs, {data['memory']} GiB RAM)"
-    )
+    description_parts = [f"{data['vcpus']} vCPUs", f"{data['memory']} GiB RAM"]
+    if data.get("gpu_count") and data.get("gpu_model"):
+        description_parts.append(f"{data['gpu_count']}x {data['gpu_model']}")
+    data["description"] = f"{data['family']} ({', '.join(description_parts)})"
     return data
 
 
@@ -360,52 +369,57 @@ def inventory_servers(vendor):
     servers = _client().get_server_plans()["plans"]["plan"]
     items = []
     for server in servers:
-        server_data = _parse_server_name(server["name"])
-        gpu_count = server.get("gpu_amount", 0)
-        gpu_fields = _parse_gpu_model(server.get("gpu_model"), gpu_count)
-        items.append(
-            {
-                "vendor_id": vendor.vendor_id,
-                "server_id": server["name"],
-                "name": server["name"],
-                "api_reference": server["name"],
-                "display_name": server["name"],
-                "description": server_data["description"],
-                "family": server_data["family"],
-                "vcpus": server["core_number"],
-                # https://upcloud.com/docs/products/cloud-servers/features/cloud-server-system/#virtualisation
-                "hypervisor": "KVM",
-                # no dedicated vCPUs in the public cloud offerings
-                "cpu_allocation": CpuAllocation.SHARED,
-                "cpu_cores": None,
-                "cpu_speed": None,
-                # no known ARM options
-                "cpu_architecture": CpuArchitecture.X86_64,
-                "cpu_manufacturer": None,
-                "cpu_family": None,
-                "cpu_model": None,
-                "cpu_flags": [],
-                "cpus": [],
-                "memory_amount": server["memory_amount"],
-                "memory_generation": None,
-                "memory_speed": None,
-                "memory_ecc": None,
-                "gpu_count": gpu_count,
-                **gpu_fields,
-                "gpus": [],  # TODO fill this array
-                "storage_size": server["storage_size"],
-                "storage_type": (StorageType.SSD if server["storage_tier"] else None),
-                "storages": [],
-                # TODO: have to implement manual mapping for network_speed related fields
-                "network_speed_baseline": None,
-                "network_speed_max": None,
-                "network_storage_speed_baseline": None,
-                "network_storage_speed_max": None,
-                "inbound_traffic": 0,
-                "outbound_traffic": server["public_traffic_out"],
-                "ipv4": 0 if server_data["family"] == "CLOUDNATIVE" else 1,
-            }
-        )
+        with sentry_capture_or_raise(vendor=vendor):
+            server_data = _parse_server_name(server["name"])
+            if server_data.get("spot"):
+                continue
+            gpu_count = server.get("gpu_amount", 0)
+            gpu_fields = _parse_gpu_model(server.get("gpu_model"), gpu_count)
+            items.append(
+                {
+                    "vendor_id": vendor.vendor_id,
+                    "server_id": server["name"],
+                    "name": server["name"],
+                    "api_reference": server["name"],
+                    "display_name": server["name"],
+                    "description": server_data["description"],
+                    "family": server_data["family"],
+                    "vcpus": server["core_number"],
+                    # https://upcloud.com/docs/products/cloud-servers/features/cloud-server-system/#virtualisation
+                    "hypervisor": "KVM",
+                    # no dedicated vCPUs in the public cloud offerings
+                    "cpu_allocation": CpuAllocation.SHARED,
+                    "cpu_cores": None,
+                    "cpu_speed": None,
+                    # no known ARM options
+                    "cpu_architecture": CpuArchitecture.X86_64,
+                    "cpu_manufacturer": None,
+                    "cpu_family": None,
+                    "cpu_model": None,
+                    "cpu_flags": [],
+                    "cpus": [],
+                    "memory_amount": server["memory_amount"],
+                    "memory_generation": None,
+                    "memory_speed": None,
+                    "memory_ecc": None,
+                    "gpu_count": gpu_count,
+                    **gpu_fields,
+                    "gpus": [],  # TODO fill this array
+                    "storage_size": server["storage_size"],
+                    "storage_type": (
+                        StorageType.SSD if server["storage_tier"] else None
+                    ),
+                    "storages": [],
+                    # TODO: have to implement manual mapping for network_speed related fields
+                    "network_speed_baseline": None,
+                    "network_speed_max": None,
+                    "network_storage_speed_baseline": None,
+                    "network_storage_speed_max": None,
+                    "inbound_traffic": 0,
+                    "outbound_traffic": server["public_traffic_out"],
+                    "ipv4": 0 if server_data["family"] == "CLOUDNATIVE" else 1,
+                }
+            )
     return items
 
 
@@ -417,6 +431,10 @@ def inventory_server_prices(vendor):
             if not k.startswith("server_plan"):
                 continue
             server_plan = k[len("server_plan_") :]
+            allocation = Allocation.ONDEMAND
+            if "SPOT" in server_plan:
+                allocation = Allocation.SPOT
+                server_plan = server_plan.replace("SPOT-", "")
             items.append(
                 {
                     "vendor_id": vendor.vendor_id,
@@ -424,7 +442,7 @@ def inventory_server_prices(vendor):
                     "zone_id": zone_prices["name"],
                     "server_id": server_plan,
                     "operating_system": "Linux",
-                    "allocation": Allocation.ONDEMAND,
+                    "allocation": allocation,
                     "unit": PriceUnit.HOUR,
                     "price": v["price"] / 100,
                     "price_upfront": 0,
