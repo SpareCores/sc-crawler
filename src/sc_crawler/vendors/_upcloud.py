@@ -99,8 +99,6 @@ def _parse_server_name(name):
     description_parts = [f"{data['vcpus']} vCPUs", f"{data['memory']} GiB RAM"]
     if data.get("gpu_count") and data.get("gpu_model"):
         description_parts.append(f"{data['gpu_count']}x {data['gpu_model']}")
-    if data.get("storage_suffix"):
-        description_parts.append(f"{data['storage_suffix']} GB storage")
     data["description"] = f"{data['family']} ({', '.join(description_parts)})"
     return data
 
