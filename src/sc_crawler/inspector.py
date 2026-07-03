@@ -754,6 +754,50 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
     except Exception as e:
         _log_cannot_load_benchmarks(server, framework, e, True)
 
+    for task_name in (
+        "hammerdb_postgres_multi_oltp_mixed_c100",
+        "hammerdb_postgres_multi_oltp_mixed_c30",
+        "benchbase_postgres_multi_read_heavy_c100",
+    ):
+        try:
+            task_dir = path.join(_server_path(server), task_name)
+            meta_path = path.join(task_dir, "meta.json")
+            metrics_path = path.join(task_dir, "metrics.json")
+            if not path.isfile(metrics_path) or not path.isfile(meta_path):
+                continue
+            with open(meta_path, "r") as fp:
+                meta = json.load(fp)
+            if meta.get("exit_code") != 0:
+                continue
+            with open(metrics_path, "r") as fp:
+                metrics = json.load(fp)
+            family = (
+                "hammerdb_postgres_multi"
+                if task_name.startswith("hammerdb_postgres_multi")
+                else "benchbase_postgres_multi"
+            )
+            measurement = "nopm" if family == "hammerdb_postgres_multi" else "tpm"
+            benchmarks.append(
+                {
+                    **_benchmark_metafields(
+                        server,
+                        framework=family,
+                        benchmark_id=f"{family}:{measurement}",
+                    ),
+                    "config": {
+                        "topology": metrics.get("topology", "multi_vm"),
+                        "cache_tier": metrics.get("cache_tier", task_name.rsplit("_", 1)[-1]),
+                        "cache_ratio": metrics.get("cache_ratio"),
+                        "peak_concurrency": metrics.get("peak_concurrency"),
+                        "client_rtt_ms": metrics.get("client_rtt_ms"),
+                        "workload": metrics.get("workload"),
+                    },
+                    "score": float(metrics.get("score", 0)),
+                }
+            )
+        except Exception as e:
+            _log_cannot_load_benchmarks(server, task_name, e, True)
+
     return benchmarks
 
 
