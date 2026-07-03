@@ -762,14 +762,14 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
         try:
             task_dir = path.join(_server_path(server), task_name)
             meta_path = path.join(task_dir, "meta.json")
-            metrics_path = path.join(task_dir, "metrics.json")
-            if not path.isfile(metrics_path) or not path.isfile(meta_path):
+            stdout_path = path.join(task_dir, "stdout")
+            if not path.isfile(stdout_path) or not path.isfile(meta_path):
                 continue
             with open(meta_path, "r") as fp:
                 meta = json.load(fp)
             if meta.get("exit_code") != 0:
                 continue
-            with open(metrics_path, "r") as fp:
+            with open(stdout_path, "r") as fp:
                 metrics = json.load(fp)
             family = (
                 "hammerdb_postgres_multi"
