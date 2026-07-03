@@ -757,7 +757,9 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
     for task_name in (
         "hammerdb_postgres_multi_oltp_mixed_c100",
         "hammerdb_postgres_multi_oltp_mixed_c30",
+        "hammerdb_postgres_multi_olap_c100",
         "benchbase_postgres_multi_read_heavy_c100",
+        "benchbase_postgres_multi_crud_simple_c100",
     ):
         try:
             task_dir = path.join(_server_path(server), task_name)
@@ -776,7 +778,12 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                 if task_name.startswith("hammerdb_postgres_multi")
                 else "benchbase_postgres_multi"
             )
-            measurement = "nopm" if family == "hammerdb_postgres_multi" else "tpm"
+            workload = metrics.get("workload", "")
+            score_unit = str(metrics.get("score_unit", "")).lower()
+            if family == "hammerdb_postgres_multi":
+                measurement = "qphh" if workload == "tpch" or score_unit == "qphh" else "nopm"
+            else:
+                measurement = "tpm"
             benchmarks.append(
                 {
                     **_benchmark_metafields(
