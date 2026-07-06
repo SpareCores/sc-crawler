@@ -132,19 +132,19 @@ WORKLOADS: dict[str, Workload] = {
             BenchmarkEntry(
                 benchmark_id="static_web:rps-extrapolated",
                 weight=0.30,
-                label="Static web RPS (1 kB, 8 conn/vCPU)",
+                label="Static web RPS (1 KiB, 8 conn/vCPU)",
                 config_filter={"size": "1k", "connections_per_vcpus": 8.0},
             ),
             BenchmarkEntry(
                 benchmark_id="static_web:rps-extrapolated",
                 weight=0.20,
-                label="Static web RPS (64 kB, 8 conn/vCPU)",
+                label="Static web RPS (64 KiB, 8 conn/vCPU)",
                 config_filter={"size": "64k", "connections_per_vcpus": 8.0},
             ),
             BenchmarkEntry(
                 benchmark_id="static_web:throughput-extrapolated",
                 weight=0.20,
-                label="Static web throughput (256 kB, 8 conn/vCPU)",
+                label="Static web throughput (256 KiB, 8 conn/vCPU)",
                 config_filter={"size": "256k", "connections_per_vcpus": 8.0},
             ),
             # SSL termination
