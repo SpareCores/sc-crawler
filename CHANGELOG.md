@@ -1,3 +1,9 @@
+## v0.8.x (DEVELOPMENT)
+
+Fix(es):
+
+- Check region availability for `UpCloud` GPU and GPU spot instance prices before adding them.
+
 ## v0.8.2 (June 30, 2026)
 
 Maintenance update:
