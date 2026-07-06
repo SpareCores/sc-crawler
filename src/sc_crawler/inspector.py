@@ -782,7 +782,9 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
             workload = metrics.get("workload", "")
             score_unit = str(metrics.get("score_unit", "")).lower()
             if family == "hammerdb_postgres_multi":
-                measurement = "qphh" if workload == "tpch" or score_unit == "qphh" else "nopm"
+                measurement = (
+                    "qphh" if workload == "tpch" or score_unit == "qphh" else "nopm"
+                )
             else:
                 measurement = "tpm"
             benchmarks.append(
@@ -794,7 +796,9 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                     ),
                     "config": {
                         "topology": metrics.get("topology", "multi_vm"),
-                        "cache_tier": metrics.get("cache_tier", task_name.rsplit("_", 1)[-1]),
+                        "cache_tier": metrics.get(
+                            "cache_tier", task_name.rsplit("_", 1)[-1]
+                        ),
                         "cache_ratio": metrics.get("cache_ratio"),
                         "durability": metrics.get("durability", "durable"),
                         "peak_concurrency": metrics.get("peak_concurrency"),
