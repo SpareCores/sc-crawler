@@ -803,6 +803,7 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                         "durability": metrics.get("durability", "durable"),
                         "peak_concurrency": metrics.get("peak_concurrency"),
                         "client_rtt_ms": metrics.get("client_rtt_ms"),
+                        "latency_ms": metrics.get("latency_ms"),
                         "workload": metrics.get("workload"),
                     },
                     "score": float(metrics.get("score", 0)),
