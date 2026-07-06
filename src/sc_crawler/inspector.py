@@ -757,6 +757,7 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
     for task_name in (
         "hammerdb_postgres_multi_oltp_mixed_c100",
         "hammerdb_postgres_multi_oltp_mixed_c30",
+        "hammerdb_postgres_multi_oltp_mixed_durable_c100",
         "hammerdb_postgres_multi_olap_c100",
         "benchbase_postgres_multi_read_heavy_c100",
         "benchbase_postgres_multi_crud_simple_c100",
@@ -795,6 +796,7 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                         "topology": metrics.get("topology", "multi_vm"),
                         "cache_tier": metrics.get("cache_tier", task_name.rsplit("_", 1)[-1]),
                         "cache_ratio": metrics.get("cache_ratio"),
+                        "durability": metrics.get("durability", "durable"),
                         "peak_concurrency": metrics.get("peak_concurrency"),
                         "client_rtt_ms": metrics.get("client_rtt_ms"),
                         "workload": metrics.get("workload"),
