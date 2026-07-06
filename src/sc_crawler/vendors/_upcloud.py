@@ -432,6 +432,9 @@ def inventory_server_prices(vendor):
                 continue
             server_plan = k[len("server_plan_") :]
             allocation = Allocation.ONDEMAND
+            # TODO: remove this once GPU servers are available in all zones
+            if server_plan.startswith("GPU") and zone_prices["name"] != "fi-hel2":
+                continue
             if "SPOT" in server_plan:
                 allocation = Allocation.SPOT
                 server_plan = server_plan.replace("SPOT-", "")
@@ -462,6 +465,7 @@ def inventory_server_prices(vendor):
 
 
 def inventory_server_prices_spot(vendor):
+    # Spot prices handled by inventory_server_prices()
     return []
 
 
