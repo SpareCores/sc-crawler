@@ -431,13 +431,9 @@ def inventory_server_prices(vendor):
             if not k.startswith("server_plan"):
                 continue
             server_plan = k[len("server_plan_") :]
-            allocation = Allocation.ONDEMAND
             # TODO: remove this once GPU servers are available in all zones
             if server_plan.startswith("GPU") and zone_prices["name"] != "fi-hel2":
                 continue
-            if "SPOT" in server_plan:
-                allocation = Allocation.SPOT
-                server_plan = server_plan.replace("SPOT-", "")
             items.append(
                 {
                     "vendor_id": vendor.vendor_id,
@@ -445,7 +441,7 @@ def inventory_server_prices(vendor):
                     "zone_id": zone_prices["name"],
                     "server_id": server_plan,
                     "operating_system": "Linux",
-                    "allocation": allocation,
+                    "allocation": Allocation.ONDEMAND,
                     "unit": PriceUnit.HOUR,
                     "price": v["price"] / 100,
                     "price_upfront": 0,
@@ -465,8 +461,38 @@ def inventory_server_prices(vendor):
 
 
 def inventory_server_prices_spot(vendor):
-    # Spot prices handled by inventory_server_prices()
-    return []
+    items = []
+    prices = _client().get_prices()
+    for zone_prices in prices["prices"]["zone"]:
+        for k, v in zone_prices.items():
+            if not k.startswith("server_plan"):
+                continue
+            server_plan = k[len("server_plan_") :]
+            if "SPOT" not in server_plan:
+                continue
+            # TODO: remove this once GPU servers are available in all zones
+            if server_plan.startswith("GPU") and zone_prices["name"] != "fi-hel2":
+                continue
+            server_plan = server_plan.replace("SPOT-", "")
+            items.append(
+                {
+                    "vendor_id": vendor.vendor_id,
+                    "region_id": zone_prices["name"],
+                    "zone_id": zone_prices["name"],
+                    "server_id": server_plan,
+                    "operating_system": "Linux",
+                    "allocation": Allocation.SPOT,
+                    "unit": PriceUnit.HOUR,
+                    "price": v["price"] / 100,
+                    "price_upfront": 0,
+                    "price_tiered": [
+                        {"lower": 0, "upper": 672, "price": v["price"] / 100},
+                        {"lower": 673, "upper": "Infinity", "price": 0},
+                    ],
+                    "currency": "EUR",
+                }
+            )
+    return items
 
 
 def inventory_storages(vendor):
