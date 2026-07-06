@@ -2,6 +2,7 @@ from functools import cache
 from os import environ
 from re import compile as recompile
 
+from cachier import cachier
 from upcloud_api import CloudManager
 
 from ..inspector import _standardize_gpu_family, _standardize_gpu_model
@@ -15,7 +16,7 @@ from ..table_fields import (
     StorageType,
     TrafficDirection,
 )
-from ..utils import _MIB_PER_GIB
+from ..utils import _MIB_PER_GIB, jsoned_hash
 
 # ##############################################################################
 # Cached client wrappers
@@ -35,6 +36,29 @@ def _client() -> CloudManager:
     manager = CloudManager(username, password)
     manager.authenticate()
     return manager
+
+
+@cachier(hash_func=jsoned_hash, separate_files=True)
+def _get_device_region_availability(region_id: str, device_type: str = "gpu") -> dict:
+    """Return available passthrough devices (GET /1.3/device/availability).
+
+    See https://upcloudltd.github.io/upcloud-openapi-spec/api/device#get-available-passthrough-devices
+    """
+    params: dict[str, str] = {"type": device_type}
+    params["zone"] = region_id
+    return _client().api.get_request("/device/availability", params=params)
+
+
+_GPU_REGION_AVAILABILITY = {}
+
+
+def _get_gpu_region_availability(region_id: str) -> dict[str, dict]:
+    if region_id not in _GPU_REGION_AVAILABILITY:
+        availability = _get_device_region_availability(region_id)
+        gpu_device_amounts = availability.get(region_id, {}).get("gpu_plans")
+        if gpu_device_amounts:
+            _GPU_REGION_AVAILABILITY[region_id] = availability.get(region_id)
+    return _GPU_REGION_AVAILABILITY.get(region_id, {}).get("gpu_plans", {})
 
 
 UPCLOUD_STORAGES = [
@@ -427,18 +451,23 @@ def inventory_server_prices(vendor):
     items = []
     prices = _client().get_prices()
     for zone_prices in prices["prices"]["zone"]:
+        region_id = zone_prices["name"]
+        gpu_region_availability = _get_gpu_region_availability(region_id)
         for k, v in zone_prices.items():
             if not k.startswith("server_plan"):
                 continue
             server_plan = k[len("server_plan_") :]
-            # TODO: remove this once GPU servers are available in all zones
-            if server_plan.startswith("GPU") and zone_prices["name"] != "fi-hel2":
+            if "SPOT" in server_plan:
                 continue
+            if server_plan.startswith("GPU"):
+                amount = gpu_region_availability.get(server_plan, {}).get("amount", 0)
+                if amount == 0:
+                    continue
             items.append(
                 {
                     "vendor_id": vendor.vendor_id,
-                    "region_id": zone_prices["name"],
-                    "zone_id": zone_prices["name"],
+                    "region_id": region_id,
+                    "zone_id": region_id,
                     "server_id": server_plan,
                     "operating_system": "Linux",
                     "allocation": Allocation.ONDEMAND,
@@ -464,21 +493,24 @@ def inventory_server_prices_spot(vendor):
     items = []
     prices = _client().get_prices()
     for zone_prices in prices["prices"]["zone"]:
+        region_id = zone_prices["name"]
+        gpu_region_availability = _get_gpu_region_availability(region_id)
         for k, v in zone_prices.items():
             if not k.startswith("server_plan"):
                 continue
             server_plan = k[len("server_plan_") :]
             if "SPOT" not in server_plan:
                 continue
-            # TODO: remove this once GPU servers are available in all zones
-            if server_plan.startswith("GPU") and zone_prices["name"] != "fi-hel2":
-                continue
+            if server_plan.startswith("GPU"):
+                amount = gpu_region_availability.get(server_plan, {}).get("amount", 0)
+                if amount == 0:
+                    continue
             server_plan = server_plan.replace("SPOT-", "")
             items.append(
                 {
                     "vendor_id": vendor.vendor_id,
-                    "region_id": zone_prices["name"],
-                    "zone_id": zone_prices["name"],
+                    "region_id": region_id,
+                    "zone_id": region_id,
                     "server_id": server_plan,
                     "operating_system": "Linux",
                     "allocation": Allocation.SPOT,
