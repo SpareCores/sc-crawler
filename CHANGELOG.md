@@ -2,6 +2,7 @@
 
 Fix(es):
 
+- Check region availability for `UpCloud` GPU and GPU spot instance prices before adding them.
 - Change the `static_web` benchmark measurement unit from kB to KiB.
 
 ## v0.8.2 (June 30, 2026)
