@@ -49,16 +49,12 @@ def _get_device_region_availability(region_id: str, device_type: str = "gpu") ->
     return _client().api.get_request("/device/availability", params=params)
 
 
-_GPU_REGION_AVAILABILITY = {}
-
-
 def _get_gpu_region_availability(region_id: str) -> dict[str, dict]:
-    if region_id not in _GPU_REGION_AVAILABILITY:
-        availability = _get_device_region_availability(region_id)
-        gpu_device_amounts = availability.get(region_id, {}).get("gpu_plans")
-        if gpu_device_amounts:
-            _GPU_REGION_AVAILABILITY[region_id] = availability.get(region_id)
-    return _GPU_REGION_AVAILABILITY.get(region_id, {}).get("gpu_plans", {})
+    return (
+        _get_device_region_availability(region_id)
+        .get(region_id, {})
+        .get("gpu_plans", {})
+    )
 
 
 UPCLOUD_STORAGES = [
@@ -505,6 +501,8 @@ def inventory_server_prices_spot(vendor):
                 amount = gpu_region_availability.get(server_plan, {}).get("amount", 0)
                 if amount == 0:
                     continue
+                else:
+                    print(server_plan, amount)
             server_plan = server_plan.replace("SPOT-", "")
             items.append(
                 {
@@ -517,10 +515,6 @@ def inventory_server_prices_spot(vendor):
                     "unit": PriceUnit.HOUR,
                     "price": v["price"] / 100,
                     "price_upfront": 0,
-                    "price_tiered": [
-                        {"lower": 0, "upper": 672, "price": v["price"] / 100},
-                        {"lower": 673, "upper": "Infinity", "price": 0},
-                    ],
                     "currency": "EUR",
                 }
             )
