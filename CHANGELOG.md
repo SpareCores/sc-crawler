@@ -1,3 +1,9 @@
+## v0.8.x (DEVELOPMENT)
+
+Fix(es):
+
+- Change the `static_web` benchmark measurement unit from kB to KiB.
+
 ## v0.8.2 (June 30, 2026)
 
 Maintenance update:
