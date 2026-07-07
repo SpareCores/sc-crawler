@@ -501,8 +501,6 @@ def inventory_server_prices_spot(vendor):
                 amount = gpu_region_availability.get(server_plan, {}).get("amount", 0)
                 if amount == 0:
                     continue
-                else:
-                    print(server_plan, amount)
             server_plan = server_plan.replace("SPOT-", "")
             items.append(
                 {
