@@ -403,7 +403,11 @@ def inventory_servers(vendor):
         cpu_model = _standardize_cpu_model(cpu_model_raw)
         vcpus = server.get("vcpu_count") or server.get("cpu_threads")
         cpu_cores = server.get("cpu_count")
-        cpu_allocation = CpuAllocation.SHARED if vcpus else CpuAllocation.DEDICATED
+        cpu_allocation = (
+            CpuAllocation.SHARED
+            if server.get("vcpu_count")
+            else CpuAllocation.DEDICATED
+        )
         cpu_architecture = (
             CpuArchitecture.ARM64 if cpu_family == "Grace" else CpuArchitecture.X86_64
         )
