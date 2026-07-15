@@ -24,6 +24,9 @@ from .table_fields import (
     Cpu,
     CpuAllocation,
     CpuArchitecture,
+    DatabaseEngine,
+    DatabaseStorageScope,
+    DatabaseSupportLevel,
     DdrGeneration,
     Disk,
     Gpu,
@@ -255,6 +258,18 @@ class HasStorageIdPK(ScModel):
     )
 
 
+class HasDatabaseIdPK(ScModel):
+    database_id: str = Field(
+        primary_key=True, description="Unique identifier, as called at the Vendor."
+    )
+
+
+class HasDatabaseStorageIdPK(ScModel):
+    database_storage_id: str = Field(
+        primary_key=True, description="Unique identifier, as called at the Vendor."
+    )
+
+
 class HasServerIdPK(ScModel):
     server_id: str = Field(
         primary_key=True, description="Unique identifier, as called at the Vendor."
@@ -276,7 +291,9 @@ class HasCategory(ScModel):
 
 
 class HasDescription(ScModel):
-    description: Optional[str] = Field(description="Short description.")
+    description: Optional[str] = Field(
+        default=None, description="Short description."
+    )
 
 
 class HasApiReference(ScModel):
@@ -325,6 +342,20 @@ class HasStoragePK(ScModel):
     storage_id: str = Field(
         primary_key=True,
         description="Reference to the Storage.",
+    )
+
+
+class HasDatabasePK(ScModel):
+    database_id: str = Field(
+        primary_key=True,
+        description="Reference to the Database.",
+    )
+
+
+class HasDatabaseStoragePK(ScModel):
+    database_storage_id: str = Field(
+        primary_key=True,
+        description="Reference to the DatabaseStorage.",
     )
 
 
@@ -857,6 +888,160 @@ class ServerPriceBase(
 
 
 class StoragePriceBase(HasPriceFields, HasStoragePK, HasRegionPK, HasVendorPKFK):
+    pass
+
+
+class DatabaseFields(
+    HasDescription,
+    HasDisplayName,
+    HasApiReference,
+    HasName,
+    HasDatabaseIdPK,
+    HasVendorPKFK,
+):
+    server_id: Optional[str] = Field(
+        default=None,
+        description="Optional reference to a related Server SKU.",
+    )
+    engine: DatabaseEngine = Field(description="Managed database engine.")
+    engine_versions: List[str] = Field(
+        default=[],
+        sa_type=JSON,
+        description="Supported major engine versions merged onto the SKU row.",
+    )
+    family: Optional[str] = Field(
+        default=None,
+        description="Database series or plan family slug.",
+    )
+    vcpus: Optional[int] = Field(
+        default=None,
+        description="Number of virtual CPUs (vCPU) of the database SKU.",
+    )
+    memory_amount: Optional[int] = Field(
+        default=None,
+        description="RAM amount (MiB) reported by the vendor.",
+    )
+    storage_size_min: Optional[int] = Field(
+        default=None,
+        description="Minimum bundled or provisioned storage size (GB).",
+    )
+    storage_size_max: Optional[int] = Field(
+        default=None,
+        description="Maximum bundled or provisioned storage size (GB).",
+    )
+    storage_type: Optional[StorageType] = Field(
+        default=None,
+        description="Bundled primary disk type when storage is included in the SKU.",
+    )
+    ha_supported: Optional[bool] = Field(
+        default=None,
+        description="If high availability is supported for the SKU.",
+    )
+    storage_autoscaling: Optional[bool] = Field(
+        default=None,
+        description="If storage can be expanded beyond the bundled minimum.",
+    )
+    scheduled_backups: Optional[bool] = Field(
+        default=None,
+        description="If scheduled/automated snapshot backups are supported.",
+    )
+    continuous_backups: Optional[int] = Field(
+        default=None,
+        description="Point-in-time recovery retention in days.",
+    )
+    engine_auto_upgrade: Optional[bool] = Field(
+        default=None,
+        description="If automatic engine version upgrades are supported.",
+    )
+    autotuning: Optional[bool] = Field(
+        default=None,
+        description="If vendor autotuning is available.",
+    )
+    custom_config: Optional[bool] = Field(
+        default=None,
+        description="If custom configuration parameters are supported.",
+    )
+    custom_extensions: Optional[bool] = Field(
+        default=None,
+        description="If custom extensions are supported.",
+    )
+    support_level: Optional[DatabaseSupportLevel] = Field(
+        default=None,
+        description="Vendor support tier for the SKU.",
+    )
+    sla: Optional[float] = Field(
+        default=None,
+        description="Service level agreement as a percentage, e.g. 99.95.",
+    )
+
+    @field_validator("engine_versions", mode="before")
+    @classmethod
+    def _deserialize_engine_versions(cls, value):
+        if value is None:
+            return []
+        return [str(item) for item in value]
+
+    @reconstructor
+    def _reconstruct_engine_versions(self):
+        if self.engine_versions is None:
+            self.engine_versions = []
+        else:
+            self.engine_versions = [str(item) for item in self.engine_versions]
+
+
+class DatabaseBase(MetaColumns, DatabaseFields):
+    pass
+
+
+class DatabasePriceFields(ScModel):
+    allocation: Allocation = Field(
+        default=Allocation.ONDEMAND,
+        description="Allocation method, e.g. on-demand or spot.",
+        primary_key=True,
+    )
+
+
+class DatabasePriceBase(
+    HasPriceFields,
+    DatabasePriceFields,
+    HasDatabasePK,
+    HasRegionPK,
+    HasVendorPKFK,
+):
+    pass
+
+
+class DatabaseStorageFields(
+    HasDescription, HasName, HasDatabaseStorageIdPK, HasVendorPKFK
+):
+    scope: DatabaseStorageScope = Field(
+        description="Scope of the storage product, e.g. data or backup."
+    )
+    redundancy: Optional[str] = Field(
+        default=None,
+        description="Redundancy model, e.g. LRS or GRS.",
+    )
+    min_size: Optional[int] = Field(
+        default=None, description="Minimum required size (GB)."
+    )
+    max_size: Optional[int] = Field(
+        default=None, description="Maximum possible size (GB)."
+    )
+    max_iops: Optional[int] = Field(
+        default=None, description="Maximum Input/Output Operations Per Second."
+    )
+    max_throughput: Optional[int] = Field(
+        default=None, description="Maximum Throughput (MB/s)."
+    )
+
+
+class DatabaseStorageBase(MetaColumns, DatabaseStorageFields):
+    pass
+
+
+class DatabaseStoragePriceBase(
+    HasPriceFields, HasDatabaseStoragePK, HasRegionPK, HasVendorPKFK
+):
     pass
 
 

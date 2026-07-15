@@ -109,3 +109,40 @@ def get_region_by_id(region_id: str, vendor: Vendor) -> Optional[Region]:
         ),
         None,
     )
+
+
+def hourly_price_tiered_monthly_cap(
+    hourly_price: float, monthly_price: float
+) -> List[dict]:
+    """Build price_tiered for hourly billing with a monthly cap (repo convention)."""
+    if hourly_price <= 0 or monthly_price <= 0:
+        return []
+    monthly_cap = int(monthly_price / hourly_price)
+    return [
+        {"lower": 0, "upper": monthly_cap, "price": hourly_price},
+        {"lower": monthly_cap + 1, "upper": "Infinity", "price": 0},
+    ]
+
+
+def merge_database_catalog_rows(rows: List[dict]) -> List[dict]:
+    """Collapse offering rows to one dict per ``database_id`` with merged versions."""
+    merged: dict[str, dict] = {}
+    for row in rows:
+        database_id = row["database_id"]
+        if database_id not in merged:
+            merged[database_id] = row.copy()
+            continue
+        existing = merged[database_id]
+        versions = set(existing.get("engine_versions") or [])
+        versions.update(row.get("engine_versions") or [])
+        existing["engine_versions"] = sorted(versions)
+        for flag in ("ha_supported", "storage_autoscaling", "scheduled_backups"):
+            if row.get(flag):
+                existing[flag] = True
+        row_cont = row.get("continuous_backups")
+        if row_cont is not None and (
+            existing.get("continuous_backups") is None
+            or row_cont > existing.get("continuous_backups", 0)
+        ):
+            existing["continuous_backups"] = row_cont
+    return list(merged.values())

@@ -25,6 +25,10 @@ from .table_bases import (
     BenchmarkScoreBase,
     ComplianceFrameworkBase,
     CountryBase,
+    DatabaseBase,
+    DatabasePriceBase,
+    DatabaseStorageBase,
+    DatabaseStoragePriceBase,
     Ipv4PriceBase,
     RegionBase,
     ScModel,
@@ -106,6 +110,18 @@ class Vendor(VendorBase, table=True):
     storage_prices: List["StoragePrice"] = Relationship(
         back_populates="vendor", sa_relationship_kwargs={"viewonly": True}
     )
+    databases: List["Database"] = Relationship(
+        back_populates="vendor", sa_relationship_kwargs={"viewonly": True}
+    )
+    database_prices: List["DatabasePrice"] = Relationship(
+        back_populates="vendor", sa_relationship_kwargs={"viewonly": True}
+    )
+    database_storages: List["DatabaseStorage"] = Relationship(
+        back_populates="vendor", sa_relationship_kwargs={"viewonly": True}
+    )
+    database_storage_prices: List["DatabaseStoragePrice"] = Relationship(
+        back_populates="vendor", sa_relationship_kwargs={"viewonly": True}
+    )
     benchmark_scores: List["BenchmarkScore"] = Relationship(
         back_populates="vendor", sa_relationship_kwargs={"viewonly": True}
     )
@@ -155,6 +171,10 @@ class Vendor(VendorBase, table=True):
                 "inventory_server_prices_spot",
                 "inventory_storages",
                 "inventory_storage_prices",
+                "inventory_databases",
+                "inventory_database_prices",
+                "inventory_database_storages",
+                "inventory_database_storage_prices",
                 "inventory_traffic_prices",
                 "inventory_ipv4_prices",
             ]:
@@ -372,6 +392,36 @@ class Vendor(VendorBase, table=True):
             Ipv4Price, self._get_methods().inventory_ipv4_prices
         )
 
+    @log_start_end
+    def inventory_databases(self):
+        """Get the vendor's all managed database SKUs."""
+        self._inventory(Database, self._get_methods().inventory_databases)
+
+    @log_start_end
+    def inventory_database_prices(self):
+        """Get the current prices of all managed database SKUs."""
+        self._inventory_price_rounding(
+            DatabasePrice,
+            self._get_methods().inventory_database_prices,
+            DatabasePrice.allocation == Allocation.ONDEMAND,
+            prefix="ondemand",
+        )
+
+    @log_start_end
+    def inventory_database_storages(self):
+        """Get the vendor's all managed database storage products."""
+        self._inventory(
+            DatabaseStorage, self._get_methods().inventory_database_storages
+        )
+
+    @log_start_end
+    def inventory_database_storage_prices(self):
+        """Get the current prices of all managed database storage products."""
+        self._inventory_price_rounding(
+            DatabaseStoragePrice,
+            self._get_methods().inventory_database_storage_prices,
+        )
+
 
 class VendorComplianceLink(VendorComplianceLinkBase, table=True):
     """List of known Compliance Frameworks paired with vendors."""
@@ -401,6 +451,12 @@ class Region(RegionBase, table=True):
         back_populates="region", sa_relationship_kwargs={"viewonly": True}
     )
     storage_prices: List["StoragePrice"] = Relationship(
+        back_populates="region", sa_relationship_kwargs={"viewonly": True}
+    )
+    database_prices: List["DatabasePrice"] = Relationship(
+        back_populates="region", sa_relationship_kwargs={"viewonly": True}
+    )
+    database_storage_prices: List["DatabaseStoragePrice"] = Relationship(
         back_populates="region", sa_relationship_kwargs={"viewonly": True}
     )
 
@@ -552,6 +608,99 @@ class StoragePrice(StoragePriceBase, table=True):
     )
 
 
+class Database(DatabaseBase, table=True):
+    """Managed database SKUs."""
+
+    vendor: Vendor = Relationship(back_populates="databases")
+    prices: List["DatabasePrice"] = Relationship(
+        back_populates="database", sa_relationship_kwargs={"viewonly": True}
+    )
+
+
+class DatabasePrice(DatabasePriceBase, table=True):
+    """Managed database SKU prices per Region."""
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["vendor_id", "region_id"],
+            ["region.vendor_id", "region.region_id"],
+        ),
+        ForeignKeyConstraint(
+            ["vendor_id", "database_id"],
+            ["database.vendor_id", "database.database_id"],
+        ),
+    )
+    vendor: Vendor = Relationship(back_populates="database_prices")
+    region: Region = Relationship(
+        back_populates="database_prices",
+        sa_relationship_kwargs={
+            "primaryjoin": (
+                "and_(Region.region_id == foreign(DatabasePrice.region_id), "
+                "Region.vendor_id == foreign(DatabasePrice.vendor_id))"
+            ),
+            "overlaps": "vendor,database",
+        },
+    )
+    database: Database = Relationship(
+        back_populates="prices",
+        sa_relationship_kwargs={
+            "primaryjoin": (
+                "and_(Database.database_id == foreign(DatabasePrice.database_id), "
+                "Database.vendor_id == foreign(DatabasePrice.vendor_id))"
+            ),
+            "overlaps": "vendor,region",
+        },
+    )
+
+
+class DatabaseStorage(DatabaseStorageBase, table=True):
+    """Managed database storage products."""
+
+    vendor: Vendor = Relationship(back_populates="database_storages")
+    prices: List["DatabaseStoragePrice"] = Relationship(
+        back_populates="database_storage",
+        sa_relationship_kwargs={"viewonly": True},
+    )
+
+
+class DatabaseStoragePrice(DatabaseStoragePriceBase, table=True):
+    """Managed database storage prices in each Region."""
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["vendor_id", "region_id"],
+            ["region.vendor_id", "region.region_id"],
+        ),
+        ForeignKeyConstraint(
+            ["vendor_id", "database_storage_id"],
+            ["database_storage.vendor_id", "database_storage.database_storage_id"],
+        ),
+    )
+    vendor: Vendor = Relationship(back_populates="database_storage_prices")
+    region: Region = Relationship(
+        back_populates="database_storage_prices",
+        sa_relationship_kwargs={
+            "primaryjoin": (
+                "and_(Region.region_id == foreign(DatabaseStoragePrice.region_id),"
+                "Region.vendor_id == foreign(DatabaseStoragePrice.vendor_id))"
+            ),
+            "overlaps": "vendor,database_storage",
+        },
+    )
+    database_storage: DatabaseStorage = Relationship(
+        back_populates="prices",
+        sa_relationship_kwargs={
+            "primaryjoin": (
+                "and_(DatabaseStorage.database_storage_id == "
+                "foreign(DatabaseStoragePrice.database_storage_id), "
+                "DatabaseStorage.vendor_id == "
+                "foreign(DatabaseStoragePrice.vendor_id))"
+            ),
+            "overlaps": "vendor,region",
+        },
+    )
+
+
 class TrafficPrice(TrafficPriceBase, table=True):
     """Extra Traffic prices in each Region."""
 
@@ -635,6 +784,8 @@ Region.model_rebuild()
 Zone.model_rebuild()
 Storage.model_rebuild()
 Server.model_rebuild()
+Database.model_rebuild()
+DatabaseStorage.model_rebuild()
 
 
 def is_table(table):

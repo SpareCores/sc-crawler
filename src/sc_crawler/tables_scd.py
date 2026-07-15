@@ -10,6 +10,10 @@ from .table_bases import (
     BenchmarkScoreBase,
     ComplianceFrameworkBase,
     CountryBase,
+    DatabaseBase,
+    DatabasePriceBase,
+    DatabaseStorageBase,
+    DatabaseStoragePriceBase,
     Ipv4PriceBase,
     RegionBase,
     ScModel,
@@ -141,6 +145,42 @@ class ServerDescriptionScd(Scd, ServerDescriptionBase, table=True):
 
 class StoragePriceScd(Scd, StoragePriceBase, table=True):
     """SCD version of .tables.StoragePrice."""
+
+    vendor_id: str = Field(
+        primary_key=True,
+        description="Reference to the Vendor.",
+    )
+
+
+class DatabaseScd(Scd, DatabaseBase, table=True):
+    """SCD version of .tables.Database."""
+
+    vendor_id: str = Field(
+        primary_key=True,
+        description="Reference to the Vendor.",
+    )
+
+
+class DatabasePriceScd(Scd, DatabasePriceBase, table=True):
+    """SCD version of .tables.DatabasePrice."""
+
+    vendor_id: str = Field(
+        primary_key=True,
+        description="Reference to the Vendor.",
+    )
+
+
+class DatabaseStorageScd(Scd, DatabaseStorageBase, table=True):
+    """SCD version of .tables.DatabaseStorage."""
+
+    vendor_id: str = Field(
+        primary_key=True,
+        description="Reference to the Vendor.",
+    )
+
+
+class DatabaseStoragePriceScd(Scd, DatabaseStoragePriceBase, table=True):
+    """SCD version of .tables.DatabaseStoragePrice."""
 
     vendor_id: str = Field(
         primary_key=True,
