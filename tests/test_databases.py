@@ -1,5 +1,3 @@
-import json
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -17,6 +15,29 @@ from sc_crawler.vendors._gcp import (
     inventory_database_prices,
     inventory_databases,
 )
+
+
+def _gcp_pg_sku(description: str, *, regions: list[str], units: int, nanos: int):
+    return SimpleNamespace(
+        description=description,
+        service_regions=regions,
+        pricing_info=[
+            SimpleNamespace(
+                pricing_expression=SimpleNamespace(
+                    tiered_rates=[
+                        SimpleNamespace(
+                            unit_price=SimpleNamespace(
+                                units=units,
+                                nanos=nanos,
+                                currency_code="USD",
+                            )
+                        )
+                    ],
+                    usage_unit="h",
+                )
+            )
+        ],
+    )
 
 
 def test_pg_database_regions_filters_unsupported_locations():
@@ -57,19 +78,30 @@ def test_pg_database_regions_falls_back_when_provider_missing():
 
 
 def test_pg_lookup_retail_price_uses_capability_database_id():
-    fixture = Path(
-        "/Users/sacrun/Projects/sc-scratch/attila/managed_dbs/vendor_data/azure/"
-        "centralus/GetRetailPrices.json"
-    )
-    if not fixture.exists():
-        return
-    with fixture.open() as handle:
-        items = json.load(handle)["Items"]
-    prices_by_arm = {}
-    for item in items:
-        arm = item.get("armSkuName")
-        if arm:
-            prices_by_arm.setdefault(arm, []).append(item)
+    prices_by_arm = {
+        "B1MS": [
+            {
+                "armSkuName": "B1MS",
+                "productName": (
+                    "Azure Database for PostgreSQL Flexible Server "
+                    "Burstable BS Series Compute"
+                ),
+                "meterName": "B1MS",
+                "retailPrice": "0.018",
+            }
+        ],
+        "Standard_D16ads_v5": [
+            {
+                "armSkuName": "Standard_D16ads_v5",
+                "productName": (
+                    "Azure Database for PostgreSQL Flexible Server "
+                    "General Purpose AMD Dadsv5 Series Compute"
+                ),
+                "meterName": "D16ads v5",
+                "retailPrice": "1.008",
+            }
+        ],
+    }
 
     burstable = _pg_lookup_retail_price(
         database_id="Standard_B1ms",
@@ -183,47 +215,21 @@ def test_merge_database_catalog_rows_merges_versions():
 
 
 def test_gcp_tier_pricing_from_billing_fixture():
-    fixture = Path(
-        "/Users/sacrun/Projects/sc-scratch/attila/managed_dbs/vendor_data/gcp/global/"
-        "cloudbilling.services.skus.json"
-    )
-    if not fixture.exists():
-        return
-
-    def sku_from_dict(data):
-        pricing = []
-        for pricing_info in data.get("pricingInfo", []):
-            tiered = []
-            for tier in pricing_info.get("pricingExpression", {}).get(
-                "tieredRates", []
-            ):
-                unit_price = tier.get("unitPrice", {})
-                tiered.append(
-                    SimpleNamespace(
-                        unit_price=SimpleNamespace(
-                            units=int(unit_price.get("units", 0) or 0),
-                            nanos=int(unit_price.get("nanos", 0) or 0),
-                            currency_code=unit_price.get("currencyCode", "USD"),
-                        )
-                    )
-                )
-            pricing.append(
-                SimpleNamespace(
-                    pricing_expression=SimpleNamespace(
-                        tiered_rates=tiered,
-                        usage_unit=pricing_info.get("pricingExpression", {}).get(
-                            "usageUnit", ""
-                        ),
-                    )
-                )
-            )
-        return SimpleNamespace(
-            description=data.get("description", ""),
-            service_regions=data.get("serviceRegions", []),
-            pricing_info=pricing,
-        )
-
-    skus = [sku_from_dict(item) for item in json.loads(fixture.read_text())["skus"]]
+    # 0.0413 vCPU * 4 + 0.007 RAM * 15 GiB = 0.2702
+    skus = [
+        _gcp_pg_sku(
+            "Cloud SQL for PostgreSQL: Zonal - vCPU in Americas",
+            regions=["us-central1"],
+            units=0,
+            nanos=41_300_000,
+        ),
+        _gcp_pg_sku(
+            "Cloud SQL for PostgreSQL: Zonal - RAM in Americas",
+            regions=["us-central1"],
+            units=0,
+            nanos=7_000_000,
+        ),
+    ]
     vendor = Mock(vendor_id="gcp")
     vendor.regions = [Mock(region_id="1", api_reference="us-central1")]
     vendor.progress_tracker = Mock(
@@ -308,52 +314,25 @@ def test_gcp_tier_description():
 
 
 def test_gcp_database_prices_use_region_name_not_numeric_id():
-    fixture = Path(
-        "/Users/sacrun/Projects/sc-scratch/attila/managed_dbs/vendor_data/gcp/global/"
-        "cloudbilling.services.skus.json"
-    )
-    if not fixture.exists():
-        return
-
-    def sku_from_dict(data):
-        pricing = []
-        for pricing_info in data.get("pricingInfo", []):
-            tiered = []
-            for tier in pricing_info.get("pricingExpression", {}).get(
-                "tieredRates", []
-            ):
-                unit_price = tier.get("unitPrice", {})
-                tiered.append(
-                    SimpleNamespace(
-                        unit_price=SimpleNamespace(
-                            units=int(unit_price.get("units", 0) or 0),
-                            nanos=int(unit_price.get("nanos", 0) or 0),
-                            currency_code=unit_price.get("currencyCode", "USD"),
-                        )
-                    )
-                )
-            pricing.append(
-                SimpleNamespace(
-                    pricing_expression=SimpleNamespace(
-                        tiered_rates=tiered,
-                        usage_unit=pricing_info.get("pricingExpression", {}).get(
-                            "usageUnit", ""
-                        ),
-                    )
-                )
-            )
-        return SimpleNamespace(
-            description=data.get("description", ""),
-            service_regions=data.get("serviceRegions", []),
-            pricing_info=pricing,
-        )
-
+    skus = [
+        _gcp_pg_sku(
+            "Cloud SQL for PostgreSQL: Zonal - vCPU in Americas",
+            regions=["us-central1"],
+            units=0,
+            nanos=41_300_000,
+        ),
+        _gcp_pg_sku(
+            "Cloud SQL for PostgreSQL: Zonal - RAM in Americas",
+            regions=["us-central1"],
+            units=0,
+            nanos=7_000_000,
+        ),
+    ]
     vendor = Mock(vendor_id="gcp")
     vendor.regions = [Mock(region_id="999", api_reference="us-central1")]
     vendor.progress_tracker = Mock(
         start_task=Mock(), advance_task=Mock(), hide_task=Mock()
     )
-    skus = [sku_from_dict(item) for item in json.loads(fixture.read_text())["skus"]]
     tiers = [
         {
             "tier": "db-n1-standard-4",
