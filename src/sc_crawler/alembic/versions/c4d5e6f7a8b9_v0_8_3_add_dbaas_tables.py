@@ -1,4 +1,4 @@
-"""v0.9.0 add dbaas tables
+"""v0.8.3 add dbaas tables
 
 Revision ID: c4d5e6f7a8b9
 Revises: 816a0ef08432
