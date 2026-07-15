@@ -1457,21 +1457,10 @@ def inventory_database_prices(vendor):
                         ].pricing_expression.tiered_rates
                         currency = tiered[0].unit_price.currency_code or "USD"
             elif cpu_count is not None and memory_gib is not None:
-                vcpu_sku = ram_sku = None
-                for candidate_family in (
-                    price_family,
-                    "enterprise",
-                    "enterprise_extended",
-                    "enterprise_n4",
-                ):
-                    vcpu_sku = compute_index.get(
-                        (region.api_reference, candidate_family, "vcpu")
-                    )
-                    ram_sku = compute_index.get(
-                        (region.api_reference, candidate_family, "ram")
-                    )
-                    if vcpu_sku is not None and ram_sku is not None:
-                        break
+                vcpu_sku = compute_index.get(
+                    (region.api_reference, price_family, "vcpu")
+                )
+                ram_sku = compute_index.get((region.api_reference, price_family, "ram"))
                 if vcpu_sku is not None and ram_sku is not None:
                     vcpu_hourly = _sku_unit_price(vcpu_sku)
                     ram_hourly = _sku_unit_price(ram_sku)
