@@ -22,13 +22,36 @@ from sc_crawler.vendors._gcp import (
 def test_pg_database_regions_filters_unsupported_locations():
     vendor = Mock(vendor_id="azure")
     vendor.regions = [
-        Mock(region_id="centralus", api_reference="centralus"),
-        Mock(region_id="australiacentral2", api_reference="australiacentral2"),
+        Mock(
+            region_id="centralus",
+            api_reference="centralus",
+            aliases=["Central US"],
+        ),
+        Mock(
+            region_id="australiacentral2",
+            api_reference="australiacentral2",
+            aliases=["Australia Central 2"],
+        ),
     ]
     with patch(
-        "sc_crawler.vendors._azure._pg_capability_locations",
-        return_value=frozenset({"centralus", "eastus"}),
+        "sc_crawler.vendors._azure._resources",
+        return_value=[
+            {
+                "resourceType": "locations/capabilities",
+                "locations": ["Central US", "East US"],
+            }
+        ],
     ):
+        regions = _pg_database_regions(vendor)
+    assert [region.api_reference for region in regions] == ["centralus"]
+
+
+def test_pg_database_regions_falls_back_when_provider_missing():
+    vendor = Mock(vendor_id="azure")
+    vendor.regions = [
+        Mock(region_id="centralus", api_reference="centralus", aliases=["Central US"]),
+    ]
+    with patch("sc_crawler.vendors._azure._resources", return_value=[]):
         regions = _pg_database_regions(vendor)
     assert [region.api_reference for region in regions] == ["centralus"]
 

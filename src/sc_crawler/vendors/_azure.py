@@ -1141,6 +1141,7 @@ def inventory_regions(vendor):
                 (region[k] for k in ("display_name", "displayName") if region.get(k)),
                 region["name"],
             )
+            display_name = region.get("displayName") or region.get("display_name")
             items.append(
                 {
                     "vendor_id": vendor.vendor_id,
@@ -1150,6 +1151,7 @@ def inventory_regions(vendor):
                     "display_name": (
                         region_name + " (" + manual_data["country_id"] + ")"
                     ),
+                    "aliases": [display_name] if display_name else [],
                     "country_id": manual_data["country_id"],
                     "state": manual_data.get("state"),
                     "city": manual_data.get("city"),
@@ -1521,8 +1523,7 @@ def _postgresql_client() -> PostgreSQLManagementClient:
     return PostgreSQLManagementClient(credential, _subscription_id())
 
 
-@cachier()
-def _pg_capability_locations() -> frozenset[str]:
+def _pg_database_regions(vendor):
     resources = _resources("Microsoft.DBforPostgreSQL")
     resource = next(
         (
@@ -1533,25 +1534,17 @@ def _pg_capability_locations() -> frozenset[str]:
         ),
         None,
     )
+    regions = list(vendor.regions)
     if not resource:
-        return frozenset()
+        return regions
 
     display_names = set(resource.get("locations") or [])
-    arm_names = set()
-    for location in _regions():
-        name = location.get("name")
-        display = location.get("display_name") or location.get("displayName")
-        if name and display and display in display_names:
-            arm_names.add(name)
-    return frozenset(arm_names)
-
-
-def _pg_database_regions(vendor):
-    supported = _pg_capability_locations()
-    regions = list(vendor.regions)
-    if not supported:
-        return regions
-    return [region for region in regions if region.api_reference in supported]
+    supported = [
+        region
+        for region in regions
+        if region.aliases and region.aliases[0] in display_names
+    ]
+    return supported or regions
 
 
 @cachier(separate_files=True)
