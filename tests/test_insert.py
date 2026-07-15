@@ -69,11 +69,12 @@ def test_dedupe_items_collapses_duplicate_database_prices():
 def test_database_base_round_trip():
     item = DatabaseBase.model_validate(
         {
-            "vendor_id": "vultr",
-            "database_id": "vultr-dbaas-cc-2-80-4",
-            "name": "vultr-dbaas-cc-2-80-4",
-            "api_reference": "vultr-dbaas-cc-2-80-4",
-            "display_name": "vultr-dbaas-cc-2-80-4",
+            "vendor_id": "gcp",
+            "database_id": "db-n1-standard-4",
+            "name": "db-n1-standard-4",
+            "api_reference": "db-n1-standard-4",
+            "display_name": "db-n1-standard-4",
+            "description": "PostgreSQL Cloud SQL N1 Standard (4 vCPUs, 15 GB RAM)",
             "engine": DatabaseEngine.POSTGRESQL,
             "engine_versions": ["15", "16"],
             "status": Status.ACTIVE,
