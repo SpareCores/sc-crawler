@@ -111,19 +111,6 @@ def get_region_by_id(region_id: str, vendor: Vendor) -> Optional[Region]:
     )
 
 
-def hourly_price_tiered_monthly_cap(
-    hourly_price: float, monthly_price: float
-) -> List[dict]:
-    """Build price_tiered for hourly billing with a monthly cap (repo convention)."""
-    if hourly_price <= 0 or monthly_price <= 0:
-        return []
-    monthly_cap = int(monthly_price / hourly_price)
-    return [
-        {"lower": 0, "upper": monthly_cap, "price": hourly_price},
-        {"lower": monthly_cap + 1, "upper": "Infinity", "price": 0},
-    ]
-
-
 def merge_database_catalog_rows(rows: List[dict]) -> List[dict]:
     """Collapse offering rows to one dict per ``database_id`` with merged versions."""
     merged: dict[str, dict] = {}

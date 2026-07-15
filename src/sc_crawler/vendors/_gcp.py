@@ -1110,7 +1110,8 @@ def _pg_sqladmin_metadata() -> dict:
     return {
         "tiers": tiers,
         "engine_versions": sorted(
-            engine_versions, key=lambda value: tuple(int(part) for part in value.split("."))
+            engine_versions,
+            key=lambda value: tuple(int(part) for part in value.split(".")),
         ),
         "custom_config": custom_config or None,
         "custom_extensions": custom_extensions or None,
@@ -1235,7 +1236,9 @@ def _pg_storage_id(description: str) -> str | None:
     return None
 
 
-def _pg_billing_catalog() -> tuple[dict[tuple[str, str, str], object], frozenset[tuple[str, str]]]:
+def _pg_billing_catalog() -> tuple[
+    dict[tuple[str, str, str], object], frozenset[tuple[str, str]]
+]:
     compute_index: dict[tuple[str, str, str], object] = {}
     ha_families: set[tuple[str, str]] = set()
     for sku in _cloud_sql_skus():
@@ -1244,7 +1247,9 @@ def _pg_billing_catalog() -> tuple[dict[tuple[str, str, str], object], frozenset
             continue
         if ": Regional -" in description:
             if "vCPU" in description:
-                family = "enterprise_n4" if "Enterprise N4" in description else "enterprise"
+                family = (
+                    "enterprise_n4" if "Enterprise N4" in description else "enterprise"
+                )
                 for region in sku.service_regions:
                     if region:
                         ha_families.add((region, family))
@@ -1258,13 +1263,17 @@ def _pg_billing_catalog() -> tuple[dict[tuple[str, str, str], object], frozenset
         else:
             extended = "Extended support" in description
             if _PG_VCPU_RE.search(description):
-                family = "enterprise_n4" if "Enterprise N4" in description else "enterprise"
+                family = (
+                    "enterprise_n4" if "Enterprise N4" in description else "enterprise"
+                )
                 if extended and family == "enterprise":
                     sku_class = ("enterprise_extended", "vcpu")
                 elif not extended:
                     sku_class = (family, "vcpu")
             elif _PG_RAM_RE.search(description):
-                family = "enterprise_n4" if "Enterprise N4" in description else "enterprise"
+                family = (
+                    "enterprise_n4" if "Enterprise N4" in description else "enterprise"
+                )
                 if extended and family == "enterprise":
                     sku_class = ("enterprise_extended", "ram")
                 elif not extended:
@@ -1443,7 +1452,9 @@ def inventory_database_prices(vendor):
                 if instance_sku is not None:
                     hourly = _sku_unit_price(instance_sku)
                     if hourly is not None:
-                        tiered = instance_sku.pricing_info[0].pricing_expression.tiered_rates
+                        tiered = instance_sku.pricing_info[
+                            0
+                        ].pricing_expression.tiered_rates
                         currency = tiered[0].unit_price.currency_code or "USD"
             elif cpu_count is not None and memory_gib is not None:
                 vcpu_sku = ram_sku = None
@@ -1466,7 +1477,9 @@ def inventory_database_prices(vendor):
                     ram_hourly = _sku_unit_price(ram_sku)
                     if vcpu_hourly is not None and ram_hourly is not None:
                         hourly = vcpu_hourly * cpu_count + ram_hourly * memory_gib
-                        vcpu_tiered = vcpu_sku.pricing_info[0].pricing_expression.tiered_rates
+                        vcpu_tiered = vcpu_sku.pricing_info[
+                            0
+                        ].pricing_expression.tiered_rates
                         currency = vcpu_tiered[0].unit_price.currency_code or "USD"
 
             if hourly is None:

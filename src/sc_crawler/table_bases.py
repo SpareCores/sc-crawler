@@ -291,9 +291,7 @@ class HasCategory(ScModel):
 
 
 class HasDescription(ScModel):
-    description: Optional[str] = Field(
-        default=None, description="Short description."
-    )
+    description: Optional[str] = Field(description="Short description.")
 
 
 class HasApiReference(ScModel):

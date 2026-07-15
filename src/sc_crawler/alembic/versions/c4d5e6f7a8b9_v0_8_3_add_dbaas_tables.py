@@ -340,7 +340,9 @@ def upgrade() -> None:
         _status_column(),
         _observed_at_column(),
         *database_price_fks,
-        sa.PrimaryKeyConstraint(*database_price_pk, name=op.f(f"pk_{database_price_table}")),
+        sa.PrimaryKeyConstraint(
+            *database_price_pk, name=op.f(f"pk_{database_price_table}")
+        ),
         comment="Managed database SKU prices per Region."
         if not is_scd
         else "SCD version of .tables.DatabasePrice.",
@@ -428,7 +430,9 @@ def upgrade() -> None:
         _status_column(),
         _observed_at_column(),
         *database_storage_fks,
-        sa.PrimaryKeyConstraint(*database_storage_pk, name=op.f(f"pk_{database_storage_table}")),
+        sa.PrimaryKeyConstraint(
+            *database_storage_pk, name=op.f(f"pk_{database_storage_table}")
+        ),
         comment="Managed database storage products."
         if not is_scd
         else "SCD version of .tables.DatabaseStorage.",
