@@ -978,3 +978,22 @@ def inventory_ipv4_prices(vendor) -> list[dict]:
             }
         )
     return items
+
+
+# TODO: Implement database collectors
+
+
+def inventory_databases(vendor):
+    return []
+
+
+def inventory_database_prices(vendor):
+    return []
+
+
+def inventory_database_storages(vendor):
+    return []
+
+
+def inventory_database_storage_prices(vendor):
+    return []
