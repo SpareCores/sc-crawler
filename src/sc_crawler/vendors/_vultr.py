@@ -8,12 +8,17 @@ from ..table_fields import (
     Allocation,
     CpuAllocation,
     CpuArchitecture,
+    DatabaseEngine,
     PriceUnit,
     Status,
     StorageType,
     TrafficDirection,
 )
 from ..utils import _MIB_PER_GIB
+from ..vendor_helpers import (
+    hourly_price_tiered_monthly_cap,
+    merge_database_catalog_rows,
+)
 
 _REGION_LOCATIONS: dict[str, dict] = {
     "ams": {"lat": 52.3676, "lon": 4.9041},
@@ -724,3 +729,145 @@ def inventory_ipv4_prices(vendor):
             }
         )
     return items
+
+
+# Database collectors
+
+
+@cachier(separate_files=True)
+def _get_database_plans():
+    response = get(
+        "https://api.vultr.com/v2/databases/plans",
+        params={"engine": "pg", "per_page": 500},
+        timeout=60,
+    )
+    response.raise_for_status()
+    return response.json()["plans"]
+
+
+@cachier(separate_files=True)
+def _get_database_available_services():
+    response = get(
+        "https://api.vultr.com/v2/databases/available-services",
+        timeout=60,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def _postgres_engine_versions(services: dict) -> list[str]:
+    nested = services.get("available_services")
+    if isinstance(nested, dict):
+        for key in ("pg", "postgresql"):
+            raw = nested.get(key)
+            if isinstance(raw, list):
+                return [str(version) for version in raw if version is not None]
+    for key in ("pg", "postgresql"):
+        raw = services.get(key)
+        if isinstance(raw, list):
+            return [str(version) for version in raw if version is not None]
+    return []
+
+
+def inventory_databases(vendor):
+    vendor.progress_tracker.start_task(name="Fetching database plan(s)", total=None)
+    plans = _get_database_plans()
+    pg_versions = _postgres_engine_versions(_get_database_available_services())
+    vendor.progress_tracker.hide_task()
+
+    rows = []
+    vendor.progress_tracker.start_task(name="Processing database(s)", total=len(plans))
+    for plan in plans:
+        supported = plan.get("supported_engines") or {}
+        if not supported.get("pg") and not supported.get("postgresql"):
+            vendor.progress_tracker.advance_task()
+            continue
+        plan_id = plan["id"]
+        disk = int(plan.get("disk", 0))
+        rows.append(
+            {
+                "vendor_id": vendor.vendor_id,
+                "database_id": plan_id,
+                "name": plan_id,
+                "api_reference": plan_id,
+                "display_name": plan_id,
+                "engine": DatabaseEngine.POSTGRESQL,
+                "engine_versions": pg_versions,
+                "family": plan.get("type"),
+                "vcpus": plan.get("vcpu_count"),
+                "memory_amount": int(plan.get("ram", 0)),
+                "storage_size_min": disk,
+                "storage_size_max": disk,
+                # Plans bundle fixed SSD; no separate storage type in plans API.
+                # https://docs.vultr.com/vultr-managed-databases
+                "storage_type": StorageType.SSD,
+                "ha_supported": int(plan.get("number_of_nodes", 1)) > 1,
+                # Fixed bundled disk size per plan; no autoscale in plans API.
+                "storage_autoscaling": False,
+                # Automatic daily backups included with managed databases.
+                # https://docs.vultr.com/vultr-managed-databases-backups
+                "scheduled_backups": True,
+                # PITR / continuous backup retention not in plans API.
+                "continuous_backups": None,
+            }
+        )
+        vendor.progress_tracker.advance_task()
+    vendor.progress_tracker.hide_task()
+    return merge_database_catalog_rows(rows)
+
+
+def inventory_database_prices(vendor):
+    vendor.progress_tracker.start_task(name="Fetching database plan(s)", total=None)
+    plans = _get_database_plans()
+    vendor.progress_tracker.hide_task()
+
+    items = []
+    vendor.progress_tracker.start_task(
+        name="Processing database_price(s)", total=len(plans)
+    )
+    for plan in plans:
+        supported = plan.get("supported_engines") or {}
+        if not supported.get("pg") and not supported.get("postgresql"):
+            vendor.progress_tracker.advance_task()
+            continue
+        plan_id = plan["id"]
+        default_hourly = plan.get("hourly_cost") or (
+            float(plan.get("monthly_cost", 0)) / 730
+        )
+        default_monthly = float(plan.get("monthly_cost", 0))
+        for region_id in plan.get("locations", []):
+            location_cost = (plan.get("location_cost") or {}).get(region_id, {})
+            hourly_price = location_cost.get("hourly_cost", default_hourly)
+            monthly_price = location_cost.get("monthly_cost", default_monthly)
+            items.append(
+                {
+                    "vendor_id": vendor.vendor_id,
+                    "region_id": region_id,
+                    "database_id": plan_id,
+                    "allocation": Allocation.ONDEMAND,
+                    "unit": PriceUnit.HOUR,
+                    "price": hourly_price,
+                    "price_upfront": 0,
+                    "price_tiered": hourly_price_tiered_monthly_cap(
+                        hourly_price, monthly_price
+                    ),
+                    "currency": plan.get("currency") or "USD",
+                }
+            )
+        vendor.progress_tracker.advance_task()
+    vendor.progress_tracker.hide_task()
+    return items
+
+
+def inventory_database_storages(vendor):
+    vendor.progress_tracker.start_task(name="Fetching database_storage(s)", total=None)
+    vendor.progress_tracker.hide_task()
+    return []
+
+
+def inventory_database_storage_prices(vendor):
+    vendor.progress_tracker.start_task(
+        name="Fetching database_storage_price(s)", total=None
+    )
+    vendor.progress_tracker.hide_task()
+    return []

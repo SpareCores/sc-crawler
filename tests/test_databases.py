@@ -6,7 +6,15 @@ from sc_crawler.table_fields import Allocation, DatabaseEngine, PriceUnit, Stora
 from sc_crawler.vendor_helpers import hourly_price_tiered_monthly_cap, merge_database_catalog_rows
 from types import SimpleNamespace
 
-from sc_crawler.vendors._alicloud import _parse_postgres_engine_versions
+from sc_crawler.vendors._alicloud import (
+    _dig_list,
+    _parse_postgres_engine_versions,
+    _parse_rds_memory_amount,
+    _parse_rds_vcpu,
+    _postgres_price_combos,
+    _postgres_storage_types,
+    _pick_postgres_price_combo,
+)
 from sc_crawler.vendors._azure import (
     _pg_database_regions,
     _pg_engine_versions,
@@ -166,6 +174,83 @@ def test_parse_postgres_engine_versions_from_zones_payload():
         }
     }
     assert _parse_postgres_engine_versions(payload) == ["15", "16"]
+
+
+def test_parse_postgres_engine_versions_from_available_zones_array():
+    payload = {
+        "AvailableZones": [
+            {
+                "ZoneId": "us-east-1b",
+                "SupportedEngines": [
+                    {
+                        "Engine": "PostgreSQL",
+                        "SupportedEngineVersions": [
+                            {"Version": "18.0"},
+                            {"Version": "17.0"},
+                        ],
+                    }
+                ],
+            }
+        ]
+    }
+    assert _parse_postgres_engine_versions(payload) == ["17", "18"]
+
+
+def test_parse_rds_memory_and_vcpu_from_list_classes_fields():
+    assert _parse_rds_memory_amount(" 4GB（通用型）") == 4096
+    assert _parse_rds_memory_amount("16GB") == 16384
+    assert _parse_rds_vcpu("8") == 8
+
+
+def test_postgres_price_combo_and_storage_types_from_zones_payload():
+    payload = {
+        "AvailableZones": [
+            {
+                "ZoneId": "us-east-1b",
+                "SupportedEngines": [
+                    {
+                        "Engine": "PostgreSQL",
+                        "SupportedEngineVersions": [
+                            {
+                                "Version": "18.0",
+                                "SupportedCategorys": [
+                                    {
+                                        "Category": "Basic",
+                                        "SupportedStorageTypes": [
+                                            {"StorageType": "cloud_essd"},
+                                            {"StorageType": "cloud_auto"},
+                                        ],
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ],
+            }
+        ]
+    }
+    combo = _pick_postgres_price_combo(_postgres_price_combos(payload))
+    assert combo is not None
+    assert combo.zone_id == "us-east-1b"
+    assert combo.engine_version == "18.0"
+    assert combo.category == "Basic"
+    assert _postgres_storage_types(payload) == ["cloud_auto", "cloud_essd"]
+
+
+def test_alicloud_list_classes_items_use_top_level_items_array():
+    payload = {
+        "Items": [
+            {
+                "ClassCode": "pg.n2.2c.1m",
+                "Cpu": "2",
+                "MemoryClass": "4GB",
+                "ReferencePrice": "1.2",
+            }
+        ]
+    }
+    items = _dig_list(payload, "Items")
+    assert len(items) == 1
+    assert items[0]["ClassCode"] == "pg.n2.2c.1m"
 
 
 def test_hcloud_database_inventory_stubs():

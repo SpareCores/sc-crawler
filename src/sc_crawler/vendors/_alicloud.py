@@ -1,12 +1,15 @@
+import random
+import re
+import threading
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from functools import cache
 from itertools import chain
 from logging import INFO, WARN
 from os import environ
-from random import shuffle
-from time import time
+from time import sleep, time
 from typing import Optional
 
 from alibabacloud_bssopenapi20171214.client import Client as BssClient
@@ -42,6 +45,8 @@ from ..table_fields import (
     Allocation,
     CpuAllocation,
     CpuArchitecture,
+    DatabaseEngine,
+    DatabaseStorageScope,
     PriceUnit,
     Status,
     StorageType,
@@ -49,10 +54,111 @@ from ..table_fields import (
 )
 from ..tables import ServerPrice, Vendor
 from ..utils import _GIB_TO_GB, _HOURS_PER_MONTH, jsoned_hash
-from ..vendor_helpers import get_region_by_id
+from ..vendor_helpers import get_region_by_id, merge_database_catalog_rows
+
+try:
+    from alibabacloud_rds20140815 import models as rds_models
+except ImportError:  # pragma: no cover
+    rds_models = None
+
+_CACHIER_WATCH_ERROR = "Cannot add watch"
+_cachier_call_lock = threading.Lock()
+
+
+def _cached_call(fn, /, *args, **kwargs):
+    """Call a @cachier function without duplicate FSEvents watches."""
+    with _cachier_call_lock:
+        try:
+            return fn(*args, **kwargs)
+        except RuntimeError as exc:
+            if _CACHIER_WATCH_ERROR not in str(exc):
+                raise
+            return fn(*args, cachier__skip_cache=True, **kwargs)
+
+
+_RDS_ENGINE = "PostgreSQL"
+_RDS_COMMODITY = "bards_intl"
+_RDS_ORDER_TYPE = "BUY"
+_RDS_PAY_TYPE = "Postpaid"
+_RDS_DEFAULT_STORAGE_GIB = 20
+_RDS_DEFAULT_CATEGORIES = frozenset({"Basic", "HighAvailability", "cluster"})
+_RDS_DEFAULT_STORAGE_TYPES = (
+    "cloud_essd",
+    "cloud_auto",
+    "cloud_essd2",
+    "cloud_essd3",
+)
+_RDS_MEMORY_RE = re.compile(r"(\d+(?:\.\d+)?)\s*G(?:i?B)?", re.IGNORECASE)
 
 # ##############################################################################
 # Internal helpers
+
+_ALICLOUD_MAX_ATTEMPTS = 8
+_ALICLOUD_RETRY_BASE_SLEEP_S = 1.0
+_ALICLOUD_REQUEST_SLEEP_S = 0.75
+
+
+def _alicloud_is_not_found(exc: Exception) -> bool:
+    message = str(exc)
+    return "InvalidCondition.NotFound" in message or "No class found" in message
+
+
+def _alicloud_is_retryable(exc: Exception) -> bool:
+    message = str(exc)
+    return (
+        "Throttling" in message
+        or "flow control" in message
+        or "SDK.HttpError" in message
+        or "Failed to establish a new connection" in message
+        or "Name or service not known" in message
+        or "Max retries exceeded" in message
+    )
+
+
+def _alicloud_error_label(exc: Exception) -> str:
+    message = str(exc)
+    for label in (
+        "Throttling.User",
+        "Throttling",
+        "MissingParameter",
+        "InvalidCondition.NotFound",
+    ):
+        if label in message:
+            return label
+    first_line = message.split("\n", 1)[0]
+    if first_line.startswith("Error: "):
+        first_line = first_line[7:]
+    return first_line[:60]
+
+
+def _alicloud_api_call(call, *, ignore_not_found: bool = False):
+    """Call Alicloud APIs with basic retry/backoff for throttling."""
+    for attempt in range(1, _ALICLOUD_MAX_ATTEMPTS + 1):
+        try:
+            result = call()
+            if _ALICLOUD_REQUEST_SLEEP_S:
+                sleep(_ALICLOUD_REQUEST_SLEEP_S)
+            return result
+        except Exception as exc:
+            if _alicloud_is_not_found(exc):
+                if ignore_not_found:
+                    return None
+                raise
+            if attempt >= _ALICLOUD_MAX_ATTEMPTS or not _alicloud_is_retryable(exc):
+                raise
+            sleep_s = min(
+                20.0, _ALICLOUD_RETRY_BASE_SLEEP_S * (2 ** (attempt - 1))
+            )
+            sleep_s *= 0.8 + 0.4 * random.random()
+            logger.warning(
+                "Alicloud API retry %d/%d: %s (sleep %.2fs)",
+                attempt,
+                _ALICLOUD_MAX_ATTEMPTS,
+                _alicloud_error_label(exc),
+                sleep_s,
+            )
+            sleep(sleep_s)
+    raise RuntimeError("unreachable")
 
 
 def _alibabacloud_config(region_id: str) -> Config:
@@ -108,6 +214,53 @@ def _ecs_clients(vendor: Vendor) -> dict[str, EcsClient]:
     }
 
 
+@cachier(hash_func=jsoned_hash, separate_files=True)
+def _cached_fetch_region_availability(
+    region_id: str,
+    instance_charge_type: str,
+    destination_resource: str,
+    resource_type: str,
+    extra_request_params: dict,
+) -> list[dict]:
+    request = DescribeAvailableResourceRequest(
+        region_id=region_id,
+        instance_charge_type=instance_charge_type,
+        destination_resource=destination_resource,
+        resource_type=resource_type,
+        **extra_request_params,
+    )
+    runtime = RuntimeOptions()
+    response = _alicloud_api_call(
+        lambda: _ecs_client(region_id).describe_available_resource_with_options(
+            request, runtime
+        )
+    )
+    available_zones = response.body.available_zones
+    if not available_zones or not available_zones.available_zone:
+        return []
+    return [
+        resource.to_map()
+        for resource in response.body.available_zones.available_zone
+    ]
+
+
+@cachier(hash_func=jsoned_hash, separate_files=True)
+def _cached_fetch_zones_for_region(region_id: str) -> list[dict]:
+    request = DescribeZonesRequest(region_id=region_id, accept_language="en-US")
+    response = _alicloud_api_call(
+        lambda: _ecs_client(region_id).describe_zones(request)
+    )
+    return [
+        {
+            "zone_id": zone.get("ZoneId"),
+            "name": zone.get("LocalName"),
+            "api_reference": zone.get("ZoneId"),
+            "display_name": zone.get("LocalName"),
+        }
+        for zone in response.body.to_map()["Zones"]["Zone"]
+    ]
+
+
 @cache
 def _bss_client(
     region_id: str = environ.get("ALIBABA_CLOUD_REGION_ID", "eu-central-1"),
@@ -141,7 +294,9 @@ def _get_sku_prices(
         **extra_request_params,
     )
     runtime = RuntimeOptions()
-    response = client.query_sku_price_list_with_options(request, runtime)
+    response = _alicloud_api_call(
+        lambda: client.query_sku_price_list_with_options(request, runtime)
+    )
     if not response.body.data:
         print(f"No data in response: {response.to_map()}")
     skus = [
@@ -155,7 +310,9 @@ def _get_sku_prices(
         )
     while response.body.data.sku_price_page.next_page_token:
         request.next_page_token = response.body.data.sku_price_page.next_page_token
-        response = client.query_sku_price_list_with_options(request, runtime)
+        response = _alicloud_api_call(
+            lambda: client.query_sku_price_list_with_options(request, runtime)
+        )
         if response.body.data:
             skus.extend(
                 [
@@ -194,38 +351,26 @@ def _get_region_availability_info(
     if extra_request_params is None:
         extra_request_params = {}
     region_availability_info: dict[str, list[dict]] = {}
-    ecs_clients: dict[str, EcsClient] = _ecs_clients(vendor)
 
-    @cachier(hash_func=jsoned_hash, separate_files=True)
-    def fetch_region_availability(
-        region_id: str,
-        instance_charge_type: str,
-        destination_resource: str,
-        resource_type: str,
-        extra_request_params: dict,
-    ) -> tuple[str, list[dict]]:
-        try:
-            client = ecs_clients[region_id]
-            resources = []
-            request = DescribeAvailableResourceRequest(
-                region_id=region_id,
-                instance_charge_type=instance_charge_type,
-                destination_resource=destination_resource,
-                resource_type=resource_type,
-                **extra_request_params,
+    def fetch_region_availability(region_id: str) -> tuple[str, list[dict]]:
+        resources = []
+
+        def on_error():
+            vendor.log(
+                f"Failed to get availability info for region {region_id}",
+                WARN,
             )
-            runtime = RuntimeOptions()
-            response = client.describe_available_resource_with_options(request, runtime)
-            available_zones = response.body.available_zones
-            if available_zones and available_zones.available_zone:
-                resources = [
-                    resource.to_map()
-                    for resource in response.body.available_zones.available_zone
-                ]
-            return region_id, resources
-        except Exception as e:
-            logger.error(f"Failed to get availability info for region {region_id}: {e}")
-            return region_id, []
+
+        with sentry_capture_or_raise(vendor=vendor, on_error=on_error):
+            resources = _cached_call(
+                _cached_fetch_region_availability,
+                region_id,
+                instance_charge_type,
+                destination_resource,
+                resource_type,
+                extra_request_params,
+            )
+        return region_id, resources
 
     vendor.progress_tracker.start_task(
         name="Fetching server availability info", total=len(vendor.regions)
@@ -331,14 +476,20 @@ def _get_spot_advices(
     def fetch_region_spot_advice(
         region_id: str, client: EcsClient
     ) -> tuple[str, list[dict]]:
-        try:
-            resources = []
+        resources = []
+
+        def on_error():
+            vendor.log(f"Failed to get spot info for region {region_id}", WARN)
+
+        with sentry_capture_or_raise(vendor=vendor, on_error=on_error):
             request = DescribeSpotAdviceRequest(
                 region_id=region_id,
                 **extra_request_params,
             )
             runtime = RuntimeOptions()
-            response = client.describe_spot_advice_with_options(request, runtime)
+            response = _alicloud_api_call(
+                lambda: client.describe_spot_advice_with_options(request, runtime)
+            )
             if response.body:
                 spot_zones = response.body.available_spot_zones
                 if spot_zones and spot_zones.available_spot_zone:
@@ -346,12 +497,8 @@ def _get_spot_advices(
                         spot_zone.to_map()
                         for spot_zone in spot_zones.available_spot_zone
                     ]
-            return region_id, resources
-        except Exception as e:
-            logger.error(f"Failed to get spot info for region {region_id}: {e}")
-            return region_id, []
-        finally:
-            vendor.progress_tracker.advance_task()
+        vendor.progress_tracker.advance_task()
+        return region_id, resources
 
     vendor.progress_tracker.start_task(
         name="Fetching spot zone info", total=len(vendor.regions)
@@ -400,7 +547,9 @@ def _get_instance_price(
     tried_data_disk = False
     while True:
         try:
-            response = client.describe_price_with_options(request, runtime)
+            response = _alicloud_api_call(
+                lambda: client.describe_price_with_options(request, runtime)
+            )
             return response.body
         except Exception as e:
             if "InvalidSystemDiskCategory.ValueNotSupported" in str(e):
@@ -747,7 +896,7 @@ def inventory_regions(vendor):
     - Aliases (old region names) collected from <https://help.aliyun.com/zh/user-center/product-overview/regional-name-change-announcement>
     """
     request = DescribeRegionsRequest(accept_language="en-US")
-    response = _ecs_client().describe_regions(request)
+    response = _alicloud_api_call(lambda: _ecs_client().describe_regions(request))
     regions = [region.to_map() for region in response.body.regions.region]
 
     items = []
@@ -783,11 +932,8 @@ def inventory_zones(vendor):
     vendor.progress_tracker.start_task(
         name="Scanning region(s) for zone(s)", total=len(vendor.regions)
     )
-    clients = _ecs_clients(vendor)
 
-    @cachier(hash_func=jsoned_hash, separate_files=True)
     def fetch_zones_for_region(region_id):
-        """Worker function to fetch zones for a single region."""
         zone_items = []
 
         def on_error():
@@ -801,17 +947,12 @@ def inventory_zones(vendor):
                 )
 
         with sentry_capture_or_raise(vendor=vendor, on_error=on_error):
-            request = DescribeZonesRequest(region_id=region_id, accept_language="en-US")
-            response = clients[region_id].describe_zones(request)
-            for zone in response.body.to_map()["Zones"]["Zone"]:
+            for zone in _cached_call(_cached_fetch_zones_for_region, region_id):
                 zone_items.append(
                     {
                         "vendor_id": vendor.vendor_id,
                         "region_id": region_id,
-                        "zone_id": zone.get("ZoneId"),
-                        "name": zone.get("LocalName"),
-                        "api_reference": zone.get("ZoneId"),
-                        "display_name": zone.get("LocalName"),
+                        **zone,
                     }
                 )
         vendor.progress_tracker.advance_task()
@@ -833,20 +974,30 @@ def inventory_servers(vendor):
     request = DescribeInstanceTypesRequest(
         max_results=1000, additional_attributes=additional_attributes
     )
-    response = client.describe_instance_types(request)
-    instance_types = [
-        instance_type.to_map()
-        for instance_type in response.body.instance_types.instance_type
-    ]
-    while response.body.next_token:
-        request = DescribeInstanceTypesRequest(
-            max_results=1000,
-            additional_attributes=additional_attributes,
-            next_token=response.body.next_token,
+    instance_types = []
+
+    def on_error():
+        vendor.log("Failed to fetch Alibaba Cloud instance types", WARN)
+
+    with sentry_capture_or_raise(vendor=vendor, on_error=on_error):
+        response = _alicloud_api_call(
+            lambda: client.describe_instance_types(request)
         )
-        response = client.describe_instance_types(request)
-        for instance_type in response.body.instance_types.instance_type:
-            instance_types.append(instance_type.to_map())
+        instance_types = [
+            instance_type.to_map()
+            for instance_type in response.body.instance_types.instance_type
+        ]
+        while response.body.next_token:
+            request = DescribeInstanceTypesRequest(
+                max_results=1000,
+                additional_attributes=additional_attributes,
+                next_token=response.body.next_token,
+            )
+            response = _alicloud_api_call(
+                lambda: client.describe_instance_types(request)
+            )
+            for instance_type in response.body.instance_types.instance_type:
+                instance_types.append(instance_type.to_map())
 
     region_availability_info: dict[str, list[dict]] = _get_region_availability_info(
         vendor
@@ -1141,7 +1292,7 @@ def inventory_server_prices_spot(vendor):
         return []
 
     for region_id in ondemand_instances:
-        shuffle(ondemand_instances[region_id])
+        random.shuffle(ondemand_instances[region_id])
 
     def fetch_spot_instance_price(
         region_id: str, zone_instance_list: list[tuple[str, str]], client: EcsClient
@@ -1150,12 +1301,21 @@ def inventory_server_prices_spot(vendor):
         start_time = time()
 
         for zone_id, instance_type in zone_instance_list:
-            try:
-                # Check if time limit exceeded
-                elapsed = time() - start_time
-                if elapsed >= sample_time:
-                    break
+            if time() - start_time >= sample_time:
+                break
 
+            def on_error(
+                instance_type=instance_type,
+                zone_id=zone_id,
+                region_id=region_id,
+            ):
+                vendor.log(
+                    f"Failed to get spot price for {instance_type} "
+                    f"in {region_id}/{zone_id}",
+                    WARN,
+                )
+
+            with sentry_capture_or_raise(vendor=vendor, on_error=on_error):
                 price_response_body: DescribePriceResponseBody = _get_instance_price(
                     region_id=region_id,
                     zone_id=zone_id,
@@ -1205,15 +1365,7 @@ def inventory_server_prices_spot(vendor):
                         "status": Status.ACTIVE,
                     }
                 )
-            except AttributeError:
-                continue
-            except Exception as e:
-                logger.error(
-                    f"Failed to get spot price for {instance_type} in {region_id}/{zone_id}: {e}"
-                )
-                continue
-            finally:
-                vendor.progress_tracker.advance_task()
+            vendor.progress_tracker.advance_task()
 
         if not spot_instances:
             logger.info(f"No spot prices found in region {region_id}")
@@ -1454,3 +1606,560 @@ def inventory_ipv4_prices(vendor):
             }
         )
     return items
+
+
+def _rds_client(region_id: str):
+    from alibabacloud_rds20140815.client import Client as RdsClient
+
+    return RdsClient(_alibabacloud_config(region_id))
+
+
+def _rds_clients(vendor: Vendor) -> dict:
+    """Create RDS clients for all regions (call from the main thread before workers)."""
+    return {
+        region.region_id: _rds_client(region.region_id) for region in vendor.regions
+    }
+
+
+def _rds_runtime() -> RuntimeOptions:
+    return RuntimeOptions(read_timeout=60000, connect_timeout=60000)
+
+
+@dataclass(frozen=True, slots=True)
+class _RdsPriceCombo:
+    zone_id: str
+    engine_version: str
+    category: str
+    storage_types: tuple[str, ...]
+
+
+def _optional_float(value) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_rds_vcpu(value) -> int | None:
+    parsed = _optional_float(value)
+    return int(parsed) if parsed is not None else None
+
+
+def _parse_rds_memory_amount(value) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return int(float(value) * 1024)
+    match = _RDS_MEMORY_RE.search(str(value))
+    if not match:
+        return None
+    return int(float(match.group(1)) * 1024)
+
+
+def _dig_list(payload, *keys):
+    current = payload
+    for key in keys:
+        if current is None:
+            return []
+        if isinstance(current, dict):
+            current = current.get(key)
+        else:
+            value = getattr(current, key, None)
+            current = value.to_map() if hasattr(value, "to_map") else value
+    if current is None:
+        return []
+    if isinstance(current, list):
+        return current
+    if isinstance(current, dict):
+        for nested in current.values():
+            if isinstance(nested, list):
+                return nested
+    return [current]
+
+
+def _postgres_zones(zones_payload: dict) -> list[dict]:
+    return _dig_list(zones_payload, "AvailableZones", "AvailableZone") or _dig_list(
+        zones_payload, "AvailableZones"
+    )
+
+
+def _postgres_category_storage_types(category_entry: dict) -> list[str]:
+    storage_types: list[str] = []
+    for storage in _dig_list(
+        category_entry, "SupportedStorageTypes", "SupportedStorageType"
+    ) or _dig_list(category_entry, "SupportedStorageTypes"):
+        if isinstance(storage, dict):
+            storage_type = storage.get("StorageType")
+            if storage_type:
+                storage_types.append(storage_type)
+    return storage_types or list(_RDS_DEFAULT_STORAGE_TYPES)
+
+
+def _postgres_price_combos(zones_payload: dict) -> list[_RdsPriceCombo]:
+    combos: list[_RdsPriceCombo] = []
+    for zone in _postgres_zones(zones_payload):
+        zone_id = zone.get("ZoneId")
+        if not zone_id:
+            continue
+        for engine in _dig_list(
+            zone, "SupportedEngines", "SupportedEngine"
+        ) or _dig_list(zone, "SupportedEngines"):
+            engine_name = engine.get("Engine") or engine.get("engine")
+            if engine_name and engine_name.lower() != _RDS_ENGINE.lower():
+                continue
+            for version_entry in _dig_list(
+                engine, "SupportedEngineVersions", "SupportedEngineVersion"
+            ) or _dig_list(engine, "SupportedEngineVersions"):
+                engine_version = version_entry.get("Version") or version_entry.get(
+                    "version"
+                )
+                if not engine_version:
+                    continue
+                for category_entry in _dig_list(
+                    version_entry, "SupportedCategorys", "SupportedCategory"
+                ) or _dig_list(version_entry, "SupportedCategorys"):
+                    category = category_entry.get("Category")
+                    if not category or category not in _RDS_DEFAULT_CATEGORIES:
+                        continue
+                    combos.append(
+                        _RdsPriceCombo(
+                            zone_id=zone_id,
+                            engine_version=str(engine_version),
+                            category=category,
+                            storage_types=tuple(
+                                _postgres_category_storage_types(category_entry)
+                            ),
+                        )
+                    )
+    return combos
+
+
+def _pick_postgres_price_combo(
+    combos: list[_RdsPriceCombo],
+) -> _RdsPriceCombo | None:
+    if not combos:
+        return None
+
+    def _sort_key(combo: _RdsPriceCombo) -> tuple:
+        version_parts = [
+            int(part) for part in combo.engine_version.split(".") if part.isdigit()
+        ]
+        maz_penalty = 1 if "MAZ" in combo.zone_id else 0
+        category_order = {"Basic": 0, "HighAvailability": 1, "cluster": 2}.get(
+            combo.category, 9
+        )
+        return (
+            maz_penalty,
+            tuple(-part for part in version_parts) or (0,),
+            category_order,
+        )
+
+    return sorted(combos, key=_sort_key)[0]
+
+
+def _combo_ha_supported(category: str | None) -> bool | None:
+    if category is None:
+        return None
+    return category in ("HighAvailability", "cluster")
+
+
+def _fetch_rds_available_zones(client, region_id: str) -> dict:
+    zones = _alicloud_api_call(
+        lambda: client.describe_available_zones_with_options(
+            rds_models.DescribeAvailableZonesRequest(
+                engine=_RDS_ENGINE,
+                engine_version="16.0",
+                commodity_code=_RDS_COMMODITY,
+                region_id=region_id,
+            ),
+            _rds_runtime(),
+        )
+    )
+    return zones.body.to_map()
+
+
+@cachier(hash_func=jsoned_hash, separate_files=True)
+def _cached_fetch_rds_available_zones(region_id: str) -> dict:
+    return _fetch_rds_available_zones(_rds_client(region_id), region_id)
+
+
+def _list_rds_classes(client, region_id: str):
+    return _alicloud_api_call(
+        lambda: client.list_classes_with_options(
+            rds_models.ListClassesRequest(
+                engine=_RDS_ENGINE,
+                commodity_code=_RDS_COMMODITY,
+                order_type=_RDS_ORDER_TYPE,
+                region_id=region_id,
+            ),
+            _rds_runtime(),
+        )
+    )
+
+
+@cachier(hash_func=jsoned_hash, separate_files=True)
+def _cached_list_rds_class_items(region_id: str) -> list[dict]:
+    classes = _list_rds_classes(_rds_client(region_id), region_id)
+    payload = classes.body.to_map()
+    return _dig_list(payload, "Items", "ClassList") or _dig_list(payload, "Items")
+
+
+def _list_rds_class_items(client, region_id: str) -> list[dict]:
+    classes = _list_rds_classes(client, region_id)
+    payload = classes.body.to_map()
+    return _dig_list(payload, "Items", "ClassList") or _dig_list(payload, "Items")
+
+
+def _rds_class_catalog(items: list[dict]) -> dict[str, dict]:
+    catalog: dict[str, dict] = {}
+    for item in items:
+        class_code = item.get("ClassCode") or item.get("DBInstanceClass")
+        if class_code:
+            catalog[class_code] = item
+    return catalog
+
+
+def _available_rds_classes_by_combo(
+    client, combo: _RdsPriceCombo, region_id: str
+) -> dict[str, tuple[str, dict]]:
+    merged: dict[str, dict[str, dict]] = {}
+    for storage_type in combo.storage_types:
+        response = _alicloud_api_call(
+            lambda storage_type=storage_type: client.describe_available_classes_with_options(
+                rds_models.DescribeAvailableClassesRequest(
+                    engine=_RDS_ENGINE,
+                    engine_version=combo.engine_version,
+                    zone_id=combo.zone_id,
+                    category=combo.category,
+                    instance_charge_type=_RDS_PAY_TYPE,
+                    dbinstance_storage_type=storage_type,
+                    commodity_code=_RDS_COMMODITY,
+                    order_type=_RDS_ORDER_TYPE,
+                    region_id=region_id,
+                ),
+                _rds_runtime(),
+            ),
+            ignore_not_found=True,
+        )
+        if response is None:
+            continue
+        for item in _dig_list(
+            response.body.to_map(), "DBInstanceClasses", "DBInstanceClass"
+        ) or _dig_list(response.body.to_map(), "DBInstanceClasses"):
+            class_code = item.get("DBInstanceClass") or item.get("ClassCode")
+            if class_code:
+                merged.setdefault(class_code, {})[storage_type] = item
+    return {
+        class_code: (next(iter(by_storage.keys())), next(iter(by_storage.values())))
+        for class_code, by_storage in merged.items()
+    }
+
+
+def _describe_rds_database_price(
+    client,
+    combo: _RdsPriceCombo,
+    class_code: str,
+    storage_type: str,
+    storage_gib: int,
+    region_id: str,
+) -> tuple[float | None, str | None]:
+    response = _alicloud_api_call(
+        lambda: client.describe_price_with_options(
+            rds_models.DescribePriceRequest(
+                engine=_RDS_ENGINE,
+                engine_version=combo.engine_version,
+                dbinstance_class=class_code,
+                dbinstance_storage=storage_gib,
+                quantity=1,
+                pay_type=_RDS_PAY_TYPE,
+                commodity_code=_RDS_COMMODITY,
+                order_type=_RDS_ORDER_TYPE,
+                zone_id=combo.zone_id,
+                dbinstance_storage_type=storage_type,
+                instance_used_type=0,
+                region_id=region_id,
+            ),
+            _rds_runtime(),
+        )
+    )
+    price_info = response.body.to_map().get("PriceInfo") or {}
+    return _optional_float(price_info.get("TradePrice")), price_info.get("Currency")
+
+
+def _postgres_storage_types(zones_payload: dict) -> list[str]:
+    storage_types: set[str] = set()
+    for combo in _postgres_price_combos(zones_payload):
+        storage_types.update(combo.storage_types)
+    return sorted(storage_types)
+
+
+def _normalize_pg_engine_version(version: str) -> str:
+    return str(version).split(".")[0]
+
+
+def _parse_postgres_engine_versions(zones_payload: dict) -> list[str]:
+    versions: set[str] = set()
+    for zone in _postgres_zones(zones_payload):
+        for engine in _dig_list(
+            zone, "SupportedEngines", "SupportedEngine"
+        ) or _dig_list(zone, "SupportedEngines"):
+            engine_name = engine.get("Engine") or engine.get("engine")
+            if engine_name and engine_name.lower() != _RDS_ENGINE.lower():
+                continue
+            for version_entry in _dig_list(
+                engine, "SupportedEngineVersions", "SupportedEngineVersion"
+            ) or _dig_list(engine, "SupportedEngineVersions"):
+                version = version_entry.get("Version") or version_entry.get("version")
+                if version:
+                    versions.add(_normalize_pg_engine_version(str(version)))
+    return sorted(versions)
+
+
+def _postgres_engine_versions(client, region_id: str) -> list[str]:
+    return _parse_postgres_engine_versions(
+        _cached_call(_cached_fetch_rds_available_zones, region_id)
+    )
+
+
+def _inventory_databases_for_region(vendor, region, client) -> list[dict]:
+    region_id = region.region_id
+    rows = []
+
+    def on_error():
+        vendor.log(f"RDS database inventory failed for {region_id}", WARN)
+
+    with sentry_capture_or_raise(vendor=vendor, on_error=on_error):
+        zones_payload = _cached_call(_cached_fetch_rds_available_zones, region_id)
+        engine_versions = _parse_postgres_engine_versions(zones_payload)
+        combo = _pick_postgres_price_combo(_postgres_price_combos(zones_payload))
+        available_by_class = (
+            _available_rds_classes_by_combo(client, combo, region_id) if combo else {}
+        )
+        class_items = _cached_call(_cached_list_rds_class_items, region_id)
+        for item in class_items:
+            class_code = item.get("ClassCode") or item.get("DBInstanceClass")
+            if not class_code:
+                continue
+            available_entry = available_by_class.get(class_code)
+            available = available_entry[1] if available_entry else {}
+            storage_range = available.get("DBInstanceStorageRange") or {}
+            storage_min = storage_range.get("MinValue")
+            storage_max = storage_range.get("MaxValue")
+            rows.append(
+                {
+                    "vendor_id": vendor.vendor_id,
+                    "database_id": class_code,
+                    "name": class_code,
+                    "api_reference": class_code,
+                    "display_name": class_code,
+                    "engine": DatabaseEngine.POSTGRESQL,
+                    "engine_versions": engine_versions,
+                    "family": class_code.split(".")[1]
+                    if "." in class_code
+                    else class_code,
+                    "vcpus": _parse_rds_vcpu(item.get("Cpu") or item.get("CpuCount")),
+                    "memory_amount": _parse_rds_memory_amount(
+                        item.get("MemoryClass") or item.get("Memory")
+                    ),
+                    "storage_size_min": int(storage_min)
+                    if storage_min is not None
+                    else None,
+                    "storage_size_max": int(storage_max)
+                    if storage_max is not None
+                    else None,
+                    "storage_type": None,
+                    "ha_supported": _combo_ha_supported(combo.category)
+                    if combo
+                    else None,
+                    "storage_autoscaling": (
+                        storage_min is not None
+                        and storage_max is not None
+                        and float(storage_max) > float(storage_min)
+                    )
+                    if storage_range
+                    else None,
+                    "scheduled_backups": True,
+                    "continuous_backups": None,
+                }
+            )
+    return rows
+
+
+def _inventory_database_prices_for_region(vendor, region, client) -> list[dict]:
+    region_id = region.region_id
+    items = []
+
+    def on_error():
+        vendor.log(f"RDS database pricing failed for {region_id}", WARN)
+
+    with sentry_capture_or_raise(vendor=vendor, on_error=on_error):
+        zones_payload = _cached_call(_cached_fetch_rds_available_zones, region_id)
+        combo = _pick_postgres_price_combo(_postgres_price_combos(zones_payload))
+        if combo is None:
+            return items
+        class_catalog = _rds_class_catalog(
+            _cached_call(_cached_list_rds_class_items, region_id)
+        )
+        available_by_class = _available_rds_classes_by_combo(client, combo, region_id)
+        price_cache: dict[tuple[str, str, int], tuple[float | None, str | None]] = {}
+        for class_code, (storage_type, available) in available_by_class.items():
+            class_meta = class_catalog.get(class_code, {})
+            storage_range = available.get("DBInstanceStorageRange") or {}
+            storage_gib = int(
+                float(storage_range.get("MinValue") or _RDS_DEFAULT_STORAGE_GIB)
+            )
+            cache_key = (class_code, storage_type, storage_gib)
+            if cache_key not in price_cache:
+                fallback = (
+                    _optional_float(class_meta.get("ReferencePrice")),
+                    class_meta.get("Currency") or "USD",
+                )
+
+                def on_price_error(
+                    key=cache_key,
+                    fallback_price=fallback,
+                    cache=price_cache,
+                ):
+                    cache[key] = fallback_price
+
+                with sentry_capture_or_raise(vendor=vendor, on_error=on_price_error):
+                    price_cache[cache_key] = _describe_rds_database_price(
+                        client,
+                        combo,
+                        class_code,
+                        storage_type,
+                        storage_gib,
+                        region_id,
+                    )
+            price, currency = price_cache[cache_key]
+            if price is None:
+                price = _optional_float(class_meta.get("ReferencePrice"))
+                currency = class_meta.get("Currency") or currency or "USD"
+            if price is None:
+                continue
+            items.append(
+                {
+                    "vendor_id": vendor.vendor_id,
+                    "region_id": region_id,
+                    "database_id": class_code,
+                    "allocation": Allocation.ONDEMAND,
+                    "unit": PriceUnit.HOUR,
+                    "price": price,
+                    "price_upfront": 0,
+                    "price_tiered": [],
+                    "currency": currency or "USD",
+                }
+            )
+    return items
+
+
+def _inventory_database_storages_for_region(vendor, region_id: str) -> list[str]:
+    storage_types = []
+
+    def on_error():
+        vendor.log(f"RDS database storage inventory failed for {region_id}", WARN)
+
+    with sentry_capture_or_raise(vendor=vendor, on_error=on_error):
+        zones_payload = _cached_call(_cached_fetch_rds_available_zones, region_id)
+        storage_types = _postgres_storage_types(zones_payload)
+    return storage_types
+
+
+def inventory_databases(vendor):
+    if rds_models is None:
+        vendor.progress_tracker.start_task(name="Fetching database(s)", total=None)
+        vendor.progress_tracker.hide_task()
+        return []
+    rows = []
+    rds_clients = _rds_clients(vendor)
+    vendor.progress_tracker.start_task(
+        name="Scanning region(s) for database(s)", total=len(vendor.regions)
+    )
+
+    def scan_region(region):
+        try:
+            return _inventory_databases_for_region(
+                vendor, region, rds_clients[region.region_id]
+            )
+        finally:
+            vendor.progress_tracker.advance_task()
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        for part in executor.map(scan_region, vendor.regions):
+            rows.extend(part)
+    vendor.progress_tracker.hide_task()
+    return merge_database_catalog_rows(rows)
+
+
+def inventory_database_prices(vendor):
+    if rds_models is None:
+        vendor.progress_tracker.start_task(
+            name="Fetching database_price(s)", total=None
+        )
+        vendor.progress_tracker.hide_task()
+        return []
+    items = []
+    rds_clients = _rds_clients(vendor)
+    vendor.progress_tracker.start_task(
+        name="Scanning region(s) for database_price(s)", total=len(vendor.regions)
+    )
+
+    def scan_region(region):
+        try:
+            return _inventory_database_prices_for_region(
+                vendor, region, rds_clients[region.region_id]
+            )
+        finally:
+            vendor.progress_tracker.advance_task()
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        for part in executor.map(scan_region, vendor.regions):
+            items.extend(part)
+    vendor.progress_tracker.hide_task()
+    return items
+
+
+def inventory_database_storages(vendor):
+    if rds_models is None:
+        vendor.progress_tracker.start_task(
+            name="Fetching database_storage(s)", total=None
+        )
+        vendor.progress_tracker.hide_task()
+        return []
+    items = []
+    vendor.progress_tracker.start_task(
+        name="Scanning region(s) for database_storage(s)", total=len(vendor.regions)
+    )
+
+    def scan_region(region):
+        try:
+            return _inventory_database_storages_for_region(vendor, region.region_id)
+        finally:
+            vendor.progress_tracker.advance_task()
+
+    storage_types: set[str] = set()
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        for region_storage_types in executor.map(scan_region, vendor.regions):
+            storage_types.update(region_storage_types)
+    for storage_type in sorted(storage_types):
+        items.append(
+            {
+                "vendor_id": vendor.vendor_id,
+                "database_storage_id": storage_type,
+                "name": storage_type,
+                "description": storage_type,
+                "scope": DatabaseStorageScope.DATA,
+            }
+        )
+    vendor.progress_tracker.hide_task()
+    return items
+
+
+def inventory_database_storage_prices(vendor):
+    vendor.progress_tracker.start_task(
+        name="Fetching database_storage_price(s)", total=None
+    )
+    vendor.progress_tracker.hide_task()
+    return []

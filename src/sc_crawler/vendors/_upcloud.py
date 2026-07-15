@@ -12,11 +12,14 @@ from ..table_fields import (
     Allocation,
     CpuAllocation,
     CpuArchitecture,
+    DatabaseEngine,
+    DatabaseStorageScope,
     PriceUnit,
     StorageType,
     TrafficDirection,
 )
 from ..utils import _MIB_PER_GIB, jsoned_hash
+from ..vendor_helpers import hourly_price_tiered_monthly_cap, merge_database_catalog_rows
 
 # ##############################################################################
 # Cached client wrappers
@@ -84,6 +87,27 @@ UPCLOUD_STORAGES = [
         "min_size": 1,
         "max_size": 4096,
         "max_iops": 100000,
+    },
+]
+
+UPCLOUD_DATABASE_STORAGES = [
+    {
+        "id": "managed_database_tiered_storage_standard",
+        "name": "Tiered Standard",
+        "description": "Managed PostgreSQL tiered standard storage expansion",
+        "storage_type": StorageType.SSD,
+    },
+    {
+        "id": "managed_database_tiered_storage_maxiops",
+        "name": "Tiered MaxIOPS",
+        "description": "Managed PostgreSQL tiered MaxIOPS storage expansion",
+        "storage_type": StorageType.SSD,
+    },
+    {
+        "id": "managed_database_storage_maxiops",
+        "name": "MaxIOPS",
+        "description": "Managed PostgreSQL MaxIOPS storage expansion",
+        "storage_type": StorageType.SSD,
     },
 ]
 
@@ -598,4 +622,221 @@ def inventory_ipv4_prices(vendor):
                         "unit": PriceUnit.HOUR,
                     }
                 )
+    return items
+
+
+# Database collectors
+
+
+@cachier(separate_files=True)
+def _get_database_service_types_pg():
+    return _client().api.get_request("/database/service-types/pg")
+
+
+def _database_plan_price_keys(plan_id: str) -> list[str]:
+    candidates = [
+        f"database_plan_{plan_id}",
+        f"database_service_plan_{plan_id}",
+        f"managed_database_plan_{plan_id}",
+        f"database_plan_{plan_id.upper()}",
+        f"database_plan_{plan_id.replace('CPU', 'Cpu')}",
+    ]
+    seen: list[str] = []
+    for candidate in candidates:
+        if candidate not in seen:
+            seen.append(candidate)
+    return seen
+
+
+def _plan_hourly_price(zone_prices: dict, plan_id: str) -> float | None:
+    for key in _database_plan_price_keys(plan_id):
+        raw = zone_prices.get(key)
+        if isinstance(raw, dict) and raw.get("price") is not None:
+            price = raw["price"] / 100
+            amount = raw.get("amount")
+            if amount not in (None, 1, "1"):
+                try:
+                    price = price / float(amount)
+                except (TypeError, ValueError, ZeroDivisionError):
+                    pass
+            return price
+    return None
+
+
+def inventory_databases(vendor):
+    vendor.progress_tracker.start_task(
+        name="Fetching PostgreSQL service plans", total=None
+    )
+    payload = _get_database_service_types_pg()
+    vendor.progress_tracker.hide_task()
+
+    version_enum = payload.get("properties", {}).get("version", {}).get("enum") or []
+    latest_version = payload.get("latest_available_version")
+    if version_enum:
+        engine_versions = [str(v) for v in version_enum]
+    elif latest_version:
+        engine_versions = [str(latest_version)]
+    else:
+        engine_versions = []
+
+    plans = payload.get("service_plans") or []
+    rows = []
+    vendor.progress_tracker.start_task(
+        name="Processing database(s)", total=len(plans)
+    )
+    for plan in plans:
+        plan_id = plan.get("plan")
+        if not plan_id:
+            vendor.progress_tracker.advance_task()
+            continue
+        storage_component = (plan.get("components") or {}).get("storage") or {}
+        included_gib = storage_component.get("included_gib")
+        if included_gib is None and plan.get("storage_size") is not None:
+            included_gib = int(plan["storage_size"]) / 1024
+        storage_cap = plan.get("storage_cap_size")
+        storage_max = int(storage_cap / 1024) if storage_cap else included_gib
+        backup_cfg = plan.get("backup_config_pg") or plan.get("backup_config") or {}
+        interval = backup_cfg.get("interval")
+        max_count = backup_cfg.get("max_count")
+        continuous_backups = None
+        if interval and max_count:
+            continuous_backups = int((max_count * interval) / 24)
+        rows.append(
+            {
+                "vendor_id": vendor.vendor_id,
+                "database_id": plan_id,
+                "name": plan_id,
+                "api_reference": plan_id,
+                "display_name": plan_id,
+                "engine": DatabaseEngine.POSTGRESQL,
+                "engine_versions": engine_versions,
+                "family": plan_id.split("-")[0] if "-" in plan_id else plan_id,
+                "vcpus": plan.get("core_number"),
+                "memory_amount": int(plan.get("memory_amount", 0)),
+                "storage_size_min": int(included_gib) if included_gib is not None else None,
+                "storage_size_max": storage_max,
+                # Managed DB plans use network-attached SSD; not a separate catalog type in API.
+                # https://upcloud.com/products/managed-databases/
+                "storage_type": StorageType.SSD,
+                "ha_supported": int(plan.get("node_count", 1)) > 1,
+                "storage_autoscaling": bool(
+                    storage_component.get("dynamic_storage_supported", False)
+                ),
+                "scheduled_backups": bool(interval),
+                "continuous_backups": continuous_backups,
+            }
+        )
+        vendor.progress_tracker.advance_task()
+    vendor.progress_tracker.hide_task()
+    return merge_database_catalog_rows(rows)
+
+
+def inventory_database_prices(vendor):
+    vendor.progress_tracker.start_task(
+        name="Fetching PostgreSQL service plans", total=None
+    )
+    payload = _get_database_service_types_pg()
+    prices = _client().get_prices()
+    vendor.progress_tracker.hide_task()
+
+    currency = prices.get("prices", {}).get("currency", "EUR")
+    plans = payload.get("service_plans") or []
+    items = []
+    vendor.progress_tracker.start_task(
+        name="Processing database_price(s)", total=len(plans)
+    )
+    for plan in plans:
+        plan_id = plan.get("plan")
+        if not plan_id:
+            vendor.progress_tracker.advance_task()
+            continue
+        zones = (plan.get("zones") or {}).get("zone") or []
+        for zone in zones:
+            region_id = zone.get("name")
+            if not region_id:
+                continue
+            zone_prices = next(
+                (
+                    zp
+                    for zp in prices["prices"]["zone"]
+                    if zp.get("name") == region_id
+                ),
+                {},
+            )
+            hourly_price = _plan_hourly_price(zone_prices, plan_id)
+            if hourly_price is None:
+                for key, value in zone.items():
+                    if key.endswith("price") and isinstance(value, (int, float)):
+                        hourly_price = value / 100
+                        break
+            if hourly_price is None:
+                continue
+            monthly_price = hourly_price * 672
+            items.append(
+                {
+                    "vendor_id": vendor.vendor_id,
+                    "region_id": region_id,
+                    "database_id": plan_id,
+                    "allocation": Allocation.ONDEMAND,
+                    "unit": PriceUnit.HOUR,
+                    "price": hourly_price,
+                    "price_upfront": 0,
+                    "price_tiered": hourly_price_tiered_monthly_cap(
+                        hourly_price, monthly_price
+                    ),
+                    "currency": currency,
+                }
+            )
+        vendor.progress_tracker.advance_task()
+    vendor.progress_tracker.hide_task()
+    return items
+
+
+def inventory_database_storages(vendor):
+    items = []
+    vendor.progress_tracker.start_task(
+        name="Processing database_storage(s)", total=len(UPCLOUD_DATABASE_STORAGES)
+    )
+    for storage in UPCLOUD_DATABASE_STORAGES:
+        items.append(
+            {
+                "vendor_id": vendor.vendor_id,
+                "database_storage_id": storage["id"],
+                "name": storage["name"],
+                "description": storage["description"],
+                "scope": DatabaseStorageScope.DATA,
+            }
+        )
+        vendor.progress_tracker.advance_task()
+    vendor.progress_tracker.hide_task()
+    return items
+
+
+def inventory_database_storage_prices(vendor):
+    vendor.progress_tracker.start_task(name="Fetching price list", total=None)
+    prices = _client().get_prices()
+    vendor.progress_tracker.hide_task()
+
+    items = []
+    zone_prices_list = prices["prices"]["zone"]
+    storage_ids = {s["id"] for s in UPCLOUD_DATABASE_STORAGES}
+    vendor.progress_tracker.start_task(
+        name="Processing database_storage_price(s)", total=len(zone_prices_list)
+    )
+    for zone_prices in zone_prices_list:
+        for key, value in zone_prices.items():
+            if key not in storage_ids:
+                continue
+            items.append(
+                {
+                    "vendor_id": vendor.vendor_id,
+                    "region_id": zone_prices["name"],
+                    "database_storage_id": key,
+                    "unit": PriceUnit.GB_MONTH,
+                    "price": value["price"] / 100 * 24 * 30,
+                    "currency": "EUR",
+                }
+            )
+        vendor.progress_tracker.advance_task()
+    vendor.progress_tracker.hide_task()
     return items

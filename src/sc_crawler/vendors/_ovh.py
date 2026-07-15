@@ -10,6 +10,8 @@ from ..table_fields import (
     Allocation,
     CpuAllocation,
     CpuArchitecture,
+    DatabaseEngine,
+    DatabaseStorageScope,
     Disk,
     PriceUnit,
     Status,
@@ -22,6 +24,7 @@ from ..utils import (
     _MICROCENTS_PER_CURRENCY_UNIT,
     scmodels_to_dict,
 )
+from ..vendor_helpers import merge_database_catalog_rows
 
 
 @cache
@@ -977,4 +980,283 @@ def inventory_ipv4_prices(vendor) -> list[dict]:
                 "unit": PriceUnit.MONTH,
             }
         )
+    return items
+
+
+# Database collectors
+
+
+_HA_DB_PLANS = {"business", "enterprise", "production", "advanced"}
+# HA-capable OVH PostgreSQL plan slugs (availability.plan); not a single API boolean.
+# https://www.ovhcloud.com/en/public-cloud/postgresql/
+_APAC_DB_REGIONS = frozenset({"SGP", "AP-SOUTH-MUM"})
+_3AZ_DB_REGIONS = frozenset({"EU-WEST-PAR", "EU-SOUTH-MIL"})
+
+
+def _database_id_from_plan_code(plan_code: str) -> str:
+    return plan_code.split(".")[0].replace("-", "_")
+
+
+def _database_catalog_suffix(region: str) -> str:
+    if region in _APAC_DB_REGIONS:
+        return ".apac"
+    if region in _3AZ_DB_REGIONS:
+        return ".3az"
+    return ""
+
+
+def _resolve_database_catalog_plan_code(
+    plan_code: str, region: str, catalog_index: dict
+) -> str | None:
+    base = plan_code if plan_code.startswith("databases.") else f"databases.{plan_code}"
+    suffix = _database_catalog_suffix(region)
+    for candidate in (base + suffix, base):
+        if candidate in catalog_index:
+            return candidate
+    return None
+
+
+def _hourly_consumption_price(addon: dict) -> float | None:
+    for pricing in addon.get("pricings", []):
+        if pricing.get("interval") != 0:
+            continue
+        if "consumption" not in (pricing.get("capacities") or []):
+            continue
+        if pricing.get("price") is None:
+            continue
+        return pricing["price"] / _MICROCENTS_PER_CURRENCY_UNIT
+    return None
+
+
+@cache
+def _get_database_capabilities() -> dict:
+    project_id = _get_project_id()
+    return _client().get(f"/cloud/project/{project_id}/database/capabilities")
+
+
+@cache
+def _get_database_availability() -> list:
+    project_id = _get_project_id()
+    return _client().get(f"/cloud/project/{project_id}/database/availability")
+
+
+def _database_storage_slug(plan_code_storage: str) -> str:
+    slug = plan_code_storage.split(".")[0]
+    if slug.startswith("postgresql-"):
+        slug = slug[len("postgresql-") :]
+    return slug.replace("additionnal", "additional")
+
+
+def inventory_databases(vendor) -> list[dict]:
+    vendor.progress_tracker.start_task(
+        name="Fetching PostgreSQL capabilities", total=None
+    )
+    caps = _get_database_capabilities()
+    availability = _get_database_availability()
+    vendor.progress_tracker.hide_task()
+
+    flavor_meta = {item["name"]: item for item in caps.get("flavors", [])}
+    rows = []
+    vendor.progress_tracker.start_task(
+        name="Processing database(s)", total=len(availability)
+    )
+    for row in availability:
+        if row.get("engine") != "postgresql":
+            vendor.progress_tracker.advance_task()
+            continue
+        if str(row.get("lifecycleStatus", "available")).lower() != "available":
+            vendor.progress_tracker.advance_task()
+            continue
+        flavor_name = row.get("flavor")
+        flavor = flavor_meta.get(flavor_name)
+        if not flavor:
+            vendor.progress_tracker.advance_task()
+            continue
+        plan_code = row.get("planCode", "")
+        database_id = _database_id_from_plan_code(plan_code)
+        backup_days = row.get("backupRetentionDays")
+        version = row.get("version")
+        rows.append(
+            {
+                "vendor_id": vendor.vendor_id,
+                "database_id": database_id,
+                "name": database_id,
+                "api_reference": plan_code,
+                "display_name": database_id,
+                "engine": DatabaseEngine.POSTGRESQL,
+                "engine_versions": [str(version)] if version else [],
+                "family": flavor_name,
+                "vcpus": int(float(flavor.get("core", 0))),
+                "memory_amount": int(float(flavor.get("memory", 0)) * _MIB_PER_GIB),
+                "storage_size_min": int(flavor.get("storage", 0)),
+                "storage_size_max": int(row.get("maxDiskSize", 0)),
+                # Bundled high-performance disk; not a separate storage product in API.
+                # https://www.ovhcloud.com/en/public-cloud/postgresql/
+                "storage_type": StorageType.SSD,
+                "ha_supported": row.get("plan", "").lower() in _HA_DB_PLANS,
+                "storage_autoscaling": None,
+                "scheduled_backups": row.get("backup") == "automatic",
+                "continuous_backups": int(backup_days) if backup_days else None,
+            }
+        )
+        vendor.progress_tracker.advance_task()
+    vendor.progress_tracker.hide_task()
+    return merge_database_catalog_rows(rows)
+
+
+def inventory_database_prices(vendor) -> list[dict]:
+    vendor.progress_tracker.start_task(
+        name="Fetching PostgreSQL availability", total=None
+    )
+    availability = _get_database_availability()
+    catalog = _get_catalog()
+    vendor.progress_tracker.hide_task()
+
+    catalog_index = {
+        entry["planCode"]: entry
+        for section in ("addons", "plans")
+        for entry in catalog.get(section, [])
+        if entry.get("planCode")
+    }
+    currency = (catalog.get("locale") or {}).get("currencyCode", "EUR")
+    items = []
+    vendor.progress_tracker.start_task(
+        name="Processing database_price(s)", total=len(availability)
+    )
+    for row in availability:
+        if row.get("engine") != "postgresql":
+            vendor.progress_tracker.advance_task()
+            continue
+        if str(row.get("lifecycleStatus", "available")).lower() != "available":
+            vendor.progress_tracker.advance_task()
+            continue
+        plan_code = row.get("planCode")
+        region = row.get("region")
+        if not plan_code or not region:
+            vendor.progress_tracker.advance_task()
+            continue
+        database_id = _database_id_from_plan_code(plan_code)
+        catalog_plan = _resolve_database_catalog_plan_code(
+            plan_code, region, catalog_index
+        )
+        if catalog_plan is None:
+            vendor.progress_tracker.advance_task()
+            continue
+        hourly = _hourly_consumption_price(catalog_index[catalog_plan])
+        if hourly is None:
+            vendor.progress_tracker.advance_task()
+            continue
+        items.append(
+            {
+                "vendor_id": vendor.vendor_id,
+                "region_id": region,
+                "database_id": database_id,
+                "allocation": Allocation.ONDEMAND,
+                "unit": PriceUnit.HOUR,
+                "price": hourly,
+                "price_upfront": 0,
+                "price_tiered": [],
+                "currency": currency,
+            }
+        )
+        vendor.progress_tracker.advance_task()
+    vendor.progress_tracker.hide_task()
+    return items
+
+
+def inventory_database_storages(vendor) -> list[dict]:
+    vendor.progress_tracker.start_task(
+        name="Fetching PostgreSQL availability", total=None
+    )
+    availability = _get_database_availability()
+    vendor.progress_tracker.hide_task()
+
+    seen: set[str] = set()
+    items = []
+    vendor.progress_tracker.start_task(
+        name="Processing database_storage(s)", total=len(availability)
+    )
+    for row in availability:
+        if row.get("engine") != "postgresql":
+            vendor.progress_tracker.advance_task()
+            continue
+        plan_code_storage = row.get("planCodeStorage")
+        if not plan_code_storage or plan_code_storage in seen:
+            vendor.progress_tracker.advance_task()
+            continue
+        seen.add(plan_code_storage)
+        slug = _database_storage_slug(plan_code_storage)
+        items.append(
+            {
+                "vendor_id": vendor.vendor_id,
+                "database_storage_id": slug,
+                "name": slug,
+                "description": "Additional PostgreSQL storage (GB)",
+                "scope": DatabaseStorageScope.DATA,
+            }
+        )
+        vendor.progress_tracker.advance_task()
+    vendor.progress_tracker.hide_task()
+    return items
+
+
+def inventory_database_storage_prices(vendor) -> list[dict]:
+    vendor.progress_tracker.start_task(
+        name="Fetching PostgreSQL availability", total=None
+    )
+    availability = _get_database_availability()
+    catalog = _get_catalog()
+    vendor.progress_tracker.hide_task()
+
+    catalog_index = {
+        entry["planCode"]: entry
+        for section in ("addons", "plans")
+        for entry in catalog.get(section, [])
+        if entry.get("planCode")
+    }
+    currency = (catalog.get("locale") or {}).get("currencyCode", "EUR")
+    items = []
+    seen: set[tuple[str, str]] = set()
+    vendor.progress_tracker.start_task(
+        name="Processing database_storage_price(s)", total=len(availability)
+    )
+    for row in availability:
+        if row.get("engine") != "postgresql":
+            vendor.progress_tracker.advance_task()
+            continue
+        plan_code_storage = row.get("planCodeStorage")
+        region = row.get("region")
+        if not plan_code_storage or not region:
+            vendor.progress_tracker.advance_task()
+            continue
+        slug = _database_storage_slug(plan_code_storage)
+        key = (region, slug)
+        if key in seen:
+            vendor.progress_tracker.advance_task()
+            continue
+        seen.add(key)
+        catalog_plan = _resolve_database_catalog_plan_code(
+            plan_code_storage, region, catalog_index
+        )
+        if catalog_plan is None:
+            vendor.progress_tracker.advance_task()
+            continue
+        hourly = _hourly_consumption_price(catalog_index[catalog_plan])
+        if hourly is None:
+            vendor.progress_tracker.advance_task()
+            continue
+        items.append(
+            {
+                "vendor_id": vendor.vendor_id,
+                "region_id": region,
+                "database_storage_id": slug,
+                "unit": PriceUnit.HOUR,
+                "price": hourly,
+                "price_upfront": 0,
+                "price_tiered": [],
+                "currency": currency,
+            }
+        )
+        vendor.progress_tracker.advance_task()
+    vendor.progress_tracker.hide_task()
     return items
