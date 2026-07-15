@@ -13,7 +13,14 @@ from sc_crawler.table_fields import (
     Status,
     StorageType,
 )
-from sc_crawler.tables import Country, Vendor, tables
+from sc_crawler.tables import (
+    Country,
+    DatabasePrice,
+    DatabaseStoragePrice,
+    StoragePrice,
+    Vendor,
+    tables,
+)
 from sc_crawler.tables_scd import tables_scd
 
 
@@ -25,6 +32,27 @@ def test_scmodels_have_base():
         assert schema.__name__.endswith("Base")
         assert hasattr(model, "__table__")
         assert not hasattr(schema, "__table__")
+
+
+def test_database_price_primary_keys_match_storage_price_shape():
+    assert DatabasePrice.get_columns()["primary_keys"] == [
+        "vendor_id",
+        "region_id",
+        "database_id",
+        "allocation",
+    ]
+    assert DatabaseStoragePrice.get_columns()["primary_keys"] == [
+        "vendor_id",
+        "region_id",
+        "database_storage_id",
+    ]
+    assert "unit" not in DatabasePrice.get_columns()["primary_keys"]
+    assert "unit" not in DatabaseStoragePrice.get_columns()["primary_keys"]
+    assert StoragePrice.get_columns()["primary_keys"] == [
+        "vendor_id",
+        "region_id",
+        "storage_id",
+    ]
 
 
 def test_bad_vendor_definition():
