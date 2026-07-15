@@ -972,11 +972,13 @@ class DatabaseFields(
         description="Service level agreement as a percentage, e.g. 99.95.",
     )
 
-    @field_validator("engine_versions", mode="before")
-    @classmethod
+    `@field_validator`("engine_versions", mode="before")
+    `@classmethod`
     def _deserialize_engine_versions(cls, value):
         if value is None:
             return []
+        if isinstance(value, str):
+            return [value]
         return [str(item) for item in value]
 
     @reconstructor
