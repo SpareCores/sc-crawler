@@ -901,7 +901,8 @@ def inventory_regions(vendor):
         },
         "indiasouthcentral": {
             "country_id": "IN",
-            "state": "Hyderabad",
+            "state": "Telangana",
+            "city": "Hyderabad",
             # coming soon; targeted mid-2026 (Microsoft Source Asia, Dec 2025)
             "founding_year": 2026,
             # no region-specific sustainability fact sheet yet
