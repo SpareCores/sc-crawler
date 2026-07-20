@@ -1340,6 +1340,18 @@ def inventory_databases(vendor):
         if spec_parts:
             description = f"{description} ({', '.join(spec_parts)})"
 
+        server_id = None
+        servers = getattr(vendor, "servers", None)
+        if servers:
+            server_id = next(
+                (
+                    server.server_id
+                    for server in servers
+                    if server.api_reference == tier_name.removeprefix("db-")
+                ),
+                None,
+            )
+
         raw_regions = tier.get("region")
         if isinstance(raw_regions, str):
             tier_regions = [raw_regions]
@@ -1375,6 +1387,9 @@ def inventory_databases(vendor):
                 "api_reference": tier_name,
                 "display_name": tier_name,
                 "description": description,
+                # TODO: not clear which are the server instances for for perf-optimized and memory-optimized
+                # db instances (like db-perf-optimized-N-2, db-memory-optimized-N-4, etc.)
+                "server_id": server_id,
                 "engine": DatabaseEngine.POSTGRESQL,
                 "engine_versions": meta["engine_versions"],
                 "family": family_slug,

@@ -279,6 +279,7 @@ def test_gcp_tier_pricing_from_billing_fixture():
 def test_gcp_tier_description():
     vendor = Mock(vendor_id="gcp")
     vendor.regions = []
+    vendor.servers = []
     vendor.progress_tracker = Mock(
         start_task=Mock(), advance_task=Mock(), hide_task=Mock()
     )
