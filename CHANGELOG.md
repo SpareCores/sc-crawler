@@ -2,10 +2,7 @@
 
 New feature(s):
 
-- Add `database_benchmark_score` table (and SCD mirror) for managed-database
-  benchmark results, mirroring `benchmark_score` with PK
-  `(vendor_id, database_id, benchmark_id, config)` and a composite FK to
-  `database`. The existing `benchmark_score` table is unchanged.
+- Add `database_benchmark_score` table for database benchmark results, mirroring `benchmark_score`.
 
 ## v0.8.3 (July 21, 2026)
 
