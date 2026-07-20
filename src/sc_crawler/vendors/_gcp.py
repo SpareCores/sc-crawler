@@ -1380,9 +1380,7 @@ def inventory_databases(vendor):
                 "family": family_slug,
                 "vcpus": cpu_count,
                 "memory_amount": memory_amount,
-                "storage_size_min": None,
-                "storage_size_max": None,
-                "storage_type": None,
+                "storage_size": None,
                 "ha_supported": ha_supported,
                 "storage_autoscaling": None,
                 # https://cloud.google.com/sql/docs/postgres/backup-recovery/backups

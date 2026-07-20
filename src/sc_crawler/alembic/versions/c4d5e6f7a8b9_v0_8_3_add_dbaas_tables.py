@@ -194,25 +194,10 @@ def upgrade() -> None:
             comment="RAM amount (MiB) reported by the vendor.",
         ),
         sa.Column(
-            "storage_size_min",
+            "storage_size",
             sa.Integer(),
             nullable=True,
-            comment="Minimum bundled or provisioned storage size (GB).",
-        ),
-        sa.Column(
-            "storage_size_max",
-            sa.Integer(),
-            nullable=True,
-            comment="Maximum bundled or provisioned storage size (GB).",
-        ),
-        sa.Column(
-            "storage_type",
-            _enum(
-                "storagetype",
-                ("HDD", "SSD", "NVME_SSD", "NETWORK"),
-            ),
-            nullable=True,
-            comment="Bundled primary disk type when storage is included in the SKU.",
+            comment="Bundled storage size (GB), when included in the SKU.",
         ),
         sa.Column(
             "ha_supported",

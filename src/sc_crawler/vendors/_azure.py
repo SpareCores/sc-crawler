@@ -1766,9 +1766,7 @@ def inventory_databases(vendor):
                                 "family": edition.name,
                                 "vcpus": vcpus,
                                 "memory_amount": memory_amount,
-                                "storage_size_min": None,
-                                "storage_size_max": None,
-                                "storage_type": None,
+                                "storage_size": None,
                                 # Burstable tier: HA not supported (General Purpose / Memory Optimized only).
                                 # https://learn.microsoft.com/en-us/azure/reliability/reliability-postgresql-flexible-server#high-availability
                                 "ha_supported": edition.name != "Burstable",

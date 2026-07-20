@@ -77,7 +77,9 @@ def test_database_base_round_trip():
             "description": "PostgreSQL Cloud SQL N1 Standard (4 vCPUs, 15 GB RAM)",
             "engine": DatabaseEngine.POSTGRESQL,
             "engine_versions": ["15", "16"],
+            "storage_size": None,
             "status": Status.ACTIVE,
         }
     )
     assert item.engine_versions == ["15", "16"]
+    assert item.storage_size is None

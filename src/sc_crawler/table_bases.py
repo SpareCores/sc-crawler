@@ -919,17 +919,9 @@ class DatabaseFields(
         default=None,
         description="RAM amount (MiB) reported by the vendor.",
     )
-    storage_size_min: Optional[int] = Field(
+    storage_size: Optional[int] = Field(
         default=None,
-        description="Minimum bundled or provisioned storage size (GB).",
-    )
-    storage_size_max: Optional[int] = Field(
-        default=None,
-        description="Maximum bundled or provisioned storage size (GB).",
-    )
-    storage_type: Optional[StorageType] = Field(
-        default=None,
-        description="Bundled primary disk type when storage is included in the SKU.",
+        description="Bundled storage size (GB), when included in the SKU.",
     )
     ha_supported: Optional[bool] = Field(
         default=None,

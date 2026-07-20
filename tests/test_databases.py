@@ -311,6 +311,7 @@ def test_gcp_tier_description():
         by_id["db-f1-micro"]["description"]
         == "PostgreSQL Cloud SQL Shared f1-micro (0.6 GB RAM)"
     )
+    assert by_id["db-n1-standard-4"]["storage_size"] is None
 
 
 def test_gcp_database_prices_use_region_name_not_numeric_id():

@@ -15,6 +15,7 @@ from sc_crawler.table_fields import (
 )
 from sc_crawler.tables import (
     Country,
+    Database,
     DatabasePrice,
     DatabaseStoragePrice,
     StoragePrice,
@@ -53,6 +54,14 @@ def test_database_price_primary_keys_match_storage_price_shape():
         "region_id",
         "storage_id",
     ]
+
+
+def test_database_columns_use_storage_size_only():
+    cols = Database.get_columns()["all"]
+    assert "storage_size" in cols
+    assert "storage_size_min" not in cols
+    assert "storage_size_max" not in cols
+    assert "storage_type" not in cols
 
 
 def test_bad_vendor_definition():
