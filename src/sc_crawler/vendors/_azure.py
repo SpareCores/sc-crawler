@@ -1770,7 +1770,9 @@ def inventory_databases(vendor):
                                 # Burstable tier: HA not supported (General Purpose / Memory Optimized only).
                                 # https://learn.microsoft.com/en-us/azure/reliability/reliability-postgresql-flexible-server#high-availability
                                 "ha_supported": edition.name != "Burstable",
+                                # TODO: investigate storage autoscaling support
                                 "storage_autoscaling": None,
+                                # TODO: investigate scheduled backups support
                                 "scheduled_backups": None,
                                 # Product max PITR retention (days); default 7, up to 35; not in capabilities API.
                                 # https://learn.microsoft.com/en-us/azure/postgresql/backup-restore/concepts-backup-restore
