@@ -1756,9 +1756,9 @@ def inventory_databases(vendor):
                             {
                                 "vendor_id": vendor.vendor_id,
                                 "database_id": database_id,
-                                "name": database_id,
+                                "name": database_id.removeprefix("Standard_"),
                                 "api_reference": database_id,
-                                "display_name": database_id,
+                                "display_name": database_id.removeprefix("Standard_"),
                                 "description": description,
                                 "server_id": database_id,
                                 "engine": DatabaseEngine.POSTGRESQL,
