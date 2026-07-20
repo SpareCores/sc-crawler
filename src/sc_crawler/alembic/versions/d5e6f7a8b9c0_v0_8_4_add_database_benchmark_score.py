@@ -97,7 +97,7 @@ def upgrade() -> None:
             json_type,
             nullable=False,
             comment=(
-                'Dictionary of config parameters of the specific benchmark, '
+                "Dictionary of config parameters of the specific benchmark, "
                 'e.g. {"bandwidth": 4096}'
             ),
         ),
