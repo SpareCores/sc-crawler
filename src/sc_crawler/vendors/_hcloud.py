@@ -224,7 +224,7 @@ def inventory_servers(vendor):
                     "gpus": [],
                     "storage_size": server.disk,
                     "storage_type": (
-                        StorageType.SSD
+                        StorageType.NVME_SSD
                         if server.storage_type == "local"
                         else StorageType.NETWORK
                     ),
