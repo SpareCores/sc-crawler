@@ -40,10 +40,7 @@ from ..utils import (
     jsoned_hash,
     scmodels_to_dict,
 )
-from ..vendor_helpers import (
-    parallel_fetch_servers,
-    preprocess_servers,
-)
+from ..vendor_helpers import parallel_fetch_servers, preprocess_servers
 
 # disable caching by default
 set_global_params(caching_enabled=False, stale_after=timedelta(days=1))
