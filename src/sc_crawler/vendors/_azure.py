@@ -3,11 +3,13 @@ from functools import cache
 from os import environ
 from re import compile as recompile
 from time import sleep
+from types import SimpleNamespace
 from typing import List, Optional
 
 from azure.core.exceptions import HttpResponseError
 from azure.identity import DefaultAzureCredential
 from azure.mgmt.compute import ComputeManagementClient
+from azure.mgmt.postgresqlflexibleservers import PostgreSQLManagementClient
 from azure.mgmt.resource.resources import ResourceManagementClient
 from azure.mgmt.resource.subscriptions import SubscriptionClient
 from cachier import cachier
@@ -20,6 +22,8 @@ from ..table_fields import (
     Allocation,
     CpuAllocation,
     CpuArchitecture,
+    DatabaseEngine,
+    DatabaseStorageScope,
     Disk,
     PriceTier,
     PriceUnit,
@@ -34,7 +38,7 @@ from ..utils import (
     list_search,
     scmodels_to_dict,
 )
-from ..vendor_helpers import preprocess_servers
+from ..vendor_helpers import merge_database_catalog_rows, preprocess_servers
 
 credential = DefaultAzureCredential()
 
@@ -895,6 +899,15 @@ def inventory_regions(vendor):
             # unknown as no sustainability fact sheet found
             "green_energy": False,
         },
+        "indiasouthcentral": {
+            "country_id": "IN",
+            "state": "Telangana",
+            "city": "Hyderabad",
+            # coming soon; targeted mid-2026 (Microsoft Source Asia, Dec 2025)
+            "founding_year": 2026,
+            # no region-specific sustainability fact sheet yet
+            "green_energy": False,
+        },
         "westindia": {
             "country_id": "IN",
             "state": "Mumbai",
@@ -1129,6 +1142,7 @@ def inventory_regions(vendor):
                 (region[k] for k in ("display_name", "displayName") if region.get(k)),
                 region["name"],
             )
+            display_name = region.get("displayName") or region.get("display_name")
             items.append(
                 {
                     "vendor_id": vendor.vendor_id,
@@ -1138,6 +1152,7 @@ def inventory_regions(vendor):
                     "display_name": (
                         region_name + " (" + manual_data["country_id"] + ")"
                     ),
+                    "aliases": [display_name] if display_name else [],
                     "country_id": manual_data["country_id"],
                     "state": manual_data.get("state"),
                     "city": manual_data.get("city"),
@@ -1498,4 +1513,533 @@ def inventory_ipv4_prices(vendor):
                     "unit": PriceUnit.HOUR,
                 }
             )
+    return items
+
+
+# PostgreSQL Flexible Server support
+
+
+@cache
+def _postgresql_client() -> PostgreSQLManagementClient:
+    return PostgreSQLManagementClient(credential, _subscription_id())
+
+
+def _pg_database_regions(vendor):
+    resources = _resources("Microsoft.DBforPostgreSQL")
+    resource = next(
+        (
+            item
+            for item in resources
+            if (item.get("resource_type") or item.get("resourceType"))
+            == "locations/capabilities"
+        ),
+        None,
+    )
+    regions = list(vendor.regions)
+    if not resource:
+        return regions
+
+    display_names = set(resource.get("locations") or [])
+    supported = [
+        region
+        for region in regions
+        if region.aliases and region.aliases[0] in display_names
+    ]
+    return supported or regions
+
+
+@cachier(separate_files=True)
+def _pg_capabilities_by_location(location: str) -> list[dict]:
+    capabilities = []
+    for capability in _postgresql_client().capabilities_by_location.list(
+        location_name=location
+    ):
+        capabilities.append(capability.as_dict())
+    return capabilities
+
+
+def _pg_capabilities(location: str) -> list[SimpleNamespace]:
+    def as_namespace(data):
+        if isinstance(data, dict):
+            return SimpleNamespace(
+                **{key: as_namespace(value) for key, value in data.items()}
+            )
+        if isinstance(data, list):
+            return [as_namespace(value) for value in data]
+        return data
+
+    return [as_namespace(item) for item in _pg_capabilities_by_location(location)]
+
+
+def _pg_retail_prices(location: str) -> list[dict]:
+    return _prices(
+        "$filter=serviceName eq 'Azure Database for PostgreSQL' "
+        f"and armRegionName eq '{location}' "
+        "and priceType eq 'Consumption'"
+    )
+
+
+_PG_SKU_RE = recompile(r"(?i)Standard_(DC|EC|[DE]|B)(\d+)([a-z]*)_v(\d+)")
+_PG_FLAT_COMPUTE_SKUS = frozenset({"B1MS", "B2S"})
+_PG_EDITION_PRODUCT_TOKENS = {
+    "GeneralPurpose": ("general purpose",),
+    "MemoryOptimized": ("memory optimized", "memory purpose"),
+    "Burstable": ("burstable",),
+}
+_PG_FLEX_STORAGE_PRODUCT = "Az DB for PostgreSQL Flexible Server Storage"
+_PG_FLEX_BACKUP_PRODUCT = "Azure Database for PostgreSQL Flexible Server Backup Storage"
+_PG_STORAGE_RETAIL_TO_ID = {
+    "storage data stored": "ManagedDisk",
+    "premium ssd v2 storage data stored": "ManagedDiskV2",
+    "ultra disk storage data stored": "UltraDisk",
+}
+_PG_STORAGE_DESCRIPTIONS = {
+    "ManagedDisk": "Premium SSD managed disk",
+    "ManagedDiskV2": "Premium SSD v2 managed disk",
+    "UltraDisk": "Ultra disk managed storage",
+}
+_PG_BACKUP_STORAGE_ID = "BackupStorageLRS"
+_PG_UNSUPPORTED_STORAGE_REASON = (
+    "Specified Storage Edition not supported in this region."
+)
+
+
+def _pg_supported_storage_ids(location: str) -> frozenset[str]:
+    ids: set[str] = set()
+    for capability in _pg_capabilities(location):
+        for edition in getattr(capability, "supported_server_editions", None) or []:
+            for storage_edition in (
+                getattr(edition, "supported_storage_editions", None) or []
+            ):
+                if (
+                    getattr(storage_edition, "reason", None)
+                    == _PG_UNSUPPORTED_STORAGE_REASON
+                ):
+                    continue
+                storage_id = storage_edition.name
+                if storage_id:
+                    ids.add(storage_id)
+    return frozenset(ids)
+
+
+_PG_ARM_SERIES_RE = recompile(
+    r"(?:General_Purpose|Memory_Optimized|Memory_Purpose|Confidential_Compute)_"
+    r"([A-Za-z0-9]+?)(?:_Series_Compute|Series_Compute)"
+)
+
+
+def _pg_lookup_retail_price(
+    *,
+    database_id: str,
+    edition_name: str | None,
+    prices_by_arm: dict[str, list[dict]],
+) -> dict | None:
+    if database_id in prices_by_arm:
+        return prices_by_arm[database_id][0]
+
+    alias = database_id.removeprefix("Standard_")
+    if alias in prices_by_arm:
+        return prices_by_arm[alias][0]
+    if alias.upper() in prices_by_arm:
+        return prices_by_arm[alias.upper()][0]
+
+    match = _PG_SKU_RE.match(database_id)
+    if match is None:
+        return None
+    family, cores, suffix, version = match.groups()
+    target_series = f"{family.lower()}{suffix.lower()}v{version}"
+    edition_tokens = _PG_EDITION_PRODUCT_TOKENS.get(
+        edition_name or "",
+        ((edition_name or "").replace("_", " ").lower(),),
+    )
+
+    def edition_matches(product_name: str) -> bool:
+        if not edition_name:
+            return True
+        product = product_name.lower()
+        return any(token in product for token in edition_tokens)
+
+    fixed_needle = f"_{cores}_vCore"
+    for arm, rows in prices_by_arm.items():
+        if fixed_needle not in arm or family.lower() not in arm.lower():
+            continue
+        if edition_matches(rows[0].get("productName") or ""):
+            return rows[0]
+
+    for arm, rows in prices_by_arm.items():
+        if "Series_Compute" not in arm:
+            continue
+        series_match = _PG_ARM_SERIES_RE.search(arm)
+        if series_match is None:
+            continue
+        arm_series = series_match.group(1).replace("_", "").lower()
+        if target_series not in arm_series and arm_series not in target_series:
+            continue
+        if not edition_matches(rows[0].get("productName") or ""):
+            continue
+        for candidate in rows:
+            if candidate.get("skuName") in ("1 vCore", "vCore"):
+                return candidate
+        return rows[0]
+
+    return None
+
+
+def _pg_hourly_compute_price(
+    item: dict, vcpus: int | None, *, database_id: str | None = None
+) -> float:
+    price = float(item["retailPrice"])
+    meter = item.get("meterName") or ""
+    sku_name = item.get("skuName") or ""
+    arm = item.get("armSkuName") or ""
+
+    if meter.upper() in _PG_FLAT_COMPUTE_SKUS or arm.upper() in _PG_FLAT_COMPUTE_SKUS:
+        return price
+    if meter.endswith(" vCore") and meter != "vCore":
+        return price * (vcpus or 1)
+    if arm.startswith("Standard_") and meter == "vCore" and " vCore" in sku_name:
+        return price
+    if recompile(r"_Compute_\d+_vCore$").search(arm):
+        return price
+    if "Series_Compute" in arm:
+        return price * (vcpus or 1)
+    if meter == "vCore" and " vCore" in sku_name:
+        return price
+    if database_id and database_id in (arm, database_id.removeprefix("Standard_")):
+        return price
+    return price
+
+
+def _pg_engine_versions(capability) -> list[str]:
+    versions = []
+    for version in getattr(capability, "supported_server_versions", None) or []:
+        name = version.name
+        if not name or getattr(version, "status", None) == "Disabled":
+            continue
+        versions.append(str(name))
+    return versions
+
+
+def inventory_databases(vendor):
+    rows = []
+    regions = _pg_database_regions(vendor)
+    vendor.progress_tracker.start_task(
+        name="Scanning region(s) for database(s)", total=len(regions)
+    )
+    for region in regions:
+        location = region.api_reference
+        with sentry_capture_or_raise(vendor=vendor):
+            for capability in _pg_capabilities(location):
+                engine_versions = _pg_engine_versions(capability)
+                for edition in (
+                    getattr(capability, "supported_server_editions", None) or []
+                ):
+                    for sku in getattr(edition, "supported_server_skus", None) or []:
+                        database_id = sku.name
+                        vcpus = int(sku.v_cores) if sku.v_cores else None
+                        memory_amount = (
+                            int(sku.supported_memory_per_vcore_mb * sku.v_cores)
+                            if sku.v_cores and sku.supported_memory_per_vcore_mb
+                            else None
+                        )
+                        spec_parts = []
+                        if vcpus is not None:
+                            spec_parts.append(
+                                f"{vcpus} vCPU{'s' if vcpus != 1 else ''}"
+                            )
+                        if memory_amount is not None:
+                            spec_parts.append(f"{memory_amount // 1024} GB RAM")
+                        description = f"PostgreSQL {edition.name}"
+                        if spec_parts:
+                            description = f"{description} ({', '.join(spec_parts)})"
+                        rows.append(
+                            {
+                                "vendor_id": vendor.vendor_id,
+                                "database_id": database_id,
+                                "name": database_id.removeprefix("Standard_"),
+                                "api_reference": database_id,
+                                "display_name": database_id.removeprefix("Standard_"),
+                                "description": description,
+                                "server_id": database_id,
+                                "engine": DatabaseEngine.POSTGRESQL,
+                                "engine_versions": engine_versions,
+                                "family": edition.name,
+                                "vcpus": vcpus,
+                                "memory_amount": memory_amount,
+                                "storage_size": None,
+                                # Burstable tier: HA not supported (General Purpose / Memory Optimized only).
+                                # https://learn.microsoft.com/en-us/azure/reliability/reliability-postgresql-flexible-server#high-availability
+                                "ha_supported": edition.name != "Burstable",
+                                # TODO: investigate storage autoscaling support
+                                "storage_autoscaling": None,
+                                # TODO: investigate scheduled backups support
+                                "scheduled_backups": None,
+                                # Product max PITR retention (days); default 7, up to 35; not in capabilities API.
+                                # https://learn.microsoft.com/en-us/azure/postgresql/backup-restore/concepts-backup-restore
+                                "continuous_backups": 35,
+                            }
+                        )
+        vendor.progress_tracker.advance_task()
+    vendor.progress_tracker.hide_task()
+    return merge_database_catalog_rows(rows)
+
+
+def inventory_database_prices(vendor):
+    items = []
+    seen: set[tuple[str, str]] = set()
+    regions = _pg_database_regions(vendor)
+    vendor.progress_tracker.start_task(
+        name="Scanning region(s) for database_price(s)", total=len(regions)
+    )
+    for region in regions:
+        location = region.api_reference
+        with sentry_capture_or_raise(vendor=vendor):
+            prices_by_arm: dict[str, list[dict]] = {}
+            for item in _pg_retail_prices(location):
+                product = (item.get("productName") or "").lower()
+                arm = item.get("armSkuName") or ""
+                meter = item.get("meterName") or ""
+                if not (
+                    "compute" in product
+                    or arm.startswith("Standard_")
+                    or arm.upper() in _PG_FLAT_COMPUTE_SKUS
+                    or meter.upper() in _PG_FLAT_COMPUTE_SKUS
+                ):
+                    continue
+                if arm:
+                    prices_by_arm.setdefault(arm, []).append(item)
+
+            for capability in _pg_capabilities(location):
+                for edition in (
+                    getattr(capability, "supported_server_editions", None) or []
+                ):
+                    edition_name = edition.name
+                    for sku in getattr(edition, "supported_server_skus", None) or []:
+                        database_id = sku.name
+                        if not database_id:
+                            continue
+                        key = (region.region_id, database_id)
+                        if key in seen:
+                            continue
+                        price_item = _pg_lookup_retail_price(
+                            database_id=database_id,
+                            edition_name=edition_name,
+                            prices_by_arm=prices_by_arm,
+                        )
+                        if price_item is None:
+                            continue
+                        vcpus = int(sku.v_cores) if sku.v_cores else None
+                        seen.add(key)
+                        items.append(
+                            {
+                                "vendor_id": vendor.vendor_id,
+                                "region_id": region.region_id,
+                                "database_id": database_id,
+                                "allocation": Allocation.ONDEMAND,
+                                "unit": PriceUnit.HOUR,
+                                "price": _pg_hourly_compute_price(
+                                    price_item, vcpus, database_id=database_id
+                                ),
+                                "price_upfront": 0,
+                                "price_tiered": [],
+                                "currency": price_item.get("currencyCode", "USD"),
+                            }
+                        )
+        vendor.progress_tracker.advance_task()
+    vendor.progress_tracker.hide_task()
+    return items
+
+
+def inventory_database_storages(vendor):
+    storages: dict[str, dict] = {}
+    regions = _pg_database_regions(vendor)
+    vendor.progress_tracker.start_task(
+        name="Scanning region(s) for database_storage(s)", total=len(regions)
+    )
+    for region in regions:
+        location = region.api_reference
+        with sentry_capture_or_raise(vendor=vendor):
+            for capability in _pg_capabilities(location):
+                for edition in (
+                    getattr(capability, "supported_server_editions", None) or []
+                ):
+                    for storage_edition in (
+                        getattr(edition, "supported_storage_editions", None) or []
+                    ):
+                        if (
+                            getattr(storage_edition, "reason", None)
+                            == _PG_UNSUPPORTED_STORAGE_REASON
+                        ):
+                            continue
+                        storage_id = storage_edition.name
+                        if not storage_id:
+                            continue
+
+                        sizes_mb: list[int] = []
+                        max_iops_values: list[int] = []
+                        max_throughput = None
+                        default_mb = getattr(
+                            storage_edition, "default_storage_size_mb", None
+                        )
+                        if default_mb is not None:
+                            sizes_mb.append(int(default_mb))
+                        for storage_mb in storage_edition.supported_storage_mb or []:
+                            size = getattr(storage_mb, "storage_size_mb", None)
+                            if size is not None:
+                                sizes_mb.append(int(size))
+                            maximum_size = getattr(
+                                storage_mb, "maximum_storage_size_mb", None
+                            )
+                            if maximum_size is not None:
+                                sizes_mb.append(int(maximum_size))
+                            iops = getattr(storage_mb, "supported_iops", None)
+                            if iops is not None:
+                                max_iops_values.append(int(iops))
+                            maximum_iops = getattr(
+                                storage_mb, "supported_maximum_iops", None
+                            )
+                            if maximum_iops is not None:
+                                max_iops_values.append(int(maximum_iops))
+                            for tier in (
+                                getattr(storage_mb, "supported_iops_tiers", None) or []
+                            ):
+                                tier_iops = getattr(tier, "iops", None)
+                                if tier_iops is not None:
+                                    max_iops_values.append(int(tier_iops))
+                            throughput = getattr(
+                                storage_mb, "supported_maximum_throughput", None
+                            )
+                            if throughput is not None:
+                                max_throughput = max(
+                                    max_throughput or 0, int(throughput)
+                                )
+
+                        bounds = {
+                            "min_size": int(min(sizes_mb) / 1024) if sizes_mb else None,
+                            "max_size": int(max(sizes_mb) / 1024) if sizes_mb else None,
+                            "max_iops": (
+                                max(max_iops_values) if max_iops_values else None
+                            ),
+                            "max_throughput": max_throughput,
+                        }
+                        merged = storages.setdefault(
+                            storage_id,
+                            {
+                                "min_size": None,
+                                "max_size": None,
+                                "max_iops": None,
+                                "max_throughput": None,
+                            },
+                        )
+                        for key in (
+                            "min_size",
+                            "max_size",
+                            "max_iops",
+                            "max_throughput",
+                        ):
+                            left, right = merged.get(key), bounds.get(key)
+                            if left is None:
+                                merged[key] = right
+                            elif right is not None:
+                                merged[key] = (
+                                    min(left, right)
+                                    if key == "min_size"
+                                    else max(left, right)
+                                )
+        vendor.progress_tracker.advance_task()
+    vendor.progress_tracker.hide_task()
+
+    items = []
+    for storage_id, bounds in sorted(storages.items()):
+        description_parts = [_PG_STORAGE_DESCRIPTIONS.get(storage_id, storage_id)]
+        min_size = bounds.get("min_size")
+        max_size = bounds.get("max_size")
+        if min_size is not None and max_size is not None:
+            description_parts.append(f"{min_size}-{max_size} GB")
+        elif min_size is not None:
+            description_parts.append(f"from {min_size} GB")
+        elif max_size is not None:
+            description_parts.append(f"up to {max_size} GB")
+        if bounds.get("max_iops") is not None:
+            description_parts.append(f"up to {bounds['max_iops']} IOPS")
+        if bounds.get("max_throughput") is not None:
+            description_parts.append(
+                f"up to {bounds['max_throughput']} MB/s throughput"
+            )
+        items.append(
+            {
+                "vendor_id": vendor.vendor_id,
+                "database_storage_id": storage_id,
+                "name": storage_id,
+                "description": ", ".join(description_parts),
+                "scope": DatabaseStorageScope.DATA,
+                "min_size": bounds.get("min_size"),
+                "max_size": bounds.get("max_size"),
+                "max_iops": bounds.get("max_iops"),
+                "max_throughput": bounds.get("max_throughput"),
+            }
+        )
+
+    items.append(
+        {
+            "vendor_id": vendor.vendor_id,
+            "database_storage_id": _PG_BACKUP_STORAGE_ID,
+            "name": _PG_BACKUP_STORAGE_ID,
+            "description": "Flexible Server backup storage (locally redundant)",
+            # Backup SKU not in capabilities API; id matches retail Backup Storage LRS meter.
+            # https://learn.microsoft.com/en-us/azure/postgresql/backup-restore/concepts-backup-restore
+            "scope": DatabaseStorageScope.BACKUP,
+            "redundancy": "LRS",
+        }
+    )
+    return items
+
+
+def inventory_database_storage_prices(vendor):
+    items = []
+    regions = _pg_database_regions(vendor)
+    vendor.progress_tracker.start_task(
+        name="Scanning region(s) for database_storage_price(s)",
+        total=len(regions),
+    )
+    for region in regions:
+        location = region.api_reference
+        with sentry_capture_or_raise(vendor=vendor):
+            supported_storage_ids = _pg_supported_storage_ids(location)
+            for item in _pg_retail_prices(location):
+                product = item.get("productName") or ""
+                meter = (item.get("meterName") or "").lower()
+                if product == _PG_FLEX_STORAGE_PRODUCT:
+                    storage_id = _PG_STORAGE_RETAIL_TO_ID.get(meter)
+                elif (
+                    product == _PG_FLEX_BACKUP_PRODUCT
+                    and meter == "backup storage lrs data stored"
+                ):
+                    storage_id = _PG_BACKUP_STORAGE_ID
+                else:
+                    storage_id = None
+                if not storage_id:
+                    continue
+                if (
+                    storage_id != _PG_BACKUP_STORAGE_ID
+                    and storage_id not in supported_storage_ids
+                ):
+                    continue
+                multiplier = STORAGE_PRICE_UNIT_MAPPING.get(item.get("unitOfMeasure"))
+                if multiplier is None:
+                    continue
+                items.append(
+                    {
+                        "vendor_id": vendor.vendor_id,
+                        "region_id": region.region_id,
+                        "database_storage_id": storage_id,
+                        "unit": PriceUnit.GB_MONTH,
+                        "price": float(item["retailPrice"]) * multiplier,
+                        "price_upfront": 0,
+                        "price_tiered": [],
+                        "currency": item.get("currencyCode", "USD"),
+                    }
+                )
+        vendor.progress_tracker.advance_task()
+    vendor.progress_tracker.hide_task()
     return items

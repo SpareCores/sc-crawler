@@ -896,6 +896,14 @@ def pull(
                     vendor.inventory_traffic_prices()
                 if Records.ipv4_prices in records:
                     vendor.inventory_ipv4_prices()
+                if Records.databases in records:
+                    vendor.inventory_databases()
+                if Records.database_prices in records:
+                    vendor.inventory_database_prices()
+                if Records.database_storages in records:
+                    vendor.inventory_database_storages()
+                if Records.database_storage_prices in records:
+                    vendor.inventory_database_storage_prices()
                 # reset current step name
                 vendor.progress_tracker.update_vendor(step="✔")
                 session.merge(vendor)

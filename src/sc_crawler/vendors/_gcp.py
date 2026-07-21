@@ -2,12 +2,14 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import cache
 from itertools import chain, repeat
 from logging import DEBUG
+from re import compile as recompile
 from re import match, sub
 from typing import List
 
 from cachier import cachier
 from google.auth import default
 from google.cloud import billing_v1, compute_v1
+from googleapiclient.discovery import build
 
 from ..lookup import map_compliance_frameworks_to_vendor
 from ..sentry import sentry_capture_or_raise
@@ -15,6 +17,8 @@ from ..table_fields import (
     Allocation,
     CpuAllocation,
     CpuArchitecture,
+    DatabaseEngine,
+    DatabaseStorageScope,
     PriceUnit,
     Status,
     StorageType,
@@ -25,7 +29,12 @@ from ..tables import (
     Zone,
 )
 from ..utils import nesteddefaultdict, scmodels_to_dict
-from ..vendor_helpers import add_vendor_id, parallel_fetch_servers, preprocess_servers
+from ..vendor_helpers import (
+    add_vendor_id,
+    merge_database_catalog_rows,
+    parallel_fetch_servers,
+    preprocess_servers,
+)
 
 # ##############################################################################
 # Cached gcp client wrappers
@@ -1069,4 +1078,519 @@ def inventory_ipv4_prices(vendor):
                 "unit": PriceUnit.HOUR,
             }
         )
+    return items
+
+
+# PostgreSQL Cloud SQL support
+# https://cloud.google.com/sql/docs/postgres/storage-options-overview
+
+
+@cachier(separate_files=True)
+def _sqladmin_service():
+    creds, _ = default()
+    return build("sqladmin", "v1", credentials=creds, cache_discovery=False)
+
+
+@cachier(separate_files=True)
+def _pg_sqladmin_metadata() -> dict:
+    service = _sqladmin_service()
+    tiers = service.tiers().list(project=_project_id()).execute().get("items", [])
+    flags = service.flags().list().execute().get("items", [])
+    engine_versions: set[str] = set()
+    custom_config = custom_extensions = False
+    for flag in flags:
+        name = flag.get("name") or ""
+        if name.startswith("cloudsql.enable_"):
+            custom_config = True
+        if name in _PG_EXTENSION_FLAGS:
+            custom_extensions = True
+        for version in flag.get("appliesTo", []):
+            if isinstance(version, str) and version.startswith("POSTGRES_"):
+                engine_versions.add(version.removeprefix("POSTGRES_").replace("_", "."))
+    return {
+        "tiers": tiers,
+        "engine_versions": sorted(
+            engine_versions,
+            key=lambda value: tuple(int(part) for part in value.split(".")),
+        ),
+        "custom_config": custom_config or None,
+        "custom_extensions": custom_extensions or None,
+    }
+
+
+@cachier(separate_files=True)
+def _cloud_sql_skus():
+    return _skus("Cloud SQL")
+
+
+_PG_CUSTOM_TIER_RE = recompile(r"^db-custom-(\d+)-(\d+)$")
+_PG_NAMED_TIER_CPU_RE = recompile(r"-(\d+)$")
+_PG_N4_TIER_MARKERS = ("c4a", "perf-optimized", "memory-optimized")
+_PG_SHARED_TIERS = {"db-f1-micro": "f1-micro", "db-g1-small": "g1-small"}
+_PG_STORAGE_METERS = (
+    (
+        recompile(r": Zonal - Enterprise Storage Hyperdisk Balanced Capacity in "),
+        "cloudsql-hyperdisk",
+    ),
+    (
+        recompile(r": Zonal - Enterprise Plus Standard Storage in "),
+        "cloudsql-ssd",
+    ),
+    (recompile(r": Zonal - Standard storage in "), "cloudsql-ssd-standard"),
+    (recompile(r": Zonal - Low cost storage in "), "cloudsql-hdd"),
+)
+_PG_MAX_STORAGE_GB = 65536
+_PG_STORAGE_SPECS: dict[str, dict] = {
+    "cloudsql-ssd": {
+        "name": "Enterprise Plus SSD",
+        "description": (
+            "Enterprise Plus standard SSD (Persistent Disk) for N2 / Enterprise Plus "
+            "machine series; 10-65536 GB, up to 100k IOPS"
+        ),
+        "min_size": 10,
+        "max_size": _PG_MAX_STORAGE_GB,
+        "max_iops": 100_000,
+        "max_throughput": 1200,
+    },
+    "cloudsql-ssd-standard": {
+        "name": "Enterprise SSD",
+        "description": (
+            "Standard SSD storage for Enterprise edition (N1, custom, shared-core); "
+            "10-65536 GB, up to 100k IOPS"
+        ),
+        "min_size": 10,
+        "max_size": _PG_MAX_STORAGE_GB,
+        "max_iops": 100_000,
+        "max_throughput": 1200,
+    },
+    "cloudsql-hdd": {
+        "name": "Low-cost HDD",
+        "description": (
+            "Low cost HDD for general-purpose shared or dedicated core series; "
+            "10-65536 GB, up to 15k IOPS"
+        ),
+        "min_size": 10,
+        "max_size": _PG_MAX_STORAGE_GB,
+        "max_iops": 15_000,
+        "max_throughput": 1200,
+    },
+    "cloudsql-hyperdisk": {
+        "name": "Hyperdisk Balanced",
+        "description": (
+            "Hyperdisk Balanced capacity for N4 and C4A machine series; "
+            "20-65536 GB, up to 160k IOPS"
+        ),
+        "min_size": 20,
+        "max_size": _PG_MAX_STORAGE_GB,
+        "max_iops": 160_000,
+        "max_throughput": 2400,
+    },
+}
+_PG_SHARED_INSTANCE_RE = recompile(
+    r": Zonal - (?:Extended support )?(f1-micro|g1-small)(?: v\d+)? in "
+)
+_PG_VCPU_RE = recompile(r": Zonal - (?:Extended support )?(?:Enterprise N4 )?vCPU in ")
+_PG_RAM_RE = recompile(r": Zonal - (?:Extended support )?(?:Enterprise N4 )?RAM in ")
+_PG_EXTENSION_FLAGS = frozenset(
+    {
+        "cloudsql.enable_pg_cron",
+        "cloudsql.enable_anon",
+        "cloudsql.enable_pgaudit",
+        "cloudsql.enable_pglogical",
+    }
+)
+_PG_TIER_FAMILY_LABELS = {
+    "f1-micro": "Shared f1-micro",
+    "g1-small": "Shared g1-small",
+    "n1-standard": "N1 Standard",
+    "n1-highmem": "N1 High Memory",
+    "perf-optimized-N": "Performance Optimized N",
+    "c4a-highmem": "C4A High Memory",
+    "memory-optimized-N": "Memory Optimized N",
+    "custom": "Custom",
+}
+
+
+def _sku_unit_price(sku) -> float | None:
+    if not sku.pricing_info:
+        return None
+    tiered = sku.pricing_info[0].pricing_expression.tiered_rates
+    if not tiered:
+        return None
+    unit_price = tiered[0].unit_price
+    return unit_price.units + unit_price.nanos / 1e9
+
+
+def _pg_storage_id(description: str) -> str | None:
+    if (
+        "for Postgre" not in description
+        or "FDC Trial" in description
+        or ": Regional -" in description
+        or (": Zonal -" not in description and ": Zonal-" not in description)
+        or any(token in description for token in ("IOPS", "Throughput", "Cache"))
+    ):
+        return None
+    for pattern, storage_id in _PG_STORAGE_METERS:
+        if pattern.search(description):
+            return storage_id
+    return None
+
+
+def _pg_billing_catalog() -> tuple[
+    dict[tuple[str, str, str], object], frozenset[tuple[str, str]]
+]:
+    compute_index: dict[tuple[str, str, str], object] = {}
+    ha_families: set[tuple[str, str]] = set()
+    for sku in _cloud_sql_skus():
+        description = sku.description or ""
+        if "for Postgre" not in description:
+            continue
+        if ": Regional -" in description:
+            if "vCPU" in description:
+                family = (
+                    "enterprise_n4" if "Enterprise N4" in description else "enterprise"
+                )
+                for region in sku.service_regions:
+                    if region:
+                        ha_families.add((region, family))
+            continue
+        if ": Zonal -" not in description and ": Zonal-" not in description:
+            continue
+
+        sku_class = None
+        if match := _PG_SHARED_INSTANCE_RE.search(description):
+            sku_class = ("shared", match.group(1))
+        else:
+            extended = "Extended support" in description
+            if _PG_VCPU_RE.search(description):
+                family = (
+                    "enterprise_n4" if "Enterprise N4" in description else "enterprise"
+                )
+                if extended and family == "enterprise":
+                    sku_class = ("enterprise_extended", "vcpu")
+                elif not extended:
+                    sku_class = (family, "vcpu")
+            elif _PG_RAM_RE.search(description):
+                family = (
+                    "enterprise_n4" if "Enterprise N4" in description else "enterprise"
+                )
+                if extended and family == "enterprise":
+                    sku_class = ("enterprise_extended", "ram")
+                elif not extended:
+                    sku_class = (family, "ram")
+
+        if not sku_class:
+            continue
+        family, component = sku_class
+        for region in sku.service_regions:
+            if region:
+                compute_index.setdefault((region, family, component), sku)
+    return compute_index, frozenset(ha_families)
+
+
+def inventory_databases(vendor):
+    vendor.progress_tracker.start_task(name="Fetching PostgreSQL tier(s)", total=None)
+    meta = _pg_sqladmin_metadata()
+    _, ha_families = _pg_billing_catalog()
+    vendor.progress_tracker.hide_task()
+
+    rows = []
+    tiers = meta["tiers"]
+    vendor.progress_tracker.start_task(name="Processing database(s)", total=len(tiers))
+    for tier in tiers:
+        tier_name = tier.get("tier")
+        if not tier_name:
+            vendor.progress_tracker.advance_task()
+            continue
+
+        if match := _PG_CUSTOM_TIER_RE.match(tier_name):
+            cpu_count = int(match.group(1))
+        elif match := _PG_NAMED_TIER_CPU_RE.search(tier_name):
+            cpu_count = int(match.group(1))
+        else:
+            cpu_count = None
+
+        ram_bytes = int(tier.get("RAM") or 0)
+        memory_amount = int(ram_bytes / 1_048_576) if ram_bytes else None
+
+        if tier_name.startswith("db-custom-"):
+            family_slug = "custom"
+        else:
+            stripped = tier_name.removeprefix("db-")
+            parts = stripped.split("-")
+            family_slug = (
+                "-".join(parts[:-1]) if parts and parts[-1].isdigit() else stripped
+            )
+
+        spec_parts: list[str] = []
+        if cpu_count is not None:
+            spec_parts.append(f"{cpu_count} vCPU{'s' if cpu_count != 1 else ''}")
+        if memory_amount is not None:
+            memory_gib = round(memory_amount / 1024, 1)
+            gib_label = (
+                f"{int(memory_gib)} GB RAM"
+                if memory_gib == int(memory_gib)
+                else f"{memory_gib:g} GB RAM"
+            )
+            spec_parts.append(gib_label)
+        family_label = _PG_TIER_FAMILY_LABELS.get(
+            family_slug, family_slug.replace("-", " ").title()
+        )
+        description = f"PostgreSQL Cloud SQL {family_label}"
+        if spec_parts:
+            description = f"{description} ({', '.join(spec_parts)})"
+
+        server_id = None
+        servers = getattr(vendor, "servers", None)
+        if servers:
+            server_id = next(
+                (
+                    server.server_id
+                    for server in servers
+                    if server.api_reference == tier_name.removeprefix("db-")
+                ),
+                None,
+            )
+
+        raw_regions = tier.get("region")
+        if isinstance(raw_regions, str):
+            tier_regions = [raw_regions]
+        elif isinstance(raw_regions, list):
+            tier_regions = [region for region in raw_regions if isinstance(region, str)]
+        else:
+            tier_regions = []
+
+        if tier_name in _PG_SHARED_TIERS:
+            price_family = "shared"
+        elif any(marker in tier_name.lower() for marker in _PG_N4_TIER_MARKERS):
+            price_family = "enterprise_n4"
+        else:
+            price_family = "enterprise"
+
+        ha_supported = None
+        if tier_regions:
+            if price_family == "shared":
+                ha_supported = False
+            else:
+                ha_supported = any(
+                    (region, price_family) in ha_families
+                    or (region, "enterprise") in ha_families
+                    or (region, "enterprise_n4") in ha_families
+                    for region in tier_regions
+                )
+
+        rows.append(
+            {
+                "vendor_id": vendor.vendor_id,
+                "database_id": tier_name,
+                "name": tier_name,
+                "api_reference": tier_name,
+                "display_name": tier_name,
+                "description": description,
+                # TODO: not clear which are the server instances for for perf-optimized and memory-optimized
+                # db instances (like db-perf-optimized-N-2, db-memory-optimized-N-4, etc.)
+                "server_id": server_id,
+                "engine": DatabaseEngine.POSTGRESQL,
+                "engine_versions": meta["engine_versions"],
+                "family": family_slug,
+                "vcpus": cpu_count,
+                "memory_amount": memory_amount,
+                "storage_size": None,
+                "ha_supported": ha_supported,
+                "storage_autoscaling": None,
+                # https://cloud.google.com/sql/docs/postgres/backup-recovery/backups
+                "scheduled_backups": True,
+                # https://cloud.google.com/sql/docs/postgres/backup-recovery/pitr
+                "continuous_backups": None,
+                "custom_config": meta["custom_config"],
+                "custom_extensions": meta["custom_extensions"],
+            }
+        )
+        vendor.progress_tracker.advance_task()
+    vendor.progress_tracker.hide_task()
+    return merge_database_catalog_rows(rows)
+
+
+def inventory_database_prices(vendor):
+    vendor.progress_tracker.start_task(name="Fetching Cloud SQL SKU(s)", total=None)
+    compute_index, _ = _pg_billing_catalog()
+    tiers = _pg_sqladmin_metadata()["tiers"]
+    vendor.progress_tracker.hide_task()
+
+    items = []
+    vendor.progress_tracker.start_task(
+        name="Processing database_price(s)", total=len(tiers)
+    )
+    for tier in tiers:
+        tier_name = tier.get("tier")
+        if not tier_name:
+            vendor.progress_tracker.advance_task()
+            continue
+
+        if match := _PG_CUSTOM_TIER_RE.match(tier_name):
+            cpu_count = int(match.group(1))
+        elif match := _PG_NAMED_TIER_CPU_RE.search(tier_name):
+            cpu_count = int(match.group(1))
+        else:
+            cpu_count = None
+
+        ram_bytes = int(tier.get("RAM") or 0)
+        memory_gib = ram_bytes / (1024**3) if ram_bytes else None
+
+        raw_regions = tier.get("region")
+        if isinstance(raw_regions, str):
+            tier_regions = {raw_regions}
+        elif isinstance(raw_regions, list):
+            tier_regions = {region for region in raw_regions if isinstance(region, str)}
+        else:
+            tier_regions = set()
+
+        if tier_name in _PG_SHARED_TIERS:
+            price_family = "shared"
+        elif any(marker in tier_name.lower() for marker in _PG_N4_TIER_MARKERS):
+            price_family = "enterprise_n4"
+        else:
+            price_family = "enterprise"
+
+        for region in vendor.regions:
+            if tier_regions and region.api_reference not in tier_regions:
+                continue
+
+            hourly = currency = None
+            if price_family == "shared":
+                component = _PG_SHARED_TIERS[tier_name]
+                instance_sku = compute_index.get(
+                    (region.api_reference, "shared", component)
+                )
+                if instance_sku is not None:
+                    hourly = _sku_unit_price(instance_sku)
+                    if hourly is not None:
+                        tiered = instance_sku.pricing_info[
+                            0
+                        ].pricing_expression.tiered_rates
+                        currency = tiered[0].unit_price.currency_code or "USD"
+            elif cpu_count is not None and memory_gib is not None:
+                vcpu_sku = compute_index.get(
+                    (region.api_reference, price_family, "vcpu")
+                )
+                ram_sku = compute_index.get((region.api_reference, price_family, "ram"))
+                if vcpu_sku is not None and ram_sku is not None:
+                    vcpu_hourly = _sku_unit_price(vcpu_sku)
+                    ram_hourly = _sku_unit_price(ram_sku)
+                    if vcpu_hourly is not None and ram_hourly is not None:
+                        hourly = vcpu_hourly * cpu_count + ram_hourly * memory_gib
+                        vcpu_tiered = vcpu_sku.pricing_info[
+                            0
+                        ].pricing_expression.tiered_rates
+                        currency = vcpu_tiered[0].unit_price.currency_code or "USD"
+
+            if hourly is None:
+                continue
+            items.append(
+                {
+                    "vendor_id": vendor.vendor_id,
+                    "region_id": region.region_id,
+                    "database_id": tier_name,
+                    "allocation": Allocation.ONDEMAND,
+                    "unit": PriceUnit.HOUR,
+                    "price": hourly,
+                    "price_upfront": 0,
+                    "price_tiered": [],
+                    "currency": currency or "USD",
+                }
+            )
+        vendor.progress_tracker.advance_task()
+    vendor.progress_tracker.hide_task()
+    return items
+
+
+def inventory_database_storages(vendor):
+    vendor.progress_tracker.start_task(name="Fetching Cloud SQL SKU(s)", total=None)
+    found = {
+        storage_id
+        for sku in _cloud_sql_skus()
+        if (storage_id := _pg_storage_id(sku.description or ""))
+    }
+    vendor.progress_tracker.hide_task()
+
+    items = []
+    vendor.progress_tracker.start_task(
+        name="Processing database_storage(s)", total=len(found)
+    )
+    for storage_id in sorted(found):
+        spec = _PG_STORAGE_SPECS[storage_id]
+        items.append(
+            {
+                "vendor_id": vendor.vendor_id,
+                "database_storage_id": storage_id,
+                "name": spec["name"],
+                "description": spec["description"],
+                "scope": DatabaseStorageScope.DATA,
+                "min_size": spec["min_size"],
+                "max_size": spec["max_size"],
+                "max_iops": spec["max_iops"],
+                "max_throughput": spec["max_throughput"],
+            }
+        )
+        vendor.progress_tracker.advance_task()
+    vendor.progress_tracker.hide_task()
+    return items
+
+
+def inventory_database_storage_prices(vendor):
+    vendor.progress_tracker.start_task(name="Fetching Cloud SQL SKU(s)", total=None)
+    skus = _cloud_sql_skus()
+    vendor.progress_tracker.hide_task()
+
+    items = []
+    seen: set[tuple[str, str]] = set()
+    vendor.progress_tracker.start_task(
+        name="Processing database_storage_price(s)", total=len(skus)
+    )
+    for sku in skus:
+        storage_id = _pg_storage_id(sku.description or "")
+        if not storage_id:
+            vendor.progress_tracker.advance_task()
+            continue
+
+        unit_price = _sku_unit_price(sku)
+        if unit_price is None:
+            vendor.progress_tracker.advance_task()
+            continue
+        usage_unit = (
+            sku.pricing_info[0].pricing_expression.usage_unit
+            if sku.pricing_info
+            else ""
+        )
+        if usage_unit == "GiBy.mo":
+            monthly = unit_price
+        elif usage_unit == "GiBy.h":
+            monthly = unit_price * 730
+        else:
+            vendor.progress_tracker.advance_task()
+            continue
+
+        tiered = sku.pricing_info[0].pricing_expression.tiered_rates
+        currency = tiered[0].unit_price.currency_code or "USD"
+        for region in vendor.regions:
+            if region.api_reference not in sku.service_regions:
+                continue
+            key = (region.region_id, storage_id)
+            if key in seen:
+                continue
+            seen.add(key)
+            items.append(
+                {
+                    "vendor_id": vendor.vendor_id,
+                    "region_id": region.region_id,
+                    "database_storage_id": storage_id,
+                    "unit": PriceUnit.GB_MONTH,
+                    "price": monthly,
+                    "price_upfront": 0,
+                    "price_tiered": [],
+                    "currency": currency,
+                }
+            )
+        vendor.progress_tracker.advance_task()
+    vendor.progress_tracker.hide_task()
     return items

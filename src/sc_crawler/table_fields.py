@@ -117,6 +117,29 @@ class StorageType(str, Enum):
     """Storage over network, e.g. using NFS."""
 
 
+class DatabaseEngine(str, Enum):
+    """Managed database engine."""
+
+    POSTGRESQL = "postgresql"
+    """PostgreSQL."""
+
+
+class DatabaseSupportLevel(str, Enum):
+    """Vendor support tier for a managed database SKU."""
+
+    STANDARD = "standard"
+    """Standard support level."""
+
+
+class DatabaseStorageScope(str, Enum):
+    """Scope of a managed database storage product."""
+
+    DATA = "data"
+    """Primary database data storage."""
+    BACKUP = "backup"
+    """Backup or archive storage."""
+
+
 class Disk(Json):
     """Disk definition based on size and storage type."""
 

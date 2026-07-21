@@ -23,6 +23,10 @@ Each vendor module should provide the below functions:
 - `inventory_server_prices`: Define the [`ServerPrice`][sc_crawler.tables.ServerPrice] instances for the standard/ondemand (or optionally also for the reserved) pricing of the instance types per region and zone. When applicable, include the monthly cap for tiered pricing in the `price_tiered` field.
 - `inventory_server_prices_spot`: Similar to the above, define [`ServerPrice`][sc_crawler.tables.ServerPrice] instances but the `allocation` field set to [`Allocation.SPOT`][sc_crawler.table_fields.Allocation]. Very likely to see different spot prices per region/zone.
 - `inventory_storage_prices`: Define [`StoragePrice`][sc_crawler.tables.StoragePrice] instances to describe the available storage options that can be attached to the servers.
+- `inventory_databases`: Define [`Database`][sc_crawler.tables.Database] instances for managed database SKUs (e.g. PostgreSQL).
+- `inventory_database_prices`: Define [`DatabasePrice`][sc_crawler.tables.DatabasePrice] instances for compute pricing per region. Use hourly `price` with optional monthly cap in `price_tiered`.
+- `inventory_database_storages`: Define [`DatabaseStorage`][sc_crawler.tables.DatabaseStorage] instances for decoupled or add-on storage products.
+- `inventory_database_storage_prices`: Define [`DatabaseStoragePrice`][sc_crawler.tables.DatabaseStoragePrice] instances for storage pricing per region.
 - `inventory_traffic_prices`: Define [`TrafficPrice`][sc_crawler.tables.TrafficPrice] instances to describe the pricing of ingress/egress traffic.
 - `inventory_ipv4_prices`: Define [`Ipv4Price`][sc_crawler.tables.Ipv4Price] instances on the price of an IPv4 address.
 
@@ -258,6 +262,83 @@ def inventory_ipv4_prices(vendor):
     #             "price": ,
     #             "currency": "USD",
     #             "unit": PriceUnit.MONTH,
+    #         }
+    #     )
+    return items
+
+
+def inventory_databases(vendor):
+    items = []
+    # for database in []:
+    #     items.append(
+    #         {
+    #             "vendor_id": vendor.vendor_id,
+    #             "database_id": ,
+    #             "name": ,
+    #             "api_reference": ,
+    #             "display_name": ,
+    #             "engine": DatabaseEngine.POSTGRESQL,
+    #             "engine_versions": ["16", "17"],
+    #             "family": None,
+    #             "vcpus": None,
+    #             "memory_amount": None,
+    #             "storage_size": None,
+    #             "ha_supported": None,
+    #             "storage_autoscaling": None,
+    #             "scheduled_backups": None,
+    #             "continuous_backups": None,
+    #         }
+    #     )
+    return items
+
+
+def inventory_database_prices(vendor):
+    items = []
+    # for price in []:
+    #     items.append(
+    #         {
+    #             "vendor_id": vendor.vendor_id,
+    #             "region_id": ,
+    #             "database_id": ,
+    #             "allocation": Allocation.ONDEMAND,
+    #             "unit": PriceUnit.HOUR,
+    #             "price": ,
+    #             "price_upfront": 0,
+    #             "price_tiered": [],
+    #             "currency": "USD",
+    #         }
+    #     )
+    return items
+
+
+def inventory_database_storages(vendor):
+    items = []
+    # for storage in []:
+    #     items.append(
+    #         {
+    #             "vendor_id": vendor.vendor_id,
+    #             "database_storage_id": ,
+    #             "name": ,
+    #             "description": None,
+    #             "scope": DatabaseStorageScope.DATA,
+    #             "min_size": None,
+    #             "max_size": None,
+    #         }
+    #     )
+    return items
+
+
+def inventory_database_storage_prices(vendor):
+    items = []
+    # for price in []:
+    #     items.append(
+    #         {
+    #             "vendor_id": vendor.vendor_id,
+    #             "region_id": ,
+    #             "database_storage_id": ,
+    #             "unit": PriceUnit.GB_MONTH,
+    #             "price": ,
+    #             "currency": "USD",
     #         }
     #     )
     return items
