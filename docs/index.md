@@ -44,7 +44,8 @@ The related user or role requires the below minimum IAM policy:
                 "ec2:DescribeAvailabilityZones",
                 "ec2:DescribeInstanceTypes",
                 "ec2:DescribeSpotPriceHistory",
-                "ec2:DescribeInstanceTypeOfferings"
+                "ec2:DescribeInstanceTypeOfferings",
+                "rds:DescribeOrderableDBInstanceOptions"
             ],
             "Resource": "*"
         }
@@ -69,6 +70,7 @@ List of APIs required to be enabled in the project:
 
 - [Cloud Billing API](https://console.cloud.google.com/apis/library/cloudbilling.googleapis.com)
 - [Compute Engine API](https://console.developers.google.com/apis/api/compute.googleapis.com/overview)
+- [Cloud SQL Admin API](https://console.cloud.google.com/apis/library/sqladmin.googleapis.com)
 
 </details>
 
@@ -159,6 +161,12 @@ You need to create a cloud project, optionally enable all regions, then create a
       },
       {
         "action": "publicCloudProject:apiovh:flavor/get"
+      },
+      {
+        "action": "publicCloudProject:apiovh:database/capabilities/get"
+      },
+      {
+        "action": "publicCloudProject:apiovh:database/availability/get"
       }
     ]
   },
@@ -190,7 +198,7 @@ This choice affects the currency used for prices.
 
 <summary>Alibaba Cloud</summary>
 
-Create a RAM user with the `AliyunBSSReadOnlyAccess` and `AliyunECSReadOnlyAccess` system policies (or a custom policy with at least the `bss:DescribeProduct` and `ecs:DescribePrice` permissions), then configure the following environment variables:
+Create a RAM user with the `AliyunBSSReadOnlyAccess`, `AliyunECSReadOnlyAccess` and `AliyunRDSReadOnlyAccess` system policies (or a custom policy with at least the `bss:DescribeProduct` and `ecs:DescribePrice` permissions), then configure the following environment variables:
 
 - `ALIBABA_CLOUD_ACCESS_KEY_ID`
 - `ALIBABA_CLOUD_ACCESS_KEY_SECRET`

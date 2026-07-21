@@ -1,4 +1,10 @@
-## v0.8.x (DEVELOPMENT)
+## v0.8.3 (July 15, 2026)
+
+New feature(s):
+
+- Add PostgreSQL DBaaS catalog tables: `database`, `database_price`, `database_storage`, and
+  `database_storage_price`, with SCD mirrors and Alembic migration.
+- Add initial support for `inventory_databases`, `inventory_database_prices`, `inventory_database_storages`, and `inventory_database_storage_prices` methods to selected vendors (now just `Azure` and `GCP` implemented). Note that records collected through this beta release are not yet intended for production use and meant only for initial exploration.
 
 Fix(es):
 

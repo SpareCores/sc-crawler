@@ -385,3 +385,20 @@ def inventory_ipv4_prices(vendor):
             }
         )
     return items
+
+
+def inventory_databases(vendor):
+    """Hetzner Cloud does not offer managed PostgreSQL."""
+    return []
+
+
+def inventory_database_prices(vendor):
+    return []
+
+
+def inventory_database_storages(vendor):
+    return []
+
+
+def inventory_database_storage_prices(vendor):
+    return []
