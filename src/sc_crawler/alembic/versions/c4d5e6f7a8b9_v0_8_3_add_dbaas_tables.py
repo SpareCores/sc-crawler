@@ -28,11 +28,26 @@ def scdize_suffix(table_name: str) -> str:
     return table_name
 
 
-def _enum(name: str, values: tuple[str, ...]):
+def _enum(name: str, values: tuple[str, ...], *, create_type: bool = False):
     is_postgresql = op.get_context().dialect.name == "postgresql"
     if is_postgresql:
-        return sa.dialects.postgresql.ENUM(*values, name=name, create_type=False)
+        return sa.dialects.postgresql.ENUM(*values, name=name, create_type=create_type)
     return sa.Enum(*values, name=name)
+
+
+def _drop_new_postgresql_enums() -> None:
+    """Table drops do not remove PostgreSQL enum types."""
+    if op.get_context().dialect.name != "postgresql":
+        return
+    bind = op.get_bind()
+    for name, values in (
+        ("databasestoragescope", ("DATA", "BACKUP")),
+        ("databasesupportlevel", ("STANDARD",)),
+        ("databaseengine", ("POSTGRESQL",)),
+    ):
+        sa.dialects.postgresql.ENUM(*values, name=name, create_type=False).drop(
+            bind, checkfirst=True
+        )
 
 
 def _status_column():
@@ -165,7 +180,7 @@ def upgrade() -> None:
         ),
         sa.Column(
             "engine",
-            _enum("databaseengine", ("POSTGRESQL",)),
+            _enum("databaseengine", ("POSTGRESQL",), create_type=True),
             nullable=False,
             comment="Managed database engine.",
         ),
@@ -249,7 +264,7 @@ def upgrade() -> None:
         ),
         sa.Column(
             "support_level",
-            _enum("databasesupportlevel", ("STANDARD",)),
+            _enum("databasesupportlevel", ("STANDARD",), create_type=True),
             nullable=True,
             comment="Vendor support tier for the SKU.",
         ),
@@ -378,7 +393,7 @@ def upgrade() -> None:
         ),
         sa.Column(
             "scope",
-            _enum("databasestoragescope", ("DATA", "BACKUP")),
+            _enum("databasestoragescope", ("DATA", "BACKUP"), create_type=True),
             nullable=False,
             comment="Scope of the storage product, e.g. data or backup.",
         ),
@@ -501,3 +516,4 @@ def downgrade() -> None:
         "database",
     ):
         op.drop_table(scdize_suffix(table))
+    _drop_new_postgresql_enums()
