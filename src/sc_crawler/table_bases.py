@@ -1340,10 +1340,6 @@ class DatabaseBenchmarkScoreFields(HasBenchmarkPKFK, HasDatabasePK, HasVendorPKF
         default=None,
         description="The version of the benchmark tool used.",
     )
-    kernel_version: Optional[str] = Field(
-        default=None,
-        description="The kernel version when the benchmark was run.",
-    )
     score: float = Field(
         description="The resulting score of the benchmark.",
     )

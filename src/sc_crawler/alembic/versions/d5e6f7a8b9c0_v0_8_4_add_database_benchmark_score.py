@@ -108,12 +108,6 @@ def upgrade() -> None:
             comment="The version of the benchmark tool used.",
         ),
         sa.Column(
-            "kernel_version",
-            sqlmodel.sql.sqltypes.AutoString(),
-            nullable=True,
-            comment="The kernel version when the benchmark was run.",
-        ),
-        sa.Column(
             "score",
             sa.Float(),
             nullable=False,
