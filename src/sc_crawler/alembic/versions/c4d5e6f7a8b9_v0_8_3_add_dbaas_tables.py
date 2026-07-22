@@ -28,26 +28,24 @@ def scdize_suffix(table_name: str) -> str:
     return table_name
 
 
-def _enum(name: str, values: tuple[str, ...], *, create_type: bool = False):
+def _enum(name: str, values: tuple[str, ...]):
     is_postgresql = op.get_context().dialect.name == "postgresql"
     if is_postgresql:
-        return sa.dialects.postgresql.ENUM(*values, name=name, create_type=create_type)
+        return sa.dialects.postgresql.ENUM(*values, name=name, create_type=False)
     return sa.Enum(*values, name=name)
 
 
-def _drop_new_postgresql_enums() -> None:
+def _drop_dbaas_enums() -> None:
     """Table drops do not remove PostgreSQL enum types."""
     if op.get_context().dialect.name != "postgresql":
         return
     bind = op.get_bind()
-    for name, values in (
-        ("databasestoragescope", ("DATA", "BACKUP")),
-        ("databasesupportlevel", ("STANDARD",)),
-        ("databaseengine", ("POSTGRESQL",)),
+    for name in (
+        "databasestoragescope",
+        "databasesupportlevel",
+        "databaseengine",
     ):
-        sa.dialects.postgresql.ENUM(*values, name=name, create_type=False).drop(
-            bind, checkfirst=True
-        )
+        sa.Enum(name=name).drop(bind, checkfirst=True)
 
 
 def _status_column():
@@ -180,7 +178,7 @@ def upgrade() -> None:
         ),
         sa.Column(
             "engine",
-            _enum("databaseengine", ("POSTGRESQL",), create_type=True),
+            sa.Enum("POSTGRESQL", name="databaseengine"),
             nullable=False,
             comment="Managed database engine.",
         ),
@@ -264,7 +262,7 @@ def upgrade() -> None:
         ),
         sa.Column(
             "support_level",
-            _enum("databasesupportlevel", ("STANDARD",), create_type=True),
+            sa.Enum("STANDARD", name="databasesupportlevel"),
             nullable=True,
             comment="Vendor support tier for the SKU.",
         ),
@@ -393,7 +391,7 @@ def upgrade() -> None:
         ),
         sa.Column(
             "scope",
-            _enum("databasestoragescope", ("DATA", "BACKUP"), create_type=True),
+            sa.Enum("DATA", "BACKUP", name="databasestoragescope"),
             nullable=False,
             comment="Scope of the storage product, e.g. data or backup.",
         ),
@@ -516,4 +514,4 @@ def downgrade() -> None:
         "database",
     ):
         op.drop_table(scdize_suffix(table))
-    _drop_new_postgresql_enums()
+    _drop_dbaas_enums()
