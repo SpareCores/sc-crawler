@@ -1,3 +1,9 @@
+## v0.8.x (DEVELOPMENT)
+
+New feature(s):
+
+- Add PostgreSQL DBaaS support for `AWS`.
+
 ## v0.8.3 (July 15, 2026)
 
 New feature(s):
