@@ -1637,6 +1637,7 @@ def inventory_database_prices(vendor):
     products = _boto_get_rds_products()
     vendor.progress_tracker.hide_task()
 
+    region_ids = _active_region_ids(vendor)
     items = []
     vendor.progress_tracker.start_task(
         name="Preprocessing database_price(s)", total=len(products)
@@ -1646,6 +1647,9 @@ def inventory_database_prices(vendor):
             if product["product"].get("productFamily") != "Database Instance":
                 continue
             attrs = product["product"]["attributes"]
+            region_id = attrs["regionCode"]
+            if region_id not in region_ids:
+                continue
             if attrs.get("deploymentOption") != "Single-AZ":
                 continue
             database_id = attrs.get("instanceType")
@@ -1653,7 +1657,7 @@ def inventory_database_prices(vendor):
             items.append(
                 {
                     "vendor_id": vendor.vendor_id,
-                    "region_id": attrs["regionCode"],
+                    "region_id": region_id,
                     "database_id": database_id,
                     "allocation": Allocation.ONDEMAND,
                     "unit": PriceUnit.HOUR,
@@ -1724,6 +1728,7 @@ def inventory_database_storage_prices(vendor):
     products = _boto_get_rds_products()
     vendor.progress_tracker.hide_task()
 
+    region_ids = _active_region_ids(vendor)
     items = []
     database_storage_ids = [s.database_storage_id for s in vendor.database_storages]
     vendor.progress_tracker.start_task(
@@ -1734,6 +1739,9 @@ def inventory_database_storage_prices(vendor):
             if product["product"].get("productFamily") != "Database Storage":
                 continue
             attrs = product["product"]["attributes"]
+            region_id = attrs["regionCode"]
+            if region_id not in region_ids:
+                continue
             storage_id = next(
                 (
                     k
@@ -1749,7 +1757,7 @@ def inventory_database_storage_prices(vendor):
             items.append(
                 {
                     "vendor_id": vendor.vendor_id,
-                    "region_id": attrs["regionCode"],
+                    "region_id": region_id,
                     "database_storage_id": storage_id,
                     "unit": PriceUnit.GB_MONTH,
                     "price": float(price[0]),

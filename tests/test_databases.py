@@ -652,7 +652,9 @@ def test_aws_inventory_databases_dedupes_across_regions():
 
 
 def test_aws_inventory_database_prices_single_az_only():
-    vendor = _aws_vendor()
+    vendor = _aws_vendor(
+        regions=[Mock(region_id="us-east-1", status=Status.ACTIVE)],
+    )
     products = [
         _aws_rds_instance_product(
             instance_type="db.m5.large", region="us-east-1", price="0.145"
@@ -662,6 +664,11 @@ def test_aws_inventory_database_prices_single_az_only():
             region="us-east-1",
             deployment="Multi-AZ",
             price="0.29",
+        ),
+        _aws_rds_instance_product(
+            instance_type="db.m5.large",
+            region="ap-south-1",
+            price="0.16",
         ),
         _aws_rds_storage_product(volume_type="General Purpose-GP3"),
     ]
@@ -724,15 +731,22 @@ def test_aws_inventory_database_storages_from_orderable_bounds():
 
 def test_aws_inventory_database_storage_prices_skip_missing_catalog():
     vendor = _aws_vendor(
+        regions=[
+            Mock(region_id="us-east-1", status=Status.ACTIVE),
+            Mock(region_id="eu-west-1", status=Status.ACTIVE),
+        ],
         database_storages=[
             Mock(database_storage_id="gp3"),
             Mock(database_storage_id="gp2"),
-        ]
+        ],
     )
     products = [
         _aws_rds_storage_product(volume_type="General Purpose-GP3", price="0.08"),
         _aws_rds_storage_product(volume_type="Magnetic", price="0.10"),
         _aws_rds_storage_product(volume_type="General Purpose", region="eu-west-1"),
+        _aws_rds_storage_product(
+            volume_type="General Purpose-GP3", region="ap-south-1", price="0.09"
+        ),
         _aws_rds_instance_product(instance_type="db.m5.large"),
     ]
     with patch(
