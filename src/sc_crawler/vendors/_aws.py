@@ -1400,7 +1400,7 @@ def _active_region_ids(vendor: Vendor) -> list[str]:
         region.region_id for region in vendor.regions if region.status == Status.ACTIVE
     }
     priority = [r for r in ("us-east-1", "eu-west-1", "eu-central-1") if r in active]
-    rest = list(active - set(priority))
+    rest = sorted(active - set(priority))
     return priority + rest
 
 
