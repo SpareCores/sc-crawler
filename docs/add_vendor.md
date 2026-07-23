@@ -74,11 +74,14 @@ def inventory_zones(vendor):
 
 ```python
 def inventory_compliance_frameworks(vendor):
-    return map_compliance_frameworks_to_vendor(vendor.vendor_id, [
-    #    "hipaa",
-    #    "soc2t2",
-    #    "iso27001",
-    ])
+    return map_compliance_frameworks_to_vendor(
+        vendor.vendor_id,
+        [
+            #    "hipaa",
+            #    "soc2t2",
+            #    "iso27001",
+        ],
+    )
 
 
 def inventory_regions(vendor):
@@ -107,7 +110,7 @@ def inventory_regions(vendor):
 
 
 def inventory_zones(vendor):
-    items =[]
+    items = []
     # for zone in []:
     #     items.append({
     #         "vendor_id": vendor.vendor_id,

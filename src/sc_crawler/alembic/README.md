@@ -154,10 +154,10 @@ def upgrade() -> None:
 
     if do_recreate_tables:
         with op.batch_alter_table(
-                table,
-                schema=None,
-                copy_from=table,
-                recreate="always",
+            table,
+            schema=None,
+            copy_from=table,
+            recreate="always",
         ) as batch_op:
             batch_op.add_column(
                 sa.Column("column_name", sa.Integer(), comment="column comment"),
@@ -175,8 +175,8 @@ def downgrade() -> None:
     table = get_table(is_scd)
 
     with op.batch_alter_table(
-            table,
-            schema=None,
+        table,
+        schema=None,
     ) as batch_op:
         batch_op.drop_column("column_name")
 ```
@@ -211,10 +211,10 @@ def upgrade() -> None:
 
     if do_recreate_tables:
         with op.batch_alter_table(
-                table,
-                schema=None,
-                copy_from=table,
-                recreate="always",
+            table,
+            schema=None,
+            copy_from=table,
+            recreate="always",
         ) as batch_op:
             batch_op.add_column(
                 sa.Column("column_name", sa.Integer(), comment="column comment"),
