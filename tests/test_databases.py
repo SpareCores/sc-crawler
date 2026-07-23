@@ -1,7 +1,27 @@
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+from sc_crawler.table_fields import Allocation, DatabaseEngine, PriceUnit, Status
 from sc_crawler.vendor_helpers import merge_database_catalog_rows
+from sc_crawler.vendors._aws import (
+    _active_region_ids,
+    _boto_describe_db_major_engine_versions_first,
+    _extract_rds_storage_size,
+    _get_rds_instance_products_by_region,
+    _get_storage_bounds_from_orderable_options,
+)
+from sc_crawler.vendors._aws import (
+    inventory_database_prices as aws_database_prices,
+)
+from sc_crawler.vendors._aws import (
+    inventory_database_storage_prices as aws_database_storage_prices,
+)
+from sc_crawler.vendors._aws import (
+    inventory_database_storages as aws_database_storages,
+)
+from sc_crawler.vendors._aws import (
+    inventory_databases as aws_databases,
+)
 from sc_crawler.vendors._azure import (
     _pg_database_regions,
     _pg_engine_versions,
@@ -15,6 +35,75 @@ from sc_crawler.vendors._gcp import (
     inventory_database_prices,
     inventory_databases,
 )
+
+
+def _aws_ondemand_terms(price: str = "0.1", currency: str = "USD") -> dict:
+    return {
+        "OnDemand": {
+            "term": {
+                "priceDimensions": {
+                    "dim": {"pricePerUnit": {currency: price}},
+                }
+            }
+        }
+    }
+
+
+def _aws_rds_instance_product(
+    *,
+    instance_type: str,
+    region: str = "us-east-1",
+    deployment: str = "Single-AZ",
+    family: str = "General purpose",
+    vcpu: str = "2",
+    memory: str = "8 GiB",
+    storage: str = "EBS Only",
+    price: str = "0.145",
+) -> dict:
+    return {
+        "product": {
+            "productFamily": "Database Instance",
+            "attributes": {
+                "instanceType": instance_type,
+                "regionCode": region,
+                "deploymentOption": deployment,
+                "instanceFamily": family,
+                "vcpu": vcpu,
+                "memory": memory,
+                "storage": storage,
+            },
+        },
+        "terms": _aws_ondemand_terms(price),
+    }
+
+
+def _aws_rds_storage_product(
+    *,
+    volume_type: str,
+    region: str = "us-east-1",
+    price: str = "0.115",
+) -> dict:
+    return {
+        "product": {
+            "productFamily": "Database Storage",
+            "attributes": {
+                "volumeType": volume_type,
+                "regionCode": region,
+            },
+        },
+        "terms": _aws_ondemand_terms(price),
+    }
+
+
+def _aws_vendor(*, regions=None, servers=None, database_storages=None):
+    vendor = Mock(vendor_id="aws")
+    vendor.regions = regions or []
+    vendor.servers = servers or []
+    vendor.database_storages = database_storages or []
+    vendor.progress_tracker = Mock(
+        start_task=Mock(), advance_task=Mock(), hide_task=Mock()
+    )
+    return vendor
 
 
 def _gcp_pg_sku(description: str, *, regions: list[str], units: int, nanos: int):
@@ -354,3 +443,305 @@ def test_gcp_database_prices_use_region_name_not_numeric_id():
     assert prices[0]["region_id"] == "999"
     assert prices[0]["database_id"] == "db-n1-standard-4"
     assert prices[0]["price"] > 0
+
+
+def test_aws_extract_rds_storage_size():
+    assert _extract_rds_storage_size(None) is None
+    assert _extract_rds_storage_size("EBS Only") is None
+    assert _extract_rds_storage_size("ebs only") is None
+    assert _extract_rds_storage_size("2 x 1425 NVMe SSD") == 2850
+    assert _extract_rds_storage_size("3 X 950 NVMe SSD") == 2850
+    assert _extract_rds_storage_size("not a size") is None
+
+
+def test_aws_active_region_ids_priority_and_active_only():
+    vendor = _aws_vendor(
+        regions=[
+            Mock(region_id="ap-south-1", status=Status.ACTIVE),
+            Mock(region_id="eu-west-1", status=Status.ACTIVE),
+            Mock(region_id="us-east-1", status=Status.INACTIVE),
+            Mock(region_id="eu-central-1", status=Status.ACTIVE),
+            Mock(region_id="us-west-2", status=Status.ACTIVE),
+        ]
+    )
+    assert _active_region_ids(vendor) == [
+        "eu-west-1",
+        "eu-central-1",
+        "ap-south-1",
+        "us-west-2",
+    ]
+
+
+def test_aws_major_engine_versions_try_regions_in_order():
+    with patch(
+        "sc_crawler.vendors._aws._boto_describe_db_major_engine_versions",
+        side_effect=[[], ["15", "16"], ["14"]],
+    ) as describe:
+        versions = _boto_describe_db_major_engine_versions_first(
+            ["eu-west-1", "us-east-1", "eu-central-1"]
+        )
+    assert versions == ["15", "16"]
+    assert describe.call_args_list[0].args == ("eu-west-1",)
+    assert describe.call_args_list[1].args == ("us-east-1",)
+    assert describe.call_count == 2
+
+
+def test_aws_instance_products_by_region_single_az_only():
+    products = [
+        _aws_rds_instance_product(instance_type="db.m5.large", region="us-east-1"),
+        _aws_rds_instance_product(
+            instance_type="db.m5.large",
+            region="us-east-1",
+            deployment="Multi-AZ",
+            price="0.29",
+        ),
+        _aws_rds_instance_product(instance_type="db.r6g.large", region="eu-west-1"),
+        {
+            "product": {
+                "productFamily": "Database Storage",
+                "attributes": {"volumeType": "Magnetic", "regionCode": "us-east-1"},
+            },
+            "terms": _aws_ondemand_terms(),
+        },
+    ]
+    with patch(
+        "sc_crawler.vendors._aws._boto_get_rds_products",
+        return_value=products,
+    ):
+        by_region = _get_rds_instance_products_by_region.__wrapped__()
+    assert set(by_region) == {"us-east-1", "eu-west-1"}
+    assert set(by_region["us-east-1"]) == {"db.m5.large"}
+    assert by_region["eu-west-1"]["db.r6g.large"]["vcpu"] == "2"
+
+
+def test_aws_storage_bounds_from_orderable_options():
+    options_by_database = {
+        "db.m5.large": [
+            {
+                "StorageType": "gp3",
+                "MinStorageSize": 20,
+                "MaxStorageSize": 65536,
+                "MaxIopsPerDbInstance": 40000,
+                "MaxStorageThroughputPerDbInstance": 4000,
+            },
+            {
+                "StorageType": "gp2",
+                "MinStorageSize": 20,
+                "MaxStorageSize": 65536,
+                "MaxIopsPerDbInstance": 16000,
+                "MaxStorageThroughputPerDbInstance": 250,
+            },
+        ],
+        "db.t3.micro": [
+            {
+                "StorageType": "gp3",
+                "MinStorageSize": 5,
+                "MaxStorageSize": 16384,
+                "MaxIopsPerDbInstance": 64000,
+                "MaxStorageThroughputPerDbInstance": 1000,
+            },
+        ],
+    }
+    bounds = _get_storage_bounds_from_orderable_options(options_by_database)
+    assert bounds["gp3"]["min_size"] == 5
+    assert bounds["gp3"]["max_size"] == 65536
+    assert bounds["gp3"]["max_iops"] == 64000
+    assert bounds["gp3"]["max_throughput"] == 4000
+    assert bounds["gp2"]["max_iops"] == 16000
+    assert "standard" not in bounds
+
+
+def test_aws_inventory_databases_description_server_id_and_capabilities():
+    vendor = _aws_vendor(
+        regions=[Mock(region_id="us-east-1", status=Status.ACTIVE)],
+        servers=[Mock(server_id="m5.large"), Mock(server_id="r6gd.xlarge")],
+    )
+    prices_by_region = {
+        "us-east-1": {
+            "db.m5.large": {
+                "instanceFamily": "General purpose",
+                "vcpu": "2",
+                "memory": "8 GiB",
+                "storage": "EBS Only",
+            },
+            "db.r6gd.xlarge": {
+                "instanceFamily": "Memory optimized",
+                "vcpu": "4",
+                "memory": "32 GiB",
+                "storage": "1 x 118 NVMe SSD",
+            },
+        }
+    }
+    options_by_database = {
+        "db.m5.large": [
+            {"MultiAZCapable": True, "SupportsStorageAutoscaling": True},
+        ],
+        "db.r6gd.xlarge": [
+            {"MultiAZCapable": False, "SupportsStorageAutoscaling": False},
+        ],
+    }
+    with (
+        patch(
+            "sc_crawler.vendors._aws._get_rds_instance_products_by_region",
+            return_value=prices_by_region,
+        ),
+        patch(
+            "sc_crawler.vendors._aws._boto_describe_db_major_engine_versions_first",
+            return_value=["15", "16"],
+        ),
+        patch(
+            "sc_crawler.vendors._aws._lookup_orderable_db_instance_options",
+            return_value=options_by_database,
+        ),
+    ):
+        rows = aws_databases(vendor)
+    by_id = {row["database_id"]: row for row in rows}
+    assert set(by_id) == {"db.m5.large", "db.r6gd.xlarge"}
+    assert by_id["db.m5.large"]["server_id"] == "m5.large"
+    assert by_id["db.m5.large"]["memory_amount"] == 8 * 1024
+    assert by_id["db.m5.large"]["storage_size"] is None
+    assert by_id["db.m5.large"]["description"] == (
+        "General purpose (2 vCPU, 8.0 GiB RAM)"
+    )
+    assert by_id["db.m5.large"]["ha_supported"] is True
+    assert by_id["db.m5.large"]["storage_autoscaling"] is True
+    assert by_id["db.m5.large"]["engine"] == DatabaseEngine.POSTGRESQL
+    assert by_id["db.m5.large"]["engine_versions"] == ["15", "16"]
+    assert by_id["db.m5.large"]["scheduled_backups"] is True
+    assert by_id["db.m5.large"]["continuous_backups"] == 35
+    assert by_id["db.r6gd.xlarge"]["server_id"] == "r6gd.xlarge"
+    assert by_id["db.r6gd.xlarge"]["storage_size"] == 118
+    assert by_id["db.r6gd.xlarge"]["description"] == (
+        "Memory optimized (4 vCPU, 32.0 GiB RAM, 118 GB NVMe SSD)"
+    )
+    assert by_id["db.r6gd.xlarge"]["ha_supported"] is False
+
+
+def test_aws_inventory_databases_dedupes_across_regions():
+    vendor = _aws_vendor(
+        regions=[
+            Mock(region_id="us-east-1", status=Status.ACTIVE),
+            Mock(region_id="eu-west-1", status=Status.ACTIVE),
+        ]
+    )
+    attrs = {
+        "instanceFamily": "General purpose",
+        "vcpu": "2",
+        "memory": "8 GiB",
+        "storage": "EBS Only",
+    }
+    with (
+        patch(
+            "sc_crawler.vendors._aws._get_rds_instance_products_by_region",
+            return_value={
+                "us-east-1": {"db.m5.large": attrs},
+                "eu-west-1": {"db.m5.large": attrs},
+            },
+        ),
+        patch(
+            "sc_crawler.vendors._aws._boto_describe_db_major_engine_versions_first",
+            return_value=["16"],
+        ),
+        patch(
+            "sc_crawler.vendors._aws._lookup_orderable_db_instance_options",
+            return_value={"db.m5.large": []},
+        ),
+    ):
+        rows = aws_databases(vendor)
+    assert [row["database_id"] for row in rows] == ["db.m5.large"]
+
+
+def test_aws_inventory_database_prices_single_az_only():
+    vendor = _aws_vendor()
+    products = [
+        _aws_rds_instance_product(
+            instance_type="db.m5.large", region="us-east-1", price="0.145"
+        ),
+        _aws_rds_instance_product(
+            instance_type="db.m5.large",
+            region="us-east-1",
+            deployment="Multi-AZ",
+            price="0.29",
+        ),
+        _aws_rds_storage_product(volume_type="General Purpose-GP3"),
+    ]
+    with patch(
+        "sc_crawler.vendors._aws._boto_get_rds_products",
+        return_value=products,
+    ):
+        prices = aws_database_prices(vendor)
+    assert len(prices) == 1
+    assert prices[0]["database_id"] == "db.m5.large"
+    assert prices[0]["region_id"] == "us-east-1"
+    assert prices[0]["price"] == 0.145
+    assert prices[0]["allocation"] == Allocation.ONDEMAND
+    assert prices[0]["unit"] == PriceUnit.HOUR
+    assert prices[0]["currency"] == "USD"
+
+
+def test_aws_inventory_database_storages_from_orderable_bounds():
+    vendor = _aws_vendor(
+        regions=[Mock(region_id="us-east-1", status=Status.ACTIVE)],
+    )
+    with (
+        patch(
+            "sc_crawler.vendors._aws._get_rds_instance_products_by_region",
+            return_value={"us-east-1": {"db.m5.large": {}}},
+        ),
+        patch(
+            "sc_crawler.vendors._aws._lookup_orderable_db_instance_options",
+            return_value={
+                "db.m5.large": [
+                    {
+                        "StorageType": "gp3",
+                        "MinStorageSize": 20,
+                        "MaxStorageSize": 65536,
+                        "MaxIopsPerDbInstance": 64000,
+                        "MaxStorageThroughputPerDbInstance": 4000,
+                    },
+                    {
+                        "StorageType": "io1",
+                        "MinStorageSize": 100,
+                        "MaxStorageSize": 65536,
+                        "MaxIopsPerDbInstance": 80000,
+                        "MaxStorageThroughputPerDbInstance": 2000,
+                    },
+                ]
+            },
+        ),
+    ):
+        storages = aws_database_storages(vendor)
+    by_id = {row["database_storage_id"]: row for row in storages}
+    assert set(by_id) == {"gp3", "io1"}
+    assert by_id["gp3"]["name"] == "General Purpose-GP3"
+    assert by_id["gp3"]["description"] == "SSD-backed"
+    assert by_id["gp3"]["min_size"] == 20
+    assert by_id["gp3"]["max_size"] == 65536
+    assert by_id["gp3"]["max_iops"] == 64000
+    assert by_id["gp3"]["max_throughput"] == 4000
+    assert "standard" not in by_id
+
+
+def test_aws_inventory_database_storage_prices_skip_missing_catalog():
+    vendor = _aws_vendor(
+        database_storages=[
+            Mock(database_storage_id="gp3"),
+            Mock(database_storage_id="gp2"),
+        ]
+    )
+    products = [
+        _aws_rds_storage_product(volume_type="General Purpose-GP3", price="0.08"),
+        _aws_rds_storage_product(volume_type="Magnetic", price="0.10"),
+        _aws_rds_storage_product(volume_type="General Purpose", region="eu-west-1"),
+        _aws_rds_instance_product(instance_type="db.m5.large"),
+    ]
+    with patch(
+        "sc_crawler.vendors._aws._boto_get_rds_products",
+        return_value=products,
+    ):
+        prices = aws_database_storage_prices(vendor)
+    assert {(p["database_storage_id"], p["region_id"]) for p in prices} == {
+        ("gp3", "us-east-1"),
+        ("gp2", "eu-west-1"),
+    }
+    assert prices[0]["unit"] == PriceUnit.GB_MONTH
