@@ -46,6 +46,7 @@ The related user or role requires the below minimum IAM policy:
                 "ec2:DescribeSpotPriceHistory",
                 "ec2:DescribeInstanceTypeOfferings",
                 "rds:DescribeOrderableDBInstanceOptions"
+                "rds:DescribeDBMajorEngineVersions"
             ],
             "Resource": "*"
         }

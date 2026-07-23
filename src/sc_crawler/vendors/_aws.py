@@ -3,6 +3,7 @@ import re
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
+from functools import cache
 from itertools import chain, repeat
 from logging import DEBUG, WARN
 from statistics import mode
@@ -1350,7 +1351,7 @@ def inventory_ipv4_prices(vendor):
 # PostgreSQL RDS support
 
 
-@cachier(separate_files=True)
+@cache
 def _boto_describe_orderable_db_instance_options(
     region: str,
     db_instance_class: str,
@@ -1374,7 +1375,7 @@ def _boto_describe_orderable_db_instance_options(
     return options
 
 
-@cachier(separate_files=True)
+@cache
 def _boto_describe_db_major_engine_versions(region: str) -> list[str]:
     rds = boto3.client("rds", region_name=region)
     paginator = rds.get_paginator("describe_db_major_engine_versions")
@@ -1387,7 +1388,6 @@ def _boto_describe_db_major_engine_versions(region: str) -> list[str]:
     return sorted(versions)
 
 
-@cachier(separate_files=True)
 def _boto_get_rds_products() -> list:
     return _boto_get_products(
         service_code="AmazonRDS",
@@ -1413,6 +1413,7 @@ def _boto_describe_db_major_engine_versions_first(regions: list[str]) -> list[st
     return []
 
 
+@cachier(hash_func=jsoned_hash, separate_files=True)
 def _describe_orderable_db_instance_options_for_class(
     regions: list[str],
     db_instance_class: str,
@@ -1470,7 +1471,7 @@ def _lookup_orderable_db_instance_options(
             )
         )
     vendor.progress_tracker.hide_task()
-    return dict(zip(database_ids, results))
+    return dict(zip(database_ids, results, strict=True))
 
 
 def _get_storage_bounds_from_orderable_options(
@@ -1565,12 +1566,16 @@ def inventory_databases(vendor):
         vendor, prices_by_region
     )
 
+    seen_database_ids = set()
     rows = []
     vendor.progress_tracker.start_task(
         name="Preprocessing database(s)", total=len(regions)
     )
     for region_id in regions:
         for database_id, product in prices_by_region.get(region_id, {}).items():
+            if database_id in seen_database_ids:
+                continue
+            seen_database_ids.add(database_id)
             db_instance_options = options_by_database.get(database_id, [])
             server_id = next(
                 (
@@ -1693,19 +1698,20 @@ def inventory_database_storages(vendor):
     )
     for storage_id, bounds in storage_bounds.items():
         description = "HDD-backed" if storage_id == "standard" else "SSD-backed"
-        items.append(
-            {
-                "vendor_id": vendor.vendor_id,
-                "database_storage_id": storage_id,
-                "name": _DATABASE_STORAGE_MAPPING[storage_id],
-                "description": description,
-                "scope": DatabaseStorageScope.DATA,
-                "min_size": bounds.get("min_size"),
-                "max_size": bounds.get("max_size"),
-                "max_iops": bounds.get("max_iops"),
-                "max_throughput": bounds.get("max_throughput"),
-            }
-        )
+        with sentry_capture_or_raise(vendor=vendor):
+            items.append(
+                {
+                    "vendor_id": vendor.vendor_id,
+                    "database_storage_id": storage_id,
+                    "name": _DATABASE_STORAGE_MAPPING[storage_id],
+                    "description": description,
+                    "scope": DatabaseStorageScope.DATA,
+                    "min_size": bounds.get("min_size"),
+                    "max_size": bounds.get("max_size"),
+                    "max_iops": bounds.get("max_iops"),
+                    "max_throughput": bounds.get("max_throughput"),
+                }
+            )
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
     return items
@@ -1719,6 +1725,7 @@ def inventory_database_storage_prices(vendor):
     vendor.progress_tracker.hide_task()
 
     items = []
+    database_storage_ids = [s.database_storage_id for s in vendor.database_storages]
     vendor.progress_tracker.start_task(
         name="Preprocessing database_storage_price(s)", total=len(products)
     )
@@ -1735,7 +1742,8 @@ def inventory_database_storage_prices(vendor):
                 ),
                 None,
             )
-            if not storage_id:
+            # Skip storage options that are not available in orderable API anymore
+            if not storage_id or storage_id not in database_storage_ids:
                 continue
             price = _extract_ondemand_price(product["terms"])
             items.append(
