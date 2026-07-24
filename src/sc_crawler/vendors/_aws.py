@@ -1405,7 +1405,6 @@ def _active_region_ids(vendor: Vendor) -> list[str]:
 
 
 def _boto_describe_db_major_engine_versions_first(regions: list[str]) -> list[str]:
-    """Try regions in order until major engine versions are found."""
     for region in regions:
         versions = _boto_describe_db_major_engine_versions(region)
         if versions:
@@ -1418,7 +1417,6 @@ def _describe_orderable_db_instance_options_for_class(
     regions: list[str],
     db_instance_class: str,
 ) -> list:
-    """Try regions in order until orderable options are found for the class."""
     for region in regions:
         options = _boto_describe_orderable_db_instance_options(
             region, db_instance_class
@@ -1444,11 +1442,6 @@ def _lookup_orderable_db_instance_options(
     vendor: Vendor,
     prices_by_region: dict[str, dict[str, dict]],
 ) -> dict[str, list]:
-    """Look up orderable options once per DB instance class.
-
-    Tries active regions in priority order (us-east-1 first) until a non-empty
-    response is returned for that class.
-    """
     regions = _active_region_ids(vendor)
     database_ids = sorted(
         {
@@ -1477,7 +1470,6 @@ def _lookup_orderable_db_instance_options(
 def _get_storage_bounds_from_orderable_options(
     options_by_database: dict[str, list],
 ) -> dict[str, dict]:
-    """Collapse orderable options into per-storage-type capability bounds."""
     storage_bounds: dict[str, dict] = {}
     for options in options_by_database.values():
         for opt in options:
@@ -1518,16 +1510,7 @@ def _get_storage_bounds_from_orderable_options(
     return storage_bounds
 
 
-def _extract_rds_storage_size(storage: str | None) -> int | None:
-    """Extract bundled storage size in GB from Pricing API ``storage`` attribute.
-
-    Examples:
-        >>> _extract_rds_storage_size("EBS Only")
-        >>> _extract_rds_storage_size("2 x 1425 NVMe SSD")
-        2850
-        >>> _extract_rds_storage_size("3 X 950 NVMe SSD")
-        2850
-    """
+def _extract_rds_bundled_storage_size(storage: str | None) -> int | None:
     if not storage or storage.strip().lower() == "ebs only":
         return None
     match = re.fullmatch(
@@ -1589,7 +1572,7 @@ def inventory_databases(vendor):
             vcpus = product["vcpu"]
             memory_amount_gib = float(product["memory"].removesuffix(" GiB"))
             memory_amount_mib = int(memory_amount_gib * 1024)
-            storage_size = _extract_rds_storage_size(product.get("storage"))
+            storage_size = _extract_rds_bundled_storage_size(product.get("storage"))
             description = (
                 f"{family} ({vcpus} vCPU, {memory_amount_gib} GiB RAM, {storage_size} GB NVMe SSD)"
                 if storage_size

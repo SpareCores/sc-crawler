@@ -286,9 +286,7 @@ from sqlmodel import create_engine, Session, select
 
 engine = create_engine("sqlite:///sc-data-all.db")  # (1)!
 session = Session(engine)  # (2)!
-server = session.exec(
-    select(Server).where(Server.server_id == "trn1.32xlarge")
-).one()  # (3)!
+server = session.exec(select(Server).where(Server.server_id == "trn1.32xlarge")).one()  # (3)! # fmt: skip
 
 from rich import print as pp  # (4)!
 

@@ -6,7 +6,7 @@ from sc_crawler.vendor_helpers import merge_database_catalog_rows
 from sc_crawler.vendors._aws import (
     _active_region_ids,
     _boto_describe_db_major_engine_versions_first,
-    _extract_rds_storage_size,
+    _extract_rds_bundled_storage_size,
     _get_rds_instance_products_by_region,
     _get_storage_bounds_from_orderable_options,
 )
@@ -446,12 +446,12 @@ def test_gcp_database_prices_use_region_name_not_numeric_id():
 
 
 def test_aws_extract_rds_storage_size():
-    assert _extract_rds_storage_size(None) is None
-    assert _extract_rds_storage_size("EBS Only") is None
-    assert _extract_rds_storage_size("ebs only") is None
-    assert _extract_rds_storage_size("2 x 1425 NVMe SSD") == 2850
-    assert _extract_rds_storage_size("3 X 950 NVMe SSD") == 2850
-    assert _extract_rds_storage_size("not a size") is None
+    assert _extract_rds_bundled_storage_size(None) is None
+    assert _extract_rds_bundled_storage_size("EBS Only") is None
+    assert _extract_rds_bundled_storage_size("ebs only") is None
+    assert _extract_rds_bundled_storage_size("2 x 1425 NVMe SSD") == 2850
+    assert _extract_rds_bundled_storage_size("3 X 950 NVMe SSD") == 2850
+    assert _extract_rds_bundled_storage_size("not a size") is None
 
 
 def test_aws_active_region_ids_priority_and_active_only():
