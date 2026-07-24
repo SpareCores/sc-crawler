@@ -1725,6 +1725,8 @@ def inventory_database_storage_prices(vendor):
             region_id = attrs["regionCode"]
             if region_id not in region_ids:
                 continue
+            if attrs.get("deploymentOption") != "Single-AZ":
+                continue
             storage_id = next(
                 (
                     k
