@@ -279,21 +279,20 @@ SC Crawler is using [SQLModel](https://sqlmodel.tiangolo.com/) /
 [SQLAlchemy](https://docs.sqlalchemy.org/) as the ORM to interact with the underlying
 database, and you can also use the defined schemas and models to actually read/filter
 a previously pulled DB. Quick examples:
-
+<!-- fmt:off -->
 ```py hl_lines="6"
 from sc_crawler.tables import Server
 from sqlmodel import create_engine, Session, select
 
-engine = create_engine("sqlite:///sc-data-all.db")  # (1)!
-session = Session(engine)  # (2)!
-server = session.exec(select(Server).where(Server.server_id == "trn1.32xlarge")).one()  # (3)! # fmt: skip
+engine = create_engine("sqlite:///sc-data-all.db") # (1)!
+session = Session(engine) # (2)!
+server = session.exec(select(Server).where(Server.server_id == "trn1.32xlarge")).one() # (3)!
 
-from rich import print as pp  # (4)!
-
+from rich import print as pp # (4)!
 pp(server)
-pp(server.vendor)  # (5)!
+pp(server.vendor) # (5)!
 ```
-
+<!-- fmt:on -->
 1. Creating a [connection (pool)][sqlalchemy.create_engine] to the SQLite database.
 2. Define an [in-memory representation of the database][sqlalchemy.orm.Session] for the ORM objects.
 3. Query the database for the [Server][sc_crawler.tables.Server] with the `trn1.32xlarge` id.
