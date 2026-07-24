@@ -81,6 +81,7 @@ def _aws_rds_storage_product(
     *,
     volume_type: str,
     region: str = "us-east-1",
+    deployment: str = "Single-AZ",
     price: str = "0.115",
 ) -> dict:
     return {
@@ -89,6 +90,7 @@ def _aws_rds_storage_product(
             "attributes": {
                 "volumeType": volume_type,
                 "regionCode": region,
+                "deploymentOption": deployment,
             },
         },
         "terms": _aws_ondemand_terms(price),
@@ -745,6 +747,12 @@ def test_aws_inventory_database_storage_prices_skip_missing_catalog():
         _aws_rds_storage_product(volume_type="Magnetic", price="0.10"),
         _aws_rds_storage_product(volume_type="General Purpose", region="eu-west-1"),
         _aws_rds_storage_product(
+            volume_type="General Purpose-GP3",
+            region="us-east-1",
+            deployment="Multi-AZ",
+            price="0.16",
+        ),
+        _aws_rds_storage_product(
             volume_type="General Purpose-GP3", region="ap-south-1", price="0.09"
         ),
         _aws_rds_instance_product(instance_type="db.m5.large"),
@@ -754,8 +762,9 @@ def test_aws_inventory_database_storage_prices_skip_missing_catalog():
         return_value=products,
     ):
         prices = aws_database_storage_prices(vendor)
-    assert {(p["database_storage_id"], p["region_id"]) for p in prices} == {
-        ("gp3", "us-east-1"),
-        ("gp2", "eu-west-1"),
+    assert len(prices) == 2
+    assert {(p["database_storage_id"], p["region_id"], p["price"]) for p in prices} == {
+        ("gp3", "us-east-1", 0.08),
+        ("gp2", "eu-west-1", 0.115),
     }
     assert prices[0]["unit"] == PriceUnit.GB_MONTH
