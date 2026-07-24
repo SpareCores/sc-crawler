@@ -228,7 +228,7 @@ def _normalise(raw: float, fleet_median: float, higher_is_better: bool) -> float
     if raw <= 0 or fleet_median <= 0:
         return None
     ratio = raw / fleet_median if higher_is_better else fleet_median / raw
-    return log2(ratio)
+    return ratio
 
 
 def _component_note_for_invalid(raw: float | None) -> str | None:
@@ -284,9 +284,8 @@ def _compute_workload_score_rows(
                         component_note = _component_note_for_invalid(raw)
 
                 if norm is not None:
-                    log_weighted_sum += norm * entry.weight
+                    log_weighted_sum += log2(norm) * entry.weight
                     total_weight += entry.weight
-                    normalized = 2**norm
                     breakdown_components.append(
                         ScoreComponent(
                             label=entry.label,
@@ -294,7 +293,7 @@ def _compute_workload_score_rows(
                             weight_share=0.0,  # filled after total_weight known
                             raw=_round_measurement(raw),
                             reference=_round_measurement(fleet_median),
-                            normalized=_round_sigfigs(normalized, sig=3),
+                            normalized=_round_sigfigs(norm, sig=3),
                             higher_is_better=higher,
                             note=None,
                         )
@@ -320,8 +319,7 @@ def _compute_workload_score_rows(
 
                 if policy == BenchmarkComponentMissingPolicy.PENALIZE:
                     penalty = entry.effective_penalty()
-                    norm = log2(penalty)
-                    log_weighted_sum += norm * entry.weight
+                    log_weighted_sum += log2(penalty) * entry.weight
                     total_weight += entry.weight
                     breakdown_components.append(
                         ScoreComponent(
