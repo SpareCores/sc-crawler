@@ -35,6 +35,19 @@ def _enum(name: str, values: tuple[str, ...]):
     return sa.Enum(*values, name=name)
 
 
+def _drop_dbaas_enums() -> None:
+    """Table drops do not remove PostgreSQL enum types."""
+    if op.get_context().dialect.name != "postgresql":
+        return
+    bind = op.get_bind()
+    for name in (
+        "databasestoragescope",
+        "databasesupportlevel",
+        "databaseengine",
+    ):
+        sa.Enum(name=name).drop(bind, checkfirst=True)
+
+
 def _status_column():
     return sa.Column(
         "status",
@@ -165,7 +178,7 @@ def upgrade() -> None:
         ),
         sa.Column(
             "engine",
-            _enum("databaseengine", ("POSTGRESQL",)),
+            sa.Enum("POSTGRESQL", name="databaseengine"),
             nullable=False,
             comment="Managed database engine.",
         ),
@@ -249,7 +262,7 @@ def upgrade() -> None:
         ),
         sa.Column(
             "support_level",
-            _enum("databasesupportlevel", ("STANDARD",)),
+            sa.Enum("STANDARD", name="databasesupportlevel"),
             nullable=True,
             comment="Vendor support tier for the SKU.",
         ),
@@ -378,7 +391,7 @@ def upgrade() -> None:
         ),
         sa.Column(
             "scope",
-            _enum("databasestoragescope", ("DATA", "BACKUP")),
+            sa.Enum("DATA", "BACKUP", name="databasestoragescope"),
             nullable=False,
             comment="Scope of the storage product, e.g. data or backup.",
         ),
@@ -501,3 +514,4 @@ def downgrade() -> None:
         "database",
     ):
         op.drop_table(scdize_suffix(table))
+    _drop_dbaas_enums()

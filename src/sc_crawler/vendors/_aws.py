@@ -3,6 +3,7 @@ import re
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
+from functools import cache
 from itertools import chain, repeat
 from logging import DEBUG, WARN
 from statistics import mode
@@ -21,6 +22,8 @@ from ..str_utils import extract_last_number
 from ..table_fields import (
     Allocation,
     CpuAllocation,
+    DatabaseEngine,
+    DatabaseStorageScope,
     Disk,
     Gpu,
     PriceTier,
@@ -40,7 +43,10 @@ from ..utils import (
     jsoned_hash,
     scmodels_to_dict,
 )
-from ..vendor_helpers import parallel_fetch_servers, preprocess_servers
+from ..vendor_helpers import (
+    parallel_fetch_servers,
+    preprocess_servers,
+)
 
 # disable caching by default
 set_global_params(caching_enabled=False, stale_after=timedelta(days=1))
@@ -1341,20 +1347,411 @@ def inventory_ipv4_prices(vendor):
     return items
 
 
-# TODO: Implement database collectors
+# ##############################################################################
+# PostgreSQL RDS support
+
+
+@cache
+def _boto_describe_orderable_db_instance_options(
+    region: str,
+    db_instance_class: str,
+) -> list:
+    rds = boto3.client("rds", region_name=region)
+    paginator = rds.get_paginator("describe_orderable_db_instance_options")
+    options = []
+    for page in paginator.paginate(
+        Engine="postgres",
+        DBInstanceClass=db_instance_class,
+        PaginationConfig={"MaxItems": 10},
+    ):
+        options.extend(page.get("OrderableDBInstanceOptions", []))
+    if options:
+        first_engine_version = options[0].get("EngineVersion")
+        options = [
+            option
+            for option in options
+            if option.get("EngineVersion") == first_engine_version
+        ]
+    return options
+
+
+@cache
+def _boto_describe_db_major_engine_versions(region: str) -> list[str]:
+    rds = boto3.client("rds", region_name=region)
+    paginator = rds.get_paginator("describe_db_major_engine_versions")
+    versions: set[str] = set()
+    for page in paginator.paginate(Engine="postgres"):
+        for item in page.get("DBMajorEngineVersions", []):
+            version = item.get("MajorEngineVersion")
+            if version:
+                versions.add(version)
+    return sorted(versions)
+
+
+def _boto_get_rds_products() -> list:
+    return _boto_get_products(
+        service_code="AmazonRDS",
+        filters={"databaseEngine": "PostgreSQL"},
+    )
+
+
+def _active_region_ids(vendor: Vendor) -> list[str]:
+    active = {
+        region.region_id for region in vendor.regions if region.status == Status.ACTIVE
+    }
+    priority = [r for r in ("us-east-1", "eu-west-1", "eu-central-1") if r in active]
+    rest = sorted(active - set(priority))
+    return priority + rest
+
+
+def _boto_describe_db_major_engine_versions_first(regions: list[str]) -> list[str]:
+    for region in regions:
+        versions = _boto_describe_db_major_engine_versions(region)
+        if versions:
+            return versions
+    return []
+
+
+@cachier(hash_func=jsoned_hash, separate_files=True)
+def _describe_orderable_db_instance_options_for_class(
+    regions: list[str],
+    db_instance_class: str,
+) -> list:
+    for region in regions:
+        options = _boto_describe_orderable_db_instance_options(
+            region, db_instance_class
+        )
+        if options:
+            return options
+    return []
+
+
+def _describe_orderable_db_instance_options_for_class_with_progress(
+    regions: list[str],
+    db_instance_class: str,
+    vendor: Vendor,
+) -> list:
+    options = _describe_orderable_db_instance_options_for_class(
+        regions, db_instance_class
+    )
+    vendor.progress_tracker.advance_task()
+    return options
+
+
+def _lookup_orderable_db_instance_options(
+    vendor: Vendor,
+    prices_by_region: dict[str, dict[str, dict]],
+) -> dict[str, list]:
+    regions = _active_region_ids(vendor)
+    database_ids = sorted(
+        {
+            database_id
+            for classes in prices_by_region.values()
+            for database_id in classes
+        }
+    )
+    vendor.progress_tracker.start_task(
+        name="Look up orderable DB instance option(s)",
+        total=len(database_ids),
+    )
+    with ThreadPoolExecutor(max_workers=16) as executor:
+        results = list(
+            executor.map(
+                _describe_orderable_db_instance_options_for_class_with_progress,
+                repeat(regions),
+                database_ids,
+                repeat(vendor),
+            )
+        )
+    vendor.progress_tracker.hide_task()
+    return dict(zip(database_ids, results, strict=True))
+
+
+def _get_storage_bounds_from_orderable_options(
+    options_by_database: dict[str, list],
+) -> dict[str, dict]:
+    storage_bounds: dict[str, dict] = {}
+    for options in options_by_database.values():
+        for opt in options:
+            storage_type = (opt.get("StorageType") or "").lower()
+            if not storage_type:
+                continue
+            bounds = storage_bounds.setdefault(
+                storage_type,
+                {
+                    "min_size": None,
+                    "max_size": None,
+                    "max_iops": None,
+                    "max_throughput": None,
+                },
+            )
+            min_size = opt.get("MinStorageSize")
+            max_size = opt.get("MaxStorageSize")
+            max_iops = opt.get("MaxIopsPerDbInstance")
+            max_throughput = opt.get("MaxStorageThroughputPerDbInstance")
+            if min_size is not None:
+                bounds["min_size"] = min(
+                    s for s in (bounds["min_size"], min_size) if s is not None
+                )
+            if max_size is not None:
+                bounds["max_size"] = max(
+                    s for s in (bounds["max_size"], max_size) if s is not None
+                )
+            if max_iops is not None:
+                bounds["max_iops"] = max(
+                    s for s in (bounds["max_iops"], max_iops) if s is not None
+                )
+            if max_throughput is not None:
+                bounds["max_throughput"] = max(
+                    s
+                    for s in (bounds["max_throughput"], max_throughput)
+                    if s is not None
+                )
+    return storage_bounds
+
+
+def _extract_rds_bundled_storage_size(storage: str | None) -> int | None:
+    if not storage or storage.strip().lower() == "ebs only":
+        return None
+    match = re.fullmatch(
+        r"\s*(\d+)\s*[xX]\s*(\d+)(?:\s+.*)?\s*",
+        storage,
+    )
+    if not match:
+        return None
+    return int(match.group(1)) * int(match.group(2))
+
+
+@cachier(separate_files=True)
+def _get_rds_instance_products_by_region() -> dict[str, dict[str, dict]]:
+    by_region: dict[str, dict[str, dict]] = {}
+    for product in _boto_get_rds_products():
+        if product["product"].get("productFamily") != "Database Instance":
+            continue
+        attrs = product["product"]["attributes"]
+        if attrs["deploymentOption"] != "Single-AZ":
+            continue
+        region_id = attrs["regionCode"]
+        instance_type = attrs["instanceType"]
+        if instance_type:
+            by_region.setdefault(region_id, {})[instance_type] = attrs
+    return by_region
 
 
 def inventory_databases(vendor):
-    return []
+    vendor.progress_tracker.start_task(name="Searching for database(s)", total=None)
+    prices_by_region = _get_rds_instance_products_by_region()
+    vendor.progress_tracker.hide_task()
+
+    regions = _active_region_ids(vendor)
+    major_versions = _boto_describe_db_major_engine_versions_first(regions)
+    options_by_database = _lookup_orderable_db_instance_options(
+        vendor, prices_by_region
+    )
+
+    seen_database_ids = set()
+    rows = []
+    vendor.progress_tracker.start_task(
+        name="Preprocessing database(s)", total=len(regions)
+    )
+    for region_id in regions:
+        for database_id, product in prices_by_region.get(region_id, {}).items():
+            if database_id in seen_database_ids:
+                continue
+            seen_database_ids.add(database_id)
+            db_instance_options = options_by_database.get(database_id, [])
+            server_id = next(
+                (
+                    server.server_id
+                    for server in vendor.servers
+                    if server.server_id == database_id.removeprefix("db.")
+                ),
+                None,
+            )
+            family = product["instanceFamily"]
+            vcpus = product["vcpu"]
+            memory_amount_gib = float(product["memory"].removesuffix(" GiB"))
+            memory_amount_mib = int(memory_amount_gib * 1024)
+            storage_size = _extract_rds_bundled_storage_size(product.get("storage"))
+            description = (
+                f"{family} ({vcpus} vCPU, {memory_amount_gib} GiB RAM, {storage_size} GB NVMe SSD)"
+                if storage_size
+                else f"{family} ({vcpus} vCPU, {memory_amount_gib} GiB RAM)"
+            )
+            rows.append(
+                {
+                    "vendor_id": vendor.vendor_id,
+                    "database_id": database_id,
+                    "name": database_id,
+                    "api_reference": database_id,
+                    "display_name": database_id,
+                    "engine": DatabaseEngine.POSTGRESQL,
+                    "engine_versions": major_versions,
+                    "family": product["instanceFamily"],
+                    "description": description,
+                    "server_id": server_id,
+                    "vcpus": product["vcpu"],
+                    "memory_amount": memory_amount_mib,
+                    "storage_size": storage_size,
+                    "ha_supported": any(
+                        db.get("MultiAZCapable") for db in db_instance_options
+                    ),
+                    "storage_autoscaling": any(
+                        db.get("SupportsStorageAutoscaling")
+                        for db in db_instance_options
+                    ),
+                    # Managed RDS includes automated backups; not per-class in orderable API.
+                    # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_WorkingWithAutomatedBackups.html
+                    "scheduled_backups": True,
+                    # Product max backup / PITR retention (days); not per SKU in orderable API.
+                    # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_WorkingWithAutomatedBackups.BackupRetention.html
+                    "continuous_backups": 35,
+                }
+            )
+        vendor.progress_tracker.advance_task()
+    vendor.progress_tracker.hide_task()
+    return rows
 
 
 def inventory_database_prices(vendor):
-    return []
+    vendor.progress_tracker.start_task(
+        name="Searching for database_price(s)", total=None
+    )
+    products = _boto_get_rds_products()
+    vendor.progress_tracker.hide_task()
+
+    region_ids = _active_region_ids(vendor)
+    items = []
+    vendor.progress_tracker.start_task(
+        name="Preprocessing database_price(s)", total=len(products)
+    )
+    for product in products:
+        try:
+            if product["product"].get("productFamily") != "Database Instance":
+                continue
+            attrs = product["product"]["attributes"]
+            region_id = attrs["regionCode"]
+            if region_id not in region_ids:
+                continue
+            if attrs.get("deploymentOption") != "Single-AZ":
+                continue
+            database_id = attrs.get("instanceType")
+            price = _extract_ondemand_price(product["terms"])
+            items.append(
+                {
+                    "vendor_id": vendor.vendor_id,
+                    "region_id": region_id,
+                    "database_id": database_id,
+                    "allocation": Allocation.ONDEMAND,
+                    "unit": PriceUnit.HOUR,
+                    "price": float(price[0]),
+                    "price_upfront": 0,
+                    "price_tiered": [],
+                    "currency": price[1],
+                }
+            )
+        except KeyError:
+            continue
+        finally:
+            vendor.progress_tracker.advance_task()
+    vendor.progress_tracker.hide_task()
+    return items
+
+
+_DATABASE_STORAGE_MAPPING = {
+    "standard": "Magnetic",
+    "gp2": "General Purpose",
+    "gp3": "General Purpose-GP3",
+    "io1": "Provisioned IOPS",
+    "io2": "Provisioned IOPS-IO2",
+}
 
 
 def inventory_database_storages(vendor):
-    return []
+    vendor.progress_tracker.start_task(
+        name="Searching for database_storage(s)", total=None
+    )
+    prices_by_region = _get_rds_instance_products_by_region()
+    vendor.progress_tracker.hide_task()
+
+    options_by_database = _lookup_orderable_db_instance_options(
+        vendor, prices_by_region
+    )
+    storage_bounds = _get_storage_bounds_from_orderable_options(options_by_database)
+
+    items = []
+    vendor.progress_tracker.start_task(
+        name="Preprocessing database_storage(s)", total=len(storage_bounds)
+    )
+    for storage_id, bounds in storage_bounds.items():
+        description = "HDD-backed" if storage_id == "standard" else "SSD-backed"
+        with sentry_capture_or_raise(vendor=vendor):
+            items.append(
+                {
+                    "vendor_id": vendor.vendor_id,
+                    "database_storage_id": storage_id,
+                    "name": _DATABASE_STORAGE_MAPPING[storage_id],
+                    "description": description,
+                    "scope": DatabaseStorageScope.DATA,
+                    "min_size": bounds.get("min_size"),
+                    "max_size": bounds.get("max_size"),
+                    "max_iops": bounds.get("max_iops"),
+                    "max_throughput": bounds.get("max_throughput"),
+                }
+            )
+        vendor.progress_tracker.advance_task()
+    vendor.progress_tracker.hide_task()
+    return items
 
 
 def inventory_database_storage_prices(vendor):
-    return []
+    vendor.progress_tracker.start_task(
+        name="Searching for database_storage_price(s)", total=None
+    )
+    products = _boto_get_rds_products()
+    vendor.progress_tracker.hide_task()
+
+    region_ids = _active_region_ids(vendor)
+    items = []
+    database_storage_ids = [s.database_storage_id for s in vendor.database_storages]
+    vendor.progress_tracker.start_task(
+        name="Preprocessing database_storage_price(s)", total=len(products)
+    )
+    for product in products:
+        try:
+            if product["product"].get("productFamily") != "Database Storage":
+                continue
+            attrs = product["product"]["attributes"]
+            region_id = attrs["regionCode"]
+            if region_id not in region_ids:
+                continue
+            storage_id = next(
+                (
+                    k
+                    for k, v in _DATABASE_STORAGE_MAPPING.items()
+                    if v == attrs.get("volumeType")
+                ),
+                None,
+            )
+            # Skip storage options that are not available in orderable API anymore
+            if not storage_id or storage_id not in database_storage_ids:
+                continue
+            price = _extract_ondemand_price(product["terms"])
+            items.append(
+                {
+                    "vendor_id": vendor.vendor_id,
+                    "region_id": region_id,
+                    "database_storage_id": storage_id,
+                    "unit": PriceUnit.GB_MONTH,
+                    "price": float(price[0]),
+                    "price_upfront": 0,
+                    "price_tiered": [],
+                    "currency": price[1],
+                }
+            )
+        except KeyError:
+            continue
+        finally:
+            vendor.progress_tracker.advance_task()
+    vendor.progress_tracker.hide_task()
+    return items
