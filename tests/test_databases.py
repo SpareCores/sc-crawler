@@ -762,8 +762,9 @@ def test_aws_inventory_database_storage_prices_skip_missing_catalog():
         return_value=products,
     ):
         prices = aws_database_storage_prices(vendor)
-    assert {(p["database_storage_id"], p["region_id"]) for p in prices} == {
-        ("gp3", "us-east-1"),
-        ("gp2", "eu-west-1"),
+    assert len(prices) == 2
+    assert {(p["database_storage_id"], p["region_id"], p["price"]) for p in prices} == {
+        ("gp3", "us-east-1", 0.08),
+        ("gp2", "eu-west-1", 0.115),
     }
     assert prices[0]["unit"] == PriceUnit.GB_MONTH
