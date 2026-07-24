@@ -81,6 +81,7 @@ def _aws_rds_storage_product(
     *,
     volume_type: str,
     region: str = "us-east-1",
+    deployment: str = "Single-AZ",
     price: str = "0.115",
 ) -> dict:
     return {
@@ -89,6 +90,7 @@ def _aws_rds_storage_product(
             "attributes": {
                 "volumeType": volume_type,
                 "regionCode": region,
+                "deploymentOption": deployment,
             },
         },
         "terms": _aws_ondemand_terms(price),
@@ -744,6 +746,12 @@ def test_aws_inventory_database_storage_prices_skip_missing_catalog():
         _aws_rds_storage_product(volume_type="General Purpose-GP3", price="0.08"),
         _aws_rds_storage_product(volume_type="Magnetic", price="0.10"),
         _aws_rds_storage_product(volume_type="General Purpose", region="eu-west-1"),
+        _aws_rds_storage_product(
+            volume_type="General Purpose-GP3",
+            region="us-east-1",
+            deployment="Multi-AZ",
+            price="0.16",
+        ),
         _aws_rds_storage_product(
             volume_type="General Purpose-GP3", region="ap-south-1", price="0.09"
         ),
