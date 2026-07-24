@@ -26,6 +26,7 @@ from .table_bases import (
     ComplianceFrameworkBase,
     CountryBase,
     DatabaseBase,
+    DatabaseBenchmarkScoreBase,
     DatabasePriceBase,
     DatabaseStorageBase,
     DatabaseStoragePriceBase,
@@ -123,6 +124,9 @@ class Vendor(VendorBase, table=True):
         back_populates="vendor", sa_relationship_kwargs={"viewonly": True}
     )
     benchmark_scores: List["BenchmarkScore"] = Relationship(
+        back_populates="vendor", sa_relationship_kwargs={"viewonly": True}
+    )
+    database_benchmark_scores: List["DatabaseBenchmarkScore"] = Relationship(
         back_populates="vendor", sa_relationship_kwargs={"viewonly": True}
     )
 
@@ -615,6 +619,9 @@ class Database(DatabaseBase, table=True):
     prices: List["DatabasePrice"] = Relationship(
         back_populates="database", sa_relationship_kwargs={"viewonly": True}
     )
+    database_benchmark_scores: List["DatabaseBenchmarkScore"] = Relationship(
+        back_populates="database", sa_relationship_kwargs={"viewonly": True}
+    )
 
 
 class DatabasePrice(DatabasePriceBase, table=True):
@@ -751,6 +758,9 @@ class Benchmark(BenchmarkBase, table=True):
     benchmark_scores: List["BenchmarkScore"] = Relationship(
         back_populates="benchmark", sa_relationship_kwargs={"viewonly": True}
     )
+    database_benchmark_scores: List["DatabaseBenchmarkScore"] = Relationship(
+        back_populates="benchmark", sa_relationship_kwargs={"viewonly": True}
+    )
 
 
 class BenchmarkScore(BenchmarkScoreBase, table=True):
@@ -776,6 +786,29 @@ class BenchmarkScore(BenchmarkScoreBase, table=True):
     benchmark: Benchmark = Relationship(back_populates="benchmark_scores")
 
 
+class DatabaseBenchmarkScore(DatabaseBenchmarkScoreBase, table=True):
+    """Results of running Benchmark scenarios on managed Databases."""
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["vendor_id", "database_id"],
+            ["database.vendor_id", "database.database_id"],
+        ),
+    )
+    vendor: Vendor = Relationship(back_populates="database_benchmark_scores")
+    database: Database = Relationship(
+        back_populates="database_benchmark_scores",
+        sa_relationship_kwargs={
+            "primaryjoin": (
+                "and_(Database.database_id == foreign(DatabaseBenchmarkScore.database_id), "
+                "Database.vendor_id == foreign(DatabaseBenchmarkScore.vendor_id))"
+            ),
+            "overlaps": "vendor",
+        },
+    )
+    benchmark: Benchmark = Relationship(back_populates="database_benchmark_scores")
+
+
 Country.model_rebuild()
 ComplianceFramework.model_rebuild()
 Vendor.model_rebuild()
@@ -786,6 +819,7 @@ Storage.model_rebuild()
 Server.model_rebuild()
 Database.model_rebuild()
 DatabaseStorage.model_rebuild()
+Benchmark.model_rebuild()
 
 
 def is_table(table):

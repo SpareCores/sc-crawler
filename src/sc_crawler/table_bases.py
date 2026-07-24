@@ -1313,3 +1313,70 @@ class BenchmarkScoreFields(HasBenchmarkPKFK, HasServerPK, HasVendorPKFK):
 
 class BenchmarkScoreBase(MetaColumns, BenchmarkScoreFields):
     pass
+
+
+class DatabaseBenchmarkScoreFields(HasBenchmarkPKFK, HasDatabasePK, HasVendorPKFK):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    @model_validator(mode="before")
+    def update_config_to_hashable(cls, values):
+        """We need a hashable column for the primary key.
+
+        Note that we also sort the keys, so that the resulting JSON
+        can be compared as text as well (as some database engines do).
+        """
+        values["config"] = HashableDict(sorted(values.get("config", {}).items()))
+        return values
+
+    # use HashableDict as it's a primary key that needs to be hashable, but
+    # fall back to dict to avoid PydanticInvalidForJsonSchema
+    config: HashableDict | dict = Field(
+        default={},
+        sa_type=HashableJSON,
+        primary_key=True,
+        description='Dictionary of config parameters of the specific benchmark, e.g. {"bandwidth": 4096}',
+    )
+    framework_version: Optional[str] = Field(
+        default=None,
+        description="The version of the benchmark tool used.",
+    )
+    score: float = Field(
+        description="The resulting score of the benchmark.",
+    )
+    score_breakdown: Optional[WorkloadScoreBreakdown] = Field(
+        default=None,
+        sa_type=JSON,
+        description=(
+            "Structured derivation of composite scores (e.g. workload profiles): "
+            "per-component raw values, references, normalized values, weights, and "
+            "coverage. Null for simple benchmark scores."
+        ),
+    )
+    note: Optional[str] = Field(
+        default=None,
+        description="Optional note, comment or context on the benchmark score.",
+    )
+
+    @field_serializer("score_breakdown")
+    def _serialize_score_breakdown(self, value: Optional[WorkloadScoreBreakdown]):
+        if value is None or isinstance(value, dict):
+            return value
+        if hasattr(value, "__json__"):
+            return value.__json__()
+        return value
+
+    @field_validator("score_breakdown", mode="before")
+    @classmethod
+    def _deserialize_score_breakdown(cls, value):
+        """Coerce a dict to WorkloadScoreBreakdown on construction."""
+        return WorkloadScoreBreakdown(**value) if isinstance(value, dict) else value
+
+    @reconstructor
+    def _reconstruct_score_breakdown(self):
+        """Re-coerce score_breakdown from the dict returned by a DB load."""
+        if isinstance(self.score_breakdown, dict):
+            self.score_breakdown = WorkloadScoreBreakdown(**self.score_breakdown)
+
+
+class DatabaseBenchmarkScoreBase(MetaColumns, DatabaseBenchmarkScoreFields):
+    pass

@@ -14,8 +14,10 @@ from sc_crawler.table_fields import (
     StorageType,
 )
 from sc_crawler.tables import (
+    BenchmarkScore,
     Country,
     Database,
+    DatabaseBenchmarkScore,
     DatabasePrice,
     DatabaseStoragePrice,
     StoragePrice,
@@ -33,6 +35,23 @@ def test_scmodels_have_base():
         assert schema.__name__.endswith("Base")
         assert hasattr(model, "__table__")
         assert not hasattr(schema, "__table__")
+
+
+def test_database_benchmark_score_primary_keys_mirror_benchmark_score():
+    assert BenchmarkScore.get_columns()["primary_keys"] == [
+        "vendor_id",
+        "server_id",
+        "benchmark_id",
+        "config",
+    ]
+    assert DatabaseBenchmarkScore.get_columns()["primary_keys"] == [
+        "vendor_id",
+        "database_id",
+        "benchmark_id",
+        "config",
+    ]
+    assert "server_id" not in DatabaseBenchmarkScore.get_columns()["all"]
+    assert DatabaseBenchmarkScore.get_table_name() == "database_benchmark_score"
 
 
 def test_database_price_primary_keys_match_storage_price_shape():
