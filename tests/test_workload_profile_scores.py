@@ -36,8 +36,8 @@ def _reconstruct_score_from_breakdown(breakdown: WorkloadScoreBreakdown) -> floa
             )
             assert norm is not None
         else:
-            norm = math.log2(component.normalized)
-        log_weighted_sum += norm * component.weight
+            norm = component.normalized
+        log_weighted_sum += math.log2(norm) * component.weight
     return 2 ** (log_weighted_sum / breakdown.coverage)
 
 
@@ -76,13 +76,13 @@ def test_round_sigfigs_compound_score():
 
 
 def test_normalise_higher_is_better():
-    assert _normalise(200.0, 100.0, True) == pytest.approx(1.0)
-    assert _normalise(50.0, 100.0, True) == pytest.approx(-1.0)
+    assert _normalise(200.0, 100.0, True) == pytest.approx(2.0)
+    assert _normalise(50.0, 100.0, True) == pytest.approx(0.5)
 
 
 def test_normalise_lower_is_better():
-    assert _normalise(50.0, 100.0, False) == pytest.approx(1.0)
-    assert _normalise(200.0, 100.0, False) == pytest.approx(-1.0)
+    assert _normalise(50.0, 100.0, False) == pytest.approx(2.0)
+    assert _normalise(200.0, 100.0, False) == pytest.approx(0.5)
 
 
 def test_normalise_invalid_values():
