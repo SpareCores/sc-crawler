@@ -224,7 +224,7 @@ def _load_scores(
 
 
 def _normalise(raw: float, fleet_median: float, higher_is_better: bool) -> float | None:
-    """Normalise *raw* to a log2 ratio to the per-benchmark median, or None if invalid."""
+    """Normalise *raw* to a ratio to the per-benchmark median, or None if invalid."""
     if raw <= 0 or fleet_median <= 0:
         return None
     ratio = raw / fleet_median if higher_is_better else fleet_median / raw
