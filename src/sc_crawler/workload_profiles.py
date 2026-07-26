@@ -94,8 +94,8 @@ def _impact_tooltip(
         and normalization == BenchmarkComponentNormalizationMethod.MEDIAN_RATIO
     ):
         return (
-            "How much this benchmark raised or lowered the overall workload score "
-            "(1.0 = median on all parts). Effects multiply, they don't add."
+            "Approximate effect on the workload score: positive is above baseline "
+            "(1.0 = median on all parts), negative below. Effects multiply, they don't add."
         )
     raise NotImplementedError(
         "impact tooltip not implemented for "
