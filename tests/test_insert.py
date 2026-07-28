@@ -1,5 +1,10 @@
 from sc_crawler.insert import _dedupe_items, _primary_key_tuple
-from sc_crawler.table_bases import BenchmarkScoreBase, DatabaseBase, DatabasePriceBase
+from sc_crawler.table_bases import (
+    BenchmarkScoreBase,
+    DatabaseBase,
+    DatabaseBenchmarkScoreBase,
+    DatabasePriceBase,
+)
 from sc_crawler.table_fields import Allocation, DatabaseEngine, PriceUnit, Status
 
 
@@ -83,3 +88,19 @@ def test_database_base_round_trip():
     )
     assert item.engine_versions == ["15", "16"]
     assert item.storage_size is None
+
+
+def test_database_benchmark_score_base_round_trip():
+    item = DatabaseBenchmarkScoreBase.model_validate(
+        {
+            "vendor_id": "gcp",
+            "database_id": "db-n1-standard-4",
+            "benchmark_id": "pgbench_tps",
+            "config": {"scale": 100, "clients": 4},
+            "score": 1234.5,
+            "status": Status.ACTIVE,
+        }
+    )
+    assert item.database_id == "db-n1-standard-4"
+    assert item.config == {"clients": 4, "scale": 100}
+    assert item.score == 1234.5

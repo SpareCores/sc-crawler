@@ -1,8 +1,9 @@
-## v0.8.x (DEVELOPMENT)
+## v0.8.4 (July 28, 2026)
 
 New feature(s):
 
 - Add PostgreSQL DBaaS support for `AWS`.
+- Add `database_benchmark_score` table for database benchmark results, mirroring `benchmark_score`.
 
 ## v0.8.3 (July 15, 2026)
 
