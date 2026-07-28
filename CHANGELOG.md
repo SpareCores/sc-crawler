@@ -1,4 +1,4 @@
-## v0.8.x (DEVELOPMENT)
+## v0.8.4 (July 28, 2026)
 
 New feature(s):
 
