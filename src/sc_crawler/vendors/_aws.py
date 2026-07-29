@@ -23,7 +23,9 @@ from ..table_fields import (
     Allocation,
     CpuAllocation,
     DatabaseEngine,
+    DatabaseHaLevel,
     DatabaseStorageScope,
+    DatabaseWireProtocol,
     Disk,
     Gpu,
     PriceTier,
@@ -1586,6 +1588,7 @@ def inventory_databases(vendor):
                     "api_reference": database_id,
                     "display_name": database_id,
                     "engine": DatabaseEngine.POSTGRESQL,
+                    "wire_protocol": DatabaseWireProtocol.POSTGRESQL,
                     "engine_versions": major_versions,
                     "family": product["instanceFamily"],
                     "description": description,
@@ -1593,10 +1596,12 @@ def inventory_databases(vendor):
                     "vcpus": product["vcpu"],
                     "memory_amount": memory_amount_mib,
                     "storage_size": storage_size,
-                    "ha_supported": any(
-                        db.get("MultiAZCapable") for db in db_instance_options
+                    "ha": (
+                        DatabaseHaLevel.MULTI_ZONE
+                        if any(db.get("MultiAZCapable") for db in db_instance_options)
+                        else DatabaseHaLevel.NONE
                     ),
-                    "storage_autoscaling": any(
+                    "storage_extra_autosize": any(
                         db.get("SupportsStorageAutoscaling")
                         for db in db_instance_options
                     ),

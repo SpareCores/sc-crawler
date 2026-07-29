@@ -23,7 +23,9 @@ from ..table_fields import (
     CpuAllocation,
     CpuArchitecture,
     DatabaseEngine,
+    DatabaseHaLevel,
     DatabaseStorageScope,
+    DatabaseWireProtocol,
     Disk,
     PriceTier,
     PriceUnit,
@@ -1762,6 +1764,7 @@ def inventory_databases(vendor):
                                 "description": description,
                                 "server_id": database_id,
                                 "engine": DatabaseEngine.POSTGRESQL,
+                                "wire_protocol": DatabaseWireProtocol.POSTGRESQL,
                                 "engine_versions": engine_versions,
                                 "family": edition.name,
                                 "vcpus": vcpus,
@@ -1769,9 +1772,13 @@ def inventory_databases(vendor):
                                 "storage_size": None,
                                 # Burstable tier: HA not supported (General Purpose / Memory Optimized only).
                                 # https://learn.microsoft.com/en-us/azure/reliability/reliability-postgresql-flexible-server#high-availability
-                                "ha_supported": edition.name != "Burstable",
+                                "ha": (
+                                    DatabaseHaLevel.NONE
+                                    if edition.name == "Burstable"
+                                    else DatabaseHaLevel.MULTI_ZONE
+                                ),
                                 # TODO: investigate storage autoscaling support
-                                "storage_autoscaling": None,
+                                "storage_extra_autosize": None,
                                 # TODO: investigate scheduled backups support
                                 "scheduled_backups": None,
                                 # Product max PITR retention (days); default 7, up to 35; not in capabilities API.

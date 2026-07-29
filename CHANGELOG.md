@@ -1,3 +1,12 @@
+## v0.8.5 (July 31, 2026)
+
+Maintenance update:
+
+- Refactor the `Database` table: replace `ha_supported` with `ha` (`DatabaseHaLevel`), 
+  rename `storage_autoscaling` to `storage_extra_autosize`, and add capability fields 
+  (`wire_protocol`, storage bounds, monitoring, autotuning, `security_features`, and tiered `support_level`).
+- Align AWS, Azure, and GCP `inventory_databases` collectors with the renamed fields.
+
 ## v0.8.4 (July 28, 2026)
 
 New feature(s):

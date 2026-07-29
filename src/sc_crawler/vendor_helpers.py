@@ -113,6 +113,19 @@ def get_region_by_id(region_id: str, vendor: Vendor) -> Optional[Region]:
 
 def merge_database_catalog_rows(rows: List[dict]) -> List[dict]:
     """Collapse offering rows to one dict per ``database_id`` with merged versions."""
+    ha_rank = {
+        None: -1,
+        "none": 0,
+        "single-zone": 1,
+        "multi-zone": 2,
+        "multi-region": 3,
+    }
+
+    def _ha_value(value):
+        if value is None:
+            return None
+        return value.value if hasattr(value, "value") else value
+
     merged: dict[str, dict] = {}
     for row in rows:
         database_id = row["database_id"]
@@ -123,9 +136,13 @@ def merge_database_catalog_rows(rows: List[dict]) -> List[dict]:
         versions = set(existing.get("engine_versions") or [])
         versions.update(row.get("engine_versions") or [])
         existing["engine_versions"] = sorted(versions)
-        for flag in ("ha_supported", "storage_autoscaling", "scheduled_backups"):
+        for flag in ("storage_extra_autosize", "scheduled_backups"):
             if row.get(flag):
                 existing[flag] = True
+        row_ha = _ha_value(row.get("ha"))
+        existing_ha = _ha_value(existing.get("ha"))
+        if ha_rank.get(row_ha, -1) > ha_rank.get(existing_ha, -1):
+            existing["ha"] = row.get("ha")
         row_cont = row.get("continuous_backups")
         if row_cont is not None and (
             existing.get("continuous_backups") is None

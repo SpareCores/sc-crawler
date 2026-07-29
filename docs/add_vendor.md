@@ -280,16 +280,34 @@ def inventory_databases(vendor):
     #             "name": ,
     #             "api_reference": ,
     #             "display_name": ,
-    #             "engine": DatabaseEngine.POSTGRESQL,
-    #             "engine_versions": ["16", "17"],
+    #             "description": None,
     #             "family": None,
+    #             "server_id": None,
     #             "vcpus": None,
     #             "memory_amount": None,
+    #             "engine": DatabaseEngine.POSTGRESQL,
+    #             "wire_protocol": DatabaseWireProtocol.POSTGRESQL,
+    #             "engine_versions": ["16", "17"],
+    #             "auto_upgrade_versions": None,
+    #             "ha": None,  # DatabaseHaLevel.NONE / SINGLE_ZONE / MULTI_ZONE / MULTI_REGION
+    #             "max_read_replicas": None,
+    #             "custom_config": None,
+    #             "custom_extensions": None,
     #             "storage_size": None,
-    #             "ha_supported": None,
-    #             "storage_autoscaling": None,
+    #             "storage_extra_min": None,
+    #             "storage_extra_max": None,
+    #             "storage_extra_autosize": None,
+    #             "disk_encryption": None,
     #             "scheduled_backups": None,
     #             "continuous_backups": None,
+    #             "connection_pool": None,
+    #             "system_monitoring": None,
+    #             "database_monitoring": None,
+    #             "autotuning_advice": None,
+    #             "autotuning_apply": None,
+    #             "sla": None,
+    #             "security_features": [],  # DatabaseSecurityFeature....
+    #             "support_level": None,  # DatabaseSupportLevel.TIER_1 / TIER_2 / TIER_3
     #         }
     #     )
     return items

@@ -987,7 +987,7 @@ class DatabaseFields(
         default=None,
         description="Database engine performance insights (slow queries, locks, execution plans).",
     )
-    autotuning_advise: Optional[bool] = Field(
+    autotuning_advice: Optional[bool] = Field(
         default=None,
         description="Analyzes workload and generates actionable performance tuning advice.",
     )

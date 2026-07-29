@@ -1,7 +1,14 @@
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from sc_crawler.table_fields import Allocation, DatabaseEngine, PriceUnit, Status
+from sc_crawler.table_fields import (
+    Allocation,
+    DatabaseEngine,
+    DatabaseHaLevel,
+    DatabaseWireProtocol,
+    PriceUnit,
+    Status,
+)
 from sc_crawler.vendor_helpers import merge_database_catalog_rows
 from sc_crawler.vendors._aws import (
     _active_region_ids,
@@ -291,18 +298,18 @@ def test_merge_database_catalog_rows_merges_versions():
             {
                 "database_id": "pg_a",
                 "engine_versions": ["15"],
-                "ha_supported": False,
+                "ha": DatabaseHaLevel.NONE,
             },
             {
                 "database_id": "pg_a",
                 "engine_versions": ["16"],
-                "ha_supported": True,
+                "ha": DatabaseHaLevel.MULTI_ZONE,
             },
         ]
     )
     assert len(rows) == 1
     assert rows[0]["engine_versions"] == ["15", "16"]
-    assert rows[0]["ha_supported"] is True
+    assert rows[0]["ha"] == DatabaseHaLevel.MULTI_ZONE
 
 
 def test_gcp_tier_pricing_from_billing_fixture():
@@ -605,9 +612,10 @@ def test_aws_inventory_databases_description_server_id_and_capabilities():
     assert by_id["db.m5.large"]["description"] == (
         "General purpose (2 vCPU, 8.0 GiB RAM)"
     )
-    assert by_id["db.m5.large"]["ha_supported"] is True
-    assert by_id["db.m5.large"]["storage_autoscaling"] is True
+    assert by_id["db.m5.large"]["ha"] == DatabaseHaLevel.MULTI_ZONE
+    assert by_id["db.m5.large"]["storage_extra_autosize"] is True
     assert by_id["db.m5.large"]["engine"] == DatabaseEngine.POSTGRESQL
+    assert by_id["db.m5.large"]["wire_protocol"] == DatabaseWireProtocol.POSTGRESQL
     assert by_id["db.m5.large"]["engine_versions"] == ["15", "16"]
     assert by_id["db.m5.large"]["scheduled_backups"] is True
     assert by_id["db.m5.large"]["continuous_backups"] == 35
@@ -616,7 +624,7 @@ def test_aws_inventory_databases_description_server_id_and_capabilities():
     assert by_id["db.r6gd.xlarge"]["description"] == (
         "Memory optimized (4 vCPU, 32.0 GiB RAM, 118 GB NVMe SSD)"
     )
-    assert by_id["db.r6gd.xlarge"]["ha_supported"] is False
+    assert by_id["db.r6gd.xlarge"]["ha"] == DatabaseHaLevel.NONE
 
 
 def test_aws_inventory_databases_dedupes_across_regions():

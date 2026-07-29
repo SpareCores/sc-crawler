@@ -18,7 +18,9 @@ from ..table_fields import (
     CpuAllocation,
     CpuArchitecture,
     DatabaseEngine,
+    DatabaseHaLevel,
     DatabaseStorageScope,
+    DatabaseWireProtocol,
     PriceUnit,
     Status,
     StorageType,
@@ -1367,17 +1369,19 @@ def inventory_databases(vendor):
         else:
             price_family = "enterprise"
 
-        ha_supported = None
+        ha = None
         if tier_regions:
             if price_family == "shared":
-                ha_supported = False
+                ha = DatabaseHaLevel.NONE
+            elif any(
+                (region, price_family) in ha_families
+                or (region, "enterprise") in ha_families
+                or (region, "enterprise_n4") in ha_families
+                for region in tier_regions
+            ):
+                ha = DatabaseHaLevel.MULTI_ZONE
             else:
-                ha_supported = any(
-                    (region, price_family) in ha_families
-                    or (region, "enterprise") in ha_families
-                    or (region, "enterprise_n4") in ha_families
-                    for region in tier_regions
-                )
+                ha = DatabaseHaLevel.NONE
 
         rows.append(
             {
@@ -1391,13 +1395,14 @@ def inventory_databases(vendor):
                 # db instances (like db-perf-optimized-N-2, db-memory-optimized-N-4, etc.)
                 "server_id": server_id,
                 "engine": DatabaseEngine.POSTGRESQL,
+                "wire_protocol": DatabaseWireProtocol.POSTGRESQL,
                 "engine_versions": meta["engine_versions"],
                 "family": family_slug,
                 "vcpus": cpu_count,
                 "memory_amount": memory_amount,
                 "storage_size": None,
-                "ha_supported": ha_supported,
-                "storage_autoscaling": None,
+                "ha": ha,
+                "storage_extra_autosize": None,
                 # https://cloud.google.com/sql/docs/postgres/backup-recovery/backups
                 "scheduled_backups": True,
                 # https://cloud.google.com/sql/docs/postgres/backup-recovery/pitr
