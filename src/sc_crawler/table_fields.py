@@ -124,11 +124,46 @@ class DatabaseEngine(str, Enum):
     """PostgreSQL."""
 
 
+class DatabaseWireProtocol(str, Enum):
+    """Wire protocol for a managed database SKU."""
+
+    POSTGRESQL = "postgresql"
+    """PostgreSQL."""
+
+
+class DatabaseHaLevel(str, Enum):
+    """High availability level for a managed database SKU."""
+
+    NONE = "none"
+    """No high availability."""
+    SINGLE_ZONE = "single-zone"
+    """Single-zone high availability."""
+    MULTI_ZONE = "multi-zone"
+    """Multi-zone high availability."""
+    MULTI_REGION = "multi-region"
+    """Multi-region high availability."""
+
+
+class DatabaseSecurityFeature(str, Enum):
+    """Security features for a managed database SKU."""
+
+    IP_ALLOWLISTING = "ip-allowlisting"
+    """IP allowlisting."""
+    NETWORK_PEERING = "network-peering"
+    """Network peering support."""
+    WAF = "waf"
+    """Web application firewall support."""
+
+
 class DatabaseSupportLevel(str, Enum):
     """Vendor support tier for a managed database SKU."""
 
-    STANDARD = "standard"
-    """Standard support level."""
+    TIER_1 = "tier-1"
+    """Tier 1 support level."""
+    TIER_2 = "tier-2"
+    """Tier 2 support level."""
+    TIER_3 = "tier-3"
+    """Tier 3 support level."""
 
 
 class DatabaseStorageScope(str, Enum):

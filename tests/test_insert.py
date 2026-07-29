@@ -5,7 +5,14 @@ from sc_crawler.table_bases import (
     DatabaseBenchmarkScoreBase,
     DatabasePriceBase,
 )
-from sc_crawler.table_fields import Allocation, DatabaseEngine, PriceUnit, Status
+from sc_crawler.table_fields import (
+    Allocation,
+    DatabaseEngine,
+    DatabaseSecurityFeature,
+    DatabaseWireProtocol,
+    PriceUnit,
+    Status,
+)
 
 
 def test_primary_key_tuple_normalizes_json_config_key_order():
@@ -81,12 +88,16 @@ def test_database_base_round_trip():
             "display_name": "db-n1-standard-4",
             "description": "PostgreSQL Cloud SQL N1 Standard (4 vCPUs, 15 GB RAM)",
             "engine": DatabaseEngine.POSTGRESQL,
+            "wire_protocol": DatabaseWireProtocol.POSTGRESQL,
             "engine_versions": ["15", "16"],
+            "security_features": ["ip-allowlisting"],
             "storage_size": None,
             "status": Status.ACTIVE,
         }
     )
     assert item.engine_versions == ["15", "16"]
+    assert item.wire_protocol == DatabaseWireProtocol.POSTGRESQL
+    assert item.security_features == [DatabaseSecurityFeature.IP_ALLOWLISTING]
     assert item.storage_size is None
 
 
