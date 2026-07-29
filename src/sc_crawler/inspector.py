@@ -755,12 +755,8 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
         _log_cannot_load_benchmarks(server, framework, e, True)
 
     for task_name in (
-        "hammerdb_postgres_multi_oltp_mixed_c100",
-        "hammerdb_postgres_multi_oltp_mixed_c30",
-        "hammerdb_postgres_multi_oltp_mixed_durable_c100",
-        "hammerdb_postgres_multi_olap_c100",
-        "benchbase_postgres_multi_read_heavy_c100",
-        "benchbase_postgres_multi_crud_simple_c100",
+        "pgbench_postgres_multi_ro_durable",
+        "pgbench_postgres_multi_tpcb_async",
     ):
         try:
             task_dir = path.join(_server_path(server), task_name)
@@ -774,35 +770,23 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                 continue
             with open(stdout_path, "r") as fp:
                 metrics = json.load(fp)
-            family = (
-                "hammerdb_postgres_multi"
-                if task_name.startswith("hammerdb_postgres_multi")
-                else "benchbase_postgres_multi"
-            )
-            workload = metrics.get("workload", "")
-            score_unit = str(metrics.get("score_unit", "")).lower()
-            if family == "hammerdb_postgres_multi":
-                measurement = (
-                    "qphh" if workload == "tpch" or score_unit == "qphh" else "nopm"
-                )
-            else:
-                measurement = "tpm"
             benchmarks.append(
                 {
                     **_benchmark_metafields(
                         server,
-                        framework=family,
-                        benchmark_id=f"{family}:{measurement}",
+                        framework="pgbench_postgres_multi",
+                        benchmark_id="pgbench_postgres_multi:tpm",
                     ),
                     "config": {
                         "topology": metrics.get("topology", "multi_vm"),
-                        "cache_tier": metrics.get(
-                            "cache_tier", task_name.rsplit("_", 1)[-1]
-                        ),
-                        "cache_ratio": metrics.get("cache_ratio"),
                         "durability": metrics.get("durability", "durable"),
+                        "scalefactor": metrics.get("scalefactor"),
+                        "peak_scalefactor": metrics.get("peak_scalefactor"),
                         "peak_concurrency": metrics.get("peak_concurrency"),
-                        "client_rtt_ms": metrics.get("client_rtt_ms"),
+                        "profile_max_clients": metrics.get("profile_max_clients"),
+                        "profile_hard_max_clients": metrics.get(
+                            "profile_hard_max_clients"
+                        ),
                         "latency_ms": metrics.get("latency_ms"),
                         "workload": metrics.get("workload"),
                     },
