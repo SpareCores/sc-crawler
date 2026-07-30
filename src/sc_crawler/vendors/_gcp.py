@@ -1370,18 +1370,31 @@ def inventory_databases(vendor):
             price_family = "enterprise"
 
         ha = None
+        has_regional_ha = False
         if tier_regions:
-            if price_family == "shared":
-                ha = DatabaseHaLevel.NONE
-            elif any(
+            # Multi-region first: Enterprise Plus (enterprise_n4) supports Advanced DR
+            # with a designated cross-region DR replica.
+            # https://cloud.google.com/sql/docs/postgres/use-advanced-disaster-recovery
+            # Regional HA billing SKUs → MULTI_ZONE; shared-core → NONE.
+            has_regional_ha = any(
                 (region, price_family) in ha_families
                 or (region, "enterprise") in ha_families
                 or (region, "enterprise_n4") in ha_families
                 for region in tier_regions
-            ):
+            )
+            if price_family == "shared":
+                ha = DatabaseHaLevel.NONE
+            elif price_family == "enterprise_n4":
+                ha = DatabaseHaLevel.MULTI_REGION
+            elif has_regional_ha:
                 ha = DatabaseHaLevel.MULTI_ZONE
             else:
                 ha = DatabaseHaLevel.NONE
+
+        disk_quota_bytes = int(tier.get("DiskQuota") or 0)
+        storage_extra_max = (
+            disk_quota_bytes // 1_000_000_000 if disk_quota_bytes else None
+        )
 
         rows.append(
             {
@@ -1402,13 +1415,47 @@ def inventory_databases(vendor):
                 "memory_amount": memory_amount,
                 "storage_size": None,
                 "ha": ha,
-                "storage_extra_autosize": None,
+                # Minimum data disk size is 10 GB.
+                # https://cloud.google.com/sql/docs/postgres/admin-api/rest/v1/instances
+                "storage_extra_min": 10,
+                "storage_extra_max": storage_extra_max,
+                # https://cloud.google.com/sql/docs/postgres/instance-settings
+                "storage_extra_autosize": True,
+                # https://cloud.google.com/sql/docs/postgres/cmek
+                "disk_encryption": True,
+                # Minor versions are applied via Cloud SQL maintenance updates.
+                # https://cloud.google.com/sql/docs/postgres/maintenance
+                "auto_upgrade_versions": True,
                 # https://cloud.google.com/sql/docs/postgres/backup-recovery/backups
                 "scheduled_backups": True,
-                # https://cloud.google.com/sql/docs/postgres/backup-recovery/pitr
-                "continuous_backups": None,
+                # Max transactionLogRetentionDays for PITR by edition; not in tiers API.
+                # Enterprise: 1–7 days; Enterprise Plus: 1–35 days.
+                # https://cloud.google.com/sql/docs/postgres/backup-recovery/configure-pitr
+                "continuous_backups": (35 if price_family == "enterprise_n4" else 7),
                 "custom_config": meta["custom_config"],
                 "custom_extensions": meta["custom_extensions"],
+                # Shared-core tiers do not support read replicas.
+                # Up to 10 replicas per primary (cascading also allowed).
+                # https://cloud.google.com/sql/docs/postgres/replication
+                "max_read_replicas": (0 if tier_name in _PG_SHARED_TIERS else 10),
+                # https://cloud.google.com/sql/docs/postgres/managed-connection-pooling
+                "connection_pool": True,
+                # https://cloud.google.com/sql/docs/postgres/monitor-instance
+                "system_monitoring": True,
+                # https://cloud.google.com/sql/docs/postgres/using-query-insights
+                "database_monitoring": True,
+                # Index advisor recommends CREATE INDEX (Enterprise Plus only); operator applies.
+                # https://cloud.google.com/sql/docs/postgres/use-index-advisor
+                "autotuning_advice": price_family == "enterprise_n4",
+                "autotuning_apply": False,
+                # https://cloud.google.com/sql/sla
+                # Enterprise Plus + HA: 99.99%; Enterprise + HA: 99.95%.
+                # Shared-core and single-zone instances are excluded from the SLA.
+                "sla": (
+                    99.99
+                    if price_family == "enterprise_n4" and has_regional_ha
+                    else (99.95 if ha == DatabaseHaLevel.MULTI_ZONE else None)
+                ),
             }
         )
         vendor.progress_tracker.advance_task()

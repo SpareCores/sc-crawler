@@ -136,17 +136,42 @@ def merge_database_catalog_rows(rows: List[dict]) -> List[dict]:
         versions = set(existing.get("engine_versions") or [])
         versions.update(row.get("engine_versions") or [])
         existing["engine_versions"] = sorted(versions)
-        for flag in ("storage_extra_autosize", "scheduled_backups"):
+        for flag in (
+            "storage_extra_autosize",
+            "scheduled_backups",
+            "disk_encryption",
+            "system_monitoring",
+            "database_monitoring",
+            "autotuning_advice",
+            "autotuning_apply",
+            "custom_config",
+            "custom_extensions",
+            "connection_pool",
+        ):
             if row.get(flag):
                 existing[flag] = True
         row_ha = _ha_value(row.get("ha"))
         existing_ha = _ha_value(existing.get("ha"))
         if ha_rank.get(row_ha, -1) > ha_rank.get(existing_ha, -1):
             existing["ha"] = row.get("ha")
-        row_cont = row.get("continuous_backups")
-        if row_cont is not None and (
-            existing.get("continuous_backups") is None
-            or row_cont > existing.get("continuous_backups", 0)
+        for field, reducer in (
+            ("storage_extra_min", min),
+            ("storage_extra_max", max),
+            ("max_read_replicas", max),
+            ("continuous_backups", max),
+            ("sla", max),
         ):
-            existing["continuous_backups"] = row_cont
+            row_val = row.get(field)
+            if row_val is None:
+                continue
+            existing_val = existing.get(field)
+            if existing_val is None:
+                existing[field] = row_val
+            else:
+                existing[field] = reducer(existing_val, row_val)
+        row_features = row.get("security_features") or []
+        if row_features:
+            features = set(existing.get("security_features") or [])
+            features.update(row_features)
+            existing["security_features"] = sorted(features)
     return list(merged.values())

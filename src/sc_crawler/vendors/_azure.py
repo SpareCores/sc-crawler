@@ -1733,9 +1733,69 @@ def inventory_databases(vendor):
         with sentry_capture_or_raise(vendor=vendor):
             for capability in _pg_capabilities(location):
                 engine_versions = _pg_engine_versions(capability)
+                storage_extra_autosize = None
+                storage_auto_growth = getattr(
+                    capability, "storage_auto_growth_supported", None
+                )
+                if storage_auto_growth == "Enabled":
+                    storage_extra_autosize = True
+                elif storage_auto_growth == "Disabled":
+                    storage_extra_autosize = False
+                scheduled_backups = None
+                geo_backup = getattr(capability, "geo_backup_supported", None)
+                if geo_backup == "Enabled":
+                    scheduled_backups = True
+                elif geo_backup == "Disabled":
+                    scheduled_backups = False
+                autotuning_advice = None
+                autotuning_apply = None
+                for feature in getattr(capability, "supported_features", None) or []:
+                    feature_name = getattr(feature, "name", None)
+                    feature_status = getattr(feature, "status", None)
+                    if (
+                        feature_name == "StorageAutoGrowth"
+                        and storage_extra_autosize is None
+                    ):
+                        if feature_status == "Enabled":
+                            storage_extra_autosize = True
+                        elif feature_status == "Disabled":
+                            storage_extra_autosize = False
+                    elif feature_name == "GeoBackup" and scheduled_backups is None:
+                        if feature_status == "Enabled":
+                            scheduled_backups = True
+                        elif feature_status == "Disabled":
+                            scheduled_backups = False
+                    elif feature_name == "IndexTuning":
+                        if feature_status == "Enabled":
+                            autotuning_advice = True
+                        elif feature_status == "Disabled":
+                            autotuning_advice = False
+                    elif feature_name == "AdaptiveAutoVacuumAutoApply":
+                        if feature_status == "Enabled":
+                            autotuning_apply = True
+                        elif feature_status == "Disabled":
+                            autotuning_apply = False
                 for edition in (
                     getattr(capability, "supported_server_editions", None) or []
                 ):
+                    sizes_gb = []
+                    for storage_edition in (
+                        getattr(edition, "supported_storage_editions", None) or []
+                    ):
+                        for storage_mb in (
+                            getattr(storage_edition, "supported_storage_mb", None) or []
+                        ):
+                            size_mb = getattr(storage_mb, "storage_size_mb", None)
+                            max_mb = getattr(
+                                storage_mb, "maximum_storage_size_mb", None
+                            )
+                            # Azure storage_size_mb values are MiB
+                            if size_mb is not None:
+                                sizes_gb.append(round(int(size_mb) / 1024 * _GIB_TO_GB))
+                            if max_mb is not None:
+                                sizes_gb.append(round(int(max_mb) / 1024 * _GIB_TO_GB))
+                    storage_extra_min = min(sizes_gb) if sizes_gb else None
+                    storage_extra_max = max(sizes_gb) if sizes_gb else None
                     for sku in getattr(edition, "supported_server_skus", None) or []:
                         database_id = sku.name
                         vcpus = int(sku.v_cores) if sku.v_cores else None
@@ -1754,6 +1814,27 @@ def inventory_databases(vendor):
                         description = f"PostgreSQL {edition.name}"
                         if spec_parts:
                             description = f"{description} ({', '.join(spec_parts)})"
+                        # Multi-region first: GP / Memory Optimized support cross-region
+                        # (geo) read replicas for regional DR. Burstable supports neither
+                        # HA nor replicas (API may still list HA modes — prefer docs).
+                        # https://learn.microsoft.com/en-us/azure/postgresql/backup-restore/concepts-geo-disaster-recovery
+                        # https://learn.microsoft.com/en-us/azure/postgresql/read-replica/concepts-read-replicas
+                        # Zone-redundant HA is same-region multi-AZ (MULTI_ZONE).
+                        # https://learn.microsoft.com/en-us/azure/postgresql/high-availability/concepts-high-availability
+                        ha_modes = {
+                            (mode.value if hasattr(mode, "value") else str(mode))
+                            for mode in (getattr(sku, "supported_ha_mode", None) or [])
+                        }
+                        if edition.name == "Burstable":
+                            ha = DatabaseHaLevel.NONE
+                        elif edition.name in ("GeneralPurpose", "MemoryOptimized"):
+                            ha = DatabaseHaLevel.MULTI_REGION
+                        elif "ZoneRedundant" in ha_modes:
+                            ha = DatabaseHaLevel.MULTI_ZONE
+                        elif "SameZone" in ha_modes:
+                            ha = DatabaseHaLevel.SINGLE_ZONE
+                        else:
+                            ha = DatabaseHaLevel.NONE
                         rows.append(
                             {
                                 "vendor_id": vendor.vendor_id,
@@ -1770,20 +1851,62 @@ def inventory_databases(vendor):
                                 "vcpus": vcpus,
                                 "memory_amount": memory_amount,
                                 "storage_size": None,
-                                # Burstable tier: HA not supported (General Purpose / Memory Optimized only).
-                                # https://learn.microsoft.com/en-us/azure/reliability/reliability-postgresql-flexible-server#high-availability
-                                "ha": (
-                                    DatabaseHaLevel.NONE
-                                    if edition.name == "Burstable"
-                                    else DatabaseHaLevel.MULTI_ZONE
+                                "storage_extra_autosize": storage_extra_autosize,
+                                "scheduled_backups": scheduled_backups,
+                                "autotuning_advice": (
+                                    False
+                                    if autotuning_advice is None
+                                    else autotuning_advice
                                 ),
-                                # TODO: investigate storage autoscaling support
-                                "storage_extra_autosize": None,
-                                # TODO: investigate scheduled backups support
-                                "scheduled_backups": None,
+                                "autotuning_apply": (
+                                    False
+                                    if autotuning_apply is None
+                                    else autotuning_apply
+                                ),
+                                # https://learn.microsoft.com/en-us/azure/postgresql/security/security-overview#data-protection
+                                "disk_encryption": True,
+                                # Minor releases are applied automatically during maintenance.
+                                # https://learn.microsoft.com/en-us/azure/postgresql/configure-maintain/concepts-major-version-upgrade
+                                "auto_upgrade_versions": True,
+                                # https://learn.microsoft.com/en-us/azure/postgresql/parameters/concepts-parameters
+                                "custom_config": True,
+                                # https://learn.microsoft.com/en-us/azure/postgresql/extensions/concepts-extensions-considerations
+                                "custom_extensions": True,
+                                "storage_extra_min": storage_extra_min,
+                                "storage_extra_max": storage_extra_max,
+                                "ha": ha,
+                                # Up to 5 replicas per primary; Burstable tier is not supported.
+                                # https://learn.microsoft.com/en-us/azure/postgresql/read-replica/concepts-read-replicas
+                                "max_read_replicas": (
+                                    0 if edition.name == "Burstable" else 5
+                                ),
+                                # Built-in PgBouncer connection pooling.
+                                # https://learn.microsoft.com/en-us/azure/postgresql/connectivity/concepts-pgbouncer
+                                "connection_pool": True,
+                                # Host-level metrics via Azure Monitor.
+                                # https://learn.microsoft.com/en-us/azure/postgresql/monitor/concepts-monitoring
+                                "system_monitoring": True,
+                                # Query Performance Insight / Query Store for query-level analysis.
+                                # https://learn.microsoft.com/en-us/azure/postgresql/monitor/concepts-query-performance-insight
+                                "database_monitoring": True,
                                 # Product max PITR retention (days); default 7, up to 35; not in capabilities API.
                                 # https://learn.microsoft.com/en-us/azure/postgresql/backup-restore/concepts-backup-restore
                                 "continuous_backups": 35,
+                                # Zone-redundant HA 99.99%; zonal HA 99.95%; no HA 99.9%.
+                                # https://learn.microsoft.com/en-us/azure/reliability/reliability-database-postgresql
+                                "sla": (
+                                    99.99
+                                    if ha
+                                    in (
+                                        DatabaseHaLevel.MULTI_ZONE,
+                                        DatabaseHaLevel.MULTI_REGION,
+                                    )
+                                    else (
+                                        99.95
+                                        if ha == DatabaseHaLevel.SINGLE_ZONE
+                                        else 99.9
+                                    )
+                                ),
                             }
                         )
         vendor.progress_tracker.advance_task()
@@ -1922,8 +2045,17 @@ def inventory_database_storages(vendor):
                                 )
 
                         bounds = {
-                            "min_size": int(min(sizes_mb) / 1024) if sizes_mb else None,
-                            "max_size": int(max(sizes_mb) / 1024) if sizes_mb else None,
+                            # Azure storage_size_mb values are MiB
+                            "min_size": (
+                                round(min(sizes_mb) / 1024 * _GIB_TO_GB)
+                                if sizes_mb
+                                else None
+                            ),
+                            "max_size": (
+                                round(max(sizes_mb) / 1024 * _GIB_TO_GB)
+                                if sizes_mb
+                                else None
+                            ),
                             "max_iops": (
                                 max(max_iops_values) if max_iops_values else None
                             ),
