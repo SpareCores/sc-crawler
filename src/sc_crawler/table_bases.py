@@ -916,11 +916,11 @@ class DatabaseFields(
         default=None,
         description="Amount of RAM (MiB) provisioned for the instance.",
     )
-    engine: DatabaseEngine = Field(
-        description="Managed database engine running on the instance."
+    engine: Optional[DatabaseEngine] = Field(
+        default=None, description="Managed database engine running on the instance."
     )
-    wire_protocol: DatabaseWireProtocol = Field(
-        description="Network protocol used for client connections."
+    wire_protocol: Optional[DatabaseWireProtocol] = Field(
+        default=None, description="Network protocol used for client connections."
     )
     engine_versions: List[str] = Field(
         default=[],
@@ -941,7 +941,7 @@ class DatabaseFields(
     )
     custom_config: Optional[bool] = Field(
         default=None,
-        description="Wether database engine parameters/flags can be customized.",
+        description="Whether database engine parameters/flags can be customized.",
     )
     custom_extensions: Optional[bool] = Field(
         default=None,

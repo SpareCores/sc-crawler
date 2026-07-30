@@ -231,12 +231,12 @@ def upgrade() -> None:
     database_table = get_database_table(is_scd)
     do_recreate_tables = (op.get_context().dialect.name == "sqlite") or is_scd
 
-    bind = op.get_bind()
-    op.drop_column(database_table_name, "support_level")
-    sa.Enum(name="databasesupportlevel").drop(bind, checkfirst=True)
-    sa.Enum("TIER_1", "TIER_2", "TIER_3", name="databasesupportlevel").create(
-        bind, checkfirst=True
-    )
+    if is_postgresql:
+        op.execute(
+            "ALTER TYPE databasesupportlevel RENAME VALUE 'STANDARD' TO 'TIER_1'"
+        )
+        op.execute("ALTER TYPE databasesupportlevel ADD VALUE 'TIER_2'")
+        op.execute("ALTER TYPE databasesupportlevel ADD VALUE 'TIER_3'")
 
     if do_recreate_tables:
         with op.batch_alter_table(
@@ -298,15 +298,15 @@ def upgrade() -> None:
                 (
                     "engine",
                     _enum("databaseengine", ("POSTGRESQL",)),
-                    False,
+                    True,
                     None,
                     "Managed database engine running on the instance.",
                 ),
                 (
                     "wire_protocol",
                     sa.Enum("POSTGRESQL", name="databasewireprotocol"),
-                    False,
-                    "POSTGRESQL",
+                    True,
+                    None,
                     "Network protocol used for client connections.",
                 ),
                 (
@@ -349,7 +349,7 @@ def upgrade() -> None:
                     sa.Boolean(),
                     True,
                     None,
-                    "Wether database engine parameters/flags can be customized.",
+                    "Whether database engine parameters/flags can be customized.",
                 ),
                 (
                     "custom_extensions",
@@ -491,37 +491,26 @@ def upgrade() -> None:
         op.drop_column(database_table_name, "engine_auto_upgrade")
         op.drop_column(database_table_name, "autotuning")
 
-        bind = op.get_bind()
-        sa.Enum("POSTGRESQL", name="databasewireprotocol").create(bind, checkfirst=True)
-        sa.Enum(
-            "NONE",
-            "SINGLE_ZONE",
-            "MULTI_ZONE",
-            "MULTI_REGION",
-            name="databasehalevel",
-        ).create(bind, checkfirst=True)
+        if is_postgresql:
+            bind = op.get_bind()
+            sa.Enum("POSTGRESQL", name="databasewireprotocol").create(
+                bind, checkfirst=True
+            )
+            sa.Enum(
+                "NONE",
+                "SINGLE_ZONE",
+                "MULTI_ZONE",
+                "MULTI_REGION",
+                name="databasehalevel",
+            ).create(bind, checkfirst=True)
 
-        op.add_column(
-            database_table_name,
-            sa.Column(
-                "support_level",
-                sa.Enum(
-                    "TIER_1",
-                    "TIER_2",
-                    "TIER_3",
-                    name="databasesupportlevel",
-                ),
-                nullable=True,
-                comment="Highest level of support plan available.",
-            ),
-        )
+        op.alter_column(database_table_name, "engine", nullable=True)
         op.add_column(
             database_table_name,
             sa.Column(
                 "wire_protocol",
                 sa.Enum("POSTGRESQL", name="databasewireprotocol"),
-                nullable=False,
-                server_default="POSTGRESQL",
+                nullable=True,
                 comment="Network protocol used for client connections.",
             ),
         )
@@ -699,12 +688,13 @@ def upgrade() -> None:
             ),
             (
                 "custom_config",
-                "Wether database engine parameters/flags can be customized.",
+                "Whether database engine parameters/flags can be customized.",
             ),
             (
                 "custom_extensions",
                 "Support for custom database engine extensions/plugins.",
             ),
+            ("support_level", "Highest level of support plan available."),
         ):
             op.alter_column(database_table_name, column, comment=comment)
 
@@ -744,11 +734,11 @@ def get_database_table_v085(is_scd: bool) -> sa.Table:
         sa.Column("server_id", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
         sa.Column("vcpus", sa.Integer(), nullable=True),
         sa.Column("memory_amount", sa.Integer(), nullable=True),
-        sa.Column("engine", _enum("databaseengine", ("POSTGRESQL",)), nullable=False),
+        sa.Column("engine", _enum("databaseengine", ("POSTGRESQL",)), nullable=True),
         sa.Column(
             "wire_protocol",
             _enum("databasewireprotocol", ("POSTGRESQL",)),
-            nullable=False,
+            nullable=True,
         ),
         sa.Column("engine_versions", json_type(), nullable=False),
         sa.Column("auto_upgrade_versions", sa.Boolean(), nullable=True),
@@ -800,10 +790,19 @@ def downgrade() -> None:
     database_table = get_database_table_v085(is_scd)
     do_recreate_tables = (op.get_context().dialect.name == "sqlite") or is_scd
 
-    bind = op.get_bind()
-    op.drop_column(database_table_name, "support_level")
-    sa.Enum(name="databasesupportlevel").drop(bind, checkfirst=True)
-    sa.Enum("STANDARD", name="databasesupportlevel").create(bind, checkfirst=True)
+    if is_postgresql:
+        bind = op.get_bind()
+        op.execute("ALTER TYPE databasesupportlevel RENAME TO databasesupportlevel_old")
+        sa.Enum("STANDARD", name="databasesupportlevel").create(bind, checkfirst=True)
+        op.execute(f"""
+            ALTER TABLE {database_table_name}
+            ALTER COLUMN support_level TYPE databasesupportlevel
+            USING CASE support_level::text
+                WHEN 'TIER_1' THEN 'STANDARD'::databasesupportlevel
+                ELSE NULL
+            END
+        """)
+        sa.Enum(name="databasesupportlevel_old").drop(bind, checkfirst=True)
 
     if do_recreate_tables:
         with op.batch_alter_table(
@@ -972,15 +971,6 @@ def downgrade() -> None:
         op.add_column(
             database_table_name,
             sa.Column(
-                "support_level",
-                sa.Enum("STANDARD", name="databasesupportlevel"),
-                nullable=True,
-                comment="Vendor support tier for the SKU.",
-            ),
-        )
-        op.add_column(
-            database_table_name,
-            sa.Column(
                 "ha_supported",
                 sa.Boolean(),
                 nullable=True,
@@ -1032,6 +1022,7 @@ def downgrade() -> None:
             ("continuous_backups", "Point-in-time recovery retention in days."),
             ("custom_config", "If custom configuration parameters are supported."),
             ("custom_extensions", "If custom extensions are supported."),
+            ("support_level", "Vendor support tier for the SKU."),
         ):
             op.alter_column(database_table_name, column, comment=comment)
 
