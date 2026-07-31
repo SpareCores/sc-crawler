@@ -2,10 +2,15 @@
 
 Maintenance update:
 
-- Refactor the `Database` table: replace `ha_supported` with `ha` (`DatabaseHaLevel`), 
-  rename `storage_autoscaling` to `storage_extra_autosize`, and add capability fields 
+- Refactor the `Database` table: replace `ha_supported` with `ha` (`DatabaseHaLevel`),
+  rename `storage_autoscaling` to `storage_extra_autosize`, and add capability fields
   (`wire_protocol`, storage bounds, monitoring, autotuning, `security_features`, and tiered `support_level`).
-- Align AWS, Azure, and GCP `inventory_databases` collectors with the renamed fields.
+
+Fix(es):
+
+- Correct and fill `AWS`, `Azure`, and `GCP` PostgreSQL DBaaS inventory fields (HA levels,
+  storage bounds, monitoring, backups, SLA, and related capabilities).
+- Drop non-orderable `AWS` RDS instance classes from the catalog.
 
 ## v0.8.4 (July 28, 2026)
 

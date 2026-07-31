@@ -1023,6 +1023,8 @@ class DatabaseFields(
     def _deserialize_security_features(cls, value):
         if not value:
             return []
+        if isinstance(value, str):
+            return [DatabaseSecurityFeature(value)]
         return [
             DatabaseSecurityFeature(item) if isinstance(item, str) else item
             for item in value

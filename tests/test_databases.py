@@ -324,15 +324,33 @@ def test_merge_database_catalog_rows_prefers_multi_region_ha():
                 "database_id": "pg_a",
                 "engine_versions": ["15"],
                 "ha": DatabaseHaLevel.MULTI_ZONE,
+                "storage_extra_min": 20,
+                "storage_extra_max": 100,
+                "max_read_replicas": 2,
+                "continuous_backups": 7,
+                "sla": 0.9995,
+                "security_features": ["ip-allowlisting"],
             },
             {
                 "database_id": "pg_a",
                 "engine_versions": ["16"],
                 "ha": DatabaseHaLevel.MULTI_REGION,
+                "storage_extra_min": 10,
+                "storage_extra_max": 200,
+                "max_read_replicas": 5,
+                "continuous_backups": 35,
+                "sla": 0.9999,
+                "security_features": ["network-peering"],
             },
         ]
     )
     assert rows[0]["ha"] == DatabaseHaLevel.MULTI_REGION
+    assert rows[0]["storage_extra_min"] == 10
+    assert rows[0]["storage_extra_max"] == 200
+    assert rows[0]["max_read_replicas"] == 5
+    assert rows[0]["continuous_backups"] == 35
+    assert rows[0]["sla"] == 0.9999
+    assert rows[0]["security_features"] == ["ip-allowlisting", "network-peering"]
 
 
 def test_azure_inventory_databases_ha_multi_region_for_gp_and_mo():
@@ -688,7 +706,7 @@ def test_aws_extract_rds_storage_size():
 
 
 def test_aws_orderable_options_skips_failing_region_when_sentry_captures():
-    from contextlib import contextmanager
+    from contextlib import contextmanager, suppress
 
     vendor = _aws_vendor()
     options = [{"DBInstanceClass": "db.m5.large", "MultiAZCapable": True}]
@@ -702,10 +720,8 @@ def test_aws_orderable_options_skips_failing_region_when_sentry_captures():
 
     @contextmanager
     def capture(vendor, on_error=None):
-        try:
+        with suppress(ConnectionError):
             yield
-        except Exception:
-            pass
 
     with (
         patch(
