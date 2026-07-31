@@ -1353,12 +1353,22 @@ def inventory_ipv4_prices(vendor):
 # PostgreSQL RDS support
 
 
-@cache
+@cachier(hash_func=jsoned_hash, separate_files=True)
 def _boto_describe_orderable_db_instance_options(
     region: str,
     db_instance_class: str,
 ) -> list:
-    rds = boto3.client("rds", region_name=region)
+    rds = boto3.client(
+        "rds",
+        region_name=region,
+        config=Config(
+            connect_timeout=5,
+            read_timeout=10,
+            retries={
+                "max_attempts": 2,
+            },
+        ),
+    )
     paginator = rds.get_paginator("describe_orderable_db_instance_options")
     options = []
     for page in paginator.paginate(
@@ -1397,11 +1407,13 @@ def _boto_get_rds_products() -> list:
     )
 
 
-def _active_region_ids(vendor: Vendor) -> list[str]:
+def _active_region_ids(vendor: Vendor, only_priority: bool = False) -> list[str]:
     active = {
         region.region_id for region in vendor.regions if region.status == Status.ACTIVE
     }
     priority = [r for r in ("us-east-1", "eu-west-1", "eu-central-1") if r in active]
+    if only_priority:
+        return priority
     rest = sorted(active - set(priority))
     return priority + rest
 
@@ -1414,49 +1426,41 @@ def _boto_describe_db_major_engine_versions_first(regions: list[str]) -> list[st
     return []
 
 
-@cachier(hash_func=jsoned_hash, separate_files=True)
-def _describe_orderable_db_instance_options_for_class(
-    regions: list[str],
-    db_instance_class: str,
-) -> list:
-    for region in regions:
-        options = _boto_describe_orderable_db_instance_options(
-            region, db_instance_class
-        )
-        if options:
-            return options
-    return []
-
-
 def _describe_orderable_db_instance_options_for_class_with_progress(
     regions: list[str],
     db_instance_class: str,
     vendor: Vendor,
 ) -> list:
-    options = _describe_orderable_db_instance_options_for_class(
-        regions, db_instance_class
-    )
+    for region in regions:
+        with sentry_capture_or_raise(vendor=vendor):
+            options = _boto_describe_orderable_db_instance_options(
+                region, db_instance_class
+            )
+            if options:
+                vendor.progress_tracker.advance_task()
+                return options
     vendor.progress_tracker.advance_task()
-    return options
+    return []
 
 
 def _lookup_orderable_db_instance_options(
     vendor: Vendor,
     prices_by_region: dict[str, dict[str, dict]],
 ) -> dict[str, list]:
-    regions = _active_region_ids(vendor)
+    regions = _active_region_ids(vendor, only_priority=True)
     database_ids = sorted(
         {
             database_id
-            for classes in prices_by_region.values()
-            for database_id in classes
+            for region_classes in prices_by_region.values()
+            for database_id, attrs in region_classes.items()
+            if attrs.get("currentGeneration") == "Yes"
         }
     )
     vendor.progress_tracker.start_task(
         name="Look up orderable DB instance option(s)",
         total=len(database_ids),
     )
-    with ThreadPoolExecutor(max_workers=16) as executor:
+    with ThreadPoolExecutor(max_workers=8) as executor:
         results = list(
             executor.map(
                 _describe_orderable_db_instance_options_for_class_with_progress,
@@ -1581,6 +1585,10 @@ def inventory_databases(vendor):
                 continue
             seen_database_ids.add(database_id)
             db_instance_options = options_by_database.get(database_id, [])
+            # Pricing keeps previous-gen SKUs (currentGeneration=No) after AWS stops
+            # allowing new launches; skip classes with no orderable options in any region.
+            if not db_instance_options:
+                continue
             deployment_options = deployment_options_by_database.get(
                 database_id, frozenset()
             )
@@ -1594,85 +1602,45 @@ def inventory_databases(vendor):
                 for opt in db_instance_options
                 if opt.get("MaxStorageSize") is not None
             ]
-            if db_instance_options or deployment_options:
-                # Multi-region first (SupportsGlobalDatabases; Aurora Global Database —
-                # typically false for engine=postgres RDS instance classes).
-                # https://docs.aws.amazon.com/AmazonRDS/latest/APIReference/API_OrderableDBInstanceOption.html
-                if any(
-                    opt.get("SupportsGlobalDatabases") for opt in db_instance_options
-                ):
-                    ha = DatabaseHaLevel.MULTI_REGION
-                elif any(
-                    opt.get("MultiAZCapable") for opt in db_instance_options
-                ) or any(
-                    dep == "Multi-AZ" or dep.startswith("Multi-AZ ")
-                    for dep in deployment_options
-                ):
-                    ha = DatabaseHaLevel.MULTI_ZONE
-                elif "Single-AZ" in deployment_options or db_instance_options:
-                    # Single-AZ only (or MultiAZCapable=false without Multi-AZ pricing).
-                    ha = DatabaseHaLevel.SINGLE_ZONE
-                else:
-                    ha = DatabaseHaLevel.NONE
-                storage_extra_autosize = (
-                    any(
-                        opt.get("SupportsStorageAutoscaling")
-                        for opt in db_instance_options
-                    )
-                    if db_instance_options
-                    else None
-                )
-                # Orderable Min/MaxStorageSize are GiB
-                storage_extra_min = (
-                    round(min(min_storage) * _GIB_TO_GB) if min_storage else None
-                )
-                storage_extra_max = (
-                    round(max(max_storage) * _GIB_TO_GB) if max_storage else None
-                )
-                disk_encryption = (
-                    any(
-                        opt.get("SupportsStorageEncryption")
-                        for opt in db_instance_options
-                    )
-                    if db_instance_options
-                    else None
-                )
-                system_monitoring = (
-                    any(
-                        opt.get("SupportsEnhancedMonitoring")
-                        for opt in db_instance_options
-                    )
-                    if db_instance_options
-                    else None
-                )
-                database_monitoring = (
-                    any(
-                        opt.get("SupportsPerformanceInsights")
-                        for opt in db_instance_options
-                    )
-                    if db_instance_options
-                    else None
-                )
-                max_read_replicas = (
-                    (
-                        15
-                        if any(
-                            opt.get("ReadReplicaCapable") for opt in db_instance_options
-                        )
-                        else 0
-                    )
-                    if db_instance_options
-                    else None
-                )
+            # Multi-region first (SupportsGlobalDatabases; Aurora Global Database —
+            # typically false for engine=postgres RDS instance classes).
+            # https://docs.aws.amazon.com/AmazonRDS/latest/APIReference/API_OrderableDBInstanceOption.html
+            if any(opt.get("SupportsGlobalDatabases") for opt in db_instance_options):
+                ha = DatabaseHaLevel.MULTI_REGION
+            elif any(opt.get("MultiAZCapable") for opt in db_instance_options) or any(
+                dep == "Multi-AZ" or dep.startswith("Multi-AZ ")
+                for dep in deployment_options
+            ):
+                ha = DatabaseHaLevel.MULTI_ZONE
+            elif "Single-AZ" in deployment_options or db_instance_options:
+                # Single-AZ only (or MultiAZCapable=false without Multi-AZ pricing).
+                ha = DatabaseHaLevel.SINGLE_ZONE
             else:
                 ha = DatabaseHaLevel.NONE
-                storage_extra_autosize = None
-                storage_extra_min = None
-                storage_extra_max = None
-                disk_encryption = None
-                system_monitoring = None
-                database_monitoring = None
-                max_read_replicas = None
+            storage_extra_autosize = any(
+                opt.get("SupportsStorageAutoscaling") for opt in db_instance_options
+            )
+            # Orderable Min/MaxStorageSize are GiB
+            storage_extra_min = (
+                round(min(min_storage) * _GIB_TO_GB) if min_storage else None
+            )
+            storage_extra_max = (
+                round(max(max_storage) * _GIB_TO_GB) if max_storage else None
+            )
+            disk_encryption = any(
+                opt.get("SupportsStorageEncryption") for opt in db_instance_options
+            )
+            system_monitoring = any(
+                opt.get("SupportsEnhancedMonitoring") for opt in db_instance_options
+            )
+            database_monitoring = any(
+                opt.get("SupportsPerformanceInsights") for opt in db_instance_options
+            )
+            max_read_replicas = (
+                15
+                if any(opt.get("ReadReplicaCapable") for opt in db_instance_options)
+                else 0
+            )
             server_id = next(
                 (
                     server.server_id
@@ -1768,6 +1736,11 @@ def inventory_database_prices(vendor):
     vendor.progress_tracker.hide_task()
 
     region_ids = _active_region_ids(vendor)
+    databases = {
+        database.database_id
+        for database in vendor.databases
+        if database.status == Status.ACTIVE
+    }
     items = []
     vendor.progress_tracker.start_task(
         name="Preprocessing database_price(s)", total=len(products)
@@ -1783,6 +1756,8 @@ def inventory_database_prices(vendor):
             if attrs.get("deploymentOption") != "Single-AZ":
                 continue
             database_id = attrs.get("instanceType")
+            if database_id not in databases:
+                continue
             price = _extract_ondemand_price(product["terms"])
             items.append(
                 {

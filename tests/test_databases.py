@@ -13,6 +13,7 @@ from sc_crawler.vendor_helpers import merge_database_catalog_rows
 from sc_crawler.vendors._aws import (
     _active_region_ids,
     _boto_describe_db_major_engine_versions_first,
+    _describe_orderable_db_instance_options_for_class_with_progress,
     _extract_rds_bundled_storage_size,
     _get_rds_instance_products_by_region,
     _get_storage_bounds_from_orderable_options,
@@ -107,10 +108,11 @@ def _aws_rds_storage_product(
     }
 
 
-def _aws_vendor(*, regions=None, servers=None, database_storages=None):
+def _aws_vendor(*, regions=None, servers=None, databases=None, database_storages=None):
     vendor = Mock(vendor_id="aws")
     vendor.regions = regions or []
     vendor.servers = servers or []
+    vendor.databases = databases or []
     vendor.database_storages = database_storages or []
     vendor.progress_tracker = Mock(
         start_task=Mock(), advance_task=Mock(), hide_task=Mock()
@@ -642,6 +644,45 @@ def test_aws_extract_rds_storage_size():
     assert _extract_rds_bundled_storage_size("not a size") is None
 
 
+def test_aws_orderable_options_skips_failing_region_when_sentry_captures():
+    from contextlib import contextmanager
+
+    vendor = _aws_vendor()
+    options = [{"DBInstanceClass": "db.m5.large", "MultiAZCapable": True}]
+
+    def describe(region, db_instance_class):
+        if region == "ap-southeast-7":
+            raise ConnectionError(f"rds.{region}.amazonaws.com refused")
+        if region == "us-east-1":
+            return options
+        return []
+
+    @contextmanager
+    def capture(vendor, on_error=None):
+        try:
+            yield
+        except Exception:
+            pass
+
+    with (
+        patch(
+            "sc_crawler.vendors._aws._boto_describe_orderable_db_instance_options",
+            side_effect=describe,
+        ),
+        patch(
+            "sc_crawler.vendors._aws.sentry_capture_or_raise",
+            side_effect=capture,
+        ),
+    ):
+        result = _describe_orderable_db_instance_options_for_class_with_progress(
+            ["ap-southeast-7", "us-east-1"],
+            "db.m5.large",
+            vendor,
+        )
+    assert result == options
+    vendor.progress_tracker.advance_task.assert_called_once()
+
+
 def test_aws_active_region_ids_priority_and_active_only():
     vendor = _aws_vendor(
         regions=[
@@ -931,7 +972,78 @@ def test_aws_inventory_databases_dedupes_across_regions():
         ),
         patch(
             "sc_crawler.vendors._aws._lookup_orderable_db_instance_options",
-            return_value={"db.m5.large": []},
+            return_value={
+                "db.m5.large": [
+                    {
+                        "MultiAZCapable": True,
+                        "SupportsStorageAutoscaling": True,
+                        "MinStorageSize": 20,
+                        "MaxStorageSize": 65536,
+                        "SupportsStorageEncryption": True,
+                        "SupportsEnhancedMonitoring": True,
+                        "SupportsPerformanceInsights": True,
+                        "ReadReplicaCapable": True,
+                    }
+                ]
+            },
+        ),
+    ):
+        rows = aws_databases(vendor)
+    assert [row["database_id"] for row in rows] == ["db.m5.large"]
+
+
+def test_aws_inventory_databases_skips_non_orderable_classes():
+    vendor = _aws_vendor(
+        regions=[Mock(region_id="us-east-1", status=Status.ACTIVE)],
+    )
+    prices_by_region = {
+        "us-east-1": {
+            "db.t2.micro": {
+                "instanceFamily": "General purpose",
+                "vcpu": "1",
+                "memory": "1 GiB",
+                "storage": "EBS Only",
+            },
+            "db.m5.large": {
+                "instanceFamily": "General purpose",
+                "vcpu": "2",
+                "memory": "8 GiB",
+                "storage": "EBS Only",
+            },
+        }
+    }
+    with (
+        patch(
+            "sc_crawler.vendors._aws._get_rds_instance_products_by_region",
+            return_value=(
+                prices_by_region,
+                {
+                    "db.t2.micro": frozenset({"Single-AZ", "Multi-AZ"}),
+                    "db.m5.large": frozenset({"Single-AZ", "Multi-AZ"}),
+                },
+            ),
+        ),
+        patch(
+            "sc_crawler.vendors._aws._boto_describe_db_major_engine_versions_first",
+            return_value=["16"],
+        ),
+        patch(
+            "sc_crawler.vendors._aws._lookup_orderable_db_instance_options",
+            return_value={
+                "db.t2.micro": [],
+                "db.m5.large": [
+                    {
+                        "MultiAZCapable": True,
+                        "SupportsStorageAutoscaling": True,
+                        "MinStorageSize": 20,
+                        "MaxStorageSize": 65536,
+                        "SupportsStorageEncryption": True,
+                        "SupportsEnhancedMonitoring": True,
+                        "SupportsPerformanceInsights": True,
+                        "ReadReplicaCapable": True,
+                    }
+                ],
+            },
         ),
     ):
         rows = aws_databases(vendor)
@@ -941,6 +1053,7 @@ def test_aws_inventory_databases_dedupes_across_regions():
 def test_aws_inventory_database_prices_single_az_only():
     vendor = _aws_vendor(
         regions=[Mock(region_id="us-east-1", status=Status.ACTIVE)],
+        databases=[Mock(database_id="db.m5.large", status=Status.ACTIVE)],
     )
     products = [
         _aws_rds_instance_product(
@@ -956,6 +1069,9 @@ def test_aws_inventory_database_prices_single_az_only():
             instance_type="db.m5.large",
             region="ap-south-1",
             price="0.16",
+        ),
+        _aws_rds_instance_product(
+            instance_type="db.t2.micro", region="us-east-1", price="0.017"
         ),
         _aws_rds_storage_product(volume_type="General Purpose-GP3"),
     ]
