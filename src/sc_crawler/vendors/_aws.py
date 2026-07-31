@@ -1562,6 +1562,7 @@ def _get_rds_instance_products_by_region() -> tuple[
 
 
 def inventory_databases(vendor):
+    """List all available AWS RDS PostgreSQL instance types via `boto3` calls."""
     vendor.progress_tracker.start_task(name="Searching for database(s)", total=None)
     prices_by_region, deployment_options_by_database = (
         _get_rds_instance_products_by_region()
@@ -1729,6 +1730,7 @@ def inventory_databases(vendor):
 
 
 def inventory_database_prices(vendor):
+    """List all on-demand AWS RDS PostgreSQL prices in all regions via `boto3` calls."""
     vendor.progress_tracker.start_task(
         name="Searching for database_price(s)", total=None
     )
@@ -1790,6 +1792,7 @@ _DATABASE_STORAGE_MAPPING = {
 
 
 def inventory_database_storages(vendor):
+    """List all AWS RDS PostgreSQL storage types via `boto3` calls."""
     vendor.progress_tracker.start_task(
         name="Searching for database_storage(s)", total=None
     )
@@ -1827,6 +1830,7 @@ def inventory_database_storages(vendor):
 
 
 def inventory_database_storage_prices(vendor):
+    """List all AWS RDS PostgreSQL storage prices in all regions via `boto3` calls."""
     vendor.progress_tracker.start_task(
         name="Searching for database_storage_price(s)", total=None
     )

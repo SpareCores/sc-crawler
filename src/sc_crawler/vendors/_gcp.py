@@ -1291,6 +1291,7 @@ def _pg_billing_catalog() -> tuple[
 
 
 def inventory_databases(vendor):
+    """List all available GCP Cloud SQL for PostgreSQL database types via API calls."""
     vendor.progress_tracker.start_task(name="Fetching PostgreSQL tier(s)", total=None)
     meta = _pg_sqladmin_metadata()
     _, ha_families = _pg_billing_catalog()
@@ -1461,6 +1462,7 @@ def inventory_databases(vendor):
 
 
 def inventory_database_prices(vendor):
+    """List all available GCP Cloud SQL for PostgreSQL on-demand prices in all regions."""
     vendor.progress_tracker.start_task(name="Fetching Cloud SQL SKU(s)", total=None)
     compute_index, _ = _pg_billing_catalog()
     tiers = _pg_sqladmin_metadata()["tiers"]
@@ -1554,6 +1556,7 @@ def inventory_database_prices(vendor):
 
 
 def inventory_database_storages(vendor):
+    """List all available GCP Cloud SQL for PostgreSQL storage options."""
     vendor.progress_tracker.start_task(name="Fetching Cloud SQL SKU(s)", total=None)
     found = {
         storage_id
@@ -1587,6 +1590,7 @@ def inventory_database_storages(vendor):
 
 
 def inventory_database_storage_prices(vendor):
+    """List all available GCP Cloud SQL for PostgreSQL storage prices in all regions."""
     vendor.progress_tracker.start_task(name="Fetching Cloud SQL SKU(s)", total=None)
     skus = _cloud_sql_skus()
     vendor.progress_tracker.hide_task()

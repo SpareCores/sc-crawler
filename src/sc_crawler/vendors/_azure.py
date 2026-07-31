@@ -1723,6 +1723,7 @@ def _pg_engine_versions(capability) -> list[str]:
 
 
 def inventory_databases(vendor):
+    """List all available Azure Database for PostgreSQL Flexible Server types in all regions."""
     rows = []
     regions = _pg_database_regions(vendor)
     vendor.progress_tracker.start_task(
@@ -1906,6 +1907,10 @@ def inventory_databases(vendor):
 
 
 def inventory_database_prices(vendor):
+    """List all known Azure Database for PostgreSQL Flexible Server on-demand prices in all regions using the Azure Retail Pricing API.
+
+    More information: <https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices>.
+    """
     items = []
     seen: set[tuple[str, str]] = set()
     regions = _pg_database_regions(vendor)
@@ -1972,6 +1977,7 @@ def inventory_database_prices(vendor):
 
 
 def inventory_database_storages(vendor):
+    """List all Azure Database for PostgreSQL Flexible Server storage options via the capabilities API."""
     storages: dict[str, dict] = {}
     regions = _pg_database_regions(vendor)
     vendor.progress_tracker.start_task(
@@ -2126,6 +2132,10 @@ def inventory_database_storages(vendor):
 
 
 def inventory_database_storage_prices(vendor):
+    """Look up Azure Database for PostgreSQL Flexible Server storage prices via the Azure Retail Prices API.
+
+    For more information, see <https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices>.
+    """
     items = []
     regions = _pg_database_regions(vendor)
     vendor.progress_tracker.start_task(
