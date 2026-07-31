@@ -406,6 +406,49 @@ def test_azure_inventory_databases_ha_multi_region_for_gp_and_mo():
     assert by_id["Standard_E2s_v3"]["ha"] == DatabaseHaLevel.MULTI_REGION
 
 
+def test_gcp_inventory_databases_ha_uses_own_price_family_only():
+    vendor = Mock(vendor_id="gcp")
+    vendor.regions = []
+    vendor.servers = []
+    vendor.progress_tracker = Mock(
+        start_task=Mock(), advance_task=Mock(), hide_task=Mock()
+    )
+    tiers = [
+        {
+            "tier": "db-n1-standard-4",
+            "RAM": "16106127360",
+            "region": ["us-central1"],
+        },
+        {
+            "tier": "db-perf-optimized-N-4",
+            "RAM": "17179869184",
+            "region": ["us-central1"],
+        },
+    ]
+    with (
+        patch(
+            "sc_crawler.vendors._gcp._pg_sqladmin_metadata",
+            return_value={
+                "tiers": tiers,
+                "engine_versions": ["16"],
+                "custom_config": True,
+                "custom_extensions": True,
+            },
+        ),
+        patch(
+            "sc_crawler.vendors._gcp._pg_billing_catalog",
+            # Only Enterprise Plus regional HA meters — must not imply Enterprise HA.
+            return_value=({}, frozenset({("us-central1", "enterprise_n4")})),
+        ),
+    ):
+        rows = inventory_databases(vendor)
+    by_id = {row["database_id"]: row for row in rows}
+    assert by_id["db-n1-standard-4"]["ha"] == DatabaseHaLevel.NONE
+    assert by_id["db-n1-standard-4"]["sla"] is None
+    assert by_id["db-perf-optimized-N-4"]["ha"] == DatabaseHaLevel.MULTI_REGION
+    assert by_id["db-perf-optimized-N-4"]["sla"] == 99.99
+
+
 def test_gcp_inventory_databases_ha_multi_region_for_enterprise_plus():
     vendor = Mock(vendor_id="gcp")
     vendor.regions = []

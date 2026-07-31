@@ -1377,10 +1377,7 @@ def inventory_databases(vendor):
             # https://cloud.google.com/sql/docs/postgres/use-advanced-disaster-recovery
             # Regional HA billing SKUs → MULTI_ZONE; shared-core → NONE.
             has_regional_ha = any(
-                (region, price_family) in ha_families
-                or (region, "enterprise") in ha_families
-                or (region, "enterprise_n4") in ha_families
-                for region in tier_regions
+                (region, price_family) in ha_families for region in tier_regions
             )
             if price_family == "shared":
                 ha = DatabaseHaLevel.NONE
