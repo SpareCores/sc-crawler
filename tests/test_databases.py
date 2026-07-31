@@ -346,7 +346,6 @@ def test_azure_inventory_databases_ha_multi_region_for_gp_and_mo():
             SimpleNamespace(name="16", status="Available"),
         ],
         storage_auto_growth_supported="Enabled",
-        geo_backup_supported="Enabled",
         supported_features=[],
         supported_server_editions=[
             SimpleNamespace(
@@ -401,6 +400,7 @@ def test_azure_inventory_databases_ha_multi_region_for_gp_and_mo():
     by_id = {row["database_id"]: row for row in rows}
     assert by_id["Standard_B1ms"]["ha"] == DatabaseHaLevel.NONE
     assert by_id["Standard_B1ms"]["sla"] == 99.9
+    assert by_id["Standard_B1ms"]["scheduled_backups"] is True
     assert by_id["Standard_D2s_v3"]["ha"] == DatabaseHaLevel.MULTI_REGION
     assert by_id["Standard_D2s_v3"]["sla"] == 99.99
     assert by_id["Standard_E2s_v3"]["ha"] == DatabaseHaLevel.MULTI_REGION

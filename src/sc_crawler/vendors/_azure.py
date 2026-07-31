@@ -1741,12 +1741,6 @@ def inventory_databases(vendor):
                     storage_extra_autosize = True
                 elif storage_auto_growth == "Disabled":
                     storage_extra_autosize = False
-                scheduled_backups = None
-                geo_backup = getattr(capability, "geo_backup_supported", None)
-                if geo_backup == "Enabled":
-                    scheduled_backups = True
-                elif geo_backup == "Disabled":
-                    scheduled_backups = False
                 autotuning_advice = None
                 autotuning_apply = None
                 for feature in getattr(capability, "supported_features", None) or []:
@@ -1760,11 +1754,6 @@ def inventory_databases(vendor):
                             storage_extra_autosize = True
                         elif feature_status == "Disabled":
                             storage_extra_autosize = False
-                    elif feature_name == "GeoBackup" and scheduled_backups is None:
-                        if feature_status == "Enabled":
-                            scheduled_backups = True
-                        elif feature_status == "Disabled":
-                            scheduled_backups = False
                     elif feature_name == "IndexTuning":
                         if feature_status == "Enabled":
                             autotuning_advice = True
@@ -1852,7 +1841,9 @@ def inventory_databases(vendor):
                                 "memory_amount": memory_amount,
                                 "storage_size": None,
                                 "storage_extra_autosize": storage_extra_autosize,
-                                "scheduled_backups": scheduled_backups,
+                                # Automated backups are always enabled for Flexible Server.
+                                # https://learn.microsoft.com/en-us/azure/postgresql/backup-restore/concepts-backup-restore
+                                "scheduled_backups": True,
                                 "autotuning_advice": (
                                     False
                                     if autotuning_advice is None
