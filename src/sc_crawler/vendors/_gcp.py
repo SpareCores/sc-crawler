@@ -1426,7 +1426,7 @@ def inventory_databases(vendor):
                 # https://cloud.google.com/sql/docs/postgres/backup-recovery/backups
                 "scheduled_backups": True,
                 # Max transactionLogRetentionDays for PITR by edition; not in tiers API.
-                # Enterprise: 1–7 days; Enterprise Plus: 1–35 days.
+                # Enterprise: 1-7 days; Enterprise Plus: 1-35 days.
                 # https://cloud.google.com/sql/docs/postgres/backup-recovery/configure-pitr
                 "continuous_backups": (35 if price_family == "enterprise_n4" else 7),
                 "custom_config": meta["custom_config"],

@@ -121,7 +121,7 @@ Fix(es):
 - Add Sentry error tracking support to region and zone inventories.
 - Fix `Alibaba Cloud` storage price ingestion by converting hourly-rated prices to monthly.
 - Fix `Azure` storage price unit conversions to correctly produce $/GB/month values for all supported unit types, and
-  extend the storage meter mapping to cover all P1–P80, E1–E80, and S4–S80 disk sizes across LRS and ZRS redundancy
+  extend the storage meter mapping to cover all P1-P80, E1-E80, and S4-S80 disk sizes across LRS and ZRS redundancy
   tiers.
 - Update `min_size`, `max_size`, and `max_throughput` calculations in vendor modules and column descriptions in the 
   `Storage` table to reflect units in GB and MB/s.
