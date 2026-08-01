@@ -1,13 +1,10 @@
-## v0.8.5 (August 1, 2026)
+## v0.8.x (development)
 
 Fix(es):
 
 - GCP: `cpu_architecture` was hardcoded to only recognize `t2a` as `ARM64`, defaulting
   every other series (including the Arm-based Axion `c4a`/`n4a`) to `X86_64`. Now reads
-  the real `MachineType.architecture` API field instead (confirmed live: correctly
-  reports `ARM64` for `t2a`/`c4a`/`n4a` today, and will auto-detect any future ARM
-  series with no code change; older series that don't populate the field default to
-  `X86_64`, which is accurate for all of them).
+  the real `MachineType.architecture` API field instead.
 
 ## v0.8.4 (July 28, 2026)
 
