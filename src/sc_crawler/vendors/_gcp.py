@@ -70,6 +70,9 @@ def _zones() -> List[compute_v1.types.compute.Zone]:
 
 @cachier(separate_files=True)
 def _servers(zone: str) -> List[compute_v1.types.compute.MachineType]:
+    """List all machine types available in a Zone.
+
+    Reference: <https://cloud.google.com/compute/docs/reference/rest/v1/machineTypes>."""
     return _paginate_list(compute_v1.services.machine_types.MachineTypesClient(), zone)
 
 
@@ -288,9 +291,11 @@ def _search_servers(zone_name: str) -> List[dict]:
                 ),
                 "cpu_cores": None,
                 "cpu_speed": None,
+                # older machine types don't populate MachineType.architecture,
+                # but it's confirmed to be present for t2a/c4a/n4a (ARM64)
                 "cpu_architecture": (
                     CpuArchitecture.ARM64
-                    if server.name.startswith("t2a")
+                    if str(server.architecture or "").upper() == "ARM64"
                     else CpuArchitecture.X86_64
                 ),
                 "cpu_manufacturer": None,

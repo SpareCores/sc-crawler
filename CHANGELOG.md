@@ -11,6 +11,9 @@ Fix(es):
   yet in the Billing Catalog (e.g. `A4X`, `M4N`, `X4`, TPU VM series as of 2026-08) are now
   skipped gracefully (logged at DEBUG) instead of crashing the whole price crawl with an
   `AssertionError`.
+- GCP: `cpu_architecture` was hardcoded to only recognize `t2a` as `ARM64`, defaulting
+  every other series (including the Arm-based Axion `c4a`/`n4a`) to `X86_64`. Now reads
+  the real `MachineType.architecture` API field instead.
 
 ## v0.8.4 (July 28, 2026)
 
