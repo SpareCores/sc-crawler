@@ -2,15 +2,10 @@
 
 Fix(es):
 
-- GCP: removed the hardcoded `SERVER_FAMILIES` allowlist that gated server pricing lookups.
-  Any machine series not on that list (e.g. Axion `C4A`/`N4A`, `C4D`/`C4N`, `G4`, `M4`, `H4D`)
-  was silently skipped from `server_price` entirely, even though its metadata (server table,
-  `cpu_architecture`, etc.) was crawled correctly. Confirmed live that the Billing Catalog
-  already has plain OnDemand/Preemptible Instance Core/Ram SKUs for all of those, matching the
-  existing description-parsing logic once let through. Families with genuinely no pricing SKUs
-  yet in the Billing Catalog (e.g. `A4X`, `M4N`, `X4`, TPU VM series as of 2026-08) are now
-  skipped gracefully (logged at DEBUG) instead of crashing the whole price crawl with an
-  `AssertionError`.
+- GCP: removed the hardcoded `SERVER_FAMILIES` allowlist that gated newer
+  (missed) server pricing lookups. Families with genuinely no pricing SKUs yet
+  in the Billing Catalog (e.g. `A4X`, `M4N`, `X4`, TPU VM series as of 2026-08)
+  are now skipped gracefully (logged at DEBUG) instead of throwing exception.
 - GCP: `cpu_architecture` was hardcoded to only recognize `t2a` as `ARM64`, defaulting
   every other series (including the Arm-based Axion `c4a`/`n4a`) to `X86_64`. Now reads
   the real `MachineType.architecture` API field instead.

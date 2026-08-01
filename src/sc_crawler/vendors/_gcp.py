@@ -152,17 +152,7 @@ STORAGE_ALLOWLIST = ["pd-standard", "pd-ssd", "pd-balanced"]
 
 
 def _server_family(server_name: str) -> str:
-    """Look up server family based on server name.
-
-    Used only to build the SKU lookup key, so this is deliberately not
-    validated against a hardcoded list of known families: that previously
-    caused e.g. Axion C4A/N4A and other newer series (which the live Billing
-    Catalog *does* have plain OnDemand/Preemptible Instance Core/Ram SKUs
-    for, confirmed live) to be silently skipped from pricing entirely,
-    despite their metadata (incl. cpu_architecture) being crawled correctly.
-    Whether pricing actually exists for the resulting family key is decided
-    downstream by the SKU dict lookup in ``_inventory_server_prices()``.
-    """
+    """Look up server family based on server name to build the SKU lookup key."""
     # example server names: f1-micro, n2d-standard-96
     return server_name.lower().split("-")[0]
 
@@ -355,9 +345,11 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
         if not server_regions:
             # some newer/exotic families (e.g. A4X, M4N, X4, TPU VM series as of
             # 2026-08) have no Instance Core/Ram (or instance-level) SKUs at all
-            # yet in the live Billing Catalog -- skip pricing for them instead of
-            # crashing the whole crawl; their metadata is still crawled normally.
-            vendor.log(f"Skip instance: no SKU found for family '{family}' ({server.name})", DEBUG)
+            # yet in the live Billing Catalog
+            vendor.log(
+                f"Skip instance: no SKU found for family '{family}' ({server.name})",
+                DEBUG,
+            )
             continue
 
         for server_region in server_regions:
