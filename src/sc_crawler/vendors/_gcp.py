@@ -357,7 +357,10 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
             # 2026-08) have no Instance Core/Ram (or instance-level) SKUs at all
             # yet in the live Billing Catalog -- skip pricing for them instead of
             # crashing the whole crawl; their metadata is still crawled normally.
-            vendor.log(f"Skip instance: no SKU found for family '{family}' ({server.name})", DEBUG)
+            vendor.log(
+                f"Skip instance: no SKU found for family '{family}' ({server.name})",
+                DEBUG,
+            )
             continue
 
         for server_region in server_regions:
