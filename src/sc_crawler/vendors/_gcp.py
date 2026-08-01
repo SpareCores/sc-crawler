@@ -306,9 +306,15 @@ def _search_servers(zone_name: str) -> List[dict]:
                 ),
                 "cpu_cores": None,
                 "cpu_speed": None,
+                # MachineType.architecture is a real, stable API field (confirmed
+                # live for all current series, e.g. t2a/c4a/n4a -> ARM64), so we
+                # read it directly instead of hardcoding known ARM series names.
+                # Older machine types don't populate it at all (empty string),
+                # defaulting those to X86_64 - accurate for everything on GCE today.
+                # https://cloud.google.com/compute/docs/reference/rest/v1/machineTypes
                 "cpu_architecture": (
                     CpuArchitecture.ARM64
-                    if server.name.startswith("t2a")
+                    if str(server.architecture or "").upper() == "ARM64"
                     else CpuArchitecture.X86_64
                 ),
                 "cpu_manufacturer": None,
