@@ -1805,13 +1805,11 @@ def inventory_databases(vendor):
                         description = f"PostgreSQL {edition.name}"
                         if spec_parts:
                             description = f"{description} ({', '.join(spec_parts)})"
-                        # https://learn.microsoft.com/en-us/azure/postgresql/backup-restore/concepts-geo-disaster-recovery
-                        # https://learn.microsoft.com/en-us/azure/postgresql/read-replica/concepts-read-replicas
                         # https://learn.microsoft.com/en-us/azure/postgresql/high-availability/concepts-high-availability
-                        # Multi-region first: GP / Memory Optimized support cross-region
-                        # (geo) read replicas for regional DR. Burstable supports neither
-                        # HA nor replicas (API may still list HA modes — prefer docs).
-                        # Zone-redundant HA is same-region multi-AZ (MULTI_ZONE).
+                        # Flexible Server HA is same-region only (zone-redundant or zonal
+                        # sync standby). Burstable does not support HA (API may still list
+                        # modes — prefer docs). Cross-region geo read replicas are DR /
+                        # read scale, not HA — see max_read_replicas.
                         ha_modes = {
                             (mode.value if hasattr(mode, "value") else str(mode))
                             for mode in (getattr(sku, "supported_ha_mode", None) or [])
@@ -1819,11 +1817,6 @@ def inventory_databases(vendor):
                         if edition.name == "Burstable":
                             ha = DatabaseHaLevel.NONE
                             ha_strategy = DatabaseHaStrategy.NONE
-                        elif edition.name in ("GeneralPurpose", "MemoryOptimized"):
-                            ha = DatabaseHaLevel.MULTI_REGION
-                            # https://learn.microsoft.com/en-us/azure/postgresql/high-availability/concepts-high-availability
-                            # Flexible Server HA uses a standby server (sync replication).
-                            ha_strategy = DatabaseHaStrategy.PASSIVE_STANDBY
                         elif "ZoneRedundant" in ha_modes:
                             ha = DatabaseHaLevel.MULTI_ZONE
                             ha_strategy = DatabaseHaStrategy.PASSIVE_STANDBY
@@ -1921,7 +1914,7 @@ def inventory_database_prices(vendor):
     More information: <https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices>.
     """
     items = []
-    seen: set[tuple[str, str]] = set()
+    seen: set[tuple[str, str, DatabaseHaLevel, DatabaseHaStrategy]] = set()
     regions = _pg_database_regions(vendor)
     vendor.progress_tracker.start_task(
         name="Scanning region(s) for database_price(s)", total=len(regions)
@@ -1953,9 +1946,6 @@ def inventory_database_prices(vendor):
                         database_id = sku.name
                         if not database_id:
                             continue
-                        key = (region.region_id, database_id)
-                        if key in seen:
-                            continue
                         price_item = _pg_lookup_retail_price(
                             database_id=database_id,
                             edition_name=edition_name,
@@ -1964,24 +1954,68 @@ def inventory_database_prices(vendor):
                         if price_item is None:
                             continue
                         vcpus = int(sku.v_cores) if sku.v_cores else None
-                        seen.add(key)
-                        items.append(
-                            {
-                                "vendor_id": vendor.vendor_id,
-                                "region_id": region.region_id,
-                                "database_id": database_id,
-                                "allocation": Allocation.ONDEMAND,
-                                "ha": DatabaseHaLevel.NONE,
-                                "ha_strategy": DatabaseHaStrategy.NONE,
-                                "unit": PriceUnit.HOUR,
-                                "price": _pg_hourly_compute_price(
-                                    price_item, vcpus, database_id=database_id
-                                ),
-                                "price_upfront": 0,
-                                "price_tiered": [],
-                                "currency": price_item.get("currencyCode", "USD"),
-                            }
+                        base_price = _pg_hourly_compute_price(
+                            price_item, vcpus, database_id=database_id
                         )
+                        currency = price_item.get("currencyCode", "USD")
+                        # https://azure.microsoft.com/pricing/details/postgresql/flexible-server/
+                        # HA bills primary + standby at the same rate (exactly 2×); SameZone
+                        # and ZoneRedundant cost the same. No separate retail HA meters.
+                        ha_modes = {
+                            (mode.value if hasattr(mode, "value") else str(mode))
+                            for mode in (getattr(sku, "supported_ha_mode", None) or [])
+                        }
+                        price_rows: list[
+                            tuple[DatabaseHaLevel, DatabaseHaStrategy, float]
+                        ] = [
+                            (
+                                DatabaseHaLevel.NONE,
+                                DatabaseHaStrategy.NONE,
+                                base_price,
+                            )
+                        ]
+                        if edition_name != "Burstable":
+                            if "ZoneRedundant" in ha_modes:
+                                price_rows.append(
+                                    (
+                                        DatabaseHaLevel.MULTI_ZONE,
+                                        DatabaseHaStrategy.PASSIVE_STANDBY,
+                                        base_price * 2,
+                                    )
+                                )
+                            if "SameZone" in ha_modes:
+                                price_rows.append(
+                                    (
+                                        DatabaseHaLevel.SINGLE_ZONE,
+                                        DatabaseHaStrategy.PASSIVE_STANDBY,
+                                        base_price * 2,
+                                    )
+                                )
+                        for ha, ha_strategy, price in price_rows:
+                            key = (
+                                region.region_id,
+                                database_id,
+                                ha,
+                                ha_strategy,
+                            )
+                            if key in seen:
+                                continue
+                            seen.add(key)
+                            items.append(
+                                {
+                                    "vendor_id": vendor.vendor_id,
+                                    "region_id": region.region_id,
+                                    "database_id": database_id,
+                                    "allocation": Allocation.ONDEMAND,
+                                    "ha": ha,
+                                    "ha_strategy": ha_strategy,
+                                    "unit": PriceUnit.HOUR,
+                                    "price": price,
+                                    "price_upfront": 0,
+                                    "price_tiered": [],
+                                    "currency": currency,
+                                }
+                            )
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
     return items

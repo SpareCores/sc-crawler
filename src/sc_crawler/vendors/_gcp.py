@@ -1244,8 +1244,6 @@ def _pg_billing_catalog() -> tuple[
 
         sku_class = None
         if match := _PG_SHARED_INSTANCE_RE.search(description):
-            if availability != "zonal":
-                continue
             sku_class = ("shared", match.group(1))
         else:
             extended = "Extended support" in description
@@ -1273,7 +1271,10 @@ def _pg_billing_catalog() -> tuple[
             if not region:
                 continue
             compute_index.setdefault((region, family, component, availability), sku)
-            if availability == "regional" and component == "vcpu":
+            # Regional SKUs are HA (same-region multi-zone standby).
+            if availability == "regional" and (
+                family == "shared" or component == "vcpu"
+            ):
                 ha_families.add((region, family))
     return compute_index, frozenset(ha_families)
 
@@ -1362,22 +1363,13 @@ def inventory_databases(vendor):
         ha_strategy = None
         has_regional_ha = False
         if tier_regions:
-            # https://cloud.google.com/sql/docs/postgres/use-advanced-disaster-recovery
-            # Multi-region first: Enterprise Plus (enterprise_n4) supports Advanced DR
-            # with a designated cross-region DR replica.
-            # Regional HA billing SKUs → MULTI_ZONE; shared-core → NONE.
+            # https://cloud.google.com/sql/docs/postgres/high-availability
+            # Regional availability = same-region multi-zone HA (standby). Enterprise
+            # Plus Advanced DR is cross-region replica promotion (not multi-region HA).
             has_regional_ha = any(
                 (region, price_family) in ha_families for region in tier_regions
             )
-            if price_family == "shared":
-                ha = DatabaseHaLevel.NONE
-                ha_strategy = DatabaseHaStrategy.NONE
-            elif price_family == "enterprise_n4":
-                ha = DatabaseHaLevel.MULTI_REGION
-                # https://cloud.google.com/sql/docs/postgres/high-availability
-                # Regional HA / Advanced DR use a standby with synchronous replication.
-                ha_strategy = DatabaseHaStrategy.PASSIVE_STANDBY
-            elif has_regional_ha:
+            if has_regional_ha:
                 ha = DatabaseHaLevel.MULTI_ZONE
                 ha_strategy = DatabaseHaStrategy.PASSIVE_STANDBY
             else:
@@ -1444,11 +1436,15 @@ def inventory_databases(vendor):
                 "autotuning_apply": False,
                 # https://cloud.google.com/sql/sla
                 # Enterprise Plus + HA: 99.99%; Enterprise + HA: 99.95%.
-                # Shared-core and single-zone instances are excluded from the SLA.
+                # Shared-core and zonal (non-HA) instances are excluded from the SLA.
                 "sla": (
                     99.99
                     if price_family == "enterprise_n4" and has_regional_ha
-                    else (99.95 if ha == DatabaseHaLevel.MULTI_ZONE else None)
+                    else (
+                        99.95
+                        if ha == DatabaseHaLevel.MULTI_ZONE and price_family != "shared"
+                        else None
+                    )
                 ),
             }
         )
@@ -1494,8 +1490,7 @@ def inventory_database_prices(vendor):
 
         if tier_name in _PG_SHARED_TIERS:
             price_family = "shared"
-            # Shared-core tiers are zonal-only (no regional HA meters).
-            availabilities = ("zonal",)
+            availabilities = ("zonal", "regional")
         elif any(marker in tier_name.lower() for marker in _PG_N4_TIER_MARKERS):
             price_family = "enterprise_n4"
             availabilities = ("zonal", "regional")
@@ -1540,8 +1535,9 @@ def inventory_database_prices(vendor):
 
                 if hourly is None:
                     continue
-                # https://cloud.google.com/sql/docs/postgres/configure-ha
-                # Zonal = single-zone; Regional HA = standby in another zone (passive).
+                # https://cloud.google.com/sql/docs/postgres/high-availability
+                # Zonal = standalone; Regional HA = multi-zone standby (exactly 2× on
+                # the pricing page; we use Regional billing SKUs, not a multiplier).
                 if availability == "regional":
                     ha = DatabaseHaLevel.MULTI_ZONE
                     ha_strategy = DatabaseHaStrategy.PASSIVE_STANDBY

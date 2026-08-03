@@ -37,6 +37,9 @@ from sc_crawler.vendors._azure import (
     _pg_lookup_retail_price,
 )
 from sc_crawler.vendors._azure import (
+    inventory_database_prices as azure_database_prices,
+)
+from sc_crawler.vendors._azure import (
     inventory_database_storage_prices as azure_database_storage_prices,
 )
 from sc_crawler.vendors._azure import (
@@ -354,7 +357,7 @@ def test_merge_database_catalog_rows_prefers_multi_region_ha():
     assert rows[0]["security_features"] == ["ip-allowlisting", "network-peering"]
 
 
-def test_azure_inventory_databases_ha_multi_region_for_gp_and_mo():
+def test_azure_inventory_databases_ha_from_supported_ha_mode():
     vendor = Mock(vendor_id="azure")
     vendor.regions = [Mock(region_id="centralus", api_reference="centralus")]
     vendor.progress_tracker = Mock(
@@ -388,7 +391,13 @@ def test_azure_inventory_databases_ha_multi_region_for_gp_and_mo():
                         v_cores=2,
                         supported_memory_per_vcore_mb=4096,
                         supported_ha_mode=["SameZone", "ZoneRedundant"],
-                    )
+                    ),
+                    SimpleNamespace(
+                        name="Standard_D4s_v3",
+                        v_cores=4,
+                        supported_memory_per_vcore_mb=4096,
+                        supported_ha_mode=["SameZone"],
+                    ),
                 ],
             ),
             SimpleNamespace(
@@ -418,11 +427,124 @@ def test_azure_inventory_databases_ha_multi_region_for_gp_and_mo():
         rows = azure_databases(vendor)
     by_id = {row["database_id"]: row for row in rows}
     assert by_id["Standard_B1ms"]["ha"] == DatabaseHaLevel.NONE
+    assert by_id["Standard_B1ms"]["ha_strategy"] == DatabaseHaStrategy.NONE
     assert by_id["Standard_B1ms"]["sla"] == 99.9
     assert by_id["Standard_B1ms"]["scheduled_backups"] is True
-    assert by_id["Standard_D2s_v3"]["ha"] == DatabaseHaLevel.MULTI_REGION
+    assert by_id["Standard_D2s_v3"]["ha"] == DatabaseHaLevel.MULTI_ZONE
+    assert by_id["Standard_D2s_v3"]["ha_strategy"] == DatabaseHaStrategy.PASSIVE_STANDBY
     assert by_id["Standard_D2s_v3"]["sla"] == 99.99
-    assert by_id["Standard_E2s_v3"]["ha"] == DatabaseHaLevel.MULTI_REGION
+    assert by_id["Standard_D4s_v3"]["ha"] == DatabaseHaLevel.SINGLE_ZONE
+    assert by_id["Standard_D4s_v3"]["ha_strategy"] == DatabaseHaStrategy.PASSIVE_STANDBY
+    assert by_id["Standard_D4s_v3"]["sla"] == 99.95
+    assert by_id["Standard_E2s_v3"]["ha"] == DatabaseHaLevel.MULTI_ZONE
+    assert by_id["Standard_E2s_v3"]["ha_strategy"] == DatabaseHaStrategy.PASSIVE_STANDBY
+
+
+def test_azure_inventory_database_prices_emit_ha_rows():
+    vendor = Mock(vendor_id="azure")
+    vendor.regions = [Mock(region_id="centralus", api_reference="centralus")]
+    vendor.progress_tracker = Mock(
+        start_task=Mock(), advance_task=Mock(), hide_task=Mock()
+    )
+    capability = SimpleNamespace(
+        supported_server_editions=[
+            SimpleNamespace(
+                name="Burstable",
+                supported_server_skus=[
+                    SimpleNamespace(
+                        name="Standard_B1ms",
+                        v_cores=1,
+                        supported_ha_mode=["SameZone", "ZoneRedundant"],
+                    )
+                ],
+            ),
+            SimpleNamespace(
+                name="GeneralPurpose",
+                supported_server_skus=[
+                    SimpleNamespace(
+                        name="Standard_D2s_v3",
+                        v_cores=2,
+                        supported_ha_mode=["SameZone", "ZoneRedundant"],
+                    )
+                ],
+            ),
+        ],
+    )
+    retail = [
+        {
+            "armSkuName": "B1MS",
+            "productName": (
+                "Azure Database for PostgreSQL Flexible Server "
+                "Burstable BS Series Compute"
+            ),
+            "meterName": "B1MS",
+            "retailPrice": "0.018",
+            "currencyCode": "USD",
+        },
+        {
+            "armSkuName": "Standard_D2s_v3",
+            "productName": (
+                "Azure Database for PostgreSQL Flexible Server "
+                "General Purpose Dsv3 Series Compute"
+            ),
+            "meterName": "D2s v3",
+            "skuName": "2 vCore",
+            "retailPrice": "0.145",
+            "currencyCode": "USD",
+        },
+    ]
+    with (
+        patch(
+            "sc_crawler.vendors._azure._pg_database_regions",
+            return_value=vendor.regions,
+        ),
+        patch(
+            "sc_crawler.vendors._azure._pg_capabilities",
+            return_value=[capability],
+        ),
+        patch(
+            "sc_crawler.vendors._azure._pg_retail_prices",
+            return_value=retail,
+        ),
+    ):
+        prices = azure_database_prices(vendor)
+    by_key = {
+        (row["database_id"], row["ha"], row["ha_strategy"]): row["price"]
+        for row in prices
+    }
+    assert (
+        by_key[("Standard_B1ms", DatabaseHaLevel.NONE, DatabaseHaStrategy.NONE)]
+        == 0.018
+    )
+    assert (
+        "Standard_B1ms",
+        DatabaseHaLevel.MULTI_ZONE,
+        DatabaseHaStrategy.PASSIVE_STANDBY,
+    ) not in by_key
+    assert (
+        by_key[("Standard_D2s_v3", DatabaseHaLevel.NONE, DatabaseHaStrategy.NONE)]
+        == 0.145
+    )
+    assert (
+        by_key[
+            (
+                "Standard_D2s_v3",
+                DatabaseHaLevel.MULTI_ZONE,
+                DatabaseHaStrategy.PASSIVE_STANDBY,
+            )
+        ]
+        == 0.29
+    )
+    assert (
+        by_key[
+            (
+                "Standard_D2s_v3",
+                DatabaseHaLevel.SINGLE_ZONE,
+                DatabaseHaStrategy.PASSIVE_STANDBY,
+            )
+        ]
+        == 0.29
+    )
 
 
 def test_gcp_inventory_databases_ha_uses_own_price_family_only():
@@ -464,11 +586,11 @@ def test_gcp_inventory_databases_ha_uses_own_price_family_only():
     by_id = {row["database_id"]: row for row in rows}
     assert by_id["db-n1-standard-4"]["ha"] == DatabaseHaLevel.NONE
     assert by_id["db-n1-standard-4"]["sla"] is None
-    assert by_id["db-perf-optimized-N-4"]["ha"] == DatabaseHaLevel.MULTI_REGION
+    assert by_id["db-perf-optimized-N-4"]["ha"] == DatabaseHaLevel.MULTI_ZONE
     assert by_id["db-perf-optimized-N-4"]["sla"] == 99.99
 
 
-def test_gcp_inventory_databases_ha_multi_region_for_enterprise_plus():
+def test_gcp_inventory_databases_ha_multi_zone_from_regional_billing():
     vendor = Mock(vendor_id="gcp")
     vendor.regions = []
     vendor.servers = []
@@ -506,6 +628,7 @@ def test_gcp_inventory_databases_ha_multi_region_for_enterprise_plus():
                     {
                         ("us-central1", "enterprise"),
                         ("us-central1", "enterprise_n4"),
+                        ("us-central1", "shared"),
                     }
                 ),
             ),
@@ -513,15 +636,18 @@ def test_gcp_inventory_databases_ha_multi_region_for_enterprise_plus():
     ):
         rows = inventory_databases(vendor)
     by_id = {row["database_id"]: row for row in rows}
-    assert by_id["db-perf-optimized-N-4"]["ha"] == DatabaseHaLevel.MULTI_REGION
+    assert by_id["db-perf-optimized-N-4"]["ha"] == DatabaseHaLevel.MULTI_ZONE
+    assert by_id["db-perf-optimized-N-4"]["ha_strategy"] == (
+        DatabaseHaStrategy.PASSIVE_STANDBY
+    )
     assert by_id["db-perf-optimized-N-4"]["sla"] == 99.99
     assert by_id["db-n1-standard-4"]["ha"] == DatabaseHaLevel.MULTI_ZONE
     assert by_id["db-n1-standard-4"]["sla"] == 99.95
-    assert by_id["db-f1-micro"]["ha"] == DatabaseHaLevel.NONE
+    assert by_id["db-f1-micro"]["ha"] == DatabaseHaLevel.MULTI_ZONE
     assert by_id["db-f1-micro"]["sla"] is None
 
 
-def test_gcp_inventory_databases_enterprise_plus_sla_requires_regional_ha():
+def test_gcp_inventory_databases_enterprise_plus_without_regional_ha():
     vendor = Mock(vendor_id="gcp")
     vendor.regions = []
     vendor.servers = []
@@ -551,7 +677,7 @@ def test_gcp_inventory_databases_enterprise_plus_sla_requires_regional_ha():
         ),
     ):
         rows = inventory_databases(vendor)
-    assert rows[0]["ha"] == DatabaseHaLevel.MULTI_REGION
+    assert rows[0]["ha"] == DatabaseHaLevel.NONE
     assert rows[0]["sla"] is None
 
 
