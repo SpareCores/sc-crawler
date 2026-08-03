@@ -72,6 +72,9 @@ def _zones() -> List[compute_v1.types.compute.Zone]:
 
 @cachier(separate_files=True)
 def _servers(zone: str) -> List[compute_v1.types.compute.MachineType]:
+    """List all machine types available in a Zone.
+
+    Reference: <https://cloud.google.com/compute/docs/reference/rest/v1/machineTypes>."""
     return _paginate_list(compute_v1.services.machine_types.MachineTypesClient(), zone)
 
 
@@ -126,31 +129,6 @@ def _skus(service_name: str) -> List[compute_v1.types.compute.Zone]:
 # ##############################################################################
 # Internal helpers
 
-SERVER_FAMILIES = {
-    "a2",
-    "a3",
-    "c2",  # compute optimized
-    "c2d",
-    "c3",
-    "c3d",
-    "c4",
-    "e2",
-    "f1",  # micro instance running on N1
-    "g1",  # micro instance running on N1
-    "g2",
-    "h3",
-    "m1",  # memory optimized
-    "m2",  # memory optimized + premium
-    "m3",
-    "n1",
-    "n2",
-    "n2d",
-    "n4",
-    "t2a",
-    "t2d",
-    "z3",
-}
-
 # there are a few odd descriptions that needs lookup,
 # otherwise the descriptions match the server family
 SERVER_DESCRIPTION_TO_FAMILY = {
@@ -176,12 +154,9 @@ STORAGE_ALLOWLIST = ["pd-standard", "pd-ssd", "pd-balanced"]
 
 
 def _server_family(server_name: str) -> str:
-    """Look up server family based on server name"""
+    """Look up server family based on server name to build the SKU lookup key."""
     # example server names: f1-micro, n2d-standard-96
-    prefix = server_name.lower().split("-")[0]
-    if prefix in SERVER_FAMILIES:
-        return prefix
-    raise KeyError(f"Not known server family for {server_name}")
+    return server_name.lower().split("-")[0]
 
 
 @cache
@@ -308,9 +283,11 @@ def _search_servers(zone_name: str) -> List[dict]:
                 ),
                 "cpu_cores": None,
                 "cpu_speed": None,
+                # older machine types don't populate MachineType.architecture,
+                # but it's confirmed to be present for t2a/c4a/n4a (ARM64)
                 "cpu_architecture": (
                     CpuArchitecture.ARM64
-                    if server.name.startswith("t2a")
+                    if str(server.architecture or "").upper() == "ARM64"
                     else CpuArchitecture.X86_64
                 ),
                 "cpu_manufacturer": None,
@@ -358,11 +335,7 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
     items = []
 
     for server in vendor.servers:
-        try:
-            family = _server_family(server.name)
-        except KeyError as e:
-            vendor.log(f"Skip instance: {str(e)}", DEBUG)
-            continue
+        family = _server_family(server.name)
 
         # https://cloud.google.com/compute/docs/memory-optimized-machines#m1_series
         # N1 -> M1 rename "to more clearly identify the machines"
@@ -371,7 +344,15 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
 
         # price per instance or cpu/ram
         server_regions = [*skus["instance"][family].keys(), *skus["cpu"][family].keys()]
-        assert len(server_regions) > 0
+        if not server_regions:
+            # some newer/exotic families (e.g. A4X, M4N, X4, TPU VM series as of
+            # 2026-08) have no Instance Core/Ram (or instance-level) SKUs at all
+            # yet in the live Billing Catalog
+            vendor.log(
+                f"Skip instance: no SKU found for family '{family}' ({server.name})",
+                DEBUG,
+            )
+            continue
 
         for server_region in server_regions:
             # skip edge regions

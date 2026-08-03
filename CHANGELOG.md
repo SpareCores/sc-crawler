@@ -11,6 +11,13 @@ Fix(es):
 - Correct and fill `AWS`, `Azure`, and `GCP` PostgreSQL DBaaS inventory fields (HA levels,
   storage bounds, monitoring, backups, SLA, and related capabilities).
 - Drop non-orderable `AWS` RDS instance classes from the catalog.
+- GCP: removed the hardcoded `SERVER_FAMILIES` allowlist that gated newer
+  (missed) server pricing lookups. Families with genuinely no pricing SKUs yet
+  in the Billing Catalog (e.g. `A4X`, `M4N`, `X4`, TPU VM series as of 2026-08)
+  are now skipped gracefully (logged at DEBUG) instead of throwing exception.
+- GCP: `cpu_architecture` was hardcoded to only recognize `t2a` as `ARM64`, defaulting
+  every other series (including the Arm-based Axion `c4a`/`n4a`) to `X86_64`. Now reads
+  the real `MachineType.architecture` API field instead.
 
 ## v0.8.4 (July 28, 2026)
 
