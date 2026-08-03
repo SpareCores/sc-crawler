@@ -2,14 +2,19 @@
 
 Maintenance update:
 
-- Refactor the `Database` table: replace `ha_supported` with `ha` (`DatabaseHaLevel`),
-  rename `storage_autoscaling` to `storage_extra_autosize`, and add capability fields
-  (`wire_protocol`, storage bounds, monitoring, autotuning, `security_features`, and tiered `support_level`).
+- Refactor the `Database` table: replace `ha_supported` with `ha` (`DatabaseHaLevel`)
+  and optional `ha_strategy` (`DatabaseHaStrategy`), rename `storage_autoscaling` to
+  `storage_extra_autosize`, and add capability fields (`wire_protocol`, storage bounds,
+  monitoring, autotuning, `security_features`, and tiered `support_level`).
+- Add `api_reference_object` (JSON) to `Database`: partial Pulumi args identifying the
+  database instance.
+- Include `ha` and `ha_strategy` in `database_price` primary keys so HA deployments can
+  carry distinct prices (e.g. AWS Multi-AZ, Azure 2× HA compute, GCP Regional meters).
 
 Fix(es):
 
-- Correct and fill `AWS`, `Azure`, and `GCP` PostgreSQL DBaaS inventory fields (HA levels,
-  storage bounds, monitoring, backups, SLA, and related capabilities).
+- Correct and fill `AWS`, `Azure`, and `GCP` PostgreSQL DBaaS inventory fields (HA levels
+  and strategies, storage bounds, monitoring, backups, SLA, and related capabilities).
 - Drop non-orderable `AWS` RDS instance classes from the catalog.
 - GCP: removed the hardcoded `SERVER_FAMILIES` allowlist that gated newer
   (missed) server pricing lookups. Families with genuinely no pricing SKUs yet
