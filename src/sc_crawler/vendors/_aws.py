@@ -28,6 +28,7 @@ from ..table_fields import (
     DatabaseWireProtocol,
     Disk,
     Gpu,
+    DatabaseHaStrategy,
     PriceTier,
     PriceUnit,
     Status,
@@ -1604,20 +1605,25 @@ def inventory_databases(vendor):
                 if opt.get("MaxStorageSize") is not None
             ]
             # https://docs.aws.amazon.com/AmazonRDS/latest/APIReference/API_OrderableDBInstanceOption.html
-            # Multi-region first (SupportsGlobalDatabases; Aurora Global Database —
-            # typically false for engine=postgres RDS instance classes).
-            if any(opt.get("SupportsGlobalDatabases") for opt in db_instance_options):
-                ha = DatabaseHaLevel.MULTI_REGION
-            elif any(opt.get("MultiAZCapable") for opt in db_instance_options) or any(
-                dep == "Multi-AZ" or dep.startswith("Multi-AZ ")
-                for dep in deployment_options
+            # SupportsGlobalDatabases is Aurora Global Database only (not RDS postgres).
+            if "Multi-AZ (readable standbys)" in deployment_options:
+                ha = DatabaseHaLevel.MULTI_ZONE
+                # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/multi-az-db-clusters-concepts.html
+                # Multi-AZ DB clusters use readable standbys with engine replication.
+                ha_strategy = DatabaseHaStrategy.READABLE_CLUSTER
+            elif any(opt.get("MultiAZCapable") for opt in db_instance_options) or (
+                "Multi-AZ" in deployment_options
             ):
                 ha = DatabaseHaLevel.MULTI_ZONE
-            elif "Single-AZ" in deployment_options or db_instance_options:
-                # Single-AZ only (or MultiAZCapable=false without Multi-AZ pricing).
+                # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.MultiAZSingleStandby.html
+                # Standard RDS Multi-AZ uses a passive standby with block storage replication.
+                ha_strategy = DatabaseHaStrategy.PASSIVE_STANDBY
+            elif "Single-AZ" in deployment_options:
                 ha = DatabaseHaLevel.SINGLE_ZONE
+                ha_strategy = DatabaseHaStrategy.NONE
             else:
                 ha = DatabaseHaLevel.NONE
+                ha_strategy = DatabaseHaStrategy.NONE
             storage_extra_autosize = any(
                 opt.get("SupportsStorageAutoscaling") for opt in db_instance_options
             )
@@ -1677,6 +1683,7 @@ def inventory_databases(vendor):
                     "memory_amount": memory_amount_mib,
                     "storage_size": storage_size,
                     "ha": ha,
+                    "ha_strategy": ha_strategy,
                     "storage_extra_autosize": storage_extra_autosize,
                     "storage_extra_min": storage_extra_min,
                     "storage_extra_max": storage_extra_max,
@@ -1755,7 +1762,16 @@ def inventory_database_prices(vendor):
             region_id = attrs["regionCode"]
             if region_id not in region_ids:
                 continue
-            if attrs.get("deploymentOption") != "Single-AZ":
+            if attrs.get("deploymentOption") == "Single-AZ":
+                ha = DatabaseHaLevel.SINGLE_ZONE
+                ha_strategy = DatabaseHaStrategy.NONE
+            elif attrs.get("deploymentOption") == "Multi-AZ (readable standbys)":
+                ha = DatabaseHaLevel.MULTI_ZONE
+                ha_strategy = DatabaseHaStrategy.READABLE_CLUSTER
+            elif attrs.get("deploymentOption") == "Multi-AZ":
+                ha = DatabaseHaLevel.MULTI_ZONE
+                ha_strategy = DatabaseHaStrategy.PASSIVE_STANDBY
+            else:
                 continue
             database_id = attrs.get("instanceType")
             if database_id not in databases:
@@ -1767,6 +1783,8 @@ def inventory_database_prices(vendor):
                     "region_id": region_id,
                     "database_id": database_id,
                     "allocation": Allocation.ONDEMAND,
+                    "ha": ha,
+                    "ha_strategy": ha_strategy,
                     "unit": PriceUnit.HOUR,
                     "price": float(price[0]),
                     "price_upfront": 0,

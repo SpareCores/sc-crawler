@@ -8,8 +8,10 @@ from sc_crawler.table_bases import (
 from sc_crawler.table_fields import (
     Allocation,
     DatabaseEngine,
+    DatabaseHaLevel,
     DatabaseSecurityFeature,
     DatabaseWireProtocol,
+    DatabaseHaStrategy,
     PriceUnit,
     Status,
 )
@@ -58,6 +60,8 @@ def test_dedupe_items_collapses_duplicate_database_prices():
         "region_id": "us-east-1",
         "database_id": "db.t3.micro",
         "allocation": Allocation.ONDEMAND,
+        "ha": DatabaseHaLevel.SINGLE_ZONE,
+        "ha_strategy": DatabaseHaStrategy.NONE,
         "unit": PriceUnit.HOUR,
         "price": 0.02,
         "price_upfront": 0,
@@ -72,7 +76,7 @@ def test_dedupe_items_collapses_duplicate_database_prices():
     validated = [DatabasePriceBase.model_validate(item).model_dump() for item in items]
     deduped = _dedupe_items(
         validated,
-        ["vendor_id", "region_id", "database_id", "allocation"],
+        ["vendor_id", "region_id", "database_id", "allocation", "ha", "ha_strategy"],
     )
     assert len(deduped) == 1
     assert deduped[0]["price"] == 0.03

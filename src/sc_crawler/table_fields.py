@@ -125,14 +125,14 @@ class DatabaseEngine(str, Enum):
 
 
 class DatabaseWireProtocol(str, Enum):
-    """Wire protocol for a managed database SKU."""
+    """Wire protocol for a managed database type."""
 
     POSTGRESQL = "postgresql"
     """PostgreSQL."""
 
 
 class DatabaseHaLevel(str, Enum):
-    """High availability level for a managed database SKU."""
+    """High availability level for a managed database type."""
 
     NONE = "none"
     """No high availability."""
@@ -144,8 +144,21 @@ class DatabaseHaLevel(str, Enum):
     """Multi-region high availability."""
 
 
+class DatabaseHaStrategy(str, Enum):
+    """High availability replication strategy for a managed database type."""
+
+    NONE = "none"
+    """No high availability strategy."""
+    PASSIVE_STANDBY = "passive-standby"
+    """Passive standby, e.g. standard RDS Multi-AZ with block storage replication."""
+    READABLE_CLUSTER = "readable-cluster"
+    """Readable cluster, e.g. RDS Multi-AZ Cluster / Aurora with engine replication."""
+    MULTI_MASTER = "multi-master"
+    """Multi-master, e.g. CockroachDB / Spanner / DynamoDB Global Tables."""
+
+
 class DatabaseSecurityFeature(str, Enum):
-    """Security features for a managed database SKU."""
+    """Security features for a managed database type."""
 
     IP_ALLOWLISTING = "ip-allowlisting"
     """IP allowlisting."""
@@ -156,7 +169,7 @@ class DatabaseSecurityFeature(str, Enum):
 
 
 class DatabaseSupportLevel(str, Enum):
-    """Vendor support tier for a managed database SKU."""
+    """Vendor support tier for a managed database type."""
 
     TIER_1 = "tier-1"
     """Tier 1 support level."""

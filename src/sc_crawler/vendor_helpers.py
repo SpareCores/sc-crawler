@@ -120,8 +120,15 @@ def merge_database_catalog_rows(rows: List[dict]) -> List[dict]:
         "multi-zone": 2,
         "multi-region": 3,
     }
+    ha_strategy_rank = {
+        None: -1,
+        "none": 0,
+        "passive-standby": 1,
+        "readable-cluster": 2,
+        "multi-master": 3,
+    }
 
-    def _ha_value(value):
+    def _enum_value(value):
         if value is None:
             return None
         return value.value if hasattr(value, "value") else value
@@ -150,10 +157,16 @@ def merge_database_catalog_rows(rows: List[dict]) -> List[dict]:
         ):
             if row.get(flag):
                 existing[flag] = True
-        row_ha = _ha_value(row.get("ha"))
-        existing_ha = _ha_value(existing.get("ha"))
+        row_ha = _enum_value(row.get("ha"))
+        existing_ha = _enum_value(existing.get("ha"))
         if ha_rank.get(row_ha, -1) > ha_rank.get(existing_ha, -1):
             existing["ha"] = row.get("ha")
+        row_ha_strategy = _enum_value(row.get("ha_strategy"))
+        existing_ha_strategy = _enum_value(existing.get("ha_strategy"))
+        if ha_strategy_rank.get(row_ha_strategy, -1) > ha_strategy_rank.get(
+            existing_ha_strategy, -1
+        ):
+            existing["ha_strategy"] = row.get("ha_strategy")
         for field, reducer in (
             ("storage_extra_min", min),
             ("storage_extra_max", max),

@@ -35,6 +35,7 @@ from .table_fields import (
     Gpu,
     HashableDict,
     HashableJSON,
+    DatabaseHaStrategy,
     PriceTier,
     PriceUnit,
     Status,
@@ -935,6 +936,10 @@ class DatabaseFields(
         default=None,
         description="Level of HA (high availability) supported.",
     )
+    ha_strategy: Optional[DatabaseHaStrategy] = Field(
+        default=None,
+        description="HA replication strategy supported.",
+    )
     max_read_replicas: Optional[int] = Field(
         default=None,
         description="Maximum number of read-only replica nodes supported to scale read workloads.",
@@ -1053,6 +1058,16 @@ class DatabasePriceFields(ScModel):
     allocation: Allocation = Field(
         default=Allocation.ONDEMAND,
         description="Allocation method, e.g. on-demand or spot.",
+        primary_key=True,
+    )
+    ha: DatabaseHaLevel = Field(
+        default=DatabaseHaLevel.NONE,
+        description="HA level this price applies to.",
+        primary_key=True,
+    )
+    ha_strategy: DatabaseHaStrategy = Field(
+        default=DatabaseHaStrategy.NONE,
+        description="HA strategy this price applies to.",
         primary_key=True,
     )
 

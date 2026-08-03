@@ -27,6 +27,7 @@ from ..table_fields import (
     DatabaseStorageScope,
     DatabaseWireProtocol,
     Disk,
+    DatabaseHaStrategy,
     PriceTier,
     PriceUnit,
     StorageType,
@@ -1817,14 +1818,21 @@ def inventory_databases(vendor):
                         }
                         if edition.name == "Burstable":
                             ha = DatabaseHaLevel.NONE
+                            ha_strategy = DatabaseHaStrategy.NONE
                         elif edition.name in ("GeneralPurpose", "MemoryOptimized"):
                             ha = DatabaseHaLevel.MULTI_REGION
+                            # https://learn.microsoft.com/en-us/azure/postgresql/high-availability/concepts-high-availability
+                            # Flexible Server HA uses a standby server (sync replication).
+                            ha_strategy = DatabaseHaStrategy.PASSIVE_STANDBY
                         elif "ZoneRedundant" in ha_modes:
                             ha = DatabaseHaLevel.MULTI_ZONE
+                            ha_strategy = DatabaseHaStrategy.PASSIVE_STANDBY
                         elif "SameZone" in ha_modes:
                             ha = DatabaseHaLevel.SINGLE_ZONE
+                            ha_strategy = DatabaseHaStrategy.PASSIVE_STANDBY
                         else:
                             ha = DatabaseHaLevel.NONE
+                            ha_strategy = DatabaseHaStrategy.NONE
                         rows.append(
                             {
                                 "vendor_id": vendor.vendor_id,
@@ -1867,6 +1875,7 @@ def inventory_databases(vendor):
                                 "storage_extra_min": storage_extra_min,
                                 "storage_extra_max": storage_extra_max,
                                 "ha": ha,
+                                "ha_strategy": ha_strategy,
                                 # https://learn.microsoft.com/en-us/azure/postgresql/read-replica/concepts-read-replicas
                                 # Up to 5 replicas per primary; Burstable tier is not supported.
                                 "max_read_replicas": (
@@ -1962,6 +1971,8 @@ def inventory_database_prices(vendor):
                                 "region_id": region.region_id,
                                 "database_id": database_id,
                                 "allocation": Allocation.ONDEMAND,
+                                "ha": DatabaseHaLevel.NONE,
+                                "ha_strategy": DatabaseHaStrategy.NONE,
                                 "unit": PriceUnit.HOUR,
                                 "price": _pg_hourly_compute_price(
                                     price_item, vcpus, database_id=database_id

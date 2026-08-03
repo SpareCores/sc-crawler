@@ -223,12 +223,76 @@ def get_database_table(is_scd: bool) -> sa.Table:
     )
 
 
+def get_database_price_table(is_scd: bool) -> sa.Table:
+    """Pre-v0.8.5 ``database_price`` schema (copy_from source)."""
+    table_name = scdize_suffix("database_price")
+    vendor_table = scdize_suffix("vendor")
+    region_table = scdize_suffix("region")
+    database_table = scdize_suffix("database")
+    primary_keys = (
+        ("vendor_id", "region_id", "database_id", "allocation", "observed_at")
+        if is_scd
+        else ("vendor_id", "region_id", "database_id", "allocation")
+    )
+    foreign_keys = (
+        (
+            sa.ForeignKeyConstraint(
+                ["vendor_id"],
+                [f"{vendor_table}.vendor_id"],
+                name=op.f(f"fk_{table_name}_vendor_id_{vendor_table}"),
+            ),
+            sa.ForeignKeyConstraint(
+                ["vendor_id", "region_id"],
+                [f"{region_table}.vendor_id", f"{region_table}.region_id"],
+                name=op.f(f"fk_{table_name}_vendor_id_{region_table}"),
+            ),
+            sa.ForeignKeyConstraint(
+                ["vendor_id", "database_id"],
+                [f"{database_table}.vendor_id", f"{database_table}.database_id"],
+                name=op.f(f"fk_{table_name}_vendor_id_{database_table}"),
+            ),
+        )
+        if not is_scd
+        else ()
+    )
+    return sa.Table(
+        table_name,
+        sa.MetaData(),
+        sa.Column("vendor_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("region_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("database_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column(
+            "allocation",
+            _enum("allocation", ("ONDEMAND", "RESERVED", "SPOT")),
+            nullable=False,
+        ),
+        sa.Column(
+            "unit",
+            _enum(
+                "priceunit",
+                ("YEAR", "MONTH", "HOUR", "GIB", "GB", "GB_MONTH"),
+            ),
+            nullable=False,
+        ),
+        sa.Column("price", sa.Float(), nullable=False),
+        sa.Column("price_upfront", sa.Float(), nullable=False),
+        sa.Column("price_tiered", sa.JSON(), nullable=False),
+        sa.Column("currency", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("status", _enum("status", ("ACTIVE", "INACTIVE")), nullable=False),
+        sa.Column("observed_at", sa.DateTime(), nullable=False),
+        *foreign_keys,
+        sa.PrimaryKeyConstraint(*primary_keys, name=op.f(f"pk_{table_name}")),
+    )
+
+
 def upgrade() -> None:
     is_scd = is_scd_migration()
     is_postgresql = op.get_context().dialect.name == "postgresql"
     json_type = sa.dialects.postgresql.JSONB if is_postgresql else sa.JSON
     database_table_name = scdize_suffix("database")
     database_table = get_database_table(is_scd)
+    database_price_table_name = scdize_suffix("database_price")
+    database_price_table = get_database_price_table(is_scd)
     do_recreate_tables = (op.get_context().dialect.name == "sqlite") or is_scd
 
     if is_postgresql:
@@ -335,6 +399,19 @@ def upgrade() -> None:
                     True,
                     None,
                     "Level of HA (high availability) supported.",
+                ),
+                (
+                    "ha_strategy",
+                    sa.Enum(
+                        "NONE",
+                        "PASSIVE_STANDBY",
+                        "READABLE_CLUSTER",
+                        "MULTI_MASTER",
+                        name="databasehastrategy",
+                    ),
+                    True,
+                    None,
+                    "HA replication strategy supported.",
                 ),
                 (
                     "max_read_replicas",
@@ -503,6 +580,13 @@ def upgrade() -> None:
                 "MULTI_REGION",
                 name="databasehalevel",
             ).create(bind, checkfirst=True)
+            sa.Enum(
+                "NONE",
+                "PASSIVE_STANDBY",
+                "READABLE_CLUSTER",
+                "MULTI_MASTER",
+                name="databasehastrategy",
+            ).create(bind, checkfirst=True)
 
         op.alter_column(database_table_name, "engine", nullable=True)
         op.add_column(
@@ -536,6 +620,21 @@ def upgrade() -> None:
                 ),
                 nullable=True,
                 comment="Level of HA (high availability) supported.",
+            ),
+        )
+        op.add_column(
+            database_table_name,
+            sa.Column(
+                "ha_strategy",
+                sa.Enum(
+                    "NONE",
+                    "PASSIVE_STANDBY",
+                    "READABLE_CLUSTER",
+                    "MULTI_MASTER",
+                    name="databasehastrategy",
+                ),
+                nullable=True,
+                comment="HA replication strategy supported.",
             ),
         )
         op.add_column(
@@ -698,6 +797,133 @@ def upgrade() -> None:
         ):
             op.alter_column(database_table_name, column, comment=comment)
 
+    database_price_pk = (
+        (
+            "vendor_id",
+            "region_id",
+            "database_id",
+            "allocation",
+            "ha",
+            "ha_strategy",
+            "observed_at",
+        )
+        if is_scd
+        else (
+            "vendor_id",
+            "region_id",
+            "database_id",
+            "allocation",
+            "ha",
+            "ha_strategy",
+        )
+    )
+
+    if do_recreate_tables:
+        with op.batch_alter_table(
+            database_price_table_name,
+            schema=None,
+            copy_from=database_price_table,
+            recreate="always",
+        ) as batch_op:
+            batch_op.add_column(
+                sa.Column(
+                    "ha",
+                    _enum(
+                        "databasehalevel",
+                        ("NONE", "SINGLE_ZONE", "MULTI_ZONE", "MULTI_REGION"),
+                    ),
+                    nullable=False,
+                    server_default="NONE",
+                    comment="HA level this price applies to.",
+                ),
+                insert_after="allocation",
+            )
+            batch_op.add_column(
+                sa.Column(
+                    "ha_strategy",
+                    _enum(
+                        "databasehastrategy",
+                        ("NONE", "PASSIVE_STANDBY", "READABLE_CLUSTER", "MULTI_MASTER"),
+                    ),
+                    nullable=False,
+                    server_default="NONE",
+                    comment="HA strategy this price applies to.",
+                ),
+                insert_after="ha",
+            )
+            batch_op.drop_constraint(
+                op.f(f"pk_{database_price_table_name}"), type_="primary"
+            )
+            batch_op.create_primary_key(
+                op.f(f"pk_{database_price_table_name}"), list(database_price_pk)
+            )
+    else:
+        if is_postgresql:
+            sa.Enum(
+                "NONE",
+                "PASSIVE_STANDBY",
+                "READABLE_CLUSTER",
+                "MULTI_MASTER",
+                name="databasehastrategy",
+            ).create(op.get_bind(), checkfirst=True)
+        op.add_column(
+            database_price_table_name,
+            sa.Column(
+                "ha",
+                sa.Enum(
+                    "NONE",
+                    "SINGLE_ZONE",
+                    "MULTI_ZONE",
+                    "MULTI_REGION",
+                    name="databasehalevel",
+                ),
+                nullable=False,
+                server_default="NONE",
+                comment="HA level this price applies to.",
+            ),
+        )
+        op.add_column(
+            database_price_table_name,
+            sa.Column(
+                "ha_strategy",
+                sa.Enum(
+                    "NONE",
+                    "PASSIVE_STANDBY",
+                    "READABLE_CLUSTER",
+                    "MULTI_MASTER",
+                    name="databasehastrategy",
+                ),
+                nullable=False,
+                server_default="NONE",
+                comment="HA strategy this price applies to.",
+            ),
+        )
+        op.drop_constraint(
+            op.f(f"pk_{database_price_table_name}"),
+            database_price_table_name,
+            type_="primary",
+        )
+        op.create_primary_key(
+            op.f(f"pk_{database_price_table_name}"),
+            database_price_table_name,
+            list(database_price_pk),
+        )
+
+    # SQLite cannot DROP DEFAULT via ALTER COLUMN; leave the migration default there.
+    if is_postgresql:
+        op.alter_column(
+            database_price_table_name,
+            "ha",
+            server_default=None,
+            existing_nullable=False,
+        )
+        op.alter_column(
+            database_price_table_name,
+            "ha_strategy",
+            server_default=None,
+            existing_nullable=False,
+        )
+
 
 def get_database_table_v085(is_scd: bool) -> sa.Table:
     """Post-v0.8.5 ``database`` schema (downgrade copy_from source)."""
@@ -750,6 +976,14 @@ def get_database_table_v085(is_scd: bool) -> sa.Table:
             ),
             nullable=True,
         ),
+        sa.Column(
+            "ha_strategy",
+            _enum(
+                "databasehastrategy",
+                ("NONE", "PASSIVE_STANDBY", "READABLE_CLUSTER", "MULTI_MASTER"),
+            ),
+            nullable=True,
+        ),
         sa.Column("max_read_replicas", sa.Integer(), nullable=True),
         sa.Column("custom_config", sa.Boolean(), nullable=True),
         sa.Column("custom_extensions", sa.Boolean(), nullable=True),
@@ -782,13 +1016,142 @@ def get_database_table_v085(is_scd: bool) -> sa.Table:
     )
 
 
+def get_database_price_table_v085(is_scd: bool) -> sa.Table:
+    """Post-v0.8.5 ``database_price`` schema (downgrade copy_from source)."""
+    table_name = scdize_suffix("database_price")
+    vendor_table = scdize_suffix("vendor")
+    region_table = scdize_suffix("region")
+    database_table = scdize_suffix("database")
+    primary_keys = (
+        (
+            "vendor_id",
+            "region_id",
+            "database_id",
+            "allocation",
+            "ha",
+            "ha_strategy",
+            "observed_at",
+        )
+        if is_scd
+        else (
+            "vendor_id",
+            "region_id",
+            "database_id",
+            "allocation",
+            "ha",
+            "ha_strategy",
+        )
+    )
+    foreign_keys = (
+        (
+            sa.ForeignKeyConstraint(
+                ["vendor_id"],
+                [f"{vendor_table}.vendor_id"],
+                name=op.f(f"fk_{table_name}_vendor_id_{vendor_table}"),
+            ),
+            sa.ForeignKeyConstraint(
+                ["vendor_id", "region_id"],
+                [f"{region_table}.vendor_id", f"{region_table}.region_id"],
+                name=op.f(f"fk_{table_name}_vendor_id_{region_table}"),
+            ),
+            sa.ForeignKeyConstraint(
+                ["vendor_id", "database_id"],
+                [f"{database_table}.vendor_id", f"{database_table}.database_id"],
+                name=op.f(f"fk_{table_name}_vendor_id_{database_table}"),
+            ),
+        )
+        if not is_scd
+        else ()
+    )
+    return sa.Table(
+        table_name,
+        sa.MetaData(),
+        sa.Column("vendor_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("region_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("database_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column(
+            "allocation",
+            _enum("allocation", ("ONDEMAND", "RESERVED", "SPOT")),
+            nullable=False,
+        ),
+        sa.Column(
+            "ha",
+            _enum(
+                "databasehalevel",
+                ("NONE", "SINGLE_ZONE", "MULTI_ZONE", "MULTI_REGION"),
+            ),
+            nullable=False,
+        ),
+        sa.Column(
+            "ha_strategy",
+            _enum(
+                "databasehastrategy",
+                ("NONE", "PASSIVE_STANDBY", "READABLE_CLUSTER", "MULTI_MASTER"),
+            ),
+            nullable=False,
+        ),
+        sa.Column(
+            "unit",
+            _enum(
+                "priceunit",
+                ("YEAR", "MONTH", "HOUR", "GIB", "GB", "GB_MONTH"),
+            ),
+            nullable=False,
+        ),
+        sa.Column("price", sa.Float(), nullable=False),
+        sa.Column("price_upfront", sa.Float(), nullable=False),
+        sa.Column("price_tiered", sa.JSON(), nullable=False),
+        sa.Column("currency", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("status", _enum("status", ("ACTIVE", "INACTIVE")), nullable=False),
+        sa.Column("observed_at", sa.DateTime(), nullable=False),
+        *foreign_keys,
+        sa.PrimaryKeyConstraint(*primary_keys, name=op.f(f"pk_{table_name}")),
+    )
+
+
 def downgrade() -> None:
     is_scd = is_scd_migration()
     is_postgresql = op.get_context().dialect.name == "postgresql"
     json_type = sa.dialects.postgresql.JSONB if is_postgresql else sa.JSON
     database_table_name = scdize_suffix("database")
     database_table = get_database_table_v085(is_scd)
+    database_price_table_name = scdize_suffix("database_price")
+    database_price_table = get_database_price_table_v085(is_scd)
     do_recreate_tables = (op.get_context().dialect.name == "sqlite") or is_scd
+    database_price_pk = (
+        ("vendor_id", "region_id", "database_id", "allocation", "observed_at")
+        if is_scd
+        else ("vendor_id", "region_id", "database_id", "allocation")
+    )
+
+    if do_recreate_tables:
+        with op.batch_alter_table(
+            database_price_table_name,
+            schema=None,
+            copy_from=database_price_table,
+            recreate="always",
+        ) as batch_op:
+            batch_op.drop_constraint(
+                op.f(f"pk_{database_price_table_name}"), type_="primary"
+            )
+            batch_op.create_primary_key(
+                op.f(f"pk_{database_price_table_name}"), list(database_price_pk)
+            )
+            batch_op.drop_column("ha_strategy")
+            batch_op.drop_column("ha")
+    else:
+        op.drop_constraint(
+            op.f(f"pk_{database_price_table_name}"),
+            database_price_table_name,
+            type_="primary",
+        )
+        op.create_primary_key(
+            op.f(f"pk_{database_price_table_name}"),
+            database_price_table_name,
+            list(database_price_pk),
+        )
+        op.drop_column(database_price_table_name, "ha_strategy")
+        op.drop_column(database_price_table_name, "ha")
 
     if is_postgresql:
         bind = op.get_bind()
@@ -815,6 +1178,7 @@ def downgrade() -> None:
                 "wire_protocol",
                 "auto_upgrade_versions",
                 "ha",
+                "ha_strategy",
                 "max_read_replicas",
                 "storage_extra_min",
                 "storage_extra_max",
@@ -956,6 +1320,7 @@ def downgrade() -> None:
         op.drop_column(database_table_name, "wire_protocol")
         op.drop_column(database_table_name, "auto_upgrade_versions")
         op.drop_column(database_table_name, "ha")
+        op.drop_column(database_table_name, "ha_strategy")
         op.drop_column(database_table_name, "max_read_replicas")
         op.drop_column(database_table_name, "storage_extra_min")
         op.drop_column(database_table_name, "storage_extra_max")
@@ -1028,5 +1393,6 @@ def downgrade() -> None:
 
     if is_postgresql:
         bind = op.get_bind()
+        sa.Enum(name="databasehastrategy").drop(bind, checkfirst=True)
         sa.Enum(name="databasehalevel").drop(bind, checkfirst=True)
         sa.Enum(name="databasewireprotocol").drop(bind, checkfirst=True)

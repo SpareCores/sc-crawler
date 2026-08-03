@@ -21,6 +21,7 @@ from ..table_fields import (
     DatabaseHaLevel,
     DatabaseStorageScope,
     DatabaseWireProtocol,
+    DatabaseHaStrategy,
     PriceUnit,
     Status,
     StorageType,
@@ -1170,10 +1171,14 @@ _PG_STORAGE_SPECS: dict[str, dict] = {
     },
 }
 _PG_SHARED_INSTANCE_RE = recompile(
-    r": Zonal - (?:Extended support )?(f1-micro|g1-small)(?: v\d+)? in "
+    r": (?:Zonal|Regional) - (?:Extended support )?(f1-micro|g1-small)(?: v\d+)? in "
 )
-_PG_VCPU_RE = recompile(r": Zonal - (?:Extended support )?(?:Enterprise N4 )?vCPU in ")
-_PG_RAM_RE = recompile(r": Zonal - (?:Extended support )?(?:Enterprise N4 )?RAM in ")
+_PG_VCPU_RE = recompile(
+    r": (?:Zonal|Regional) - (?:Extended support )?(?:Enterprise N4 )?vCPU in "
+)
+_PG_RAM_RE = recompile(
+    r": (?:Zonal|Regional) - (?:Extended support )?(?:Enterprise N4 )?RAM in "
+)
 _PG_EXTENSION_FLAGS = frozenset(
     {
         "cloudsql.enable_pg_cron",
@@ -1220,28 +1225,27 @@ def _pg_storage_id(description: str) -> str | None:
 
 
 def _pg_billing_catalog() -> tuple[
-    dict[tuple[str, str, str], object], frozenset[tuple[str, str]]
+    dict[tuple[str, str, str, str], object], frozenset[tuple[str, str]]
 ]:
-    compute_index: dict[tuple[str, str, str], object] = {}
+    # Key: (region, price_family, component, availability) where availability is
+    # "zonal" or "regional".
+    compute_index: dict[tuple[str, str, str, str], object] = {}
     ha_families: set[tuple[str, str]] = set()
     for sku in _cloud_sql_skus():
         description = sku.description or ""
         if "for Postgre" not in description:
             continue
         if ": Regional -" in description:
-            if "vCPU" in description:
-                family = (
-                    "enterprise_n4" if "Enterprise N4" in description else "enterprise"
-                )
-                for region in sku.service_regions:
-                    if region:
-                        ha_families.add((region, family))
-            continue
-        if ": Zonal -" not in description and ": Zonal-" not in description:
+            availability = "regional"
+        elif ": Zonal -" in description or ": Zonal-" in description:
+            availability = "zonal"
+        else:
             continue
 
         sku_class = None
         if match := _PG_SHARED_INSTANCE_RE.search(description):
+            if availability != "zonal":
+                continue
             sku_class = ("shared", match.group(1))
         else:
             extended = "Extended support" in description
@@ -1266,8 +1270,11 @@ def _pg_billing_catalog() -> tuple[
             continue
         family, component = sku_class
         for region in sku.service_regions:
-            if region:
-                compute_index.setdefault((region, family, component), sku)
+            if not region:
+                continue
+            compute_index.setdefault((region, family, component, availability), sku)
+            if availability == "regional" and component == "vcpu":
+                ha_families.add((region, family))
     return compute_index, frozenset(ha_families)
 
 
@@ -1352,6 +1359,7 @@ def inventory_databases(vendor):
             price_family = "enterprise"
 
         ha = None
+        ha_strategy = None
         has_regional_ha = False
         if tier_regions:
             # https://cloud.google.com/sql/docs/postgres/use-advanced-disaster-recovery
@@ -1363,12 +1371,18 @@ def inventory_databases(vendor):
             )
             if price_family == "shared":
                 ha = DatabaseHaLevel.NONE
+                ha_strategy = DatabaseHaStrategy.NONE
             elif price_family == "enterprise_n4":
                 ha = DatabaseHaLevel.MULTI_REGION
+                # https://cloud.google.com/sql/docs/postgres/high-availability
+                # Regional HA / Advanced DR use a standby with synchronous replication.
+                ha_strategy = DatabaseHaStrategy.PASSIVE_STANDBY
             elif has_regional_ha:
                 ha = DatabaseHaLevel.MULTI_ZONE
+                ha_strategy = DatabaseHaStrategy.PASSIVE_STANDBY
             else:
                 ha = DatabaseHaLevel.NONE
+                ha_strategy = DatabaseHaStrategy.NONE
 
         disk_quota_bytes = int(tier.get("DiskQuota") or 0)
         storage_extra_max = (
@@ -1394,6 +1408,7 @@ def inventory_databases(vendor):
                 "memory_amount": memory_amount,
                 "storage_size": None,
                 "ha": ha,
+                "ha_strategy": ha_strategy,
                 # https://cloud.google.com/sql/docs/postgres/admin-api/rest/v1/instances
                 # Minimum data disk size is 10 GB.
                 "storage_extra_min": 10,
@@ -1479,58 +1494,78 @@ def inventory_database_prices(vendor):
 
         if tier_name in _PG_SHARED_TIERS:
             price_family = "shared"
+            # Shared-core tiers are zonal-only (no regional HA meters).
+            availabilities = ("zonal",)
         elif any(marker in tier_name.lower() for marker in _PG_N4_TIER_MARKERS):
             price_family = "enterprise_n4"
+            availabilities = ("zonal", "regional")
         else:
             price_family = "enterprise"
+            availabilities = ("zonal", "regional")
 
         for region in vendor.regions:
             if tier_regions and region.api_reference not in tier_regions:
                 continue
 
-            hourly = currency = None
-            if price_family == "shared":
-                component = _PG_SHARED_TIERS[tier_name]
-                instance_sku = compute_index.get(
-                    (region.api_reference, "shared", component)
-                )
-                if instance_sku is not None:
-                    hourly = _sku_unit_price(instance_sku)
-                    if hourly is not None:
-                        tiered = instance_sku.pricing_info[
-                            0
-                        ].pricing_expression.tiered_rates
-                        currency = tiered[0].unit_price.currency_code or "USD"
-            elif cpu_count is not None and memory_gib is not None:
-                vcpu_sku = compute_index.get(
-                    (region.api_reference, price_family, "vcpu")
-                )
-                ram_sku = compute_index.get((region.api_reference, price_family, "ram"))
-                if vcpu_sku is not None and ram_sku is not None:
-                    vcpu_hourly = _sku_unit_price(vcpu_sku)
-                    ram_hourly = _sku_unit_price(ram_sku)
-                    if vcpu_hourly is not None and ram_hourly is not None:
-                        hourly = vcpu_hourly * cpu_count + ram_hourly * memory_gib
-                        vcpu_tiered = vcpu_sku.pricing_info[
-                            0
-                        ].pricing_expression.tiered_rates
-                        currency = vcpu_tiered[0].unit_price.currency_code or "USD"
+            for availability in availabilities:
+                hourly = currency = None
+                if price_family == "shared":
+                    component = _PG_SHARED_TIERS[tier_name]
+                    instance_sku = compute_index.get(
+                        (region.api_reference, "shared", component, availability)
+                    )
+                    if instance_sku is not None:
+                        hourly = _sku_unit_price(instance_sku)
+                        if hourly is not None:
+                            tiered = instance_sku.pricing_info[
+                                0
+                            ].pricing_expression.tiered_rates
+                            currency = tiered[0].unit_price.currency_code or "USD"
+                elif cpu_count is not None and memory_gib is not None:
+                    vcpu_sku = compute_index.get(
+                        (region.api_reference, price_family, "vcpu", availability)
+                    )
+                    ram_sku = compute_index.get(
+                        (region.api_reference, price_family, "ram", availability)
+                    )
+                    if vcpu_sku is not None and ram_sku is not None:
+                        vcpu_hourly = _sku_unit_price(vcpu_sku)
+                        ram_hourly = _sku_unit_price(ram_sku)
+                        if vcpu_hourly is not None and ram_hourly is not None:
+                            hourly = vcpu_hourly * cpu_count + ram_hourly * memory_gib
+                            vcpu_tiered = vcpu_sku.pricing_info[
+                                0
+                            ].pricing_expression.tiered_rates
+                            currency = vcpu_tiered[0].unit_price.currency_code or "USD"
 
-            if hourly is None:
-                continue
-            items.append(
-                {
-                    "vendor_id": vendor.vendor_id,
-                    "region_id": region.region_id,
-                    "database_id": tier_name,
-                    "allocation": Allocation.ONDEMAND,
-                    "unit": PriceUnit.HOUR,
-                    "price": hourly,
-                    "price_upfront": 0,
-                    "price_tiered": [],
-                    "currency": currency or "USD",
-                }
-            )
+                if hourly is None:
+                    continue
+                # https://cloud.google.com/sql/docs/postgres/configure-ha
+                # Zonal = single-zone; Regional HA = standby in another zone (passive).
+                if availability == "regional":
+                    ha = DatabaseHaLevel.MULTI_ZONE
+                    ha_strategy = DatabaseHaStrategy.PASSIVE_STANDBY
+                elif price_family == "shared":
+                    ha = DatabaseHaLevel.NONE
+                    ha_strategy = DatabaseHaStrategy.NONE
+                else:
+                    ha = DatabaseHaLevel.SINGLE_ZONE
+                    ha_strategy = DatabaseHaStrategy.NONE
+                items.append(
+                    {
+                        "vendor_id": vendor.vendor_id,
+                        "region_id": region.region_id,
+                        "database_id": tier_name,
+                        "allocation": Allocation.ONDEMAND,
+                        "ha": ha,
+                        "ha_strategy": ha_strategy,
+                        "unit": PriceUnit.HOUR,
+                        "price": hourly,
+                        "price_upfront": 0,
+                        "price_tiered": [],
+                        "currency": currency or "USD",
+                    }
+                )
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
     return items
