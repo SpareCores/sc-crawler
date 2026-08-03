@@ -5,8 +5,8 @@ from sc_crawler.table_fields import (
     Allocation,
     DatabaseEngine,
     DatabaseHaLevel,
-    DatabaseWireProtocol,
     DatabaseHaStrategy,
+    DatabaseWireProtocol,
     PriceUnit,
     Status,
 )

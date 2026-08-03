@@ -9,9 +9,9 @@ from sc_crawler.table_fields import (
     Allocation,
     DatabaseEngine,
     DatabaseHaLevel,
+    DatabaseHaStrategy,
     DatabaseSecurityFeature,
     DatabaseWireProtocol,
-    DatabaseHaStrategy,
     PriceUnit,
     Status,
 )
