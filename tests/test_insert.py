@@ -103,6 +103,7 @@ def test_database_base_round_trip():
     assert item.wire_protocol == DatabaseWireProtocol.POSTGRESQL
     assert item.security_features == [DatabaseSecurityFeature.IP_ALLOWLISTING]
     assert item.storage_size is None
+    assert item.api_reference_object == {}
 
 
 def test_database_benchmark_score_base_round_trip():

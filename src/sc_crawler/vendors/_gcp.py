@@ -1387,6 +1387,9 @@ def inventory_databases(vendor):
                 "database_id": tier_name,
                 "name": tier_name,
                 "api_reference": tier_name,
+                # https://www.pulumi.com/registry/packages/gcp/api-docs/sql/databaseinstance/
+                # Machine size lives under settings (Pulumi DatabaseInstance.settings.tier).
+                "api_reference_object": {"settings": {"tier": tier_name}},
                 "display_name": tier_name,
                 "description": description,
                 # TODO: not clear which are the server instances for for perf-optimized and memory-optimized

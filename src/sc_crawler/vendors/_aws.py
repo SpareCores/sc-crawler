@@ -1672,6 +1672,8 @@ def inventory_databases(vendor):
                     "database_id": database_id,
                     "name": database_id,
                     "api_reference": database_id,
+                    # https://www.pulumi.com/registry/packages/aws/api-docs/rds/instance/
+                    "api_reference_object": {"instance_class": database_id},
                     "display_name": database_id,
                     "engine": DatabaseEngine.POSTGRESQL,
                     "wire_protocol": DatabaseWireProtocol.POSTGRESQL,

@@ -308,6 +308,21 @@ class HasApiReference(ScModel):
     )
 
 
+class HasDatabaseApiReference(ScModel):
+    api_reference: str = Field(
+        description=(
+            "How this resource is referenced in the vendor API calls. "
+            "This is usually either the id or name of the resource, "
+            "depending on the vendor and actual API endpoint."
+        )
+    )
+    api_reference_object: dict = Field(
+        default={},
+        sa_type=JSON,
+        description="Partial Pulumi args identifying this database instance.",
+    )
+
+
 class HasDisplayName(ScModel):
     display_name: str = Field(
         description="Human-friendly reference (usually the id or name) of the resource."
@@ -896,7 +911,7 @@ class StoragePriceBase(HasPriceFields, HasStoragePK, HasRegionPK, HasVendorPKFK)
 class DatabaseFields(
     HasDescription,
     HasDisplayName,
-    HasApiReference,
+    HasDatabaseApiReference,
     HasName,
     HasDatabaseIdPK,
     HasVendorPKFK,

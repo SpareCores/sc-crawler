@@ -329,6 +329,17 @@ def upgrade() -> None:
             ):
                 batch_op.drop_column(col)
 
+            batch_op.add_column(
+                sa.Column(
+                    "api_reference_object",
+                    json_type(),
+                    nullable=False,
+                    server_default="{}",
+                    comment="Partial Pulumi args identifying this database instance.",
+                ),
+                insert_after="api_reference",
+            )
+
             columns_in_order = [
                 (
                     "family",
@@ -589,6 +600,16 @@ def upgrade() -> None:
             ).create(bind, checkfirst=True)
 
         op.alter_column(database_table_name, "engine", nullable=True)
+        op.add_column(
+            database_table_name,
+            sa.Column(
+                "api_reference_object",
+                json_type(),
+                nullable=False,
+                server_default="{}",
+                comment="Partial Pulumi args identifying this database instance.",
+            ),
+        )
         op.add_column(
             database_table_name,
             sa.Column(
@@ -954,6 +975,7 @@ def get_database_table_v085(is_scd: bool) -> sa.Table:
         sa.Column("database_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
         sa.Column("name", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
         sa.Column("api_reference", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("api_reference_object", json_type(), nullable=False),
         sa.Column("display_name", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
         sa.Column("description", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
         sa.Column("family", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
@@ -1190,6 +1212,7 @@ def downgrade() -> None:
                 "autotuning_advice",
                 "autotuning_apply",
                 "security_features",
+                "api_reference_object",
                 "family",
                 "server_id",
                 "vcpus",
@@ -1332,6 +1355,7 @@ def downgrade() -> None:
         op.drop_column(database_table_name, "autotuning_advice")
         op.drop_column(database_table_name, "autotuning_apply")
         op.drop_column(database_table_name, "security_features")
+        op.drop_column(database_table_name, "api_reference_object")
 
         op.add_column(
             database_table_name,

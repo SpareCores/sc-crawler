@@ -1589,6 +1589,13 @@ _PG_EDITION_PRODUCT_TOKENS = {
     "MemoryOptimized": ("memory optimized", "memory purpose"),
     "Burstable": ("burstable",),
 }
+# https://www.pulumi.com/registry/packages/azure/api-docs/postgresql/flexibleserver/
+# Pulumi sku_name is tier+name (e.g. B_Standard_B1ms, GP_Standard_D2s_v3).
+_PG_SKU_NAME_PREFIX = {
+    "Burstable": "B",
+    "GeneralPurpose": "GP",
+    "MemoryOptimized": "MO",
+}
 _PG_FLEX_STORAGE_PRODUCT = "Az DB for PostgreSQL Flexible Server Storage"
 _PG_FLEX_BACKUP_PRODUCT = "Azure Database for PostgreSQL Flexible Server Backup Storage"
 _PG_STORAGE_RETAIL_TO_ID = {
@@ -1832,6 +1839,15 @@ def inventory_databases(vendor):
                                 "database_id": database_id,
                                 "name": database_id.removeprefix("Standard_"),
                                 "api_reference": database_id,
+                                # https://www.pulumi.com/registry/packages/azure/api-docs/postgresql/flexibleserver/
+                                "api_reference_object": {
+                                    "sku_name": (
+                                        f"{_PG_SKU_NAME_PREFIX[edition.name]}_"
+                                        f"{database_id}"
+                                        if edition.name in _PG_SKU_NAME_PREFIX
+                                        else database_id
+                                    )
+                                },
                                 "display_name": database_id.removeprefix("Standard_"),
                                 "description": description,
                                 "server_id": database_id,

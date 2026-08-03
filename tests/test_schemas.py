@@ -82,6 +82,11 @@ def test_database_columns_include_ha_strategy_after_ha():
     assert cols.index("ha_strategy") == cols.index("ha") + 1
 
 
+def test_database_columns_include_api_reference_object_after_api_reference():
+    cols = Database.get_columns()["all"]
+    assert cols.index("api_reference_object") == cols.index("api_reference") + 1
+
+
 def test_database_columns_use_storage_size_only():
     cols = Database.get_columns()["all"]
     assert "storage_size" in cols

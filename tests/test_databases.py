@@ -433,6 +433,9 @@ def test_azure_inventory_databases_ha_from_supported_ha_mode():
     assert by_id["Standard_D2s_v3"]["ha"] == DatabaseHaLevel.MULTI_ZONE
     assert by_id["Standard_D2s_v3"]["ha_strategy"] == DatabaseHaStrategy.PASSIVE_STANDBY
     assert by_id["Standard_D2s_v3"]["sla"] == 99.99
+    assert by_id["Standard_D2s_v3"]["api_reference_object"] == {
+        "sku_name": "GP_Standard_D2s_v3"
+    }
     assert by_id["Standard_D4s_v3"]["ha"] == DatabaseHaLevel.SINGLE_ZONE
     assert by_id["Standard_D4s_v3"]["ha_strategy"] == DatabaseHaStrategy.PASSIVE_STANDBY
     assert by_id["Standard_D4s_v3"]["sla"] == 99.95
@@ -586,6 +589,9 @@ def test_gcp_inventory_databases_ha_uses_own_price_family_only():
     by_id = {row["database_id"]: row for row in rows}
     assert by_id["db-n1-standard-4"]["ha"] == DatabaseHaLevel.NONE
     assert by_id["db-n1-standard-4"]["sla"] is None
+    assert by_id["db-n1-standard-4"]["api_reference_object"] == {
+        "settings": {"tier": "db-n1-standard-4"}
+    }
     assert by_id["db-perf-optimized-N-4"]["ha"] == DatabaseHaLevel.MULTI_ZONE
     assert by_id["db-perf-optimized-N-4"]["sla"] == 99.99
 
@@ -1123,6 +1129,9 @@ def test_aws_inventory_databases_description_server_id_and_capabilities():
     )
     assert by_id["db.m5.large"]["ha"] == DatabaseHaLevel.MULTI_ZONE
     assert by_id["db.m5.large"]["ha_strategy"] == DatabaseHaStrategy.PASSIVE_STANDBY
+    assert by_id["db.m5.large"]["api_reference_object"] == {
+        "instance_class": "db.m5.large"
+    }
     assert by_id["db.m5.large"]["storage_extra_autosize"] is True
     assert by_id["db.m5.large"]["storage_extra_min"] == 21
     assert by_id["db.m5.large"]["storage_extra_max"] == 70369
