@@ -1804,13 +1804,13 @@ def inventory_databases(vendor):
                         description = f"PostgreSQL {edition.name}"
                         if spec_parts:
                             description = f"{description} ({', '.join(spec_parts)})"
+                        # https://learn.microsoft.com/en-us/azure/postgresql/backup-restore/concepts-geo-disaster-recovery
+                        # https://learn.microsoft.com/en-us/azure/postgresql/read-replica/concepts-read-replicas
+                        # https://learn.microsoft.com/en-us/azure/postgresql/high-availability/concepts-high-availability
                         # Multi-region first: GP / Memory Optimized support cross-region
                         # (geo) read replicas for regional DR. Burstable supports neither
                         # HA nor replicas (API may still list HA modes — prefer docs).
-                        # https://learn.microsoft.com/en-us/azure/postgresql/backup-restore/concepts-geo-disaster-recovery
-                        # https://learn.microsoft.com/en-us/azure/postgresql/read-replica/concepts-read-replicas
                         # Zone-redundant HA is same-region multi-AZ (MULTI_ZONE).
-                        # https://learn.microsoft.com/en-us/azure/postgresql/high-availability/concepts-high-availability
                         ha_modes = {
                             (mode.value if hasattr(mode, "value") else str(mode))
                             for mode in (getattr(sku, "supported_ha_mode", None) or [])
@@ -1842,8 +1842,8 @@ def inventory_databases(vendor):
                                 "memory_amount": memory_amount,
                                 "storage_size": None,
                                 "storage_extra_autosize": storage_extra_autosize,
-                                # Automated backups are always enabled for Flexible Server.
                                 # https://learn.microsoft.com/en-us/azure/postgresql/backup-restore/concepts-backup-restore
+                                # Automated backups are always enabled for Flexible Server.
                                 "scheduled_backups": True,
                                 "autotuning_advice": (
                                     False
@@ -1857,8 +1857,8 @@ def inventory_databases(vendor):
                                 ),
                                 # https://learn.microsoft.com/en-us/azure/postgresql/security/security-overview#data-protection
                                 "disk_encryption": True,
-                                # Minor releases are applied automatically during maintenance.
                                 # https://learn.microsoft.com/en-us/azure/postgresql/configure-maintain/concepts-major-version-upgrade
+                                # Minor releases are applied automatically during maintenance.
                                 "auto_upgrade_versions": True,
                                 # https://learn.microsoft.com/en-us/azure/postgresql/parameters/concepts-parameters
                                 "custom_config": True,
@@ -1867,25 +1867,25 @@ def inventory_databases(vendor):
                                 "storage_extra_min": storage_extra_min,
                                 "storage_extra_max": storage_extra_max,
                                 "ha": ha,
-                                # Up to 5 replicas per primary; Burstable tier is not supported.
                                 # https://learn.microsoft.com/en-us/azure/postgresql/read-replica/concepts-read-replicas
+                                # Up to 5 replicas per primary; Burstable tier is not supported.
                                 "max_read_replicas": (
                                     0 if edition.name == "Burstable" else 5
                                 ),
-                                # Built-in PgBouncer connection pooling.
                                 # https://learn.microsoft.com/en-us/azure/postgresql/connectivity/concepts-pgbouncer
+                                # Built-in PgBouncer connection pooling.
                                 "connection_pool": True,
-                                # Host-level metrics via Azure Monitor.
                                 # https://learn.microsoft.com/en-us/azure/postgresql/monitor/concepts-monitoring
+                                # Host-level metrics via Azure Monitor.
                                 "system_monitoring": True,
-                                # Query Performance Insight / Query Store for query-level analysis.
                                 # https://learn.microsoft.com/en-us/azure/postgresql/monitor/concepts-query-performance-insight
+                                # Query Performance Insight / Query Store for query-level analysis.
                                 "database_monitoring": True,
-                                # Product max PITR retention (days); default 7, up to 35; not in capabilities API.
                                 # https://learn.microsoft.com/en-us/azure/postgresql/backup-restore/concepts-backup-restore
+                                # Product max PITR retention (days); default 7, up to 35; not in capabilities API.
                                 "continuous_backups": 35,
-                                # Zone-redundant HA 99.99%; zonal HA 99.95%; no HA 99.9%.
                                 # https://learn.microsoft.com/en-us/azure/reliability/reliability-database-postgresql
+                                # Zone-redundant HA 99.99%; zonal HA 99.95%; no HA 99.9%.
                                 "sla": (
                                     99.99
                                     if ha

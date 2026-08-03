@@ -1373,9 +1373,9 @@ def inventory_databases(vendor):
         ha = None
         has_regional_ha = False
         if tier_regions:
+            # https://cloud.google.com/sql/docs/postgres/use-advanced-disaster-recovery
             # Multi-region first: Enterprise Plus (enterprise_n4) supports Advanced DR
             # with a designated cross-region DR replica.
-            # https://cloud.google.com/sql/docs/postgres/use-advanced-disaster-recovery
             # Regional HA billing SKUs → MULTI_ZONE; shared-core → NONE.
             has_regional_ha = any(
                 (region, price_family) in ha_families for region in tier_regions
@@ -1413,28 +1413,28 @@ def inventory_databases(vendor):
                 "memory_amount": memory_amount,
                 "storage_size": None,
                 "ha": ha,
-                # Minimum data disk size is 10 GB.
                 # https://cloud.google.com/sql/docs/postgres/admin-api/rest/v1/instances
+                # Minimum data disk size is 10 GB.
                 "storage_extra_min": 10,
                 "storage_extra_max": storage_extra_max,
                 # https://cloud.google.com/sql/docs/postgres/instance-settings
                 "storage_extra_autosize": True,
                 # https://cloud.google.com/sql/docs/postgres/cmek
                 "disk_encryption": True,
-                # Minor versions are applied via Cloud SQL maintenance updates.
                 # https://cloud.google.com/sql/docs/postgres/maintenance
+                # Minor versions are applied via Cloud SQL maintenance updates.
                 "auto_upgrade_versions": True,
                 # https://cloud.google.com/sql/docs/postgres/backup-recovery/backups
                 "scheduled_backups": True,
+                # https://cloud.google.com/sql/docs/postgres/backup-recovery/configure-pitr
                 # Max transactionLogRetentionDays for PITR by edition; not in tiers API.
                 # Enterprise: 1-7 days; Enterprise Plus: 1-35 days.
-                # https://cloud.google.com/sql/docs/postgres/backup-recovery/configure-pitr
                 "continuous_backups": (35 if price_family == "enterprise_n4" else 7),
                 "custom_config": meta["custom_config"],
                 "custom_extensions": meta["custom_extensions"],
+                # https://cloud.google.com/sql/docs/postgres/replication
                 # Shared-core tiers do not support read replicas.
                 # Up to 10 replicas per primary (cascading also allowed).
-                # https://cloud.google.com/sql/docs/postgres/replication
                 "max_read_replicas": (0 if tier_name in _PG_SHARED_TIERS else 10),
                 # https://cloud.google.com/sql/docs/postgres/managed-connection-pooling
                 "connection_pool": True,
@@ -1442,8 +1442,8 @@ def inventory_databases(vendor):
                 "system_monitoring": True,
                 # https://cloud.google.com/sql/docs/postgres/using-query-insights
                 "database_monitoring": True,
-                # Index advisor recommends CREATE INDEX (Enterprise Plus only); operator applies.
                 # https://cloud.google.com/sql/docs/postgres/use-index-advisor
+                # Index advisor recommends CREATE INDEX (Enterprise Plus only); operator applies.
                 "autotuning_advice": price_family == "enterprise_n4",
                 "autotuning_apply": False,
                 # https://cloud.google.com/sql/sla

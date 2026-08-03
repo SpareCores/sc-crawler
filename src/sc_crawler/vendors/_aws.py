@@ -1603,9 +1603,9 @@ def inventory_databases(vendor):
                 for opt in db_instance_options
                 if opt.get("MaxStorageSize") is not None
             ]
+            # https://docs.aws.amazon.com/AmazonRDS/latest/APIReference/API_OrderableDBInstanceOption.html
             # Multi-region first (SupportsGlobalDatabases; Aurora Global Database —
             # typically false for engine=postgres RDS instance classes).
-            # https://docs.aws.amazon.com/AmazonRDS/latest/APIReference/API_OrderableDBInstanceOption.html
             if any(opt.get("SupportsGlobalDatabases") for opt in db_instance_options):
                 ha = DatabaseHaLevel.MULTI_REGION
             elif any(opt.get("MultiAZCapable") for opt in db_instance_options) or any(
@@ -1683,36 +1683,36 @@ def inventory_databases(vendor):
                     "disk_encryption": disk_encryption,
                     "system_monitoring": system_monitoring,
                     "database_monitoring": database_monitoring,
-                    # Up to 15 read replicas per primary when the instance class supports replicas.
                     # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_PostgreSQL.Replication.ReadReplicas.Configuration.html
                     # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/CHAP_Limits.html
+                    # Up to 15 read replicas per primary when the instance class supports replicas.
                     "max_read_replicas": max_read_replicas,
-                    # Auto minor version upgrade is a supported instance option for RDS PostgreSQL.
                     # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_UpgradeDBInstance.PostgreSQL.Minor.html
+                    # Auto minor version upgrade is a supported instance option for RDS PostgreSQL.
                     "auto_upgrade_versions": True,
-                    # Managed RDS includes automated backups; not per-class in orderable API.
                     # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_WorkingWithAutomatedBackups.html
+                    # Managed RDS includes automated backups; not per-class in orderable API.
                     "scheduled_backups": True,
-                    # Product max backup / PITR retention (days); not per SKU in orderable API.
                     # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_WorkingWithAutomatedBackups.BackupRetention.html
+                    # Product max backup / PITR retention (days); not per SKU in orderable API.
                     "continuous_backups": 35,
-                    # DB parameter groups are supported for all RDS PostgreSQL instances.
                     # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_WorkingWithParamGroups.html
+                    # DB parameter groups are supported for all RDS PostgreSQL instances.
                     "custom_config": True,
-                    # Supported PostgreSQL extensions can be installed on the instance.
                     # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/PostgreSQL.Concepts.General.FeatureSupport.Extensions.html
+                    # Supported PostgreSQL extensions can be installed on the instance.
                     "custom_extensions": True,
-                    # RDS Proxy provides managed connection pooling for PostgreSQL.
                     # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy.html
+                    # RDS Proxy provides managed connection pooling for PostgreSQL.
                     "connection_pool": True,
+                    # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/devops-guru-for-rds.html
                     # DevOps Guru for RDS analyzes Performance Insights and recommends actions.
-                    # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/devops-guru-for-rds.html
                     "autotuning_advice": True,
-                    # Recommendations require operator action; the service does not auto-apply fixes.
                     # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/devops-guru-for-rds.html
+                    # Recommendations require operator action; the service does not auto-apply fixes.
                     "autotuning_apply": False,
-                    # Multi-AZ SLO 99.95%; Single-AZ SLO 99.5% (credit tables).
                     # https://aws.amazon.com/rds/sla/
+                    # Multi-AZ SLO 99.95%; Single-AZ SLO 99.5% (credit tables).
                     "sla": (
                         99.95
                         if ha
