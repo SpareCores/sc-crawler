@@ -1974,7 +1974,7 @@ def inventory_database_prices(vendor):
                         )
                         currency = price_item.get("currencyCode", "USD")
                         # https://azure.microsoft.com/pricing/details/postgresql/flexible-server/
-                        # HA bills primary + standby at the same rate (exactly 2×); SameZone
+                        # HA bills primary + standby at the same rate (exactly 2x); SameZone
                         # and ZoneRedundant cost the same. No separate retail HA meters.
                         ha_modes = {
                             (mode.value if hasattr(mode, "value") else str(mode))

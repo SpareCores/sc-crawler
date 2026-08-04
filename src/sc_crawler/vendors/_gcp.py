@@ -1539,7 +1539,7 @@ def inventory_database_prices(vendor):
                 if hourly is None:
                     continue
                 # https://cloud.google.com/sql/docs/postgres/high-availability
-                # Zonal = standalone; Regional HA = multi-zone standby (exactly 2× on
+                # Zonal = standalone; Regional HA = multi-zone standby (exactly 2x on
                 # the pricing page; we use Regional billing SKUs, not a multiplier).
                 if availability == "regional":
                     ha = DatabaseHaLevel.MULTI_ZONE
