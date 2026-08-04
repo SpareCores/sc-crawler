@@ -6,6 +6,7 @@ from sc_crawler.table_fields import (
     DatabaseEngine,
     DatabaseHaLevel,
     DatabaseHaStrategy,
+    DatabaseSecurityFeature,
     DatabaseWireProtocol,
     PriceUnit,
     Status,
@@ -373,6 +374,19 @@ def test_azure_inventory_databases_ha_from_supported_ha_mode():
     assert by_id["Standard_B1ms"]["ha_strategy"] == [DatabaseHaStrategy.NONE]
     assert by_id["Standard_B1ms"]["sla"] == 99.9
     assert by_id["Standard_B1ms"]["scheduled_backups"] is True
+    assert by_id["Standard_B1ms"]["security_features"] == [
+        DatabaseSecurityFeature.IP_FILTERING,
+        DatabaseSecurityFeature.PRIVATE_NETWORK,
+        DatabaseSecurityFeature.NETWORK_PEERING,
+        DatabaseSecurityFeature.IDENTITY_BASED_AUTH,
+        DatabaseSecurityFeature.ENFORCED_TLS,
+        DatabaseSecurityFeature.CUSTOMER_MANAGED_KEYS,
+        DatabaseSecurityFeature.AUDIT_LOGGING,
+    ]
+    assert (
+        DatabaseSecurityFeature.CLIENT_CERT_AUTH
+        not in by_id["Standard_B1ms"]["security_features"]
+    )
     assert by_id["Standard_D2s_v3"]["ha"] == [
         DatabaseHaLevel.MULTI_ZONE,
         DatabaseHaLevel.SINGLE_ZONE,
@@ -617,6 +631,16 @@ def test_gcp_inventory_databases_ha_multi_zone_from_regional_billing():
         DatabaseHaStrategy.PASSIVE_STANDBY
     ]
     assert by_id["db-perf-optimized-N-4"]["sla"] == 99.99
+    assert by_id["db-perf-optimized-N-4"]["security_features"] == [
+        DatabaseSecurityFeature.IP_FILTERING,
+        DatabaseSecurityFeature.PRIVATE_NETWORK,
+        DatabaseSecurityFeature.NETWORK_PEERING,
+        DatabaseSecurityFeature.IDENTITY_BASED_AUTH,
+        DatabaseSecurityFeature.CLIENT_CERT_AUTH,
+        DatabaseSecurityFeature.ENFORCED_TLS,
+        DatabaseSecurityFeature.CUSTOMER_MANAGED_KEYS,
+        DatabaseSecurityFeature.AUDIT_LOGGING,
+    ]
     assert by_id["db-n1-standard-4"]["ha"] == [
         DatabaseHaLevel.MULTI_ZONE,
         DatabaseHaLevel.SINGLE_ZONE,
@@ -1149,6 +1173,19 @@ def test_aws_inventory_databases_description_server_id_and_capabilities():
     assert by_id["db.m5.large"]["engine_versions"] == ["15", "16"]
     assert by_id["db.m5.large"]["scheduled_backups"] is True
     assert by_id["db.m5.large"]["continuous_backups"] == 35
+    assert by_id["db.m5.large"]["security_features"] == [
+        DatabaseSecurityFeature.IP_FILTERING,
+        DatabaseSecurityFeature.PRIVATE_NETWORK,
+        DatabaseSecurityFeature.NETWORK_PEERING,
+        DatabaseSecurityFeature.IDENTITY_BASED_AUTH,
+        DatabaseSecurityFeature.ENFORCED_TLS,
+        DatabaseSecurityFeature.CUSTOMER_MANAGED_KEYS,
+        DatabaseSecurityFeature.AUDIT_LOGGING,
+    ]
+    assert (
+        DatabaseSecurityFeature.CLIENT_CERT_AUTH
+        not in by_id["db.m5.large"]["security_features"]
+    )
     assert by_id["db.r6gd.xlarge"]["server_id"] == "r6gd.xlarge"
     assert by_id["db.r6gd.xlarge"]["storage_size"] == 127
     assert by_id["db.r6gd.xlarge"]["description"] == (

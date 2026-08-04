@@ -536,7 +536,7 @@ def upgrade() -> None:
                     json_type(),
                     False,
                     "[]",
-                    "List of security features supported.",
+                    "Security capabilities supported by DBaaS providers.",
                 ),
             ]
             after = "description"
@@ -737,7 +737,7 @@ def upgrade() -> None:
                 json_type(),
                 nullable=False,
                 server_default="[]",
-                comment="List of security features supported.",
+                comment="Security capabilities supported by DBaaS providers.",
             ),
         )
         for column, comment in (

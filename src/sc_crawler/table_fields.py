@@ -162,14 +162,35 @@ class DatabaseHaStrategy(str, Enum):
 
 
 class DatabaseSecurityFeature(str, Enum):
-    """Security features for a managed database type."""
+    """Security capabilities supported by DBaaS providers."""
 
-    IP_ALLOWLISTING = "ip-allowlisting"
-    """IP allowlisting."""
+    # --- Network Security ---
+    IP_FILTERING = "ip-filtering"
+    """Access via public endpoint restricted to explicit IP/CIDR ranges."""
+
+    PRIVATE_NETWORK = "private-network"
+    """Provisioned natively inside customer's own private network/subnets (e.g. VPC/VNet)."""
+
     NETWORK_PEERING = "network-peering"
-    """Network peering support."""
-    WAF = "waf"
-    """Web application firewall support."""
+    """Private access via cross-network peering or private service endpoints (e.g. PrivateLink)."""
+
+    # --- Authentication & Access ---
+    IDENTITY_BASED_AUTH = "identity-based-auth"
+    """Auth offloaded to cloud or enterprise identity providers (e.g. IAM, Entra ID, OIDC, SSO)."""
+
+    CLIENT_CERT_AUTH = "client-cert-auth"
+    """Mutual TLS (mTLS) authentication requiring client-side SSL/TLS certificates."""
+
+    # --- Encryption & Key Management ---
+    ENFORCED_TLS = "enforced-tls"
+    """Enforceable requirement that all database connections use SSL/TLS (no plaintext fallback)."""
+
+    CUSTOMER_MANAGED_KEYS = "customer-managed-keys"
+    """Bring Your Own Key (BYOK) support for storage encryption."""
+
+    # --- Auditing & Governance ---
+    AUDIT_LOGGING = "audit-logging"
+    """Detailed database audit logs (e.g. pgaudit) exportable to external logging services or storage."""
 
 
 class DatabaseStorageScope(str, Enum):

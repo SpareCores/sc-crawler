@@ -25,6 +25,7 @@ from ..table_fields import (
     DatabaseEngine,
     DatabaseHaLevel,
     DatabaseHaStrategy,
+    DatabaseSecurityFeature,
     DatabaseStorageScope,
     DatabaseWireProtocol,
     Disk,
@@ -1892,6 +1893,24 @@ def inventory_databases(vendor):
                             "storage_extra_max": storage_extra_max,
                             "ha": ha,
                             "ha_strategy": ha_strategy,
+                            # https://learn.microsoft.com/en-us/azure/postgresql/network/concepts-networking-public
+                            # https://learn.microsoft.com/en-us/azure/postgresql/network/concepts-networking-private
+                            # https://learn.microsoft.com/en-us/azure/postgresql/network/concepts-networking-private-link
+                            # https://learn.microsoft.com/en-us/azure/postgresql/flexible-server/how-to-configure-sign-in-azure-ad-authentication
+                            # https://learn.microsoft.com/en-us/azure/postgresql/flexible-server/how-to-connect-tls-ssl
+                            # https://learn.microsoft.com/en-us/azure/postgresql/flexible-server/concepts-data-encryption
+                            # https://learn.microsoft.com/en-us/azure/postgresql/flexible-server/concepts-audit
+                            # Firewall rules, VNet injection, Private Link, Entra ID auth,
+                            # require_secure_transport, Key Vault CMK, pgaudit. Server certs only.
+                            "security_features": [
+                                DatabaseSecurityFeature.IP_FILTERING,
+                                DatabaseSecurityFeature.PRIVATE_NETWORK,
+                                DatabaseSecurityFeature.NETWORK_PEERING,
+                                DatabaseSecurityFeature.IDENTITY_BASED_AUTH,
+                                DatabaseSecurityFeature.ENFORCED_TLS,
+                                DatabaseSecurityFeature.CUSTOMER_MANAGED_KEYS,
+                                DatabaseSecurityFeature.AUDIT_LOGGING,
+                            ],
                             # https://learn.microsoft.com/en-us/azure/postgresql/read-replica/concepts-read-replicas
                             # Up to 5 replicas per primary; Burstable tier is not supported.
                             "max_read_replicas": (

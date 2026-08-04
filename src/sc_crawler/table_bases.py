@@ -1017,7 +1017,7 @@ class DatabaseFields(
     security_features: List[DatabaseSecurityFeature] = Field(
         default=[],
         sa_type=JSON,
-        description="List of security features supported.",
+        description="Security capabilities supported by DBaaS providers.",
     )
 
     @field_validator("engine_versions", mode="before")

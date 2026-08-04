@@ -94,14 +94,14 @@ def test_database_base_round_trip():
             "engine": DatabaseEngine.POSTGRESQL,
             "wire_protocol": DatabaseWireProtocol.POSTGRESQL,
             "engine_versions": ["15", "16"],
-            "security_features": ["ip-allowlisting"],
+            "security_features": ["ip-filtering"],
             "storage_size": None,
             "status": Status.ACTIVE,
         }
     )
     assert item.engine_versions == ["15", "16"]
     assert item.wire_protocol == DatabaseWireProtocol.POSTGRESQL
-    assert item.security_features == [DatabaseSecurityFeature.IP_ALLOWLISTING]
+    assert item.security_features == [DatabaseSecurityFeature.IP_FILTERING]
     assert item.storage_size is None
     assert item.api_reference_object == {}
 

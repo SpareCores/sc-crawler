@@ -25,6 +25,7 @@ from ..table_fields import (
     DatabaseEngine,
     DatabaseHaLevel,
     DatabaseHaStrategy,
+    DatabaseSecurityFeature,
     DatabaseStorageScope,
     DatabaseWireProtocol,
     Disk,
@@ -1690,6 +1691,24 @@ def inventory_databases(vendor):
                     "storage_size": storage_size,
                     "ha": ha,
                     "ha_strategy": ha_strategy,
+                    # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Overview.RDSSecurityGroups.html
+                    # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_VPC.html
+                    # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_VPC.pc.html
+                    # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/UsingWithRDS.IAMDBAuth.html
+                    # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/UsingWithRDS.SSL.html
+                    # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Overview.Encryption.Keys.html
+                    # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Appendix.PostgreSQL.CommonDBATasks.pgaudit.html
+                    # Security groups (IP filtering), VPC placement, PrivateLink, IAM DB auth,
+                    # rds.force_ssl, KMS CMK, pgaudit. Server certs only (no client-cert auth).
+                    "security_features": [
+                        DatabaseSecurityFeature.IP_FILTERING,
+                        DatabaseSecurityFeature.PRIVATE_NETWORK,
+                        DatabaseSecurityFeature.NETWORK_PEERING,
+                        DatabaseSecurityFeature.IDENTITY_BASED_AUTH,
+                        DatabaseSecurityFeature.ENFORCED_TLS,
+                        DatabaseSecurityFeature.CUSTOMER_MANAGED_KEYS,
+                        DatabaseSecurityFeature.AUDIT_LOGGING,
+                    ],
                     "storage_extra_autosize": storage_extra_autosize,
                     "storage_extra_min": storage_extra_min,
                     "storage_extra_max": storage_extra_max,

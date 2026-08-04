@@ -20,6 +20,7 @@ from ..table_fields import (
     DatabaseEngine,
     DatabaseHaLevel,
     DatabaseHaStrategy,
+    DatabaseSecurityFeature,
     DatabaseStorageScope,
     DatabaseWireProtocol,
     PriceUnit,
@@ -1406,6 +1407,25 @@ def inventory_databases(vendor):
                 "storage_size": None,
                 "ha": ha,
                 "ha_strategy": ha_strategy,
+                # https://cloud.google.com/sql/docs/postgres/configure-ip
+                # https://cloud.google.com/sql/docs/postgres/private-ip
+                # https://cloud.google.com/sql/docs/postgres/configure-private-service-connect
+                # https://cloud.google.com/sql/docs/postgres/iam-authentication
+                # https://cloud.google.com/sql/docs/postgres/configure-ssl-instance
+                # https://cloud.google.com/sql/docs/postgres/cmek
+                # https://cloud.google.com/sql/docs/postgres/pg-audit
+                # Authorized networks, private IP (PSA tenant VPC), PSC, IAM DB auth,
+                # sslMode (ENCRYPTED_ONLY / client certs), CMEK, pgaudit.
+                "security_features": [
+                    DatabaseSecurityFeature.IP_FILTERING,
+                    DatabaseSecurityFeature.PRIVATE_NETWORK,
+                    DatabaseSecurityFeature.NETWORK_PEERING,
+                    DatabaseSecurityFeature.IDENTITY_BASED_AUTH,
+                    DatabaseSecurityFeature.CLIENT_CERT_AUTH,
+                    DatabaseSecurityFeature.ENFORCED_TLS,
+                    DatabaseSecurityFeature.CUSTOMER_MANAGED_KEYS,
+                    DatabaseSecurityFeature.AUDIT_LOGGING,
+                ],
                 # https://cloud.google.com/sql/docs/postgres/admin-api/rest/v1/instances
                 # Minimum data disk size is 10 GB.
                 "storage_extra_min": 10,
