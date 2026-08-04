@@ -34,10 +34,10 @@ from ..tables import (
 from ..utils import nesteddefaultdict, scmodels_to_dict
 from ..vendor_helpers import (
     add_vendor_id,
-    merge_database_catalog_rows,
     parallel_fetch_servers,
     preprocess_servers,
 )
+
 
 # ##############################################################################
 # Cached gcp client wrappers
@@ -1359,22 +1359,25 @@ def inventory_databases(vendor):
         else:
             price_family = "enterprise"
 
-        ha = None
-        ha_strategy = None
+        ha: list[DatabaseHaLevel] = []
+        ha_strategy: list[DatabaseHaStrategy] = []
         has_regional_ha = False
         if tier_regions:
             # https://cloud.google.com/sql/docs/postgres/high-availability
-            # Regional availability = same-region multi-zone HA (standby). Enterprise
-            # Plus Advanced DR is cross-region replica promotion (not multi-region HA).
+            # Regional billing meters ⇒ same-region multi-zone HA (standby). Zonal
+            # (non-HA) remains available for the same tier. Enterprise Plus Advanced
+            # DR is cross-region replica promotion (not multi-region HA).
             has_regional_ha = any(
                 (region, price_family) in ha_families for region in tier_regions
             )
             if has_regional_ha:
-                ha = DatabaseHaLevel.MULTI_ZONE
-                ha_strategy = DatabaseHaStrategy.PASSIVE_STANDBY
-            else:
-                ha = DatabaseHaLevel.NONE
-                ha_strategy = DatabaseHaStrategy.NONE
+                ha.append(DatabaseHaLevel.MULTI_ZONE)
+                ha.append(DatabaseHaLevel.SINGLE_ZONE)
+                ha_strategy.append(DatabaseHaStrategy.PASSIVE_STANDBY)
+        if not ha:
+            ha.append(DatabaseHaLevel.NONE)
+        if not ha_strategy:
+            ha_strategy.append(DatabaseHaStrategy.NONE)
 
         disk_quota_bytes = int(tier.get("DiskQuota") or 0)
         storage_extra_max = (
@@ -1445,7 +1448,7 @@ def inventory_databases(vendor):
                     if price_family == "enterprise_n4" and has_regional_ha
                     else (
                         99.95
-                        if ha == DatabaseHaLevel.MULTI_ZONE and price_family != "shared"
+                        if DatabaseHaLevel.MULTI_ZONE in ha and price_family != "shared"
                         else None
                     )
                 ),
@@ -1453,7 +1456,7 @@ def inventory_databases(vendor):
         )
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
-    return merge_database_catalog_rows(rows)
+    return rows
 
 
 def inventory_database_prices(vendor):

@@ -29,7 +29,6 @@ from .table_fields import (
     DatabaseHaStrategy,
     DatabaseSecurityFeature,
     DatabaseStorageScope,
-    DatabaseSupportLevel,
     DatabaseWireProtocol,
     DdrGeneration,
     Disk,
@@ -308,18 +307,11 @@ class HasApiReference(ScModel):
     )
 
 
-class HasDatabaseApiReference(ScModel):
-    api_reference: str = Field(
-        description=(
-            "How this resource is referenced in the vendor API calls. "
-            "This is usually either the id or name of the resource, "
-            "depending on the vendor and actual API endpoint."
-        )
-    )
+class HasApiReferenceObject(ScModel):
     api_reference_object: dict = Field(
         default={},
         sa_type=JSON,
-        description="Partial Pulumi args identifying this database instance.",
+        description="How this resource is referenced in the vendor API calls, including the parameter name(s).",
     )
 
 
@@ -911,7 +903,8 @@ class StoragePriceBase(HasPriceFields, HasStoragePK, HasRegionPK, HasVendorPKFK)
 class DatabaseFields(
     HasDescription,
     HasDisplayName,
-    HasDatabaseApiReference,
+    HasApiReferenceObject,
+    HasApiReference,
     HasName,
     HasDatabaseIdPK,
     HasVendorPKFK,
@@ -947,13 +940,15 @@ class DatabaseFields(
         default=None,
         description="Auto-upgrade between minor database engine versions.",
     )
-    ha: Optional[DatabaseHaLevel] = Field(
-        default=None,
-        description="Level of HA (high availability) supported.",
+    ha: List[DatabaseHaLevel] = Field(
+        default=[DatabaseHaLevel.NONE],
+        sa_type=JSON,
+        description="Ordered HA levels supported, strongest first.",
     )
-    ha_strategy: Optional[DatabaseHaStrategy] = Field(
-        default=None,
-        description="HA replication strategy supported.",
+    ha_strategy: List[DatabaseHaStrategy] = Field(
+        default=[DatabaseHaStrategy.NONE],
+        sa_type=JSON,
+        description="Ordered HA strategies supported, strongest first.",
     )
     max_read_replicas: Optional[int] = Field(
         default=None,
@@ -1024,10 +1019,6 @@ class DatabaseFields(
         sa_type=JSON,
         description="List of security features supported.",
     )
-    support_level: Optional[DatabaseSupportLevel] = Field(
-        default=None,
-        description="Highest level of support plan available.",
-    )
 
     @field_validator("engine_versions", mode="before")
     @classmethod
@@ -1050,6 +1041,29 @@ class DatabaseFields(
             for item in value
         ]
 
+    @field_validator("ha", mode="before")
+    @classmethod
+    def _deserialize_ha(cls, value):
+        if not value:
+            return [DatabaseHaLevel.NONE]
+        if isinstance(value, str):
+            return [DatabaseHaLevel(value)]
+        return [
+            DatabaseHaLevel(item) if isinstance(item, str) else item for item in value
+        ]
+
+    @field_validator("ha_strategy", mode="before")
+    @classmethod
+    def _deserialize_ha_strategy(cls, value):
+        if not value:
+            return [DatabaseHaStrategy.NONE]
+        if isinstance(value, str):
+            return [DatabaseHaStrategy(value)]
+        return [
+            DatabaseHaStrategy(item) if isinstance(item, str) else item
+            for item in value
+        ]
+
     @reconstructor
     def _reconstruct_json_fields(self):
         if not self.engine_versions:
@@ -1062,6 +1076,20 @@ class DatabaseFields(
             self.security_features = [
                 DatabaseSecurityFeature(item) if isinstance(item, str) else item
                 for item in self.security_features
+            ]
+        if not self.ha:
+            self.ha = [DatabaseHaLevel.NONE]
+        else:
+            self.ha = [
+                DatabaseHaLevel(item) if isinstance(item, str) else item
+                for item in self.ha
+            ]
+        if not self.ha_strategy:
+            self.ha_strategy = [DatabaseHaStrategy.NONE]
+        else:
+            self.ha_strategy = [
+                DatabaseHaStrategy(item) if isinstance(item, str) else item
+                for item in self.ha_strategy
             ]
 
 

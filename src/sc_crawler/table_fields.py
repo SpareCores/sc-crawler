@@ -30,7 +30,11 @@ class HashableJSON(TypeDecorator):
     def process_result_value(self, value: str, dialect: Any) -> Any:
         if value is None:
             return None
-        return HashableDict(value)
+        if isinstance(value, dict):
+            return HashableDict(value)
+        if isinstance(value, list):
+            return tuple(value)
+        return value
 
 
 class Json(BaseModel):
@@ -166,17 +170,6 @@ class DatabaseSecurityFeature(str, Enum):
     """Network peering support."""
     WAF = "waf"
     """Web application firewall support."""
-
-
-class DatabaseSupportLevel(str, Enum):
-    """Vendor support tier for a managed database type."""
-
-    TIER_1 = "tier-1"
-    """Tier 1 support level."""
-    TIER_2 = "tier-2"
-    """Tier 2 support level."""
-    TIER_3 = "tier-3"
-    """Tier 3 support level."""
 
 
 class DatabaseStorageScope(str, Enum):

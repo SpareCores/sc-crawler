@@ -41,7 +41,7 @@ from ..utils import (
     list_search,
     scmodels_to_dict,
 )
-from ..vendor_helpers import merge_database_catalog_rows, preprocess_servers
+from ..vendor_helpers import preprocess_servers
 
 credential = DefaultAzureCredential()
 
@@ -1730,7 +1730,7 @@ def _pg_engine_versions(capability) -> list[str]:
 
 def inventory_databases(vendor):
     """List all available Azure Database for PostgreSQL Flexible Server types in all regions."""
-    rows = []
+    merged: dict[str, dict] = {}
     regions = _pg_database_regions(vendor)
     vendor.progress_tracker.start_task(
         name="Scanning region(s) for database(s)", total=len(regions)
@@ -1794,6 +1794,9 @@ def inventory_databases(vendor):
                     storage_extra_max = max(sizes_gb) if sizes_gb else None
                     for sku in getattr(edition, "supported_server_skus", None) or []:
                         database_id = sku.name
+                        # Same SKU can appear in multiple regions; keep first seen.
+                        if database_id in merged:
+                            continue
                         vcpus = int(sku.v_cores) if sku.v_cores else None
                         memory_amount = (
                             int(sku.supported_memory_per_vcore_mb * sku.v_cores)
@@ -1819,108 +1822,98 @@ def inventory_databases(vendor):
                             (mode.value if hasattr(mode, "value") else str(mode))
                             for mode in (getattr(sku, "supported_ha_mode", None) or [])
                         }
-                        if edition.name == "Burstable":
-                            ha = DatabaseHaLevel.NONE
-                            ha_strategy = DatabaseHaStrategy.NONE
-                        elif "ZoneRedundant" in ha_modes:
-                            ha = DatabaseHaLevel.MULTI_ZONE
-                            ha_strategy = DatabaseHaStrategy.PASSIVE_STANDBY
-                        elif "SameZone" in ha_modes:
-                            ha = DatabaseHaLevel.SINGLE_ZONE
-                            ha_strategy = DatabaseHaStrategy.PASSIVE_STANDBY
+                        ha: list[DatabaseHaLevel] = []
+                        ha_strategy: list[DatabaseHaStrategy] = []
+                        if edition.name != "Burstable":
+                            if "ZoneRedundant" in ha_modes:
+                                ha.append(DatabaseHaLevel.MULTI_ZONE)
+                            if "SameZone" in ha_modes:
+                                ha.append(DatabaseHaLevel.SINGLE_ZONE)
+                            if ha:
+                                ha_strategy.append(DatabaseHaStrategy.PASSIVE_STANDBY)
+                        if not ha:
+                            ha.append(DatabaseHaLevel.NONE)
+                        if not ha_strategy:
+                            ha_strategy.append(DatabaseHaStrategy.NONE)
+                        # https://learn.microsoft.com/en-us/azure/reliability/reliability-database-postgresql
+                        # Zone-redundant HA 99.99%; zonal HA 99.95%; no HA 99.9%.
+                        if DatabaseHaLevel.MULTI_ZONE in ha:
+                            sla = 99.99
+                        elif DatabaseHaLevel.SINGLE_ZONE in ha:
+                            sla = 99.95
                         else:
-                            ha = DatabaseHaLevel.NONE
-                            ha_strategy = DatabaseHaStrategy.NONE
-                        rows.append(
-                            {
-                                "vendor_id": vendor.vendor_id,
-                                "database_id": database_id,
-                                "name": database_id.removeprefix("Standard_"),
-                                "api_reference": database_id,
-                                # https://www.pulumi.com/registry/packages/azure/api-docs/postgresql/flexibleserver/
-                                # Pulumi sku_name is tier+name (e.g. B_Standard_B1ms, GP_Standard_D2s_v3).
-                                "api_reference_object": {
-                                    "sku_name": (
-                                        f"{_PG_SKU_NAME_PREFIX[edition.name]}_"
-                                        f"{database_id}"
-                                        if edition.name in _PG_SKU_NAME_PREFIX
-                                        else database_id
-                                    )
-                                },
-                                "display_name": database_id.removeprefix("Standard_"),
-                                "description": description,
-                                "server_id": database_id,
-                                "engine": DatabaseEngine.POSTGRESQL,
-                                "wire_protocol": DatabaseWireProtocol.POSTGRESQL,
-                                "engine_versions": engine_versions,
-                                "family": edition.name,
-                                "vcpus": vcpus,
-                                "memory_amount": memory_amount,
-                                "storage_size": None,
-                                "storage_extra_autosize": storage_extra_autosize,
-                                # https://learn.microsoft.com/en-us/azure/postgresql/backup-restore/concepts-backup-restore
-                                # Automated backups are always enabled for Flexible Server.
-                                "scheduled_backups": True,
-                                "autotuning_advice": (
-                                    False
-                                    if autotuning_advice is None
-                                    else autotuning_advice
-                                ),
-                                "autotuning_apply": (
-                                    False
-                                    if autotuning_apply is None
-                                    else autotuning_apply
-                                ),
-                                # https://learn.microsoft.com/en-us/azure/postgresql/security/security-overview#data-protection
-                                "disk_encryption": True,
-                                # https://learn.microsoft.com/en-us/azure/postgresql/configure-maintain/concepts-major-version-upgrade
-                                # Minor releases are applied automatically during maintenance.
-                                "auto_upgrade_versions": True,
-                                # https://learn.microsoft.com/en-us/azure/postgresql/parameters/concepts-parameters
-                                "custom_config": True,
-                                # https://learn.microsoft.com/en-us/azure/postgresql/extensions/concepts-extensions-considerations
-                                "custom_extensions": True,
-                                "storage_extra_min": storage_extra_min,
-                                "storage_extra_max": storage_extra_max,
-                                "ha": ha,
-                                "ha_strategy": ha_strategy,
-                                # https://learn.microsoft.com/en-us/azure/postgresql/read-replica/concepts-read-replicas
-                                # Up to 5 replicas per primary; Burstable tier is not supported.
-                                "max_read_replicas": (
-                                    0 if edition.name == "Burstable" else 5
-                                ),
-                                # https://learn.microsoft.com/en-us/azure/postgresql/connectivity/concepts-pgbouncer
-                                # Built-in PgBouncer connection pooling.
-                                "connection_pool": True,
-                                # https://learn.microsoft.com/en-us/azure/postgresql/monitor/concepts-monitoring
-                                # Host-level metrics via Azure Monitor.
-                                "system_monitoring": True,
-                                # https://learn.microsoft.com/en-us/azure/postgresql/monitor/concepts-query-performance-insight
-                                # Query Performance Insight / Query Store for query-level analysis.
-                                "database_monitoring": True,
-                                # https://learn.microsoft.com/en-us/azure/postgresql/backup-restore/concepts-backup-restore
-                                # Product max PITR retention (days); default 7, up to 35; not in capabilities API.
-                                "continuous_backups": 35,
-                                # https://learn.microsoft.com/en-us/azure/reliability/reliability-database-postgresql
-                                # Zone-redundant HA 99.99%; zonal HA 99.95%; no HA 99.9%.
-                                "sla": (
-                                    99.99
-                                    if ha
-                                    in (
-                                        DatabaseHaLevel.MULTI_ZONE,
-                                        DatabaseHaLevel.MULTI_REGION,
-                                    )
-                                    else (
-                                        99.95
-                                        if ha == DatabaseHaLevel.SINGLE_ZONE
-                                        else 99.9
-                                    )
-                                ),
-                            }
-                        )
-        vendor.progress_tracker.advance_task()
+                            sla = 99.9
+                        merged[database_id] = {
+                            "vendor_id": vendor.vendor_id,
+                            "database_id": database_id,
+                            "name": database_id.removeprefix("Standard_"),
+                            "api_reference": database_id,
+                            # https://www.pulumi.com/registry/packages/azure/api-docs/postgresql/flexibleserver/
+                            # Pulumi sku_name is tier+name (e.g. B_Standard_B1ms, GP_Standard_D2s_v3).
+                            "api_reference_object": {
+                                "sku_name": (
+                                    f"{_PG_SKU_NAME_PREFIX[edition.name]}_{database_id}"
+                                    if edition.name in _PG_SKU_NAME_PREFIX
+                                    else database_id
+                                )
+                            },
+                            "display_name": database_id.removeprefix("Standard_"),
+                            "description": description,
+                            "server_id": database_id,
+                            "engine": DatabaseEngine.POSTGRESQL,
+                            "wire_protocol": DatabaseWireProtocol.POSTGRESQL,
+                            "engine_versions": engine_versions,
+                            "family": edition.name,
+                            "vcpus": vcpus,
+                            "memory_amount": memory_amount,
+                            "storage_size": None,
+                            "storage_extra_autosize": storage_extra_autosize,
+                            # https://learn.microsoft.com/en-us/azure/postgresql/backup-restore/concepts-backup-restore
+                            # Automated backups are always enabled for Flexible Server.
+                            "scheduled_backups": True,
+                            "autotuning_advice": (
+                                False
+                                if autotuning_advice is None
+                                else autotuning_advice
+                            ),
+                            "autotuning_apply": (
+                                False if autotuning_apply is None else autotuning_apply
+                            ),
+                            # https://learn.microsoft.com/en-us/azure/postgresql/security/security-overview#data-protection
+                            "disk_encryption": True,
+                            # https://learn.microsoft.com/en-us/azure/postgresql/configure-maintain/concepts-major-version-upgrade
+                            # Minor releases are applied automatically during maintenance.
+                            "auto_upgrade_versions": True,
+                            # https://learn.microsoft.com/en-us/azure/postgresql/parameters/concepts-parameters
+                            "custom_config": True,
+                            # https://learn.microsoft.com/en-us/azure/postgresql/extensions/concepts-extensions-considerations
+                            "custom_extensions": True,
+                            "storage_extra_min": storage_extra_min,
+                            "storage_extra_max": storage_extra_max,
+                            "ha": ha,
+                            "ha_strategy": ha_strategy,
+                            # https://learn.microsoft.com/en-us/azure/postgresql/read-replica/concepts-read-replicas
+                            # Up to 5 replicas per primary; Burstable tier is not supported.
+                            "max_read_replicas": (
+                                0 if edition.name == "Burstable" else 5
+                            ),
+                            # https://learn.microsoft.com/en-us/azure/postgresql/connectivity/concepts-pgbouncer
+                            # Built-in PgBouncer connection pooling.
+                            "connection_pool": True,
+                            # https://learn.microsoft.com/en-us/azure/postgresql/monitor/concepts-monitoring
+                            # Host-level metrics via Azure Monitor.
+                            "system_monitoring": True,
+                            # https://learn.microsoft.com/en-us/azure/postgresql/monitor/concepts-query-performance-insight
+                            # Query Performance Insight / Query Store for query-level analysis.
+                            "database_monitoring": True,
+                            # https://learn.microsoft.com/en-us/azure/postgresql/backup-restore/concepts-backup-restore
+                            # Product max PITR retention (days); default 7, up to 35; not in capabilities API.
+                            "continuous_backups": 35,
+                            "sla": sla,
+                        }
+                        vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
-    return merge_database_catalog_rows(rows)
+    return list(merged.values())
 
 
 def inventory_database_prices(vendor):
@@ -1983,11 +1976,7 @@ def inventory_database_prices(vendor):
                         price_rows: list[
                             tuple[DatabaseHaLevel, DatabaseHaStrategy, float]
                         ] = [
-                            (
-                                DatabaseHaLevel.NONE,
-                                DatabaseHaStrategy.NONE,
-                                base_price,
-                            )
+                            (DatabaseHaLevel.NONE, DatabaseHaStrategy.NONE, base_price)
                         ]
                         if edition_name != "Burstable":
                             if "ZoneRedundant" in ha_modes:
