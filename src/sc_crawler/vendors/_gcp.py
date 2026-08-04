@@ -38,7 +38,6 @@ from ..vendor_helpers import (
     preprocess_servers,
 )
 
-
 # ##############################################################################
 # Cached gcp client wrappers
 
