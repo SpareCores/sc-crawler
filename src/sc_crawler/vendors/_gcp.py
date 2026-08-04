@@ -20,6 +20,7 @@ from ..table_fields import (
     DatabaseEngine,
     DatabaseHaLevel,
     DatabaseHaStrategy,
+    DatabaseSecurityFeature,
     DatabaseStorageScope,
     DatabaseWireProtocol,
     PriceUnit,
@@ -34,7 +35,6 @@ from ..tables import (
 from ..utils import nesteddefaultdict, scmodels_to_dict
 from ..vendor_helpers import (
     add_vendor_id,
-    merge_database_catalog_rows,
     parallel_fetch_servers,
     preprocess_servers,
 )
@@ -1359,22 +1359,25 @@ def inventory_databases(vendor):
         else:
             price_family = "enterprise"
 
-        ha = None
-        ha_strategy = None
+        ha: list[DatabaseHaLevel] = []
+        ha_strategy: list[DatabaseHaStrategy] = []
         has_regional_ha = False
         if tier_regions:
             # https://cloud.google.com/sql/docs/postgres/high-availability
-            # Regional availability = same-region multi-zone HA (standby). Enterprise
-            # Plus Advanced DR is cross-region replica promotion (not multi-region HA).
+            # Regional billing meters ⇒ same-region multi-zone HA (standby). Zonal
+            # (non-HA) remains available for the same tier. Enterprise Plus Advanced
+            # DR is cross-region replica promotion (not multi-region HA).
             has_regional_ha = any(
                 (region, price_family) in ha_families for region in tier_regions
             )
             if has_regional_ha:
-                ha = DatabaseHaLevel.MULTI_ZONE
-                ha_strategy = DatabaseHaStrategy.PASSIVE_STANDBY
-            else:
-                ha = DatabaseHaLevel.NONE
-                ha_strategy = DatabaseHaStrategy.NONE
+                ha.append(DatabaseHaLevel.MULTI_ZONE)
+                ha.append(DatabaseHaLevel.SINGLE_ZONE)
+                ha_strategy.append(DatabaseHaStrategy.PASSIVE_STANDBY)
+        if not ha:
+            ha.append(DatabaseHaLevel.NONE)
+        if not ha_strategy:
+            ha_strategy.append(DatabaseHaStrategy.NONE)
 
         disk_quota_bytes = int(tier.get("DiskQuota") or 0)
         storage_extra_max = (
@@ -1387,6 +1390,9 @@ def inventory_databases(vendor):
                 "database_id": tier_name,
                 "name": tier_name,
                 "api_reference": tier_name,
+                # https://www.pulumi.com/registry/packages/gcp/api-docs/sql/databaseinstance/
+                # Machine size lives under settings (Pulumi DatabaseInstance.settings.tier).
+                "api_reference_object": {"settings": {"tier": tier_name}},
                 "display_name": tier_name,
                 "description": description,
                 # TODO: not clear which are the server instances for for perf-optimized and memory-optimized
@@ -1401,6 +1407,25 @@ def inventory_databases(vendor):
                 "storage_size": None,
                 "ha": ha,
                 "ha_strategy": ha_strategy,
+                # https://cloud.google.com/sql/docs/postgres/configure-ip
+                # https://cloud.google.com/sql/docs/postgres/private-ip
+                # https://cloud.google.com/sql/docs/postgres/configure-private-service-connect
+                # https://cloud.google.com/sql/docs/postgres/iam-authentication
+                # https://cloud.google.com/sql/docs/postgres/configure-ssl-instance
+                # https://cloud.google.com/sql/docs/postgres/cmek
+                # https://cloud.google.com/sql/docs/postgres/pg-audit
+                # Authorized networks, private IP (PSA tenant VPC), PSC, IAM DB auth,
+                # sslMode (ENCRYPTED_ONLY / client certs), CMEK, pgaudit.
+                "security_features": [
+                    DatabaseSecurityFeature.IP_FILTERING,
+                    DatabaseSecurityFeature.PRIVATE_NETWORK,
+                    DatabaseSecurityFeature.NETWORK_PEERING,
+                    DatabaseSecurityFeature.IDENTITY_BASED_AUTH,
+                    DatabaseSecurityFeature.CLIENT_CERT_AUTH,
+                    DatabaseSecurityFeature.ENFORCED_TLS,
+                    DatabaseSecurityFeature.CUSTOMER_MANAGED_KEYS,
+                    DatabaseSecurityFeature.AUDIT_LOGGING,
+                ],
                 # https://cloud.google.com/sql/docs/postgres/admin-api/rest/v1/instances
                 # Minimum data disk size is 10 GB.
                 "storage_extra_min": 10,
@@ -1442,7 +1467,7 @@ def inventory_databases(vendor):
                     if price_family == "enterprise_n4" and has_regional_ha
                     else (
                         99.95
-                        if ha == DatabaseHaLevel.MULTI_ZONE and price_family != "shared"
+                        if DatabaseHaLevel.MULTI_ZONE in ha and price_family != "shared"
                         else None
                     )
                 ),
@@ -1450,7 +1475,7 @@ def inventory_databases(vendor):
         )
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
-    return merge_database_catalog_rows(rows)
+    return rows
 
 
 def inventory_database_prices(vendor):
@@ -1536,7 +1561,7 @@ def inventory_database_prices(vendor):
                 if hourly is None:
                     continue
                 # https://cloud.google.com/sql/docs/postgres/high-availability
-                # Zonal = standalone; Regional HA = multi-zone standby (exactly 2× on
+                # Zonal = standalone; Regional HA = multi-zone standby (exactly 2x on
                 # the pricing page; we use Regional billing SKUs, not a multiplier).
                 if availability == "regional":
                     ha = DatabaseHaLevel.MULTI_ZONE

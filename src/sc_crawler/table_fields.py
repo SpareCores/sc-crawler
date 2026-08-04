@@ -30,7 +30,11 @@ class HashableJSON(TypeDecorator):
     def process_result_value(self, value: str, dialect: Any) -> Any:
         if value is None:
             return None
-        return HashableDict(value)
+        if isinstance(value, dict):
+            return HashableDict(value)
+        if isinstance(value, list):
+            return tuple(value)
+        return value
 
 
 class Json(BaseModel):
@@ -158,25 +162,35 @@ class DatabaseHaStrategy(str, Enum):
 
 
 class DatabaseSecurityFeature(str, Enum):
-    """Security features for a managed database type."""
+    """Security capabilities supported by DBaaS providers."""
 
-    IP_ALLOWLISTING = "ip-allowlisting"
-    """IP allowlisting."""
+    # --- Network Security ---
+    IP_FILTERING = "ip-filtering"
+    """Access via public endpoint restricted to explicit IP/CIDR ranges."""
+
+    PRIVATE_NETWORK = "private-network"
+    """Provisioned natively inside customer's own private network/subnets (e.g. VPC/VNet)."""
+
     NETWORK_PEERING = "network-peering"
-    """Network peering support."""
-    WAF = "waf"
-    """Web application firewall support."""
+    """Private access via cross-network peering or private service endpoints (e.g. PrivateLink)."""
 
+    # --- Authentication & Access ---
+    IDENTITY_BASED_AUTH = "identity-based-auth"
+    """Auth offloaded to cloud or enterprise identity providers (e.g. IAM, Entra ID, OIDC, SSO)."""
 
-class DatabaseSupportLevel(str, Enum):
-    """Vendor support tier for a managed database type."""
+    CLIENT_CERT_AUTH = "client-cert-auth"
+    """Mutual TLS (mTLS) authentication requiring client-side SSL/TLS certificates."""
 
-    TIER_1 = "tier-1"
-    """Tier 1 support level."""
-    TIER_2 = "tier-2"
-    """Tier 2 support level."""
-    TIER_3 = "tier-3"
-    """Tier 3 support level."""
+    # --- Encryption & Key Management ---
+    ENFORCED_TLS = "enforced-tls"
+    """Enforceable requirement that all database connections use SSL/TLS (no plaintext fallback)."""
+
+    CUSTOMER_MANAGED_KEYS = "customer-managed-keys"
+    """Bring Your Own Key (BYOK) support for storage encryption."""
+
+    # --- Auditing & Governance ---
+    AUDIT_LOGGING = "audit-logging"
+    """Detailed database audit logs (e.g. pgaudit) exportable to external logging services or storage."""
 
 
 class DatabaseStorageScope(str, Enum):

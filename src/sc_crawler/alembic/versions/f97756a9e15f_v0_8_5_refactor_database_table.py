@@ -36,6 +36,10 @@ def _enum(name: str, values: tuple[str, ...]):
     return sa.Enum(*values, name=name)
 
 
+_HA_LEVEL_VALUES = ("NONE", "SINGLE_ZONE", "MULTI_ZONE", "MULTI_REGION")
+_HA_STRATEGY_VALUES = ("NONE", "PASSIVE_STANDBY", "READABLE_CLUSTER", "MULTI_MASTER")
+
+
 def get_database_table(is_scd: bool) -> sa.Table:
     """Pre-v0.8.5 ``database`` / ``database_scd`` schema (copy_from source)."""
     is_postgresql = op.get_context().dialect.name == "postgresql"
@@ -295,13 +299,6 @@ def upgrade() -> None:
     database_price_table = get_database_price_table(is_scd)
     do_recreate_tables = (op.get_context().dialect.name == "sqlite") or is_scd
 
-    if is_postgresql:
-        op.execute(
-            "ALTER TYPE databasesupportlevel RENAME VALUE 'STANDARD' TO 'TIER_1'"
-        )
-        op.execute("ALTER TYPE databasesupportlevel ADD VALUE 'TIER_2'")
-        op.execute("ALTER TYPE databasesupportlevel ADD VALUE 'TIER_3'")
-
     if do_recreate_tables:
         with op.batch_alter_table(
             database_table_name,
@@ -314,6 +311,7 @@ def upgrade() -> None:
                 "storage_autoscaling",
                 "engine_auto_upgrade",
                 "autotuning",
+                "support_level",
                 "server_id",
                 "engine",
                 "engine_versions",
@@ -328,6 +326,17 @@ def upgrade() -> None:
                 "sla",
             ):
                 batch_op.drop_column(col)
+
+            batch_op.add_column(
+                sa.Column(
+                    "api_reference_object",
+                    json_type(),
+                    nullable=False,
+                    server_default="{}",
+                    comment="How this resource is referenced in the vendor API calls, including the parameter name(s).",
+                ),
+                insert_after="api_reference",
+            )
 
             columns_in_order = [
                 (
@@ -389,29 +398,17 @@ def upgrade() -> None:
                 ),
                 (
                     "ha",
-                    sa.Enum(
-                        "NONE",
-                        "SINGLE_ZONE",
-                        "MULTI_ZONE",
-                        "MULTI_REGION",
-                        name="databasehalevel",
-                    ),
-                    True,
-                    None,
-                    "Level of HA (high availability) supported.",
+                    json_type(),
+                    False,
+                    '["none"]',
+                    "Ordered HA levels supported, strongest first.",
                 ),
                 (
                     "ha_strategy",
-                    sa.Enum(
-                        "NONE",
-                        "PASSIVE_STANDBY",
-                        "READABLE_CLUSTER",
-                        "MULTI_MASTER",
-                        name="databasehastrategy",
-                    ),
-                    True,
-                    None,
-                    "HA replication strategy supported.",
+                    json_type(),
+                    False,
+                    '["none"]',
+                    "Ordered HA strategies supported, strongest first.",
                 ),
                 (
                     "max_read_replicas",
@@ -539,14 +536,7 @@ def upgrade() -> None:
                     json_type(),
                     False,
                     "[]",
-                    "List of security features supported.",
-                ),
-                (
-                    "support_level",
-                    _enum("databasesupportlevel", ("TIER_1", "TIER_2", "TIER_3")),
-                    True,
-                    None,
-                    "Highest level of support plan available.",
+                    "Security capabilities supported by DBaaS providers.",
                 ),
             ]
             after = "description"
@@ -567,28 +557,25 @@ def upgrade() -> None:
         op.drop_column(database_table_name, "storage_autoscaling")
         op.drop_column(database_table_name, "engine_auto_upgrade")
         op.drop_column(database_table_name, "autotuning")
+        op.drop_column(database_table_name, "support_level")
 
         if is_postgresql:
             bind = op.get_bind()
             sa.Enum("POSTGRESQL", name="databasewireprotocol").create(
                 bind, checkfirst=True
             )
-            sa.Enum(
-                "NONE",
-                "SINGLE_ZONE",
-                "MULTI_ZONE",
-                "MULTI_REGION",
-                name="databasehalevel",
-            ).create(bind, checkfirst=True)
-            sa.Enum(
-                "NONE",
-                "PASSIVE_STANDBY",
-                "READABLE_CLUSTER",
-                "MULTI_MASTER",
-                name="databasehastrategy",
-            ).create(bind, checkfirst=True)
 
         op.alter_column(database_table_name, "engine", nullable=True)
+        op.add_column(
+            database_table_name,
+            sa.Column(
+                "api_reference_object",
+                json_type(),
+                nullable=False,
+                server_default="{}",
+                comment="How this resource is referenced in the vendor API calls, including the parameter name(s).",
+            ),
+        )
         op.add_column(
             database_table_name,
             sa.Column(
@@ -611,30 +598,20 @@ def upgrade() -> None:
             database_table_name,
             sa.Column(
                 "ha",
-                sa.Enum(
-                    "NONE",
-                    "SINGLE_ZONE",
-                    "MULTI_ZONE",
-                    "MULTI_REGION",
-                    name="databasehalevel",
-                ),
-                nullable=True,
-                comment="Level of HA (high availability) supported.",
+                json_type(),
+                nullable=False,
+                server_default='["none"]',
+                comment="Ordered HA levels supported, strongest first.",
             ),
         )
         op.add_column(
             database_table_name,
             sa.Column(
                 "ha_strategy",
-                sa.Enum(
-                    "NONE",
-                    "PASSIVE_STANDBY",
-                    "READABLE_CLUSTER",
-                    "MULTI_MASTER",
-                    name="databasehastrategy",
-                ),
-                nullable=True,
-                comment="HA replication strategy supported.",
+                json_type(),
+                nullable=False,
+                server_default='["none"]',
+                comment="Ordered HA strategies supported, strongest first.",
             ),
         )
         op.add_column(
@@ -760,7 +737,7 @@ def upgrade() -> None:
                 json_type(),
                 nullable=False,
                 server_default="[]",
-                comment="List of security features supported.",
+                comment="Security capabilities supported by DBaaS providers.",
             ),
         )
         for column, comment in (
@@ -793,9 +770,11 @@ def upgrade() -> None:
                 "custom_extensions",
                 "Support for custom database engine extensions/plugins.",
             ),
-            ("support_level", "Highest level of support plan available."),
         ):
             op.alter_column(database_table_name, column, comment=comment)
+
+    if is_postgresql:
+        sa.Enum(name="databasesupportlevel").drop(op.get_bind(), checkfirst=True)
 
     database_price_pk = (
         (
@@ -818,6 +797,13 @@ def upgrade() -> None:
         )
     )
 
+    if is_postgresql:
+        bind = op.get_bind()
+        sa.Enum(*_HA_LEVEL_VALUES, name="databasehalevel").create(bind, checkfirst=True)
+        sa.Enum(*_HA_STRATEGY_VALUES, name="databasehastrategy").create(
+            bind, checkfirst=True
+        )
+
     if do_recreate_tables:
         with op.batch_alter_table(
             database_price_table_name,
@@ -828,10 +814,7 @@ def upgrade() -> None:
             batch_op.add_column(
                 sa.Column(
                     "ha",
-                    _enum(
-                        "databasehalevel",
-                        ("NONE", "SINGLE_ZONE", "MULTI_ZONE", "MULTI_REGION"),
-                    ),
+                    _enum("databasehalevel", _HA_LEVEL_VALUES),
                     nullable=False,
                     server_default="NONE",
                     comment="HA level this price applies to.",
@@ -841,10 +824,7 @@ def upgrade() -> None:
             batch_op.add_column(
                 sa.Column(
                     "ha_strategy",
-                    _enum(
-                        "databasehastrategy",
-                        ("NONE", "PASSIVE_STANDBY", "READABLE_CLUSTER", "MULTI_MASTER"),
-                    ),
+                    _enum("databasehastrategy", _HA_STRATEGY_VALUES),
                     nullable=False,
                     server_default="NONE",
                     comment="HA strategy this price applies to.",
@@ -858,25 +838,11 @@ def upgrade() -> None:
                 op.f(f"pk_{database_price_table_name}"), list(database_price_pk)
             )
     else:
-        if is_postgresql:
-            sa.Enum(
-                "NONE",
-                "PASSIVE_STANDBY",
-                "READABLE_CLUSTER",
-                "MULTI_MASTER",
-                name="databasehastrategy",
-            ).create(op.get_bind(), checkfirst=True)
         op.add_column(
             database_price_table_name,
             sa.Column(
                 "ha",
-                sa.Enum(
-                    "NONE",
-                    "SINGLE_ZONE",
-                    "MULTI_ZONE",
-                    "MULTI_REGION",
-                    name="databasehalevel",
-                ),
+                _enum("databasehalevel", _HA_LEVEL_VALUES),
                 nullable=False,
                 server_default="NONE",
                 comment="HA level this price applies to.",
@@ -886,13 +852,7 @@ def upgrade() -> None:
             database_price_table_name,
             sa.Column(
                 "ha_strategy",
-                sa.Enum(
-                    "NONE",
-                    "PASSIVE_STANDBY",
-                    "READABLE_CLUSTER",
-                    "MULTI_MASTER",
-                    name="databasehastrategy",
-                ),
+                _enum("databasehastrategy", _HA_STRATEGY_VALUES),
                 nullable=False,
                 server_default="NONE",
                 comment="HA strategy this price applies to.",
@@ -954,6 +914,7 @@ def get_database_table_v085(is_scd: bool) -> sa.Table:
         sa.Column("database_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
         sa.Column("name", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
         sa.Column("api_reference", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("api_reference_object", json_type(), nullable=False),
         sa.Column("display_name", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
         sa.Column("description", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
         sa.Column("family", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
@@ -968,22 +929,8 @@ def get_database_table_v085(is_scd: bool) -> sa.Table:
         ),
         sa.Column("engine_versions", json_type(), nullable=False),
         sa.Column("auto_upgrade_versions", sa.Boolean(), nullable=True),
-        sa.Column(
-            "ha",
-            _enum(
-                "databasehalevel",
-                ("NONE", "SINGLE_ZONE", "MULTI_ZONE", "MULTI_REGION"),
-            ),
-            nullable=True,
-        ),
-        sa.Column(
-            "ha_strategy",
-            _enum(
-                "databasehastrategy",
-                ("NONE", "PASSIVE_STANDBY", "READABLE_CLUSTER", "MULTI_MASTER"),
-            ),
-            nullable=True,
-        ),
+        sa.Column("ha", json_type(), nullable=False),
+        sa.Column("ha_strategy", json_type(), nullable=False),
         sa.Column("max_read_replicas", sa.Integer(), nullable=True),
         sa.Column("custom_config", sa.Boolean(), nullable=True),
         sa.Column("custom_extensions", sa.Boolean(), nullable=True),
@@ -1001,14 +948,6 @@ def get_database_table_v085(is_scd: bool) -> sa.Table:
         sa.Column("autotuning_apply", sa.Boolean(), nullable=True),
         sa.Column("sla", sa.Float(), nullable=True),
         sa.Column("security_features", json_type(), nullable=False),
-        sa.Column(
-            "support_level",
-            _enum(
-                "databasesupportlevel",
-                ("TIER_1", "TIER_2", "TIER_3"),
-            ),
-            nullable=True,
-        ),
         sa.Column("status", _enum("status", ("ACTIVE", "INACTIVE")), nullable=False),
         sa.Column("observed_at", sa.DateTime(), nullable=False),
         *foreign_keys,
@@ -1076,18 +1015,12 @@ def get_database_price_table_v085(is_scd: bool) -> sa.Table:
         ),
         sa.Column(
             "ha",
-            _enum(
-                "databasehalevel",
-                ("NONE", "SINGLE_ZONE", "MULTI_ZONE", "MULTI_REGION"),
-            ),
+            _enum("databasehalevel", _HA_LEVEL_VALUES),
             nullable=False,
         ),
         sa.Column(
             "ha_strategy",
-            _enum(
-                "databasehastrategy",
-                ("NONE", "PASSIVE_STANDBY", "READABLE_CLUSTER", "MULTI_MASTER"),
-            ),
+            _enum("databasehastrategy", _HA_STRATEGY_VALUES),
             nullable=False,
         ),
         sa.Column(
@@ -1154,18 +1087,9 @@ def downgrade() -> None:
         op.drop_column(database_price_table_name, "ha")
 
     if is_postgresql:
-        bind = op.get_bind()
-        op.execute("ALTER TYPE databasesupportlevel RENAME TO databasesupportlevel_old")
-        sa.Enum("STANDARD", name="databasesupportlevel").create(bind, checkfirst=True)
-        op.execute(f"""
-            ALTER TABLE {database_table_name}
-            ALTER COLUMN support_level TYPE databasesupportlevel
-            USING CASE support_level::text
-                WHEN 'TIER_1' THEN 'STANDARD'::databasesupportlevel
-                ELSE NULL
-            END
-        """)
-        sa.Enum(name="databasesupportlevel_old").drop(bind, checkfirst=True)
+        sa.Enum("STANDARD", name="databasesupportlevel").create(
+            op.get_bind(), checkfirst=True
+        )
 
     if do_recreate_tables:
         with op.batch_alter_table(
@@ -1190,6 +1114,7 @@ def downgrade() -> None:
                 "autotuning_advice",
                 "autotuning_apply",
                 "security_features",
+                "api_reference_object",
                 "family",
                 "server_id",
                 "vcpus",
@@ -1332,7 +1257,17 @@ def downgrade() -> None:
         op.drop_column(database_table_name, "autotuning_advice")
         op.drop_column(database_table_name, "autotuning_apply")
         op.drop_column(database_table_name, "security_features")
+        op.drop_column(database_table_name, "api_reference_object")
 
+        op.add_column(
+            database_table_name,
+            sa.Column(
+                "support_level",
+                _enum("databasesupportlevel", ("STANDARD",)),
+                nullable=True,
+                comment="Vendor support tier for the SKU.",
+            ),
+        )
         op.add_column(
             database_table_name,
             sa.Column(
@@ -1393,6 +1328,6 @@ def downgrade() -> None:
 
     if is_postgresql:
         bind = op.get_bind()
+        sa.Enum(name="databasewireprotocol").drop(bind, checkfirst=True)
         sa.Enum(name="databasehastrategy").drop(bind, checkfirst=True)
         sa.Enum(name="databasehalevel").drop(bind, checkfirst=True)
-        sa.Enum(name="databasewireprotocol").drop(bind, checkfirst=True)

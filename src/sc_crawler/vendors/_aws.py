@@ -25,6 +25,7 @@ from ..table_fields import (
     DatabaseEngine,
     DatabaseHaLevel,
     DatabaseHaStrategy,
+    DatabaseSecurityFeature,
     DatabaseStorageScope,
     DatabaseWireProtocol,
     Disk,
@@ -1551,11 +1552,13 @@ def _get_rds_instance_products_by_region() -> tuple[
             deployment_options_by_database.setdefault(instance_type, set()).add(
                 deployment_option
             )
-        # Catalog/spec rows use Single-AZ; Multi-AZ prices are deferred.
-        if deployment_option != "Single-AZ":
-            continue
         region_id = attrs["regionCode"]
-        by_region.setdefault(region_id, {})[instance_type] = attrs
+        region_map = by_region.setdefault(region_id, {})
+        existing = region_map.get(instance_type)
+        # Prefer Single-AZ attrs for catalog; otherwise keep the first seen row
+        # (e.g. readable-standbys-only classes that have no Single-AZ meter).
+        if existing is None or deployment_option == "Single-AZ":
+            region_map[instance_type] = attrs
     return by_region, {
         database_id: frozenset(options)
         for database_id, options in deployment_options_by_database.items()
@@ -1606,24 +1609,26 @@ def inventory_databases(vendor):
             ]
             # https://docs.aws.amazon.com/AmazonRDS/latest/APIReference/API_OrderableDBInstanceOption.html
             # SupportsGlobalDatabases is Aurora Global Database only (not RDS postgres).
-            if "Multi-AZ (readable standbys)" in deployment_options:
-                ha = DatabaseHaLevel.MULTI_ZONE
+            multi_az = any(
+                opt.get("MultiAZCapable") for opt in db_instance_options
+            ) or ("Multi-AZ" in deployment_options)
+            readable = "Multi-AZ (readable standbys)" in deployment_options
+            ha = []
+            ha_strategy = []
+            if readable or multi_az:
+                ha.append(DatabaseHaLevel.MULTI_ZONE)
+            if "Single-AZ" in deployment_options:
+                ha.append(DatabaseHaLevel.SINGLE_ZONE)
+            if not ha:
+                ha.append(DatabaseHaLevel.NONE)
+            if readable:
                 # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/multi-az-db-clusters-concepts.html
-                # Multi-AZ DB clusters use readable standbys with engine replication.
-                ha_strategy = DatabaseHaStrategy.READABLE_CLUSTER
-            elif any(opt.get("MultiAZCapable") for opt in db_instance_options) or (
-                "Multi-AZ" in deployment_options
-            ):
-                ha = DatabaseHaLevel.MULTI_ZONE
+                ha_strategy.append(DatabaseHaStrategy.READABLE_CLUSTER)
+            if multi_az:
                 # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.MultiAZSingleStandby.html
-                # Standard RDS Multi-AZ uses a passive standby with block storage replication.
-                ha_strategy = DatabaseHaStrategy.PASSIVE_STANDBY
-            elif "Single-AZ" in deployment_options:
-                ha = DatabaseHaLevel.SINGLE_ZONE
-                ha_strategy = DatabaseHaStrategy.NONE
-            else:
-                ha = DatabaseHaLevel.NONE
-                ha_strategy = DatabaseHaStrategy.NONE
+                ha_strategy.append(DatabaseHaStrategy.PASSIVE_STANDBY)
+            if not ha_strategy:
+                ha_strategy.append(DatabaseHaStrategy.NONE)
             storage_extra_autosize = any(
                 opt.get("SupportsStorageAutoscaling") for opt in db_instance_options
             )
@@ -1672,6 +1677,8 @@ def inventory_databases(vendor):
                     "database_id": database_id,
                     "name": database_id,
                     "api_reference": database_id,
+                    # https://www.pulumi.com/registry/packages/aws/api-docs/rds/instance/
+                    "api_reference_object": {"instance_class": database_id},
                     "display_name": database_id,
                     "engine": DatabaseEngine.POSTGRESQL,
                     "wire_protocol": DatabaseWireProtocol.POSTGRESQL,
@@ -1684,6 +1691,24 @@ def inventory_databases(vendor):
                     "storage_size": storage_size,
                     "ha": ha,
                     "ha_strategy": ha_strategy,
+                    # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Overview.RDSSecurityGroups.html
+                    # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_VPC.html
+                    # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_VPC.pc.html
+                    # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/UsingWithRDS.IAMDBAuth.html
+                    # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/UsingWithRDS.SSL.html
+                    # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Overview.Encryption.Keys.html
+                    # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Appendix.PostgreSQL.CommonDBATasks.pgaudit.html
+                    # Security groups (IP filtering), VPC placement, PrivateLink, IAM DB auth,
+                    # rds.force_ssl, KMS CMK, pgaudit. Server certs only (no client-cert auth).
+                    "security_features": [
+                        DatabaseSecurityFeature.IP_FILTERING,
+                        DatabaseSecurityFeature.PRIVATE_NETWORK,
+                        DatabaseSecurityFeature.NETWORK_PEERING,
+                        DatabaseSecurityFeature.IDENTITY_BASED_AUTH,
+                        DatabaseSecurityFeature.ENFORCED_TLS,
+                        DatabaseSecurityFeature.CUSTOMER_MANAGED_KEYS,
+                        DatabaseSecurityFeature.AUDIT_LOGGING,
+                    ],
                     "storage_extra_autosize": storage_extra_autosize,
                     "storage_extra_min": storage_extra_min,
                     "storage_extra_max": storage_extra_max,
@@ -1720,15 +1745,7 @@ def inventory_databases(vendor):
                     "autotuning_apply": False,
                     # https://aws.amazon.com/rds/sla/
                     # Multi-AZ SLO 99.95%; Single-AZ SLO 99.5% (credit tables).
-                    "sla": (
-                        99.95
-                        if ha
-                        in (
-                            DatabaseHaLevel.MULTI_ZONE,
-                            DatabaseHaLevel.MULTI_REGION,
-                        )
-                        else 99.5
-                    ),
+                    "sla": 99.95 if multi_az or readable else 99.5,
                 }
             )
         vendor.progress_tracker.advance_task()

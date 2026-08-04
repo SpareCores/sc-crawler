@@ -2,14 +2,21 @@
 
 Maintenance update:
 
-- Refactor the `Database` table: replace `ha_supported` with `ha` (`DatabaseHaLevel`),
-  rename `storage_autoscaling` to `storage_extra_autosize`, and add capability fields
-  (`wire_protocol`, storage bounds, monitoring, autotuning, `security_features`, and tiered `support_level`).
+- Refactor the `Database` table: replace `ha_supported` with ordered JSON lists
+  `ha` (`DatabaseHaLevel`) and `ha_strategy` (`DatabaseHaStrategy`), rename
+  `storage_autoscaling` to `storage_extra_autosize`, drop `support_level`, and add
+  capability fields (`wire_protocol`, storage bounds, monitoring, autotuning, and
+  `security_features`).
+- Add `api_reference_object` (JSON) to `Database`: named API args identifying the
+  database instance.
+- Include `ha` and `ha_strategy` (scalar enums) in `database_price` primary keys so
+  HA deployments can carry distinct prices (e.g. AWS Multi-AZ, Azure 2x HA compute,
+  GCP Regional meters). Catalog `database.ha` / `ha_strategy` remain ordered JSON lists.
 
 Fix(es):
 
-- Correct and fill `AWS`, `Azure`, and `GCP` PostgreSQL DBaaS inventory fields (HA levels,
-  storage bounds, monitoring, backups, SLA, and related capabilities).
+- Correct and fill `AWS`, `Azure`, and `GCP` PostgreSQL DBaaS inventory fields (HA levels
+  and strategies, storage bounds, monitoring, backups, SLA, and related capabilities).
 - Drop non-orderable `AWS` RDS instance classes from the catalog.
 - GCP: removed the hardcoded `SERVER_FAMILIES` allowlist that gated newer
   (missed) server pricing lookups. Families with genuinely no pricing SKUs yet
