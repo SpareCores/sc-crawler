@@ -57,6 +57,7 @@ from ..vendor_helpers import get_region_by_id
 
 def _alibabacloud_config(region_id: str) -> Config:
     """Build SDK config with direct credentials, avoiding DefaultCredentialsProvider with unnecessary background scheduler."""
+    timeout_kwargs = {"connect_timeout": 5_000, "read_timeout": 10_000}
     access_key_id = environ.get("ALIBABA_CLOUD_ACCESS_KEY_ID")
     access_key_secret = environ.get("ALIBABA_CLOUD_ACCESS_KEY_SECRET")
     if access_key_id and access_key_secret:
@@ -64,12 +65,13 @@ def _alibabacloud_config(region_id: str) -> Config:
             access_key_id=access_key_id,
             access_key_secret=access_key_secret,
             region_id=region_id,
+            **timeout_kwargs,
         )
         security_token = environ.get("ALIBABA_CLOUD_SECURITY_TOKEN")
         if security_token:
             config.security_token = security_token
         return config
-    return Config(credential=CredClient(), region_id=region_id)
+    return Config(credential=CredClient(), region_id=region_id, **timeout_kwargs)
 
 
 @cache
@@ -677,6 +679,14 @@ locations = {
         "lon": -99.1332,
         "country_id": "MX",
         "founding_year": 2025,
+    },
+    # -------- South America --------
+    "sa-east-1": {
+        "city": "Sao Paulo",
+        "lat": -23.5505,
+        "lon": -46.6333,
+        "country_id": "BR",
+        "founding_year": 2026,
     },
     # -------- Europe --------
     "eu-west-1": {
