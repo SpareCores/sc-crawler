@@ -403,9 +403,15 @@ def inventory_servers(vendor):
         cpu_model = _standardize_cpu_model(cpu_model_raw)
         vcpus = server.get("vcpu_count") or server.get("cpu_threads")
         cpu_cores = server.get("cpu_count")
+        # Plan type → CPU allocation (API has no dedicated/shared flag).
+        # Shared: vc2, vhp, vhf — https://www.vultr.com/pricing/ ("Cloud Compute" /
+        #   "These virtual machines run atop shared vCPUs")
+        # Dedicated: voc — same page ("Optimized Cloud Compute" / "fully dedicated")
+        # Dedicated: vx1 — https://docs.vultr.com/vultr-vx1-cloud-compute
+        # Dedicated: vcg, vdm, and bare metal (type SSD/NVMe from /v2/plans/metal)
         cpu_allocation = (
             CpuAllocation.SHARED
-            if server.get("vcpu_count")
+            if server.get("type") in ("vc2", "vhp", "vhf")
             else CpuAllocation.DEDICATED
         )
         cpu_architecture = (
