@@ -40,6 +40,66 @@ _HA_LEVEL_VALUES = ("NONE", "SINGLE_ZONE", "MULTI_ZONE", "MULTI_REGION")
 _HA_STRATEGY_VALUES = ("NONE", "PASSIVE_STANDBY", "READABLE_CLUSTER", "MULTI_MASTER")
 
 
+def _ha_rank_sql(column: str) -> str:
+    """CASE expression: lower rank = lower HA tier (preferred on downgrade)."""
+    # Match both enum names (Postgres) and values (possible on SQLite).
+    mapping = (
+        ("NONE", "none", 0),
+        ("SINGLE_ZONE", "single-zone", 1),
+        ("MULTI_ZONE", "multi-zone", 2),
+        ("MULTI_REGION", "multi-region", 3),
+    )
+    whens = " ".join(
+        f"WHEN '{name}' THEN {rank} WHEN '{value}' THEN {rank}"
+        for name, value, rank in mapping
+    )
+    return f"CASE CAST({column} AS TEXT) {whens} ELSE 4 END"
+
+
+def _ha_strategy_rank_sql(column: str) -> str:
+    """CASE expression: lower rank = lower HA strategy tier."""
+    mapping = (
+        ("NONE", "none", 0),
+        ("PASSIVE_STANDBY", "passive-standby", 1),
+        ("READABLE_CLUSTER", "readable-cluster", 2),
+        ("MULTI_MASTER", "multi-master", 3),
+    )
+    whens = " ".join(
+        f"WHEN '{name}' THEN {rank} WHEN '{value}' THEN {rank}"
+        for name, value, rank in mapping
+    )
+    return f"CASE CAST({column} AS TEXT) {whens} ELSE 4 END"
+
+
+def _dedupe_database_price_for_pre_v085_pk(table_name: str, is_scd: bool) -> None:
+    """Keep one row per pre-v0.8.5 PK: lowest ha, then lowest ha_strategy."""
+    partition = "vendor_id, region_id, database_id, allocation"
+    if is_scd:
+        partition = f"{partition}, observed_at"
+    is_postgresql = op.get_context().dialect.name == "postgresql"
+    row_id = "ctid" if is_postgresql else "rowid"
+    ha_rank = _ha_rank_sql("ha")
+    strategy_rank = _ha_strategy_rank_sql("ha_strategy")
+    op.execute(
+        sa.text(
+            f"""
+            DELETE FROM {table_name}
+            WHERE {row_id} IN (
+                SELECT {row_id} FROM (
+                    SELECT {row_id},
+                           ROW_NUMBER() OVER (
+                               PARTITION BY {partition}
+                               ORDER BY {ha_rank}, {strategy_rank}, {row_id}
+                           ) AS rn
+                    FROM {table_name}
+                ) ranked
+                WHERE rn > 1
+            )
+            """
+        )
+    )
+
+
 def get_database_table(is_scd: bool) -> sa.Table:
     """Pre-v0.8.5 ``database`` / ``database_scd`` schema (copy_from source)."""
     is_postgresql = op.get_context().dialect.name == "postgresql"
@@ -859,6 +919,9 @@ def downgrade() -> None:
         if is_scd
         else ("vendor_id", "region_id", "database_id", "allocation")
     )
+
+    # Multiple HA price rows collapse to one pre-v0.8.5 PK; keep lowest tier.
+    _dedupe_database_price_for_pre_v085_pk(database_price_table_name, is_scd)
 
     if do_recreate_tables:
         with op.batch_alter_table(
