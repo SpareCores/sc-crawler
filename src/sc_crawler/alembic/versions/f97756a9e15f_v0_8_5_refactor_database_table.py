@@ -299,263 +299,234 @@ def upgrade() -> None:
     database_price_table = get_database_price_table(is_scd)
     do_recreate_tables = (op.get_context().dialect.name == "sqlite") or is_scd
 
+    # Columns dropped: type change (ha_supported → ha JSON) or removed (support_level).
+    # Columns renamed in place to preserve data.
+    # Kept columns: alter comment/nullability only (no drop+readd).
+    # Recreate path uses partial_reordering so CREATE TABLE order matches the model
+    # while INSERT still copies by column key (renames keep the old key).
+    _kept_column_comments = (
+        ("family", "Hardware family or class classification."),
+        ("server_id", "Reference to the underlying cloud server's identifier."),
+        (
+            "vcpus",
+            "Number of virtual CPU cores allocated to the database server instance.",
+        ),
+        ("memory_amount", "Amount of RAM (MiB) provisioned for the instance."),
+        ("engine", "Managed database engine running on the instance."),
+        ("engine_versions", "Major database engine versions supported."),
+        ("storage_size", "Bundled storage capacity included in the database (GB)."),
+        (
+            "scheduled_backups",
+            "Support for automated snapshot schedules and backup retention management.",
+        ),
+        (
+            "continuous_backups",
+            "Maximum point-in-time recovery (PITR) log retention window "
+            "expressed in days (0 if unsupported).",
+        ),
+        (
+            "custom_config",
+            "Whether database engine parameters/flags can be customized.",
+        ),
+        (
+            "custom_extensions",
+            "Support for custom database engine extensions/plugins.",
+        ),
+        ("sla", "Service level agreement as a percentage, e.g. 99.95."),
+    )
+    _new_database_columns = (
+        (
+            "api_reference_object",
+            json_type(),
+            True,
+            None,
+            "How this resource is referenced in the vendor API calls, "
+            "including the parameter name(s).",
+        ),
+        (
+            "wire_protocol",
+            sa.Enum("POSTGRESQL", name="databasewireprotocol"),
+            True,
+            None,
+            "Network protocol used for client connections.",
+        ),
+        (
+            "ha",
+            json_type(),
+            False,
+            '["none"]',
+            "Ordered HA levels supported, highest tier first.",
+        ),
+        (
+            "ha_strategy",
+            json_type(),
+            False,
+            '["none"]',
+            "Ordered HA strategies supported, highest tier first.",
+        ),
+        (
+            "max_read_replicas",
+            sa.Integer(),
+            True,
+            None,
+            "Maximum number of read-only replica nodes supported "
+            "to scale read workloads.",
+        ),
+        (
+            "storage_extra_min",
+            sa.Integer(),
+            True,
+            None,
+            "Minimum custom storage size (in GB) that can be attached to the instance.",
+        ),
+        (
+            "storage_extra_max",
+            sa.Integer(),
+            True,
+            None,
+            "Maximum storage limit (in GB) supported by the instance or storage tier.",
+        ),
+        (
+            "disk_encryption",
+            sa.Boolean(),
+            True,
+            None,
+            "Indicates whether underlying storage drives are encrypted at rest.",
+        ),
+        (
+            "connection_pool",
+            sa.Boolean(),
+            True,
+            None,
+            "Managed connection proxy support.",
+        ),
+        (
+            "system_monitoring",
+            sa.Boolean(),
+            True,
+            None,
+            "Availability of host-level CPU, RAM, and disk metrics dashboards.",
+        ),
+        (
+            "database_monitoring",
+            sa.Boolean(),
+            True,
+            None,
+            "Database engine performance insights "
+            "(slow queries, locks, execution plans).",
+        ),
+        (
+            "autotuning_apply",
+            sa.Boolean(),
+            True,
+            None,
+            "System automatically executes performance fixes "
+            "(e.g., index creation, parameter tuning) without "
+            "operator intervention.",
+        ),
+        (
+            "security_features",
+            json_type(),
+            False,
+            "[]",
+            "Security capabilities supported by DBaaS providers.",
+        ),
+    )
+    # Keys are pre-rename names for existing cols; new cols use their final names.
+    _upgrade_column_order = (
+        "vendor_id",
+        "database_id",
+        "name",
+        "api_reference",
+        "api_reference_object",
+        "display_name",
+        "description",
+        "family",
+        "server_id",
+        "vcpus",
+        "memory_amount",
+        "engine",
+        "wire_protocol",
+        "engine_versions",
+        "engine_auto_upgrade",  # → auto_upgrade_versions
+        "ha",
+        "ha_strategy",
+        "max_read_replicas",
+        "custom_config",
+        "custom_extensions",
+        "storage_size",
+        "storage_extra_min",
+        "storage_extra_max",
+        "storage_autoscaling",  # → storage_extra_autosize
+        "disk_encryption",
+        "scheduled_backups",
+        "continuous_backups",
+        "connection_pool",
+        "system_monitoring",
+        "database_monitoring",
+        "autotuning",  # → autotuning_advice
+        "autotuning_apply",
+        "sla",
+        "security_features",
+        "status",
+        "observed_at",
+    )
+
     if do_recreate_tables:
         with op.batch_alter_table(
             database_table_name,
             schema=None,
             copy_from=database_table,
             recreate="always",
+            partial_reordering=[_upgrade_column_order],
         ) as batch_op:
-            for col in (
-                "ha_supported",
-                "storage_autoscaling",
-                "engine_auto_upgrade",
-                "autotuning",
-                "support_level",
-                "server_id",
-                "engine",
-                "engine_versions",
-                "family",
-                "vcpus",
-                "memory_amount",
-                "storage_size",
-                "scheduled_backups",
-                "continuous_backups",
-                "custom_config",
-                "custom_extensions",
-                "sla",
-            ):
+            for col in ("ha_supported", "support_level"):
                 batch_op.drop_column(col)
 
-            batch_op.add_column(
-                sa.Column(
-                    "api_reference_object",
-                    json_type(),
-                    nullable=True,
-                    comment="How this resource is referenced in the vendor API calls, including the parameter name(s).",
-                ),
-                insert_after="api_reference",
-            )
-
-            columns_in_order = [
-                (
-                    "family",
-                    sqlmodel.sql.sqltypes.AutoString(),
-                    True,
-                    None,
-                    "Hardware family or class classification.",
-                ),
-                (
-                    "server_id",
-                    sqlmodel.sql.sqltypes.AutoString(),
-                    True,
-                    None,
-                    "Reference to the underlying cloud server's identifier.",
-                ),
-                (
-                    "vcpus",
-                    sa.Integer(),
-                    True,
-                    None,
-                    "Number of virtual CPU cores allocated to the database "
-                    "server instance.",
-                ),
-                (
-                    "memory_amount",
-                    sa.Integer(),
-                    True,
-                    None,
-                    "Amount of RAM (MiB) provisioned for the instance.",
-                ),
-                (
-                    "engine",
-                    _enum("databaseengine", ("POSTGRESQL",)),
-                    True,
-                    None,
-                    "Managed database engine running on the instance.",
-                ),
-                (
-                    "wire_protocol",
-                    sa.Enum("POSTGRESQL", name="databasewireprotocol"),
-                    True,
-                    None,
-                    "Network protocol used for client connections.",
-                ),
-                (
-                    "engine_versions",
-                    json_type(),
-                    False,
-                    None,
-                    "Major database engine versions supported.",
-                ),
-                (
-                    "auto_upgrade_versions",
-                    sa.Boolean(),
-                    True,
-                    None,
-                    "Auto-upgrade between minor database engine versions.",
-                ),
-                (
-                    "ha",
-                    json_type(),
-                    False,
-                    '["none"]',
-                    "Ordered HA levels supported, highest tier first.",
-                ),
-                (
-                    "ha_strategy",
-                    json_type(),
-                    False,
-                    '["none"]',
-                    "Ordered HA strategies supported, highest tier first.",
-                ),
-                (
-                    "max_read_replicas",
-                    sa.Integer(),
-                    True,
-                    None,
-                    "Maximum number of read-only replica nodes supported "
-                    "to scale read workloads.",
-                ),
-                (
-                    "custom_config",
-                    sa.Boolean(),
-                    True,
-                    None,
-                    "Whether database engine parameters/flags can be customized.",
-                ),
-                (
-                    "custom_extensions",
-                    sa.Boolean(),
-                    True,
-                    None,
-                    "Support for custom database engine extensions/plugins.",
-                ),
-                (
-                    "storage_size",
-                    sa.Integer(),
-                    True,
-                    None,
-                    "Bundled storage capacity included in the database (GB).",
-                ),
-                (
-                    "storage_extra_min",
-                    sa.Integer(),
-                    True,
-                    None,
-                    "Minimum custom storage size (in GB) that can be attached "
-                    "to the instance.",
-                ),
-                (
-                    "storage_extra_max",
-                    sa.Integer(),
-                    True,
-                    None,
-                    "Maximum storage limit (in GB) supported by the instance "
-                    "or storage tier.",
-                ),
-                (
-                    "storage_extra_autosize",
-                    sa.Boolean(),
-                    True,
-                    None,
+            batch_op.alter_column(
+                "storage_autoscaling",
+                new_column_name="storage_extra_autosize",
+                comment=(
                     "Whether storage capacity can automatically expand as "
-                    "disk usage grows.",
+                    "disk usage grows."
                 ),
-                (
-                    "disk_encryption",
-                    sa.Boolean(),
-                    True,
-                    None,
-                    "Indicates whether underlying storage drives are encrypted at rest.",
+            )
+            batch_op.alter_column(
+                "engine_auto_upgrade",
+                new_column_name="auto_upgrade_versions",
+                comment="Auto-upgrade between minor database engine versions.",
+            )
+            batch_op.alter_column(
+                "autotuning",
+                new_column_name="autotuning_advice",
+                comment=(
+                    "Analyzes workload and generates actionable performance "
+                    "tuning advice."
                 ),
-                (
-                    "scheduled_backups",
-                    sa.Boolean(),
-                    True,
-                    None,
-                    "Support for automated snapshot schedules and backup "
-                    "retention management.",
-                ),
-                (
-                    "continuous_backups",
-                    sa.Integer(),
-                    True,
-                    None,
-                    "Maximum point-in-time recovery (PITR) log retention window "
-                    "expressed in days (0 if unsupported).",
-                ),
-                (
-                    "connection_pool",
-                    sa.Boolean(),
-                    True,
-                    None,
-                    "Managed connection proxy support.",
-                ),
-                (
-                    "system_monitoring",
-                    sa.Boolean(),
-                    True,
-                    None,
-                    "Availability of host-level CPU, RAM, and disk metrics dashboards.",
-                ),
-                (
-                    "database_monitoring",
-                    sa.Boolean(),
-                    True,
-                    None,
-                    "Database engine performance insights "
-                    "(slow queries, locks, execution plans).",
-                ),
-                (
-                    "autotuning_advice",
-                    sa.Boolean(),
-                    True,
-                    None,
-                    "Analyzes workload and generates actionable performance tuning advice.",
-                ),
-                (
-                    "autotuning_apply",
-                    sa.Boolean(),
-                    True,
-                    None,
-                    "System automatically executes performance fixes "
-                    "(e.g., index creation, parameter tuning) without "
-                    "operator intervention.",
-                ),
-                (
-                    "sla",
-                    sa.Float(),
-                    True,
-                    None,
-                    "Service level agreement as a percentage, e.g. 99.95.",
-                ),
-                (
-                    "security_features",
-                    json_type(),
-                    False,
-                    "[]",
-                    "Security capabilities supported by DBaaS providers.",
-                ),
-            ]
-            after = "description"
-            for name, coltype, nullable, server_default, comment in columns_in_order:
-                kwargs = {
-                    "nullable": nullable,
-                    "comment": comment,
-                }
+            )
+            batch_op.alter_column(
+                "engine",
+                nullable=True,
+                comment="Managed database engine running on the instance.",
+            )
+            for column, comment in _kept_column_comments:
+                if column == "engine":
+                    continue
+                batch_op.alter_column(column, comment=comment)
+
+            for (
+                name,
+                coltype,
+                nullable,
+                server_default,
+                comment,
+            ) in _new_database_columns:
+                kwargs = {"nullable": nullable, "comment": comment}
                 if server_default is not None:
                     kwargs["server_default"] = server_default
-                batch_op.add_column(
-                    sa.Column(name, coltype, **kwargs),
-                    insert_after=after,
-                )
-                after = name
+                batch_op.add_column(sa.Column(name, coltype, **kwargs))
     else:
         op.drop_column(database_table_name, "ha_supported")
-        op.drop_column(database_table_name, "storage_autoscaling")
-        op.drop_column(database_table_name, "engine_auto_upgrade")
-        op.drop_column(database_table_name, "autotuning")
         op.drop_column(database_table_name, "support_level")
 
         if is_postgresql:
@@ -564,212 +535,47 @@ def upgrade() -> None:
                 bind, checkfirst=True
             )
 
-        op.alter_column(database_table_name, "engine", nullable=True)
-        op.add_column(
+        op.alter_column(
             database_table_name,
-            sa.Column(
-                "api_reference_object",
-                json_type(),
-                nullable=True,
-                comment="How this resource is referenced in the vendor API calls, including the parameter name(s).",
+            "storage_autoscaling",
+            new_column_name="storage_extra_autosize",
+            comment=(
+                "Whether storage capacity can automatically expand as disk usage grows."
             ),
         )
-        op.add_column(
+        op.alter_column(
             database_table_name,
-            sa.Column(
-                "wire_protocol",
-                sa.Enum("POSTGRESQL", name="databasewireprotocol"),
-                nullable=True,
-                comment="Network protocol used for client connections.",
+            "engine_auto_upgrade",
+            new_column_name="auto_upgrade_versions",
+            comment="Auto-upgrade between minor database engine versions.",
+        )
+        op.alter_column(
+            database_table_name,
+            "autotuning",
+            new_column_name="autotuning_advice",
+            comment=(
+                "Analyzes workload and generates actionable performance tuning advice."
             ),
         )
-        op.add_column(
+        op.alter_column(
             database_table_name,
-            sa.Column(
-                "auto_upgrade_versions",
-                sa.Boolean(),
-                nullable=True,
-                comment="Auto-upgrade between minor database engine versions.",
-            ),
+            "engine",
+            nullable=True,
+            comment="Managed database engine running on the instance.",
         )
-        op.add_column(
-            database_table_name,
-            sa.Column(
-                "ha",
-                json_type(),
-                nullable=False,
-                server_default='["none"]',
-                comment="Ordered HA levels supported, highest tier first.",
-            ),
-        )
-        op.add_column(
-            database_table_name,
-            sa.Column(
-                "ha_strategy",
-                json_type(),
-                nullable=False,
-                server_default='["none"]',
-                comment="Ordered HA strategies supported, highest tier first.",
-            ),
-        )
-        op.add_column(
-            database_table_name,
-            sa.Column(
-                "max_read_replicas",
-                sa.Integer(),
-                nullable=True,
-                comment=(
-                    "Maximum number of read-only replica nodes supported "
-                    "to scale read workloads."
-                ),
-            ),
-        )
-        op.add_column(
-            database_table_name,
-            sa.Column(
-                "storage_extra_min",
-                sa.Integer(),
-                nullable=True,
-                comment=(
-                    "Minimum custom storage size (in GB) that can be attached "
-                    "to the instance."
-                ),
-            ),
-        )
-        op.add_column(
-            database_table_name,
-            sa.Column(
-                "storage_extra_max",
-                sa.Integer(),
-                nullable=True,
-                comment=(
-                    "Maximum storage limit (in GB) supported by the instance "
-                    "or storage tier."
-                ),
-            ),
-        )
-        op.add_column(
-            database_table_name,
-            sa.Column(
-                "storage_extra_autosize",
-                sa.Boolean(),
-                nullable=True,
-                comment=(
-                    "Whether storage capacity can automatically expand as "
-                    "disk usage grows."
-                ),
-            ),
-        )
-        op.add_column(
-            database_table_name,
-            sa.Column(
-                "disk_encryption",
-                sa.Boolean(),
-                nullable=True,
-                comment=(
-                    "Indicates whether underlying storage drives are encrypted at rest."
-                ),
-            ),
-        )
-        op.add_column(
-            database_table_name,
-            sa.Column(
-                "connection_pool",
-                sa.Boolean(),
-                nullable=True,
-                comment="Managed connection proxy support.",
-            ),
-        )
-        op.add_column(
-            database_table_name,
-            sa.Column(
-                "system_monitoring",
-                sa.Boolean(),
-                nullable=True,
-                comment=(
-                    "Availability of host-level CPU, RAM, and disk metrics dashboards."
-                ),
-            ),
-        )
-        op.add_column(
-            database_table_name,
-            sa.Column(
-                "database_monitoring",
-                sa.Boolean(),
-                nullable=True,
-                comment=(
-                    "Database engine performance insights "
-                    "(slow queries, locks, execution plans)."
-                ),
-            ),
-        )
-        op.add_column(
-            database_table_name,
-            sa.Column(
-                "autotuning_advice",
-                sa.Boolean(),
-                nullable=True,
-                comment=(
-                    "Analyzes workload and generates actionable performance "
-                    "tuning advice."
-                ),
-            ),
-        )
-        op.add_column(
-            database_table_name,
-            sa.Column(
-                "autotuning_apply",
-                sa.Boolean(),
-                nullable=True,
-                comment=(
-                    "System automatically executes performance fixes "
-                    "(e.g., index creation, parameter tuning) without "
-                    "operator intervention."
-                ),
-            ),
-        )
-        op.add_column(
-            database_table_name,
-            sa.Column(
-                "security_features",
-                json_type(),
-                nullable=False,
-                server_default="[]",
-                comment="Security capabilities supported by DBaaS providers.",
-            ),
-        )
-        for column, comment in (
-            ("family", "Hardware family or class classification."),
-            ("server_id", "Reference to the underlying cloud server's identifier."),
-            (
-                "vcpus",
-                "Number of virtual CPU cores allocated to the database server instance.",
-            ),
-            ("memory_amount", "Amount of RAM (MiB) provisioned for the instance."),
-            ("engine", "Managed database engine running on the instance."),
-            ("engine_versions", "Major database engine versions supported."),
-            (
-                "storage_size",
-                "Bundled storage capacity included in the database (GB).",
-            ),
-            (
-                "scheduled_backups",
-                "Support for automated snapshot schedules and backup retention management.",
-            ),
-            (
-                "continuous_backups",
-                "Maximum point-in-time recovery (PITR) log retention window expressed in days (0 if unsupported).",
-            ),
-            (
-                "custom_config",
-                "Whether database engine parameters/flags can be customized.",
-            ),
-            (
-                "custom_extensions",
-                "Support for custom database engine extensions/plugins.",
-            ),
-        ):
+        for column, comment in _kept_column_comments:
+            if column == "engine":
+                continue
             op.alter_column(database_table_name, column, comment=comment)
+
+        for name, coltype, nullable, server_default, comment in _new_database_columns:
+            kwargs = {"nullable": nullable, "comment": comment}
+            if server_default is not None:
+                kwargs["server_default"] = server_default
+            op.add_column(
+                database_table_name,
+                sa.Column(name, coltype, **kwargs),
+            )
 
     if is_postgresql:
         sa.Enum(name="databasesupportlevel").drop(op.get_bind(), checkfirst=True)
@@ -1043,7 +849,6 @@ def get_database_price_table_v085(is_scd: bool) -> sa.Table:
 def downgrade() -> None:
     is_scd = is_scd_migration()
     is_postgresql = op.get_context().dialect.name == "postgresql"
-    json_type = sa.dialects.postgresql.JSONB if is_postgresql else sa.JSON
     database_table_name = scdize_suffix("database")
     database_table = get_database_table_v085(is_scd)
     database_price_table_name = scdize_suffix("database_price")
@@ -1089,173 +894,154 @@ def downgrade() -> None:
             op.get_bind(), checkfirst=True
         )
 
+    _downgrade_kept_column_comments = (
+        ("family", "Database series or plan family slug."),
+        ("server_id", "Optional reference to a related Server SKU."),
+        ("vcpus", "Number of virtual CPUs (vCPU) of the database SKU."),
+        ("memory_amount", "RAM amount (MiB) reported by the vendor."),
+        ("engine", "Managed database engine."),
+        (
+            "engine_versions",
+            "Supported major engine versions merged onto the SKU row.",
+        ),
+        ("storage_size", "Bundled storage size (GB), when included in the SKU."),
+        (
+            "scheduled_backups",
+            "If scheduled/automated snapshot backups are supported.",
+        ),
+        ("continuous_backups", "Point-in-time recovery retention in days."),
+        ("custom_config", "If custom configuration parameters are supported."),
+        ("custom_extensions", "If custom extensions are supported."),
+        ("sla", "Service level agreement as a percentage, e.g. 99.95."),
+    )
+    _downgrade_drop_new_columns = (
+        "wire_protocol",
+        "ha",
+        "ha_strategy",
+        "max_read_replicas",
+        "storage_extra_min",
+        "storage_extra_max",
+        "disk_encryption",
+        "connection_pool",
+        "system_monitoring",
+        "database_monitoring",
+        "autotuning_apply",
+        "security_features",
+        "api_reference_object",
+    )
+    # Keys are pre-rename-back names from v0.8.5 schema; restored cols use final names.
+    _downgrade_column_order = (
+        "vendor_id",
+        "database_id",
+        "name",
+        "api_reference",
+        "display_name",
+        "description",
+        "server_id",
+        "engine",
+        "engine_versions",
+        "family",
+        "vcpus",
+        "memory_amount",
+        "storage_size",
+        "ha_supported",
+        "storage_extra_autosize",  # → storage_autoscaling
+        "scheduled_backups",
+        "continuous_backups",
+        "auto_upgrade_versions",  # → engine_auto_upgrade
+        "autotuning_advice",  # → autotuning
+        "custom_config",
+        "custom_extensions",
+        "support_level",
+        "sla",
+        "status",
+        "observed_at",
+    )
+
     if do_recreate_tables:
         with op.batch_alter_table(
             database_table_name,
             schema=None,
             copy_from=database_table,
             recreate="always",
+            partial_reordering=[_downgrade_column_order],
         ) as batch_op:
-            for col in (
-                "wire_protocol",
-                "auto_upgrade_versions",
-                "ha",
-                "ha_strategy",
-                "max_read_replicas",
-                "storage_extra_min",
-                "storage_extra_max",
-                "storage_extra_autosize",
-                "disk_encryption",
-                "connection_pool",
-                "system_monitoring",
-                "database_monitoring",
-                "autotuning_advice",
-                "autotuning_apply",
-                "security_features",
-                "api_reference_object",
-                "family",
-                "server_id",
-                "vcpus",
-                "memory_amount",
-                "engine",
-                "engine_versions",
-                "custom_config",
-                "custom_extensions",
-                "storage_size",
-                "scheduled_backups",
-                "continuous_backups",
-                "sla",
-            ):
+            for col in _downgrade_drop_new_columns:
                 batch_op.drop_column(col)
 
-            columns_in_order = [
-                (
-                    "server_id",
-                    sqlmodel.sql.sqltypes.AutoString(),
-                    True,
-                    "Optional reference to a related Server SKU.",
-                ),
-                (
-                    "engine",
-                    _enum("databaseengine", ("POSTGRESQL",)),
-                    False,
-                    "Managed database engine.",
-                ),
-                (
-                    "engine_versions",
-                    json_type(),
-                    False,
-                    "Supported major engine versions merged onto the SKU row.",
-                ),
-                (
-                    "family",
-                    sqlmodel.sql.sqltypes.AutoString(),
-                    True,
-                    "Database series or plan family slug.",
-                ),
-                (
-                    "vcpus",
-                    sa.Integer(),
-                    True,
-                    "Number of virtual CPUs (vCPU) of the database SKU.",
-                ),
-                (
-                    "memory_amount",
-                    sa.Integer(),
-                    True,
-                    "RAM amount (MiB) reported by the vendor.",
-                ),
-                (
-                    "storage_size",
-                    sa.Integer(),
-                    True,
-                    "Bundled storage size (GB), when included in the SKU.",
-                ),
-                (
+            batch_op.alter_column(
+                "storage_extra_autosize",
+                new_column_name="storage_autoscaling",
+                comment="If storage can be expanded beyond the bundled minimum.",
+            )
+            batch_op.alter_column(
+                "auto_upgrade_versions",
+                new_column_name="engine_auto_upgrade",
+                comment="If automatic engine version upgrades are supported.",
+            )
+            batch_op.alter_column(
+                "autotuning_advice",
+                new_column_name="autotuning",
+                comment="If vendor autotuning is available.",
+            )
+            batch_op.alter_column(
+                "engine",
+                nullable=False,
+                comment="Managed database engine.",
+            )
+            for column, comment in _downgrade_kept_column_comments:
+                if column == "engine":
+                    continue
+                batch_op.alter_column(column, comment=comment)
+
+            batch_op.add_column(
+                sa.Column(
                     "ha_supported",
                     sa.Boolean(),
-                    True,
-                    "If high availability is supported for the SKU.",
+                    nullable=True,
+                    comment="If high availability is supported for the SKU.",
                 ),
-                (
-                    "storage_autoscaling",
-                    sa.Boolean(),
-                    True,
-                    "If storage can be expanded beyond the bundled minimum.",
-                ),
-                (
-                    "scheduled_backups",
-                    sa.Boolean(),
-                    True,
-                    "If scheduled/automated snapshot backups are supported.",
-                ),
-                (
-                    "continuous_backups",
-                    sa.Integer(),
-                    True,
-                    "Point-in-time recovery retention in days.",
-                ),
-                (
-                    "engine_auto_upgrade",
-                    sa.Boolean(),
-                    True,
-                    "If automatic engine version upgrades are supported.",
-                ),
-                (
-                    "autotuning",
-                    sa.Boolean(),
-                    True,
-                    "If vendor autotuning is available.",
-                ),
-                (
-                    "custom_config",
-                    sa.Boolean(),
-                    True,
-                    "If custom configuration parameters are supported.",
-                ),
-                (
-                    "custom_extensions",
-                    sa.Boolean(),
-                    True,
-                    "If custom extensions are supported.",
-                ),
-                (
+            )
+            batch_op.add_column(
+                sa.Column(
                     "support_level",
                     _enum("databasesupportlevel", ("STANDARD",)),
-                    True,
-                    "Vendor support tier for the SKU.",
+                    nullable=True,
+                    comment="Vendor support tier for the SKU.",
                 ),
-                (
-                    "sla",
-                    sa.Float(),
-                    True,
-                    "Service level agreement as a percentage, e.g. 99.95.",
-                ),
-            ]
-            after = "description"
-            for name, coltype, nullable, comment in columns_in_order:
-                batch_op.add_column(
-                    sa.Column(name, coltype, nullable=nullable, comment=comment),
-                    insert_after=after,
-                )
-                after = name
+            )
     else:
-        op.drop_column(database_table_name, "wire_protocol")
-        op.drop_column(database_table_name, "auto_upgrade_versions")
-        op.drop_column(database_table_name, "ha")
-        op.drop_column(database_table_name, "ha_strategy")
-        op.drop_column(database_table_name, "max_read_replicas")
-        op.drop_column(database_table_name, "storage_extra_min")
-        op.drop_column(database_table_name, "storage_extra_max")
-        op.drop_column(database_table_name, "storage_extra_autosize")
-        op.drop_column(database_table_name, "disk_encryption")
-        op.drop_column(database_table_name, "connection_pool")
-        op.drop_column(database_table_name, "system_monitoring")
-        op.drop_column(database_table_name, "database_monitoring")
-        op.drop_column(database_table_name, "autotuning_advice")
-        op.drop_column(database_table_name, "autotuning_apply")
-        op.drop_column(database_table_name, "security_features")
-        op.drop_column(database_table_name, "api_reference_object")
+        for col in _downgrade_drop_new_columns:
+            op.drop_column(database_table_name, col)
+
+        op.alter_column(
+            database_table_name,
+            "storage_extra_autosize",
+            new_column_name="storage_autoscaling",
+            comment="If storage can be expanded beyond the bundled minimum.",
+        )
+        op.alter_column(
+            database_table_name,
+            "auto_upgrade_versions",
+            new_column_name="engine_auto_upgrade",
+            comment="If automatic engine version upgrades are supported.",
+        )
+        op.alter_column(
+            database_table_name,
+            "autotuning_advice",
+            new_column_name="autotuning",
+            comment="If vendor autotuning is available.",
+        )
+        op.alter_column(
+            database_table_name,
+            "engine",
+            nullable=False,
+            comment="Managed database engine.",
+        )
+        for column, comment in _downgrade_kept_column_comments:
+            if column == "engine":
+                continue
+            op.alter_column(database_table_name, column, comment=comment)
 
         op.add_column(
             database_table_name,
@@ -1275,54 +1061,6 @@ def downgrade() -> None:
                 comment="If high availability is supported for the SKU.",
             ),
         )
-        op.add_column(
-            database_table_name,
-            sa.Column(
-                "storage_autoscaling",
-                sa.Boolean(),
-                nullable=True,
-                comment="If storage can be expanded beyond the bundled minimum.",
-            ),
-        )
-        op.add_column(
-            database_table_name,
-            sa.Column(
-                "engine_auto_upgrade",
-                sa.Boolean(),
-                nullable=True,
-                comment="If automatic engine version upgrades are supported.",
-            ),
-        )
-        op.add_column(
-            database_table_name,
-            sa.Column(
-                "autotuning",
-                sa.Boolean(),
-                nullable=True,
-                comment="If vendor autotuning is available.",
-            ),
-        )
-        for column, comment in (
-            ("family", "Database series or plan family slug."),
-            ("server_id", "Optional reference to a related Server SKU."),
-            ("vcpus", "Number of virtual CPUs (vCPU) of the database SKU."),
-            ("memory_amount", "RAM amount (MiB) reported by the vendor."),
-            ("engine", "Managed database engine."),
-            (
-                "engine_versions",
-                "Supported major engine versions merged onto the SKU row.",
-            ),
-            ("storage_size", "Bundled storage size (GB), when included in the SKU."),
-            (
-                "scheduled_backups",
-                "If scheduled/automated snapshot backups are supported.",
-            ),
-            ("continuous_backups", "Point-in-time recovery retention in days."),
-            ("custom_config", "If custom configuration parameters are supported."),
-            ("custom_extensions", "If custom extensions are supported."),
-            ("support_level", "Vendor support tier for the SKU."),
-        ):
-            op.alter_column(database_table_name, column, comment=comment)
 
     if is_postgresql:
         bind = op.get_bind()
