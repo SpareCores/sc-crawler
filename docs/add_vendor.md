@@ -23,8 +23,8 @@ Each vendor module should provide the below functions:
 - `inventory_server_prices`: Define the [`ServerPrice`][sc_crawler.tables.ServerPrice] instances for the standard/ondemand (or optionally also for the reserved) pricing of the instance types per region and zone. When applicable, include the monthly cap for tiered pricing in the `price_tiered` field.
 - `inventory_server_prices_spot`: Similar to the above, define [`ServerPrice`][sc_crawler.tables.ServerPrice] instances but the `allocation` field set to [`Allocation.SPOT`][sc_crawler.table_fields.Allocation]. Very likely to see different spot prices per region/zone.
 - `inventory_storage_prices`: Define [`StoragePrice`][sc_crawler.tables.StoragePrice] instances to describe the available storage options that can be attached to the servers.
-- `inventory_databases`: Define [`Database`][sc_crawler.tables.Database] instances for managed database SKUs (e.g. PostgreSQL).
-- `inventory_database_prices`: Define [`DatabasePrice`][sc_crawler.tables.DatabasePrice] instances for compute pricing per region. Use hourly `price` with optional monthly cap in `price_tiered`.
+- `inventory_databases`: Define [`Database`][sc_crawler.tables.Database] instances for managed database SKUs (e.g. PostgreSQL). Catalog rows describe capabilities per SKU: ordered JSON lists for `ha` / `ha_strategy`, optional `security_features`, and `api_reference_object` for provisioning APIs.
+- `inventory_database_prices`: Define [`DatabasePrice`][sc_crawler.tables.DatabasePrice] instances for compute pricing per region. `ha` and `ha_strategy` are scalar primary-key fields (one price row per HA deployment). Use hourly `price` with optional monthly cap in `price_tiered`.
 - `inventory_database_storages`: Define [`DatabaseStorage`][sc_crawler.tables.DatabaseStorage] instances for decoupled or add-on storage products.
 - `inventory_database_storage_prices`: Define [`DatabaseStoragePrice`][sc_crawler.tables.DatabaseStoragePrice] instances for storage pricing per region.
 - `inventory_traffic_prices`: Define [`TrafficPrice`][sc_crawler.tables.TrafficPrice] instances to describe the pricing of ingress/egress traffic.
@@ -279,35 +279,48 @@ def inventory_databases(vendor):
     #             "database_id": ,
     #             "name": ,
     #             "api_reference": ,
+    #             # Named API args for provisioning (e.g. Pulumi/Terraform).
+    #             "api_reference_object": {},
     #             "display_name": ,
     #             "description": None,
     #             "family": None,
     #             "server_id": None,
     #             "vcpus": None,
-    #             "memory_amount": None,
+    #             "memory_amount": None,  # MiB
     #             "engine": DatabaseEngine.POSTGRESQL,
     #             "wire_protocol": DatabaseWireProtocol.POSTGRESQL,
     #             "engine_versions": ["16", "17"],
     #             "auto_upgrade_versions": None,
-    #             "ha": None,  # DatabaseHaLevel.NONE / SINGLE_ZONE / MULTI_ZONE / MULTI_REGION
+    #             # Ordered JSON lists (strongest first); defaults to [NONE].
+    #             "ha": [DatabaseHaLevel.NONE],
+    #             "ha_strategy": [DatabaseHaStrategy.NONE],
     #             "max_read_replicas": None,
     #             "custom_config": None,
     #             "custom_extensions": None,
-    #             "storage_size": None,
-    #             "storage_extra_min": None,
-    #             "storage_extra_max": None,
+    #             "storage_size": None,  # bundled GB
+    #             "storage_extra_min": None,  # GB
+    #             "storage_extra_max": None,  # GB
     #             "storage_extra_autosize": None,
     #             "disk_encryption": None,
     #             "scheduled_backups": None,
-    #             "continuous_backups": None,
+    #             "continuous_backups": None,  # max PITR retention (days)
     #             "connection_pool": None,
     #             "system_monitoring": None,
     #             "database_monitoring": None,
     #             "autotuning_advice": None,
     #             "autotuning_apply": None,
-    #             "sla": None,
-    #             "security_features": [],  # DatabaseSecurityFeature....
-    #             "support_level": None,  # DatabaseSupportLevel.TIER_1 / TIER_2 / TIER_3
+    #             "sla": None,  # e.g. 99.95
+    #             # Supported security capabilities for this db instance.
+    #             "security_features": [
+    #                 # DatabaseSecurityFeature.IP_FILTERING,
+    #                 # DatabaseSecurityFeature.PRIVATE_NETWORK,
+    #                 # DatabaseSecurityFeature.NETWORK_PEERING,
+    #                 # DatabaseSecurityFeature.IDENTITY_BASED_AUTH,
+    #                 # DatabaseSecurityFeature.CLIENT_CERT_AUTH,
+    #                 # DatabaseSecurityFeature.ENFORCED_TLS,
+    #                 # DatabaseSecurityFeature.CUSTOMER_MANAGED_KEYS,
+    #                 # DatabaseSecurityFeature.AUDIT_LOGGING,
+    #             ],
     #         }
     #     )
     return items
@@ -322,6 +335,9 @@ def inventory_database_prices(vendor):
     #             "region_id": ,
     #             "database_id": ,
     #             "allocation": Allocation.ONDEMAND,
+    #             # Scalar PK fields: one row per HA deployment (e.g. Single-AZ vs Multi-AZ).
+    #             "ha": DatabaseHaLevel.NONE,
+    #             "ha_strategy": DatabaseHaStrategy.NONE,
     #             "unit": PriceUnit.HOUR,
     #             "price": ,
     #             "price_upfront": 0,
