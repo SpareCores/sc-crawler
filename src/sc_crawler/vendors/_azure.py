@@ -1930,7 +1930,7 @@ def inventory_databases(vendor):
                             "continuous_backups": 35,
                             "sla": sla,
                         }
-                        vendor.progress_tracker.advance_task()
+        vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
     return list(merged.values())
 
