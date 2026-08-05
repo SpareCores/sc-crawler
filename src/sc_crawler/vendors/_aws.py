@@ -1590,10 +1590,11 @@ def inventory_databases(vendor):
                 continue
             seen_database_ids.add(database_id)
             db_instance_options = options_by_database.get(database_id, [])
+            status = Status.ACTIVE
             # Pricing keeps previous-gen SKUs (currentGeneration=No) after AWS stops
-            # allowing new launches; skip classes with no orderable options in any region.
+            # allowing new launches; add these classes with INACTIVE status.
             if not db_instance_options:
-                continue
+                status = Status.INACTIVE
             deployment_options = deployment_options_by_database.get(
                 database_id, frozenset()
             )
@@ -1746,6 +1747,7 @@ def inventory_databases(vendor):
                     # https://aws.amazon.com/rds/sla/
                     # Multi-AZ SLO 99.95%; Single-AZ SLO 99.5% (credit tables).
                     "sla": 99.95 if multi_az or readable else 99.5,
+                    "status": status,
                 }
             )
         vendor.progress_tracker.advance_task()
@@ -1762,11 +1764,7 @@ def inventory_database_prices(vendor):
     vendor.progress_tracker.hide_task()
 
     region_ids = _active_region_ids(vendor)
-    databases = {
-        database.database_id
-        for database in vendor.databases
-        if database.status == Status.ACTIVE
-    }
+    databases = {database.database_id for database in vendor.databases}
     items = []
     vendor.progress_tracker.start_task(
         name="Preprocessing database_price(s)", total=len(products)
