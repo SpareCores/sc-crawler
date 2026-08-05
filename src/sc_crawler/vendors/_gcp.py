@@ -1331,19 +1331,14 @@ def inventory_databases(vendor):
         description = f"PostgreSQL Cloud SQL {family_label}"
         if spec_parts:
             description = f"{description} ({', '.join(spec_parts)})"
-
-        server_id = None
-        servers = getattr(vendor, "servers", None)
-        if servers:
-            server_id = next(
-                (
-                    server.server_id
-                    for server in servers
-                    if server.api_reference == tier_name.removeprefix("db-")
-                ),
-                None,
-            )
-
+        server_id = next(
+            (
+                server.server_id
+                for server in vendor.servers
+                if server.api_reference == tier_name.removeprefix("db-")
+            ),
+            None,
+        )
         raw_regions = tier.get("region")
         if isinstance(raw_regions, str):
             tier_regions = [raw_regions]

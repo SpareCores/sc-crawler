@@ -1792,6 +1792,14 @@ def inventory_databases(vendor):
                         # Same SKU can appear in multiple regions; keep first seen.
                         if database_id in merged:
                             continue
+                        server_id = next(
+                            (
+                                server.server_id
+                                for server in vendor.servers
+                                if server.api_reference == database_id
+                            ),
+                            None,
+                        )
                         vcpus = int(sku.v_cores) if sku.v_cores else None
                         memory_amount = (
                             int(sku.supported_memory_per_vcore_mb * sku.v_cores)
@@ -1852,7 +1860,7 @@ def inventory_databases(vendor):
                             },
                             "display_name": database_id.removeprefix("Standard_"),
                             "description": description,
-                            "server_id": database_id,
+                            "server_id": server_id,
                             "engine": DatabaseEngine.POSTGRESQL,
                             "wire_protocol": DatabaseWireProtocol.POSTGRESQL,
                             "engine_versions": engine_versions,

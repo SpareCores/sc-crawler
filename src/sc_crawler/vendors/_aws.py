@@ -1658,7 +1658,7 @@ def inventory_databases(vendor):
                 (
                     server.server_id
                     for server in vendor.servers
-                    if server.server_id == database_id.removeprefix("db.")
+                    if server.api_reference == database_id.removeprefix("db.")
                 ),
                 None,
             )

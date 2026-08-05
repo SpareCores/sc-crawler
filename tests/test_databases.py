@@ -305,6 +305,7 @@ def test_azure_inventory_databases_autotuning_from_supported_features():
     """IndexTuning → advice; AdaptiveAutoVacuumAutoApply → apply (param auto-tune)."""
     vendor = Mock(vendor_id="azure")
     vendor.regions = [Mock(region_id="centralus", api_reference="centralus")]
+    vendor.servers = []
     vendor.progress_tracker = Mock(
         start_task=Mock(), advance_task=Mock(), hide_task=Mock()
     )
@@ -368,6 +369,7 @@ def test_azure_inventory_databases_autotuning_from_supported_features():
 def test_azure_inventory_databases_ha_from_supported_ha_mode():
     vendor = Mock(vendor_id="azure")
     vendor.regions = [Mock(region_id="centralus", api_reference="centralus")]
+    vendor.servers = []
     vendor.progress_tracker = Mock(
         start_task=Mock(), advance_task=Mock(), hide_task=Mock()
     )
@@ -1144,7 +1146,10 @@ def test_aws_storage_bounds_from_orderable_options():
 def test_aws_inventory_databases_description_server_id_and_capabilities():
     vendor = _aws_vendor(
         regions=[Mock(region_id="us-east-1", status=Status.ACTIVE)],
-        servers=[Mock(server_id="m5.large"), Mock(server_id="r6gd.xlarge")],
+        servers=[
+            Mock(server_id="m5.large", api_reference="m5.large"),
+            Mock(server_id="r6gd.xlarge", api_reference="r6gd.xlarge"),
+        ],
     )
     prices_by_region = {
         "us-east-1": {
