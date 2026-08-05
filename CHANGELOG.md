@@ -5,8 +5,8 @@ Maintenance update:
 - Refactor the `Database` table: replace `ha_supported` with ordered JSON lists
   `ha` (`DatabaseHaLevel`) and `ha_strategy` (`DatabaseHaStrategy`), rename
   `storage_autoscaling` to `storage_extra_autosize`, drop `support_level`, and add
-  capability fields (`wire_protocol`, storage bounds, monitoring, autotuning, and
-  `security_features`).
+  capability fields (`wire_protocol`, storage bounds, monitoring,
+  `autotuning_advice` / `autotuning_apply`, and `security_features`).
 - Add optional `api_reference_object` (JSON) to `Database`: named API args identifying the
   database instance when known.
 - Include `ha` and `ha_strategy` (scalar enums) in `database_price` primary keys so
@@ -17,7 +17,9 @@ Fix(es):
 
 - Correct and fill `AWS`, `Azure`, and `GCP` PostgreSQL DBaaS inventory fields (HA levels
   and strategies, storage bounds, monitoring, backups, SLA, and related capabilities).
-- Drop non-orderable `AWS` RDS instance classes from the catalog.
+- Keep non-orderable `AWS` RDS instance classes in the catalog as `INACTIVE` (prices still
+  crawled).
+- `AliCloud`: add API timeout and region mapping updates.
 - GCP: removed the hardcoded `SERVER_FAMILIES` allowlist that gated newer
   (missed) server pricing lookups. Families with genuinely no pricing SKUs yet
   in the Billing Catalog (e.g. `A4X`, `M4N`, `X4`, TPU VM series as of 2026-08)
