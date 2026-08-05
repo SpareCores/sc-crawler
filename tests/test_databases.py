@@ -1354,7 +1354,7 @@ def test_aws_inventory_databases_dedupes_across_regions():
     assert [row["database_id"] for row in rows] == ["db.m5.large"]
 
 
-def test_aws_inventory_databases_skips_non_orderable_classes():
+def test_aws_inventory_databases_marks_non_orderable_classes_inactive():
     vendor = _aws_vendor(
         regions=[Mock(region_id="us-east-1", status=Status.ACTIVE)],
     )
@@ -1409,7 +1409,10 @@ def test_aws_inventory_databases_skips_non_orderable_classes():
         ),
     ):
         rows = aws_databases(vendor)
-    assert [row["database_id"] for row in rows] == ["db.m5.large"]
+    by_id = {row["database_id"]: row for row in rows}
+    assert set(by_id) == {"db.t2.micro", "db.m5.large"}
+    assert by_id["db.t2.micro"]["status"] == Status.INACTIVE
+    assert by_id["db.m5.large"]["status"] == Status.ACTIVE
 
 
 def test_aws_inventory_database_prices_by_ha_deployment():
