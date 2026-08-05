@@ -943,12 +943,12 @@ class DatabaseFields(
     ha: List[DatabaseHaLevel] = Field(
         default=[DatabaseHaLevel.NONE],
         sa_type=JSON,
-        description="Ordered HA levels supported, strongest first.",
+        description="Ordered HA levels supported, highest tier first.",
     )
     ha_strategy: List[DatabaseHaStrategy] = Field(
         default=[DatabaseHaStrategy.NONE],
         sa_type=JSON,
-        description="Ordered HA strategies supported, strongest first.",
+        description="Ordered HA strategies supported, highest tier first.",
     )
     max_read_replicas: Optional[int] = Field(
         default=None,

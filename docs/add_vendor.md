@@ -291,7 +291,7 @@ def inventory_databases(vendor):
     #             "wire_protocol": DatabaseWireProtocol.POSTGRESQL,
     #             "engine_versions": ["16", "17"],
     #             "auto_upgrade_versions": None,
-    #             # Ordered JSON lists (strongest first); defaults to [NONE].
+    #             # Ordered JSON lists (highest tier first); defaults to [NONE].
     #             "ha": [DatabaseHaLevel.NONE],
     #             "ha_strategy": [DatabaseHaStrategy.NONE],
     #             "max_read_replicas": None,

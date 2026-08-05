@@ -400,14 +400,14 @@ def upgrade() -> None:
                     json_type(),
                     False,
                     '["none"]',
-                    "Ordered HA levels supported, strongest first.",
+                    "Ordered HA levels supported, highest tier first.",
                 ),
                 (
                     "ha_strategy",
                     json_type(),
                     False,
                     '["none"]',
-                    "Ordered HA strategies supported, strongest first.",
+                    "Ordered HA strategies supported, highest tier first.",
                 ),
                 (
                     "max_read_replicas",
@@ -599,7 +599,7 @@ def upgrade() -> None:
                 json_type(),
                 nullable=False,
                 server_default='["none"]',
-                comment="Ordered HA levels supported, strongest first.",
+                comment="Ordered HA levels supported, highest tier first.",
             ),
         )
         op.add_column(
@@ -609,7 +609,7 @@ def upgrade() -> None:
                 json_type(),
                 nullable=False,
                 server_default='["none"]',
-                comment="Ordered HA strategies supported, strongest first.",
+                comment="Ordered HA strategies supported, highest tier first.",
             ),
         )
         op.add_column(
