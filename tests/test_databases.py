@@ -454,22 +454,32 @@ def test_azure_inventory_databases_ha_from_supported_ha_mode():
     assert by_id["Standard_D2s_v3"]["ha"] == [
         DatabaseHaLevel.MULTI_ZONE,
         DatabaseHaLevel.SINGLE_ZONE,
+        DatabaseHaLevel.NONE,
     ]
     assert by_id["Standard_D2s_v3"]["ha_strategy"] == [
-        DatabaseHaStrategy.PASSIVE_STANDBY
+        DatabaseHaStrategy.PASSIVE_STANDBY,
+        DatabaseHaStrategy.NONE,
     ]
     assert by_id["Standard_D2s_v3"]["sla"] == 99.99
     assert by_id["Standard_D2s_v3"]["api_reference_object"] == {
         "sku_name": "GP_Standard_D2s_v3"
     }
-    assert by_id["Standard_D4s_v3"]["ha"] == [DatabaseHaLevel.SINGLE_ZONE]
+    assert by_id["Standard_D4s_v3"]["ha"] == [
+        DatabaseHaLevel.SINGLE_ZONE,
+        DatabaseHaLevel.NONE,
+    ]
     assert by_id["Standard_D4s_v3"]["ha_strategy"] == [
-        DatabaseHaStrategy.PASSIVE_STANDBY
+        DatabaseHaStrategy.PASSIVE_STANDBY,
+        DatabaseHaStrategy.NONE,
     ]
     assert by_id["Standard_D4s_v3"]["sla"] == 99.95
-    assert by_id["Standard_E2s_v3"]["ha"] == [DatabaseHaLevel.MULTI_ZONE]
+    assert by_id["Standard_E2s_v3"]["ha"] == [
+        DatabaseHaLevel.MULTI_ZONE,
+        DatabaseHaLevel.NONE,
+    ]
     assert by_id["Standard_E2s_v3"]["ha_strategy"] == [
-        DatabaseHaStrategy.PASSIVE_STANDBY
+        DatabaseHaStrategy.PASSIVE_STANDBY,
+        DatabaseHaStrategy.NONE,
     ]
 
 

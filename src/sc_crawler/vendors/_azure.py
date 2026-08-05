@@ -1809,10 +1809,9 @@ def inventory_databases(vendor):
                         if spec_parts:
                             description = f"{description} ({', '.join(spec_parts)})"
                         # https://learn.microsoft.com/en-us/azure/postgresql/high-availability/concepts-high-availability
-                        # Flexible Server HA is same-region only (zone-redundant or zonal
-                        # sync standby). Burstable does not support HA (API may still list
-                        # modes — prefer docs). Cross-region geo read replicas are DR /
-                        # read scale, not HA — see max_read_replicas.
+                        # Flexible Server HA is same-region only (zone-redundant or zonal sync standby) and optional.
+                        # Burstable does not support HA (API may still list modes - prefer docs).
+                        # Cross-region geo read replicas are DR / read scale, not HA - see max_read_replicas.
                         ha_modes = {
                             (mode.value if hasattr(mode, "value") else str(mode))
                             for mode in (getattr(sku, "supported_ha_mode", None) or [])
@@ -1826,10 +1825,9 @@ def inventory_databases(vendor):
                                 ha.append(DatabaseHaLevel.SINGLE_ZONE)
                             if ha:
                                 ha_strategy.append(DatabaseHaStrategy.PASSIVE_STANDBY)
-                        if not ha:
-                            ha.append(DatabaseHaLevel.NONE)
-                        if not ha_strategy:
-                            ha_strategy.append(DatabaseHaStrategy.NONE)
+                        # Non-HA deployment is always available
+                        ha.append(DatabaseHaLevel.NONE)
+                        ha_strategy.append(DatabaseHaStrategy.NONE)
                         # https://learn.microsoft.com/en-us/azure/reliability/reliability-database-postgresql
                         # Zone-redundant HA 99.99%; zonal HA 99.95%; no HA 99.9%.
                         if DatabaseHaLevel.MULTI_ZONE in ha:
