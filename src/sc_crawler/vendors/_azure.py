@@ -1749,29 +1749,36 @@ def inventory_databases(vendor):
                     storage_extra_autosize = True
                 elif storage_auto_growth == "Disabled":
                     storage_extra_autosize = False
-                autotuning_advice = None
-                autotuning_apply = None
+                # IndexTuning → advice; AdaptiveAutoVacuumAutoApply → apply (vacuum GUCs).
+                # https://learn.microsoft.com/en-us/azure/postgresql/monitor/concepts-autonomous-tuning
+                # https://learn.microsoft.com/en-us/azure/postgresql/monitor/concepts-adaptive-autovacuum
+                advice_enabled = False
+                apply_enabled = False
+                saw_advice_feature = False
+                saw_apply_feature = False
                 for feature in getattr(capability, "supported_features", None) or []:
                     feature_name = getattr(feature, "name", None)
                     feature_status = getattr(feature, "status", None)
+                    enabled = feature_status == "Enabled"
+                    disabled = feature_status == "Disabled"
                     if (
                         feature_name == "StorageAutoGrowth"
                         and storage_extra_autosize is None
                     ):
-                        if feature_status == "Enabled":
+                        if enabled:
                             storage_extra_autosize = True
-                        elif feature_status == "Disabled":
+                        elif disabled:
                             storage_extra_autosize = False
                     elif feature_name == "IndexTuning":
-                        if feature_status == "Enabled":
-                            autotuning_advice = True
-                        elif feature_status == "Disabled":
-                            autotuning_advice = False
+                        saw_advice_feature = True
+                        if enabled:
+                            advice_enabled = True
                     elif feature_name == "AdaptiveAutoVacuumAutoApply":
-                        if feature_status == "Enabled":
-                            autotuning_apply = True
-                        elif feature_status == "Disabled":
-                            autotuning_apply = False
+                        saw_apply_feature = True
+                        if enabled:
+                            apply_enabled = True
+                autotuning_advice = advice_enabled if saw_advice_feature else None
+                autotuning_apply = apply_enabled if saw_apply_feature else None
                 for edition in (
                     getattr(capability, "supported_server_editions", None) or []
                 ):

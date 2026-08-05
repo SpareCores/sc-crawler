@@ -301,6 +301,70 @@ def test_pg_engine_versions_from_capability():
     assert _pg_engine_versions(capability) == ["15", "16"]
 
 
+def test_azure_inventory_databases_autotuning_from_supported_features():
+    """IndexTuning → advice; AdaptiveAutoVacuumAutoApply → apply (param auto-tune)."""
+    vendor = Mock(vendor_id="azure")
+    vendor.regions = [Mock(region_id="centralus", api_reference="centralus")]
+    vendor.progress_tracker = Mock(
+        start_task=Mock(), advance_task=Mock(), hide_task=Mock()
+    )
+
+    def _sku(name, v_cores=2):
+        return SimpleNamespace(
+            name=name,
+            v_cores=v_cores,
+            supported_memory_per_vcore_mb=4096,
+            supported_ha_mode=[],
+        )
+
+    capability = SimpleNamespace(
+        supported_server_versions=[SimpleNamespace(name="16", status="Available")],
+        storage_auto_growth_supported=None,
+        supported_features=[
+            SimpleNamespace(name="IndexTuning", status="Enabled"),
+            SimpleNamespace(name="AdaptiveAutoVacuumAutoApply", status="Enabled"),
+        ],
+        supported_server_editions=[
+            SimpleNamespace(
+                name="GeneralPurpose",
+                supported_storage_editions=[],
+                supported_server_skus=[_sku("Standard_D2s_v3")],
+            )
+        ],
+    )
+    with (
+        patch(
+            "sc_crawler.vendors._azure._pg_database_regions",
+            return_value=vendor.regions,
+        ),
+        patch(
+            "sc_crawler.vendors._azure._pg_capabilities",
+            return_value=[capability],
+        ),
+    ):
+        rows = azure_databases(vendor)
+    assert rows[0]["autotuning_advice"] is True
+    assert rows[0]["autotuning_apply"] is True
+
+    capability.supported_features = [
+        SimpleNamespace(name="IndexTuning", status="Enabled"),
+        SimpleNamespace(name="AdaptiveAutoVacuumAutoApply", status="Disabled"),
+    ]
+    with (
+        patch(
+            "sc_crawler.vendors._azure._pg_database_regions",
+            return_value=vendor.regions,
+        ),
+        patch(
+            "sc_crawler.vendors._azure._pg_capabilities",
+            return_value=[capability],
+        ),
+    ):
+        rows = azure_databases(vendor)
+    assert rows[0]["autotuning_advice"] is True
+    assert rows[0]["autotuning_apply"] is False
+
+
 def test_azure_inventory_databases_ha_from_supported_ha_mode():
     vendor = Mock(vendor_id="azure")
     vendor.regions = [Mock(region_id="centralus", api_reference="centralus")]
