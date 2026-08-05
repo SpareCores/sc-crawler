@@ -727,7 +727,7 @@ def test_gcp_tier_pricing_from_billing_fixture():
     assert prices[0]["database_id"] == "db-n1-standard-4"
     assert abs(prices[0]["price"] - 0.2702) < 0.001
     assert prices[0]["currency"] == "USD"
-    assert prices[0]["ha"] == DatabaseHaLevel.SINGLE_ZONE
+    assert prices[0]["ha"] == DatabaseHaLevel.NONE
     assert prices[0]["ha_strategy"] == DatabaseHaStrategy.NONE
     assert (
         _pg_storage_id(
@@ -829,7 +829,7 @@ def test_gcp_database_prices_use_region_name_not_numeric_id():
     assert prices[0]["region_id"] == "999"
     assert prices[0]["database_id"] == "db-n1-standard-4"
     assert prices[0]["price"] > 0
-    assert prices[0]["ha"] == DatabaseHaLevel.SINGLE_ZONE
+    assert prices[0]["ha"] == DatabaseHaLevel.NONE
     assert prices[0]["ha_strategy"] == DatabaseHaStrategy.NONE
 
 
@@ -882,14 +882,11 @@ def test_gcp_database_prices_emit_regional_ha_rows():
         prices = inventory_database_prices(vendor)
     by_ha = {(row["ha"], row["ha_strategy"]): row for row in prices}
     assert set(by_ha) == {
-        (DatabaseHaLevel.SINGLE_ZONE, DatabaseHaStrategy.NONE),
+        (DatabaseHaLevel.NONE, DatabaseHaStrategy.NONE),
         (DatabaseHaLevel.MULTI_ZONE, DatabaseHaStrategy.PASSIVE_STANDBY),
     }
     assert (
-        abs(
-            by_ha[(DatabaseHaLevel.SINGLE_ZONE, DatabaseHaStrategy.NONE)]["price"]
-            - 0.2702
-        )
+        abs(by_ha[(DatabaseHaLevel.NONE, DatabaseHaStrategy.NONE)]["price"] - 0.2702)
         < 0.001
     )
     assert (

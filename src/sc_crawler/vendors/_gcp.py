@@ -1566,11 +1566,8 @@ def inventory_database_prices(vendor):
                 if availability == "regional":
                     ha = DatabaseHaLevel.MULTI_ZONE
                     ha_strategy = DatabaseHaStrategy.PASSIVE_STANDBY
-                elif price_family == "shared":
-                    ha = DatabaseHaLevel.NONE
-                    ha_strategy = DatabaseHaStrategy.NONE
                 else:
-                    ha = DatabaseHaLevel.SINGLE_ZONE
+                    ha = DatabaseHaLevel.NONE
                     ha_strategy = DatabaseHaStrategy.NONE
                 items.append(
                     {
