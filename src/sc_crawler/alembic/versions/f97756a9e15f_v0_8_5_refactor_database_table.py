@@ -372,7 +372,6 @@ def upgrade() -> None:
             "Number of virtual CPU cores allocated to the database server instance.",
         ),
         ("memory_amount", "Amount of RAM (MiB) provisioned for the instance."),
-        ("engine", "Managed database engine running on the instance."),
         ("engine_versions", "Major database engine versions supported."),
         ("storage_size", "Bundled storage capacity included in the database (GB)."),
         (
@@ -570,8 +569,6 @@ def upgrade() -> None:
                 comment="Managed database engine running on the instance.",
             )
             for column, comment in _kept_column_comments:
-                if column == "engine":
-                    continue
                 batch_op.alter_column(column, comment=comment)
 
             for (
@@ -624,8 +621,6 @@ def upgrade() -> None:
             comment="Managed database engine running on the instance.",
         )
         for column, comment in _kept_column_comments:
-            if column == "engine":
-                continue
             op.alter_column(database_table_name, column, comment=comment)
 
         for name, coltype, nullable, server_default, comment in _new_database_columns:
@@ -962,7 +957,6 @@ def downgrade() -> None:
         ("server_id", "Optional reference to a related Server SKU."),
         ("vcpus", "Number of virtual CPUs (vCPU) of the database SKU."),
         ("memory_amount", "RAM amount (MiB) reported by the vendor."),
-        ("engine", "Managed database engine."),
         (
             "engine_versions",
             "Supported major engine versions merged onto the SKU row.",
@@ -1053,8 +1047,6 @@ def downgrade() -> None:
                 comment="Managed database engine.",
             )
             for column, comment in _downgrade_kept_column_comments:
-                if column == "engine":
-                    continue
                 batch_op.alter_column(column, comment=comment)
 
             batch_op.add_column(
@@ -1102,8 +1094,6 @@ def downgrade() -> None:
             comment="Managed database engine.",
         )
         for column, comment in _downgrade_kept_column_comments:
-            if column == "engine":
-                continue
             op.alter_column(database_table_name, column, comment=comment)
 
         op.add_column(
