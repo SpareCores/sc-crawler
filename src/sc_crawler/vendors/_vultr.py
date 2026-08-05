@@ -532,7 +532,9 @@ def inventory_servers(vendor):
             "storage_type": storage_type,
             "storages": [],
             "network_speed_baseline": None,
-            "network_speed_max": None,
+            # link_speed is Gbps when present ("up to" / provisioned; no documented baseline)
+            # link_type (shared|dedicated) is network uplink, not mapped to a column
+            "network_speed_max": server.get("link_speed"),
             "network_storage_speed_baseline": None,
             "network_storage_speed_max": None,
             "inbound_traffic": 0,
