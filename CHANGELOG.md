@@ -7,8 +7,8 @@ Maintenance update:
   `storage_autoscaling` to `storage_extra_autosize`, drop `support_level`, and add
   capability fields (`wire_protocol`, storage bounds, monitoring, autotuning, and
   `security_features`).
-- Add `api_reference_object` (JSON) to `Database`: named API args identifying the
-  database instance.
+- Add optional `api_reference_object` (JSON) to `Database`: named API args identifying the
+  database instance when known.
 - Include `ha` and `ha_strategy` (scalar enums) in `database_price` primary keys so
   HA deployments can carry distinct prices (e.g. AWS Multi-AZ, Azure 2x HA compute,
   GCP Regional meters). Catalog `database.ha` / `ha_strategy` remain ordered JSON lists.

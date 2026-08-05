@@ -23,7 +23,7 @@ Each vendor module should provide the below functions:
 - `inventory_server_prices`: Define the [`ServerPrice`][sc_crawler.tables.ServerPrice] instances for the standard/ondemand (or optionally also for the reserved) pricing of the instance types per region and zone. When applicable, include the monthly cap for tiered pricing in the `price_tiered` field.
 - `inventory_server_prices_spot`: Similar to the above, define [`ServerPrice`][sc_crawler.tables.ServerPrice] instances but the `allocation` field set to [`Allocation.SPOT`][sc_crawler.table_fields.Allocation]. Very likely to see different spot prices per region/zone.
 - `inventory_storage_prices`: Define [`StoragePrice`][sc_crawler.tables.StoragePrice] instances to describe the available storage options that can be attached to the servers.
-- `inventory_databases`: Define [`Database`][sc_crawler.tables.Database] instances for managed database SKUs (e.g. PostgreSQL). Catalog rows describe capabilities per SKU: ordered JSON lists for `ha` / `ha_strategy`, optional `security_features`, and `api_reference_object` for provisioning APIs.
+- `inventory_databases`: Define [`Database`][sc_crawler.tables.Database] instances for managed database instances (e.g. PostgreSQL).
 - `inventory_database_prices`: Define [`DatabasePrice`][sc_crawler.tables.DatabasePrice] instances for compute pricing per region. `ha` and `ha_strategy` are scalar primary-key fields (one price row per HA deployment). Use hourly `price` with optional monthly cap in `price_tiered`.
 - `inventory_database_storages`: Define [`DatabaseStorage`][sc_crawler.tables.DatabaseStorage] instances for decoupled or add-on storage products.
 - `inventory_database_storage_prices`: Define [`DatabaseStoragePrice`][sc_crawler.tables.DatabaseStoragePrice] instances for storage pricing per region.
@@ -280,7 +280,7 @@ def inventory_databases(vendor):
     #             "name": ,
     #             "api_reference": ,
     #             # Named API args for provisioning (e.g. Pulumi/Terraform).
-    #             "api_reference_object": {},
+    #             "api_reference_object": None,
     #             "display_name": ,
     #             "description": None,
     #             "family": None,

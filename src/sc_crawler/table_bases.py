@@ -308,8 +308,8 @@ class HasApiReference(ScModel):
 
 
 class HasApiReferenceObject(ScModel):
-    api_reference_object: dict = Field(
-        default={},
+    api_reference_object: Optional[dict] = Field(
+        default=None,
         sa_type=JSON,
         description="How this resource is referenced in the vendor API calls, including the parameter name(s).",
     )

@@ -331,8 +331,7 @@ def upgrade() -> None:
                 sa.Column(
                     "api_reference_object",
                     json_type(),
-                    nullable=False,
-                    server_default="{}",
+                    nullable=True,
                     comment="How this resource is referenced in the vendor API calls, including the parameter name(s).",
                 ),
                 insert_after="api_reference",
@@ -571,8 +570,7 @@ def upgrade() -> None:
             sa.Column(
                 "api_reference_object",
                 json_type(),
-                nullable=False,
-                server_default="{}",
+                nullable=True,
                 comment="How this resource is referenced in the vendor API calls, including the parameter name(s).",
             ),
         )
@@ -914,7 +912,7 @@ def get_database_table_v085(is_scd: bool) -> sa.Table:
         sa.Column("database_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
         sa.Column("name", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
         sa.Column("api_reference", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("api_reference_object", json_type(), nullable=False),
+        sa.Column("api_reference_object", json_type(), nullable=True),
         sa.Column("display_name", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
         sa.Column("description", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
         sa.Column("family", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
