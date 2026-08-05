@@ -1752,33 +1752,20 @@ def inventory_databases(vendor):
                 # IndexTuning → advice; AdaptiveAutoVacuumAutoApply → apply (vacuum GUCs).
                 # https://learn.microsoft.com/en-us/azure/postgresql/monitor/concepts-autonomous-tuning
                 # https://learn.microsoft.com/en-us/azure/postgresql/monitor/concepts-adaptive-autovacuum
-                advice_enabled = False
-                apply_enabled = False
-                saw_advice_feature = False
-                saw_apply_feature = False
+                autotuning_advice = False
+                autotuning_apply = False
                 for feature in getattr(capability, "supported_features", None) or []:
                     feature_name = getattr(feature, "name", None)
-                    feature_status = getattr(feature, "status", None)
-                    enabled = feature_status == "Enabled"
-                    disabled = feature_status == "Disabled"
+                    enabled = getattr(feature, "status", None) == "Enabled"
                     if (
                         feature_name == "StorageAutoGrowth"
                         and storage_extra_autosize is None
                     ):
-                        if enabled:
-                            storage_extra_autosize = True
-                        elif disabled:
-                            storage_extra_autosize = False
+                        storage_extra_autosize = enabled
                     elif feature_name == "IndexTuning":
-                        saw_advice_feature = True
-                        if enabled:
-                            advice_enabled = True
+                        autotuning_advice = enabled
                     elif feature_name == "AdaptiveAutoVacuumAutoApply":
-                        saw_apply_feature = True
-                        if enabled:
-                            apply_enabled = True
-                autotuning_advice = advice_enabled if saw_advice_feature else None
-                autotuning_apply = apply_enabled if saw_apply_feature else None
+                        autotuning_apply = enabled
                 for edition in (
                     getattr(capability, "supported_server_editions", None) or []
                 ):
@@ -1879,14 +1866,8 @@ def inventory_databases(vendor):
                             # https://learn.microsoft.com/en-us/azure/postgresql/backup-restore/concepts-backup-restore
                             # Automated backups are always enabled for Flexible Server.
                             "scheduled_backups": True,
-                            "autotuning_advice": (
-                                False
-                                if autotuning_advice is None
-                                else autotuning_advice
-                            ),
-                            "autotuning_apply": (
-                                False if autotuning_apply is None else autotuning_apply
-                            ),
+                            "autotuning_advice": autotuning_advice,
+                            "autotuning_apply": autotuning_apply,
                             # https://learn.microsoft.com/en-us/azure/postgresql/security/security-overview#data-protection
                             "disk_encryption": True,
                             # https://learn.microsoft.com/en-us/azure/postgresql/configure-maintain/concepts-major-version-upgrade
