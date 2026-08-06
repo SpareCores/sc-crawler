@@ -1793,9 +1793,6 @@ def inventory_databases(vendor):
                     storage_extra_max = max(sizes_gb) if sizes_gb else None
                     for sku in getattr(edition, "supported_server_skus", None) or []:
                         database_id = sku.name
-                        # Same SKU can appear in multiple regions; keep first seen.
-                        if database_id in merged:
-                            continue
                         server_id = next(
                             (
                                 server.server_id
@@ -1840,6 +1837,9 @@ def inventory_databases(vendor):
                         # Non-HA deployment is always available
                         ha.append(DatabaseHaLevel.NONE)
                         ha_strategy.append(DatabaseHaStrategy.NONE)
+                        if earlier_ha := merged.get(database_id, {}).get("ha", []):
+                            if DatabaseHaLevel.MULTI_ZONE in earlier_ha:
+                                ha = earlier_ha
                         # https://learn.microsoft.com/en-us/azure/reliability/reliability-database-postgresql
                         # Zone-redundant HA 99.99%; zonal HA 99.95%; no HA 99.9%.
                         if DatabaseHaLevel.MULTI_ZONE in ha:

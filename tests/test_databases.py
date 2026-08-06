@@ -1223,8 +1223,14 @@ def test_aws_inventory_databases_description_server_id_and_capabilities():
     assert by_id["db.m5.large"]["description"] == (
         "General purpose (2 vCPU, 8.0 GiB RAM)"
     )
-    assert by_id["db.m5.large"]["ha"] == [DatabaseHaLevel.MULTI_ZONE]
-    assert by_id["db.m5.large"]["ha_strategy"] == [DatabaseHaStrategy.PASSIVE_STANDBY]
+    assert by_id["db.m5.large"]["ha"] == [
+        DatabaseHaLevel.MULTI_ZONE,
+        DatabaseHaLevel.NONE,
+    ]
+    assert by_id["db.m5.large"]["ha_strategy"] == [
+        DatabaseHaStrategy.PASSIVE_STANDBY,
+        DatabaseHaStrategy.NONE,
+    ]
     assert by_id["db.m5.large"]["api_reference_object"] == {
         "instance_class": "db.m5.large"
     }
@@ -1319,8 +1325,11 @@ def test_aws_inventory_databases_ignores_supports_global_databases_for_postgres(
         ),
     ):
         rows = aws_databases(vendor)
-    assert rows[0]["ha"] == [DatabaseHaLevel.MULTI_ZONE]
-    assert rows[0]["ha_strategy"] == [DatabaseHaStrategy.PASSIVE_STANDBY]
+    assert rows[0]["ha"] == [DatabaseHaLevel.MULTI_ZONE, DatabaseHaLevel.NONE]
+    assert rows[0]["ha_strategy"] == [
+        DatabaseHaStrategy.PASSIVE_STANDBY,
+        DatabaseHaStrategy.NONE,
+    ]
     assert rows[0]["sla"] == 99.95
 
 
@@ -1374,10 +1383,11 @@ def test_aws_inventory_databases_ha_readable_standbys_from_deployment_options():
         ),
     ):
         rows = aws_databases(vendor)
-    assert rows[0]["ha"] == [DatabaseHaLevel.MULTI_ZONE]
+    assert rows[0]["ha"] == [DatabaseHaLevel.MULTI_ZONE, DatabaseHaLevel.NONE]
     assert rows[0]["ha_strategy"] == [
         DatabaseHaStrategy.READABLE_CLUSTER,
         DatabaseHaStrategy.PASSIVE_STANDBY,
+        DatabaseHaStrategy.NONE,
     ]
 
 
