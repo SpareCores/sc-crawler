@@ -748,7 +748,6 @@ benchmarks: List[Benchmark] = [
         },
         unit="Transactions per minute (TPM)",
         higher_is_better=True,
-        note='Concurrency values should be "single" or "peak".',
     ),
 ]
 
