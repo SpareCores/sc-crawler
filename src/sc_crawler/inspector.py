@@ -767,10 +767,6 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
             single_profile: dict = next(
                 (p for p in profiles if p["concurrency"] == 1), {}
             )
-            single_score = single_profile["score"]
-            single_latency_avg_ms = single_profile["latency_avg_ms"]
-            peak_score = data["score"]
-            peak_latency_avg_ms = data["latency_avg_ms"]
             benchmarks.extend(
                 [
                     {
@@ -780,8 +776,8 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                             benchmark_id=":".join([framework, measurement]),
                         ),
                         "config": {"concurrency": "single"},
-                        "score": single_score,
-                        "note": f"Latency: {single_latency_avg_ms} ms.",
+                        "score": single_profile["score"],
+                        "note": f"Latency: {single_profile['latency_avg_ms']} ms.",
                     },
                     {
                         **_benchmark_metafields(
@@ -790,8 +786,8 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                             benchmark_id=":".join([framework, measurement]),
                         ),
                         "config": {"concurrency": "peak"},
-                        "score": peak_score,
-                        "note": f"Latency: {peak_latency_avg_ms} ms.",
+                        "score": data["score"],
+                        "note": f"Latency: {data['latency_avg_ms']} ms, concurrency: {data['peak_concurrency']}.",
                     },
                 ]
             )
