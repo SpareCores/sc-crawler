@@ -724,6 +724,32 @@ benchmarks: List[Benchmark] = [
         unit="tokens/second (t/s)",
         note=_BENCHMARK_LLM_SPEED_NOTE,
     ),
+    Benchmark(
+        benchmark_id="pgbench:heavy_read_only",
+        name="PostgreSQL heavy read-only throughput",
+        category="Database",
+        description=(
+            "Measures peak PostgreSQL throughput with a remote pgbench client against "
+            "a custom, cache-resident, read-only transaction (joins, aggregates, "
+            "full-text search, arrays, regex, TOAST) that fits in shared_buffers, so "
+            "the score reflects engine CPU and memory behavior rather than disk or "
+            "network. Server and client run in the same availability zone. Servers "
+            "use pgtune-style host GUCs, while DBaaS keep the vendor-managed config. "
+            "Headline score is the maximum TPM over a fixed concurrency profile of 1, "
+            "vCPUS/2, vCPUS, and 2*vCPUs. This is a synthetic proxy for relative "
+            "RDBMS performance across server types, not a prediction of any specific "
+            "application's throughput."
+        ),
+        framework="pgbench",
+        measurement="heavy_read_only",
+        source={"kind": "measured"},
+        config_fields={
+            "concurrency": "Parallel client query count. Single means sequential connection, peak refers to the concurrency profile setting yielding maximum measured TPM."
+        },
+        unit="Transactions per minute (TPM)",
+        higher_is_better=True,
+        note='Concurrency values should be "single" or "peak".',
+    ),
 ]
 
 # dynamically add synthetic compound/augmented workloads
