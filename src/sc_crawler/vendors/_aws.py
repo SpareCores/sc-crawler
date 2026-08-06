@@ -1618,9 +1618,9 @@ def inventory_databases(vendor):
             ha_strategy = []
             if readable or multi_az:
                 ha.append(DatabaseHaLevel.MULTI_ZONE)
-            elif "Single-AZ" in deployment_options:
+            if "Single-AZ" in deployment_options:
                 ha.append(DatabaseHaLevel.NONE)
-            else:
+            if not ha:
                 raise ValueError(
                     f"Unknown deployment option for database {database_id}: {product}"
                 )
