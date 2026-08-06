@@ -754,6 +754,50 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
     except Exception as e:
         _log_cannot_load_benchmarks(server, framework, e, True)
 
+    framework = "pgbench"
+    try:
+        with open(
+            _server_framework_stdout_path(server, "pgbench_postgres_multi_ro_durable"),
+            "r",
+        ) as fp:
+            data = json.load(fp)
+            measurement = "heavy_read_only"
+            profiles = data["sizes"][0]["profile"]
+            single_profile: dict = next(
+                (p for p in profiles if p["concurrency"] == 1), {}
+            )
+            single_score = single_profile["score"]
+            single_latency_avg_ms = single_profile["latency_avg_ms"]
+            peak_score = data["score"]
+            peak_latency_avg_ms = data["latency_avg_ms"]
+            peak_concurrency = data["peak_concurrency"]
+            benchmarks.extend(
+                [
+                    {
+                        **_benchmark_metafields(
+                            server,
+                            framework="pgbench_postgres_multi_ro_durable",
+                            benchmark_id=":".join([framework, measurement]),
+                        ),
+                        "config": {"concurrency": "single"},
+                        "score": single_score,
+                        "note": f"Latency average: {single_latency_avg_ms} ms, Concurrency: 1.",
+                    },
+                    {
+                        **_benchmark_metafields(
+                            server,
+                            framework="pgbench_postgres_multi_ro_durable",
+                            benchmark_id=":".join([framework, measurement]),
+                        ),
+                        "config": {"concurrency": "peak"},
+                        "score": peak_score,
+                        "note": f"Latency average: {peak_latency_avg_ms} ms, Concurrency: {peak_concurrency}.",
+                    },
+                ]
+            )
+    except Exception as e:
+        _log_cannot_load_benchmarks(server, framework, e, True)
+
     return benchmarks
 
 
