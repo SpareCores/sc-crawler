@@ -755,9 +755,10 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
         _log_cannot_load_benchmarks(server, framework, e, True)
 
     framework = "pgbench"
+    framework_path = framework + "_postgres_multi_ro_durable"
     try:
         with open(
-            _server_framework_stdout_path(server, "pgbench_postgres_multi_ro_durable"),
+            _server_framework_stdout_path(server, framework_path),
             "r",
         ) as fp:
             data = json.load(fp)
@@ -776,7 +777,7 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                     {
                         **_benchmark_metafields(
                             server,
-                            framework="pgbench_postgres_multi_ro_durable",
+                            framework=framework_path,
                             benchmark_id=":".join([framework, measurement]),
                         ),
                         "config": {"concurrency": "single"},
@@ -786,7 +787,7 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                     {
                         **_benchmark_metafields(
                             server,
-                            framework="pgbench_postgres_multi_ro_durable",
+                            framework=framework_path,
                             benchmark_id=":".join([framework, measurement]),
                         ),
                         "config": {"concurrency": "peak"},
@@ -796,7 +797,7 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                 ]
             )
     except Exception as e:
-        _log_cannot_load_benchmarks(server, framework, e, True)
+        _log_cannot_load_benchmarks(server, framework_path, e, True)
 
     return benchmarks
 
