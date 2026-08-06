@@ -1766,6 +1766,10 @@ def inventory_databases(vendor):
                         autotuning_advice = enabled
                     elif feature_name == "AdaptiveAutoVacuumAutoApply":
                         autotuning_apply = enabled
+                    # Maybe this the indicator for Writes tuning, but it's not documented.
+                    # https://learn.microsoft.com/en-us/azure/postgresql/monitor/concepts-intelligent-tuning
+                    # elif feature_name == "ConfigTuning":
+                    #     autotuning_apply = enabled
                 for edition in (
                     getattr(capability, "supported_server_editions", None) or []
                 ):

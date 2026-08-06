@@ -141,11 +141,11 @@ class DatabaseHaLevel(str, Enum):
     NONE = "none"
     """No high availability."""
     SINGLE_ZONE = "single-zone"
-    """Single-zone high availability."""
+    """Single-zone high availability, meaning multiple databases in the same zone with failover or multi-master."""
     MULTI_ZONE = "multi-zone"
-    """Multi-zone high availability."""
+    """Multi-zone high availability, meaning multiple databases in multiple zones of the same region with failover or multi-master."""
     MULTI_REGION = "multi-region"
-    """Multi-region high availability."""
+    """Multi-region high availability, meaning multiple databases in multiple regions with failover or multi-master."""
 
 
 class DatabaseHaStrategy(str, Enum):
@@ -154,11 +154,11 @@ class DatabaseHaStrategy(str, Enum):
     NONE = "none"
     """No high availability strategy."""
     PASSIVE_STANDBY = "passive-standby"
-    """Passive standby, e.g. standard RDS Multi-AZ with block storage replication."""
+    """Passive standby for failover, e.g. standard RDS Multi-AZ with block storage replication."""
     READABLE_CLUSTER = "readable-cluster"
-    """Readable cluster, e.g. RDS Multi-AZ Cluster / Aurora with engine replication."""
+    """Readable cluster for read scaling and failover, e.g. RDS Multi-AZ Cluster / Aurora with engine replication."""
     MULTI_MASTER = "multi-master"
-    """Multi-master, e.g. CockroachDB / Spanner / DynamoDB Global Tables."""
+    """True multi-master, e.g. CockroachDB / Spanner / DynamoDB Global Tables."""
 
 
 class DatabaseSecurityFeature(str, Enum):

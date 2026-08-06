@@ -1235,9 +1235,9 @@ def _pg_billing_catalog() -> tuple[
         description = sku.description or ""
         if "for Postgre" not in description:
             continue
-        if ": Regional -" in description:
+        if "Regional" in description:
             availability = "regional"
-        elif ": Zonal -" in description or ": Zonal-" in description:
+        elif "Zonal" in description:
             availability = "zonal"
         else:
             continue
@@ -1359,20 +1359,17 @@ def inventory_databases(vendor):
         has_regional_ha = False
         if tier_regions:
             # https://cloud.google.com/sql/docs/postgres/high-availability
-            # Regional billing meters ⇒ same-region multi-zone HA (standby). Zonal
-            # (non-HA) remains available for the same tier. Enterprise Plus Advanced
-            # DR is cross-region replica promotion (not multi-region HA).
+            # Regional billing meters -> same-region multi-zone HA (standby).
+            # Zonal billing meters -> non-HA.
+            # Enterprise Plus Advanced DR -> cross-region replica promotion (not multi-region HA).
             has_regional_ha = any(
                 (region, price_family) in ha_families for region in tier_regions
             )
             if has_regional_ha:
                 ha.append(DatabaseHaLevel.MULTI_ZONE)
-                ha.append(DatabaseHaLevel.SINGLE_ZONE)
                 ha_strategy.append(DatabaseHaStrategy.PASSIVE_STANDBY)
-        if not ha:
-            ha.append(DatabaseHaLevel.NONE)
-        if not ha_strategy:
-            ha_strategy.append(DatabaseHaStrategy.NONE)
+        ha.append(DatabaseHaLevel.NONE)
+        ha_strategy.append(DatabaseHaStrategy.NONE)
 
         disk_quota_bytes = int(tier.get("DiskQuota") or 0)
         storage_extra_max = (

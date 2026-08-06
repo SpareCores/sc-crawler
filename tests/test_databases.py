@@ -648,7 +648,7 @@ def test_gcp_inventory_databases_ha_uses_own_price_family_only():
     }
     assert by_id["db-perf-optimized-N-4"]["ha"] == [
         DatabaseHaLevel.MULTI_ZONE,
-        DatabaseHaLevel.SINGLE_ZONE,
+        DatabaseHaLevel.NONE,
     ]
     assert by_id["db-perf-optimized-N-4"]["sla"] == 99.99
 
@@ -701,10 +701,11 @@ def test_gcp_inventory_databases_ha_multi_zone_from_regional_billing():
     by_id = {row["database_id"]: row for row in rows}
     assert by_id["db-perf-optimized-N-4"]["ha"] == [
         DatabaseHaLevel.MULTI_ZONE,
-        DatabaseHaLevel.SINGLE_ZONE,
+        DatabaseHaLevel.NONE,
     ]
     assert by_id["db-perf-optimized-N-4"]["ha_strategy"] == [
-        DatabaseHaStrategy.PASSIVE_STANDBY
+        DatabaseHaStrategy.PASSIVE_STANDBY,
+        DatabaseHaStrategy.NONE,
     ]
     assert by_id["db-perf-optimized-N-4"]["sla"] == 99.99
     assert by_id["db-perf-optimized-N-4"]["security_features"] == [
@@ -719,12 +720,12 @@ def test_gcp_inventory_databases_ha_multi_zone_from_regional_billing():
     ]
     assert by_id["db-n1-standard-4"]["ha"] == [
         DatabaseHaLevel.MULTI_ZONE,
-        DatabaseHaLevel.SINGLE_ZONE,
+        DatabaseHaLevel.NONE,
     ]
     assert by_id["db-n1-standard-4"]["sla"] == 99.95
     assert by_id["db-f1-micro"]["ha"] == [
         DatabaseHaLevel.MULTI_ZONE,
-        DatabaseHaLevel.SINGLE_ZONE,
+        DatabaseHaLevel.NONE,
     ]
     assert by_id["db-f1-micro"]["sla"] is None
 
@@ -1222,10 +1223,7 @@ def test_aws_inventory_databases_description_server_id_and_capabilities():
     assert by_id["db.m5.large"]["description"] == (
         "General purpose (2 vCPU, 8.0 GiB RAM)"
     )
-    assert by_id["db.m5.large"]["ha"] == [
-        DatabaseHaLevel.MULTI_ZONE,
-        DatabaseHaLevel.SINGLE_ZONE,
-    ]
+    assert by_id["db.m5.large"]["ha"] == [DatabaseHaLevel.MULTI_ZONE]
     assert by_id["db.m5.large"]["ha_strategy"] == [DatabaseHaStrategy.PASSIVE_STANDBY]
     assert by_id["db.m5.large"]["api_reference_object"] == {
         "instance_class": "db.m5.large"
@@ -1267,7 +1265,7 @@ def test_aws_inventory_databases_description_server_id_and_capabilities():
     assert by_id["db.r6gd.xlarge"]["description"] == (
         "Memory optimized (4 vCPU, 32.0 GiB RAM, 127 GB NVMe SSD)"
     )
-    assert by_id["db.r6gd.xlarge"]["ha"] == [DatabaseHaLevel.SINGLE_ZONE]
+    assert by_id["db.r6gd.xlarge"]["ha"] == [DatabaseHaLevel.NONE]
     assert by_id["db.r6gd.xlarge"]["ha_strategy"] == [DatabaseHaStrategy.NONE]
     assert by_id["db.r6gd.xlarge"]["sla"] == 99.5
     assert by_id["db.r6gd.xlarge"]["max_read_replicas"] == 0
@@ -1321,7 +1319,7 @@ def test_aws_inventory_databases_ignores_supports_global_databases_for_postgres(
         ),
     ):
         rows = aws_databases(vendor)
-    assert rows[0]["ha"] == [DatabaseHaLevel.MULTI_ZONE, DatabaseHaLevel.SINGLE_ZONE]
+    assert rows[0]["ha"] == [DatabaseHaLevel.MULTI_ZONE]
     assert rows[0]["ha_strategy"] == [DatabaseHaStrategy.PASSIVE_STANDBY]
     assert rows[0]["sla"] == 99.95
 
@@ -1376,7 +1374,7 @@ def test_aws_inventory_databases_ha_readable_standbys_from_deployment_options():
         ),
     ):
         rows = aws_databases(vendor)
-    assert rows[0]["ha"] == [DatabaseHaLevel.MULTI_ZONE, DatabaseHaLevel.SINGLE_ZONE]
+    assert rows[0]["ha"] == [DatabaseHaLevel.MULTI_ZONE]
     assert rows[0]["ha_strategy"] == [
         DatabaseHaStrategy.READABLE_CLUSTER,
         DatabaseHaStrategy.PASSIVE_STANDBY,

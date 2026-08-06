@@ -1618,17 +1618,19 @@ def inventory_databases(vendor):
             ha_strategy = []
             if readable or multi_az:
                 ha.append(DatabaseHaLevel.MULTI_ZONE)
-            if "Single-AZ" in deployment_options:
-                ha.append(DatabaseHaLevel.SINGLE_ZONE)
-            if not ha:
+            elif "Single-AZ" in deployment_options:
                 ha.append(DatabaseHaLevel.NONE)
+            else:
+                raise ValueError(
+                    f"Unknown deployment option for database {database_id}: {product}"
+                )
             if readable:
                 # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/multi-az-db-clusters-concepts.html
                 ha_strategy.append(DatabaseHaStrategy.READABLE_CLUSTER)
             if multi_az:
                 # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.MultiAZSingleStandby.html
                 ha_strategy.append(DatabaseHaStrategy.PASSIVE_STANDBY)
-            if not ha_strategy:
+            if DatabaseHaLevel.NONE in ha:
                 ha_strategy.append(DatabaseHaStrategy.NONE)
             storage_extra_autosize = any(
                 opt.get("SupportsStorageAutoscaling") for opt in db_instance_options
