@@ -747,7 +747,6 @@ benchmarks: List[Benchmark] = [
             "concurrency": "Parallel client query count. Single means sequential connection, peak refers to the concurrency profile setting yielding maximum measured TPM."
         },
         unit="Transactions per minute (TPM)",
-        higher_is_better=True,
     ),
 ]
 
