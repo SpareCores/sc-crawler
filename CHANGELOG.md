@@ -1,5 +1,9 @@
 ## v0.8.5 (July 31, 2026)
 
+New benchmark(s):
+
+- pgbench
+
 Maintenance update:
 
 - Refactor the `Database` table: replace `ha_supported` with ordered JSON lists
