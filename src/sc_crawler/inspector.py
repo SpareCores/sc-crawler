@@ -764,9 +764,7 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
             data = json.load(fp)
             measurement = "heavy_read_only"
             profiles = data["sizes"][0]["profile"]
-            single_profile: dict = next(
-                (p for p in profiles if p["concurrency"] == 1), {}
-            )
+            single_profile: dict = next((p for p in profiles if p["concurrency"] == 1))
             benchmarks.extend(
                 [
                     {
