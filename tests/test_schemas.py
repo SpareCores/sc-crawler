@@ -60,6 +60,8 @@ def test_database_price_primary_keys_match_storage_price_shape():
         "region_id",
         "database_id",
         "allocation",
+        "ha",
+        "ha_strategy",
     ]
     assert DatabaseStoragePrice.get_columns()["primary_keys"] == [
         "vendor_id",
@@ -73,6 +75,16 @@ def test_database_price_primary_keys_match_storage_price_shape():
         "region_id",
         "storage_id",
     ]
+
+
+def test_database_columns_include_ha_strategy_after_ha():
+    cols = Database.get_columns()["all"]
+    assert cols.index("ha_strategy") == cols.index("ha") + 1
+
+
+def test_database_columns_include_api_reference_object_after_api_reference():
+    cols = Database.get_columns()["all"]
+    assert cols.index("api_reference_object") == cols.index("api_reference") + 1
 
 
 def test_database_columns_use_storage_size_only():

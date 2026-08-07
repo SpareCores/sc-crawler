@@ -754,6 +754,44 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
     except Exception as e:
         _log_cannot_load_benchmarks(server, framework, e, True)
 
+    framework = "pgbench"
+    framework_path = framework + "_postgres_multi_ro_durable"
+    try:
+        with open(
+            _server_framework_stdout_path(server, framework_path),
+            "r",
+        ) as fp:
+            data = json.load(fp)
+            measurement = "heavy_read_only"
+            profiles = data["sizes"][0]["profile"]
+            single_profile: dict = next((p for p in profiles if p["concurrency"] == 1))
+            benchmarks.extend(
+                [
+                    {
+                        **_benchmark_metafields(
+                            server,
+                            framework=framework_path,
+                            benchmark_id=":".join([framework, measurement]),
+                        ),
+                        "config": {"concurrency": "single"},
+                        "score": single_profile["score"],
+                        "note": f"Latency: {single_profile['latency_avg_ms']} ms.",
+                    },
+                    {
+                        **_benchmark_metafields(
+                            server,
+                            framework=framework_path,
+                            benchmark_id=":".join([framework, measurement]),
+                        ),
+                        "config": {"concurrency": "peak"},
+                        "score": data["score"],
+                        "note": f"Latency: {data['latency_avg_ms']} ms, concurrency: {data['peak_concurrency']}.",
+                    },
+                ]
+            )
+    except Exception as e:
+        _log_cannot_load_benchmarks(server, framework_path, e, True)
+
     return benchmarks
 
 

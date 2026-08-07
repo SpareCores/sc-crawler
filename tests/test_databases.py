@@ -1,11 +1,20 @@
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from sc_crawler.table_fields import Allocation, DatabaseEngine, PriceUnit, Status
-from sc_crawler.vendor_helpers import merge_database_catalog_rows
+from sc_crawler.table_fields import (
+    Allocation,
+    DatabaseEngine,
+    DatabaseHaLevel,
+    DatabaseHaStrategy,
+    DatabaseSecurityFeature,
+    DatabaseWireProtocol,
+    PriceUnit,
+    Status,
+)
 from sc_crawler.vendors._aws import (
     _active_region_ids,
     _boto_describe_db_major_engine_versions_first,
+    _describe_orderable_db_instance_options_for_class_with_progress,
     _extract_rds_bundled_storage_size,
     _get_rds_instance_products_by_region,
     _get_storage_bounds_from_orderable_options,
@@ -28,7 +37,13 @@ from sc_crawler.vendors._azure import (
     _pg_lookup_retail_price,
 )
 from sc_crawler.vendors._azure import (
+    inventory_database_prices as azure_database_prices,
+)
+from sc_crawler.vendors._azure import (
     inventory_database_storage_prices as azure_database_storage_prices,
+)
+from sc_crawler.vendors._azure import (
+    inventory_databases as azure_databases,
 )
 from sc_crawler.vendors._gcp import (
     _pg_storage_id,
@@ -97,10 +112,11 @@ def _aws_rds_storage_product(
     }
 
 
-def _aws_vendor(*, regions=None, servers=None, database_storages=None):
+def _aws_vendor(*, regions=None, servers=None, databases=None, database_storages=None):
     vendor = Mock(vendor_id="aws")
     vendor.regions = regions or []
     vendor.servers = servers or []
+    vendor.databases = databases or []
     vendor.database_storages = database_storages or []
     vendor.progress_tracker = Mock(
         start_task=Mock(), advance_task=Mock(), hide_task=Mock()
@@ -285,24 +301,467 @@ def test_pg_engine_versions_from_capability():
     assert _pg_engine_versions(capability) == ["15", "16"]
 
 
-def test_merge_database_catalog_rows_merges_versions():
-    rows = merge_database_catalog_rows(
-        [
-            {
-                "database_id": "pg_a",
-                "engine_versions": ["15"],
-                "ha_supported": False,
-            },
-            {
-                "database_id": "pg_a",
-                "engine_versions": ["16"],
-                "ha_supported": True,
-            },
-        ]
+def test_azure_inventory_databases_autotuning_from_supported_features():
+    """IndexTuning → advice; AdaptiveAutoVacuumAutoApply → apply (param auto-tune)."""
+    vendor = Mock(vendor_id="azure")
+    vendor.regions = [Mock(region_id="centralus", api_reference="centralus")]
+    vendor.servers = []
+    vendor.progress_tracker = Mock(
+        start_task=Mock(), advance_task=Mock(), hide_task=Mock()
     )
-    assert len(rows) == 1
-    assert rows[0]["engine_versions"] == ["15", "16"]
-    assert rows[0]["ha_supported"] is True
+
+    def _sku(name, v_cores=2):
+        return SimpleNamespace(
+            name=name,
+            v_cores=v_cores,
+            supported_memory_per_vcore_mb=4096,
+            supported_ha_mode=[],
+        )
+
+    capability = SimpleNamespace(
+        supported_server_versions=[SimpleNamespace(name="16", status="Available")],
+        storage_auto_growth_supported=None,
+        supported_features=[
+            SimpleNamespace(name="IndexTuning", status="Enabled"),
+            SimpleNamespace(name="AdaptiveAutoVacuumAutoApply", status="Enabled"),
+        ],
+        supported_server_editions=[
+            SimpleNamespace(
+                name="GeneralPurpose",
+                supported_storage_editions=[],
+                supported_server_skus=[_sku("Standard_D2s_v3")],
+            )
+        ],
+    )
+    with (
+        patch(
+            "sc_crawler.vendors._azure._pg_database_regions",
+            return_value=vendor.regions,
+        ),
+        patch(
+            "sc_crawler.vendors._azure._pg_capabilities",
+            return_value=[capability],
+        ),
+    ):
+        rows = azure_databases(vendor)
+    assert rows[0]["autotuning_advice"] is True
+    assert rows[0]["autotuning_apply"] is True
+
+    capability.supported_features = [
+        SimpleNamespace(name="IndexTuning", status="Enabled"),
+        SimpleNamespace(name="AdaptiveAutoVacuumAutoApply", status="Disabled"),
+    ]
+    with (
+        patch(
+            "sc_crawler.vendors._azure._pg_database_regions",
+            return_value=vendor.regions,
+        ),
+        patch(
+            "sc_crawler.vendors._azure._pg_capabilities",
+            return_value=[capability],
+        ),
+    ):
+        rows = azure_databases(vendor)
+    assert rows[0]["autotuning_advice"] is True
+    assert rows[0]["autotuning_apply"] is False
+
+
+def test_azure_inventory_databases_ha_from_supported_ha_mode():
+    vendor = Mock(vendor_id="azure")
+    vendor.regions = [Mock(region_id="centralus", api_reference="centralus")]
+    vendor.servers = []
+    vendor.progress_tracker = Mock(
+        start_task=Mock(), advance_task=Mock(), hide_task=Mock()
+    )
+    capability = SimpleNamespace(
+        supported_server_versions=[
+            SimpleNamespace(name="16", status="Available"),
+        ],
+        storage_auto_growth_supported="Enabled",
+        supported_features=[],
+        supported_server_editions=[
+            SimpleNamespace(
+                name="Burstable",
+                supported_storage_editions=[],
+                supported_server_skus=[
+                    SimpleNamespace(
+                        name="Standard_B1ms",
+                        v_cores=1,
+                        supported_memory_per_vcore_mb=2048,
+                        supported_ha_mode=["SameZone", "ZoneRedundant"],
+                    )
+                ],
+            ),
+            SimpleNamespace(
+                name="GeneralPurpose",
+                supported_storage_editions=[],
+                supported_server_skus=[
+                    SimpleNamespace(
+                        name="Standard_D2s_v3",
+                        v_cores=2,
+                        supported_memory_per_vcore_mb=4096,
+                        supported_ha_mode=["SameZone", "ZoneRedundant"],
+                    ),
+                    SimpleNamespace(
+                        name="Standard_D4s_v3",
+                        v_cores=4,
+                        supported_memory_per_vcore_mb=4096,
+                        supported_ha_mode=["SameZone"],
+                    ),
+                ],
+            ),
+            SimpleNamespace(
+                name="MemoryOptimized",
+                supported_storage_editions=[],
+                supported_server_skus=[
+                    SimpleNamespace(
+                        name="Standard_E2s_v3",
+                        v_cores=2,
+                        supported_memory_per_vcore_mb=8192,
+                        supported_ha_mode=["ZoneRedundant"],
+                    )
+                ],
+            ),
+        ],
+    )
+    with (
+        patch(
+            "sc_crawler.vendors._azure._pg_database_regions",
+            return_value=vendor.regions,
+        ),
+        patch(
+            "sc_crawler.vendors._azure._pg_capabilities",
+            return_value=[capability],
+        ),
+    ):
+        rows = azure_databases(vendor)
+    by_id = {row["database_id"]: row for row in rows}
+    assert by_id["Standard_B1ms"]["ha"] == [DatabaseHaLevel.NONE]
+    assert by_id["Standard_B1ms"]["ha_strategy"] == [DatabaseHaStrategy.NONE]
+    assert by_id["Standard_B1ms"]["sla"] == 99.9
+    assert by_id["Standard_B1ms"]["scheduled_backups"] is True
+    assert by_id["Standard_B1ms"]["security_features"] == [
+        DatabaseSecurityFeature.IP_FILTERING,
+        DatabaseSecurityFeature.PRIVATE_NETWORK,
+        DatabaseSecurityFeature.NETWORK_PEERING,
+        DatabaseSecurityFeature.IDENTITY_BASED_AUTH,
+        DatabaseSecurityFeature.ENFORCED_TLS,
+        DatabaseSecurityFeature.CUSTOMER_MANAGED_KEYS,
+        DatabaseSecurityFeature.AUDIT_LOGGING,
+    ]
+    assert (
+        DatabaseSecurityFeature.CLIENT_CERT_AUTH
+        not in by_id["Standard_B1ms"]["security_features"]
+    )
+    assert by_id["Standard_D2s_v3"]["ha"] == [
+        DatabaseHaLevel.MULTI_ZONE,
+        DatabaseHaLevel.SINGLE_ZONE,
+        DatabaseHaLevel.NONE,
+    ]
+    assert by_id["Standard_D2s_v3"]["ha_strategy"] == [
+        DatabaseHaStrategy.PASSIVE_STANDBY,
+        DatabaseHaStrategy.NONE,
+    ]
+    assert by_id["Standard_D2s_v3"]["sla"] == 99.99
+    assert by_id["Standard_D2s_v3"]["api_reference_object"] == {
+        "sku_name": "GP_Standard_D2s_v3"
+    }
+    assert by_id["Standard_D4s_v3"]["ha"] == [
+        DatabaseHaLevel.SINGLE_ZONE,
+        DatabaseHaLevel.NONE,
+    ]
+    assert by_id["Standard_D4s_v3"]["ha_strategy"] == [
+        DatabaseHaStrategy.PASSIVE_STANDBY,
+        DatabaseHaStrategy.NONE,
+    ]
+    assert by_id["Standard_D4s_v3"]["sla"] == 99.95
+    assert by_id["Standard_E2s_v3"]["ha"] == [
+        DatabaseHaLevel.MULTI_ZONE,
+        DatabaseHaLevel.NONE,
+    ]
+    assert by_id["Standard_E2s_v3"]["ha_strategy"] == [
+        DatabaseHaStrategy.PASSIVE_STANDBY,
+        DatabaseHaStrategy.NONE,
+    ]
+
+
+def test_azure_inventory_database_prices_emit_ha_rows():
+    vendor = Mock(vendor_id="azure")
+    vendor.regions = [Mock(region_id="centralus", api_reference="centralus")]
+    vendor.progress_tracker = Mock(
+        start_task=Mock(), advance_task=Mock(), hide_task=Mock()
+    )
+    capability = SimpleNamespace(
+        supported_server_editions=[
+            SimpleNamespace(
+                name="Burstable",
+                supported_server_skus=[
+                    SimpleNamespace(
+                        name="Standard_B1ms",
+                        v_cores=1,
+                        supported_ha_mode=["SameZone", "ZoneRedundant"],
+                    )
+                ],
+            ),
+            SimpleNamespace(
+                name="GeneralPurpose",
+                supported_server_skus=[
+                    SimpleNamespace(
+                        name="Standard_D2s_v3",
+                        v_cores=2,
+                        supported_ha_mode=["SameZone", "ZoneRedundant"],
+                    )
+                ],
+            ),
+        ],
+    )
+    retail = [
+        {
+            "armSkuName": "B1MS",
+            "productName": (
+                "Azure Database for PostgreSQL Flexible Server "
+                "Burstable BS Series Compute"
+            ),
+            "meterName": "B1MS",
+            "retailPrice": "0.018",
+            "currencyCode": "USD",
+        },
+        {
+            "armSkuName": "Standard_D2s_v3",
+            "productName": (
+                "Azure Database for PostgreSQL Flexible Server "
+                "General Purpose Dsv3 Series Compute"
+            ),
+            "meterName": "D2s v3",
+            "skuName": "2 vCore",
+            "retailPrice": "0.145",
+            "currencyCode": "USD",
+        },
+    ]
+    with (
+        patch(
+            "sc_crawler.vendors._azure._pg_database_regions",
+            return_value=vendor.regions,
+        ),
+        patch(
+            "sc_crawler.vendors._azure._pg_capabilities",
+            return_value=[capability],
+        ),
+        patch(
+            "sc_crawler.vendors._azure._pg_retail_prices",
+            return_value=retail,
+        ),
+    ):
+        prices = azure_database_prices(vendor)
+    by_key = {
+        (row["database_id"], row["ha"], row["ha_strategy"]): row["price"]
+        for row in prices
+    }
+    assert (
+        by_key[
+            (
+                "Standard_B1ms",
+                DatabaseHaLevel.NONE,
+                DatabaseHaStrategy.NONE,
+            )
+        ]
+        == 0.018
+    )
+    assert (
+        "Standard_B1ms",
+        DatabaseHaLevel.MULTI_ZONE,
+        DatabaseHaStrategy.PASSIVE_STANDBY,
+    ) not in by_key
+    assert (
+        by_key[
+            (
+                "Standard_D2s_v3",
+                DatabaseHaLevel.NONE,
+                DatabaseHaStrategy.NONE,
+            )
+        ]
+        == 0.145
+    )
+    assert (
+        by_key[
+            (
+                "Standard_D2s_v3",
+                DatabaseHaLevel.MULTI_ZONE,
+                DatabaseHaStrategy.PASSIVE_STANDBY,
+            )
+        ]
+        == 0.29
+    )
+    assert (
+        by_key[
+            (
+                "Standard_D2s_v3",
+                DatabaseHaLevel.SINGLE_ZONE,
+                DatabaseHaStrategy.PASSIVE_STANDBY,
+            )
+        ]
+        == 0.29
+    )
+
+
+def test_gcp_inventory_databases_ha_uses_own_price_family_only():
+    vendor = Mock(vendor_id="gcp")
+    vendor.regions = []
+    vendor.servers = []
+    vendor.progress_tracker = Mock(
+        start_task=Mock(), advance_task=Mock(), hide_task=Mock()
+    )
+    tiers = [
+        {
+            "tier": "db-n1-standard-4",
+            "RAM": "16106127360",
+            "region": ["us-central1"],
+        },
+        {
+            "tier": "db-perf-optimized-N-4",
+            "RAM": "17179869184",
+            "region": ["us-central1"],
+        },
+    ]
+    with (
+        patch(
+            "sc_crawler.vendors._gcp._pg_sqladmin_metadata",
+            return_value={
+                "tiers": tiers,
+                "engine_versions": ["16"],
+                "custom_config": True,
+                "custom_extensions": True,
+            },
+        ),
+        patch(
+            "sc_crawler.vendors._gcp._pg_billing_catalog",
+            # Only Enterprise Plus regional HA meters — must not imply Enterprise HA.
+            return_value=({}, frozenset({("us-central1", "enterprise_n4")})),
+        ),
+    ):
+        rows = inventory_databases(vendor)
+    by_id = {row["database_id"]: row for row in rows}
+    assert by_id["db-n1-standard-4"]["ha"] == [DatabaseHaLevel.NONE]
+    assert by_id["db-n1-standard-4"]["sla"] is None
+    assert by_id["db-n1-standard-4"]["api_reference_object"] == {
+        "settings": {"tier": "db-n1-standard-4"}
+    }
+    assert by_id["db-perf-optimized-N-4"]["ha"] == [
+        DatabaseHaLevel.MULTI_ZONE,
+        DatabaseHaLevel.NONE,
+    ]
+    assert by_id["db-perf-optimized-N-4"]["sla"] == 99.99
+
+
+def test_gcp_inventory_databases_ha_multi_zone_from_regional_billing():
+    vendor = Mock(vendor_id="gcp")
+    vendor.regions = []
+    vendor.servers = []
+    vendor.progress_tracker = Mock(
+        start_task=Mock(), advance_task=Mock(), hide_task=Mock()
+    )
+    tiers = [
+        {
+            "tier": "db-perf-optimized-N-4",
+            "RAM": "17179869184",
+            "region": ["us-central1"],
+        },
+        {
+            "tier": "db-n1-standard-4",
+            "RAM": "16106127360",
+            "region": ["us-central1"],
+        },
+        {"tier": "db-f1-micro", "RAM": "644245094", "region": ["us-central1"]},
+    ]
+    with (
+        patch(
+            "sc_crawler.vendors._gcp._pg_sqladmin_metadata",
+            return_value={
+                "tiers": tiers,
+                "engine_versions": ["16"],
+                "custom_config": True,
+                "custom_extensions": True,
+            },
+        ),
+        patch(
+            "sc_crawler.vendors._gcp._pg_billing_catalog",
+            return_value=(
+                {},
+                frozenset(
+                    {
+                        ("us-central1", "enterprise"),
+                        ("us-central1", "enterprise_n4"),
+                        ("us-central1", "shared"),
+                    }
+                ),
+            ),
+        ),
+    ):
+        rows = inventory_databases(vendor)
+    by_id = {row["database_id"]: row for row in rows}
+    assert by_id["db-perf-optimized-N-4"]["ha"] == [
+        DatabaseHaLevel.MULTI_ZONE,
+        DatabaseHaLevel.NONE,
+    ]
+    assert by_id["db-perf-optimized-N-4"]["ha_strategy"] == [
+        DatabaseHaStrategy.PASSIVE_STANDBY,
+        DatabaseHaStrategy.NONE,
+    ]
+    assert by_id["db-perf-optimized-N-4"]["sla"] == 99.99
+    assert by_id["db-perf-optimized-N-4"]["security_features"] == [
+        DatabaseSecurityFeature.IP_FILTERING,
+        DatabaseSecurityFeature.PRIVATE_NETWORK,
+        DatabaseSecurityFeature.NETWORK_PEERING,
+        DatabaseSecurityFeature.IDENTITY_BASED_AUTH,
+        DatabaseSecurityFeature.CLIENT_CERT_AUTH,
+        DatabaseSecurityFeature.ENFORCED_TLS,
+        DatabaseSecurityFeature.CUSTOMER_MANAGED_KEYS,
+        DatabaseSecurityFeature.AUDIT_LOGGING,
+    ]
+    assert by_id["db-n1-standard-4"]["ha"] == [
+        DatabaseHaLevel.MULTI_ZONE,
+        DatabaseHaLevel.NONE,
+    ]
+    assert by_id["db-n1-standard-4"]["sla"] == 99.95
+    assert by_id["db-f1-micro"]["ha"] == [
+        DatabaseHaLevel.MULTI_ZONE,
+        DatabaseHaLevel.NONE,
+    ]
+    assert by_id["db-f1-micro"]["sla"] is None
+
+
+def test_gcp_inventory_databases_enterprise_plus_without_regional_ha():
+    vendor = Mock(vendor_id="gcp")
+    vendor.regions = []
+    vendor.servers = []
+    vendor.progress_tracker = Mock(
+        start_task=Mock(), advance_task=Mock(), hide_task=Mock()
+    )
+    tiers = [
+        {
+            "tier": "db-perf-optimized-N-4",
+            "RAM": "17179869184",
+            "region": ["us-central1"],
+        },
+    ]
+    with (
+        patch(
+            "sc_crawler.vendors._gcp._pg_sqladmin_metadata",
+            return_value={
+                "tiers": tiers,
+                "engine_versions": ["16"],
+                "custom_config": True,
+                "custom_extensions": True,
+            },
+        ),
+        patch(
+            "sc_crawler.vendors._gcp._pg_billing_catalog",
+            return_value=({}, frozenset()),
+        ),
+    ):
+        rows = inventory_databases(vendor)
+    assert rows[0]["ha"] == [DatabaseHaLevel.NONE]
+    assert rows[0]["sla"] is None
 
 
 def test_gcp_tier_pricing_from_billing_fixture():
@@ -345,6 +804,8 @@ def test_gcp_tier_pricing_from_billing_fixture():
     assert prices[0]["database_id"] == "db-n1-standard-4"
     assert abs(prices[0]["price"] - 0.2702) < 0.001
     assert prices[0]["currency"] == "USD"
+    assert prices[0]["ha"] == DatabaseHaLevel.NONE
+    assert prices[0]["ha_strategy"] == DatabaseHaStrategy.NONE
     assert (
         _pg_storage_id(
             "Cloud SQL for PostgreSQL: Zonal - Enterprise Plus Standard Storage in Iowa"
@@ -445,15 +906,121 @@ def test_gcp_database_prices_use_region_name_not_numeric_id():
     assert prices[0]["region_id"] == "999"
     assert prices[0]["database_id"] == "db-n1-standard-4"
     assert prices[0]["price"] > 0
+    assert prices[0]["ha"] == DatabaseHaLevel.NONE
+    assert prices[0]["ha_strategy"] == DatabaseHaStrategy.NONE
+
+
+def test_gcp_database_prices_emit_regional_ha_rows():
+    skus = [
+        _gcp_pg_sku(
+            "Cloud SQL for PostgreSQL: Zonal - vCPU in Americas",
+            regions=["us-central1"],
+            units=0,
+            nanos=41_300_000,
+        ),
+        _gcp_pg_sku(
+            "Cloud SQL for PostgreSQL: Zonal - RAM in Americas",
+            regions=["us-central1"],
+            units=0,
+            nanos=7_000_000,
+        ),
+        _gcp_pg_sku(
+            "Cloud SQL for PostgreSQL: Regional - vCPU in Americas",
+            regions=["us-central1"],
+            units=0,
+            nanos=82_600_000,
+        ),
+        _gcp_pg_sku(
+            "Cloud SQL for PostgreSQL: Regional - RAM in Americas",
+            regions=["us-central1"],
+            units=0,
+            nanos=14_000_000,
+        ),
+    ]
+    vendor = Mock(vendor_id="gcp")
+    vendor.regions = [Mock(region_id="1", api_reference="us-central1")]
+    vendor.progress_tracker = Mock(
+        start_task=Mock(), advance_task=Mock(), hide_task=Mock()
+    )
+    tiers = [
+        {
+            "tier": "db-n1-standard-4",
+            "RAM": "16106127360",
+            "region": ["us-central1"],
+        }
+    ]
+    with (
+        patch("sc_crawler.vendors._gcp._cloud_sql_skus", return_value=skus),
+        patch(
+            "sc_crawler.vendors._gcp._pg_sqladmin_metadata",
+            return_value={"tiers": tiers},
+        ),
+    ):
+        prices = inventory_database_prices(vendor)
+    by_ha = {(row["ha"], row["ha_strategy"]): row for row in prices}
+    assert set(by_ha) == {
+        (DatabaseHaLevel.NONE, DatabaseHaStrategy.NONE),
+        (DatabaseHaLevel.MULTI_ZONE, DatabaseHaStrategy.PASSIVE_STANDBY),
+    }
+    assert (
+        abs(by_ha[(DatabaseHaLevel.NONE, DatabaseHaStrategy.NONE)]["price"] - 0.2702)
+        < 0.001
+    )
+    assert (
+        abs(
+            by_ha[(DatabaseHaLevel.MULTI_ZONE, DatabaseHaStrategy.PASSIVE_STANDBY)][
+                "price"
+            ]
+            - 0.5404
+        )
+        < 0.001
+    )
 
 
 def test_aws_extract_rds_storage_size():
     assert _extract_rds_bundled_storage_size(None) is None
     assert _extract_rds_bundled_storage_size("EBS Only") is None
     assert _extract_rds_bundled_storage_size("ebs only") is None
-    assert _extract_rds_bundled_storage_size("2 x 1425 NVMe SSD") == 2850
-    assert _extract_rds_bundled_storage_size("3 X 950 NVMe SSD") == 2850
+    assert _extract_rds_bundled_storage_size("2 x 1425 NVMe SSD") == 3060
+    assert _extract_rds_bundled_storage_size("3 X 950 NVMe SSD") == 3060
     assert _extract_rds_bundled_storage_size("not a size") is None
+
+
+def test_aws_orderable_options_skips_failing_region_when_sentry_captures():
+    from contextlib import contextmanager, suppress
+
+    vendor = _aws_vendor()
+    options = [{"DBInstanceClass": "db.m5.large", "MultiAZCapable": True}]
+
+    def describe(region, db_instance_class):
+        if region == "ap-southeast-7":
+            raise ConnectionError(f"rds.{region}.amazonaws.com refused")
+        if region == "us-east-1":
+            return options
+        return []
+
+    @contextmanager
+    def capture(vendor, on_error=None):
+        with suppress(ConnectionError):
+            yield
+
+    with (
+        patch(
+            "sc_crawler.vendors._aws._boto_describe_orderable_db_instance_options",
+            side_effect=describe,
+        ),
+        patch(
+            "sc_crawler.vendors._aws.sentry_capture_or_raise",
+            side_effect=capture,
+        ),
+    ):
+        result = _describe_orderable_db_instance_options_for_class_with_progress(
+            ["ap-southeast-7", "us-east-1"],
+            "db.m5.large",
+            vendor,
+        )
+    assert result == options
+    vendor.progress_tracker.advance_task.assert_called_once()
 
 
 def test_aws_active_region_ids_priority_and_active_only():
@@ -488,14 +1055,22 @@ def test_aws_major_engine_versions_try_regions_in_order():
     assert describe.call_count == 2
 
 
-def test_aws_instance_products_by_region_single_az_only():
+def test_aws_instance_products_by_region_collects_all_deployment_options():
     products = [
-        _aws_rds_instance_product(instance_type="db.m5.large", region="us-east-1"),
         _aws_rds_instance_product(
             instance_type="db.m5.large",
             region="us-east-1",
             deployment="Multi-AZ",
             price="0.29",
+            vcpu="99",  # should be overwritten by later Single-AZ attrs
+        ),
+        _aws_rds_instance_product(instance_type="db.m5.large", region="us-east-1"),
+        _aws_rds_instance_product(
+            instance_type="db.c6gd.large",
+            region="us-east-1",
+            deployment="Multi-AZ (readable standbys)",
+            price="0.50",
+            family="Compute optimized",
         ),
         _aws_rds_instance_product(instance_type="db.r6g.large", region="eu-west-1"),
         {
@@ -510,10 +1085,25 @@ def test_aws_instance_products_by_region_single_az_only():
         "sc_crawler.vendors._aws._boto_get_rds_products",
         return_value=products,
     ):
-        by_region = _get_rds_instance_products_by_region.__wrapped__()
+        by_region, deployment_options = (
+            _get_rds_instance_products_by_region.__wrapped__()
+        )
     assert set(by_region) == {"us-east-1", "eu-west-1"}
-    assert set(by_region["us-east-1"]) == {"db.m5.large"}
+    assert set(by_region["us-east-1"]) == {"db.m5.large", "db.c6gd.large"}
+    # Prefer Single-AZ attrs when both Multi-AZ and Single-AZ meters exist.
+    assert by_region["us-east-1"]["db.m5.large"]["vcpu"] == "2"
+    assert by_region["us-east-1"]["db.m5.large"]["deploymentOption"] == "Single-AZ"
+    # Readable-standbys-only classes still enter the catalog index.
+    assert (
+        by_region["us-east-1"]["db.c6gd.large"]["deploymentOption"]
+        == "Multi-AZ (readable standbys)"
+    )
     assert by_region["eu-west-1"]["db.r6g.large"]["vcpu"] == "2"
+    assert deployment_options["db.m5.large"] == frozenset({"Single-AZ", "Multi-AZ"})
+    assert deployment_options["db.c6gd.large"] == frozenset(
+        {"Multi-AZ (readable standbys)"}
+    )
+    assert deployment_options["db.r6g.large"] == frozenset({"Single-AZ"})
 
 
 def test_aws_storage_bounds_from_orderable_options():
@@ -546,17 +1136,21 @@ def test_aws_storage_bounds_from_orderable_options():
     }
     bounds = _get_storage_bounds_from_orderable_options(options_by_database)
     assert bounds["gp3"]["min_size"] == 5
-    assert bounds["gp3"]["max_size"] == 65536
+    assert bounds["gp3"]["max_size"] == 70369
     assert bounds["gp3"]["max_iops"] == 64000
     assert bounds["gp3"]["max_throughput"] == 4000
     assert bounds["gp2"]["max_iops"] == 16000
+    assert bounds["gp2"]["max_size"] == 70369
     assert "standard" not in bounds
 
 
 def test_aws_inventory_databases_description_server_id_and_capabilities():
     vendor = _aws_vendor(
         regions=[Mock(region_id="us-east-1", status=Status.ACTIVE)],
-        servers=[Mock(server_id="m5.large"), Mock(server_id="r6gd.xlarge")],
+        servers=[
+            Mock(server_id="m5.large", api_reference="m5.large"),
+            Mock(server_id="r6gd.xlarge", api_reference="r6gd.xlarge"),
+        ],
     )
     prices_by_region = {
         "us-east-1": {
@@ -576,16 +1170,40 @@ def test_aws_inventory_databases_description_server_id_and_capabilities():
     }
     options_by_database = {
         "db.m5.large": [
-            {"MultiAZCapable": True, "SupportsStorageAutoscaling": True},
+            {
+                "MultiAZCapable": True,
+                "SupportsStorageAutoscaling": True,
+                "MinStorageSize": 20,
+                "MaxStorageSize": 65536,
+                "SupportsStorageEncryption": True,
+                "SupportsEnhancedMonitoring": True,
+                "SupportsPerformanceInsights": True,
+                "ReadReplicaCapable": True,
+            },
         ],
         "db.r6gd.xlarge": [
-            {"MultiAZCapable": False, "SupportsStorageAutoscaling": False},
+            {
+                "MultiAZCapable": False,
+                "SupportsStorageAutoscaling": False,
+                "MinStorageSize": 100,
+                "MaxStorageSize": 16384,
+                "SupportsStorageEncryption": True,
+                "SupportsEnhancedMonitoring": False,
+                "SupportsPerformanceInsights": False,
+                "ReadReplicaCapable": False,
+            },
         ],
     }
     with (
         patch(
             "sc_crawler.vendors._aws._get_rds_instance_products_by_region",
-            return_value=prices_by_region,
+            return_value=(
+                prices_by_region,
+                {
+                    "db.m5.large": frozenset({"Single-AZ", "Multi-AZ"}),
+                    "db.r6gd.xlarge": frozenset({"Single-AZ"}),
+                },
+            ),
         ),
         patch(
             "sc_crawler.vendors._aws._boto_describe_db_major_engine_versions_first",
@@ -605,18 +1223,172 @@ def test_aws_inventory_databases_description_server_id_and_capabilities():
     assert by_id["db.m5.large"]["description"] == (
         "General purpose (2 vCPU, 8.0 GiB RAM)"
     )
-    assert by_id["db.m5.large"]["ha_supported"] is True
-    assert by_id["db.m5.large"]["storage_autoscaling"] is True
+    assert by_id["db.m5.large"]["ha"] == [
+        DatabaseHaLevel.MULTI_ZONE,
+        DatabaseHaLevel.NONE,
+    ]
+    assert by_id["db.m5.large"]["ha_strategy"] == [
+        DatabaseHaStrategy.PASSIVE_STANDBY,
+        DatabaseHaStrategy.NONE,
+    ]
+    assert by_id["db.m5.large"]["api_reference_object"] == {
+        "instance_class": "db.m5.large"
+    }
+    assert by_id["db.m5.large"]["storage_extra_autosize"] is True
+    assert by_id["db.m5.large"]["storage_extra_min"] == 21
+    assert by_id["db.m5.large"]["storage_extra_max"] == 70369
+    assert by_id["db.m5.large"]["disk_encryption"] is True
+    assert by_id["db.m5.large"]["system_monitoring"] is True
+    assert by_id["db.m5.large"]["database_monitoring"] is True
+    assert by_id["db.m5.large"]["custom_config"] is True
+    assert by_id["db.m5.large"]["custom_extensions"] is True
+    assert by_id["db.m5.large"]["auto_upgrade_versions"] is True
+    assert by_id["db.m5.large"]["autotuning_advice"] is True
+    assert by_id["db.m5.large"]["autotuning_apply"] is False
+    assert by_id["db.m5.large"]["max_read_replicas"] == 15
+    assert by_id["db.m5.large"]["connection_pool"] is True
+    assert by_id["db.m5.large"]["sla"] == 99.95
     assert by_id["db.m5.large"]["engine"] == DatabaseEngine.POSTGRESQL
+    assert by_id["db.m5.large"]["wire_protocol"] == DatabaseWireProtocol.POSTGRESQL
     assert by_id["db.m5.large"]["engine_versions"] == ["15", "16"]
     assert by_id["db.m5.large"]["scheduled_backups"] is True
     assert by_id["db.m5.large"]["continuous_backups"] == 35
-    assert by_id["db.r6gd.xlarge"]["server_id"] == "r6gd.xlarge"
-    assert by_id["db.r6gd.xlarge"]["storage_size"] == 118
-    assert by_id["db.r6gd.xlarge"]["description"] == (
-        "Memory optimized (4 vCPU, 32.0 GiB RAM, 118 GB NVMe SSD)"
+    assert by_id["db.m5.large"]["security_features"] == [
+        DatabaseSecurityFeature.IP_FILTERING,
+        DatabaseSecurityFeature.PRIVATE_NETWORK,
+        DatabaseSecurityFeature.NETWORK_PEERING,
+        DatabaseSecurityFeature.IDENTITY_BASED_AUTH,
+        DatabaseSecurityFeature.ENFORCED_TLS,
+        DatabaseSecurityFeature.CUSTOMER_MANAGED_KEYS,
+        DatabaseSecurityFeature.AUDIT_LOGGING,
+    ]
+    assert (
+        DatabaseSecurityFeature.CLIENT_CERT_AUTH
+        not in by_id["db.m5.large"]["security_features"]
     )
-    assert by_id["db.r6gd.xlarge"]["ha_supported"] is False
+    assert by_id["db.r6gd.xlarge"]["server_id"] == "r6gd.xlarge"
+    assert by_id["db.r6gd.xlarge"]["storage_size"] == 127
+    assert by_id["db.r6gd.xlarge"]["description"] == (
+        "Memory optimized (4 vCPU, 32.0 GiB RAM, 127 GB NVMe SSD)"
+    )
+    assert by_id["db.r6gd.xlarge"]["ha"] == [DatabaseHaLevel.NONE]
+    assert by_id["db.r6gd.xlarge"]["ha_strategy"] == [DatabaseHaStrategy.NONE]
+    assert by_id["db.r6gd.xlarge"]["sla"] == 99.5
+    assert by_id["db.r6gd.xlarge"]["max_read_replicas"] == 0
+
+
+def test_aws_inventory_databases_ignores_supports_global_databases_for_postgres():
+    """SupportsGlobalDatabases is Aurora-only; RDS postgres falls through to Multi-AZ."""
+    vendor = _aws_vendor(
+        regions=[Mock(region_id="us-east-1", status=Status.ACTIVE)],
+        servers=[],
+    )
+    prices_by_region = {
+        "us-east-1": {
+            "db.r5.large": {
+                "instanceFamily": "Memory optimized",
+                "vcpu": "2",
+                "memory": "16 GiB",
+                "storage": "EBS Only",
+            },
+        }
+    }
+    with (
+        patch(
+            "sc_crawler.vendors._aws._get_rds_instance_products_by_region",
+            return_value=(
+                prices_by_region,
+                {"db.r5.large": frozenset({"Single-AZ", "Multi-AZ"})},
+            ),
+        ),
+        patch(
+            "sc_crawler.vendors._aws._boto_describe_db_major_engine_versions_first",
+            return_value=["16"],
+        ),
+        patch(
+            "sc_crawler.vendors._aws._lookup_orderable_db_instance_options",
+            return_value={
+                "db.r5.large": [
+                    {
+                        "MultiAZCapable": True,
+                        "SupportsGlobalDatabases": True,
+                        "SupportsStorageAutoscaling": True,
+                        "MinStorageSize": 20,
+                        "MaxStorageSize": 65536,
+                        "SupportsStorageEncryption": True,
+                        "SupportsEnhancedMonitoring": True,
+                        "SupportsPerformanceInsights": True,
+                        "ReadReplicaCapable": True,
+                    }
+                ]
+            },
+        ),
+    ):
+        rows = aws_databases(vendor)
+    assert rows[0]["ha"] == [DatabaseHaLevel.MULTI_ZONE, DatabaseHaLevel.NONE]
+    assert rows[0]["ha_strategy"] == [
+        DatabaseHaStrategy.PASSIVE_STANDBY,
+        DatabaseHaStrategy.NONE,
+    ]
+    assert rows[0]["sla"] == 99.95
+
+
+def test_aws_inventory_databases_ha_readable_standbys_from_deployment_options():
+    vendor = _aws_vendor(
+        regions=[Mock(region_id="us-east-1", status=Status.ACTIVE)],
+        servers=[],
+    )
+    prices_by_region = {
+        "us-east-1": {
+            "db.m5d.large": {
+                "instanceFamily": "General purpose",
+                "vcpu": "2",
+                "memory": "8 GiB",
+                "storage": "EBS Only",
+            },
+        }
+    }
+    with (
+        patch(
+            "sc_crawler.vendors._aws._get_rds_instance_products_by_region",
+            return_value=(
+                prices_by_region,
+                {
+                    "db.m5d.large": frozenset(
+                        {"Single-AZ", "Multi-AZ", "Multi-AZ (readable standbys)"}
+                    )
+                },
+            ),
+        ),
+        patch(
+            "sc_crawler.vendors._aws._boto_describe_db_major_engine_versions_first",
+            return_value=["16"],
+        ),
+        patch(
+            "sc_crawler.vendors._aws._lookup_orderable_db_instance_options",
+            return_value={
+                "db.m5d.large": [
+                    {
+                        "MultiAZCapable": True,
+                        "SupportsStorageAutoscaling": True,
+                        "MinStorageSize": 20,
+                        "MaxStorageSize": 65536,
+                        "SupportsStorageEncryption": True,
+                        "SupportsEnhancedMonitoring": True,
+                        "SupportsPerformanceInsights": True,
+                        "ReadReplicaCapable": True,
+                    }
+                ]
+            },
+        ),
+    ):
+        rows = aws_databases(vendor)
+    assert rows[0]["ha"] == [DatabaseHaLevel.MULTI_ZONE, DatabaseHaLevel.NONE]
+    assert rows[0]["ha_strategy"] == [
+        DatabaseHaStrategy.READABLE_CLUSTER,
+        DatabaseHaStrategy.PASSIVE_STANDBY,
+        DatabaseHaStrategy.NONE,
+    ]
 
 
 def test_aws_inventory_databases_dedupes_across_regions():
@@ -635,10 +1407,13 @@ def test_aws_inventory_databases_dedupes_across_regions():
     with (
         patch(
             "sc_crawler.vendors._aws._get_rds_instance_products_by_region",
-            return_value={
-                "us-east-1": {"db.m5.large": attrs},
-                "eu-west-1": {"db.m5.large": attrs},
-            },
+            return_value=(
+                {
+                    "us-east-1": {"db.m5.large": attrs},
+                    "eu-west-1": {"db.m5.large": attrs},
+                },
+                {"db.m5.large": frozenset({"Single-AZ", "Multi-AZ"})},
+            ),
         ),
         patch(
             "sc_crawler.vendors._aws._boto_describe_db_major_engine_versions_first",
@@ -646,16 +1421,91 @@ def test_aws_inventory_databases_dedupes_across_regions():
         ),
         patch(
             "sc_crawler.vendors._aws._lookup_orderable_db_instance_options",
-            return_value={"db.m5.large": []},
+            return_value={
+                "db.m5.large": [
+                    {
+                        "MultiAZCapable": True,
+                        "SupportsStorageAutoscaling": True,
+                        "MinStorageSize": 20,
+                        "MaxStorageSize": 65536,
+                        "SupportsStorageEncryption": True,
+                        "SupportsEnhancedMonitoring": True,
+                        "SupportsPerformanceInsights": True,
+                        "ReadReplicaCapable": True,
+                    }
+                ]
+            },
         ),
     ):
         rows = aws_databases(vendor)
     assert [row["database_id"] for row in rows] == ["db.m5.large"]
 
 
-def test_aws_inventory_database_prices_single_az_only():
+def test_aws_inventory_databases_marks_non_orderable_classes_inactive():
     vendor = _aws_vendor(
         regions=[Mock(region_id="us-east-1", status=Status.ACTIVE)],
+    )
+    prices_by_region = {
+        "us-east-1": {
+            "db.t2.micro": {
+                "instanceFamily": "General purpose",
+                "vcpu": "1",
+                "memory": "1 GiB",
+                "storage": "EBS Only",
+            },
+            "db.m5.large": {
+                "instanceFamily": "General purpose",
+                "vcpu": "2",
+                "memory": "8 GiB",
+                "storage": "EBS Only",
+            },
+        }
+    }
+    with (
+        patch(
+            "sc_crawler.vendors._aws._get_rds_instance_products_by_region",
+            return_value=(
+                prices_by_region,
+                {
+                    "db.t2.micro": frozenset({"Single-AZ", "Multi-AZ"}),
+                    "db.m5.large": frozenset({"Single-AZ", "Multi-AZ"}),
+                },
+            ),
+        ),
+        patch(
+            "sc_crawler.vendors._aws._boto_describe_db_major_engine_versions_first",
+            return_value=["16"],
+        ),
+        patch(
+            "sc_crawler.vendors._aws._lookup_orderable_db_instance_options",
+            return_value={
+                "db.t2.micro": [],
+                "db.m5.large": [
+                    {
+                        "MultiAZCapable": True,
+                        "SupportsStorageAutoscaling": True,
+                        "MinStorageSize": 20,
+                        "MaxStorageSize": 65536,
+                        "SupportsStorageEncryption": True,
+                        "SupportsEnhancedMonitoring": True,
+                        "SupportsPerformanceInsights": True,
+                        "ReadReplicaCapable": True,
+                    }
+                ],
+            },
+        ),
+    ):
+        rows = aws_databases(vendor)
+    by_id = {row["database_id"]: row for row in rows}
+    assert set(by_id) == {"db.t2.micro", "db.m5.large"}
+    assert by_id["db.t2.micro"]["status"] == Status.INACTIVE
+    assert by_id["db.m5.large"]["status"] == Status.ACTIVE
+
+
+def test_aws_inventory_database_prices_by_ha_deployment():
+    vendor = _aws_vendor(
+        regions=[Mock(region_id="us-east-1", status=Status.ACTIVE)],
+        databases=[Mock(database_id="db.m5.large", status=Status.ACTIVE)],
     )
     products = [
         _aws_rds_instance_product(
@@ -669,8 +1519,17 @@ def test_aws_inventory_database_prices_single_az_only():
         ),
         _aws_rds_instance_product(
             instance_type="db.m5.large",
+            region="us-east-1",
+            deployment="Multi-AZ (readable standbys)",
+            price="0.435",
+        ),
+        _aws_rds_instance_product(
+            instance_type="db.m5.large",
             region="ap-south-1",
             price="0.16",
+        ),
+        _aws_rds_instance_product(
+            instance_type="db.t2.micro", region="us-east-1", price="0.017"
         ),
         _aws_rds_storage_product(volume_type="General Purpose-GP3"),
     ]
@@ -679,10 +1538,23 @@ def test_aws_inventory_database_prices_single_az_only():
         return_value=products,
     ):
         prices = aws_database_prices(vendor)
-    assert len(prices) == 1
+    assert len(prices) == 3
+    by_ha = {(row["ha"], row["ha_strategy"]): row for row in prices}
+    assert (
+        by_ha[(DatabaseHaLevel.SINGLE_ZONE, DatabaseHaStrategy.NONE)]["price"] == 0.145
+    )
+    assert (
+        by_ha[(DatabaseHaLevel.MULTI_ZONE, DatabaseHaStrategy.PASSIVE_STANDBY)]["price"]
+        == 0.29
+    )
+    assert (
+        by_ha[(DatabaseHaLevel.MULTI_ZONE, DatabaseHaStrategy.READABLE_CLUSTER)][
+            "price"
+        ]
+        == 0.435
+    )
     assert prices[0]["database_id"] == "db.m5.large"
     assert prices[0]["region_id"] == "us-east-1"
-    assert prices[0]["price"] == 0.145
     assert prices[0]["allocation"] == Allocation.ONDEMAND
     assert prices[0]["unit"] == PriceUnit.HOUR
     assert prices[0]["currency"] == "USD"
@@ -695,7 +1567,7 @@ def test_aws_inventory_database_storages_from_orderable_bounds():
     with (
         patch(
             "sc_crawler.vendors._aws._get_rds_instance_products_by_region",
-            return_value={"us-east-1": {"db.m5.large": {}}},
+            return_value=({"us-east-1": {"db.m5.large": {}}}, {}),
         ),
         patch(
             "sc_crawler.vendors._aws._lookup_orderable_db_instance_options",
@@ -724,8 +1596,8 @@ def test_aws_inventory_database_storages_from_orderable_bounds():
     assert set(by_id) == {"gp3", "io1"}
     assert by_id["gp3"]["name"] == "General Purpose-GP3"
     assert by_id["gp3"]["description"] == "SSD-backed"
-    assert by_id["gp3"]["min_size"] == 20
-    assert by_id["gp3"]["max_size"] == 65536
+    assert by_id["gp3"]["min_size"] == 21
+    assert by_id["gp3"]["max_size"] == 70369
     assert by_id["gp3"]["max_iops"] == 64000
     assert by_id["gp3"]["max_throughput"] == 4000
     assert "standard" not in by_id

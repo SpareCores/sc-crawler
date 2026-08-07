@@ -23,7 +23,11 @@ from ..table_fields import (
     CpuAllocation,
     CpuArchitecture,
     DatabaseEngine,
+    DatabaseHaLevel,
+    DatabaseHaStrategy,
+    DatabaseSecurityFeature,
     DatabaseStorageScope,
+    DatabaseWireProtocol,
     Disk,
     PriceTier,
     PriceUnit,
@@ -38,7 +42,7 @@ from ..utils import (
     list_search,
     scmodels_to_dict,
 )
-from ..vendor_helpers import merge_database_catalog_rows, preprocess_servers
+from ..vendor_helpers import preprocess_servers
 
 credential = DefaultAzureCredential()
 
@@ -1586,6 +1590,11 @@ _PG_EDITION_PRODUCT_TOKENS = {
     "MemoryOptimized": ("memory optimized", "memory purpose"),
     "Burstable": ("burstable",),
 }
+_PG_SKU_NAME_PREFIX = {
+    "Burstable": "B",
+    "GeneralPurpose": "GP",
+    "MemoryOptimized": "MO",
+}
 _PG_FLEX_STORAGE_PRODUCT = "Az DB for PostgreSQL Flexible Server Storage"
 _PG_FLEX_BACKUP_PRODUCT = "Azure Database for PostgreSQL Flexible Server Backup Storage"
 _PG_STORAGE_RETAIL_TO_ID = {
@@ -1721,7 +1730,8 @@ def _pg_engine_versions(capability) -> list[str]:
 
 
 def inventory_databases(vendor):
-    rows = []
+    """List all available Azure Database for PostgreSQL Flexible Server types in all regions."""
+    merged: dict[str, dict] = {}
     regions = _pg_database_regions(vendor)
     vendor.progress_tracker.start_task(
         name="Scanning region(s) for database(s)", total=len(regions)
@@ -1731,11 +1741,66 @@ def inventory_databases(vendor):
         with sentry_capture_or_raise(vendor=vendor):
             for capability in _pg_capabilities(location):
                 engine_versions = _pg_engine_versions(capability)
+                storage_extra_autosize = None
+                storage_auto_growth = getattr(
+                    capability, "storage_auto_growth_supported", None
+                )
+                if storage_auto_growth == "Enabled":
+                    storage_extra_autosize = True
+                elif storage_auto_growth == "Disabled":
+                    storage_extra_autosize = False
+                # IndexTuning → advice; AdaptiveAutoVacuumAutoApply → apply (vacuum GUCs).
+                # https://learn.microsoft.com/en-us/azure/postgresql/monitor/concepts-autonomous-tuning
+                # https://learn.microsoft.com/en-us/azure/postgresql/monitor/concepts-adaptive-autovacuum
+                autotuning_advice = False
+                autotuning_apply = False
+                for feature in getattr(capability, "supported_features", None) or []:
+                    feature_name = getattr(feature, "name", None)
+                    enabled = getattr(feature, "status", None) == "Enabled"
+                    if (
+                        feature_name == "StorageAutoGrowth"
+                        and storage_extra_autosize is None
+                    ):
+                        storage_extra_autosize = enabled
+                    elif feature_name == "IndexTuning":
+                        autotuning_advice = enabled
+                    elif feature_name == "AdaptiveAutoVacuumAutoApply":
+                        autotuning_apply = enabled
+                    # Maybe this the indicator for Writes tuning, but it's not documented.
+                    # https://learn.microsoft.com/en-us/azure/postgresql/monitor/concepts-intelligent-tuning
+                    # elif feature_name == "ConfigTuning":
+                    #     autotuning_apply = enabled
                 for edition in (
                     getattr(capability, "supported_server_editions", None) or []
                 ):
+                    sizes_gb = []
+                    for storage_edition in (
+                        getattr(edition, "supported_storage_editions", None) or []
+                    ):
+                        for storage_mb in (
+                            getattr(storage_edition, "supported_storage_mb", None) or []
+                        ):
+                            size_mb = getattr(storage_mb, "storage_size_mb", None)
+                            max_mb = getattr(
+                                storage_mb, "maximum_storage_size_mb", None
+                            )
+                            # Azure storage_size_mb values are MiB
+                            if size_mb is not None:
+                                sizes_gb.append(round(int(size_mb) / 1024 * _GIB_TO_GB))
+                            if max_mb is not None:
+                                sizes_gb.append(round(int(max_mb) / 1024 * _GIB_TO_GB))
+                    storage_extra_min = min(sizes_gb) if sizes_gb else None
+                    storage_extra_max = max(sizes_gb) if sizes_gb else None
                     for sku in getattr(edition, "supported_server_skus", None) or []:
                         database_id = sku.name
+                        server_id = next(
+                            (
+                                server.server_id
+                                for server in vendor.servers
+                                if server.api_reference == database_id
+                            ),
+                            None,
+                        )
                         vcpus = int(sku.v_cores) if sku.v_cores else None
                         memory_amount = (
                             int(sku.supported_memory_per_vcore_mb * sku.v_cores)
@@ -1752,41 +1817,129 @@ def inventory_databases(vendor):
                         description = f"PostgreSQL {edition.name}"
                         if spec_parts:
                             description = f"{description} ({', '.join(spec_parts)})"
-                        rows.append(
-                            {
-                                "vendor_id": vendor.vendor_id,
-                                "database_id": database_id,
-                                "name": database_id.removeprefix("Standard_"),
-                                "api_reference": database_id,
-                                "display_name": database_id.removeprefix("Standard_"),
-                                "description": description,
-                                "server_id": database_id,
-                                "engine": DatabaseEngine.POSTGRESQL,
-                                "engine_versions": engine_versions,
-                                "family": edition.name,
-                                "vcpus": vcpus,
-                                "memory_amount": memory_amount,
-                                "storage_size": None,
-                                # Burstable tier: HA not supported (General Purpose / Memory Optimized only).
-                                # https://learn.microsoft.com/en-us/azure/reliability/reliability-postgresql-flexible-server#high-availability
-                                "ha_supported": edition.name != "Burstable",
-                                # TODO: investigate storage autoscaling support
-                                "storage_autoscaling": None,
-                                # TODO: investigate scheduled backups support
-                                "scheduled_backups": None,
-                                # Product max PITR retention (days); default 7, up to 35; not in capabilities API.
-                                # https://learn.microsoft.com/en-us/azure/postgresql/backup-restore/concepts-backup-restore
-                                "continuous_backups": 35,
-                            }
-                        )
+                        # https://learn.microsoft.com/en-us/azure/postgresql/high-availability/concepts-high-availability
+                        # Flexible Server HA is same-region only (zone-redundant or zonal sync standby) and optional.
+                        # Burstable does not support HA (API may still list modes - prefer docs).
+                        # Cross-region geo read replicas are DR / read scale, not HA - see max_read_replicas.
+                        ha_modes = {
+                            (mode.value if hasattr(mode, "value") else str(mode))
+                            for mode in (getattr(sku, "supported_ha_mode", None) or [])
+                        }
+                        ha: list[DatabaseHaLevel] = []
+                        ha_strategy: list[DatabaseHaStrategy] = []
+                        if edition.name != "Burstable":
+                            if "ZoneRedundant" in ha_modes:
+                                ha.append(DatabaseHaLevel.MULTI_ZONE)
+                            if "SameZone" in ha_modes:
+                                ha.append(DatabaseHaLevel.SINGLE_ZONE)
+                            if ha:
+                                ha_strategy.append(DatabaseHaStrategy.PASSIVE_STANDBY)
+                        # Non-HA deployment is always available
+                        ha.append(DatabaseHaLevel.NONE)
+                        ha_strategy.append(DatabaseHaStrategy.NONE)
+                        if earlier_ha := merged.get(database_id, {}).get("ha", []):
+                            if DatabaseHaLevel.MULTI_ZONE in earlier_ha:
+                                ha = earlier_ha
+                        # https://learn.microsoft.com/en-us/azure/reliability/reliability-database-postgresql
+                        # Zone-redundant HA 99.99%; zonal HA 99.95%; no HA 99.9%.
+                        if DatabaseHaLevel.MULTI_ZONE in ha:
+                            sla = 99.99
+                        elif DatabaseHaLevel.SINGLE_ZONE in ha:
+                            sla = 99.95
+                        else:
+                            sla = 99.9
+                        merged[database_id] = {
+                            "vendor_id": vendor.vendor_id,
+                            "database_id": database_id,
+                            "name": database_id.removeprefix("Standard_"),
+                            "api_reference": database_id,
+                            # https://www.pulumi.com/registry/packages/azure/api-docs/postgresql/flexibleserver/
+                            # Pulumi sku_name is tier+name (e.g. B_Standard_B1ms, GP_Standard_D2s_v3).
+                            "api_reference_object": {
+                                "sku_name": (
+                                    f"{_PG_SKU_NAME_PREFIX[edition.name]}_{database_id}"
+                                    if edition.name in _PG_SKU_NAME_PREFIX
+                                    else database_id
+                                )
+                            },
+                            "display_name": database_id.removeprefix("Standard_"),
+                            "description": description,
+                            "server_id": server_id,
+                            "engine": DatabaseEngine.POSTGRESQL,
+                            "wire_protocol": DatabaseWireProtocol.POSTGRESQL,
+                            "engine_versions": engine_versions,
+                            "family": edition.name,
+                            "vcpus": vcpus,
+                            "memory_amount": memory_amount,
+                            "storage_size": None,
+                            "storage_extra_autosize": storage_extra_autosize,
+                            # https://learn.microsoft.com/en-us/azure/postgresql/backup-restore/concepts-backup-restore
+                            # Automated backups are always enabled for Flexible Server.
+                            "scheduled_backups": True,
+                            "autotuning_advice": autotuning_advice,
+                            "autotuning_apply": autotuning_apply,
+                            # https://learn.microsoft.com/en-us/azure/postgresql/security/security-overview#data-protection
+                            "disk_encryption": True,
+                            # https://learn.microsoft.com/en-us/azure/postgresql/configure-maintain/concepts-major-version-upgrade
+                            # Minor releases are applied automatically during maintenance.
+                            "auto_upgrade_versions": True,
+                            # https://learn.microsoft.com/en-us/azure/postgresql/parameters/concepts-parameters
+                            "custom_config": True,
+                            # https://learn.microsoft.com/en-us/azure/postgresql/extensions/concepts-extensions-considerations
+                            "custom_extensions": True,
+                            "storage_extra_min": storage_extra_min,
+                            "storage_extra_max": storage_extra_max,
+                            "ha": ha,
+                            "ha_strategy": ha_strategy,
+                            # https://learn.microsoft.com/en-us/azure/postgresql/network/concepts-networking-public
+                            # https://learn.microsoft.com/en-us/azure/postgresql/network/concepts-networking-private
+                            # https://learn.microsoft.com/en-us/azure/postgresql/network/concepts-networking-private-link
+                            # https://learn.microsoft.com/en-us/azure/postgresql/flexible-server/how-to-configure-sign-in-azure-ad-authentication
+                            # https://learn.microsoft.com/en-us/azure/postgresql/flexible-server/how-to-connect-tls-ssl
+                            # https://learn.microsoft.com/en-us/azure/postgresql/flexible-server/concepts-data-encryption
+                            # https://learn.microsoft.com/en-us/azure/postgresql/flexible-server/concepts-audit
+                            # Firewall rules, VNet injection, Private Link, Entra ID auth,
+                            # require_secure_transport, Key Vault CMK, pgaudit. Server certs only.
+                            "security_features": [
+                                DatabaseSecurityFeature.IP_FILTERING,
+                                DatabaseSecurityFeature.PRIVATE_NETWORK,
+                                DatabaseSecurityFeature.NETWORK_PEERING,
+                                DatabaseSecurityFeature.IDENTITY_BASED_AUTH,
+                                DatabaseSecurityFeature.ENFORCED_TLS,
+                                DatabaseSecurityFeature.CUSTOMER_MANAGED_KEYS,
+                                DatabaseSecurityFeature.AUDIT_LOGGING,
+                            ],
+                            # https://learn.microsoft.com/en-us/azure/postgresql/read-replica/concepts-read-replicas
+                            # Up to 5 replicas per primary; Burstable tier is not supported.
+                            "max_read_replicas": (
+                                0 if edition.name == "Burstable" else 5
+                            ),
+                            # https://learn.microsoft.com/en-us/azure/postgresql/connectivity/concepts-pgbouncer
+                            # Built-in PgBouncer connection pooling.
+                            "connection_pool": True,
+                            # https://learn.microsoft.com/en-us/azure/postgresql/monitor/concepts-monitoring
+                            # Host-level metrics via Azure Monitor.
+                            "system_monitoring": True,
+                            # https://learn.microsoft.com/en-us/azure/postgresql/monitor/concepts-query-performance-insight
+                            # Query Performance Insight / Query Store for query-level analysis.
+                            "database_monitoring": True,
+                            # https://learn.microsoft.com/en-us/azure/postgresql/backup-restore/concepts-backup-restore
+                            # Product max PITR retention (days); default 7, up to 35; not in capabilities API.
+                            "continuous_backups": 35,
+                            "sla": sla,
+                        }
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
-    return merge_database_catalog_rows(rows)
+    return list(merged.values())
 
 
 def inventory_database_prices(vendor):
+    """List all known Azure Database for PostgreSQL Flexible Server on-demand prices in all regions using the Azure Retail Pricing API.
+
+    More information: <https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices>.
+    """
     items = []
-    seen: set[tuple[str, str]] = set()
+    seen: set[tuple[str, str, DatabaseHaLevel, DatabaseHaStrategy]] = set()
     regions = _pg_database_regions(vendor)
     vendor.progress_tracker.start_task(
         name="Scanning region(s) for database_price(s)", total=len(regions)
@@ -1818,9 +1971,6 @@ def inventory_database_prices(vendor):
                         database_id = sku.name
                         if not database_id:
                             continue
-                        key = (region.region_id, database_id)
-                        if key in seen:
-                            continue
                         price_item = _pg_lookup_retail_price(
                             database_id=database_id,
                             edition_name=edition_name,
@@ -1829,28 +1979,71 @@ def inventory_database_prices(vendor):
                         if price_item is None:
                             continue
                         vcpus = int(sku.v_cores) if sku.v_cores else None
-                        seen.add(key)
-                        items.append(
-                            {
-                                "vendor_id": vendor.vendor_id,
-                                "region_id": region.region_id,
-                                "database_id": database_id,
-                                "allocation": Allocation.ONDEMAND,
-                                "unit": PriceUnit.HOUR,
-                                "price": _pg_hourly_compute_price(
-                                    price_item, vcpus, database_id=database_id
-                                ),
-                                "price_upfront": 0,
-                                "price_tiered": [],
-                                "currency": price_item.get("currencyCode", "USD"),
-                            }
+                        base_price = _pg_hourly_compute_price(
+                            price_item, vcpus, database_id=database_id
                         )
+                        currency = price_item.get("currencyCode", "USD")
+                        # https://azure.microsoft.com/pricing/details/postgresql/flexible-server/
+                        # HA bills primary + standby at the same rate (exactly 2x); SameZone
+                        # and ZoneRedundant cost the same. No separate retail HA meters.
+                        ha_modes = {
+                            (mode.value if hasattr(mode, "value") else str(mode))
+                            for mode in (getattr(sku, "supported_ha_mode", None) or [])
+                        }
+                        price_rows: list[
+                            tuple[DatabaseHaLevel, DatabaseHaStrategy, float]
+                        ] = [
+                            (DatabaseHaLevel.NONE, DatabaseHaStrategy.NONE, base_price)
+                        ]
+                        if edition_name != "Burstable":
+                            if "ZoneRedundant" in ha_modes:
+                                price_rows.append(
+                                    (
+                                        DatabaseHaLevel.MULTI_ZONE,
+                                        DatabaseHaStrategy.PASSIVE_STANDBY,
+                                        base_price * 2,
+                                    )
+                                )
+                            if "SameZone" in ha_modes:
+                                price_rows.append(
+                                    (
+                                        DatabaseHaLevel.SINGLE_ZONE,
+                                        DatabaseHaStrategy.PASSIVE_STANDBY,
+                                        base_price * 2,
+                                    )
+                                )
+                        for ha, ha_strategy, price in price_rows:
+                            key = (
+                                region.region_id,
+                                database_id,
+                                ha,
+                                ha_strategy,
+                            )
+                            if key in seen:
+                                continue
+                            seen.add(key)
+                            items.append(
+                                {
+                                    "vendor_id": vendor.vendor_id,
+                                    "region_id": region.region_id,
+                                    "database_id": database_id,
+                                    "allocation": Allocation.ONDEMAND,
+                                    "ha": ha,
+                                    "ha_strategy": ha_strategy,
+                                    "unit": PriceUnit.HOUR,
+                                    "price": price,
+                                    "price_upfront": 0,
+                                    "price_tiered": [],
+                                    "currency": currency,
+                                }
+                            )
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
     return items
 
 
 def inventory_database_storages(vendor):
+    """List all Azure Database for PostgreSQL Flexible Server storage options via the capabilities API."""
     storages: dict[str, dict] = {}
     regions = _pg_database_regions(vendor)
     vendor.progress_tracker.start_task(
@@ -1915,8 +2108,17 @@ def inventory_database_storages(vendor):
                                 )
 
                         bounds = {
-                            "min_size": int(min(sizes_mb) / 1024) if sizes_mb else None,
-                            "max_size": int(max(sizes_mb) / 1024) if sizes_mb else None,
+                            # Azure storage_size_mb values are MiB
+                            "min_size": (
+                                round(min(sizes_mb) / 1024 * _GIB_TO_GB)
+                                if sizes_mb
+                                else None
+                            ),
+                            "max_size": (
+                                round(max(sizes_mb) / 1024 * _GIB_TO_GB)
+                                if sizes_mb
+                                else None
+                            ),
                             "max_iops": (
                                 max(max_iops_values) if max_iops_values else None
                             ),
@@ -1996,6 +2198,10 @@ def inventory_database_storages(vendor):
 
 
 def inventory_database_storage_prices(vendor):
+    """Look up Azure Database for PostgreSQL Flexible Server storage prices via the Azure Retail Prices API.
+
+    For more information, see <https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices>.
+    """
     items = []
     regions = _pg_database_regions(vendor)
     vendor.progress_tracker.start_task(

@@ -1,7 +1,29 @@
-## v0.8.x (development)
+## v0.8.5 (July 31, 2026)
+
+New benchmark(s):
+
+- pgbench
+
+Maintenance update:
+
+- Refactor the `Database` table: replace `ha_supported` with ordered JSON lists
+  `ha` (`DatabaseHaLevel`) and `ha_strategy` (`DatabaseHaStrategy`), rename
+  `storage_autoscaling` to `storage_extra_autosize`, drop `support_level`, and add
+  capability fields (`wire_protocol`, storage bounds, monitoring,
+  `autotuning_advice` / `autotuning_apply`, and `security_features`).
+- Add optional `api_reference_object` (JSON) to `Database`: named API args identifying the
+  database instance when known.
+- Include `ha` and `ha_strategy` (scalar enums) in `database_price` primary keys so
+  HA deployments can carry distinct prices (e.g. AWS Multi-AZ, Azure 2x HA compute,
+  GCP Regional meters). Catalog `database.ha` / `ha_strategy` remain ordered JSON lists.
 
 Fix(es):
 
+- Correct and fill `AWS`, `Azure`, and `GCP` PostgreSQL DBaaS inventory fields (HA levels
+  and strategies, storage bounds, monitoring, backups, SLA, and related capabilities).
+- Keep non-orderable `AWS` RDS instance classes in the catalog as `INACTIVE` (prices still
+  crawled).
+- `AliCloud`: add API timeout and region mapping updates.
 - GCP: removed the hardcoded `SERVER_FAMILIES` allowlist that gated newer
   (missed) server pricing lookups. Families with genuinely no pricing SKUs yet
   in the Billing Catalog (e.g. `A4X`, `M4N`, `X4`, TPU VM series as of 2026-08)
@@ -124,7 +146,7 @@ Fix(es):
 - Add Sentry error tracking support to region and zone inventories.
 - Fix `Alibaba Cloud` storage price ingestion by converting hourly-rated prices to monthly.
 - Fix `Azure` storage price unit conversions to correctly produce $/GB/month values for all supported unit types, and
-  extend the storage meter mapping to cover all P1–P80, E1–E80, and S4–S80 disk sizes across LRS and ZRS redundancy
+  extend the storage meter mapping to cover all P1-P80, E1-E80, and S4-S80 disk sizes across LRS and ZRS redundancy
   tiers.
 - Update `min_size`, `max_size`, and `max_throughput` calculations in vendor modules and column descriptions in the 
   `Storage` table to reflect units in GB and MB/s.

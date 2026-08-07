@@ -5,7 +5,16 @@ from sc_crawler.table_bases import (
     DatabaseBenchmarkScoreBase,
     DatabasePriceBase,
 )
-from sc_crawler.table_fields import Allocation, DatabaseEngine, PriceUnit, Status
+from sc_crawler.table_fields import (
+    Allocation,
+    DatabaseEngine,
+    DatabaseHaLevel,
+    DatabaseHaStrategy,
+    DatabaseSecurityFeature,
+    DatabaseWireProtocol,
+    PriceUnit,
+    Status,
+)
 
 
 def test_primary_key_tuple_normalizes_json_config_key_order():
@@ -51,6 +60,8 @@ def test_dedupe_items_collapses_duplicate_database_prices():
         "region_id": "us-east-1",
         "database_id": "db.t3.micro",
         "allocation": Allocation.ONDEMAND,
+        "ha": DatabaseHaLevel.SINGLE_ZONE,
+        "ha_strategy": DatabaseHaStrategy.NONE,
         "unit": PriceUnit.HOUR,
         "price": 0.02,
         "price_upfront": 0,
@@ -65,7 +76,7 @@ def test_dedupe_items_collapses_duplicate_database_prices():
     validated = [DatabasePriceBase.model_validate(item).model_dump() for item in items]
     deduped = _dedupe_items(
         validated,
-        ["vendor_id", "region_id", "database_id", "allocation"],
+        ["vendor_id", "region_id", "database_id", "allocation", "ha", "ha_strategy"],
     )
     assert len(deduped) == 1
     assert deduped[0]["price"] == 0.03
@@ -81,13 +92,18 @@ def test_database_base_round_trip():
             "display_name": "db-n1-standard-4",
             "description": "PostgreSQL Cloud SQL N1 Standard (4 vCPUs, 15 GB RAM)",
             "engine": DatabaseEngine.POSTGRESQL,
+            "wire_protocol": DatabaseWireProtocol.POSTGRESQL,
             "engine_versions": ["15", "16"],
+            "security_features": ["ip-filtering"],
             "storage_size": None,
             "status": Status.ACTIVE,
         }
     )
     assert item.engine_versions == ["15", "16"]
+    assert item.wire_protocol == DatabaseWireProtocol.POSTGRESQL
+    assert item.security_features == [DatabaseSecurityFeature.IP_FILTERING]
     assert item.storage_size is None
+    assert item.api_reference_object is None
 
 
 def test_database_benchmark_score_base_round_trip():

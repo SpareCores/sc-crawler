@@ -23,7 +23,11 @@ from ..table_fields import (
     Allocation,
     CpuAllocation,
     DatabaseEngine,
+    DatabaseHaLevel,
+    DatabaseHaStrategy,
+    DatabaseSecurityFeature,
     DatabaseStorageScope,
+    DatabaseWireProtocol,
     Disk,
     Gpu,
     PriceTier,
@@ -1351,12 +1355,22 @@ def inventory_ipv4_prices(vendor):
 # PostgreSQL RDS support
 
 
-@cache
+@cachier(hash_func=jsoned_hash, separate_files=True)
 def _boto_describe_orderable_db_instance_options(
     region: str,
     db_instance_class: str,
 ) -> list:
-    rds = boto3.client("rds", region_name=region)
+    rds = boto3.client(
+        "rds",
+        region_name=region,
+        config=Config(
+            connect_timeout=5,
+            read_timeout=10,
+            retries={
+                "max_attempts": 2,
+            },
+        ),
+    )
     paginator = rds.get_paginator("describe_orderable_db_instance_options")
     options = []
     for page in paginator.paginate(
@@ -1395,11 +1409,13 @@ def _boto_get_rds_products() -> list:
     )
 
 
-def _active_region_ids(vendor: Vendor) -> list[str]:
+def _active_region_ids(vendor: Vendor, only_priority: bool = False) -> list[str]:
     active = {
         region.region_id for region in vendor.regions if region.status == Status.ACTIVE
     }
     priority = [r for r in ("us-east-1", "eu-west-1", "eu-central-1") if r in active]
+    if only_priority:
+        return priority
     rest = sorted(active - set(priority))
     return priority + rest
 
@@ -1412,49 +1428,41 @@ def _boto_describe_db_major_engine_versions_first(regions: list[str]) -> list[st
     return []
 
 
-@cachier(hash_func=jsoned_hash, separate_files=True)
-def _describe_orderable_db_instance_options_for_class(
-    regions: list[str],
-    db_instance_class: str,
-) -> list:
-    for region in regions:
-        options = _boto_describe_orderable_db_instance_options(
-            region, db_instance_class
-        )
-        if options:
-            return options
-    return []
-
-
 def _describe_orderable_db_instance_options_for_class_with_progress(
     regions: list[str],
     db_instance_class: str,
     vendor: Vendor,
 ) -> list:
-    options = _describe_orderable_db_instance_options_for_class(
-        regions, db_instance_class
-    )
+    for region in regions:
+        with sentry_capture_or_raise(vendor=vendor):
+            options = _boto_describe_orderable_db_instance_options(
+                region, db_instance_class
+            )
+            if options:
+                vendor.progress_tracker.advance_task()
+                return options
     vendor.progress_tracker.advance_task()
-    return options
+    return []
 
 
 def _lookup_orderable_db_instance_options(
     vendor: Vendor,
     prices_by_region: dict[str, dict[str, dict]],
 ) -> dict[str, list]:
-    regions = _active_region_ids(vendor)
+    regions = _active_region_ids(vendor, only_priority=True)
     database_ids = sorted(
         {
             database_id
-            for classes in prices_by_region.values()
-            for database_id in classes
+            for region_classes in prices_by_region.values()
+            for database_id, attrs in region_classes.items()
+            if attrs.get("currentGeneration") == "Yes"
         }
     )
     vendor.progress_tracker.start_task(
         name="Look up orderable DB instance option(s)",
         total=len(database_ids),
     )
-    with ThreadPoolExecutor(max_workers=16) as executor:
+    with ThreadPoolExecutor(max_workers=8) as executor:
         results = list(
             executor.map(
                 _describe_orderable_db_instance_options_for_class_with_progress,
@@ -1489,11 +1497,14 @@ def _get_storage_bounds_from_orderable_options(
             max_size = opt.get("MaxStorageSize")
             max_iops = opt.get("MaxIopsPerDbInstance")
             max_throughput = opt.get("MaxStorageThroughputPerDbInstance")
+            # Orderable Min/MaxStorageSize are GiB
             if min_size is not None:
+                min_size = round(min_size * _GIB_TO_GB)
                 bounds["min_size"] = min(
                     s for s in (bounds["min_size"], min_size) if s is not None
                 )
             if max_size is not None:
+                max_size = round(max_size * _GIB_TO_GB)
                 bounds["max_size"] = max(
                     s for s in (bounds["max_size"], max_size) if s is not None
                 )
@@ -1519,28 +1530,47 @@ def _extract_rds_bundled_storage_size(storage: str | None) -> int | None:
     )
     if not match:
         return None
-    return int(match.group(1)) * int(match.group(2))
+    # Pricing attribute sizes are GiB
+    return round(int(match.group(1)) * int(match.group(2)) * _GIB_TO_GB)
 
 
 @cachier(separate_files=True)
-def _get_rds_instance_products_by_region() -> dict[str, dict[str, dict]]:
+def _get_rds_instance_products_by_region() -> tuple[
+    dict[str, dict[str, dict]], dict[str, frozenset[str]]
+]:
     by_region: dict[str, dict[str, dict]] = {}
+    deployment_options_by_database: dict[str, set[str]] = {}
     for product in _boto_get_rds_products():
         if product["product"].get("productFamily") != "Database Instance":
             continue
         attrs = product["product"]["attributes"]
-        if attrs["deploymentOption"] != "Single-AZ":
+        instance_type = attrs.get("instanceType")
+        if not instance_type:
             continue
+        deployment_option = attrs.get("deploymentOption")
+        if deployment_option:
+            deployment_options_by_database.setdefault(instance_type, set()).add(
+                deployment_option
+            )
         region_id = attrs["regionCode"]
-        instance_type = attrs["instanceType"]
-        if instance_type:
-            by_region.setdefault(region_id, {})[instance_type] = attrs
-    return by_region
+        region_map = by_region.setdefault(region_id, {})
+        existing = region_map.get(instance_type)
+        # Prefer Single-AZ attrs for catalog; otherwise keep the first seen row
+        # (e.g. readable-standbys-only classes that have no Single-AZ meter).
+        if existing is None or deployment_option == "Single-AZ":
+            region_map[instance_type] = attrs
+    return by_region, {
+        database_id: frozenset(options)
+        for database_id, options in deployment_options_by_database.items()
+    }
 
 
 def inventory_databases(vendor):
+    """List all available AWS RDS PostgreSQL instance types via `boto3` calls."""
     vendor.progress_tracker.start_task(name="Searching for database(s)", total=None)
-    prices_by_region = _get_rds_instance_products_by_region()
+    prices_by_region, deployment_options_by_database = (
+        _get_rds_instance_products_by_region()
+    )
     vendor.progress_tracker.hide_task()
 
     regions = _active_region_ids(vendor)
@@ -1560,11 +1590,77 @@ def inventory_databases(vendor):
                 continue
             seen_database_ids.add(database_id)
             db_instance_options = options_by_database.get(database_id, [])
+            status = Status.ACTIVE
+            # Pricing keeps previous-gen SKUs (currentGeneration=No) after AWS stops
+            # allowing new launches; add these classes with INACTIVE status.
+            if not db_instance_options:
+                status = Status.INACTIVE
+            deployment_options = deployment_options_by_database.get(
+                database_id, frozenset()
+            )
+            min_storage = [
+                opt["MinStorageSize"]
+                for opt in db_instance_options
+                if opt.get("MinStorageSize") is not None
+            ]
+            max_storage = [
+                opt["MaxStorageSize"]
+                for opt in db_instance_options
+                if opt.get("MaxStorageSize") is not None
+            ]
+            # https://docs.aws.amazon.com/AmazonRDS/latest/APIReference/API_OrderableDBInstanceOption.html
+            # SupportsGlobalDatabases is Aurora Global Database only (not RDS postgres).
+            multi_az = any(
+                opt.get("MultiAZCapable") for opt in db_instance_options
+            ) or ("Multi-AZ" in deployment_options)
+            readable = "Multi-AZ (readable standbys)" in deployment_options
+            ha = []
+            ha_strategy = []
+            if readable or multi_az:
+                ha.append(DatabaseHaLevel.MULTI_ZONE)
+            if "Single-AZ" in deployment_options:
+                ha.append(DatabaseHaLevel.NONE)
+            if not ha:
+                raise ValueError(
+                    f"Unknown deployment option for database {database_id}: {product}"
+                )
+            if readable:
+                # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/multi-az-db-clusters-concepts.html
+                ha_strategy.append(DatabaseHaStrategy.READABLE_CLUSTER)
+            if multi_az:
+                # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.MultiAZSingleStandby.html
+                ha_strategy.append(DatabaseHaStrategy.PASSIVE_STANDBY)
+            if DatabaseHaLevel.NONE in ha:
+                ha_strategy.append(DatabaseHaStrategy.NONE)
+            storage_extra_autosize = any(
+                opt.get("SupportsStorageAutoscaling") for opt in db_instance_options
+            )
+            # Orderable Min/MaxStorageSize are GiB
+            storage_extra_min = (
+                round(min(min_storage) * _GIB_TO_GB) if min_storage else None
+            )
+            storage_extra_max = (
+                round(max(max_storage) * _GIB_TO_GB) if max_storage else None
+            )
+            disk_encryption = any(
+                opt.get("SupportsStorageEncryption") for opt in db_instance_options
+            )
+            system_monitoring = any(
+                opt.get("SupportsEnhancedMonitoring") for opt in db_instance_options
+            )
+            database_monitoring = any(
+                opt.get("SupportsPerformanceInsights") for opt in db_instance_options
+            )
+            max_read_replicas = (
+                15
+                if any(opt.get("ReadReplicaCapable") for opt in db_instance_options)
+                else 0
+            )
             server_id = next(
                 (
                     server.server_id
                     for server in vendor.servers
-                    if server.server_id == database_id.removeprefix("db.")
+                    if server.api_reference == database_id.removeprefix("db.")
                 ),
                 None,
             )
@@ -1584,8 +1680,11 @@ def inventory_databases(vendor):
                     "database_id": database_id,
                     "name": database_id,
                     "api_reference": database_id,
+                    # https://www.pulumi.com/registry/packages/aws/api-docs/rds/instance/
+                    "api_reference_object": {"instance_class": database_id},
                     "display_name": database_id,
                     "engine": DatabaseEngine.POSTGRESQL,
+                    "wire_protocol": DatabaseWireProtocol.POSTGRESQL,
                     "engine_versions": major_versions,
                     "family": product["instanceFamily"],
                     "description": description,
@@ -1593,19 +1692,64 @@ def inventory_databases(vendor):
                     "vcpus": product["vcpu"],
                     "memory_amount": memory_amount_mib,
                     "storage_size": storage_size,
-                    "ha_supported": any(
-                        db.get("MultiAZCapable") for db in db_instance_options
-                    ),
-                    "storage_autoscaling": any(
-                        db.get("SupportsStorageAutoscaling")
-                        for db in db_instance_options
-                    ),
-                    # Managed RDS includes automated backups; not per-class in orderable API.
+                    "ha": ha,
+                    "ha_strategy": ha_strategy,
+                    # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Overview.RDSSecurityGroups.html
+                    # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_VPC.html
+                    # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_VPC.pc.html
+                    # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/UsingWithRDS.IAMDBAuth.html
+                    # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/UsingWithRDS.SSL.html
+                    # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Overview.Encryption.Keys.html
+                    # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Appendix.PostgreSQL.CommonDBATasks.pgaudit.html
+                    # Security groups (IP filtering), VPC placement, PrivateLink, IAM DB auth,
+                    # rds.force_ssl, KMS CMK, pgaudit. Server certs only (no client-cert auth).
+                    "security_features": [
+                        DatabaseSecurityFeature.IP_FILTERING,
+                        DatabaseSecurityFeature.PRIVATE_NETWORK,
+                        DatabaseSecurityFeature.NETWORK_PEERING,
+                        DatabaseSecurityFeature.IDENTITY_BASED_AUTH,
+                        DatabaseSecurityFeature.ENFORCED_TLS,
+                        DatabaseSecurityFeature.CUSTOMER_MANAGED_KEYS,
+                        DatabaseSecurityFeature.AUDIT_LOGGING,
+                    ],
+                    "storage_extra_autosize": storage_extra_autosize,
+                    "storage_extra_min": storage_extra_min,
+                    "storage_extra_max": storage_extra_max,
+                    "disk_encryption": disk_encryption,
+                    "system_monitoring": system_monitoring,
+                    "database_monitoring": database_monitoring,
+                    # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_PostgreSQL.Replication.ReadReplicas.Configuration.html
+                    # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/CHAP_Limits.html
+                    # Up to 15 read replicas per primary when the instance class supports replicas.
+                    "max_read_replicas": max_read_replicas,
+                    # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_UpgradeDBInstance.PostgreSQL.Minor.html
+                    # Auto minor version upgrade is a supported instance option for RDS PostgreSQL.
+                    "auto_upgrade_versions": True,
                     # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_WorkingWithAutomatedBackups.html
+                    # Managed RDS includes automated backups; not per-class in orderable API.
                     "scheduled_backups": True,
-                    # Product max backup / PITR retention (days); not per SKU in orderable API.
                     # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_WorkingWithAutomatedBackups.BackupRetention.html
+                    # Product max backup / PITR retention (days); not per SKU in orderable API.
                     "continuous_backups": 35,
+                    # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_WorkingWithParamGroups.html
+                    # DB parameter groups are supported for all RDS PostgreSQL instances.
+                    "custom_config": True,
+                    # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/PostgreSQL.Concepts.General.FeatureSupport.Extensions.html
+                    # Supported PostgreSQL extensions can be installed on the instance.
+                    "custom_extensions": True,
+                    # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy.html
+                    # RDS Proxy provides managed connection pooling for PostgreSQL.
+                    "connection_pool": True,
+                    # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/devops-guru-for-rds.html
+                    # DevOps Guru for RDS analyzes Performance Insights and recommends actions.
+                    "autotuning_advice": True,
+                    # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/devops-guru-for-rds.html
+                    # Recommendations require operator action; the service does not auto-apply fixes.
+                    "autotuning_apply": False,
+                    # https://aws.amazon.com/rds/sla/
+                    # Multi-AZ SLO 99.95%; Single-AZ SLO 99.5% (credit tables).
+                    "sla": 99.95 if multi_az or readable else 99.5,
+                    "status": status,
                 }
             )
         vendor.progress_tracker.advance_task()
@@ -1614,6 +1758,7 @@ def inventory_databases(vendor):
 
 
 def inventory_database_prices(vendor):
+    """List all on-demand AWS RDS PostgreSQL prices in all regions via `boto3` calls."""
     vendor.progress_tracker.start_task(
         name="Searching for database_price(s)", total=None
     )
@@ -1621,6 +1766,7 @@ def inventory_database_prices(vendor):
     vendor.progress_tracker.hide_task()
 
     region_ids = _active_region_ids(vendor)
+    databases = {database.database_id for database in vendor.databases}
     items = []
     vendor.progress_tracker.start_task(
         name="Preprocessing database_price(s)", total=len(products)
@@ -1633,9 +1779,20 @@ def inventory_database_prices(vendor):
             region_id = attrs["regionCode"]
             if region_id not in region_ids:
                 continue
-            if attrs.get("deploymentOption") != "Single-AZ":
+            if attrs.get("deploymentOption") == "Single-AZ":
+                ha = DatabaseHaLevel.SINGLE_ZONE
+                ha_strategy = DatabaseHaStrategy.NONE
+            elif attrs.get("deploymentOption") == "Multi-AZ (readable standbys)":
+                ha = DatabaseHaLevel.MULTI_ZONE
+                ha_strategy = DatabaseHaStrategy.READABLE_CLUSTER
+            elif attrs.get("deploymentOption") == "Multi-AZ":
+                ha = DatabaseHaLevel.MULTI_ZONE
+                ha_strategy = DatabaseHaStrategy.PASSIVE_STANDBY
+            else:
                 continue
             database_id = attrs.get("instanceType")
+            if database_id not in databases:
+                continue
             price = _extract_ondemand_price(product["terms"])
             items.append(
                 {
@@ -1643,6 +1800,8 @@ def inventory_database_prices(vendor):
                     "region_id": region_id,
                     "database_id": database_id,
                     "allocation": Allocation.ONDEMAND,
+                    "ha": ha,
+                    "ha_strategy": ha_strategy,
                     "unit": PriceUnit.HOUR,
                     "price": float(price[0]),
                     "price_upfront": 0,
@@ -1668,10 +1827,11 @@ _DATABASE_STORAGE_MAPPING = {
 
 
 def inventory_database_storages(vendor):
+    """List all AWS RDS PostgreSQL storage types via `boto3` calls."""
     vendor.progress_tracker.start_task(
         name="Searching for database_storage(s)", total=None
     )
-    prices_by_region = _get_rds_instance_products_by_region()
+    prices_by_region, _ = _get_rds_instance_products_by_region()
     vendor.progress_tracker.hide_task()
 
     options_by_database = _lookup_orderable_db_instance_options(
@@ -1705,6 +1865,7 @@ def inventory_database_storages(vendor):
 
 
 def inventory_database_storage_prices(vendor):
+    """List all AWS RDS PostgreSQL storage prices in all regions via `boto3` calls."""
     vendor.progress_tracker.start_task(
         name="Searching for database_storage_price(s)", total=None
     )

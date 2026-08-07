@@ -25,8 +25,11 @@ from .table_fields import (
     CpuAllocation,
     CpuArchitecture,
     DatabaseEngine,
+    DatabaseHaLevel,
+    DatabaseHaStrategy,
+    DatabaseSecurityFeature,
     DatabaseStorageScope,
-    DatabaseSupportLevel,
+    DatabaseWireProtocol,
     DdrGeneration,
     Disk,
     Gpu,
@@ -301,6 +304,14 @@ class HasApiReference(ScModel):
             "This is usually either the id or name of the resource, "
             "depending on the vendor and actual API endpoint."
         )
+    )
+
+
+class HasApiReferenceObject(ScModel):
+    api_reference_object: Optional[dict] = Field(
+        default=None,
+        sa_type=JSON,
+        description="How this resource is referenced in the vendor API calls, including the parameter name(s).",
     )
 
 
@@ -892,76 +903,121 @@ class StoragePriceBase(HasPriceFields, HasStoragePK, HasRegionPK, HasVendorPKFK)
 class DatabaseFields(
     HasDescription,
     HasDisplayName,
+    HasApiReferenceObject,
     HasApiReference,
     HasName,
     HasDatabaseIdPK,
     HasVendorPKFK,
 ):
-    server_id: Optional[str] = Field(
-        default=None,
-        description="Optional reference to a related Server SKU.",
-    )
-    engine: DatabaseEngine = Field(description="Managed database engine.")
-    engine_versions: List[str] = Field(
-        default=[],
-        sa_type=JSON,
-        description="Supported major engine versions merged onto the SKU row.",
-    )
     family: Optional[str] = Field(
         default=None,
-        description="Database series or plan family slug.",
+        description="Hardware family or class classification.",
+    )
+    server_id: Optional[str] = Field(
+        default=None,
+        description="Reference to the underlying cloud server's identifier.",
     )
     vcpus: Optional[int] = Field(
         default=None,
-        description="Number of virtual CPUs (vCPU) of the database SKU.",
+        description="Number of virtual CPU cores allocated to the database server instance.",
     )
     memory_amount: Optional[int] = Field(
         default=None,
-        description="RAM amount (MiB) reported by the vendor.",
+        description="Amount of RAM (MiB) provisioned for the instance.",
     )
-    storage_size: Optional[int] = Field(
-        default=None,
-        description="Bundled storage size (GB), when included in the SKU.",
+    engine: Optional[DatabaseEngine] = Field(
+        default=None, description="Managed database engine running on the instance."
     )
-    ha_supported: Optional[bool] = Field(
-        default=None,
-        description="If high availability is supported for the SKU.",
+    wire_protocol: Optional[DatabaseWireProtocol] = Field(
+        default=None, description="Network protocol used for client connections."
     )
-    storage_autoscaling: Optional[bool] = Field(
-        default=None,
-        description="If storage can be expanded beyond the bundled minimum.",
+    engine_versions: List[str] = Field(
+        default=[],
+        sa_type=JSON,
+        description="Major database engine versions supported.",
     )
-    scheduled_backups: Optional[bool] = Field(
+    auto_upgrade_versions: Optional[bool] = Field(
         default=None,
-        description="If scheduled/automated snapshot backups are supported.",
+        description="Auto-upgrade between minor database engine versions.",
     )
-    continuous_backups: Optional[int] = Field(
-        default=None,
-        description="Point-in-time recovery retention in days.",
+    ha: List[DatabaseHaLevel] = Field(
+        default=[DatabaseHaLevel.NONE],
+        sa_type=JSON,
+        description="Ordered HA levels supported, highest tier first.",
     )
-    engine_auto_upgrade: Optional[bool] = Field(
-        default=None,
-        description="If automatic engine version upgrades are supported.",
+    ha_strategy: List[DatabaseHaStrategy] = Field(
+        default=[DatabaseHaStrategy.NONE],
+        sa_type=JSON,
+        description="Ordered HA strategies supported, highest tier first.",
     )
-    autotuning: Optional[bool] = Field(
+    max_read_replicas: Optional[int] = Field(
         default=None,
-        description="If vendor autotuning is available.",
+        description="Maximum number of read-only replica nodes supported to scale read workloads.",
     )
     custom_config: Optional[bool] = Field(
         default=None,
-        description="If custom configuration parameters are supported.",
+        description="Whether database engine parameters/flags can be customized.",
     )
     custom_extensions: Optional[bool] = Field(
         default=None,
-        description="If custom extensions are supported.",
+        description="Support for custom database engine extensions/plugins.",
     )
-    support_level: Optional[DatabaseSupportLevel] = Field(
+    storage_size: Optional[int] = Field(
         default=None,
-        description="Vendor support tier for the SKU.",
+        description="Bundled storage capacity included in the database (GB).",
+    )
+    storage_extra_min: Optional[int] = Field(
+        default=None,
+        description="Minimum custom storage size (in GB) that can be attached to the instance.",
+    )
+    storage_extra_max: Optional[int] = Field(
+        default=None,
+        description="Maximum storage limit (in GB) supported by the instance or storage tier.",
+    )
+    storage_extra_autosize: Optional[bool] = Field(
+        default=None,
+        description="Whether storage capacity can automatically expand as disk usage grows.",
+    )
+    disk_encryption: Optional[bool] = Field(
+        default=None,
+        description="Indicates whether underlying storage drives are encrypted at rest.",
+    )
+    scheduled_backups: Optional[bool] = Field(
+        default=None,
+        description="Support for automated snapshot schedules and backup retention management.",
+    )
+    continuous_backups: Optional[int] = Field(
+        default=None,
+        description="Maximum point-in-time recovery (PITR) log retention window expressed in days (0 if unsupported).",
+    )
+    connection_pool: Optional[bool] = Field(
+        default=None,
+        description="Managed connection proxy support.",
+    )
+    system_monitoring: Optional[bool] = Field(
+        default=None,
+        description="Availability of host-level CPU, RAM, and disk metrics dashboards.",
+    )
+    database_monitoring: Optional[bool] = Field(
+        default=None,
+        description="Database engine performance insights (slow queries, locks, execution plans).",
+    )
+    autotuning_advice: Optional[bool] = Field(
+        default=None,
+        description="Analyzes workload and generates actionable performance tuning advice.",
+    )
+    autotuning_apply: Optional[bool] = Field(
+        default=None,
+        description="System automatically executes performance fixes (e.g., index creation, parameter tuning) without operator intervention.",
     )
     sla: Optional[float] = Field(
         default=None,
         description="Service level agreement as a percentage, e.g. 99.95.",
+    )
+    security_features: List[DatabaseSecurityFeature] = Field(
+        default=[],
+        sa_type=JSON,
+        description="Security capabilities supported by DBaaS providers.",
     )
 
     @field_validator("engine_versions", mode="before")
@@ -973,12 +1029,68 @@ class DatabaseFields(
             return [value]
         return [str(item) for item in value]
 
+    @field_validator("security_features", mode="before")
+    @classmethod
+    def _deserialize_security_features(cls, value):
+        if not value:
+            return []
+        if isinstance(value, str):
+            return [DatabaseSecurityFeature(value)]
+        return [
+            DatabaseSecurityFeature(item) if isinstance(item, str) else item
+            for item in value
+        ]
+
+    @field_validator("ha", mode="before")
+    @classmethod
+    def _deserialize_ha(cls, value):
+        if not value:
+            return [DatabaseHaLevel.NONE]
+        if isinstance(value, str):
+            return [DatabaseHaLevel(value)]
+        return [
+            DatabaseHaLevel(item) if isinstance(item, str) else item for item in value
+        ]
+
+    @field_validator("ha_strategy", mode="before")
+    @classmethod
+    def _deserialize_ha_strategy(cls, value):
+        if not value:
+            return [DatabaseHaStrategy.NONE]
+        if isinstance(value, str):
+            return [DatabaseHaStrategy(value)]
+        return [
+            DatabaseHaStrategy(item) if isinstance(item, str) else item
+            for item in value
+        ]
+
     @reconstructor
-    def _reconstruct_engine_versions(self):
-        if self.engine_versions is None:
+    def _reconstruct_json_fields(self):
+        if not self.engine_versions:
             self.engine_versions = []
         else:
             self.engine_versions = [str(item) for item in self.engine_versions]
+        if not self.security_features:
+            self.security_features = []
+        else:
+            self.security_features = [
+                DatabaseSecurityFeature(item) if isinstance(item, str) else item
+                for item in self.security_features
+            ]
+        if not self.ha:
+            self.ha = [DatabaseHaLevel.NONE]
+        else:
+            self.ha = [
+                DatabaseHaLevel(item) if isinstance(item, str) else item
+                for item in self.ha
+            ]
+        if not self.ha_strategy:
+            self.ha_strategy = [DatabaseHaStrategy.NONE]
+        else:
+            self.ha_strategy = [
+                DatabaseHaStrategy(item) if isinstance(item, str) else item
+                for item in self.ha_strategy
+            ]
 
 
 class DatabaseBase(MetaColumns, DatabaseFields):
@@ -989,6 +1101,16 @@ class DatabasePriceFields(ScModel):
     allocation: Allocation = Field(
         default=Allocation.ONDEMAND,
         description="Allocation method, e.g. on-demand or spot.",
+        primary_key=True,
+    )
+    ha: DatabaseHaLevel = Field(
+        default=DatabaseHaLevel.NONE,
+        description="HA level this price applies to.",
+        primary_key=True,
+    )
+    ha_strategy: DatabaseHaStrategy = Field(
+        default=DatabaseHaStrategy.NONE,
+        description="HA strategy this price applies to.",
         primary_key=True,
     )
 

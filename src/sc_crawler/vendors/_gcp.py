@@ -18,7 +18,11 @@ from ..table_fields import (
     CpuAllocation,
     CpuArchitecture,
     DatabaseEngine,
+    DatabaseHaLevel,
+    DatabaseHaStrategy,
+    DatabaseSecurityFeature,
     DatabaseStorageScope,
+    DatabaseWireProtocol,
     PriceUnit,
     Status,
     StorageType,
@@ -31,7 +35,6 @@ from ..tables import (
 from ..utils import nesteddefaultdict, scmodels_to_dict
 from ..vendor_helpers import (
     add_vendor_id,
-    merge_database_catalog_rows,
     parallel_fetch_servers,
     preprocess_servers,
 )
@@ -1168,10 +1171,14 @@ _PG_STORAGE_SPECS: dict[str, dict] = {
     },
 }
 _PG_SHARED_INSTANCE_RE = recompile(
-    r": Zonal - (?:Extended support )?(f1-micro|g1-small)(?: v\d+)? in "
+    r": (?:Zonal|Regional) - (?:Extended support )?(f1-micro|g1-small)(?: v\d+)? in "
 )
-_PG_VCPU_RE = recompile(r": Zonal - (?:Extended support )?(?:Enterprise N4 )?vCPU in ")
-_PG_RAM_RE = recompile(r": Zonal - (?:Extended support )?(?:Enterprise N4 )?RAM in ")
+_PG_VCPU_RE = recompile(
+    r": (?:Zonal|Regional) - (?:Extended support )?(?:Enterprise N4 )?vCPU in "
+)
+_PG_RAM_RE = recompile(
+    r": (?:Zonal|Regional) - (?:Extended support )?(?:Enterprise N4 )?RAM in "
+)
 _PG_EXTENSION_FLAGS = frozenset(
     {
         "cloudsql.enable_pg_cron",
@@ -1218,24 +1225,21 @@ def _pg_storage_id(description: str) -> str | None:
 
 
 def _pg_billing_catalog() -> tuple[
-    dict[tuple[str, str, str], object], frozenset[tuple[str, str]]
+    dict[tuple[str, str, str, str], object], frozenset[tuple[str, str]]
 ]:
-    compute_index: dict[tuple[str, str, str], object] = {}
+    # Key: (region, price_family, component, availability) where availability is
+    # "zonal" or "regional".
+    compute_index: dict[tuple[str, str, str, str], object] = {}
     ha_families: set[tuple[str, str]] = set()
     for sku in _cloud_sql_skus():
         description = sku.description or ""
         if "for Postgre" not in description:
             continue
-        if ": Regional -" in description:
-            if "vCPU" in description:
-                family = (
-                    "enterprise_n4" if "Enterprise N4" in description else "enterprise"
-                )
-                for region in sku.service_regions:
-                    if region:
-                        ha_families.add((region, family))
-            continue
-        if ": Zonal -" not in description and ": Zonal-" not in description:
+        if "Regional" in description:
+            availability = "regional"
+        elif "Zonal" in description:
+            availability = "zonal"
+        else:
             continue
 
         sku_class = None
@@ -1264,12 +1268,19 @@ def _pg_billing_catalog() -> tuple[
             continue
         family, component = sku_class
         for region in sku.service_regions:
-            if region:
-                compute_index.setdefault((region, family, component), sku)
+            if not region:
+                continue
+            compute_index.setdefault((region, family, component, availability), sku)
+            # Regional SKUs are HA (same-region multi-zone standby).
+            if availability == "regional" and (
+                family == "shared" or component == "vcpu"
+            ):
+                ha_families.add((region, family))
     return compute_index, frozenset(ha_families)
 
 
 def inventory_databases(vendor):
+    """List all available GCP Cloud SQL for PostgreSQL database types via API calls."""
     vendor.progress_tracker.start_task(name="Fetching PostgreSQL tier(s)", total=None)
     meta = _pg_sqladmin_metadata()
     _, ha_families = _pg_billing_catalog()
@@ -1320,19 +1331,14 @@ def inventory_databases(vendor):
         description = f"PostgreSQL Cloud SQL {family_label}"
         if spec_parts:
             description = f"{description} ({', '.join(spec_parts)})"
-
-        server_id = None
-        servers = getattr(vendor, "servers", None)
-        if servers:
-            server_id = next(
-                (
-                    server.server_id
-                    for server in servers
-                    if server.api_reference == tier_name.removeprefix("db-")
-                ),
-                None,
-            )
-
+        server_id = next(
+            (
+                server.server_id
+                for server in vendor.servers
+                if server.api_reference == tier_name.removeprefix("db-")
+            ),
+            None,
+        )
         raw_regions = tier.get("region")
         if isinstance(raw_regions, str):
             tier_regions = [raw_regions]
@@ -1348,17 +1354,27 @@ def inventory_databases(vendor):
         else:
             price_family = "enterprise"
 
-        ha_supported = None
+        ha: list[DatabaseHaLevel] = []
+        ha_strategy: list[DatabaseHaStrategy] = []
+        has_regional_ha = False
         if tier_regions:
-            if price_family == "shared":
-                ha_supported = False
-            else:
-                ha_supported = any(
-                    (region, price_family) in ha_families
-                    or (region, "enterprise") in ha_families
-                    or (region, "enterprise_n4") in ha_families
-                    for region in tier_regions
-                )
+            # https://cloud.google.com/sql/docs/postgres/high-availability
+            # Regional billing meters -> same-region multi-zone HA (standby).
+            # Zonal billing meters -> non-HA.
+            # Enterprise Plus Advanced DR -> cross-region replica promotion (not multi-region HA).
+            has_regional_ha = any(
+                (region, price_family) in ha_families for region in tier_regions
+            )
+            if has_regional_ha:
+                ha.append(DatabaseHaLevel.MULTI_ZONE)
+                ha_strategy.append(DatabaseHaStrategy.PASSIVE_STANDBY)
+        ha.append(DatabaseHaLevel.NONE)
+        ha_strategy.append(DatabaseHaStrategy.NONE)
+
+        disk_quota_bytes = int(tier.get("DiskQuota") or 0)
+        storage_extra_max = (
+            disk_quota_bytes // 1_000_000_000 if disk_quota_bytes else None
+        )
 
         rows.append(
             {
@@ -1366,33 +1382,96 @@ def inventory_databases(vendor):
                 "database_id": tier_name,
                 "name": tier_name,
                 "api_reference": tier_name,
+                # https://www.pulumi.com/registry/packages/gcp/api-docs/sql/databaseinstance/
+                # Machine size lives under settings (Pulumi DatabaseInstance.settings.tier).
+                "api_reference_object": {"settings": {"tier": tier_name}},
                 "display_name": tier_name,
                 "description": description,
                 # TODO: not clear which are the server instances for for perf-optimized and memory-optimized
                 # db instances (like db-perf-optimized-N-2, db-memory-optimized-N-4, etc.)
                 "server_id": server_id,
                 "engine": DatabaseEngine.POSTGRESQL,
+                "wire_protocol": DatabaseWireProtocol.POSTGRESQL,
                 "engine_versions": meta["engine_versions"],
                 "family": family_slug,
                 "vcpus": cpu_count,
                 "memory_amount": memory_amount,
                 "storage_size": None,
-                "ha_supported": ha_supported,
-                "storage_autoscaling": None,
+                "ha": ha,
+                "ha_strategy": ha_strategy,
+                # https://cloud.google.com/sql/docs/postgres/configure-ip
+                # https://cloud.google.com/sql/docs/postgres/private-ip
+                # https://cloud.google.com/sql/docs/postgres/configure-private-service-connect
+                # https://cloud.google.com/sql/docs/postgres/iam-authentication
+                # https://cloud.google.com/sql/docs/postgres/configure-ssl-instance
+                # https://cloud.google.com/sql/docs/postgres/cmek
+                # https://cloud.google.com/sql/docs/postgres/pg-audit
+                # Authorized networks, private IP (PSA tenant VPC), PSC, IAM DB auth,
+                # sslMode (ENCRYPTED_ONLY / client certs), CMEK, pgaudit.
+                "security_features": [
+                    DatabaseSecurityFeature.IP_FILTERING,
+                    DatabaseSecurityFeature.PRIVATE_NETWORK,
+                    DatabaseSecurityFeature.NETWORK_PEERING,
+                    DatabaseSecurityFeature.IDENTITY_BASED_AUTH,
+                    DatabaseSecurityFeature.CLIENT_CERT_AUTH,
+                    DatabaseSecurityFeature.ENFORCED_TLS,
+                    DatabaseSecurityFeature.CUSTOMER_MANAGED_KEYS,
+                    DatabaseSecurityFeature.AUDIT_LOGGING,
+                ],
+                # https://cloud.google.com/sql/docs/postgres/admin-api/rest/v1/instances
+                # Minimum data disk size is 10 GB.
+                "storage_extra_min": 10,
+                "storage_extra_max": storage_extra_max,
+                # https://cloud.google.com/sql/docs/postgres/instance-settings
+                "storage_extra_autosize": True,
+                # https://cloud.google.com/sql/docs/postgres/cmek
+                "disk_encryption": True,
+                # https://cloud.google.com/sql/docs/postgres/maintenance
+                # Minor versions are applied via Cloud SQL maintenance updates.
+                "auto_upgrade_versions": True,
                 # https://cloud.google.com/sql/docs/postgres/backup-recovery/backups
                 "scheduled_backups": True,
-                # https://cloud.google.com/sql/docs/postgres/backup-recovery/pitr
-                "continuous_backups": None,
+                # https://cloud.google.com/sql/docs/postgres/backup-recovery/configure-pitr
+                # Max transactionLogRetentionDays for PITR by edition; not in tiers API.
+                # Enterprise: 1-7 days; Enterprise Plus: 1-35 days.
+                "continuous_backups": (35 if price_family == "enterprise_n4" else 7),
                 "custom_config": meta["custom_config"],
                 "custom_extensions": meta["custom_extensions"],
+                # https://cloud.google.com/sql/docs/postgres/replication
+                # Shared-core tiers do not support read replicas.
+                # Up to 10 replicas per primary (cascading also allowed).
+                "max_read_replicas": (0 if tier_name in _PG_SHARED_TIERS else 10),
+                # https://cloud.google.com/sql/docs/postgres/managed-connection-pooling
+                "connection_pool": True,
+                # https://cloud.google.com/sql/docs/postgres/monitor-instance
+                "system_monitoring": True,
+                # https://cloud.google.com/sql/docs/postgres/using-query-insights
+                "database_monitoring": True,
+                # https://cloud.google.com/sql/docs/postgres/use-index-advisor
+                # Index advisor recommends CREATE INDEX (Enterprise Plus only); operator applies.
+                "autotuning_advice": price_family == "enterprise_n4",
+                "autotuning_apply": False,
+                # https://cloud.google.com/sql/sla
+                # Enterprise Plus + HA: 99.99%; Enterprise + HA: 99.95%.
+                # Shared-core and zonal (non-HA) instances are excluded from the SLA.
+                "sla": (
+                    99.99
+                    if price_family == "enterprise_n4" and has_regional_ha
+                    else (
+                        99.95
+                        if DatabaseHaLevel.MULTI_ZONE in ha and price_family != "shared"
+                        else None
+                    )
+                ),
             }
         )
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
-    return merge_database_catalog_rows(rows)
+    return rows
 
 
 def inventory_database_prices(vendor):
+    """List all available GCP Cloud SQL for PostgreSQL on-demand prices in all regions."""
     vendor.progress_tracker.start_task(name="Fetching Cloud SQL SKU(s)", total=None)
     compute_index, _ = _pg_billing_catalog()
     tiers = _pg_sqladmin_metadata()["tiers"]
@@ -1428,64 +1507,82 @@ def inventory_database_prices(vendor):
 
         if tier_name in _PG_SHARED_TIERS:
             price_family = "shared"
+            availabilities = ("zonal", "regional")
         elif any(marker in tier_name.lower() for marker in _PG_N4_TIER_MARKERS):
             price_family = "enterprise_n4"
+            availabilities = ("zonal", "regional")
         else:
             price_family = "enterprise"
+            availabilities = ("zonal", "regional")
 
         for region in vendor.regions:
             if tier_regions and region.api_reference not in tier_regions:
                 continue
 
-            hourly = currency = None
-            if price_family == "shared":
-                component = _PG_SHARED_TIERS[tier_name]
-                instance_sku = compute_index.get(
-                    (region.api_reference, "shared", component)
-                )
-                if instance_sku is not None:
-                    hourly = _sku_unit_price(instance_sku)
-                    if hourly is not None:
-                        tiered = instance_sku.pricing_info[
-                            0
-                        ].pricing_expression.tiered_rates
-                        currency = tiered[0].unit_price.currency_code or "USD"
-            elif cpu_count is not None and memory_gib is not None:
-                vcpu_sku = compute_index.get(
-                    (region.api_reference, price_family, "vcpu")
-                )
-                ram_sku = compute_index.get((region.api_reference, price_family, "ram"))
-                if vcpu_sku is not None and ram_sku is not None:
-                    vcpu_hourly = _sku_unit_price(vcpu_sku)
-                    ram_hourly = _sku_unit_price(ram_sku)
-                    if vcpu_hourly is not None and ram_hourly is not None:
-                        hourly = vcpu_hourly * cpu_count + ram_hourly * memory_gib
-                        vcpu_tiered = vcpu_sku.pricing_info[
-                            0
-                        ].pricing_expression.tiered_rates
-                        currency = vcpu_tiered[0].unit_price.currency_code or "USD"
+            for availability in availabilities:
+                hourly = currency = None
+                if price_family == "shared":
+                    component = _PG_SHARED_TIERS[tier_name]
+                    instance_sku = compute_index.get(
+                        (region.api_reference, "shared", component, availability)
+                    )
+                    if instance_sku is not None:
+                        hourly = _sku_unit_price(instance_sku)
+                        if hourly is not None:
+                            tiered = instance_sku.pricing_info[
+                                0
+                            ].pricing_expression.tiered_rates
+                            currency = tiered[0].unit_price.currency_code or "USD"
+                elif cpu_count is not None and memory_gib is not None:
+                    vcpu_sku = compute_index.get(
+                        (region.api_reference, price_family, "vcpu", availability)
+                    )
+                    ram_sku = compute_index.get(
+                        (region.api_reference, price_family, "ram", availability)
+                    )
+                    if vcpu_sku is not None and ram_sku is not None:
+                        vcpu_hourly = _sku_unit_price(vcpu_sku)
+                        ram_hourly = _sku_unit_price(ram_sku)
+                        if vcpu_hourly is not None and ram_hourly is not None:
+                            hourly = vcpu_hourly * cpu_count + ram_hourly * memory_gib
+                            vcpu_tiered = vcpu_sku.pricing_info[
+                                0
+                            ].pricing_expression.tiered_rates
+                            currency = vcpu_tiered[0].unit_price.currency_code or "USD"
 
-            if hourly is None:
-                continue
-            items.append(
-                {
-                    "vendor_id": vendor.vendor_id,
-                    "region_id": region.region_id,
-                    "database_id": tier_name,
-                    "allocation": Allocation.ONDEMAND,
-                    "unit": PriceUnit.HOUR,
-                    "price": hourly,
-                    "price_upfront": 0,
-                    "price_tiered": [],
-                    "currency": currency or "USD",
-                }
-            )
+                if hourly is None:
+                    continue
+                # https://cloud.google.com/sql/docs/postgres/high-availability
+                # Zonal = standalone; Regional HA = multi-zone standby (exactly 2x on
+                # the pricing page; we use Regional billing SKUs, not a multiplier).
+                if availability == "regional":
+                    ha = DatabaseHaLevel.MULTI_ZONE
+                    ha_strategy = DatabaseHaStrategy.PASSIVE_STANDBY
+                else:
+                    ha = DatabaseHaLevel.NONE
+                    ha_strategy = DatabaseHaStrategy.NONE
+                items.append(
+                    {
+                        "vendor_id": vendor.vendor_id,
+                        "region_id": region.region_id,
+                        "database_id": tier_name,
+                        "allocation": Allocation.ONDEMAND,
+                        "ha": ha,
+                        "ha_strategy": ha_strategy,
+                        "unit": PriceUnit.HOUR,
+                        "price": hourly,
+                        "price_upfront": 0,
+                        "price_tiered": [],
+                        "currency": currency or "USD",
+                    }
+                )
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
     return items
 
 
 def inventory_database_storages(vendor):
+    """List all available GCP Cloud SQL for PostgreSQL storage options."""
     vendor.progress_tracker.start_task(name="Fetching Cloud SQL SKU(s)", total=None)
     found = {
         storage_id
@@ -1519,6 +1616,7 @@ def inventory_database_storages(vendor):
 
 
 def inventory_database_storage_prices(vendor):
+    """List all available GCP Cloud SQL for PostgreSQL storage prices in all regions."""
     vendor.progress_tracker.start_task(name="Fetching Cloud SQL SKU(s)", total=None)
     skus = _cloud_sql_skus()
     vendor.progress_tracker.hide_task()

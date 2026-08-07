@@ -30,7 +30,11 @@ class HashableJSON(TypeDecorator):
     def process_result_value(self, value: str, dialect: Any) -> Any:
         if value is None:
             return None
-        return HashableDict(value)
+        if isinstance(value, dict):
+            return HashableDict(value)
+        if isinstance(value, list):
+            return tuple(value)
+        return value
 
 
 class Json(BaseModel):
@@ -124,11 +128,69 @@ class DatabaseEngine(str, Enum):
     """PostgreSQL."""
 
 
-class DatabaseSupportLevel(str, Enum):
-    """Vendor support tier for a managed database SKU."""
+class DatabaseWireProtocol(str, Enum):
+    """Wire protocol for a managed database type."""
 
-    STANDARD = "standard"
-    """Standard support level."""
+    POSTGRESQL = "postgresql"
+    """PostgreSQL."""
+
+
+class DatabaseHaLevel(str, Enum):
+    """High availability level for a managed database type."""
+
+    NONE = "none"
+    """No high availability."""
+    SINGLE_ZONE = "single-zone"
+    """Single-zone high availability, meaning multiple databases in the same zone with failover or multi-master."""
+    MULTI_ZONE = "multi-zone"
+    """Multi-zone high availability, meaning multiple databases in multiple zones of the same region with failover or multi-master."""
+    MULTI_REGION = "multi-region"
+    """Multi-region high availability, meaning multiple databases in multiple regions with failover or multi-master."""
+
+
+class DatabaseHaStrategy(str, Enum):
+    """High availability replication strategy for a managed database type."""
+
+    NONE = "none"
+    """No high availability strategy."""
+    PASSIVE_STANDBY = "passive-standby"
+    """Passive standby for failover, e.g. standard RDS Multi-AZ with block storage replication."""
+    READABLE_CLUSTER = "readable-cluster"
+    """Readable cluster for read scaling and failover, e.g. RDS Multi-AZ Cluster / Aurora with engine replication."""
+    MULTI_MASTER = "multi-master"
+    """True multi-master, e.g. CockroachDB / Spanner / DynamoDB Global Tables."""
+
+
+class DatabaseSecurityFeature(str, Enum):
+    """Security capabilities supported by DBaaS providers."""
+
+    # --- Network Security ---
+    IP_FILTERING = "ip-filtering"
+    """Access via public endpoint restricted to explicit IP/CIDR ranges."""
+
+    PRIVATE_NETWORK = "private-network"
+    """Provisioned natively inside customer's own private network/subnets (e.g. VPC/VNet)."""
+
+    NETWORK_PEERING = "network-peering"
+    """Private access via cross-network peering or private service endpoints (e.g. PrivateLink)."""
+
+    # --- Authentication & Access ---
+    IDENTITY_BASED_AUTH = "identity-based-auth"
+    """Auth offloaded to cloud or enterprise identity providers (e.g. IAM, Entra ID, OIDC, SSO)."""
+
+    CLIENT_CERT_AUTH = "client-cert-auth"
+    """Mutual TLS (mTLS) authentication requiring client-side SSL/TLS certificates."""
+
+    # --- Encryption & Key Management ---
+    ENFORCED_TLS = "enforced-tls"
+    """Enforceable requirement that all database connections use SSL/TLS (no plaintext fallback)."""
+
+    CUSTOMER_MANAGED_KEYS = "customer-managed-keys"
+    """Bring Your Own Key (BYOK) support for storage encryption."""
+
+    # --- Auditing & Governance ---
+    AUDIT_LOGGING = "audit-logging"
+    """Detailed database audit logs (e.g. pgaudit) exportable to external logging services or storage."""
 
 
 class DatabaseStorageScope(str, Enum):
