@@ -1,4 +1,5 @@
 from collections import defaultdict
+from datetime import UTC, datetime
 from functools import cache
 from os import environ
 from re import compile as recompile
@@ -617,7 +618,7 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
             continue
         # don't track Windows pricing, or the Azure Cloud Services pricing either
         if retail_price["productName"].endswith(
-            ("Windows", "CloudServices", "Cloud Services")
+            ("Windows", "Win", "CloudServices", "Cloud Services")
         ):
             continue
         # drop records related to unknown server types and/or regions
@@ -625,6 +626,12 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
             continue
         if retail_price["armRegionName"] not in region_ids:
             continue
+        if refdate := retail_price.get("effectiveEndDate"):
+            if datetime.fromisoformat(refdate) < datetime.now(UTC):
+                continue
+        if refdate := retail_price.get("effectiveStartDate"):
+            if datetime.fromisoformat(refdate) > datetime.now(UTC):
+                continue
         # filter for ondemand or spot prict
         is_spot = "Spot" in retail_price["skuName"]
         if (allocation == Allocation.ONDEMAND and is_spot) or (

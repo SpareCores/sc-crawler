@@ -1,3 +1,12 @@
+## v0.8.x (development)
+
+Fix(es):
+
+- Fix OVH charges for stopped servers.
+- Note that billing of stopped OVH servers depends on the location.
+- Explicitly exclude Azure outdated server prices before most recent record takes precedence.
+- Remove bogus CPU cache amount for ARM servers with the hypervisor reporting zero amount.
+
 ## v0.8.5 (July 31, 2026)
 
 New benchmark(s):
