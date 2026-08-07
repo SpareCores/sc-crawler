@@ -56,9 +56,9 @@ class CpuCacheInfo:
         t_kib, t_mib = fmt_bytes(self.total_bytes)
         return {
             "level": self.level,
-            "per_instance_bytes": self.per_instance_bytes
-            if self.per_instance_bytes > 0
-            else None,
+            "per_instance_bytes": (
+                self.per_instance_bytes if self.per_instance_bytes > 0 else None
+            ),
             "per_instance_KiB": pi_kib,
             "per_instance_MiB": pi_mib,
             "total_bytes": self.total_bytes if self.total_bytes > 0 else None,
