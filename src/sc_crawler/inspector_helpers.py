@@ -44,17 +44,24 @@ class CpuCacheInfo:
         return self.total_bytes // self.instances if self.instances else 0
 
     def as_dict(self) -> Dict[str, object]:
-        def fmt_bytes(n: int) -> Tuple[int, float]:
-            return int(n / 1024), n / (1024.0 * 1024.0)
+        def fmt_bytes(n: int) -> Tuple[Optional[int], Optional[float]]:
+            if n <= 0:
+                return None, None
+            kib = n // 1024
+            if kib <= 0:
+                return None, None
+            return kib, n / (1024.0 * 1024.0)
 
         pi_kib, pi_mib = fmt_bytes(self.per_instance_bytes)
         t_kib, t_mib = fmt_bytes(self.total_bytes)
         return {
             "level": self.level,
-            "per_instance_bytes": self.per_instance_bytes,
+            "per_instance_bytes": self.per_instance_bytes
+            if self.per_instance_bytes > 0
+            else None,
             "per_instance_KiB": pi_kib,
             "per_instance_MiB": pi_mib,
-            "total_bytes": self.total_bytes,
+            "total_bytes": self.total_bytes if self.total_bytes > 0 else None,
             "total_KiB": t_kib,
             "total_MiB": t_mib,
             "instances": self.instances,
@@ -208,6 +215,8 @@ def _parse_lstopo_caches(
                 size_bytes = int(size_str)
             except ValueError:
                 continue
+            if size_bytes <= 0:
+                continue
             num_cores = _count_cores_under(elem)
             if num_cores == 0:
                 num_cores = 1
@@ -301,6 +310,8 @@ def _extract_cache_info(
         if field in LSCPU_CACHE_FIELDS and data:
             level = LSCPU_CACHE_FIELDS[field]
             total_bytes, instances = _parse_cache_data_string(data)
+            if total_bytes <= 0:
+                continue
             caches[level] = CpuCacheInfo(
                 level=level, total_bytes=total_bytes, instances=instances
             )
