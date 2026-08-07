@@ -130,7 +130,7 @@ ovh = Vendor(
     zip_code="59100",
     founding_year=1999,
     status_page="https://www.status-ovhcloud.com",
-    stopped_server_charged=False,
+    stopped_server_charged=True,
     # https://github.com/ovh/public-cloud-roadmap/issues/562#issuecomment-5164465907
     # per-second billing, min billing = 1 minute: "Scope: EU/CA/APAC (out of US)"
     # TODO: uncomment when US is supported too, now keep worst case, keep 1 hour billing increment
