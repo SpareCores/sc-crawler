@@ -626,17 +626,11 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
             continue
         if retail_price["armRegionName"] not in region_ids:
             continue
-        if retail_price.get("effectiveEndDate"):
-            effective_end_date = datetime.fromisoformat(
-                retail_price["effectiveEndDate"]
-            )
-            if effective_end_date < datetime.now(UTC):
+        if refdate := retail_price.get("effectiveEndDate"):
+            if datetime.fromisoformat(refdate) < datetime.now(UTC):
                 continue
-        if retail_price.get("effectiveStartDate"):
-            effective_start_date = datetime.fromisoformat(
-                retail_price["effectiveStartDate"]
-            )
-            if effective_start_date > datetime.now(UTC):
+        if refdate := retail_price.get("effectiveStartDate"):
+            if datetime.fromisoformat(refdate) > datetime.now(UTC):
                 continue
         # filter for ondemand or spot prict
         is_spot = "Spot" in retail_price["skuName"]
