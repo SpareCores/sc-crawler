@@ -131,9 +131,17 @@ ovh = Vendor(
     founding_year=1999,
     status_page="https://www.status-ovhcloud.com",
     stopped_server_charged=False,
+    # https://github.com/ovh/public-cloud-roadmap/issues/562#issuecomment-5164465907
+    # per-second billing, min billing = 1 minute: "Scope: EU/CA/APAC (out of US)"
+    # TODO: uncomment when US is supported too, now keep worst case, keep 1 hour billing increment
+    # billing_increment_seconds=1,
+    # minimum_billing_seconds=60,
     billing_increment_seconds=3600,
     minimum_billing_seconds=3600,
-    billing_comment="Billing for stopped servers depends on status: suspended or paused is billed, while shelved is not.",
+    billing_comment=(
+        "EU/CA/APAC: per-second with 60s minimum; US: hourly. "
+        "Billing for stopped servers depends on status: suspended or paused is billed, while shelved is not."
+    ),
 )
 """OVHcloud."""
 
