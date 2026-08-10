@@ -537,6 +537,19 @@ def test_benchmark_score_legacy_key_translation_and_hybrids():
     assert "environment" not in bare_response
     assert "kernel_version" not in bare_response
 
+    constructed = BenchmarkScoreBase.model_construct(
+        vendor_id="aws",
+        resource_type="server",
+        resource_id="m5.large",
+        benchmark_id="bogomips",
+        config={},
+        score=4.0,
+        environment={"server_id": "env-should-not-win", "kernel_version": "6.1.0"},
+    )
+    constructed_response = constructed.to_response()
+    assert constructed_response["server_id"] == "m5.large"
+    assert constructed_response["kernel_version"] == "6.1.0"
+
     filter_sql = str(select(BenchmarkScore).where(BenchmarkScore.server_id == "x"))
     assert "resource_type" in filter_sql
     assert "resource_id" in filter_sql
@@ -544,3 +557,25 @@ def test_benchmark_score_legacy_key_translation_and_hybrids():
     select_sql = str(select(BenchmarkScore.server_id, BenchmarkScore.database_id))
     assert "AS server_id" in select_sql
     assert "AS database_id" in select_sql
+
+
+def test_benchmark_score_rejects_both_legacy_ids():
+    from pydantic import ValidationError
+
+    from sc_crawler.table_bases import BenchmarkScoreBase
+
+    try:
+        BenchmarkScoreBase.model_validate(
+            {
+                "vendor_id": "aws",
+                "server_id": "m5.large",
+                "database_id": "db.m5.large",
+                "benchmark_id": "bogomips",
+                "config": {},
+                "score": 1.0,
+            }
+        )
+    except ValidationError as e:
+        assert "only one of server_id or database_id" in str(e)
+    else:
+        raise AssertionError("expected ValidationError")

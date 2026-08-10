@@ -362,7 +362,7 @@ def _benchmark_metafields(
             else {"environment": kernel_version_fallback}
         )
     if extend_environment:
-        kernel_version["environment"].update(extend_environment)
+        kernel_version.setdefault("environment", {}).update(extend_environment)
     if isinstance(resource, ServerBase):
         _resource_ids = _server_ids(resource)
     else:

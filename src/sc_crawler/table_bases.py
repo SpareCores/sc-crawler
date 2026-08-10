@@ -1408,13 +1408,16 @@ class BenchmarkScoreFields(HasBenchmarkPKFK, HasVendorPKFK):
     @model_validator(mode="before")
     def update_config_to_hashable(cls, values):
         """Accept legacy ``server_id`` / ``database_id`` keys; hashably sort config."""
-        for key, rtype in (
-            ("server_id", ResourceType.SERVER),
-            ("database_id", ResourceType.DATABASE),
-        ):
-            if key in values:
-                values["resource_type"] = rtype
-                values["resource_id"] = values.pop(key)
+        has_server = "server_id" in values
+        has_database = "database_id" in values
+        if has_server and has_database:
+            raise ValueError("Provide only one of server_id or database_id.")
+        if has_server:
+            values["resource_type"] = ResourceType.SERVER
+            values["resource_id"] = values.pop("server_id")
+        elif has_database:
+            values["resource_type"] = ResourceType.DATABASE
+            values["resource_id"] = values.pop("database_id")
         values["config"] = HashableDict(sorted(values.get("config", {}).items()))
         return values
 
@@ -1475,10 +1478,12 @@ class BenchmarkScoreFields(HasBenchmarkPKFK, HasVendorPKFK):
 
     def to_response(self) -> dict:
         data = self.model_dump(exclude={"resource_type", "resource_id", "environment"})
-        data[f"{self.resource_type.value}_id"] = self.resource_id
+        resource_type = ResourceType(self.resource_type)
+        data[f"{resource_type.value}_id"] = self.resource_id
         if self.environment:
             for key, value in self.environment.items():
-                data[key] = value
+                if key not in data:
+                    data[key] = value
         return data
 
     @field_serializer("score_breakdown")

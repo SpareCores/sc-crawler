@@ -456,7 +456,7 @@ def upgrade() -> None:
                 UPDATE {table_name}
                 SET environment = jsonb_build_object('kernel_version', kernel_version)
                 WHERE kernel_version IS NOT NULL
-                """
+                """  # noqa: S608
             )
         )
     else:
@@ -466,7 +466,7 @@ def upgrade() -> None:
                 UPDATE {table_name}
                 SET environment = json_object('kernel_version', kernel_version)
                 WHERE kernel_version IS NOT NULL
-                """
+                """  # noqa: S608
             )
         )
 
@@ -617,6 +617,30 @@ def downgrade() -> None:
         ),
     )
 
+    op.execute(
+        sa.text(
+            f"""
+            INSERT INTO {db_score_name} (
+                vendor_id, database_id, benchmark_id, config,
+                framework_version, score, score_breakdown, note, status, observed_at
+            )
+            SELECT
+                vendor_id, resource_id, benchmark_id, config,
+                framework_version, score, score_breakdown, note, status, observed_at
+            FROM {table_name}
+            WHERE resource_type = 'DATABASE'
+            """  # noqa: S608
+        )
+    )
+    op.execute(
+        sa.text(
+            f"""
+            DELETE FROM {table_name}
+            WHERE resource_type = 'DATABASE'
+            """  # noqa: S608
+        )
+    )
+
     op.add_column(
         table_name,
         sa.Column(
@@ -633,7 +657,7 @@ def downgrade() -> None:
                 UPDATE {table_name}
                 SET kernel_version = environment ->> 'kernel_version'
                 WHERE environment IS NOT NULL
-                """
+                """  # noqa: S608
             )
         )
     else:
@@ -643,7 +667,7 @@ def downgrade() -> None:
                 UPDATE {table_name}
                 SET kernel_version = json_extract(environment, '$.kernel_version')
                 WHERE environment IS NOT NULL
-                """
+                """  # noqa: S608
             )
         )
 

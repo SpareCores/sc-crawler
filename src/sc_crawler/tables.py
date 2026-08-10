@@ -48,6 +48,7 @@ from .table_fields import (
     CpuAllocation,  # noqa: F401 imported for mkdocstrings
     CpuArchitecture,  # noqa: F401 imported for mkdocstrings
     PriceUnit,  # noqa: F401 imported for mkdocstrings
+    ResourceType,
     Status,
     StorageType,  # noqa: F401 imported for mkdocstrings
     TrafficDirection,  # noqa: F401 imported for mkdocstrings
@@ -326,7 +327,7 @@ class Vendor(VendorBase, table=True):
         self.set_table_rows_inactive(
             BenchmarkScore,
             BenchmarkScore.vendor_id == self.vendor_id,
-            BenchmarkScore.resource_type == "SERVER",
+            BenchmarkScore.resource_type == ResourceType.SERVER,
         )
         insert_items(BenchmarkScore, benchmarks, self)
         self.progress_tracker.start_task(
@@ -418,7 +419,7 @@ class Vendor(VendorBase, table=True):
         self.set_table_rows_inactive(
             BenchmarkScore,
             BenchmarkScore.vendor_id == self.vendor_id,
-            BenchmarkScore.resource_type == "DATABASE",
+            BenchmarkScore.resource_type == ResourceType.DATABASE,
         )
         insert_items(BenchmarkScore, benchmarks, self)
 
