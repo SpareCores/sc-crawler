@@ -13,7 +13,7 @@ from re import compile, match, search, sub
 from shutil import rmtree
 from statistics import mode
 from tempfile import mkdtemp
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING, List, Union
 from zipfile import ZipFile
 
 from requests import get
@@ -292,7 +292,7 @@ def _server_average_time_to_start(server: "Server") -> float | None:
     return round(sum(durations) / len(durations), 2) if durations else None
 
 
-def _observed_at(resource: "Server" | "Database", framework: str) -> dict:
+def _observed_at(resource: Union["Server", "Database"], framework: str) -> dict:
     if isinstance(resource, ServerBase):
         ts = _server_framework_meta(resource, framework)["end"]
     else:
@@ -301,7 +301,7 @@ def _observed_at(resource: "Server" | "Database", framework: str) -> dict:
     return {"observed_at": ts}
 
 
-def _framework_version(resource: "Server" | "Database", framework: str) -> dict:
+def _framework_version(resource: Union["Server", "Database"], framework: str) -> dict:
     if isinstance(resource, ServerBase):
         framework_version = _server_framework_meta(resource, framework).get("version")
     else:
@@ -313,7 +313,7 @@ def _framework_version(resource: "Server" | "Database", framework: str) -> dict:
     )
 
 
-def _kernel_version(resource: "Server" | "Database", framework: str) -> dict:
+def _kernel_version(resource: ["Server", "Database"], framework: str) -> dict:
     if isinstance(resource, ServerBase):
         kernel_version = _server_framework_meta(resource, framework).get(
             "kernel_version"
@@ -330,7 +330,7 @@ def _kernel_version(resource: "Server" | "Database", framework: str) -> dict:
 
 
 def _benchmark_metafields(
-    resource: "Server" | "Database",
+    resource: Union["Server", "Database"],
     framework: str | None = None,
     benchmark_id: str | None = None,
     framework_version_fallback: str | dict | None = None,
