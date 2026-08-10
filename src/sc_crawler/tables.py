@@ -15,6 +15,7 @@ from .description_ingestor import (
 )
 from .insert import insert_items
 from .inspector import (
+    inspect_database_benchmarks,
     inspect_server_benchmarks,
     inspect_update_server_dict,
     inspector_data_path,
@@ -316,14 +317,16 @@ class Vendor(VendorBase, table=True):
         insert_items(Server, servers, self)
         benchmarks = []
         self.progress_tracker.start_task(
-            name="Searching for benchmark(s)", total=len(self.servers)
+            name="Searching for server benchmark(s)", total=len(self.servers)
         )
         for server in self.servers:
             benchmarks += inspect_server_benchmarks(server)
             self.progress_tracker.advance_task()
         self.progress_tracker.hide_task()
         self.set_table_rows_inactive(
-            BenchmarkScore, BenchmarkScore.vendor_id == self.vendor_id
+            BenchmarkScore,
+            BenchmarkScore.vendor_id == self.vendor_id,
+            BenchmarkScore.resource_type == "SERVER",
         )
         insert_items(BenchmarkScore, benchmarks, self)
         self.progress_tracker.start_task(
@@ -394,12 +397,34 @@ class Vendor(VendorBase, table=True):
 
     @log_start_end
     def inventory_databases(self):
-        """Get the vendor's all managed database SKUs."""
-        self._inventory(Database, self._get_methods().inventory_databases)
+        """Get the vendor's all managed database types."""
+        self.set_table_rows_inactive(Database)
+        databases = self._get_methods().inventory_databases(self)
+        # show progress bar while downloading
+        self.progress_tracker.start_task(
+            name="Downloading sc-inspector-data", total=None
+        )
+        inspector_data_path()
+        self.progress_tracker.hide_task()
+        insert_items(Database, databases, self)
+        benchmarks = []
+        self.progress_tracker.start_task(
+            name="Searching for database benchmark(s)", total=len(self.databases)
+        )
+        for database in self.databases:
+            benchmarks += inspect_database_benchmarks(database)
+            self.progress_tracker.advance_task()
+        self.progress_tracker.hide_task()
+        self.set_table_rows_inactive(
+            BenchmarkScore,
+            BenchmarkScore.vendor_id == self.vendor_id,
+            BenchmarkScore.resource_type == "DATABASE",
+        )
+        insert_items(BenchmarkScore, benchmarks, self)
 
     @log_start_end
     def inventory_database_prices(self):
-        """Get the current prices of all managed database SKUs."""
+        """Get the current prices of all managed database types."""
         self._inventory_price_rounding(
             DatabasePrice,
             self._get_methods().inventory_database_prices,

@@ -31,7 +31,7 @@ from .table_bases import ServerBase
 from .table_fields import DdrGeneration, Disk, Parallelism, StorageType
 
 if TYPE_CHECKING:
-    from .tables import Server
+    from .tables import Database, Server
 
 SERVER_CLIENT_FRAMEWORK_MAPS = {
     "static_web": {
@@ -71,7 +71,7 @@ PASSMARK_MAPS = {
 
 
 @cache
-def inspector_data_path() -> str | PathLike:
+def inspector_data_path(dir_name: str = "data") -> str | PathLike:
     """Download current inspector data into a temp folder.
 
     Setting the `SC_CRAWLER_INSPECTOR_DATA_PATH` environment variable will
@@ -92,7 +92,7 @@ def inspector_data_path() -> str | PathLike:
             f.write(response.content)
         with ZipFile(zip_path, "r") as zip_ref:
             zip_ref.extractall(temp_dir)
-    return path.join(temp_dir, "sc-inspector-data-main", "data")
+    return path.join(temp_dir, "sc-inspector-data-main", dir_name)
 
 
 def _server_ids(server: "Server") -> dict:
@@ -101,6 +101,16 @@ def _server_ids(server: "Server") -> dict:
 
 def _server_path(server: "Server") -> str | PathLike:
     return path.join(inspector_data_path(), server.vendor_id, server.api_reference)
+
+
+def _database_ids(database: "Database") -> dict:
+    return {"vendor_id": database.vendor_id, "database_id": database.database_id}
+
+
+def _database_path(database: "Database") -> str | PathLike:
+    return path.join(
+        inspector_data_path("dbaas"), database.vendor_id, database.api_reference
+    )
 
 
 def _get_server_framework_run_ids(server: "Server", framework: str) -> List[str]:
@@ -126,12 +136,42 @@ def _server_framework_path(
     return path.join(*path_parts)
 
 
+def _database_framework_path(
+    database: "Database", framework: str, relpath: str | list[str] | None = None
+) -> str | PathLike:
+    path_extra_parts = ["postgres", "18", "standalone"]
+    path_parts = (
+        [_database_path(database), *path_extra_parts, framework, *relpath]
+        if isinstance(relpath, list)
+        else [
+            _database_path(database),
+            *path_extra_parts,
+            framework,
+            relpath,
+        ]
+    )
+    path_parts = [path_part for path_part in path_parts if path_part is not None]
+    return path.join(*path_parts)
+
+
 def _server_framework_stdout_path(server: "Server", framework: str) -> str | PathLike:
     return _server_framework_path(server, framework, "stdout")
 
 
+def _database_framework_stdout_path(
+    database: "Database", framework: str
+) -> str | PathLike:
+    return _database_framework_path(database, framework, "stdout")
+
+
 def _server_framework_stderr_path(server: "Server", framework: str) -> str | PathLike:
     return _server_framework_path(server, framework, "stderr")
+
+
+def _database_framework_stderr_path(
+    database: "Database", framework: str
+) -> str | PathLike:
+    return _database_framework_path(database, framework, "stderr")
 
 
 def _server_framework_stdout_from_json(server: "Server", framework: str) -> dict:
@@ -139,8 +179,18 @@ def _server_framework_stdout_from_json(server: "Server", framework: str) -> dict
         return json.load(fp)
 
 
+def _database_framework_stdout_from_json(database: "Database", framework: str) -> dict:
+    with open(_database_framework_stdout_path(database, framework), "r") as fp:
+        return json.load(fp)
+
+
 def _server_framework_meta(server: "Server", framework: str) -> dict:
     with open(_server_framework_path(server, framework, "meta.json"), "r") as fp:
+        return json.load(fp)
+
+
+def _database_framework_meta(database: "Database", framework: str) -> dict:
+    with open(_database_framework_path(database, framework, "meta.json"), "r") as fp:
         return json.load(fp)
 
 
@@ -242,14 +292,20 @@ def _server_average_time_to_start(server: "Server") -> float | None:
     return round(sum(durations) / len(durations), 2) if durations else None
 
 
-def _observed_at(server: "Server", framework: str) -> dict:
-    ts = _server_framework_meta(server, framework)["end"]
+def _observed_at(resource: "Server" | "Database", framework: str) -> dict:
+    if isinstance(resource, ServerBase):
+        ts = _server_framework_meta(resource, framework)["end"]
+    else:
+        ts = _database_framework_meta(resource, framework)["end"]
     assert ts is not None
     return {"observed_at": ts}
 
 
-def _framework_version(server: "Server", framework: str) -> dict:
-    framework_version = _server_framework_meta(server, framework).get("version")
+def _framework_version(resource: "Server" | "Database", framework: str) -> dict:
+    if isinstance(resource, ServerBase):
+        framework_version = _server_framework_meta(resource, framework).get("version")
+    else:
+        framework_version = _database_framework_meta(resource, framework).get("version")
     return (
         {"framework_version": framework_version}
         if framework_version is not None
@@ -257,8 +313,15 @@ def _framework_version(server: "Server", framework: str) -> dict:
     )
 
 
-def _kernel_version(server: "Server", framework: str) -> dict:
-    kernel_version = _server_framework_meta(server, framework).get("kernel_version")
+def _kernel_version(resource: "Server" | "Database", framework: str) -> dict:
+    if isinstance(resource, ServerBase):
+        kernel_version = _server_framework_meta(resource, framework).get(
+            "kernel_version"
+        )
+    else:
+        kernel_version = _database_framework_meta(resource, framework).get(
+            "kernel_version"
+        )
     return (
         {"environment": {"kernel_version": kernel_version}}
         if kernel_version is not None
@@ -267,13 +330,14 @@ def _kernel_version(server: "Server", framework: str) -> dict:
 
 
 def _benchmark_metafields(
-    server: "Server",
+    resource: "Server" | "Database",
     framework: str | None = None,
     benchmark_id: str | None = None,
     framework_version_fallback: str | dict | None = None,
     kernel_version_fallback: str | dict | None = None,
     override_framework_version: bool = False,
     override_kernel_version: bool = False,
+    extend_environment: dict | None = None,
 ) -> dict:
     if benchmark_id is None:
         if framework is None:
@@ -281,8 +345,8 @@ def _benchmark_metafields(
         benchmark_id = framework
     if framework is None:
         framework = benchmark_id.split(":")[0]
-    framework_version = _framework_version(server, framework)
-    kernel_version = _kernel_version(server, framework)
+    framework_version = _framework_version(resource, framework)
+    kernel_version = _kernel_version(resource, framework)
     if framework_version_fallback and (
         override_framework_version or not framework_version
     ):
@@ -297,9 +361,15 @@ def _benchmark_metafields(
             if isinstance(kernel_version_fallback, str)
             else {"environment": kernel_version_fallback}
         )
+    if extend_environment:
+        kernel_version["environment"].update(extend_environment)
+    if isinstance(resource, ServerBase):
+        _resource_ids = _server_ids(resource)
+    else:
+        _resource_ids = _database_ids(resource)
     return {
-        **_server_ids(server),
-        **_observed_at(server, framework),
+        **_resource_ids,
+        **_observed_at(resource, framework),
         **framework_version,
         **kernel_version,
         "benchmark_id": benchmark_id,
@@ -795,6 +865,57 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
             )
     except Exception as e:
         _log_cannot_load_benchmarks(server, framework_path, e, True)
+
+    return benchmarks
+
+
+def inspect_database_benchmarks(database: "Database") -> list[dict]:
+    benchmarks = []
+
+    framework = "pgbench"
+    framework_path = framework + "_postgres_dbaas_ro_durable"
+    try:
+        with open(
+            _database_framework_stdout_path(database, framework_path),
+            "r",
+        ) as fp:
+            data = json.load(fp)
+            measurement = "heavy_read_only"
+            profiles = data["sizes"][0]["profile"]
+            single_profile: dict = next((p for p in profiles if p["concurrency"] == 1))
+            database_engine_version = data["postgres"]["server_version"]
+            benchmarks.extend(
+                [
+                    {
+                        **_benchmark_metafields(
+                            database,
+                            framework=framework_path,
+                            benchmark_id=":".join([framework, measurement]),
+                            extend_environment={
+                                "database_engine_version": database_engine_version
+                            },
+                        ),
+                        "config": {"concurrency": "single"},
+                        "score": single_profile["score"],
+                        "note": f"Latency: {single_profile['latency_avg_ms']} ms.",
+                    },
+                    {
+                        **_benchmark_metafields(
+                            database,
+                            framework=framework_path,
+                            benchmark_id=":".join([framework, measurement]),
+                            extend_environment={
+                                "database_engine_version": database_engine_version
+                            },
+                        ),
+                        "config": {"concurrency": "peak"},
+                        "score": data["score"],
+                        "note": f"Latency: {data['latency_avg_ms']} ms, concurrency: {data['peak_concurrency']}.",
+                    },
+                ]
+            )
+    except Exception as e:
+        _log_cannot_load_benchmarks(database, framework_path, e, True)
 
     return benchmarks
 
