@@ -1,4 +1,17 @@
-## v0.8.x (development)
+## v0.9.0 (August 10, 2026)
+
+‼ Breaking changes:
+
+- Reshape `benchmark_score`: add `resource_type` discriminator and `resource_id`
+  (replaces `server_id`); replace `kernel_version` with an extensible
+  `environment` JSON column (e.g. `kernel_version`, `database_engine_version`).
+
+Maintenance update:
+
+- Drop empty `database_benchmark_score`; database scores use `benchmark_score`
+  with `resource_type=DATABASE`.
+- Keep legacy `server_id` / `database_id` query and insert keys via hybrid
+  properties and input-dict translation.
 
 Fix(es):
 

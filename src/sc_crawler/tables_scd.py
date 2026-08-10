@@ -11,7 +11,6 @@ from .table_bases import (
     ComplianceFrameworkBase,
     CountryBase,
     DatabaseBase,
-    DatabaseBenchmarkScoreBase,
     DatabasePriceBase,
     DatabaseStorageBase,
     DatabaseStoragePriceBase,
@@ -215,19 +214,6 @@ class BenchmarkScd(Scd, BenchmarkBase, table=True):
 
 class BenchmarkScoreScd(Scd, BenchmarkScoreBase, table=True):
     """SCD version of .tables.BenchmarkScore."""
-
-    benchmark_id: str = Field(
-        primary_key=True,
-        description="Reference to the Benchmark.",
-    )
-    vendor_id: str = Field(
-        primary_key=True,
-        description="Reference to the Vendor.",
-    )
-
-
-class DatabaseBenchmarkScoreScd(Scd, DatabaseBenchmarkScoreBase, table=True):
-    """SCD version of .tables.DatabaseBenchmarkScore."""
 
     benchmark_id: str = Field(
         primary_key=True,

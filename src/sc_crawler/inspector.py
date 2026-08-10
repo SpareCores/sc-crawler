@@ -259,7 +259,11 @@ def _framework_version(server: "Server", framework: str) -> dict:
 
 def _kernel_version(server: "Server", framework: str) -> dict:
     kernel_version = _server_framework_meta(server, framework).get("kernel_version")
-    return {"kernel_version": kernel_version} if kernel_version is not None else {}
+    return (
+        {"environment": {"kernel_version": kernel_version}}
+        if kernel_version is not None
+        else {}
+    )
 
 
 def _benchmark_metafields(
@@ -289,9 +293,9 @@ def _benchmark_metafields(
         )
     if kernel_version_fallback and (override_kernel_version or not kernel_version):
         kernel_version = (
-            {"kernel_version": kernel_version_fallback}
+            {"environment": {"kernel_version": kernel_version_fallback}}
             if isinstance(kernel_version_fallback, str)
-            else kernel_version_fallback
+            else {"environment": kernel_version_fallback}
         )
     return {
         **_server_ids(server),

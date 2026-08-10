@@ -2,7 +2,6 @@ from sc_crawler.insert import _dedupe_items, _primary_key_tuple
 from sc_crawler.table_bases import (
     BenchmarkScoreBase,
     DatabaseBase,
-    DatabaseBenchmarkScoreBase,
     DatabasePriceBase,
 )
 from sc_crawler.table_fields import (
@@ -13,6 +12,7 @@ from sc_crawler.table_fields import (
     DatabaseSecurityFeature,
     DatabaseWireProtocol,
     PriceUnit,
+    ResourceType,
     Status,
 )
 
@@ -20,7 +20,7 @@ from sc_crawler.table_fields import (
 def test_primary_key_tuple_normalizes_json_config_key_order():
     item_a = {"config": {"size": 1.0, "operation": "rd"}}
     item_b = {"config": {"operation": "rd", "size": 1.0}}
-    keys = ("vendor_id", "server_id", "benchmark_id", "config")
+    keys = ("vendor_id", "resource_type", "resource_id", "benchmark_id", "config")
 
     assert _primary_key_tuple(item_a, list(keys)) == _primary_key_tuple(
         item_b, list(keys)
@@ -33,7 +33,7 @@ def test_dedupe_items_collapses_duplicate_benchmark_scores():
         "server_id": "t3.micro",
         "benchmark_id": "bw_mem",
         "framework_version": None,
-        "kernel_version": None,
+        "environment": None,
         "score": 1.0,
         "score_breakdown": None,
         "note": None,
@@ -47,11 +47,13 @@ def test_dedupe_items_collapses_duplicate_benchmark_scores():
     validated = [BenchmarkScoreBase.model_validate(item).model_dump() for item in items]
     deduped = _dedupe_items(
         validated,
-        ["vendor_id", "server_id", "benchmark_id", "config"],
+        ["vendor_id", "resource_type", "resource_id", "benchmark_id", "config"],
     )
 
     assert len(deduped) == 1
     assert deduped[0]["score"] == 2.0
+    assert deduped[0]["resource_type"] == ResourceType.SERVER
+    assert deduped[0]["resource_id"] == "t3.micro"
 
 
 def test_dedupe_items_collapses_duplicate_database_prices():
@@ -106,8 +108,8 @@ def test_database_base_round_trip():
     assert item.api_reference_object is None
 
 
-def test_database_benchmark_score_base_round_trip():
-    item = DatabaseBenchmarkScoreBase.model_validate(
+def test_database_benchmark_score_via_legacy_database_id_key():
+    item = BenchmarkScoreBase.model_validate(
         {
             "vendor_id": "gcp",
             "database_id": "db-n1-standard-4",
@@ -117,6 +119,8 @@ def test_database_benchmark_score_base_round_trip():
             "status": Status.ACTIVE,
         }
     )
+    assert item.resource_type == ResourceType.DATABASE
+    assert item.resource_id == "db-n1-standard-4"
     assert item.database_id == "db-n1-standard-4"
     assert item.config == {"clients": 4, "scale": 100}
     assert item.score == 1234.5

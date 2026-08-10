@@ -26,7 +26,6 @@ from .table_bases import (
     ComplianceFrameworkBase,
     CountryBase,
     DatabaseBase,
-    DatabaseBenchmarkScoreBase,
     DatabasePriceBase,
     DatabaseStorageBase,
     DatabaseStoragePriceBase,
@@ -124,9 +123,6 @@ class Vendor(VendorBase, table=True):
         back_populates="vendor", sa_relationship_kwargs={"viewonly": True}
     )
     benchmark_scores: List["BenchmarkScore"] = Relationship(
-        back_populates="vendor", sa_relationship_kwargs={"viewonly": True}
-    )
-    database_benchmark_scores: List["DatabaseBenchmarkScore"] = Relationship(
         back_populates="vendor", sa_relationship_kwargs={"viewonly": True}
     )
 
@@ -510,7 +506,15 @@ class Server(ServerBase, table=True):
         back_populates="server", sa_relationship_kwargs={"viewonly": True}
     )
     benchmark_scores: List["BenchmarkScore"] = Relationship(
-        back_populates="server", sa_relationship_kwargs={"viewonly": True}
+        back_populates="server",
+        sa_relationship_kwargs={
+            "viewonly": True,
+            "primaryjoin": (
+                "and_(Server.server_id == foreign(BenchmarkScore.resource_id), "
+                "Server.vendor_id == foreign(BenchmarkScore.vendor_id), "
+                "BenchmarkScore.resource_type == 'SERVER')"
+            ),
+        },
     )
 
 
@@ -619,8 +623,16 @@ class Database(DatabaseBase, table=True):
     prices: List["DatabasePrice"] = Relationship(
         back_populates="database", sa_relationship_kwargs={"viewonly": True}
     )
-    database_benchmark_scores: List["DatabaseBenchmarkScore"] = Relationship(
-        back_populates="database", sa_relationship_kwargs={"viewonly": True}
+    benchmark_scores: List["BenchmarkScore"] = Relationship(
+        back_populates="database",
+        sa_relationship_kwargs={
+            "viewonly": True,
+            "primaryjoin": (
+                "and_(Database.database_id == foreign(BenchmarkScore.resource_id), "
+                "Database.vendor_id == foreign(BenchmarkScore.vendor_id), "
+                "BenchmarkScore.resource_type == 'DATABASE')"
+            ),
+        },
     )
 
 
@@ -758,55 +770,37 @@ class Benchmark(BenchmarkBase, table=True):
     benchmark_scores: List["BenchmarkScore"] = Relationship(
         back_populates="benchmark", sa_relationship_kwargs={"viewonly": True}
     )
-    database_benchmark_scores: List["DatabaseBenchmarkScore"] = Relationship(
-        back_populates="benchmark", sa_relationship_kwargs={"viewonly": True}
-    )
 
 
 class BenchmarkScore(BenchmarkScoreBase, table=True):
-    """Results of running Benchmark scenarios on Servers."""
+    """Results of running Benchmark scenarios on Servers or managed Databases."""
 
-    __table_args__ = (
-        ForeignKeyConstraint(
-            ["vendor_id", "server_id"],
-            ["server.vendor_id", "server.server_id"],
-        ),
-    )
     vendor: Vendor = Relationship(back_populates="benchmark_scores")
-    server: Server = Relationship(
+    server: Optional[Server] = Relationship(
         back_populates="benchmark_scores",
         sa_relationship_kwargs={
             "primaryjoin": (
-                "and_(Server.server_id == foreign(BenchmarkScore.server_id), "
-                "Server.vendor_id == foreign(BenchmarkScore.vendor_id))"
+                "and_(Server.server_id == foreign(BenchmarkScore.resource_id), "
+                "Server.vendor_id == foreign(BenchmarkScore.vendor_id), "
+                "BenchmarkScore.resource_type == 'SERVER')"
             ),
-            "overlaps": "vendor",
+            "overlaps": "vendor,database",
+            "viewonly": True,
+        },
+    )
+    database: Optional[Database] = Relationship(
+        back_populates="benchmark_scores",
+        sa_relationship_kwargs={
+            "primaryjoin": (
+                "and_(Database.database_id == foreign(BenchmarkScore.resource_id), "
+                "Database.vendor_id == foreign(BenchmarkScore.vendor_id), "
+                "BenchmarkScore.resource_type == 'DATABASE')"
+            ),
+            "overlaps": "vendor,server",
+            "viewonly": True,
         },
     )
     benchmark: Benchmark = Relationship(back_populates="benchmark_scores")
-
-
-class DatabaseBenchmarkScore(DatabaseBenchmarkScoreBase, table=True):
-    """Results of running Benchmark scenarios on managed Databases."""
-
-    __table_args__ = (
-        ForeignKeyConstraint(
-            ["vendor_id", "database_id"],
-            ["database.vendor_id", "database.database_id"],
-        ),
-    )
-    vendor: Vendor = Relationship(back_populates="database_benchmark_scores")
-    database: Database = Relationship(
-        back_populates="database_benchmark_scores",
-        sa_relationship_kwargs={
-            "primaryjoin": (
-                "and_(Database.database_id == foreign(DatabaseBenchmarkScore.database_id), "
-                "Database.vendor_id == foreign(DatabaseBenchmarkScore.vendor_id))"
-            ),
-            "overlaps": "vendor",
-        },
-    )
-    benchmark: Benchmark = Relationship(back_populates="database_benchmark_scores")
 
 
 Country.model_rebuild()

@@ -54,6 +54,15 @@ class Status(str, Enum):
     """Inactive resource that is not available anymore."""
 
 
+class ResourceType(str, Enum):
+    """Kind of resource a benchmark score refers to."""
+
+    SERVER = "server"
+    """Compute server / VM instance."""
+    DATABASE = "database"
+    """Managed database instance."""
+
+
 class Cpu(Json):
     """CPU details."""
 
