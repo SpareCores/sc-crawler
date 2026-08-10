@@ -483,10 +483,23 @@ def test_benchmark_score_legacy_key_translation_and_hybrids():
     assert server_item.database_id is None
 
     response = server_item.to_response()
-    assert response["server_id"] == "m5.large"
+    assert response == {
+        "vendor_id": "aws",
+        "benchmark_id": "bogomips",
+        "config": {},
+        "framework_version": None,
+        "score": 1.0,
+        "score_breakdown": None,
+        "note": None,
+        "status": server_item.status,
+        "observed_at": server_item.observed_at,
+        "server_id": "m5.large",
+        "kernel_version": "6.8.0",
+    }
     assert "database_id" not in response
     assert "resource_type" not in response
     assert "resource_id" not in response
+    assert "environment" not in response
 
     db_item = BenchmarkScoreBase.model_validate(
         {
@@ -504,9 +517,25 @@ def test_benchmark_score_legacy_key_translation_and_hybrids():
 
     db_response = db_item.to_response()
     assert db_response["database_id"] == "db.m5.large"
+    assert db_response["database_engine_version"] == "16.3"
     assert "server_id" not in db_response
     assert "resource_type" not in db_response
     assert "resource_id" not in db_response
+    assert "environment" not in db_response
+
+    bare = BenchmarkScoreBase.model_validate(
+        {
+            "vendor_id": "aws",
+            "server_id": "t3.micro",
+            "benchmark_id": "bogomips",
+            "config": {},
+            "score": 3.0,
+        }
+    )
+    bare_response = bare.to_response()
+    assert bare_response["server_id"] == "t3.micro"
+    assert "environment" not in bare_response
+    assert "kernel_version" not in bare_response
 
     filter_sql = str(select(BenchmarkScore).where(BenchmarkScore.server_id == "x"))
     assert "resource_type" in filter_sql
