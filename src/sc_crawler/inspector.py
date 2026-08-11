@@ -852,30 +852,22 @@ def _pgbench_benchmark_scores(
             measurement = "heavy_read_only"
             profiles = data["sizes"][0]["profile"]
             single_profile: dict = next((p for p in profiles if p["concurrency"] == 1))
-            database_engine_version = data["postgres"]["server_version"]
+            database_engine_version = data["postgres"]["server_version"].split()[0]
+            benchmark_metafields = _benchmark_metafields(
+                resource,
+                framework=framework_path,
+                benchmark_id=":".join([framework, measurement]),
+                extend_environment={"database_engine_version": database_engine_version},
+            )
             return [
                 {
-                    **_benchmark_metafields(
-                        resource,
-                        framework=framework_path,
-                        benchmark_id=":".join([framework, measurement]),
-                        extend_environment={
-                            "database_engine_version": database_engine_version
-                        },
-                    ),
+                    **benchmark_metafields,
                     "config": {"concurrency": "single"},
                     "score": single_profile["score"],
                     "note": f"Latency: {single_profile['latency_avg_ms']} ms.",
                 },
                 {
-                    **_benchmark_metafields(
-                        resource,
-                        framework=framework_path,
-                        benchmark_id=":".join([framework, measurement]),
-                        extend_environment={
-                            "database_engine_version": database_engine_version
-                        },
-                    ),
+                    **benchmark_metafields,
                     "config": {"concurrency": "peak"},
                     "score": data["score"],
                     "note": f"Latency: {data['latency_avg_ms']} ms, concurrency: {data['peak_concurrency']}.",
@@ -887,6 +879,7 @@ def _pgbench_benchmark_scores(
 
 
 def inspect_database_benchmarks(database: "Database") -> list[dict]:
+    """Generate a list of BenchmarkScore-like dicts for the Database."""
     return _pgbench_benchmark_scores(
         database, framework_path_postfix="_postgres_dbaas_ro_durable"
     )
