@@ -10,8 +10,9 @@ Maintenance update:
 
 - Drop empty `database_benchmark_score`; database scores use `benchmark_score`
   with `resource_type=DATABASE`.
-- Keep legacy `server_id` / `database_id` query and insert keys via hybrid
-  properties and input-dict translation.
+- Keep `server_id` / `database_id` query and insert keys via hybrid properties 
+  and input-dict translation.
+- Ingest `pgbench` scores for database instances too.
 
 Fix(es):
 

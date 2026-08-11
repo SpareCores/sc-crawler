@@ -461,7 +461,7 @@ def test_validate_items_keeps_datetime_objects():
     assert validated["observed_at"] == observed_at
 
 
-def test_benchmark_score_legacy_key_translation_and_hybrids():
+def test_benchmark_score_key_translation_and_hybrids():
     from sqlmodel import select
 
     from sc_crawler.table_bases import BenchmarkScoreBase
@@ -559,7 +559,7 @@ def test_benchmark_score_legacy_key_translation_and_hybrids():
     assert "AS database_id" in select_sql
 
 
-def test_benchmark_score_rejects_both_legacy_ids():
+def test_benchmark_score_rejects_both_ids():
     from pydantic import ValidationError
 
     from sc_crawler.table_bases import BenchmarkScoreBase

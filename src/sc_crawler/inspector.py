@@ -71,12 +71,8 @@ PASSMARK_MAPS = {
 
 
 @cache
-def inspector_data_path(dir_name: str = "data") -> str | PathLike:
-    """Download current inspector data into a temp folder.
-
-    Setting the `SC_CRAWLER_INSPECTOR_DATA_PATH` environment variable will
-    override the default path for persistent/cached inspector data access.
-    """
+def _inspector_data_root() -> str | PathLike:
+    """Download current inspector data into a temp folder once per process."""
     if getenv("SC_CRAWLER_INSPECTOR_DATA_PATH"):
         temp_dir = getenv("SC_CRAWLER_INSPECTOR_DATA_PATH")
         makedirs(temp_dir, exist_ok=True)
@@ -92,7 +88,12 @@ def inspector_data_path(dir_name: str = "data") -> str | PathLike:
             f.write(response.content)
         with ZipFile(zip_path, "r") as zip_ref:
             zip_ref.extractall(temp_dir)
-    return path.join(temp_dir, "sc-inspector-data-main", dir_name)
+    return path.join(temp_dir, "sc-inspector-data-main")
+
+
+def inspector_data_path(dir_name: str = "data") -> str | PathLike:
+    """Return a subpath under the cached inspector data root."""
+    return path.join(_inspector_data_root(), dir_name)
 
 
 def _server_ids(server: "Server") -> dict:
@@ -314,12 +315,9 @@ def _framework_version(resource: Union["Server", "Database"], framework: str) ->
 
 
 def _kernel_version(resource: ["Server", "Database"], framework: str) -> dict:
+    kernel_version = None
     if isinstance(resource, ServerBase):
         kernel_version = _server_framework_meta(resource, framework).get(
-            "kernel_version"
-        )
-    else:
-        kernel_version = _database_framework_meta(resource, framework).get(
             "kernel_version"
         )
     return (
@@ -386,12 +384,14 @@ def _extract_line_from_file(file_path: str | PathLike, pattern: str) -> str | No
     return None
 
 
-def _log_cannot_load_benchmarks(server: "Server", benchmark_id, e, exc_info=False):
+def _log_cannot_load_benchmarks(
+    resource: Union["Server", "Database"], benchmark_id, e, exc_info=False
+):
     logger.debug(
         "%s benchmark(s) not loaded for %s/%s: %s",
         benchmark_id,
-        server.vendor_id,
-        server.api_reference,
+        resource.vendor_id,
+        resource.api_reference,
         e,
         stacklevel=2,
         exc_info=exc_info,
@@ -828,96 +828,68 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
     except Exception as e:
         _log_cannot_load_benchmarks(server, framework, e, True)
 
-    framework = "pgbench"
-    framework_path = framework + "_postgres_multi_ro_durable"
-    try:
-        with open(
-            _server_framework_stdout_path(server, framework_path),
-            "r",
-        ) as fp:
-            data = json.load(fp)
-            measurement = "heavy_read_only"
-            profiles = data["sizes"][0]["profile"]
-            single_profile: dict = next((p for p in profiles if p["concurrency"] == 1))
-            benchmarks.extend(
-                [
-                    {
-                        **_benchmark_metafields(
-                            server,
-                            framework=framework_path,
-                            benchmark_id=":".join([framework, measurement]),
-                        ),
-                        "config": {"concurrency": "single"},
-                        "score": single_profile["score"],
-                        "note": f"Latency: {single_profile['latency_avg_ms']} ms.",
-                    },
-                    {
-                        **_benchmark_metafields(
-                            server,
-                            framework=framework_path,
-                            benchmark_id=":".join([framework, measurement]),
-                        ),
-                        "config": {"concurrency": "peak"},
-                        "score": data["score"],
-                        "note": f"Latency: {data['latency_avg_ms']} ms, concurrency: {data['peak_concurrency']}.",
-                    },
-                ]
-            )
-    except Exception as e:
-        _log_cannot_load_benchmarks(server, framework_path, e, True)
+    # add server related pgbench benchmark scores
+    benchmarks.extend(_pgbench_benchmark_scores(server))
 
     return benchmarks
 
 
-def inspect_database_benchmarks(database: "Database") -> list[dict]:
-    benchmarks = []
-
+def _pgbench_benchmark_scores(
+    resource: Union["Server", "Database"],
+    framework_path_postfix: str = "_postgres_multi_ro_durable",
+) -> list[dict]:
     framework = "pgbench"
-    framework_path = framework + "_postgres_dbaas_ro_durable"
+    framework_path = framework + framework_path_postfix
+    if isinstance(resource, ServerBase):
+        framework_stdout_path = _server_framework_stdout_path(resource, framework_path)
+    else:
+        framework_stdout_path = _database_framework_stdout_path(
+            resource, framework_path
+        )
     try:
-        with open(
-            _database_framework_stdout_path(database, framework_path),
-            "r",
-        ) as fp:
+        with open(framework_stdout_path, "r") as fp:
             data = json.load(fp)
             measurement = "heavy_read_only"
             profiles = data["sizes"][0]["profile"]
             single_profile: dict = next((p for p in profiles if p["concurrency"] == 1))
             database_engine_version = data["postgres"]["server_version"]
-            benchmarks.extend(
-                [
-                    {
-                        **_benchmark_metafields(
-                            database,
-                            framework=framework_path,
-                            benchmark_id=":".join([framework, measurement]),
-                            extend_environment={
-                                "database_engine_version": database_engine_version
-                            },
-                        ),
-                        "config": {"concurrency": "single"},
-                        "score": single_profile["score"],
-                        "note": f"Latency: {single_profile['latency_avg_ms']} ms.",
-                    },
-                    {
-                        **_benchmark_metafields(
-                            database,
-                            framework=framework_path,
-                            benchmark_id=":".join([framework, measurement]),
-                            extend_environment={
-                                "database_engine_version": database_engine_version
-                            },
-                        ),
-                        "config": {"concurrency": "peak"},
-                        "score": data["score"],
-                        "note": f"Latency: {data['latency_avg_ms']} ms, concurrency: {data['peak_concurrency']}.",
-                    },
-                ]
-            )
+            return [
+                {
+                    **_benchmark_metafields(
+                        resource,
+                        framework=framework_path,
+                        benchmark_id=":".join([framework, measurement]),
+                        extend_environment={
+                            "database_engine_version": database_engine_version
+                        },
+                    ),
+                    "config": {"concurrency": "single"},
+                    "score": single_profile["score"],
+                    "note": f"Latency: {single_profile['latency_avg_ms']} ms.",
+                },
+                {
+                    **_benchmark_metafields(
+                        resource,
+                        framework=framework_path,
+                        benchmark_id=":".join([framework, measurement]),
+                        extend_environment={
+                            "database_engine_version": database_engine_version
+                        },
+                    ),
+                    "config": {"concurrency": "peak"},
+                    "score": data["score"],
+                    "note": f"Latency: {data['latency_avg_ms']} ms, concurrency: {data['peak_concurrency']}.",
+                },
+            ]
     except Exception as e:
-        _log_cannot_load_benchmarks(database, framework_path, e, True)
+        _log_cannot_load_benchmarks(resource, framework_path, e, True)
+    return []
 
-    return benchmarks
+
+def inspect_database_benchmarks(database: "Database") -> list[dict]:
+    return _pgbench_benchmark_scores(
+        database, framework_path_postfix="_postgres_dbaas_ro_durable"
+    )
 
 
 def _extract_manufacturer(name: str) -> str:

@@ -108,7 +108,7 @@ def test_database_base_round_trip():
     assert item.api_reference_object is None
 
 
-def test_database_benchmark_score_via_legacy_database_id_key():
+def test_database_benchmark_score_via_database_id_key():
     item = BenchmarkScoreBase.model_validate(
         {
             "vendor_id": "gcp",

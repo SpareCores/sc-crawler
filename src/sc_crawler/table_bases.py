@@ -1407,7 +1407,7 @@ class BenchmarkScoreFields(HasBenchmarkPKFK, HasVendorPKFK):
 
     @model_validator(mode="before")
     def update_config_to_hashable(cls, values):
-        """Accept legacy ``server_id`` / ``database_id`` keys; hashably sort config."""
+        """Accept ``server_id`` / ``database_id`` keys; hashably sort config."""
         has_server = "server_id" in values
         has_database = "database_id" in values
         if has_server and has_database:

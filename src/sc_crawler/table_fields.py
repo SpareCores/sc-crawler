@@ -58,7 +58,7 @@ class ResourceType(str, Enum):
     """Kind of resource a benchmark score refers to."""
 
     SERVER = "server"
-    """Compute server / VM instance."""
+    """Compute server instance."""
     DATABASE = "database"
     """Managed database instance."""
 
