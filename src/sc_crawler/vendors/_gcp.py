@@ -1537,9 +1537,15 @@ def inventory_database_prices(vendor):
                     vcpu_sku = compute_index.get(
                         (region.api_reference, price_family, "vcpu", availability)
                     )
+                    # N4/C4A billing has Enterprise N4 vCPU meters, but RAM uses the
+                    # generic PostgreSQL RAM meters (no "Enterprise N4 RAM" SKU).
                     ram_sku = compute_index.get(
                         (region.api_reference, price_family, "ram", availability)
                     )
+                    if ram_sku is None and price_family == "enterprise_n4":
+                        ram_sku = compute_index.get(
+                            (region.api_reference, "enterprise", "ram", availability)
+                        )
                     if vcpu_sku is not None and ram_sku is not None:
                         vcpu_hourly = _sku_unit_price(vcpu_sku)
                         ram_hourly = _sku_unit_price(ram_sku)
