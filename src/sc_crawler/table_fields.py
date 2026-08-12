@@ -52,6 +52,14 @@ class Status(str, Enum):
     """Active and available resource."""
     INACTIVE = "inactive"
     """Inactive resource that is not available anymore."""
+    PLANNED_FOR_RETIREMENT = "planned-for-retirement"
+    """Planned for retirement; only valid for Server and Database."""
+    RETIRED = "retired"
+    """Not orderable anymore, but prices may still exist (e.g. active multi-year contracts). Only valid for Server and Database."""
+
+
+# ACTIVE / INACTIVE only — used by MetaColumns validator for non-server/database models.
+GENERAL_STATUSES = frozenset({Status.ACTIVE, Status.INACTIVE})
 
 
 class ResourceType(str, Enum):

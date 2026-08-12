@@ -579,3 +579,54 @@ def test_benchmark_score_rejects_both_ids():
         assert "only one of server_id or database_id" in str(e)
     else:
         raise AssertionError("expected ValidationError")
+
+
+def test_status_retired_only_allowed_on_server_and_database():
+    from pydantic import ValidationError
+
+    from sc_crawler.table_bases import DatabaseBase, VendorBase
+
+    server = ServerBase(
+        vendor_id="test",
+        server_id="test-server",
+        name="Test Server",
+        api_reference="test-ref",
+        display_name="Test Server",
+        description="A test server",
+        vcpus=4,
+        memory_amount=8192,
+        gpu_count=0,
+        storage_size=0,
+        status=Status.RETIRED,
+    )
+    assert server.status == Status.RETIRED
+
+    database = DatabaseBase(
+        vendor_id="test",
+        database_id="db.test",
+        name="db.test",
+        api_reference="db.test",
+        display_name="db.test",
+        description="A test database",
+        status=Status.PLANNED_FOR_RETIREMENT,
+    )
+    assert database.status == Status.PLANNED_FOR_RETIREMENT
+
+    with pytest.raises(ValidationError, match="only valid for Server and Database"):
+        VendorBase(
+            vendor_id="test",
+            name="Test",
+            country_id="US",
+            founding_year=2000,
+            status=Status.RETIRED,
+        )
+
+    with pytest.raises(ValidationError, match="only valid for Server and Database"):
+        StoragePriceBase(
+            vendor_id="test",
+            region_id="us-east-1",
+            storage_id="gp3",
+            unit=PriceUnit.GB_MONTH,
+            price=0.1,
+            status=Status.PLANNED_FOR_RETIREMENT,
+        )

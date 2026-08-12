@@ -1,3 +1,10 @@
+## v0.9.1 (August 12, 2026)
+
+New feature(s):
+
+- Extend `Status` with `PLANNED_FOR_RETIREMENT` and `RETIRED` for Server and
+  Database (model validators reject these on other tables).
+
 ## v0.9.0 (August 10, 2026)
 
 ‼ Breaking changes:

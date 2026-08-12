@@ -34,6 +34,7 @@ from .table_fields import (
     DatabaseWireProtocol,
     DdrGeneration,
     Disk,
+    GENERAL_STATUSES,
     Gpu,
     HashableDict,
     HashableJSON,
@@ -234,6 +235,16 @@ class MetaColumns(ScModel):
         sa_column_kwargs={"onupdate": lambda: datetime.now(UTC)},
         description="Timestamp of the last observation.",
     )
+
+    @field_validator("status")
+    @classmethod
+    def _validate_status(cls, value: Status) -> Status:
+        if value not in GENERAL_STATUSES:
+            raise ValueError(
+                f"{value!r} is only valid for Server and Database. "
+                f"Use ACTIVE or INACTIVE for {cls.__name__}."
+            )
+        return value
 
 
 class HasComplianceFrameworkIdPK(ScModel):
@@ -876,7 +887,10 @@ class ServerFields(
 
 
 class ServerBase(MetaColumns, ServerFields):
-    pass
+    @field_validator("status")
+    @classmethod
+    def _validate_status(cls, value: Status) -> Status:
+        return value
 
 
 class ServerPriceFields(ScModel):
@@ -1097,7 +1111,10 @@ class DatabaseFields(
 
 
 class DatabaseBase(MetaColumns, DatabaseFields):
-    pass
+    @field_validator("status")
+    @classmethod
+    def _validate_status(cls, value: Status) -> Status:
+        return value
 
 
 class DatabasePriceFields(ScModel):
