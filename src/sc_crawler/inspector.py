@@ -851,7 +851,6 @@ def _pgbench_benchmark_scores(
             data = json.load(fp)
             measurement = "heavy_read_only"
             profiles = data["sizes"][0]["profile"]
-            single_profile: dict = next((p for p in profiles if p["concurrency"] == 1))
             database_engine_version = data["postgres"]["server_version"].split()[0]
             benchmark_metafields = _benchmark_metafields(
                 resource,
@@ -859,20 +858,36 @@ def _pgbench_benchmark_scores(
                 benchmark_id=":".join([framework, measurement]),
                 extend_environment={"database_engine_version": database_engine_version},
             )
-            return [
+            scores = [
                 {
                     **benchmark_metafields,
-                    "config": {"concurrency": "single"},
+                    "config": {"concurrency": int(profile["concurrency"])},
+                    "score": profile["score"],
+                    "note": f"Latency: {profile['latency_avg_ms']} ms.",
+                }
+                for profile in profiles
+            ]
+            single_profile = next((p for p in profiles if p["concurrency"] == 1))
+            scores.append(
+                {
+                    **benchmark_metafields,
+                    "benchmark_id": ":".join([framework, measurement, "single"]),
                     "score": single_profile["score"],
                     "note": f"Latency: {single_profile['latency_avg_ms']} ms.",
-                },
+                }
+            )
+            scores.append(
                 {
                     **benchmark_metafields,
-                    "config": {"concurrency": "peak"},
+                    "benchmark_id": ":".join([framework, measurement, "peak"]),
                     "score": data["score"],
-                    "note": f"Latency: {data['latency_avg_ms']} ms, concurrency: {data['peak_concurrency']}.",
-                },
-            ]
+                    "note": (
+                        f"Latency: {data['latency_avg_ms']} ms, "
+                        f"concurrency: {data['peak_concurrency']}."
+                    ),
+                }
+            )
+            return scores
     except Exception as e:
         _log_cannot_load_benchmarks(resource, framework_path, e, True)
     return []
