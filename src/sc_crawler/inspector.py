@@ -858,29 +858,48 @@ def _pgbench_benchmark_scores(
                 benchmark_id=":".join([framework, measurement]),
                 extend_environment={"database_engine_version": database_engine_version},
             )
+            base_environment = benchmark_metafields.get("environment", {})
             scores = [
                 {
                     **benchmark_metafields,
                     "config": {"concurrency": int(profile["concurrency"])},
                     "score": profile["score"],
+                    "environment": {
+                        **base_environment,
+                        "latency_avg_ms": profile["latency_avg_ms"],
+                    },
                     "note": f"Latency: {profile['latency_avg_ms']} ms.",
                 }
                 for profile in profiles
             ]
-            single_profile = next((p for p in profiles if p["concurrency"] == 1))
-            scores.append(
-                {
-                    **benchmark_metafields,
-                    "benchmark_id": ":".join([framework, measurement, "single"]),
-                    "score": single_profile["score"],
-                    "note": f"Latency: {single_profile['latency_avg_ms']} ms.",
-                }
+            single_profile = next(
+                (p for p in profiles if p["concurrency"] == 1), None
             )
+            if single_profile is not None:
+                scores.append(
+                    {
+                        **benchmark_metafields,
+                        "benchmark_id": ":".join(
+                            [framework, measurement, "single"]
+                        ),
+                        "score": single_profile["score"],
+                        "environment": {
+                            **base_environment,
+                            "latency_avg_ms": single_profile["latency_avg_ms"],
+                        },
+                        "note": f"Latency: {single_profile['latency_avg_ms']} ms.",
+                    }
+                )
             scores.append(
                 {
                     **benchmark_metafields,
                     "benchmark_id": ":".join([framework, measurement, "peak"]),
                     "score": data["score"],
+                    "environment": {
+                        **base_environment,
+                        "latency_avg_ms": data["latency_avg_ms"],
+                        "peak_concurrency": data["peak_concurrency"],
+                    },
                     "note": (
                         f"Latency: {data['latency_avg_ms']} ms, "
                         f"concurrency: {data['peak_concurrency']}."

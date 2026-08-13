@@ -488,18 +488,18 @@ def test_benchmark_score_key_translation_and_hybrids():
         "benchmark_id": "bogomips",
         "config": {},
         "framework_version": None,
+        "environment": {"kernel_version": "6.8.0"},
         "score": 1.0,
         "score_breakdown": None,
         "note": None,
         "status": server_item.status,
         "observed_at": server_item.observed_at,
         "server_id": "m5.large",
-        "kernel_version": "6.8.0",
     }
     assert "database_id" not in response
     assert "resource_type" not in response
     assert "resource_id" not in response
-    assert "environment" not in response
+    assert "kernel_version" not in response
 
     db_item = BenchmarkScoreBase.model_validate(
         {
@@ -517,11 +517,11 @@ def test_benchmark_score_key_translation_and_hybrids():
 
     db_response = db_item.to_response()
     assert db_response["database_id"] == "db.m5.large"
-    assert db_response["database_engine_version"] == "16.3"
+    assert db_response["environment"] == {"database_engine_version": "16.3"}
+    assert "database_engine_version" not in db_response
     assert "server_id" not in db_response
     assert "resource_type" not in db_response
     assert "resource_id" not in db_response
-    assert "environment" not in db_response
 
     bare = BenchmarkScoreBase.model_validate(
         {
@@ -534,7 +534,7 @@ def test_benchmark_score_key_translation_and_hybrids():
     )
     bare_response = bare.to_response()
     assert bare_response["server_id"] == "t3.micro"
-    assert "environment" not in bare_response
+    assert bare_response["environment"] is None
     assert "kernel_version" not in bare_response
 
     constructed = BenchmarkScoreBase.model_construct(
@@ -548,7 +548,11 @@ def test_benchmark_score_key_translation_and_hybrids():
     )
     constructed_response = constructed.to_response()
     assert constructed_response["server_id"] == "m5.large"
-    assert constructed_response["kernel_version"] == "6.1.0"
+    assert constructed_response["environment"] == {
+        "server_id": "env-should-not-win",
+        "kernel_version": "6.1.0",
+    }
+    assert "kernel_version" not in constructed_response
 
     filter_sql = str(select(BenchmarkScore).where(BenchmarkScore.server_id == "x"))
     assert "resource_type" in filter_sql
