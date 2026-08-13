@@ -910,6 +910,78 @@ def test_gcp_database_prices_use_region_name_not_numeric_id():
     assert prices[0]["ha_strategy"] == DatabaseHaStrategy.NONE
 
 
+def test_gcp_n4_family_prices_fall_back_to_enterprise_ram():
+    # Enterprise N4 vCPU + generic PostgreSQL RAM (no Enterprise N4 RAM SKU).
+    # 0.0542 * 4 + 0.0091 * 32 = 0.508
+    skus = [
+        _gcp_pg_sku(
+            "Cloud SQL for Postgres: Zonal - Enterprise N4 vCPU in Iowa",
+            regions=["us-central1"],
+            units=0,
+            nanos=54_200_000,
+        ),
+        _gcp_pg_sku(
+            "Cloud SQL for PostgreSQL: Zonal - RAM in Americas",
+            regions=["us-central1"],
+            units=0,
+            nanos=9_100_000,
+        ),
+        _gcp_pg_sku(
+            "Cloud SQL for Postgres: Regional - Enterprise N4 vCPU in Iowa",
+            regions=["us-central1"],
+            units=0,
+            nanos=108_400_000,
+        ),
+        _gcp_pg_sku(
+            "Cloud SQL for PostgreSQL: Regional - RAM in Americas",
+            regions=["us-central1"],
+            units=0,
+            nanos=18_200_000,
+        ),
+    ]
+    vendor = Mock(vendor_id="gcp")
+    vendor.regions = [Mock(region_id="1", api_reference="us-central1")]
+    vendor.progress_tracker = Mock(
+        start_task=Mock(), advance_task=Mock(), hide_task=Mock()
+    )
+    tiers = [
+        {
+            "tier": "db-c4a-highmem-4",
+            "RAM": str(32 * 1024**3),
+            "region": ["us-central1"],
+        },
+        {
+            "tier": "db-perf-optimized-N-4",
+            "RAM": str(32 * 1024**3),
+            "region": ["us-central1"],
+        },
+        {
+            "tier": "db-memory-optimized-N-4",
+            "RAM": str(32 * 1024**3),
+            "region": ["us-central1"],
+        },
+    ]
+    with (
+        patch("sc_crawler.vendors._gcp._cloud_sql_skus", return_value=skus),
+        patch(
+            "sc_crawler.vendors._gcp._pg_sqladmin_metadata",
+            return_value={"tiers": tiers},
+        ),
+    ):
+        prices = inventory_database_prices(vendor)
+    by_id_ha = {(row["database_id"], row["ha"]): row for row in prices}
+    for database_id in (
+        "db-c4a-highmem-4",
+        "db-perf-optimized-N-4",
+        "db-memory-optimized-N-4",
+    ):
+        zonal = by_id_ha[(database_id, DatabaseHaLevel.NONE)]
+        regional = by_id_ha[(database_id, DatabaseHaLevel.MULTI_ZONE)]
+        assert abs(zonal["price"] - 0.508) < 0.001
+        assert abs(regional["price"] - 1.016) < 0.001
+        assert regional["ha_strategy"] == DatabaseHaStrategy.PASSIVE_STANDBY
+
+
 def test_gcp_database_prices_emit_regional_ha_rows():
     skus = [
         _gcp_pg_sku(

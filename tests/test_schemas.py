@@ -17,7 +17,6 @@ from sc_crawler.tables import (
     BenchmarkScore,
     Country,
     Database,
-    DatabaseBenchmarkScore,
     DatabasePrice,
     DatabaseStoragePrice,
     StoragePrice,
@@ -37,21 +36,21 @@ def test_scmodels_have_base():
         assert not hasattr(schema, "__table__")
 
 
-def test_database_benchmark_score_primary_keys_mirror_benchmark_score():
+def test_benchmark_score_primary_keys_include_resource_discriminator():
     assert BenchmarkScore.get_columns()["primary_keys"] == [
         "vendor_id",
-        "server_id",
         "benchmark_id",
+        "resource_type",
+        "resource_id",
         "config",
     ]
-    assert DatabaseBenchmarkScore.get_columns()["primary_keys"] == [
-        "vendor_id",
-        "database_id",
-        "benchmark_id",
-        "config",
-    ]
-    assert "server_id" not in DatabaseBenchmarkScore.get_columns()["all"]
-    assert DatabaseBenchmarkScore.get_table_name() == "database_benchmark_score"
+    cols = BenchmarkScore.get_columns()["all"]
+    assert "server_id" not in cols
+    assert "database_id" not in cols
+    assert "kernel_version" not in cols
+    assert "environment" in cols
+    assert BenchmarkScore.get_table_name() == "benchmark_score"
+    assert "database_benchmark_score" not in [t.get_table_name() for t in tables]
 
 
 def test_database_price_primary_keys_match_storage_price_shape():
@@ -460,3 +459,123 @@ def test_validate_items_keeps_datetime_objects():
 
     assert isinstance(validated["observed_at"], datetime)
     assert validated["observed_at"] == observed_at
+
+
+def test_benchmark_score_key_translation_and_hybrids():
+    from sqlmodel import select
+
+    from sc_crawler.table_bases import BenchmarkScoreBase
+    from sc_crawler.table_fields import ResourceType
+
+    server_item = BenchmarkScoreBase.model_validate(
+        {
+            "vendor_id": "aws",
+            "server_id": "m5.large",
+            "benchmark_id": "bogomips",
+            "config": {},
+            "score": 1.0,
+            "environment": {"kernel_version": "6.8.0"},
+        }
+    )
+    assert server_item.resource_type == ResourceType.SERVER
+    assert server_item.resource_id == "m5.large"
+    assert server_item.server_id == "m5.large"
+    assert server_item.database_id is None
+
+    response = server_item.to_response()
+    assert response == {
+        "vendor_id": "aws",
+        "benchmark_id": "bogomips",
+        "config": {},
+        "framework_version": None,
+        "score": 1.0,
+        "score_breakdown": None,
+        "note": None,
+        "status": server_item.status,
+        "observed_at": server_item.observed_at,
+        "server_id": "m5.large",
+        "kernel_version": "6.8.0",
+    }
+    assert "database_id" not in response
+    assert "resource_type" not in response
+    assert "resource_id" not in response
+    assert "environment" not in response
+
+    db_item = BenchmarkScoreBase.model_validate(
+        {
+            "vendor_id": "aws",
+            "database_id": "db.m5.large",
+            "benchmark_id": "pgbench",
+            "config": {},
+            "score": 2.0,
+            "environment": {"database_engine_version": "16.3"},
+        }
+    )
+    assert db_item.resource_type == ResourceType.DATABASE
+    assert db_item.server_id is None
+    assert db_item.database_id == "db.m5.large"
+
+    db_response = db_item.to_response()
+    assert db_response["database_id"] == "db.m5.large"
+    assert db_response["database_engine_version"] == "16.3"
+    assert "server_id" not in db_response
+    assert "resource_type" not in db_response
+    assert "resource_id" not in db_response
+    assert "environment" not in db_response
+
+    bare = BenchmarkScoreBase.model_validate(
+        {
+            "vendor_id": "aws",
+            "server_id": "t3.micro",
+            "benchmark_id": "bogomips",
+            "config": {},
+            "score": 3.0,
+        }
+    )
+    bare_response = bare.to_response()
+    assert bare_response["server_id"] == "t3.micro"
+    assert "environment" not in bare_response
+    assert "kernel_version" not in bare_response
+
+    constructed = BenchmarkScoreBase.model_construct(
+        vendor_id="aws",
+        resource_type="server",
+        resource_id="m5.large",
+        benchmark_id="bogomips",
+        config={},
+        score=4.0,
+        environment={"server_id": "env-should-not-win", "kernel_version": "6.1.0"},
+    )
+    constructed_response = constructed.to_response()
+    assert constructed_response["server_id"] == "m5.large"
+    assert constructed_response["kernel_version"] == "6.1.0"
+
+    filter_sql = str(select(BenchmarkScore).where(BenchmarkScore.server_id == "x"))
+    assert "resource_type" in filter_sql
+    assert "resource_id" in filter_sql
+
+    select_sql = str(select(BenchmarkScore.server_id, BenchmarkScore.database_id))
+    assert "AS server_id" in select_sql
+    assert "AS database_id" in select_sql
+
+
+def test_benchmark_score_rejects_both_ids():
+    from pydantic import ValidationError
+
+    from sc_crawler.table_bases import BenchmarkScoreBase
+
+    try:
+        BenchmarkScoreBase.model_validate(
+            {
+                "vendor_id": "aws",
+                "server_id": "m5.large",
+                "database_id": "db.m5.large",
+                "benchmark_id": "bogomips",
+                "config": {},
+                "score": 1.0,
+            }
+        )
+    except ValidationError as e:
+        assert "only one of server_id or database_id" in str(e)
+    else:
+        raise AssertionError("expected ValidationError")
