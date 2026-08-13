@@ -1,9 +1,47 @@
 from concurrent.futures import ThreadPoolExecutor
 from itertools import chain, repeat
-from typing import Callable, List, Literal, Optional
+from typing import Callable, Collection, List, Literal, Mapping, Optional
 
 from .table_fields import Status
 from .tables import Region, Vendor
+
+
+def server_status_from_availability_categories(
+    categories: Collection[str],
+    category_to_status: Mapping[str, Status],
+    status_priority: tuple[Status, ...],
+    *,
+    missing_status: Status = Status.RETIRED,
+) -> Status:
+    """Map vendor availability categories to a single Server/Database status.
+
+    Each category is mapped via ``category_to_status``. If more than one
+    status results, ``status_priority`` (best first) selects the best.
+    Empty or unmapped ``categories`` return ``missing_status``.
+    """
+    if not categories:
+        return missing_status
+
+    priority = {status: index for index, status in enumerate(status_priority)}
+    mapped = {
+        category_to_status[category]
+        for category in categories
+        if category in category_to_status
+    }
+    if not mapped:
+        return missing_status
+
+    return min(mapped, key=lambda status: priority[status])
+
+
+def server_price_status_from_availability_category(
+    category: Optional[str],
+    orderable_categories: frozenset[str],
+) -> Status:
+    """Map a per-zone availability category to ServerPrice ACTIVE/INACTIVE."""
+    if category in orderable_categories:
+        return Status.ACTIVE
+    return Status.INACTIVE
 
 
 def fetch_servers(fn: Callable, where: str, vendor: Optional[Vendor]) -> List[dict]:

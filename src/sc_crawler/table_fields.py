@@ -51,7 +51,7 @@ class Status(str, Enum):
     ACTIVE = "active"
     """Active and available resource."""
     INACTIVE = "inactive"
-    """Inactive resource that is not available anymore."""
+    """Unavailable. For Server/Database: temporary or unknown cause."""
     PLANNED_FOR_RETIREMENT = "planned-for-retirement"
     """Planned for retirement; only valid for Server and Database."""
     RETIRED = "retired"
