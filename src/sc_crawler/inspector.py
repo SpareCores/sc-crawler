@@ -872,16 +872,12 @@ def _pgbench_benchmark_scores(
                 }
                 for profile in profiles
             ]
-            single_profile = next(
-                (p for p in profiles if p["concurrency"] == 1), None
-            )
+            single_profile = next((p for p in profiles if p["concurrency"] == 1), None)
             if single_profile is not None:
                 scores.append(
                     {
                         **benchmark_metafields,
-                        "benchmark_id": ":".join(
-                            [framework, measurement, "single"]
-                        ),
+                        "benchmark_id": ":".join([framework, measurement, "single"]),
                         "score": single_profile["score"],
                         "environment": {
                             **base_environment,
