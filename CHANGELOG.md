@@ -4,6 +4,22 @@ New feature(s):
 
 - Extend `Status` with `PLANNED_FOR_RETIREMENT` and `RETIRED` for Server and
   Database (model validators reject these on other tables).
+  
+## v0.9.1 (August 14, 2026)
+
+‼ Breaking changes:
+
+- `benchmark_score` responses expose `environment` as an object;
+  `kernel_version` / `database_engine_version` are no longer top-level fields.
+- Reshape `pgbench:heavy_read_only` ingest: `concurrency` is now an integer
+  (one raw score per profile point). Old string configs `"single"` / `"peak"`
+  move to config-less `pgbench:heavy_read_only:single` and
+  `pgbench:heavy_read_only:peak`.
+
+New:
+
+- pgbench scores record `latency_avg_ms` (plus `peak_concurrency` on the peak
+  row) in `environment`.
 
 ## v0.9.0 (August 10, 2026)
 
