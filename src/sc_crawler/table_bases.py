@@ -1477,13 +1477,9 @@ class BenchmarkScoreFields(HasBenchmarkPKFK, HasVendorPKFK):
         return ResourceIdComparator(cls, ResourceType.DATABASE, "database_id")
 
     def to_response(self) -> dict:
-        data = self.model_dump(exclude={"resource_type", "resource_id", "environment"})
+        data = self.model_dump(exclude={"resource_type", "resource_id"})
         resource_type = ResourceType(self.resource_type)
         data[f"{resource_type.value}_id"] = self.resource_id
-        if self.environment:
-            for key, value in self.environment.items():
-                if key not in data:
-                    data[key] = value
         return data
 
     @field_serializer("score_breakdown")

@@ -851,7 +851,6 @@ def _pgbench_benchmark_scores(
             data = json.load(fp)
             measurement = "heavy_read_only"
             profiles = data["sizes"][0]["profile"]
-            single_profile: dict = next((p for p in profiles if p["concurrency"] == 1))
             database_engine_version = data["postgres"]["server_version"].split()[0]
             benchmark_metafields = _benchmark_metafields(
                 resource,
@@ -859,20 +858,51 @@ def _pgbench_benchmark_scores(
                 benchmark_id=":".join([framework, measurement]),
                 extend_environment={"database_engine_version": database_engine_version},
             )
-            return [
+            base_environment = benchmark_metafields.get("environment", {})
+            scores = [
                 {
                     **benchmark_metafields,
-                    "config": {"concurrency": "single"},
-                    "score": single_profile["score"],
-                    "note": f"Latency: {single_profile['latency_avg_ms']} ms.",
-                },
-                {
-                    **benchmark_metafields,
-                    "config": {"concurrency": "peak"},
-                    "score": data["score"],
-                    "note": f"Latency: {data['latency_avg_ms']} ms, concurrency: {data['peak_concurrency']}.",
-                },
+                    "config": {"concurrency": int(profile["concurrency"])},
+                    "score": profile["score"],
+                    "environment": {
+                        **base_environment,
+                        "latency_avg_ms": profile["latency_avg_ms"],
+                    },
+                    "note": f"Latency: {profile['latency_avg_ms']} ms.",
+                }
+                for profile in profiles
             ]
+            single_profile = next((p for p in profiles if p["concurrency"] == 1), None)
+            if single_profile is not None:
+                scores.append(
+                    {
+                        **benchmark_metafields,
+                        "benchmark_id": ":".join([framework, measurement, "single"]),
+                        "score": single_profile["score"],
+                        "environment": {
+                            **base_environment,
+                            "latency_avg_ms": single_profile["latency_avg_ms"],
+                        },
+                        "note": f"Latency: {single_profile['latency_avg_ms']} ms.",
+                    }
+                )
+            scores.append(
+                {
+                    **benchmark_metafields,
+                    "benchmark_id": ":".join([framework, measurement, "peak"]),
+                    "score": data["score"],
+                    "environment": {
+                        **base_environment,
+                        "latency_avg_ms": data["latency_avg_ms"],
+                        "peak_concurrency": data["peak_concurrency"],
+                    },
+                    "note": (
+                        f"Latency: {data['latency_avg_ms']} ms, "
+                        f"concurrency: {data['peak_concurrency']}."
+                    ),
+                }
+            )
+            return scores
     except Exception as e:
         _log_cannot_load_benchmarks(resource, framework_path, e, True)
     return []
