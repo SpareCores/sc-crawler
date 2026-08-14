@@ -31,6 +31,9 @@ from sc_crawler.vendors._aws import (
 from sc_crawler.vendors._aws import (
     inventory_databases as aws_databases,
 )
+from sc_crawler.vendors._aws import (
+    inventory_server_prices as aws_server_prices,
+)
 from sc_crawler.vendors._azure import (
     _pg_database_regions,
     _pg_engine_versions,
@@ -1513,7 +1516,7 @@ def test_aws_inventory_databases_dedupes_across_regions():
     assert [row["database_id"] for row in rows] == ["db.m5.large"]
 
 
-def test_aws_inventory_databases_marks_status_from_generation_and_options():
+def test_aws_inventory_databases_status_from_orderable_options_and_end_of_support():
     vendor = _aws_vendor(
         regions=[Mock(region_id="us-east-1", status=Status.ACTIVE)],
     )
@@ -1543,6 +1546,12 @@ def test_aws_inventory_databases_marks_status_from_generation_and_options():
                 "memory": "1 GiB",
                 "storage": "EBS Only",
             },
+            "db.t1.micro": {
+                "instanceFamily": "General purpose",
+                "vcpu": "1",
+                "memory": "1 GiB",
+                "storage": "EBS Only",
+            },
         }
     }
     orderable = {
@@ -1565,6 +1574,7 @@ def test_aws_inventory_databases_marks_status_from_generation_and_options():
                     "db.m4.large": frozenset({"Single-AZ", "Multi-AZ"}),
                     "db.m6g.large": frozenset({"Single-AZ", "Multi-AZ"}),
                     "db.t2.micro": frozenset({"Single-AZ", "Multi-AZ"}),
+                    "db.t1.micro": frozenset({"Single-AZ", "Multi-AZ"}),
                 },
             ),
         ),
@@ -1579,15 +1589,76 @@ def test_aws_inventory_databases_marks_status_from_generation_and_options():
                 "db.m4.large": [orderable],
                 "db.m6g.large": [],
                 "db.t2.micro": [],
+                "db.t1.micro": [],
             },
         ),
     ):
         rows = aws_databases(vendor)
     by_id = {row["database_id"]: row for row in rows}
     assert by_id["db.m5.large"]["status"] == Status.ACTIVE
+    # orderable, but with an announced end-of-support date
     assert by_id["db.m4.large"]["status"] == Status.PLANNED_FOR_RETIREMENT
-    assert by_id["db.m6g.large"]["status"] == Status.INACTIVE
+    assert by_id["db.m6g.large"]["status"] == Status.RETIRED
+    # not orderable wins over the end-of-support mapping
     assert by_id["db.t2.micro"]["status"] == Status.RETIRED
+    # not orderable classes are retired without being mapped
+    assert by_id["db.t1.micro"]["status"] == Status.RETIRED
+
+
+def test_aws_inventory_server_prices_deactivates_unoffered_instance_types():
+    region = Mock(
+        region_id="us-east-1",
+        api_reference="us-east-1",
+        aliases=[],
+        status=Status.ACTIVE,
+    )
+    region.name = "US East (N. Virginia)"
+    m5 = Mock(server_id="m5.large", status=Status.ACTIVE)
+    t1 = Mock(server_id="t1.micro", status=Status.ACTIVE)
+    mac = Mock(server_id="mac1.metal", status=Status.ACTIVE)
+    vendor = _aws_vendor(regions=[region], servers=[m5, t1, mac])
+    products = [
+        {
+            "product": {
+                "attributes": {
+                    "location": "US East (N. Virginia)",
+                    "instanceType": "m5.large",
+                }
+            },
+            "terms": _aws_ondemand_terms("0.096"),
+        },
+        {
+            "product": {
+                "attributes": {
+                    "location": "US East (N. Virginia)",
+                    "instanceType": "t1.micro",
+                }
+            },
+            "terms": _aws_ondemand_terms("0.02"),
+        },
+    ]
+    with (
+        patch(
+            "sc_crawler.vendors._aws._boto_get_products",
+            return_value=products,
+        ),
+        patch(
+            "sc_crawler.vendors._aws._describe_instance_type_offerings_per_zone_with_progress",
+            return_value={
+                "m5.large": ["use1-az1"],
+                "mac1.metal": ["use1-az1"],
+            },
+        ),
+    ):
+        prices = aws_server_prices(vendor)
+    assert {(p["server_id"], p["zone_id"]) for p in prices} == {
+        ("m5.large", "use1-az1")
+    }
+    assert m5.status == Status.ACTIVE
+    # still priced, but not offered in any zone
+    assert t1.status == Status.INACTIVE
+    # offered, even without a Linux on-demand SKU
+    assert mac.status == Status.ACTIVE
 
 
 def test_aws_inventory_database_prices_by_ha_deployment():

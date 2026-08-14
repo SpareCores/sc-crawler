@@ -222,31 +222,9 @@ _instance_suffixes = {
     "flex": "Flex instance",
 }
 
-# Previous-generation EC2 families.
-# https://docs.aws.amazon.com/ec2/latest/instancetypes/instance-types.html
-_EC2_PLANNED_FOR_RETIREMENT_FAMILIES = frozenset(
-    {
-        "a1",
-        "c1",
-        "c3",
-        "c4",
-        "g3",
-        "i2",
-        "m1",
-        "m2",
-        "m3",
-        "m4",
-        "p3",
-        "p3dn",
-        "r3",
-        "r4",
-        "t1",
-    }
-)
-
-# RDS instance classes with documented end-of-support.
+# RDS instance classes with an announced end-of-support schedule.
 # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.DBInstanceClass.Types.html
-_RDS_PLANNED_FOR_RETIREMENT_FAMILIES = frozenset(
+_RDS_END_OF_SUPPORT_FAMILIES = frozenset(
     {
         "db.m3",
         "db.m4",
@@ -427,11 +405,6 @@ def _make_server_from_instance_type(instance_type, vendor) -> dict:
         "network_speed_max": network_card["PeakBandwidthInGbps"],
         "network_storage_speed_baseline": ebs_baseline_gbps,
         "network_storage_speed_max": ebs_max_gbps,
-        "status": (
-            Status.PLANNED_FOR_RETIREMENT
-            if it.split(".")[0] in _EC2_PLANNED_FOR_RETIREMENT_FAMILIES
-            else Status.ACTIVE
-        ),
     }
 
 
@@ -1082,14 +1055,16 @@ def inventory_server_prices(vendor):
             vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
 
-    priced_server_ids = {item["server_id"] for item in server_prices}
+    # Not offered in any ACTIVE region/zone. AWS does not confirm retirement,
+    # so mark INACTIVE rather than RETIRED. Prices may still be published.
+    offered_server_ids = {
+        server_id
+        for zone_servers in regions_servers.values()
+        for server_id in zone_servers
+    }
     for server in vendor.servers:
-        if server.server_id in priced_server_ids:
-            continue
-        if server.status == Status.ACTIVE:
+        if server.server_id not in offered_server_ids:
             server.status = Status.INACTIVE
-        elif server.status == Status.PLANNED_FOR_RETIREMENT:
-            server.status = Status.RETIRED
 
     return server_prices
 
@@ -1638,14 +1613,12 @@ def inventory_databases(vendor):
                 continue
             seen_database_ids.add(database_id)
             db_instance_options = options_by_database.get(database_id, [])
-            status = (
-                Status.PLANNED_FOR_RETIREMENT
-                if ".".join(database_id.split(".")[:2])
-                in _RDS_PLANNED_FOR_RETIREMENT_FAMILIES
-                else Status.ACTIVE
-            )
             if not db_instance_options:
-                status = Status.INACTIVE if status == Status.ACTIVE else Status.RETIRED
+                status = Status.RETIRED
+            elif ".".join(database_id.split(".")[:2]) in _RDS_END_OF_SUPPORT_FAMILIES:
+                status = Status.PLANNED_FOR_RETIREMENT
+            else:
+                status = Status.ACTIVE
             deployment_options = deployment_options_by_database.get(
                 database_id, frozenset()
             )
