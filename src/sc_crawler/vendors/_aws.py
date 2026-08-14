@@ -222,6 +222,40 @@ _instance_suffixes = {
     "flex": "Flex instance",
 }
 
+# Previous-generation EC2 families.
+# https://docs.aws.amazon.com/ec2/latest/instancetypes/instance-types.html
+_EC2_PLANNED_FOR_RETIREMENT_FAMILIES = frozenset(
+    {
+        "a1",
+        "c1",
+        "c3",
+        "c4",
+        "g3",
+        "i2",
+        "m1",
+        "m2",
+        "m3",
+        "m4",
+        "p3",
+        "p3dn",
+        "r3",
+        "r4",
+        "t1",
+    }
+)
+
+# RDS instance classes with documented end-of-support.
+# https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.DBInstanceClass.Types.html
+_RDS_PLANNED_FOR_RETIREMENT_FAMILIES = frozenset(
+    {
+        "db.m3",
+        "db.m4",
+        "db.r3",
+        "db.r4",
+        "db.t2",
+    }
+)
+
 
 def _annotate_instance_type(instance_type_id):
     """Resolve instance type coding to human-friendly description.
@@ -393,6 +427,11 @@ def _make_server_from_instance_type(instance_type, vendor) -> dict:
         "network_speed_max": network_card["PeakBandwidthInGbps"],
         "network_storage_speed_baseline": ebs_baseline_gbps,
         "network_storage_speed_max": ebs_max_gbps,
+        "status": (
+            Status.PLANNED_FOR_RETIREMENT
+            if it.split(".")[0] in _EC2_PLANNED_FOR_RETIREMENT_FAMILIES
+            else Status.ACTIVE
+        ),
     }
 
 
@@ -1042,6 +1081,16 @@ def inventory_server_prices(vendor):
         finally:
             vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
+
+    priced_server_ids = {item["server_id"] for item in server_prices}
+    for server in vendor.servers:
+        if server.server_id in priced_server_ids:
+            continue
+        if server.status == Status.ACTIVE:
+            server.status = Status.INACTIVE
+        elif server.status == Status.PLANNED_FOR_RETIREMENT:
+            server.status = Status.RETIRED
+
     return server_prices
 
 
@@ -1454,8 +1503,7 @@ def _lookup_orderable_db_instance_options(
         {
             database_id
             for region_classes in prices_by_region.values()
-            for database_id, attrs in region_classes.items()
-            if attrs.get("currentGeneration") == "Yes"
+            for database_id in region_classes
         }
     )
     vendor.progress_tracker.start_task(
@@ -1590,11 +1638,14 @@ def inventory_databases(vendor):
                 continue
             seen_database_ids.add(database_id)
             db_instance_options = options_by_database.get(database_id, [])
-            status = Status.ACTIVE
-            # Pricing keeps previous-gen SKUs (currentGeneration=No) after AWS stops
-            # allowing new launches; add these classes with INACTIVE status.
+            status = (
+                Status.PLANNED_FOR_RETIREMENT
+                if ".".join(database_id.split(".")[:2])
+                in _RDS_PLANNED_FOR_RETIREMENT_FAMILIES
+                else Status.ACTIVE
+            )
             if not db_instance_options:
-                status = Status.INACTIVE
+                status = Status.INACTIVE if status == Status.ACTIVE else Status.RETIRED
             deployment_options = deployment_options_by_database.get(
                 database_id, frozenset()
             )

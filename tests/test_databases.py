@@ -1513,25 +1513,47 @@ def test_aws_inventory_databases_dedupes_across_regions():
     assert [row["database_id"] for row in rows] == ["db.m5.large"]
 
 
-def test_aws_inventory_databases_marks_non_orderable_classes_inactive():
+def test_aws_inventory_databases_marks_status_from_generation_and_options():
     vendor = _aws_vendor(
         regions=[Mock(region_id="us-east-1", status=Status.ACTIVE)],
     )
     prices_by_region = {
         "us-east-1": {
-            "db.t2.micro": {
-                "instanceFamily": "General purpose",
-                "vcpu": "1",
-                "memory": "1 GiB",
-                "storage": "EBS Only",
-            },
             "db.m5.large": {
                 "instanceFamily": "General purpose",
                 "vcpu": "2",
                 "memory": "8 GiB",
                 "storage": "EBS Only",
             },
+            "db.m4.large": {
+                "instanceFamily": "General purpose",
+                "vcpu": "2",
+                "memory": "8 GiB",
+                "storage": "EBS Only",
+            },
+            "db.m6g.large": {
+                "instanceFamily": "General purpose",
+                "vcpu": "2",
+                "memory": "8 GiB",
+                "storage": "EBS Only",
+            },
+            "db.t2.micro": {
+                "instanceFamily": "General purpose",
+                "vcpu": "1",
+                "memory": "1 GiB",
+                "storage": "EBS Only",
+            },
         }
+    }
+    orderable = {
+        "MultiAZCapable": True,
+        "SupportsStorageAutoscaling": True,
+        "MinStorageSize": 20,
+        "MaxStorageSize": 65536,
+        "SupportsStorageEncryption": True,
+        "SupportsEnhancedMonitoring": True,
+        "SupportsPerformanceInsights": True,
+        "ReadReplicaCapable": True,
     }
     with (
         patch(
@@ -1539,8 +1561,10 @@ def test_aws_inventory_databases_marks_non_orderable_classes_inactive():
             return_value=(
                 prices_by_region,
                 {
-                    "db.t2.micro": frozenset({"Single-AZ", "Multi-AZ"}),
                     "db.m5.large": frozenset({"Single-AZ", "Multi-AZ"}),
+                    "db.m4.large": frozenset({"Single-AZ", "Multi-AZ"}),
+                    "db.m6g.large": frozenset({"Single-AZ", "Multi-AZ"}),
+                    "db.t2.micro": frozenset({"Single-AZ", "Multi-AZ"}),
                 },
             ),
         ),
@@ -1551,27 +1575,19 @@ def test_aws_inventory_databases_marks_non_orderable_classes_inactive():
         patch(
             "sc_crawler.vendors._aws._lookup_orderable_db_instance_options",
             return_value={
+                "db.m5.large": [orderable],
+                "db.m4.large": [orderable],
+                "db.m6g.large": [],
                 "db.t2.micro": [],
-                "db.m5.large": [
-                    {
-                        "MultiAZCapable": True,
-                        "SupportsStorageAutoscaling": True,
-                        "MinStorageSize": 20,
-                        "MaxStorageSize": 65536,
-                        "SupportsStorageEncryption": True,
-                        "SupportsEnhancedMonitoring": True,
-                        "SupportsPerformanceInsights": True,
-                        "ReadReplicaCapable": True,
-                    }
-                ],
             },
         ),
     ):
         rows = aws_databases(vendor)
     by_id = {row["database_id"]: row for row in rows}
-    assert set(by_id) == {"db.t2.micro", "db.m5.large"}
-    assert by_id["db.t2.micro"]["status"] == Status.INACTIVE
     assert by_id["db.m5.large"]["status"] == Status.ACTIVE
+    assert by_id["db.m4.large"]["status"] == Status.PLANNED_FOR_RETIREMENT
+    assert by_id["db.m6g.large"]["status"] == Status.INACTIVE
+    assert by_id["db.t2.micro"]["status"] == Status.RETIRED
 
 
 def test_aws_inventory_database_prices_by_ha_deployment():

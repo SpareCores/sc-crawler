@@ -329,7 +329,7 @@ class Vendor(VendorBase, table=True):
             BenchmarkScore.vendor_id == self.vendor_id,
             BenchmarkScore.resource_type == ResourceType.SERVER,
         )
-        insert_items(BenchmarkScore, benchmarks, self)
+        insert_items(BenchmarkScore, benchmarks, self, prefix="server")
         self.progress_tracker.start_task(
             name="Downloading sc-navigator-descriptions", total=None
         )
@@ -421,7 +421,7 @@ class Vendor(VendorBase, table=True):
             BenchmarkScore.vendor_id == self.vendor_id,
             BenchmarkScore.resource_type == ResourceType.DATABASE,
         )
-        insert_items(BenchmarkScore, benchmarks, self)
+        insert_items(BenchmarkScore, benchmarks, self, prefix="database")
 
     @log_start_end
     def inventory_database_prices(self):
