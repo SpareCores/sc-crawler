@@ -21,6 +21,7 @@ from sqlmodel import JSON, Field, Session, SQLModel, select
 
 from .str_utils import snake_case
 from .table_fields import (
+    GENERAL_STATUSES,
     Allocation,
     Category,
     Cpu,
@@ -34,7 +35,6 @@ from .table_fields import (
     DatabaseWireProtocol,
     DdrGeneration,
     Disk,
-    GENERAL_STATUSES,
     Gpu,
     HashableDict,
     HashableJSON,
