@@ -544,8 +544,10 @@ def inventory_servers(vendor):
         }
 
         # exclude limited plans not generally available without scale
-        if item["server_id"] == "vc2-1c-0.5gb-free":
+        if item["server_id"] == "vc2-1c-0.5gb-free" or not server.get("locations"):
             item["status"] = Status.INACTIVE
+        else:
+            item["status"] = Status.ACTIVE
 
         items.append(item)
     return items

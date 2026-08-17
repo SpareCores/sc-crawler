@@ -2,6 +2,7 @@ from collections import defaultdict
 from datetime import UTC, datetime
 from functools import cache
 from os import environ
+from re import IGNORECASE
 from re import compile as recompile
 from time import sleep
 from types import SimpleNamespace
@@ -32,6 +33,7 @@ from ..table_fields import (
     Disk,
     PriceTier,
     PriceUnit,
+    Status,
     StorageType,
     TrafficDirection,
 )
@@ -298,6 +300,53 @@ STORAGE_PRICE_UNIT_MAPPING: dict[str, float | None] = {
     "1 GB/Hour": _HOURS_PER_MONTH,
 }
 """Storage capacity units → multiplier to convert the raw API price to $/GB/month."""
+
+# VM size series retirement. Previous-gen is not retirement.
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retired-sizes-list
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/previous-gen-sizes-list
+_AZURE_RETIRED_SKU_PATTERNS = (
+    # NCv3-series and NCv3-NC24rs. Retired 2025-09-30.
+    recompile(r"^NC(?:6s|12s|24s|24rs)_v3$", IGNORECASE),
+)
+_AZURE_ANNOUNCED_SKU_SIZES = frozenset(
+    {
+        "m192idms_v2",
+        "m192ids_v2",
+        "m192ims_v2",
+        "m192is_v2",
+    }
+)
+_AZURE_ANNOUNCED_SKU_PATTERNS = (
+    recompile(r"^D\d+(-\d+)?$", IGNORECASE),  # D-series
+    recompile(r"^DS\d+(-\d+)?$", IGNORECASE),  # Ds-series
+    recompile(r"^D\d+(-\d+)?_v2$", IGNORECASE),  # Dv2-series
+    recompile(r"^DS\d+(-\d+)?_v2$", IGNORECASE),  # Dsv2-series
+    recompile(r"^A\d+_v2$", IGNORECASE),  # Av2-series
+    recompile(r"^A\d+m_v2$", IGNORECASE),  # Amv2-series
+    recompile(r"^B\d+[a-z]*$", IGNORECASE),  # B-series (V1), not Bv2
+    recompile(r"^F\d+$", IGNORECASE),  # F-series
+    recompile(r"^F\d+s$", IGNORECASE),  # Fs-series
+    recompile(r"^F\d+s_v2$", IGNORECASE),  # Fsv2-series
+    recompile(r"^G\d+$", IGNORECASE),  # G-series
+    recompile(r"^GS\d+(-\d+)?$", IGNORECASE),  # Gs-series
+    recompile(r"^L\d+s$", IGNORECASE),  # Ls-series
+    recompile(r"^L\d+s_v2$", IGNORECASE),  # Lsv2-series
+    recompile(r"^NV\d+s_v3$", IGNORECASE),  # NVv3-series
+    recompile(r"^NV\d+as_v4$", IGNORECASE),  # NVv4-series
+    recompile(r"^NP\d+s$", IGNORECASE),  # NP-series
+)
+
+
+def _azure_sku_lifecycle_status(sku_name: str) -> Status:
+    """Map an Azure VM / Flexible Server SKU name to Server/Database status."""
+    size = sku_name.removeprefix("Standard_").removeprefix("Basic_")
+    if size.lower() in _AZURE_ANNOUNCED_SKU_SIZES:
+        return Status.PLANNED_FOR_RETIREMENT
+    if any(pattern.fullmatch(size) for pattern in _AZURE_RETIRED_SKU_PATTERNS):
+        return Status.RETIRED
+    if any(pattern.fullmatch(size) for pattern in _AZURE_ANNOUNCED_SKU_PATTERNS):
+        return Status.PLANNED_FOR_RETIREMENT
+    return Status.ACTIVE
 
 
 def _parse_server_name(name):
@@ -580,6 +629,7 @@ def _standardize_server(server: dict, vendor) -> dict:
         "inbound_traffic": 0,
         "outbound_traffic": 0,
         "ipv4": 0,
+        "status": _azure_sku_lifecycle_status(server["name"]),
     }
 
 
@@ -1934,6 +1984,7 @@ def inventory_databases(vendor):
                             # Product max PITR retention (days); default 7, up to 35; not in capabilities API.
                             "continuous_backups": 35,
                             "sla": sla,
+                            "status": _azure_sku_lifecycle_status(database_id),
                         }
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()

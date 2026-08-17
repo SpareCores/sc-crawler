@@ -1,8 +1,5 @@
 from sc_crawler.table_fields import Status
-from sc_crawler.vendor_helpers import (
-    server_price_status_from_availability_category,
-    server_status_from_availability_categories,
-)
+from sc_crawler.vendor_helpers import server_status_from_availability_categories
 
 _ALICLOUD_CATEGORY_TO_SERVER_STATUS = {
     "WithStock": Status.ACTIVE,
@@ -10,13 +7,30 @@ _ALICLOUD_CATEGORY_TO_SERVER_STATUS = {
     "WithoutStock": Status.INACTIVE,
     "ClosedWithoutStock": Status.RETIRED,
 }
-_ALICLOUD_SERVER_STATUS_PRIORITY = (
-    Status.ACTIVE,
-    Status.PLANNED_FOR_RETIREMENT,
-    Status.INACTIVE,
-    Status.RETIRED,
-)
-_ALICLOUD_ORDERABLE = frozenset({"WithStock", "ClosedWithStock"})
+
+
+def test_status_best_picks_lifecycle_order():
+    assert Status.best({Status.RETIRED, Status.ACTIVE}) == Status.ACTIVE
+    assert (
+        Status.best({Status.RETIRED, Status.PLANNED_FOR_RETIREMENT})
+        == Status.PLANNED_FOR_RETIREMENT
+    )
+    assert Status.best({Status.RETIRED, Status.INACTIVE}) == Status.INACTIVE
+    assert Status.best({Status.RETIRED}) == Status.RETIRED
+
+
+def test_status_is_orderable():
+    assert Status.ACTIVE.is_orderable
+    assert Status.PLANNED_FOR_RETIREMENT.is_orderable
+    assert not Status.INACTIVE.is_orderable
+    assert not Status.RETIRED.is_orderable
+
+
+def test_alicloud_stock_categories_match_status_orderability():
+    assert _ALICLOUD_CATEGORY_TO_SERVER_STATUS["WithStock"].is_orderable
+    assert _ALICLOUD_CATEGORY_TO_SERVER_STATUS["ClosedWithStock"].is_orderable
+    assert not _ALICLOUD_CATEGORY_TO_SERVER_STATUS["WithoutStock"].is_orderable
+    assert not _ALICLOUD_CATEGORY_TO_SERVER_STATUS["ClosedWithoutStock"].is_orderable
 
 
 def test_server_status_from_availability_categories_maps_each_value():
@@ -24,7 +38,6 @@ def test_server_status_from_availability_categories_maps_each_value():
         server_status_from_availability_categories(
             {"WithStock"},
             _ALICLOUD_CATEGORY_TO_SERVER_STATUS,
-            _ALICLOUD_SERVER_STATUS_PRIORITY,
         )
         == Status.ACTIVE
     )
@@ -32,7 +45,6 @@ def test_server_status_from_availability_categories_maps_each_value():
         server_status_from_availability_categories(
             {"ClosedWithStock"},
             _ALICLOUD_CATEGORY_TO_SERVER_STATUS,
-            _ALICLOUD_SERVER_STATUS_PRIORITY,
         )
         == Status.PLANNED_FOR_RETIREMENT
     )
@@ -40,7 +52,6 @@ def test_server_status_from_availability_categories_maps_each_value():
         server_status_from_availability_categories(
             {"WithoutStock"},
             _ALICLOUD_CATEGORY_TO_SERVER_STATUS,
-            _ALICLOUD_SERVER_STATUS_PRIORITY,
         )
         == Status.INACTIVE
     )
@@ -48,7 +59,6 @@ def test_server_status_from_availability_categories_maps_each_value():
         server_status_from_availability_categories(
             {"ClosedWithoutStock"},
             _ALICLOUD_CATEGORY_TO_SERVER_STATUS,
-            _ALICLOUD_SERVER_STATUS_PRIORITY,
         )
         == Status.RETIRED
     )
@@ -59,7 +69,6 @@ def test_server_status_from_availability_categories_picks_best_across_zones():
         server_status_from_availability_categories(
             {"ClosedWithoutStock", "WithStock", "WithoutStock"},
             _ALICLOUD_CATEGORY_TO_SERVER_STATUS,
-            _ALICLOUD_SERVER_STATUS_PRIORITY,
         )
         == Status.ACTIVE
     )
@@ -67,7 +76,6 @@ def test_server_status_from_availability_categories_picks_best_across_zones():
         server_status_from_availability_categories(
             {"ClosedWithoutStock", "ClosedWithStock"},
             _ALICLOUD_CATEGORY_TO_SERVER_STATUS,
-            _ALICLOUD_SERVER_STATUS_PRIORITY,
         )
         == Status.PLANNED_FOR_RETIREMENT
     )
@@ -78,36 +86,6 @@ def test_server_status_from_availability_categories_missing_is_retired():
         server_status_from_availability_categories(
             set(),
             _ALICLOUD_CATEGORY_TO_SERVER_STATUS,
-            _ALICLOUD_SERVER_STATUS_PRIORITY,
         )
         == Status.RETIRED
-    )
-
-
-def test_server_price_status_from_availability_category():
-    assert (
-        server_price_status_from_availability_category("WithStock", _ALICLOUD_ORDERABLE)
-        == Status.ACTIVE
-    )
-    assert (
-        server_price_status_from_availability_category(
-            "ClosedWithStock", _ALICLOUD_ORDERABLE
-        )
-        == Status.ACTIVE
-    )
-    assert (
-        server_price_status_from_availability_category(
-            "WithoutStock", _ALICLOUD_ORDERABLE
-        )
-        == Status.INACTIVE
-    )
-    assert (
-        server_price_status_from_availability_category(
-            "ClosedWithoutStock", _ALICLOUD_ORDERABLE
-        )
-        == Status.INACTIVE
-    )
-    assert (
-        server_price_status_from_availability_category(None, _ALICLOUD_ORDERABLE)
-        == Status.INACTIVE
     )

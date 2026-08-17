@@ -2,7 +2,7 @@
 
 from enum import Enum
 from json import dumps
-from typing import Any, List, Optional
+from typing import Any, Collection, List, Optional
 
 from pydantic import BaseModel, field_serializer, field_validator
 from sqlalchemy.types import TypeDecorator
@@ -56,6 +56,24 @@ class Status(str, Enum):
     """Planned for retirement; only valid for Server and Database."""
     RETIRED = "retired"
     """Not orderable anymore, but prices may still exist (e.g. active multi-year contracts). Only valid for Server and Database."""
+
+    @classmethod
+    def best(cls, statuses: Collection["Status"]) -> "Status":
+        """Return the best of the given statuses: ACTIVE, PLANNED_FOR_RETIREMENT, INACTIVE, then RETIRED."""
+        for status in (
+            cls.ACTIVE,
+            cls.PLANNED_FOR_RETIREMENT,
+            cls.INACTIVE,
+            cls.RETIRED,
+        ):
+            if status in statuses:
+                return status
+        raise ValueError("statuses is empty")
+
+    @property
+    def is_orderable(self) -> bool:
+        """Whether a Server/Database with this status can still be ordered."""
+        return self in (Status.ACTIVE, Status.PLANNED_FOR_RETIREMENT)
 
 
 # ACTIVE / INACTIVE only — used by MetaColumns validator for non-server/database models.

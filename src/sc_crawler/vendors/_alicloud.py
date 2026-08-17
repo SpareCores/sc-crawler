@@ -51,7 +51,6 @@ from ..tables import ServerPrice, Vendor
 from ..utils import _GIB_TO_GB, _HOURS_PER_MONTH, jsoned_hash
 from ..vendor_helpers import (
     get_region_by_id,
-    server_price_status_from_availability_category,
     server_status_from_availability_categories,
 )
 
@@ -71,13 +70,6 @@ _ALICLOUD_STATUS_CATEGORY_TO_SERVER_STATUS = {
     "WithoutStock": Status.INACTIVE,
     "ClosedWithoutStock": Status.RETIRED,
 }
-_ALICLOUD_SERVER_STATUS_PRIORITY = (
-    Status.ACTIVE,
-    Status.PLANNED_FOR_RETIREMENT,
-    Status.INACTIVE,
-    Status.RETIRED,
-)
-_ALICLOUD_ORDERABLE_STATUS_CATEGORIES = frozenset({"WithStock", "ClosedWithStock"})
 
 # ##############################################################################
 # Internal helpers
@@ -1008,7 +1000,6 @@ def inventory_servers(vendor):
         status = server_status_from_availability_categories(
             status_categories,
             _ALICLOUD_STATUS_CATEGORY_TO_SERVER_STATUS,
-            _ALICLOUD_SERVER_STATUS_PRIORITY,
         )
 
         items.append(
@@ -1088,15 +1079,16 @@ def inventory_server_prices(vendor):
             continue
         for zone in region.zones:
             server_id = sku.get("SkuFactorMap", {}).get("instance_type")
-            status = server_price_status_from_availability_category(
-                _get_resource_status_category(
-                    region_availability_info,
-                    region.region_id,
-                    zone.zone_id,
-                    server_id,
-                ),
-                _ALICLOUD_ORDERABLE_STATUS_CATEGORIES,
+            category = _get_resource_status_category(
+                region_availability_info,
+                region.region_id,
+                zone.zone_id,
+                server_id,
             )
+            mapped = _ALICLOUD_STATUS_CATEGORY_TO_SERVER_STATUS.get(
+                category or "", Status.INACTIVE
+            )
+            status = Status.ACTIVE if mapped.is_orderable else Status.INACTIVE
 
             items.append(
                 {

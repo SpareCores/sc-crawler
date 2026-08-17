@@ -35,6 +35,7 @@ from sc_crawler.vendors._aws import (
     inventory_server_prices as aws_server_prices,
 )
 from sc_crawler.vendors._azure import (
+    _azure_sku_lifecycle_status,
     _pg_database_regions,
     _pg_engine_versions,
     _pg_lookup_retail_price,
@@ -49,6 +50,7 @@ from sc_crawler.vendors._azure import (
     inventory_databases as azure_databases,
 )
 from sc_crawler.vendors._gcp import (
+    _gcp_machine_type_status,
     _pg_storage_id,
     inventory_database_prices,
     inventory_databases,
@@ -304,6 +306,50 @@ def test_pg_engine_versions_from_capability():
     assert _pg_engine_versions(capability) == ["15", "16"]
 
 
+def test_azure_sku_lifecycle_status_from_retired_sizes_list():
+    # https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retired-sizes-list
+    announced = [
+        "Standard_D2",
+        "Standard_DS2",
+        "Standard_D2_v2",
+        "Standard_DS2_v2",
+        "Standard_A2_v2",
+        "Standard_A2m_v2",
+        "Standard_B1ms",
+        "Standard_F2",
+        "Standard_F2s",
+        "Standard_F2s_v2",
+        "Standard_G1",
+        "Standard_GS2",
+        "Standard_L8s",
+        "Standard_L8s_v2",
+        "Standard_NV12s_v3",
+        "Standard_NV8as_v4",
+        "Standard_NP10s",
+        "Standard_M192ims_v2",
+    ]
+    retired = [
+        "Standard_NC6s_v3",
+        "Standard_NC24rs_v3",
+    ]
+    active = [
+        "Standard_D2s_v3",
+        "Standard_D4s_v5",
+        "Standard_B2als_v2",
+        "Standard_E2s_v3",
+        "Standard_L8s_v3",
+        "Standard_NC4as_T4_v3",
+        "Standard_NV4ads_V710_v5",
+        "Standard_M64s_v2",
+    ]
+    for sku in announced:
+        assert _azure_sku_lifecycle_status(sku) == Status.PLANNED_FOR_RETIREMENT, sku
+    for sku in retired:
+        assert _azure_sku_lifecycle_status(sku) == Status.RETIRED, sku
+    for sku in active:
+        assert _azure_sku_lifecycle_status(sku) == Status.ACTIVE, sku
+
+
 def test_azure_inventory_databases_autotuning_from_supported_features():
     """IndexTuning → advice; AdaptiveAutoVacuumAutoApply → apply (param auto-tune)."""
     vendor = Mock(vendor_id="azure")
@@ -486,6 +532,9 @@ def test_azure_inventory_databases_ha_from_supported_ha_mode():
         DatabaseHaStrategy.PASSIVE_STANDBY,
         DatabaseHaStrategy.NONE,
     ]
+    assert by_id["Standard_B1ms"]["status"] == Status.PLANNED_FOR_RETIREMENT
+    assert by_id["Standard_D2s_v3"]["status"] == Status.ACTIVE
+    assert by_id["Standard_E2s_v3"]["status"] == Status.ACTIVE
 
 
 def test_azure_inventory_database_prices_emit_ha_rows():
@@ -605,6 +654,62 @@ def test_azure_inventory_database_prices_emit_ha_rows():
         ]
         == 0.29
     )
+
+
+def test_gcp_machine_type_status_from_deprecation_state():
+    # https://cloud.google.com/compute/docs/reference/rest/v1/machineTypes
+    assert _gcp_machine_type_status("") == Status.ACTIVE
+    assert _gcp_machine_type_status("ACTIVE") == Status.ACTIVE
+    assert _gcp_machine_type_status(None) == Status.ACTIVE
+    assert _gcp_machine_type_status("DEPRECATED") == Status.PLANNED_FOR_RETIREMENT
+    assert _gcp_machine_type_status("OBSOLETE") == Status.RETIRED
+    assert _gcp_machine_type_status("DELETED") == Status.RETIRED
+
+
+def test_gcp_inventory_databases_inherits_gce_machine_type_status():
+    vendor = Mock(vendor_id="gcp")
+    vendor.regions = []
+    vendor.servers = [
+        Mock(
+            server_id="n1-standard-4",
+            api_reference="n1-standard-4",
+            status=Status.PLANNED_FOR_RETIREMENT,
+        )
+    ]
+    vendor.progress_tracker = Mock(
+        start_task=Mock(), advance_task=Mock(), hide_task=Mock()
+    )
+    with (
+        patch(
+            "sc_crawler.vendors._gcp._pg_sqladmin_metadata",
+            return_value={
+                "tiers": [
+                    {
+                        "tier": "db-n1-standard-4",
+                        "RAM": "16106127360",
+                        "region": ["us-central1"],
+                    },
+                    {
+                        "tier": "db-perf-optimized-N-4",
+                        "RAM": "17179869184",
+                        "region": ["us-central1"],
+                    },
+                ],
+                "engine_versions": ["16"],
+                "custom_config": True,
+                "custom_extensions": True,
+            },
+        ),
+        patch(
+            "sc_crawler.vendors._gcp._pg_billing_catalog",
+            return_value=({}, frozenset()),
+        ),
+    ):
+        rows = inventory_databases(vendor)
+    by_id = {row["database_id"]: row for row in rows}
+    assert by_id["db-n1-standard-4"]["status"] == Status.PLANNED_FOR_RETIREMENT
+    # no matching GCE machine type
+    assert by_id["db-perf-optimized-N-4"]["status"] == Status.ACTIVE
 
 
 def test_gcp_inventory_databases_ha_uses_own_price_family_only():
