@@ -10,7 +10,7 @@ def server_status_from_availability_categories(
     categories: Collection[str],
     category_to_status: Mapping[str, Status],
     *,
-    missing_status: Status = Status.RETIRED,
+    missing_status: Status = Status.INACTIVE,
 ) -> Status:
     """Map vendor availability categories to a single Server/Database status.
 

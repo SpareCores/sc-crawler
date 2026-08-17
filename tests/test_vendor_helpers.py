@@ -81,11 +81,18 @@ def test_server_status_from_availability_categories_picks_best_across_zones():
     )
 
 
-def test_server_status_from_availability_categories_missing_is_retired():
+def test_server_status_from_availability_categories_missing_is_inactive():
     assert (
         server_status_from_availability_categories(
             set(),
             _ALICLOUD_CATEGORY_TO_SERVER_STATUS,
         )
-        == Status.RETIRED
+        == Status.INACTIVE
+    )
+    assert (
+        server_status_from_availability_categories(
+            {"UnknownCategory"},
+            _ALICLOUD_CATEGORY_TO_SERVER_STATUS,
+        )
+        == Status.INACTIVE
     )
