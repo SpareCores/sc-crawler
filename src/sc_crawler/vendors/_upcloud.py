@@ -124,28 +124,16 @@ def _parse_server_name(name):
     return data
 
 
-# No longer orderable for new deployments as of 2026-04-16.
-# https://upcloud.com/global/blog/introducing-starter-and-premium-plans/
-_UPCLOUD_RETIRED_FAMILIES = frozenset(
-    {
-        "Developer",
-        "General Purpose",
-        "High CPU",
-        "High Memory",
-    }
-)
-
-
-def _upcloud_server_status(vendor, server_name: str, family: str) -> Status:
-    """Map UpCloud plan family and GPU stock to Server status."""
-    if family in _UPCLOUD_RETIRED_FAMILIES:
+def _upcloud_server_status(vendor, server: dict) -> Status:
+    """Map plan current_offering and GPU stock to Server status."""
+    if server.get("current_offering") == "no":
         return Status.RETIRED
-    if family != "GPU":
+    if server.get("family") != "gpu":
         return Status.ACTIVE
     for region in vendor.regions:
         amount = (
             _get_gpu_region_availability(region.region_id)
-            .get(server_name, {})
+            .get(server["name"], {})
             .get("amount", 0)
         )
         if amount:
@@ -468,9 +456,7 @@ def inventory_servers(vendor):
                     "inbound_traffic": 0,
                     "outbound_traffic": server["public_traffic_out"],
                     "ipv4": 0 if server_data["family"] == "CLOUDNATIVE" else 1,
-                    "status": _upcloud_server_status(
-                        vendor, server["name"], server_data["family"]
-                    ),
+                    "status": _upcloud_server_status(vendor, server),
                 }
             )
     return items
