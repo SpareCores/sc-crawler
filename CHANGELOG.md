@@ -4,7 +4,8 @@ New feature(s):
 
 - Extend `Status` with `PLANNED_FOR_RETIREMENT` and `RETIRED` for Server and
   Database (model validators reject these on other tables).
-  
+- Map vendor inventory onto those statuses from confirmed APIs and docs.
+ 
 ## v0.9.1 (August 14, 2026)
 
 ‼ Breaking changes:
