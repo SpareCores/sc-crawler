@@ -38,6 +38,48 @@ The functions should return an array of dict representing the related objects. T
 
 Other functions and variables must be prefixed with an underscore to suggest those are internal tools.
 
+## Status and retirement checks
+
+For `Server` and `Database`, `status` can be `ACTIVE`, `INACTIVE`,
+`PLANNED_FOR_RETIREMENT`, or `RETIRED`.
+
+Current per-vendor lifecycle sources:
+
+- `AliCloud` (server): `DescribeAvailableResource` `StatusCategory` mapping:
+  `WithStock` -> `ACTIVE`, `ClosedWithStock` -> `PLANNED_FOR_RETIREMENT`,
+  `WithoutStock` -> `INACTIVE`, `ClosedWithoutStock` -> `RETIRED`.
+  If a type is missing from availability response, mark `INACTIVE`.
+- `AWS` (server): from `DescribeInstanceTypeOfferings`; not offered in any
+  active region/zone -> `INACTIVE`. No type-level EC2 retirement API is used.
+- `AWS` (database): from `DescribeOrderableDBInstanceOptions`; no orderable
+  options -> `RETIRED`. Families in `_RDS_END_OF_SUPPORT_FAMILIES` ->
+  `PLANNED_FOR_RETIREMENT`, otherwise `ACTIVE`.
+- `Azure` (server + database): hardcoded regex/name mappings from Azure VM
+  lifecycle docs (`_AZURE_RETIRED_SKU_PATTERNS`, announced lists) ->
+  `PLANNED_FOR_RETIREMENT` / `RETIRED`, else `ACTIVE`.
+- `GCP` (server): `machineTypes.deprecated.state` mapping:
+  `DEPRECATED` -> `PLANNED_FOR_RETIREMENT`, `OBSOLETE`/`DELETED` -> `RETIRED`,
+  empty/`ACTIVE` -> `ACTIVE`.
+- `Hetzner` (server): per-location fields from server types API:
+  `deprecation.unavailable_after` in past -> `RETIRED`,
+  `deprecation` present -> `PLANNED_FOR_RETIREMENT`,
+  `available is False` or empty locations -> `INACTIVE`, else `ACTIVE`.
+- `OVH` (server): catalog plan `blobs.tags` contains `active` -> `ACTIVE`,
+  otherwise `INACTIVE` (`legacy` is not treated as retirement).
+- `UpCloud` (server): `current_offering == "no"` -> `RETIRED`.
+  GPU plans are `INACTIVE` when `/device/availability` reports zero stock
+  across regions; otherwise `ACTIVE`.
+- `Vultr` (server): free plan or empty `locations` -> `INACTIVE`, else `ACTIVE`.
+
+Rules:
+
+- Use only explicit API/doc lifecycle signals for `PLANNED_FOR_RETIREMENT`
+  and `RETIRED`.
+- Do not infer retirement from naming patterns like "previous generation"
+  unless there is an explicit mapping.
+- If multiple signals exist, best status wins:
+  `ACTIVE` > `PLANNED_FOR_RETIREMENT` > `INACTIVE` > `RETIRED`.
+
 ## Progress bars
 
 To create progress bars, you can use the [Vendor][sc_crawler.tables.Vendor]'s [progress_tracker][sc_crawler.tables.Vendor.progress_tracker] attribute with the below methods:
