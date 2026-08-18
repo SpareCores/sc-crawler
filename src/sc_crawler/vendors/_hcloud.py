@@ -211,6 +211,7 @@ def inventory_servers(vendor):
     """List all server types from API and manual data entry from the Hetzner Cloud homepage.
 
     CPU information is recorded from <https://www.hetzner.com/cloud/> as not exposed via API."""
+    now = datetime.now(UTC)
     items = []
     for server in _client().server_types.get_all():
         # CPU info not available via the API,
@@ -273,7 +274,7 @@ def inventory_servers(vendor):
                         / (1024**3)
                     ),
                     "ipv4": 0,
-                    "status": _hcloud_server_status(server),
+                    "status": _hcloud_server_status(server, now),
                 }
             )
     return items

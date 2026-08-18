@@ -1,4 +1,4 @@
-"""v0.9.1 extend status enum for server/database retirement
+"""v0.9.2 extend status enum for server/database retirement
 
 Revision ID: b1c2d3e4f5a6
 Revises: a9b0c1d2e3f4
