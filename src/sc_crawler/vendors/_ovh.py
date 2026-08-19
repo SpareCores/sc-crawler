@@ -1017,6 +1017,9 @@ def inventory_ipv4_prices(vendor) -> list[dict]:
 def inventory_databases(vendor):
     """List Public Cloud Databases for PostgreSQL compute SKUs.
 
+    Lifecycle (`availability[].lifecycle.status`): `END_OF_LIFE` -> RETIRED,
+    `STABLE`/`BETA` -> ACTIVE, otherwise INACTIVE.
+
     Data sources:
 
     - `GET /cloud/project/{serviceName}/database/availability`
@@ -1038,8 +1041,6 @@ def inventory_databases(vendor):
         if offer["engine"] != "postgresql":
             continue
         lifecycle = offer["lifecycle"]["status"]
-        if lifecycle in {"UNAVAILABLE", "END_OF_LIFE"}:
-            continue
         engine = offer["engine"]
         plan = offer["plan"]
         flavor_name = offer["specifications"]["flavor"]
@@ -1054,7 +1055,12 @@ def inventory_databases(vendor):
         extra_max = offer["specifications"]["storage"]["maximum"]["value"]
         scheduled = offer["backups"]["available"]
         retention = offer["backups"]["retentionDays"]
-        status = Status.ACTIVE if lifecycle in {"STABLE", "BETA"} else Status.INACTIVE
+        if lifecycle == "END_OF_LIFE":
+            status = Status.RETIRED
+        elif lifecycle in {"STABLE", "BETA"}:
+            status = Status.ACTIVE
+        else:
+            status = Status.INACTIVE
         # Plan topology is fixed (1/2/3 nodes). Replicas are readable, not passive standby.
         # https://docs.ovhcloud.com/en/guides/public-cloud/databases/postgresql-concept-high-availability
         if min_nodes > 1:
