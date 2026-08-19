@@ -1014,6 +1014,18 @@ def inventory_ipv4_prices(vendor) -> list[dict]:
     return items
 
 
+_APAC_DATABASE_REGIONS = frozenset({"SGP", "AP-SOUTH-MUM", "SYD"})
+
+
+def _catalog_suffixes(region) -> tuple[str, ...]:
+    """Return catalog addon suffixes to try for a database region."""
+    if region.region_id in _APAC_DATABASE_REGIONS:
+        return (".apac", ".APAC", "")
+    if len(region.zones) > 1:
+        return (".3az", ".3AZ", "")
+    return ("",)
+
+
 def inventory_databases(vendor):
     """List Public Cloud Databases for PostgreSQL compute SKUs.
 
@@ -1078,7 +1090,7 @@ def inventory_databases(vendor):
         scheduled_backups = False
         continuous_backups = 0
         sla = None
-        status = Status.INACTIVE
+        offer_statuses: set[Status] = set()
 
         for offer in offers:
             lifecycle = offer.get("lifecycle", {}).get("status")
@@ -1088,8 +1100,7 @@ def inventory_databases(vendor):
                 offer_status = Status.ACTIVE
             else:
                 offer_status = Status.INACTIVE
-            if offer_status == Status.ACTIVE:
-                status = Status.ACTIVE
+            offer_statuses.add(offer_status)
 
             region = regions.get(offer.get("region"))
             multi_az = region is not None and len(region.zones) > 1
@@ -1141,6 +1152,8 @@ def inventory_databases(vendor):
             if offer_sla is not None:
                 sla = offer_sla if sla is None else max(sla, offer_sla)
 
+        status = Status.best(offer_statuses) if offer_statuses else Status.INACTIVE
+
         items.append(
             {
                 "vendor_id": vendor.vendor_id,
@@ -1162,7 +1175,7 @@ def inventory_databases(vendor):
                 # Service plan tier (Essential, Production, Advanced, ...).
                 "family": plan_label,
                 "vcpus": vcpus,
-                "memory_amount": memory * _MIB_PER_GIB,
+                "memory_amount": memory * _MIB_PER_GIB if memory is not None else None,
                 "storage_size": storage_size,
                 "storage_extra_min": 0 if storage_extra_max is not None else None,
                 "storage_extra_max": storage_extra_max,
@@ -1252,12 +1265,7 @@ def inventory_database_prices(vendor):
         if databases and database_id not in databases:
             continue
         multi_az = len(region.zones) > 1
-        if region.region_id in {"SGP", "AP-SOUTH-MUM", "SYD"}:
-            suffixes = (".apac", ".APAC", "")
-        elif multi_az:
-            suffixes = (".3az", ".3AZ", "")
-        else:
-            suffixes = ("",)
+        suffixes = _catalog_suffixes(region)
         plan_code = offer.get("planCode", "")
         catalog_key = (
             plan_code
@@ -1399,13 +1407,7 @@ def inventory_database_storage_prices(vendor):
         storage_id = f"postgresql-{plan}-additional"
         if storages and storage_id not in storages:
             continue
-        multi_az = len(region.zones) > 1
-        if region.region_id in {"SGP", "AP-SOUTH-MUM", "SYD"}:
-            suffixes = (".apac", ".APAC", "")
-        elif multi_az:
-            suffixes = (".3az", ".3AZ", "")
-        else:
-            suffixes = ("",)
+        suffixes = _catalog_suffixes(region)
         catalog_key = (
             f"databases.postgresql-{plan}-additionnal-storage-gb.hour.consumption"
         )

@@ -23,7 +23,7 @@ from ..table_fields import (
     StorageType,
     TrafficDirection,
 )
-from ..utils import _GIB_TO_GB, _MIB_PER_GIB, jsoned_hash
+from ..utils import _GIB_TO_GB, _HOURS_PER_MONTH, _MIB_PER_GIB, jsoned_hash
 
 # ##############################################################################
 # Cached client wrappers
@@ -676,8 +676,8 @@ def inventory_databases(vendor):
             family = "2-node HA"
         else:
             family = "3-node HA"
-        display_name = components.get("compute", {}).get("name")
-        compute = components.get("compute") or {}
+        compute = components.get("compute", {})
+        display_name = compute.get("name")
         cpu = compute.get("cpu")
         memory_gb = compute.get("memory_gb")
         # Per-node compute profile from service-types/pg `components.compute`.
@@ -699,11 +699,15 @@ def inventory_databases(vendor):
             f"({', '.join(filter(None, description_parts))})"
         )
         backup_cfg = plan.get("backup_config_pg", {})
-        continuous_backups = (
-            backup_cfg.get("max_count")
-            if backup_cfg.get("recovery_mode") == "pitr"
-            else None
-        )
+        if backup_cfg.get("recovery_mode") == "pitr":
+            interval = backup_cfg.get("interval")
+            max_count = backup_cfg.get("max_count")
+            if interval is not None and max_count is not None:
+                continuous_backups = (max_count * interval) // 24
+            else:
+                continuous_backups = None
+        else:
+            continuous_backups = None
         zones = plan.get("zones", {}).get("zone", [])
         status = Status.ACTIVE if zones else Status.INACTIVE
         # Multi-node plans include primary and standby nodes; standbys accept
@@ -764,7 +768,7 @@ def inventory_databases(vendor):
                 # Plans include daily full backups (`backup_config.interval`).
                 # https://upcloud.com/docs/products/managed-postgresql/backups/
                 "scheduled_backups": bool(backup_cfg.get("interval")),
-                # PITR retention days from backup_config_pg.max_count.
+                # PITR retention days from backup_config_pg interval × max_count.
                 # https://upcloud.com/docs/products/managed-postgresql/backups/
                 "continuous_backups": continuous_backups,
                 # Connection pools are managed via API; `properties.pgbouncer` exists.
@@ -899,7 +903,7 @@ def inventory_database_storage_prices(vendor):
                 "database_storage_id": storage_id,
                 "unit": PriceUnit.GB_MONTH,
                 # UpCloud list prices are hourly; normalize to GB/month.
-                "price": (float(raw_price) / 100) * 24 * 30,
+                "price": (float(raw_price) / 100) * _HOURS_PER_MONTH,
                 "currency": currency,
             }
         )

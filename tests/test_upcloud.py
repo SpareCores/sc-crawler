@@ -303,4 +303,4 @@ def test_upcloud_inventory_database_storage_prices_from_zone_list():
     assert {row["region_id"] for row in rows} == {"fi-hel1", "de-fra1"}
     assert rows[0]["database_storage_id"] == "additional-disk"
     assert rows[0]["unit"] == PriceUnit.GB_MONTH
-    assert round(rows[0]["price"], 4) == 7.2
+    assert round(rows[0]["price"], 4) == 7.3

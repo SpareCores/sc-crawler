@@ -465,6 +465,12 @@ def test_inventory_databases_collapses_versions_and_maps_fields(mock_ovh_client)
         ),
         _pg_offer(engine="mysql", plan="production", version="8"),
         _pg_offer(version="16", region="GRA", status="UNAVAILABLE"),
+        _pg_offer(
+            plan="business",
+            version="16",
+            region="GRA",
+            status="END_OF_LIFE",
+        ),
     ]
     _extend_ovh_get(
         mock_ovh_client,
@@ -479,6 +485,7 @@ def test_inventory_databases_collapses_versions_and_maps_fields(mock_ovh_client)
         "postgresql-production-b3-8",
         "postgresql-essential-b3-8",
         "postgresql-discovery-b3-8",
+        "postgresql-business-b3-8",
     }
 
     production = by_id["postgresql-production-b3-8"]
@@ -529,6 +536,9 @@ def test_inventory_databases_collapses_versions_and_maps_fields(mock_ovh_client)
     assert discovery["ha"] == [DatabaseHaLevel.NONE]
     assert discovery["ha_strategy"] == [DatabaseHaStrategy.NONE]
     assert discovery["sla"] is None
+
+    retired = by_id["postgresql-business-b3-8"]
+    assert retired["status"] == Status.RETIRED
 
 
 def test_inventory_databases_merges_multi_az_ha(mock_ovh_client):

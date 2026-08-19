@@ -148,6 +148,14 @@ _DATABASE_PLAN_TYPES: dict[str, str] = {
     "occ_so": "Optimized Cloud Compute Storage Optimized",
 }
 
+_DATABASE_TIERS = frozenset({"hobbyist", "startup", "business", "premium"})
+_DATABASE_PITR_DAYS_BY_TIER: dict[str, int | None] = {
+    "hobbyist": None,
+    "startup": 2,
+    "business": 14,
+    "premium": 30,
+}
+
 _CPU_MODEL_PREFIXES: tuple[str, ...] = (
     "EPYC ",
     "Grace ",
@@ -297,29 +305,30 @@ def _storage_type_from_plan(plan: dict) -> StorageType:
     return _DISK_TYPES.get(plan.get("type"))
 
 
+def _database_plan_tier(database_id: str) -> str:
+    """Return the node-plan tier token from a vultr-dbaas id, or '' if absent."""
+    parts = database_id.split("-")
+    if len(parts) <= 2:
+        return ""
+    tier = parts[2].lower()
+    return tier if tier in _DATABASE_TIERS else ""
+
+
 def _database_family_name(plan: dict) -> str:
     """Build readable managed database family from plan id and type."""
-    database_id = plan.get("id", "")
-    parts = database_id.split("-")
-    tier_token = parts[2].lower() if len(parts) > 2 else ""
-    tiers = {"hobbyist", "startup", "business", "premium"}
-    tier = tier_token.title() if tier_token in tiers else ""
-    plan_type = _DATABASE_PLAN_TYPES.get(plan.get("type"), plan.get("type", "Unknown"))
-    return f"{tier} {plan_type}".strip()
+    tier = _database_plan_tier(plan.get("id", ""))
+    tier_label = tier.title() if tier else ""
+    plan_type = plan.get("type") or "Unknown"
+    plan_type = _DATABASE_PLAN_TYPES.get(plan_type, plan_type)
+    return f"{tier_label} {plan_type}".strip()
 
 
 def _database_pitr_days(database_id: str) -> int | None:
     """Map Vultr PostgreSQL node-plan tier to PITR retention days."""
-    parts = database_id.split("-")
-    if len(parts) < 3:
+    tier = _database_plan_tier(database_id)
+    if not tier:
         return None
-    tier = parts[2].lower()
-    return {
-        "premium": 30,
-        "business": 14,
-        "startup": 2,
-        "hobbyist": None,
-    }.get(tier)
+    return _DATABASE_PITR_DAYS_BY_TIER.get(tier)
 
 
 def _server_description(
@@ -395,7 +404,7 @@ def _vultr_auth_headers() -> dict[str, str]:
     try:
         api_key = environ["VULTR_API_KEY"]
     except KeyError:
-        raise KeyError("Missing environment variable: VULTR_API_KEY")
+        raise KeyError("Missing environment variable: VULTR_API_KEY") from None
     return {"Authorization": f"Bearer {api_key}"}
 
 
@@ -407,6 +416,7 @@ def _get_database_plans():
         params={"engine": "pg", "per_page": 500},
         timeout=10,
     )
+    response.raise_for_status()
     return response.json().get("plans", [])
 
 
@@ -418,6 +428,7 @@ def _get_database_available_services():
         params={"per_page": 500},
         timeout=10,
     )
+    response.raise_for_status()
     return response.json()
 
 
