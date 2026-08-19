@@ -326,10 +326,21 @@ def test_azure_sku_lifecycle_status_from_retired_sizes_list():
         "Standard_L8s_v2",
         "Standard_NV12s_v3",
         "Standard_NV8as_v4",
+        "Standard_NV8ahs_v4",
         "Standard_NP10s",
+        "Standard_HC44rs",
+        "Standard_HC44-16rs",
         "Standard_M192ims_v2",
+        "Standard_M192ids_v2",
     ]
     retired = [
+        "Standard_A2",
+        "Standard_NC6",
+        "Standard_NC24r",
+        "Standard_NC12s_v2",
+        "Standard_ND6",
+        "Standard_ND24r",
+        "Standard_DC2s_v2",
         "Standard_NC6s_v3",
         "Standard_NC24rs_v3",
     ]
@@ -372,6 +383,24 @@ def test_azure_sku_lifecycle_status_transitions_on_retirement_date():
     )
     assert (
         _azure_sku_lifecycle_status("Standard_D2", as_of=date(2028, 5, 1))
+        == Status.RETIRED
+    )
+    # NVv4 (as_v4): retires 2026-09-30
+    assert (
+        _azure_sku_lifecycle_status("Standard_NV8as_v4", as_of=date(2026, 9, 29))
+        == Status.PLANNED_FOR_RETIREMENT
+    )
+    assert (
+        _azure_sku_lifecycle_status("Standard_NV8as_v4", as_of=date(2026, 9, 30))
+        == Status.RETIRED
+    )
+    # NVv4 (ahs_v4): retires 2026-09-30
+    assert (
+        _azure_sku_lifecycle_status("Standard_NV8ahs_v4", as_of=date(2026, 9, 29))
+        == Status.PLANNED_FOR_RETIREMENT
+    )
+    assert (
+        _azure_sku_lifecycle_status("Standard_NV8ahs_v4", as_of=date(2026, 9, 30))
         == Status.RETIRED
     )
     # NP-series: retires 2027-05-31
