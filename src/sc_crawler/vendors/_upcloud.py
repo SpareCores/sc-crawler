@@ -768,7 +768,7 @@ def inventory_databases(vendor):
                 # Plans include daily full backups (`backup_config.interval`).
                 # https://upcloud.com/docs/products/managed-postgresql/backups/
                 "scheduled_backups": bool(backup_cfg.get("interval")),
-                # PITR retention days from backup_config_pg interval × max_count.
+                # PITR retention days from backup_config_pg interval * max_count.
                 # https://upcloud.com/docs/products/managed-postgresql/backups/
                 "continuous_backups": continuous_backups,
                 # Connection pools are managed via API; `properties.pgbouncer` exists.

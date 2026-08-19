@@ -1,3 +1,7 @@
+## v0.9.x (DEVELOPMENT)
+
+- Implement database inventories for `OVH`, `UpCloud` and `VultR`.
+
 ## v0.9.2 (August 17, 2026)
 
 New feature(s):
