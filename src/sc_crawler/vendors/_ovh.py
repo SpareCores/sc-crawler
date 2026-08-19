@@ -10,6 +10,12 @@ from ..table_fields import (
     Allocation,
     CpuAllocation,
     CpuArchitecture,
+    DatabaseEngine,
+    DatabaseHaLevel,
+    DatabaseHaStrategy,
+    DatabaseSecurityFeature,
+    DatabaseStorageScope,
+    DatabaseWireProtocol,
     Disk,
     PriceUnit,
     Status,
@@ -111,6 +117,28 @@ def _get_catalog(subsidiary: str = getenv("OVH_SUBSIDIARY", "IE")) -> dict:
         Catalog dictionary with plans and addons.
     """
     return _client().get("/order/catalog/public/cloud", ovhSubsidiary=subsidiary)
+
+
+@cache
+def _get_database_availability(project_id: Optional[str] = None) -> list[dict]:
+    """Fetch Public Cloud Databases availability combinations.
+
+    Endpoint: `GET /cloud/project/{serviceName}/database/availability`
+    https://eu.api.ovh.com/console/?section=%2Fcloud&branch=v1#get-/cloud/project/-serviceName-/database/availability
+    """
+    project_id = project_id or _get_project_id()
+    return _client().get(f"/cloud/project/{project_id}/database/availability")
+
+
+@cache
+def _get_database_capabilities(project_id: Optional[str] = None) -> dict:
+    """Fetch Public Cloud Databases engine, plan, and flavor capabilities.
+
+    Endpoint: `GET /cloud/project/{serviceName}/database/capabilities`
+    https://eu.api.ovh.com/console/?section=%2Fcloud&branch=v1#get-/cloud/project/-serviceName-/database/capabilities
+    """
+    project_id = project_id or _get_project_id()
+    return _client().get(f"/cloud/project/{project_id}/database/capabilities")
 
 
 def _get_server_family(instance_type_name: str) -> str | None:
@@ -980,20 +1008,371 @@ def inventory_ipv4_prices(vendor) -> list[dict]:
     return items
 
 
-# TODO: Implement database collectors
-
-
 def inventory_databases(vendor):
-    return []
+    """List Public Cloud Databases for PostgreSQL compute SKUs.
+
+    Data sources:
+
+    - `GET /cloud/project/{serviceName}/database/availability`
+    - `GET /cloud/project/{serviceName}/database/capabilities`
+    - https://docs.ovhcloud.com/en/guides/public-cloud/databases/postgresql-capabilities
+    - https://docs.ovhcloud.com/en/guides/public-cloud/databases/postgresql-concept-high-availability
+    """
+    vendor.progress_tracker.start_task(name="Fetching database catalogs", total=None)
+    availability = _get_database_availability()
+    capabilities = _get_database_capabilities()
+    vendor.progress_tracker.hide_task()
+
+    flavors = {f["name"]: f for f in capabilities["flavors"]}
+    regions = scmodels_to_dict(vendor.regions, keys=["api_reference"])
+    servers = {server.api_reference: server for server in vendor.servers}
+
+    merged: dict[str, dict] = {}
+    for offer in availability:
+        if offer["engine"] != "postgresql":
+            continue
+        lifecycle = offer["lifecycle"]["status"]
+        if lifecycle in {"UNAVAILABLE", "END_OF_LIFE"}:
+            continue
+        engine = offer["engine"]
+        plan = offer["plan"]
+        flavor_name = offer["specifications"]["flavor"]
+        database_id = f"{engine}_{plan}_{flavor_name}"
+        region = regions.get(offer["region"])
+        # https://labs.ovhcloud.com/en/3az-databases-analytics/
+        multi_az = region is not None and len(region.zones) > 1
+        nodes = offer["specifications"]["nodes"]
+        min_nodes = nodes["minimum"]
+        max_nodes = nodes["maximum"]
+        extra_min = offer["specifications"]["storage"]["minimum"]["value"]
+        extra_max = offer["specifications"]["storage"]["maximum"]["value"]
+        scheduled = offer["backups"]["available"]
+        retention = offer["backups"]["retentionDays"]
+        status = Status.ACTIVE if lifecycle in {"STABLE", "BETA"} else Status.INACTIVE
+        # Plan topology is fixed (1/2/3 nodes). Replicas are readable, not passive standby.
+        # https://docs.ovhcloud.com/en/guides/public-cloud/databases/postgresql-concept-high-availability
+        if min_nodes > 1:
+            ha_level = (
+                DatabaseHaLevel.MULTI_ZONE if multi_az else DatabaseHaLevel.SINGLE_ZONE
+            )
+            ha_strategy = DatabaseHaStrategy.READABLE_CLUSTER
+        else:
+            ha_level = DatabaseHaLevel.NONE
+            ha_strategy = DatabaseHaStrategy.NONE
+        # https://docs.ovhcloud.com/en/guides/public-cloud/databases/capabilities
+        # https://docs.ovhcloud.com/en/guides/public-cloud/databases/concepts-security-overview
+        if plan in {"enterprise", "advanced"}:
+            sla = 99.99 if multi_az else 99.95
+        elif plan in {"business", "production"}:
+            sla = 99.95 if multi_az else 99.9
+        else:
+            sla = None
+
+        row = merged.get(database_id)
+        if row is None:
+            flavor = flavors[flavor_name]
+            flavor_specs = flavor["specifications"]
+            vcpus = flavor_specs["core"]
+            memory = flavor_specs["memory"]["value"]
+            storage_size = flavor_specs["storage"]["value"]
+            spec_parts = [
+                f"{vcpus} vCPU{'s' if vcpus != 1 else ''}",
+                f"{memory} GB RAM",
+                f"{storage_size} GB SSD",
+            ]
+            plan_label = plan.replace("-", " ").title()
+            server = servers.get(flavor_name)
+            row = {
+                "vendor_id": vendor.vendor_id,
+                "database_id": database_id,
+                "name": database_id,
+                "api_reference": offer["planCode"],
+                # https://www.pulumi.com/registry/packages/ovh/api-docs/cloudproject/database/
+                "api_reference_object": {
+                    "engine": engine,
+                    "plan": plan,
+                    "flavor": flavor_name,
+                },
+                "display_name": f"{plan_label} {flavor_name}",
+                "description": f"PostgreSQL {plan_label} ({', '.join(spec_parts)})",
+                "server_id": server.server_id if server else None,
+                "engine": DatabaseEngine.POSTGRESQL,
+                "wire_protocol": DatabaseWireProtocol.POSTGRESQL,
+                "engine_versions": set(),
+                "family": flavor_name,
+                "vcpus": vcpus,
+                "memory_amount": memory * _MIB_PER_GIB,
+                "storage_size": storage_size,
+                "storage_extra_min": extra_min,
+                "storage_extra_max": extra_max,
+                "storage_extra_autosize": False,
+                "ha": set(),
+                "ha_strategy": set(),
+                "max_read_replicas": max_nodes - 1,
+                # https://docs.ovhcloud.com/en/guides/public-cloud/databases/advanced-configuration
+                "custom_config": True,
+                # https://docs.ovhcloud.com/en/guides/public-cloud/databases/postgresql-extensions
+                "custom_extensions": True,
+                # https://docs.ovhcloud.com/en/guides/public-cloud/databases/concepts-security-overview
+                "disk_encryption": True,
+                # https://docs.ovhcloud.com/en/guides/public-cloud/databases/capabilities
+                "auto_upgrade_versions": True,
+                "scheduled_backups": scheduled,
+                "continuous_backups": retention,
+                # https://docs.ovhcloud.com/en/guides/public-cloud/databases/postgresql-pool
+                "connection_pool": True,
+                # https://docs.ovhcloud.com/en/guides/public-cloud/databases/postgresql-capabilities
+                "system_monitoring": True,
+                "database_monitoring": True,
+                "autotuning_advice": False,
+                "autotuning_apply": False,
+                "sla": sla,
+                "status": status,
+            }
+            merged[database_id] = row
+        row["engine_versions"].add(offer["version"])
+        row["ha"].add(ha_level)
+        row["ha_strategy"].add(ha_strategy)
+        row["max_read_replicas"] = max(row["max_read_replicas"], max_nodes - 1)
+        row["storage_extra_min"] = min(row["storage_extra_min"], extra_min)
+        row["storage_extra_max"] = max(row["storage_extra_max"], extra_max)
+        row["scheduled_backups"] = row["scheduled_backups"] or scheduled
+        row["continuous_backups"] = max(row["continuous_backups"], retention)
+        if sla is not None:
+            row["sla"] = sla if row["sla"] is None else max(row["sla"], sla)
+        if status == Status.ACTIVE:
+            row["status"] = Status.ACTIVE
+
+    items = []
+    for row in merged.values():
+        row["engine_versions"] = sorted(row["engine_versions"])
+        row["ha"] = [
+            level
+            for level in (
+                DatabaseHaLevel.MULTI_ZONE,
+                DatabaseHaLevel.SINGLE_ZONE,
+                DatabaseHaLevel.NONE,
+            )
+            if level in row["ha"]
+        ]
+        row["ha_strategy"] = [
+            strategy
+            for strategy in (
+                DatabaseHaStrategy.READABLE_CLUSTER,
+                DatabaseHaStrategy.NONE,
+            )
+            if strategy in row["ha_strategy"]
+        ]
+        # https://docs.ovhcloud.com/en/guides/public-cloud/databases/concepts-security-overview
+        # IP restrictions, vRack, enforced TLS, pgaudit. No customer-managed keys.
+        row["security_features"] = [
+            DatabaseSecurityFeature.IP_FILTERING,
+            DatabaseSecurityFeature.PRIVATE_NETWORK,
+            DatabaseSecurityFeature.ENFORCED_TLS,
+            DatabaseSecurityFeature.AUDIT_LOGGING,
+        ]
+        items.append(row)
+    return items
 
 
 def inventory_database_prices(vendor):
-    return []
+    """Fetch Public Cloud Databases for PostgreSQL on-demand compute prices.
+
+    Hourly consumption addons come from `/order/catalog/public/cloud`.
+    Catalog lookup uses `databases.{planCode}` with `.apac` / `.3az` suffixes.
+    Price is the full cluster amount (per-node catalog rate × included nodes).
+    """
+    regions = scmodels_to_dict(vendor.regions, keys=["api_reference"])
+    databases = {database.database_id for database in vendor.databases}
+    vendor.progress_tracker.start_task(name="Fetching database prices", total=None)
+    catalog = _get_catalog()
+    availability = _get_database_availability()
+    vendor.progress_tracker.hide_task()
+
+    addons = {addon["planCode"]: addon for addon in catalog["addons"]}
+    currency = catalog["locale"]["currencyCode"]
+    items = []
+    seen: set[tuple[str, str, DatabaseHaLevel, DatabaseHaStrategy]] = set()
+    for offer in availability:
+        if offer["engine"] != "postgresql":
+            continue
+        if offer["lifecycle"]["status"] in {"UNAVAILABLE", "END_OF_LIFE"}:
+            continue
+        region = regions.get(offer["region"])
+        if region is None:
+            vendor.log(
+                f"Excluding database offer from unknown region: {offer['region']}"
+            )
+            continue
+        engine = offer["engine"]
+        plan = offer["plan"]
+        flavor_name = offer["specifications"]["flavor"]
+        database_id = f"{engine}_{plan}_{flavor_name}"
+        if databases and database_id not in databases:
+            continue
+        multi_az = len(region.zones) > 1
+        if region.region_id in {"SGP", "AP-SOUTH-MUM", "SYD"}:
+            suffixes = (".apac", ".APAC", "")
+        elif multi_az:
+            suffixes = (".3az", ".3AZ", "")
+        else:
+            suffixes = ("",)
+        plan_code = offer["planCode"]
+        catalog_key = (
+            plan_code
+            if plan_code.startswith("databases.")
+            else f"databases.{plan_code}"
+        )
+        addon = None
+        for suffix in suffixes:
+            addon = addons.get(catalog_key + suffix)
+            if addon:
+                break
+        if addon is None:
+            vendor.log(
+                f"Excluding {database_id} in {region.region_id}: no catalog addon"
+            )
+            continue
+        node_price = None
+        for pricing in addon["pricings"]:
+            if pricing["interval"] == 0 and "consumption" in pricing["capacities"]:
+                node_price = pricing["price"] / _MICROCENTS_PER_CURRENCY_UNIT
+                break
+        if node_price is None:
+            continue
+        min_nodes = offer["specifications"]["nodes"]["minimum"]
+        if min_nodes > 1:
+            ha = DatabaseHaLevel.MULTI_ZONE if multi_az else DatabaseHaLevel.SINGLE_ZONE
+            ha_strategy = DatabaseHaStrategy.READABLE_CLUSTER
+        else:
+            ha = DatabaseHaLevel.NONE
+            ha_strategy = DatabaseHaStrategy.NONE
+        key = (region.region_id, database_id, ha, ha_strategy)
+        if key in seen:
+            continue
+        seen.add(key)
+        items.append(
+            {
+                "vendor_id": vendor.vendor_id,
+                "region_id": region.region_id,
+                "database_id": database_id,
+                "allocation": Allocation.ONDEMAND,
+                "ha": ha,
+                "ha_strategy": ha_strategy,
+                "unit": PriceUnit.HOUR,
+                "price": node_price * min_nodes,
+                "price_upfront": 0,
+                "price_tiered": [],
+                "currency": currency,
+            }
+        )
+    return items
 
 
 def inventory_database_storages(vendor):
-    return []
+    """List extra disk for Public Cloud PostgreSQL.
+
+    Each flavor includes a base volume; extra GB can be attached up to the
+    availability maximum and is billed separately.
+    https://docs.ovhcloud.com/en/guides/public-cloud/databases/resize-cluster-storage
+    https://docs.ovhcloud.com/en/guides/public-cloud/databases/pricing
+    """
+    availability = _get_database_availability()
+    merged: dict[str, dict] = {}
+    for offer in availability:
+        if offer["engine"] != "postgresql":
+            continue
+        if offer["lifecycle"]["status"] in {"UNAVAILABLE", "END_OF_LIFE"}:
+            continue
+        storage = offer["specifications"]["storage"]
+        additional_max = storage["maximum"]["value"] - storage["minimum"]["value"]
+        if additional_max <= 0:
+            continue
+        plan = offer["plan"]
+        storage_id = f"postgresql-{plan}-additional"
+        row = merged.get(storage_id)
+        if row is None:
+            plan_label = plan.replace("-", " ").title()
+            merged[storage_id] = {
+                "vendor_id": vendor.vendor_id,
+                "database_storage_id": storage_id,
+                "name": storage_id,
+                "description": f"PostgreSQL {plan_label} additional storage",
+                "scope": DatabaseStorageScope.DATA,
+                "min_size": 0,
+                "max_size": additional_max,
+            }
+        else:
+            row["max_size"] = max(row["max_size"], additional_max)
+    return list(merged.values())
 
 
 def inventory_database_storage_prices(vendor):
-    return []
+    """Fetch extra PostgreSQL disk prices (GB-month) from the public catalog."""
+    regions = scmodels_to_dict(vendor.regions, keys=["api_reference"])
+    storages = {storage.database_storage_id for storage in vendor.database_storages}
+    catalog = _get_catalog()
+    availability = _get_database_availability()
+    addons = {addon["planCode"]: addon for addon in catalog["addons"]}
+    currency = catalog["locale"]["currencyCode"]
+    items = []
+    seen: set[tuple[str, str]] = set()
+    for offer in availability:
+        if offer["engine"] != "postgresql":
+            continue
+        if offer["lifecycle"]["status"] in {"UNAVAILABLE", "END_OF_LIFE"}:
+            continue
+        region = regions.get(offer["region"])
+        if region is None:
+            vendor.log(
+                f"Excluding database storage from unknown region: {offer['region']}"
+            )
+            continue
+        plan = offer["plan"]
+        storage_id = f"postgresql-{plan}-additional"
+        if storages and storage_id not in storages:
+            continue
+        multi_az = len(region.zones) > 1
+        if region.region_id in {"SGP", "AP-SOUTH-MUM", "SYD"}:
+            suffixes = (".apac", ".APAC", "")
+        elif multi_az:
+            suffixes = (".3az", ".3AZ", "")
+        else:
+            suffixes = ("",)
+        catalog_key = (
+            f"databases.postgresql-{plan}-additionnal-storage-gb.hour.consumption"
+        )
+        addon = None
+        for suffix in suffixes:
+            addon = addons.get(catalog_key + suffix)
+            if addon:
+                break
+        if addon is None:
+            vendor.log(
+                f"Excluding {storage_id} in {region.region_id}: no catalog addon"
+            )
+            continue
+        gb_hour = None
+        for pricing in addon["pricings"]:
+            if pricing["interval"] == 0 and "consumption" in pricing["capacities"]:
+                gb_hour = pricing["price"] / _MICROCENTS_PER_CURRENCY_UNIT
+                break
+        if gb_hour is None:
+            continue
+        key = (region.region_id, storage_id)
+        if key in seen:
+            continue
+        seen.add(key)
+        items.append(
+            {
+                "vendor_id": vendor.vendor_id,
+                "region_id": region.region_id,
+                "database_storage_id": storage_id,
+                "unit": PriceUnit.GB_MONTH,
+                "price": gb_hour * _HOURS_PER_MONTH,
+                "price_upfront": 0,
+                "price_tiered": [],
+                "currency": currency,
+            }
+        )
+    return items
