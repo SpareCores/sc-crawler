@@ -13,6 +13,7 @@ from ..table_fields import (
     CpuAllocation,
     CpuArchitecture,
     PriceUnit,
+    Status,
     StorageType,
     TrafficDirection,
 )
@@ -121,6 +122,23 @@ def _parse_server_name(name):
         description_parts.append(f"{data['gpu_count']}x {data['gpu_model']}")
     data["description"] = f"{data['family']} ({', '.join(description_parts)})"
     return data
+
+
+def _upcloud_server_status(vendor, server: dict) -> Status:
+    """Map plan current_offering and GPU stock to Server status."""
+    if server.get("current_offering") == "no":
+        return Status.RETIRED
+    if server.get("family") != "gpu":
+        return Status.ACTIVE
+    for region in vendor.regions:
+        amount = (
+            _get_gpu_region_availability(region.region_id)
+            .get(server["name"], {})
+            .get("amount", 0)
+        )
+        if amount:
+            return Status.ACTIVE
+    return Status.INACTIVE
 
 
 _UPCLOUD_GPU_MEMORY_MIB = {
@@ -386,6 +404,12 @@ def inventory_zones(vendor):
 
 
 def inventory_servers(vendor):
+    """List all server plans from UpCloud API.
+
+    Lifecycle: `current_offering == "no"` -> RETIRED; GPU plans with zero stock
+    in `/device/availability` across all regions -> INACTIVE; otherwise ACTIVE.
+    See `_upcloud_server_status`.
+    """
     servers = _client().get_server_plans()["plans"]["plan"]
     items = []
     for server in servers:
@@ -438,6 +462,7 @@ def inventory_servers(vendor):
                     "inbound_traffic": 0,
                     "outbound_traffic": server["public_traffic_out"],
                     "ipv4": 0 if server_data["family"] == "CLOUDNATIVE" else 1,
+                    "status": _upcloud_server_status(vendor, server),
                 }
             )
     return items

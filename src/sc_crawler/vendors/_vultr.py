@@ -390,7 +390,10 @@ def inventory_zones(vendor):
 
 
 def inventory_servers(vendor):
-    """List all servers from Vultr API."""
+    """List all servers from Vultr API.
+
+    Lifecycle: free plan or empty `locations` -> INACTIVE, otherwise ACTIVE.
+    """
     plans = _get_plans()
     plans_metal = _get_plans_metal()
 
@@ -544,8 +547,10 @@ def inventory_servers(vendor):
         }
 
         # exclude limited plans not generally available without scale
-        if item["server_id"] == "vc2-1c-0.5gb-free":
+        if item["server_id"] == "vc2-1c-0.5gb-free" or not server.get("locations"):
             item["status"] = Status.INACTIVE
+        else:
+            item["status"] = Status.ACTIVE
 
         items.append(item)
     return items

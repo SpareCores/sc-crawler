@@ -153,6 +153,23 @@ STORAGE_DESCRIPTION_TO_FAMILY = {
 # partial list of storages to exclude options with extra pricing on IOPS/throughput
 STORAGE_ALLOWLIST = ["pd-standard", "pd-ssd", "pd-balanced"]
 
+# Compute Engine machineTypes.deprecated.state.
+# https://cloud.google.com/compute/docs/reference/rest/v1/machineTypes
+# DEPRECATED: still creatable, with a replacement warning.
+# OBSOLETE / DELETED: create is rejected.
+_GCP_DEPRECATION_STATE_TO_STATUS = {
+    "": Status.ACTIVE,
+    "ACTIVE": Status.ACTIVE,
+    "DEPRECATED": Status.PLANNED_FOR_RETIREMENT,
+    "OBSOLETE": Status.RETIRED,
+    "DELETED": Status.RETIRED,
+}
+
+
+def _gcp_machine_type_status(deprecated_state: str | None) -> Status:
+    """Map Compute Engine DeprecationStatus.state to Server/Database status."""
+    return _GCP_DEPRECATION_STATE_TO_STATUS.get(deprecated_state or "", Status.ACTIVE)
+
 
 def _server_family(server_name: str) -> str:
     """Look up server family based on server name to build the SKU lookup key."""
@@ -322,9 +339,7 @@ def _search_servers(zone_name: str) -> List[dict]:
                 "inbound_traffic": 0,
                 "outbound_traffic": 0,
                 "ipv4": 0,
-                "status": (
-                    Status.ACTIVE if server.deprecated.state == "" else Status.INACTIVE
-                ),
+                "status": _gcp_machine_type_status(server.deprecated.state),
             }
         )
     return zone_servers
@@ -888,7 +903,12 @@ def inventory_zones(vendor):
 
 
 def inventory_servers(vendor):
-    """List all available GCP servers available in all zones."""
+    """List all available GCP servers available in all zones.
+
+    Lifecycle (`machineTypes.deprecated.state`): DEPRECATED -> PLANNED_FOR_RETIREMENT,
+    OBSOLETE / DELETED -> RETIRED, empty / ACTIVE -> ACTIVE.
+    See `_gcp_machine_type_status`.
+    """
     servers = parallel_fetch_servers(vendor, _search_servers, "name", "zones")
     servers = preprocess_servers(servers, vendor, add_vendor_id)
     return servers
@@ -1331,14 +1351,16 @@ def inventory_databases(vendor):
         description = f"PostgreSQL Cloud SQL {family_label}"
         if spec_parts:
             description = f"{description} ({', '.join(spec_parts)})"
-        server_id = next(
+        server = next(
             (
-                server.server_id
-                for server in vendor.servers
-                if server.api_reference == tier_name.removeprefix("db-")
+                item
+                for item in vendor.servers
+                if item.api_reference == tier_name.removeprefix("db-")
             ),
             None,
         )
+        server_id = server.server_id if server is not None else None
+        status = server.status if server is not None else Status.ACTIVE
         raw_regions = tier.get("region")
         if isinstance(raw_regions, str):
             tier_regions = [raw_regions]
@@ -1463,6 +1485,7 @@ def inventory_databases(vendor):
                         else None
                     )
                 ),
+                "status": status,
             }
         )
         vendor.progress_tracker.advance_task()

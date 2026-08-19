@@ -949,7 +949,11 @@ def inventory_zones(vendor):
 
 
 def inventory_servers(vendor):
-    """List all available AWS instance types in all regions via `boto3` calls."""
+    """List all available AWS instance types in all regions via `boto3` calls.
+
+    Lifecycle (`DescribeInstanceTypeOfferings`): not offered in any active
+    region/zone -> INACTIVE. No type-level EC2 retirement API exists.
+    """
     # TODO consider dropping this in favor of pricing.get_products, as
     #      it has info e.g. on instanceFamily although other fields
     #      are messier (e.g. extract memory from string)
@@ -1042,6 +1046,18 @@ def inventory_server_prices(vendor):
         finally:
             vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
+
+    # Not offered in any ACTIVE region/zone. AWS does not confirm retirement,
+    # so mark INACTIVE rather than RETIRED. Prices may still be published.
+    offered_server_ids = {
+        server_id
+        for zone_servers in regions_servers.values()
+        for server_id in zone_servers
+    }
+    for server in vendor.servers:
+        if server.server_id not in offered_server_ids:
+            server.status = Status.INACTIVE
+
     return server_prices
 
 
@@ -1454,8 +1470,7 @@ def _lookup_orderable_db_instance_options(
         {
             database_id
             for region_classes in prices_by_region.values()
-            for database_id, attrs in region_classes.items()
-            if attrs.get("currentGeneration") == "Yes"
+            for database_id in region_classes
         }
     )
     vendor.progress_tracker.start_task(
@@ -1566,7 +1581,11 @@ def _get_rds_instance_products_by_region() -> tuple[
 
 
 def inventory_databases(vendor):
-    """List all available AWS RDS PostgreSQL instance types via `boto3` calls."""
+    """List all available AWS RDS PostgreSQL instance types via `boto3` calls.
+
+    Lifecycle (`DescribeOrderableDBInstanceOptions`): no orderable options ->
+    RETIRED; otherwise ACTIVE.
+    """
     vendor.progress_tracker.start_task(name="Searching for database(s)", total=None)
     prices_by_region, deployment_options_by_database = (
         _get_rds_instance_products_by_region()
@@ -1590,11 +1609,10 @@ def inventory_databases(vendor):
                 continue
             seen_database_ids.add(database_id)
             db_instance_options = options_by_database.get(database_id, [])
-            status = Status.ACTIVE
-            # Pricing keeps previous-gen SKUs (currentGeneration=No) after AWS stops
-            # allowing new launches; add these classes with INACTIVE status.
             if not db_instance_options:
-                status = Status.INACTIVE
+                status = Status.RETIRED
+            else:
+                status = Status.ACTIVE
             deployment_options = deployment_options_by_database.get(
                 database_id, frozenset()
             )

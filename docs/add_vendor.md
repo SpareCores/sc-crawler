@@ -38,6 +38,14 @@ The functions should return an array of dict representing the related objects. T
 
 Other functions and variables must be prefixed with an underscore to suggest those are internal tools.
 
+## Status and retirement checks
+
+Set `status` on every `Server` and `Database` row. Possible values: `ACTIVE`, `INACTIVE`, `PLANNED_FOR_RETIREMENT`, `RETIRED`.
+
+- Map the vendor's lifecycle API fields to these four states. Document the mapping in the `inventory_servers` / `inventory_databases` docstring.
+- Use only explicit API or documentation signals for `PLANNED_FOR_RETIREMENT` and `RETIRED`. Do not infer retirement from naming patterns like "previous generation" unless there is a confirmed mapping.
+- If multiple signals exist (e.g. per-region availability), pick the best: `ACTIVE` > `PLANNED_FOR_RETIREMENT` > `INACTIVE` > `RETIRED`.
+
 ## Progress bars
 
 To create progress bars, you can use the [Vendor][sc_crawler.tables.Vendor]'s [progress_tracker][sc_crawler.tables.Vendor.progress_tracker] attribute with the below methods:
