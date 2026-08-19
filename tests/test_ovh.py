@@ -502,9 +502,7 @@ def test_inventory_databases_collapses_versions_and_maps_fields(mock_ovh_client)
     assert production["storage_extra_max"] == 320
     assert production["storage_extra_autosize"] is False
     assert production["server_id"] == "b3-8"
-    assert production["api_reference"] == (
-        "postgresql-production-b3-8.hour.consumption"
-    )
+    assert production["api_reference"] == "postgresql-production-b3-8"
     assert production["api_reference_object"] == {
         "engine": "postgresql",
         "plan": "production",

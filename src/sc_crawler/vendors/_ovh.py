@@ -1159,7 +1159,7 @@ def inventory_databases(vendor):
                 "vendor_id": vendor.vendor_id,
                 "database_id": database_id,
                 "name": database_id,
-                "api_reference": sample["planCode"],
+                "api_reference": database_id,
                 # https://www.pulumi.com/registry/packages/ovh/api-docs/cloudproject/database/
                 "api_reference_object": {
                     "engine": engine,
@@ -1179,6 +1179,8 @@ def inventory_databases(vendor):
                 "storage_size": storage_size,
                 "storage_extra_min": 0 if storage_extra_max is not None else None,
                 "storage_extra_max": storage_extra_max,
+                # Flexible storage is increased manually; disk-full goes read-only until storage is provisioned.
+                # https://docs.ovhcloud.com/en/guides/public-cloud/databases/postgresql-capabilities/
                 "storage_extra_autosize": False,
                 "ha": [
                     level
