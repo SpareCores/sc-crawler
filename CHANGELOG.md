@@ -1,4 +1,34 @@
-## v0.8.x (development)
+## v0.9.1 (August 14, 2026)
+
+‼ Breaking changes:
+
+- `benchmark_score` responses expose `environment` as an object;
+  `kernel_version` / `database_engine_version` are no longer top-level fields.
+- Reshape `pgbench:heavy_read_only` ingest: `concurrency` is now an integer
+  (one raw score per profile point). Old string configs `"single"` / `"peak"`
+  move to config-less `pgbench:heavy_read_only:single` and
+  `pgbench:heavy_read_only:peak`.
+
+New:
+
+- pgbench scores record `latency_avg_ms` (plus `peak_concurrency` on the peak
+  row) in `environment`.
+
+## v0.9.0 (August 10, 2026)
+
+‼ Breaking changes:
+
+- Reshape `benchmark_score`: add `resource_type` discriminator and `resource_id`
+  (replaces `server_id`); replace `kernel_version` with an extensible
+  `environment` JSON column (e.g. `kernel_version`, `database_engine_version`).
+
+Maintenance update:
+
+- Drop empty `database_benchmark_score`; database scores use `benchmark_score`
+  with `resource_type=DATABASE`.
+- Keep `server_id` / `database_id` query and insert keys via hybrid properties 
+  and input-dict translation.
+- Ingest `pgbench` scores for database instances too.
 
 Fix(es):
 
