@@ -40,25 +40,11 @@ Other functions and variables must be prefixed with an underscore to suggest tho
 
 ## Status and retirement checks
 
-For `Server` and `Database`, `status` can be `ACTIVE`, `INACTIVE`, `PLANNED_FOR_RETIREMENT`, or `RETIRED`.
+Set `status` on every `Server` and `Database` row. Possible values: `ACTIVE`, `INACTIVE`, `PLANNED_FOR_RETIREMENT`, `RETIRED`.
 
-Current per-vendor lifecycle sources:
-
-- `AliCloud` server (`DescribeAvailableResource` `StatusCategory`): `WithStock` -> `ACTIVE`, `ClosedWithStock` -> `PLANNED_FOR_RETIREMENT`, `WithoutStock` -> `INACTIVE`, `ClosedWithoutStock` -> `RETIRED`; missing in availability response -> `INACTIVE`.
-- `AWS` server (`DescribeInstanceTypeOfferings`): not offered in any active region/zone -> `INACTIVE`; no type-level EC2 retirement API is used.
-- `AWS` database (`DescribeOrderableDBInstanceOptions`): no orderable options -> `RETIRED`; `_RDS_END_OF_SUPPORT_FAMILIES` -> `PLANNED_FOR_RETIREMENT`; otherwise -> `ACTIVE`.
-- `Azure` server + database: hardcoded lifecycle mappings (`_AZURE_RETIRED_SKU_PATTERNS` and announced SKU lists) -> `PLANNED_FOR_RETIREMENT` / `RETIRED`; otherwise `ACTIVE`.
-- `GCP` server (`machineTypes.deprecated.state`): `DEPRECATED` -> `PLANNED_FOR_RETIREMENT`, `OBSOLETE` / `DELETED` -> `RETIRED`, empty / `ACTIVE` -> `ACTIVE`.
-- `Hetzner` server (per-location server type fields): `deprecation.unavailable_after` in past -> `RETIRED`, `deprecation` present -> `PLANNED_FOR_RETIREMENT`, `available is False` or empty locations -> `INACTIVE`, otherwise `ACTIVE`.
-- `OVH` server (catalog plan `blobs.tags`): `active` tag -> `ACTIVE`, otherwise `INACTIVE` (`legacy` is not treated as retirement).
-- `UpCloud` server: `current_offering == "no"` -> `RETIRED`; GPU plans with zero stock in `/device/availability` across all regions -> `INACTIVE`; otherwise `ACTIVE`.
-- `Vultr` server: free plan or empty `locations` -> `INACTIVE`, otherwise `ACTIVE`.
-
-Rules:
-
-- Use only explicit API/doc lifecycle signals for `PLANNED_FOR_RETIREMENT` and `RETIRED`.
-- Do not infer retirement from naming patterns like "previous generation" unless there is an explicit mapping.
-- If multiple signals exist, best status wins: `ACTIVE` > `PLANNED_FOR_RETIREMENT` > `INACTIVE` > `RETIRED`.
+- Map the vendor's lifecycle API fields to these four states. Document the mapping in the `inventory_servers` / `inventory_databases` docstring.
+- Use only explicit API or documentation signals for `PLANNED_FOR_RETIREMENT` and `RETIRED`. Do not infer retirement from naming patterns like "previous generation" unless there is a confirmed mapping.
+- If multiple signals exist (e.g. per-region availability), pick the best: `ACTIVE` > `PLANNED_FOR_RETIREMENT` > `INACTIVE` > `RETIRED`.
 
 ## Progress bars
 

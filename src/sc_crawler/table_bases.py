@@ -21,7 +21,6 @@ from sqlmodel import JSON, Field, Session, SQLModel, select
 
 from .str_utils import snake_case
 from .table_fields import (
-    GENERAL_STATUSES,
     Allocation,
     Category,
     Cpu,
@@ -239,7 +238,7 @@ class MetaColumns(ScModel):
     @field_validator("status")
     @classmethod
     def _validate_status(cls, value: Status) -> Status:
-        if value not in GENERAL_STATUSES:
+        if not value.is_general:
             raise ValueError(
                 f"{value!r} is only valid for Server and Database. "
                 f"Use ACTIVE or INACTIVE for {cls.__name__}."

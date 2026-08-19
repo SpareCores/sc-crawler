@@ -210,7 +210,13 @@ def inventory_zones(vendor):
 def inventory_servers(vendor):
     """List all server types from API and manual data entry from the Hetzner Cloud homepage.
 
-    CPU information is recorded from <https://www.hetzner.com/cloud/> as not exposed via API."""
+    CPU information is recorded from <https://www.hetzner.com/cloud/> as not exposed via API.
+
+    Lifecycle (per-location server type fields): `deprecation.unavailable_after` in
+    past -> RETIRED, `deprecation` present -> PLANNED_FOR_RETIREMENT,
+    `available is False` or empty locations -> INACTIVE, otherwise ACTIVE.
+    See `_hcloud_server_status`.
+    """
     now = datetime.now(UTC)
     items = []
     for server in _client().server_types.get_all():

@@ -404,6 +404,12 @@ def inventory_zones(vendor):
 
 
 def inventory_servers(vendor):
+    """List all server plans from UpCloud API.
+
+    Lifecycle: `current_offering == "no"` -> RETIRED; GPU plans with zero stock
+    in `/device/availability` across all regions -> INACTIVE; otherwise ACTIVE.
+    See `_upcloud_server_status`.
+    """
     servers = _client().get_server_plans()["plans"]["plan"]
     items = []
     for server in servers:

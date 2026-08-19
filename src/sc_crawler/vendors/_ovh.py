@@ -578,7 +578,11 @@ def inventory_zones(vendor) -> list[dict]:
 
 
 def inventory_servers(vendor) -> list[dict]:
-    """List all server types (called "flavors" at OVHcloud)."""
+    """List all server types (called "flavors" at OVHcloud).
+
+    Lifecycle (catalog plan `blobs.tags`): `active` tag -> ACTIVE, otherwise
+    INACTIVE. The `legacy` tag is not treated as retirement.
+    """
     items = []
 
     server_plans = [

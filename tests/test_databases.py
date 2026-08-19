@@ -1,3 +1,4 @@
+from datetime import date
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -342,12 +343,46 @@ def test_azure_sku_lifecycle_status_from_retired_sizes_list():
         "Standard_NV4ads_V710_v5",
         "Standard_M64s_v2",
     ]
+    as_of = date(2026, 8, 19)
     for sku in announced:
-        assert _azure_sku_lifecycle_status(sku) == Status.PLANNED_FOR_RETIREMENT, sku
+        assert (
+            _azure_sku_lifecycle_status(sku, as_of=as_of)
+            == Status.PLANNED_FOR_RETIREMENT
+        ), sku
     for sku in retired:
-        assert _azure_sku_lifecycle_status(sku) == Status.RETIRED, sku
+        assert _azure_sku_lifecycle_status(sku, as_of=as_of) == Status.RETIRED, sku
     for sku in active:
-        assert _azure_sku_lifecycle_status(sku) == Status.ACTIVE, sku
+        assert _azure_sku_lifecycle_status(sku, as_of=as_of) == Status.ACTIVE, sku
+
+
+def test_azure_sku_lifecycle_status_transitions_on_retirement_date():
+    # NVv3: retires 2026-09-30
+    assert (
+        _azure_sku_lifecycle_status("Standard_NV12s_v3", as_of=date(2026, 9, 29))
+        == Status.PLANNED_FOR_RETIREMENT
+    )
+    assert (
+        _azure_sku_lifecycle_status("Standard_NV12s_v3", as_of=date(2026, 9, 30))
+        == Status.RETIRED
+    )
+    # D-series: retires 2028-05-01
+    assert (
+        _azure_sku_lifecycle_status("Standard_D2", as_of=date(2028, 4, 30))
+        == Status.PLANNED_FOR_RETIREMENT
+    )
+    assert (
+        _azure_sku_lifecycle_status("Standard_D2", as_of=date(2028, 5, 1))
+        == Status.RETIRED
+    )
+    # NP-series: retires 2027-05-31
+    assert (
+        _azure_sku_lifecycle_status("Standard_NP10s", as_of=date(2027, 5, 30))
+        == Status.PLANNED_FOR_RETIREMENT
+    )
+    assert (
+        _azure_sku_lifecycle_status("Standard_NP10s", as_of=date(2027, 5, 31))
+        == Status.RETIRED
+    )
 
 
 def test_azure_inventory_databases_autotuning_from_supported_features():
@@ -1701,8 +1736,8 @@ def test_aws_inventory_databases_status_from_orderable_options_and_end_of_suppor
         rows = aws_databases(vendor)
     by_id = {row["database_id"]: row for row in rows}
     assert by_id["db.m5.large"]["status"] == Status.ACTIVE
-    # orderable, but with an announced end-of-support date
-    assert by_id["db.m4.large"]["status"] == Status.PLANNED_FOR_RETIREMENT
+    # orderable -> ACTIVE (no end-of-support family mapping in current code)
+    assert by_id["db.m4.large"]["status"] == Status.ACTIVE
     assert by_id["db.m6g.large"]["status"] == Status.RETIRED
     # not orderable wins over the end-of-support mapping
     assert by_id["db.t2.micro"]["status"] == Status.RETIRED

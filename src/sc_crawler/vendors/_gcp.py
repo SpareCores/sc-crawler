@@ -903,7 +903,12 @@ def inventory_zones(vendor):
 
 
 def inventory_servers(vendor):
-    """List all available GCP servers available in all zones."""
+    """List all available GCP servers available in all zones.
+
+    Lifecycle (`machineTypes.deprecated.state`): DEPRECATED -> PLANNED_FOR_RETIREMENT,
+    OBSOLETE / DELETED -> RETIRED, empty / ACTIVE -> ACTIVE.
+    See `_gcp_machine_type_status`.
+    """
     servers = parallel_fetch_servers(vendor, _search_servers, "name", "zones")
     servers = preprocess_servers(servers, vendor, add_vendor_id)
     return servers

@@ -75,9 +75,10 @@ class Status(str, Enum):
         """Whether a Server/Database with this status can still be ordered."""
         return self in (Status.ACTIVE, Status.PLANNED_FOR_RETIREMENT)
 
-
-# ACTIVE / INACTIVE only — used by MetaColumns validator for non-server/database models.
-GENERAL_STATUSES = frozenset({Status.ACTIVE, Status.INACTIVE})
+    @property
+    def is_general(self) -> bool:
+        """Whether this status is valid for non-server/database models (ACTIVE or INACTIVE only)."""
+        return self in (Status.ACTIVE, Status.INACTIVE)
 
 
 class ResourceType(str, Enum):

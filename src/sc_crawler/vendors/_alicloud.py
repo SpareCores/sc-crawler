@@ -834,7 +834,12 @@ def inventory_zones(vendor):
 
 
 def inventory_servers(vendor):
-    """List all server types at Alibaba Cloud using the `DescribeInstanceTypes` API endpoint."""
+    """List all server types at Alibaba Cloud using the `DescribeInstanceTypes` API endpoint.
+
+    Lifecycle (`DescribeAvailableResource` `StatusCategory`): WithStock -> ACTIVE,
+    ClosedWithStock -> PLANNED_FOR_RETIREMENT, WithoutStock -> INACTIVE,
+    ClosedWithoutStock -> RETIRED; missing in availability response -> INACTIVE.
+    """
     client = _ecs_client()
     additional_attributes = ["NetworkInfo.BandwidthWeighting"]
     request = DescribeInstanceTypesRequest(

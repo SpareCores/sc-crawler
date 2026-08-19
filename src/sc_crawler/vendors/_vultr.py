@@ -390,7 +390,10 @@ def inventory_zones(vendor):
 
 
 def inventory_servers(vendor):
-    """List all servers from Vultr API."""
+    """List all servers from Vultr API.
+
+    Lifecycle: free plan or empty `locations` -> INACTIVE, otherwise ACTIVE.
+    """
     plans = _get_plans()
     plans_metal = _get_plans_metal()
 

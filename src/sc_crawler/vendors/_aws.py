@@ -222,18 +222,6 @@ _instance_suffixes = {
     "flex": "Flex instance",
 }
 
-# RDS instance classes with an announced end-of-support schedule.
-# https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.DBInstanceClass.Types.html
-_RDS_END_OF_SUPPORT_FAMILIES = frozenset(
-    {
-        "db.m3",
-        "db.m4",
-        "db.r3",
-        "db.r4",
-        "db.t2",
-    }
-)
-
 
 def _annotate_instance_type(instance_type_id):
     """Resolve instance type coding to human-friendly description.
@@ -961,7 +949,11 @@ def inventory_zones(vendor):
 
 
 def inventory_servers(vendor):
-    """List all available AWS instance types in all regions via `boto3` calls."""
+    """List all available AWS instance types in all regions via `boto3` calls.
+
+    Lifecycle (`DescribeInstanceTypeOfferings`): not offered in any active
+    region/zone -> INACTIVE. No type-level EC2 retirement API exists.
+    """
     # TODO consider dropping this in favor of pricing.get_products, as
     #      it has info e.g. on instanceFamily although other fields
     #      are messier (e.g. extract memory from string)
@@ -1589,7 +1581,11 @@ def _get_rds_instance_products_by_region() -> tuple[
 
 
 def inventory_databases(vendor):
-    """List all available AWS RDS PostgreSQL instance types via `boto3` calls."""
+    """List all available AWS RDS PostgreSQL instance types via `boto3` calls.
+
+    Lifecycle (`DescribeOrderableDBInstanceOptions`): no orderable options ->
+    RETIRED; otherwise ACTIVE.
+    """
     vendor.progress_tracker.start_task(name="Searching for database(s)", total=None)
     prices_by_region, deployment_options_by_database = (
         _get_rds_instance_products_by_region()
@@ -1615,8 +1611,6 @@ def inventory_databases(vendor):
             db_instance_options = options_by_database.get(database_id, [])
             if not db_instance_options:
                 status = Status.RETIRED
-            elif ".".join(database_id.split(".")[:2]) in _RDS_END_OF_SUPPORT_FAMILIES:
-                status = Status.PLANNED_FOR_RETIREMENT
             else:
                 status = Status.ACTIVE
             deployment_options = deployment_options_by_database.get(
