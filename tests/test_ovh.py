@@ -489,8 +489,8 @@ def test_inventory_databases_collapses_versions_and_maps_fields(mock_ovh_client)
     assert production["vcpus"] == 2
     assert production["memory_amount"] == 8 * 1024
     assert production["storage_size"] == 160
-    assert production["storage_extra_min"] == 160
-    assert production["storage_extra_max"] == 480
+    assert production["storage_extra_min"] == 0
+    assert production["storage_extra_max"] == 320
     assert production["storage_extra_autosize"] is False
     assert production["server_id"] == "b3-8"
     assert production["api_reference"] == (
