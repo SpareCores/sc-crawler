@@ -305,11 +305,22 @@ STORAGE_PRICE_UNIT_MAPPING: dict[str, float | None] = {
 # https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retired-sizes-list
 # https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/previous-gen-sizes-list
 # https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/d-ds-dv2-dsv2-ls-series-migration-guide
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/nvv4-retirement
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/hbv2-series-retirement
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/hc-series-retirement
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/dcsv2-series-retirement
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/n-series-migration
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/av1-series-retirement
 # Rule format: (compiled regex or exact size, retired_on date or None).
 # - If retired_on is set and as_of >= retired_on -> RETIRED.
 # - Else matched -> PLANNED_FOR_RETIREMENT.
 # - No match -> ACTIVE.
 _AZURE_SKU_LIFECYCLE_RULES = (
+    (recompile(r"^A\d+$", IGNORECASE), date(2024, 8, 31)),  # noqa: E501  # Av1-series (Basic/Standard)
+    (recompile(r"^NC\d+r?$", IGNORECASE), date(2023, 8, 31)),  # NC v1-series
+    (recompile(r"^NC\d+r?s_v2$", IGNORECASE), date(2023, 8, 31)),  # NCv2-series
+    (recompile(r"^ND\d+r?s?$", IGNORECASE), date(2023, 8, 31)),  # ND v1-series
+    (recompile(r"^DC\d+s?_v2$", IGNORECASE), date(2026, 6, 30)),  # DCsv2-series
     (recompile(r"^NC(?:6s|12s|24s|24rs)_v3$", IGNORECASE), date(2025, 9, 30)),  # noqa: E501  # NCv3-series
     (recompile(r"^D\d+(-\d+)?$", IGNORECASE), date(2028, 5, 1)),  # D-series
     (recompile(r"^DS\d+(-\d+)?$", IGNORECASE), date(2028, 5, 1)),  # Ds-series
@@ -326,10 +337,11 @@ _AZURE_SKU_LIFECYCLE_RULES = (
     (recompile(r"^GS\d+(-\d+)?$", IGNORECASE), date(2028, 11, 15)),  # Gs-series
     (recompile(r"^L\d+s_v2$", IGNORECASE), date(2028, 11, 15)),  # Lsv2-series
     (recompile(r"^NV\d+s_v3$", IGNORECASE), date(2026, 9, 30)),  # NVv3-series
-    (recompile(r"^NV\d+as_v4$", IGNORECASE), None),  # NVv4-series (no date yet)
+    (recompile(r"^NV\d+a[h]?s_v4$", IGNORECASE), date(2026, 9, 30)),  # NVv4-series
     (recompile(r"^NP\d+s$", IGNORECASE), date(2027, 5, 31)),  # NP-series
-    (recompile(r"^HB120rs?_v2$", IGNORECASE), date(2027, 5, 31)),  # HBv2-series
-    (recompile(r"^M192i(?:d?m)?s_v2$", IGNORECASE), date(2027, 3, 31)),  # noqa: E501  # Mv2 isolated sizes
+    (recompile(r"^HC44(-\d+)?rs$", IGNORECASE), date(2027, 5, 31)),  # HC-series
+    (recompile(r"^HB120(-\d+)?rs_v2$", IGNORECASE), date(2027, 5, 31)),  # HBv2-series
+    (recompile(r"^M192i(?:dm?|m)?s_v2$", IGNORECASE), date(2027, 3, 31)),  # noqa: E501  # Mv2 isolated sizes
 )
 
 
@@ -1273,9 +1285,10 @@ def inventory_zones(vendor):
 def inventory_servers(vendor):
     """List all available instance types in all regions.
 
-    Lifecycle: `_azure_sku_lifecycle_status` maps `_AZURE_RETIRED_SKU_PATTERNS`
-    and `_AZURE_ANNOUNCED_SKU_PATTERNS`/sizes to RETIRED / PLANNED_FOR_RETIREMENT;
-    otherwise ACTIVE. Same function is used for database SKUs.
+    Lifecycle: `_azure_sku_lifecycle_status` checks `_AZURE_SKU_LIFECYCLE_RULES`
+    — RETIRED if the retirement date has passed, PLANNED_FOR_RETIREMENT if
+    matched but not yet retired, otherwise ACTIVE. Same function is used for
+    database SKUs.
     """
     servers = _servers()
     for i in range(len(servers) - 1, -1, -1):
