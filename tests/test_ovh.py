@@ -476,16 +476,18 @@ def test_inventory_databases_collapses_versions_and_maps_fields(mock_ovh_client)
     rows = inventory_databases(vendor)
     by_id = {row["database_id"]: row for row in rows}
     assert set(by_id) == {
-        "postgresql_production_b3-8",
-        "postgresql_essential_b3-8",
-        "postgresql_discovery_b3-8",
+        "postgresql-production-b3-8",
+        "postgresql-essential-b3-8",
+        "postgresql-discovery-b3-8",
     }
 
-    production = by_id["postgresql_production_b3-8"]
+    production = by_id["postgresql-production-b3-8"]
     assert production["engine"] == DatabaseEngine.POSTGRESQL
     assert production["wire_protocol"] == DatabaseWireProtocol.POSTGRESQL
     assert production["engine_versions"] == ["16", "17"]
-    assert production["family"] == "b3-8"
+    assert production["family"] == "Production"
+    assert production["name"] == "postgresql-production-b3-8"
+    assert production["database_id"] == "postgresql-production-b3-8"
     assert production["vcpus"] == 2
     assert production["memory_amount"] == 8 * 1024
     assert production["storage_size"] == 160
@@ -501,6 +503,7 @@ def test_inventory_databases_collapses_versions_and_maps_fields(mock_ovh_client)
         "plan": "production",
         "flavor": "b3-8",
     }
+    assert production["display_name"] == "Production b3-8"
     assert production["ha"] == [DatabaseHaLevel.SINGLE_ZONE]
     assert production["ha_strategy"] == [DatabaseHaStrategy.READABLE_CLUSTER]
     assert production["max_read_replicas"] == 1
@@ -515,14 +518,14 @@ def test_inventory_databases_collapses_versions_and_maps_fields(mock_ovh_client)
     assert DatabaseSecurityFeature.PRIVATE_NETWORK in production["security_features"]
     assert DatabaseSecurityFeature.AUDIT_LOGGING in production["security_features"]
 
-    essential = by_id["postgresql_essential_b3-8"]
+    essential = by_id["postgresql-essential-b3-8"]
     assert essential["ha"] == [DatabaseHaLevel.NONE]
     assert essential["ha_strategy"] == [DatabaseHaStrategy.NONE]
     assert essential["max_read_replicas"] == 0
     assert essential["continuous_backups"] == 2
     assert essential["sla"] is None
 
-    discovery = by_id["postgresql_discovery_b3-8"]
+    discovery = by_id["postgresql-discovery-b3-8"]
     assert discovery["ha"] == [DatabaseHaLevel.NONE]
     assert discovery["ha_strategy"] == [DatabaseHaStrategy.NONE]
     assert discovery["sla"] is None
@@ -576,7 +579,7 @@ def test_inventory_database_prices_use_catalog_suffix_and_node_count(mock_ovh_cl
         catalog_addons=catalog_addons,
     )
     vendor = _ovh_vendor(
-        databases=[SimpleNamespace(database_id="postgresql_production_b3-8")]
+        databases=[SimpleNamespace(database_id="postgresql-production-b3-8")]
     )
     prices = inventory_database_prices(vendor)
     by_region = {row["region_id"]: row for row in prices}
@@ -612,7 +615,7 @@ def test_inventory_database_prices_skip_unknown_region(mock_ovh_client):
         ],
     )
     vendor = _ovh_vendor(
-        databases=[SimpleNamespace(database_id="postgresql_production_b3-8")]
+        databases=[SimpleNamespace(database_id="postgresql-production-b3-8")]
     )
     assert inventory_database_prices(vendor) == []
     vendor.log.assert_called()

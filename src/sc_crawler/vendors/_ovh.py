@@ -1046,14 +1046,14 @@ def inventory_databases(vendor):
         flavor_name = offer.get("specifications", {}).get("flavor")
         if not flavor_name:
             continue
-        database_id = f"{offer['engine']}_{offer['plan']}_{flavor_name}"
+        database_id = f"{offer['engine']}-{offer['plan']}-{flavor_name}"
         offers_by_id.setdefault(database_id, []).append(offer)
 
     items = []
     for database_id, offers in offers_by_id.items():
         sample = offers[0]
-        plan = sample["plan"]
         engine = sample["engine"]
+        plan = sample["plan"]
         flavor_name = sample["specifications"]["flavor"]
         flavor = flavors.get(flavor_name)
         if flavor is None:
@@ -1159,7 +1159,8 @@ def inventory_databases(vendor):
                 "engine": DatabaseEngine.POSTGRESQL,
                 "wire_protocol": DatabaseWireProtocol.POSTGRESQL,
                 "engine_versions": sorted(engine_versions),
-                "family": flavor_name,
+                # Service plan tier (Essential, Production, Advanced, ...).
+                "family": plan_label,
                 "vcpus": vcpus,
                 "memory_amount": memory * _MIB_PER_GIB,
                 "storage_size": storage_size,
@@ -1247,7 +1248,7 @@ def inventory_database_prices(vendor):
         specs = offer.get("specifications", {})
         flavor_name = specs.get("flavor")
         plan = offer["plan"]
-        database_id = f"{offer['engine']}_{plan}_{flavor_name}"
+        database_id = f"{offer['engine']}-{plan}-{flavor_name}"
         if databases and database_id not in databases:
             continue
         multi_az = len(region.zones) > 1
