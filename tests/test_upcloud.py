@@ -1,6 +1,5 @@
 from unittest.mock import Mock, patch
 
-from sc_crawler.table_fields import Status
 from sc_crawler.table_fields import (
     Allocation,
     DatabaseEngine,
@@ -8,13 +7,14 @@ from sc_crawler.table_fields import (
     DatabaseHaStrategy,
     DatabaseStorageScope,
     PriceUnit,
+    Status,
 )
 from sc_crawler.utils import _GIB_TO_GB
 from sc_crawler.vendors._upcloud import (
     _upcloud_server_status,
+    inventory_database_prices,
     inventory_database_storage_prices,
     inventory_database_storages,
-    inventory_database_prices,
     inventory_databases,
 )
 

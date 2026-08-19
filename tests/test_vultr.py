@@ -9,9 +9,9 @@ from sc_crawler.table_fields import (
     Status,
 )
 from sc_crawler.vendors._vultr import (
+    inventory_database_prices,
     inventory_database_storage_prices,
     inventory_database_storages,
-    inventory_database_prices,
     inventory_databases,
     inventory_servers,
 )
