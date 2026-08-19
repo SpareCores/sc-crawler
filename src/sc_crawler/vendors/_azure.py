@@ -1,7 +1,8 @@
 from collections import defaultdict
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from functools import cache
 from os import environ
+from re import IGNORECASE
 from re import compile as recompile
 from time import sleep
 from types import SimpleNamespace
@@ -32,6 +33,7 @@ from ..table_fields import (
     Disk,
     PriceTier,
     PriceUnit,
+    Status,
     StorageType,
     TrafficDirection,
 )
@@ -298,6 +300,63 @@ STORAGE_PRICE_UNIT_MAPPING: dict[str, float | None] = {
     "1 GB/Hour": _HOURS_PER_MONTH,
 }
 """Storage capacity units → multiplier to convert the raw API price to $/GB/month."""
+
+# VM size series lifecycle. Previous-gen is not retirement.
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retired-sizes-list
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/previous-gen-sizes-list
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/d-ds-dv2-dsv2-ls-series-migration-guide
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/nvv4-retirement
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/hbv2-series-retirement
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/hc-series-retirement
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/dcsv2-series-retirement
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/n-series-migration
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/av1-series-retirement
+# Rule format: (compiled regex or exact size, retired_on date or None).
+# - If retired_on is set and as_of >= retired_on -> RETIRED.
+# - Else matched -> PLANNED_FOR_RETIREMENT.
+# - No match -> ACTIVE.
+_AZURE_SKU_LIFECYCLE_RULES = (
+    (recompile(r"^A\d+$", IGNORECASE), date(2024, 8, 31)),  # noqa: E501  # Av1-series (Basic/Standard)
+    (recompile(r"^NC\d+r?$", IGNORECASE), date(2023, 8, 31)),  # NC v1-series
+    (recompile(r"^NC\d+r?s_v2$", IGNORECASE), date(2023, 8, 31)),  # NCv2-series
+    (recompile(r"^ND\d+r?s?$", IGNORECASE), date(2023, 8, 31)),  # ND v1-series
+    (recompile(r"^DC\d+s?_v2$", IGNORECASE), date(2026, 6, 30)),  # DCsv2-series
+    (recompile(r"^NC(?:6s|12s|24s|24rs)_v3$", IGNORECASE), date(2025, 9, 30)),  # noqa: E501  # NCv3-series
+    (recompile(r"^D\d+(-\d+)?$", IGNORECASE), date(2028, 5, 1)),  # D-series
+    (recompile(r"^DS\d+(-\d+)?$", IGNORECASE), date(2028, 5, 1)),  # Ds-series
+    (recompile(r"^D\d+(-\d+)?_v2$", IGNORECASE), date(2028, 5, 1)),  # Dv2-series
+    (recompile(r"^DS\d+(-\d+)?_v2$", IGNORECASE), date(2028, 5, 1)),  # Dsv2-series
+    (recompile(r"^L\d+s$", IGNORECASE), date(2028, 5, 1)),  # Ls-series
+    (recompile(r"^A\d+_v2$", IGNORECASE), date(2028, 11, 15)),  # Av2-series
+    (recompile(r"^A\d+m_v2$", IGNORECASE), date(2028, 11, 15)),  # Amv2-series
+    (recompile(r"^B\d+[a-z]*$", IGNORECASE), date(2028, 11, 15)),  # Bv1-series, not Bv2
+    (recompile(r"^F\d+$", IGNORECASE), date(2028, 11, 15)),  # F-series
+    (recompile(r"^F\d+s$", IGNORECASE), date(2028, 11, 15)),  # Fs-series
+    (recompile(r"^F\d+s_v2$", IGNORECASE), date(2028, 11, 15)),  # Fsv2-series
+    (recompile(r"^G\d+$", IGNORECASE), date(2028, 11, 15)),  # G-series
+    (recompile(r"^GS\d+(-\d+)?$", IGNORECASE), date(2028, 11, 15)),  # Gs-series
+    (recompile(r"^L\d+s_v2$", IGNORECASE), date(2028, 11, 15)),  # Lsv2-series
+    (recompile(r"^NV\d+s_v3$", IGNORECASE), date(2026, 9, 30)),  # NVv3-series
+    (recompile(r"^NV\d+a[h]?s_v4$", IGNORECASE), date(2026, 9, 30)),  # NVv4-series
+    (recompile(r"^NP\d+s$", IGNORECASE), date(2027, 5, 31)),  # NP-series
+    (recompile(r"^HC44(-\d+)?rs$", IGNORECASE), date(2027, 5, 31)),  # HC-series
+    (recompile(r"^HB120(-\d+)?rs_v2$", IGNORECASE), date(2027, 5, 31)),  # HBv2-series
+    (recompile(r"^M192i(?:dm?|m)?s_v2$", IGNORECASE), date(2027, 3, 31)),  # noqa: E501  # Mv2 isolated sizes
+)
+
+
+def _azure_sku_lifecycle_status(sku_name: str, as_of: date | None = None) -> Status:
+    """Map an Azure VM / Flexible Server SKU name to Server/Database status."""
+    current_date = as_of or datetime.now(UTC).date()
+    size = sku_name.removeprefix("Standard_").removeprefix("Basic_")
+
+    for pattern, retired_on in _AZURE_SKU_LIFECYCLE_RULES:
+        if not pattern.fullmatch(size):
+            continue
+        if retired_on and current_date >= retired_on:
+            return Status.RETIRED
+        return Status.PLANNED_FOR_RETIREMENT
+    return Status.ACTIVE
 
 
 def _parse_server_name(name):
@@ -580,6 +639,7 @@ def _standardize_server(server: dict, vendor) -> dict:
         "inbound_traffic": 0,
         "outbound_traffic": 0,
         "ipv4": 0,
+        "status": _azure_sku_lifecycle_status(server["name"]),
     }
 
 
@@ -1223,7 +1283,13 @@ def inventory_zones(vendor):
 
 
 def inventory_servers(vendor):
-    """List all available instance types in all regions."""
+    """List all available instance types in all regions.
+
+    Lifecycle: `_azure_sku_lifecycle_status` checks `_AZURE_SKU_LIFECYCLE_RULES`
+    — RETIRED if the retirement date has passed, PLANNED_FOR_RETIREMENT if
+    matched but not yet retired, otherwise ACTIVE. Same function is used for
+    database SKUs.
+    """
     servers = _servers()
     for i in range(len(servers) - 1, -1, -1):
         name = servers[i].get("name")
@@ -1934,6 +2000,7 @@ def inventory_databases(vendor):
                             # Product max PITR retention (days); default 7, up to 35; not in capabilities API.
                             "continuous_backups": 35,
                             "sla": sla,
+                            "status": _azure_sku_lifecycle_status(database_id),
                         }
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()

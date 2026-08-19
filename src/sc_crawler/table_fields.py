@@ -2,7 +2,7 @@
 
 from enum import Enum
 from json import dumps
-from typing import Any, List, Optional
+from typing import Any, Collection, List, Optional
 
 from pydantic import BaseModel, field_serializer, field_validator
 from sqlalchemy.types import TypeDecorator
@@ -51,7 +51,34 @@ class Status(str, Enum):
     ACTIVE = "active"
     """Active and available resource."""
     INACTIVE = "inactive"
-    """Inactive resource that is not available anymore."""
+    """Unavailable. For Server/Database: temporary or unknown cause."""
+    PLANNED_FOR_RETIREMENT = "planned-for-retirement"
+    """Planned for retirement; only valid for Server and Database."""
+    RETIRED = "retired"
+    """Not orderable anymore, but prices may still exist (e.g. active multi-year contracts). Only valid for Server and Database."""
+
+    @classmethod
+    def best(cls, statuses: Collection["Status"]) -> "Status":
+        """Return the best of the given statuses: ACTIVE, PLANNED_FOR_RETIREMENT, INACTIVE, then RETIRED."""
+        for status in (
+            cls.ACTIVE,
+            cls.PLANNED_FOR_RETIREMENT,
+            cls.INACTIVE,
+            cls.RETIRED,
+        ):
+            if status in statuses:
+                return status
+        raise ValueError("statuses is empty")
+
+    @property
+    def is_orderable(self) -> bool:
+        """Whether a Server/Database with this status can still be ordered."""
+        return self in (Status.ACTIVE, Status.PLANNED_FOR_RETIREMENT)
+
+    @property
+    def is_general(self) -> bool:
+        """Whether this status is valid for non-server/database models (ACTIVE or INACTIVE only)."""
+        return self in (Status.ACTIVE, Status.INACTIVE)
 
 
 class ResourceType(str, Enum):

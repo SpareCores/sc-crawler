@@ -578,7 +578,11 @@ def inventory_zones(vendor) -> list[dict]:
 
 
 def inventory_servers(vendor) -> list[dict]:
-    """List all server types (called "flavors" at OVHcloud)."""
+    """List all server types (called "flavors" at OVHcloud).
+
+    Lifecycle (catalog plan `blobs.tags`): `active` tag -> ACTIVE, otherwise
+    INACTIVE. The `legacy` tag is not treated as retirement.
+    """
     items = []
 
     server_plans = [
@@ -672,8 +676,6 @@ def inventory_servers(vendor) -> list[dict]:
             disk.size for disk in storages if disk.storage_type == StorageType.SSD
         )
 
-        status = Status.ACTIVE if "active" in blobs.get("tags", []) else Status.INACTIVE
-
         description_parts = [
             f"{vcpus} vCPUs",
             f"{memory_size_gb} GiB RAM",
@@ -741,7 +743,11 @@ def inventory_servers(vendor) -> list[dict]:
                 "inbound_traffic": 0,
                 "outbound_traffic": 0,
                 "ipv4": 1,  # each instance gets one IPv4
-                "status": status,
+                "status": (
+                    Status.ACTIVE
+                    if "active" in (blobs.get("tags") or [])
+                    else Status.INACTIVE
+                ),
             }
         )
 

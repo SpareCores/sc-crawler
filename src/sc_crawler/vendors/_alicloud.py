@@ -49,7 +49,27 @@ from ..table_fields import (
 )
 from ..tables import ServerPrice, Vendor
 from ..utils import _GIB_TO_GB, _HOURS_PER_MONTH, jsoned_hash
-from ..vendor_helpers import get_region_by_id
+from ..vendor_helpers import (
+    get_region_by_id,
+    server_status_from_availability_categories,
+)
+
+# StatusCategory values:
+# *   WithStock: The resources are available and can be continuously
+#     replenished.
+# *   ClosedWithStock: Inventory is available, but resources will not be
+#     replenished. The ability to guarantee the supply of inventory is low.
+#     We recommend selecting a product specification in the WithStock state.
+# *   WithoutStock: The resource is out of stock and will be replenished.
+#     We recommend using other resources that are in stock.
+# *   ClosedWithoutStock: The resource is out of stock and will no longer
+#     be replenished. We recommend using other resources that are in stock.
+_ALICLOUD_STATUS_CATEGORY_TO_SERVER_STATUS = {
+    "WithStock": Status.ACTIVE,
+    "ClosedWithStock": Status.PLANNED_FOR_RETIREMENT,
+    "WithoutStock": Status.INACTIVE,
+    "ClosedWithoutStock": Status.RETIRED,
+}
 
 # ##############################################################################
 # Internal helpers
@@ -251,26 +271,16 @@ def _get_region_availability_info(
     return region_availability_info
 
 
-def _is_resource_available(
+def _get_resource_status_category(
     region_availability_info: dict[str, list[dict]],
     region_id: str,
     zone_id: str,
     server_id: str,
     resource_type: str = "InstanceType",
-    status_category: str = "WithStock",
-) -> bool:
-    """Check if a specific resource is available in a specific region and zone.
-
-    Args:
-        region_availability_info: The region availability information.
-        region_id: The region ID.
-        zone_id: The zone ID.
-        server_id: The server ID.
-        resource_type: The resource type, defaults to "InstanceType".
-        status_category: The status category to check for, defaults to "WithStock".
-    """
+) -> Optional[str]:
+    """Return AliCloud StatusCategory for a resource in a region/zone, if listed."""
     if not region_availability_info:
-        return False
+        return None
 
     zone_availability_info = next(
         (
@@ -280,9 +290,8 @@ def _is_resource_available(
         ),
         None,
     )
-
     if not zone_availability_info:
-        return False
+        return None
 
     available_resource: list[dict] = zone_availability_info.get(
         "AvailableResources", {}
@@ -299,24 +308,12 @@ def _is_resource_available(
 
     server_info = next(
         (r for r in supported_resource if r.get("Value") == server_id),
-        {},
+        None,
     )
+    if not server_info:
+        return None
 
-    # StatusCategory values:
-    # *   WithStock: The resources are available and can be continuously
-    #     replenished.
-    # *   ClosedWithStock: Inventory is available, but resources will not be
-    #     replenished. The ability to guarantee the supply of inventory is low.
-    #     We recommend selecting a product specification in the WithStock state.
-    # *   WithoutStock: The resource is out of stock and will be replenished.
-    #     We recommend using other resources that are in stock.
-    # *   ClosedWithoutStock: The resource is out of stock and will no longer
-    #     be replenished. We recommend using other resources that are in stock.
-
-    if server_info.get("StatusCategory") == status_category:
-        return True
-
-    return False
+    return server_info.get("StatusCategory")
 
 
 def _get_spot_advices(
@@ -837,7 +834,12 @@ def inventory_zones(vendor):
 
 
 def inventory_servers(vendor):
-    """List all server types at Alibaba Cloud using the `DescribeInstanceTypes` API endpoint."""
+    """List all server types at Alibaba Cloud using the `DescribeInstanceTypes` API endpoint.
+
+    Lifecycle (`DescribeAvailableResource` `StatusCategory`): WithStock -> ACTIVE,
+    ClosedWithStock -> PLANNED_FOR_RETIREMENT, WithoutStock -> INACTIVE,
+    ClosedWithoutStock -> RETIRED; missing in availability response -> INACTIVE.
+    """
     client = _ecs_client()
     additional_attributes = ["NetworkInfo.BandwidthWeighting"]
     request = DescribeInstanceTypesRequest(
@@ -987,19 +989,22 @@ def inventory_servers(vendor):
         ]
         description = f"{family} family ({', '.join(filter(None, description_parts))})"
         server_id = instance_type.get("InstanceTypeId")
-        status = (
-            Status.ACTIVE
-            if any(
-                _is_resource_available(
+        status_categories = {
+            category
+            for region_id, zones in region_availability_info.items()
+            for zone_info in zones
+            if (
+                category := _get_resource_status_category(
                     region_availability_info,
                     region_id,
                     zone_info.get("ZoneId"),
                     server_id,
                 )
-                for region_id, zones in region_availability_info.items()
-                for zone_info in zones
             )
-            else Status.INACTIVE
+        }
+        status = server_status_from_availability_categories(
+            status_categories,
+            _ALICLOUD_STATUS_CATEGORY_TO_SERVER_STATUS,
         )
 
         items.append(
@@ -1079,13 +1084,16 @@ def inventory_server_prices(vendor):
             continue
         for zone in region.zones:
             server_id = sku.get("SkuFactorMap", {}).get("instance_type")
-            status = (
-                Status.ACTIVE
-                if _is_resource_available(
-                    region_availability_info, region.region_id, zone.zone_id, server_id
-                )
-                else Status.INACTIVE
+            category = _get_resource_status_category(
+                region_availability_info,
+                region.region_id,
+                zone.zone_id,
+                server_id,
             )
+            mapped = _ALICLOUD_STATUS_CATEGORY_TO_SERVER_STATUS.get(
+                category or "", Status.INACTIVE
+            )
+            status = Status.ACTIVE if mapped.is_orderable else Status.INACTIVE
 
             items.append(
                 {
@@ -1115,12 +1123,12 @@ def inventory_server_prices(vendor):
         counts = status_by_region[region_id]
         vendor.log(
             f"{region_id}: Found {counts[Status.ACTIVE]} ACTIVE and "
-            f"{counts[Status.INACTIVE]} INACTIVE server prices",
+            f"{counts[Status.INACTIVE]} INACTIVE on-demand server prices",
             level=INFO,
         )
     vendor.log(
         f"OVERALL: Found {overall[Status.ACTIVE]} ACTIVE and "
-        f"{overall[Status.INACTIVE]} INACTIVE server prices",
+        f"{overall[Status.INACTIVE]} INACTIVE on-demand server prices",
         level=INFO,
     )
     return items

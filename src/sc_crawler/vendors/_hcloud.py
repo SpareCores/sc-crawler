@@ -1,4 +1,5 @@
 import os
+from datetime import UTC, datetime
 from functools import cache
 
 from hcloud import Client
@@ -68,6 +69,34 @@ def _server_cpu(server_name):
     if server_name.upper() in ["CCX13", "CCX23", "CCX33", "CCX43", "CCX53", "CCX63"]:
         return ("AMD", None, None)
     raise ValueError("Unknown Hetzner Cloud server name: " + server_name)
+
+
+# https://docs.hetzner.cloud/reference/cloud#tag/server-types/list_server_types
+# https://docs.hetzner.cloud/changelog#2025-09-24-per-location-server-types
+def _hcloud_location_status(location, now: datetime) -> Status:
+    if location is None:
+        return Status.INACTIVE
+    deprecation = location.deprecation
+    if deprecation is not None:
+        unavailable_after = deprecation.unavailable_after
+        if unavailable_after is not None:
+            if unavailable_after.tzinfo is None:
+                unavailable_after = unavailable_after.replace(tzinfo=UTC)
+            if unavailable_after <= now:
+                return Status.RETIRED
+        return Status.PLANNED_FOR_RETIREMENT
+    if location.available is False:
+        return Status.INACTIVE
+    return Status.ACTIVE
+
+
+def _hcloud_server_status(server, now: datetime) -> Status:
+    """Map Hetzner per-location support/deprecation to a single Server status."""
+    if not server.locations:
+        return Status.INACTIVE
+    return Status.best(
+        {_hcloud_location_status(location, now) for location in server.locations}
+    )
 
 
 # ##############################################################################
@@ -181,7 +210,14 @@ def inventory_zones(vendor):
 def inventory_servers(vendor):
     """List all server types from API and manual data entry from the Hetzner Cloud homepage.
 
-    CPU information is recorded from <https://www.hetzner.com/cloud/> as not exposed via API."""
+    CPU information is recorded from <https://www.hetzner.com/cloud/> as not exposed via API.
+
+    Lifecycle (per-location server type fields): `deprecation.unavailable_after` in
+    past -> RETIRED, `deprecation` present -> PLANNED_FOR_RETIREMENT,
+    `available is False` or empty locations -> INACTIVE, otherwise ACTIVE.
+    See `_hcloud_server_status`.
+    """
+    now = datetime.now(UTC)
     items = []
     for server in _client().server_types.get_all():
         # CPU info not available via the API,
@@ -244,9 +280,7 @@ def inventory_servers(vendor):
                         / (1024**3)
                     ),
                     "ipv4": 0,
-                    "status": Status.ACTIVE
-                    if not server.deprecation
-                    else Status.INACTIVE,
+                    "status": _hcloud_server_status(server, now),
                 }
             )
     return items
@@ -254,8 +288,16 @@ def inventory_servers(vendor):
 
 def inventory_server_prices(vendor):
     regions = scmodels_to_dict(vendor.regions, keys=["name", "aliases"])
+    now = datetime.now(UTC)
     items = []
     for server in _client().server_types.get_all():
+        locations_by_name = {}
+        if server.locations:
+            locations_by_name = {
+                loc.location.name: loc
+                for loc in server.locations
+                if loc.location is not None
+            }
         for location in server.prices:
             region_id = regions[location["location"]].region_id
             hourly_price = float(location["price_hourly"]["net"])
@@ -264,6 +306,9 @@ def inventory_server_prices(vendor):
             # we need to proxy the number of discounted hours in a month
             # (rounding to full hours is a good-enough approximation)
             monthly_cap = int(float(location["price_monthly"]["net"]) / hourly_price)
+            loc = locations_by_name.get(location["location"])
+            status = _hcloud_location_status(loc, now)
+            price_status = Status.ACTIVE if status.is_orderable else Status.INACTIVE
             items.append(
                 {
                     "vendor_id": vendor.vendor_id,
@@ -281,6 +326,7 @@ def inventory_server_prices(vendor):
                         {"lower": monthly_cap + 1, "upper": "Infinity", "price": 0},
                     ],
                     "currency": "EUR",
+                    "status": price_status,
                 }
             )
     return items

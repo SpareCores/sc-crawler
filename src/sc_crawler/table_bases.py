@@ -235,6 +235,16 @@ class MetaColumns(ScModel):
         description="Timestamp of the last observation.",
     )
 
+    @field_validator("status")
+    @classmethod
+    def _validate_status(cls, value: Status) -> Status:
+        if not value.is_general:
+            raise ValueError(
+                f"{value!r} is only valid for Server and Database. "
+                f"Use ACTIVE or INACTIVE for {cls.__name__}."
+            )
+        return value
+
 
 class HasComplianceFrameworkIdPK(ScModel):
     compliance_framework_id: str = Field(
@@ -876,7 +886,10 @@ class ServerFields(
 
 
 class ServerBase(MetaColumns, ServerFields):
-    pass
+    @field_validator("status")
+    @classmethod
+    def _validate_status(cls, value: Status) -> Status:
+        return value
 
 
 class ServerPriceFields(ScModel):
@@ -1097,7 +1110,10 @@ class DatabaseFields(
 
 
 class DatabaseBase(MetaColumns, DatabaseFields):
-    pass
+    @field_validator("status")
+    @classmethod
+    def _validate_status(cls, value: Status) -> Status:
+        return value
 
 
 class DatabasePriceFields(ScModel):
