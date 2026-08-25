@@ -836,7 +836,7 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
 
 def _pgbench_benchmark_scores(
     resource: Union["Server", "Database"],
-    framework_path_postfix: str = "_postgres_multi_ro_durable",
+    framework_path_postfix: str = "_postgres_ro_durable",
 ) -> list[dict]:
     framework = "pgbench"
     framework_path = framework + framework_path_postfix
