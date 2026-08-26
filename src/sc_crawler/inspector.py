@@ -1175,28 +1175,6 @@ def _standardize_gpu_family(server):
     return family
 
 
-# TODO: deprecated, deletable once we successfully avoid corrupted lscpu cache data
-def _l123_cache(lscpu: dict, level: int):
-    if level == 1:
-        # don't include instruction cache
-        cache = int(_listsearch(lscpu, "field", "L1d cache:")["data"].split(" ")[0])
-        if cache > 32 * 1024 * 1024:  # 32 MiB+ is potentially corrupted data
-            return None
-        return cache
-    elif level == 2:
-        cache = int(_listsearch(lscpu, "field", "L2 cache:")["data"].split(" ")[0])
-        if cache > 512 * 1024 * 1024:  # 512 MiB+ is potentially corrupted data
-            return None
-        return cache
-    elif level == 3:
-        cache = int(_listsearch(lscpu, "field", "L3 cache:")["data"].split(" ")[0])
-        if cache > 1024 * 1024 * 1024:  # 1 GiB+ is potentially corrupted data
-            return None
-        return cache
-    else:
-        raise ValueError("Not known cache level.")
-
-
 def _dropna(text: str) -> str:
     if text in ["N/A"]:
         return None
