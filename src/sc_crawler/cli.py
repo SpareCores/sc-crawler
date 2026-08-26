@@ -72,7 +72,6 @@ engine_to_dialect = {
 }
 Engines = Enum("ENGINES", {k: k for k in engine_to_dialect.keys()})
 
-# Used the public logging API introduced in Python 3.11.
 log_levels = list(logging.getLevelNamesMapping().keys())
 LogLevels = StrEnum("LOGLEVELS", {k: k for k in log_levels})
 
