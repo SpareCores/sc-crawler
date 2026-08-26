@@ -851,12 +851,17 @@ def _pgbench_benchmark_scores(
             data = json.load(fp)
             measurement = "heavy_read_only"
             profiles = data["sizes"][0]["profile"]
-            database_engine_version = data["postgres"]["server_version"].split()[0]
+            extend_environment = {}
+            database_engine_version = data.get("postgres", {}).get("server_version")
+            if database_engine_version:
+                extend_environment["database_engine_version"] = (
+                    database_engine_version.split()[0]
+                )
             benchmark_metafields = _benchmark_metafields(
                 resource,
                 framework=framework_path,
                 benchmark_id=":".join([framework, measurement]),
-                extend_environment={"database_engine_version": database_engine_version},
+                extend_environment=extend_environment,
             )
             base_environment = benchmark_metafields.get("environment", {})
             scores = [
