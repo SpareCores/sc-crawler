@@ -1170,7 +1170,6 @@ def _standardize_gpu_family(server):
     return family
 
 
-
 def _dropna(text: str) -> str:
     if text in ["N/A"]:
         return None
