@@ -5,7 +5,7 @@ Check `sc-crawler --help` for more details."""
 import logging
 from contextlib import suppress
 from datetime import UTC, datetime, timedelta
-from enum import Enum
+from enum import Enum, StrEnum
 from json import dump as json_dump
 from json import loads
 from os import environ
@@ -72,9 +72,8 @@ engine_to_dialect = {
 }
 Engines = Enum("ENGINES", {k: k for k in engine_to_dialect.keys()})
 
-# TODO use logging.getLevelNamesMapping() from Python 3.11
-log_levels = list(logging._nameToLevel.keys())
-LogLevels = Enum("LOGLEVELS", {k: k for k in log_levels})
+log_levels = list(logging.getLevelNamesMapping().keys())
+LogLevels = StrEnum("LOGLEVELS", {k: k for k in log_levels})
 
 supported_records = [r[10:] for r in dir(Vendor) if r.startswith("inventory_")]
 Records = Enum("RECORDS", {k: k for k in supported_records})
@@ -781,7 +780,7 @@ def pull(
     ] = [],
     log_level: Annotated[
         LogLevels, typer.Option(help="Log level threshold.")
-    ] = LogLevels.INFO.value,  # TODO drop .value after updating Enum to StrEnum in Python3.11
+    ] = LogLevels.INFO,
     cache: Annotated[
         bool,
         typer.Option(help="Enable or disable caching of all vendor API calls on disk."),
@@ -808,7 +807,7 @@ def pull(
     channel = ScRichHandler()
     formatter = logging.Formatter("%(message)s")
     channel.setFormatter(formatter)
-    logger.setLevel(log_level.value)
+    logger.setLevel(log_level)
     logger.addHandler(channel)
 
     # filter vendors

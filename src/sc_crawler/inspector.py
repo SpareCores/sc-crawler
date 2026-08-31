@@ -836,7 +836,7 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
 
 def _pgbench_benchmark_scores(
     resource: Union["Server", "Database"],
-    framework_path_postfix: str = "_postgres_multi_ro_durable",
+    framework_path_postfix: str = "_postgres_ro_durable",
 ) -> list[dict]:
     framework = "pgbench"
     framework_path = framework + framework_path_postfix
@@ -851,12 +851,17 @@ def _pgbench_benchmark_scores(
             data = json.load(fp)
             measurement = "heavy_read_only"
             profiles = data["sizes"][0]["profile"]
-            database_engine_version = data["postgres"]["server_version"].split()[0]
+            extend_environment = {}
+            database_engine_version = data.get("postgres", {}).get("server_version")
+            if database_engine_version:
+                extend_environment["database_engine_version"] = (
+                    database_engine_version.split()[0]
+                )
             benchmark_metafields = _benchmark_metafields(
                 resource,
                 framework=framework_path,
                 benchmark_id=":".join([framework, measurement]),
-                extend_environment={"database_engine_version": database_engine_version},
+                extend_environment=extend_environment,
             )
             base_environment = benchmark_metafields.get("environment", {})
             scores = [
@@ -1168,28 +1173,6 @@ def _standardize_gpu_family(server):
     if "HL-205" in server.get("gpu_model"):
         family = "Gaudi"
     return family
-
-
-# TODO: deprecated, deletable once we successfully avoid corrupted lscpu cache data
-def _l123_cache(lscpu: dict, level: int):
-    if level == 1:
-        # don't include instruction cache
-        cache = int(_listsearch(lscpu, "field", "L1d cache:")["data"].split(" ")[0])
-        if cache > 32 * 1024 * 1024:  # 32 MiB+ is potentially corrupted data
-            return None
-        return cache
-    elif level == 2:
-        cache = int(_listsearch(lscpu, "field", "L2 cache:")["data"].split(" ")[0])
-        if cache > 512 * 1024 * 1024:  # 512 MiB+ is potentially corrupted data
-            return None
-        return cache
-    elif level == 3:
-        cache = int(_listsearch(lscpu, "field", "L3 cache:")["data"].split(" ")[0])
-        if cache > 1024 * 1024 * 1024:  # 1 GiB+ is potentially corrupted data
-            return None
-        return cache
-    else:
-        raise ValueError("Not known cache level.")
 
 
 def _dropna(text: str) -> str:
