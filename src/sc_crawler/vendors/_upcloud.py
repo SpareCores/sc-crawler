@@ -668,8 +668,8 @@ def inventory_databases(vendor):
             storage_extra_min = storage_step_gb
             storage_extra_max = storage_extra_max_gb
         else:
-            storage_extra_min = None
-            storage_extra_max = None
+            storage_extra_min = 0
+            storage_extra_max = 0
         if node_count == 1:
             family = "Single node"
         elif node_count == 2:
@@ -745,11 +745,12 @@ def inventory_databases(vendor):
                 "vcpus": vcpus,
                 "memory_amount": memory_amount,
                 "storage_size": storage_size_gb,
-                # Extra disk in storage_step_size increments up to cap minus bundled size.
+                # Extra disk is added manually via control panel/API, not when usage grows,
+                # `storage_extra_min/max` apply only when `dynamic_storage_supported` is true.
                 # https://upcloud.com/docs/changelog/2025-05-26-additional-disk-space-managed-databases/
                 "storage_extra_min": storage_extra_min,
                 "storage_extra_max": storage_extra_max,
-                "storage_extra_autosize": bool(dynamic_storage_supported),
+                "storage_extra_autosize": False,
                 "ha": ha,
                 "ha_strategy": ha_strategy,
                 "max_read_replicas": max(node_count - 1, 0),

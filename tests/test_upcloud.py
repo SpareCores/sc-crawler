@@ -161,7 +161,7 @@ def test_upcloud_inventory_databases_maps_pg_service_plans():
     assert by_id["4xCPU-16GB-200GB-ha"]["ha_strategy"] == [
         DatabaseHaStrategy.READABLE_CLUSTER
     ]
-    assert by_id["4xCPU-16GB-200GB-ha"]["storage_extra_autosize"] is True
+    assert by_id["4xCPU-16GB-200GB-ha"]["storage_extra_autosize"] is False
     assert by_id["4xCPU-16GB-200GB-ha"]["continuous_backups"] == 14
 
 
@@ -197,8 +197,9 @@ def test_upcloud_inventory_databases_keeps_server_id_none_when_no_match():
     with patch("sc_crawler.vendors._upcloud._client", return_value=mock_client):
         rows = inventory_databases(vendor)
     assert rows[0]["server_id"] is None
-    assert rows[0]["storage_extra_min"] is None
-    assert rows[0]["storage_extra_max"] is None
+    assert rows[0]["storage_extra_min"] == 0
+    assert rows[0]["storage_extra_max"] == 0
+    assert rows[0]["storage_extra_autosize"] is False
 
 
 def test_upcloud_inventory_database_prices_from_price_list():

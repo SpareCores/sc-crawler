@@ -20,7 +20,7 @@ from ..table_fields import (
     StorageType,
     TrafficDirection,
 )
-from ..utils import _MIB_PER_GIB
+from ..utils import _HOURS_PER_MONTH, _MIB_PER_GIB
 
 _REGION_LOCATIONS: dict[str, dict] = {
     "ams": {"lat": 52.3676, "lon": 4.9041},
@@ -908,8 +908,8 @@ def inventory_databases(vendor):
                 "memory_amount": memory,
                 "storage_size": storage_size,
                 # Vultr does not expose explicit storage extra min/max/autosize - only bundled storage size is present
-                "storage_extra_min": None,
-                "storage_extra_max": None,
+                "storage_extra_min": 0,
+                "storage_extra_max": 0,
                 "storage_extra_autosize": False,
                 "ha": ha,
                 "ha_strategy": ha_strategy,
@@ -988,13 +988,18 @@ def inventory_database_prices(vendor):
         hourly_cost = plan.get("hourly_cost")
         monthly_cost = plan.get("monthly_cost")
         if hourly_cost is not None:
-            price = float(hourly_cost)
-            unit = PriceUnit.HOUR
+            hourly_price = hourly_cost
         elif monthly_cost is not None:
-            price = float(monthly_cost)
-            unit = PriceUnit.MONTH
+            hourly_price = monthly_cost / _HOURS_PER_MONTH
         else:
             continue
+        price_tiered = []
+        if monthly_cost is not None and hourly_price:
+            monthly_cap = int(monthly_cost / hourly_price)
+            price_tiered = [
+                {"lower": 0, "upper": monthly_cap, "price": hourly_price},
+                {"lower": monthly_cap + 1, "upper": "Infinity", "price": 0},
+            ]
         for location in plan.get("locations", []):
             items.append(
                 {
@@ -1004,8 +1009,10 @@ def inventory_database_prices(vendor):
                     "allocation": Allocation.ONDEMAND,
                     "ha": ha,
                     "ha_strategy": ha_strategy,
-                    "unit": unit,
-                    "price": price,
+                    "unit": PriceUnit.HOUR,
+                    "price": hourly_price,
+                    "price_upfront": 0,
+                    "price_tiered": price_tiered,
                     "currency": plan.get("currency", "USD"),
                 }
             )
