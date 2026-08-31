@@ -1710,8 +1710,8 @@ def inventory_databases(vendor):
                     "vcpus": product["vcpu"],
                     "memory_amount": memory_amount_mib,
                     "storage_size": storage_size,
-                    "ha": ha,
-                    "ha_strategy": ha_strategy,
+                    "ha": DatabaseHaLevel.ordered(ha),
+                    "ha_strategy": DatabaseHaStrategy.ordered(ha_strategy),
                     # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Overview.RDSSecurityGroups.html
                     # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_VPC.html
                     # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_VPC.pc.html

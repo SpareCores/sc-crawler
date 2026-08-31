@@ -1182,23 +1182,8 @@ def inventory_databases(vendor):
                 # Flexible storage is increased manually; disk-full goes read-only until storage is provisioned.
                 # https://docs.ovhcloud.com/en/guides/public-cloud/databases/postgresql-capabilities/
                 "storage_extra_autosize": False,
-                "ha": [
-                    level
-                    for level in (
-                        DatabaseHaLevel.MULTI_ZONE,
-                        DatabaseHaLevel.SINGLE_ZONE,
-                        DatabaseHaLevel.NONE,
-                    )
-                    if level in ha
-                ],
-                "ha_strategy": [
-                    strategy
-                    for strategy in (
-                        DatabaseHaStrategy.READABLE_CLUSTER,
-                        DatabaseHaStrategy.NONE,
-                    )
-                    if strategy in ha_strategy
-                ],
+                "ha": DatabaseHaLevel.ordered(ha),
+                "ha_strategy": DatabaseHaStrategy.ordered(ha_strategy),
                 "max_read_replicas": max_read_replicas,
                 # https://docs.ovhcloud.com/en/guides/public-cloud/databases/advanced-configuration
                 "custom_config": True,

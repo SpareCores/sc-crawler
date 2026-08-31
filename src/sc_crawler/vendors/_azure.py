@@ -1962,8 +1962,8 @@ def inventory_databases(vendor):
                             "custom_extensions": True,
                             "storage_extra_min": storage_extra_min,
                             "storage_extra_max": storage_extra_max,
-                            "ha": ha,
-                            "ha_strategy": ha_strategy,
+                            "ha": DatabaseHaLevel.ordered(ha),
+                            "ha_strategy": DatabaseHaStrategy.ordered(ha_strategy),
                             # https://learn.microsoft.com/en-us/azure/postgresql/network/concepts-networking-public
                             # https://learn.microsoft.com/en-us/azure/postgresql/network/concepts-networking-private
                             # https://learn.microsoft.com/en-us/azure/postgresql/network/concepts-networking-private-link
