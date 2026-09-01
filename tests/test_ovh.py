@@ -1,18 +1,36 @@
 """Unit tests for OVHcloud vendor module."""
 
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import pytest
 
+from sc_crawler.table_fields import (
+    Allocation,
+    DatabaseEngine,
+    DatabaseHaLevel,
+    DatabaseHaStrategy,
+    DatabaseSecurityFeature,
+    DatabaseStorageScope,
+    DatabaseWireProtocol,
+    PriceUnit,
+    Status,
+)
 from sc_crawler.vendors._ovh import (
     _client,
     _get_catalog,
+    _get_database_availability,
+    _get_database_capabilities,
     _get_gpu_info,
     _get_project_id,
     _get_region,
     _get_regions,
     _get_server_family,
     inventory_compliance_frameworks,
+    inventory_database_prices,
+    inventory_database_storage_prices,
+    inventory_database_storages,
+    inventory_databases,
     inventory_regions,
 )
 
@@ -27,6 +45,8 @@ def mock_ovh_client():
     _get_regions.cache_clear()
     _get_region.cache_clear()
     _get_catalog.cache_clear()
+    _get_database_availability.cache_clear()
+    _get_database_capabilities.cache_clear()
 
     with (
         patch("sc_crawler.vendors._ovh._client") as mock_client_factory,
@@ -273,6 +293,412 @@ def test_inventory_regions():
     assert len(result) == 2
     assert result[0]["region_id"] == "EU-WEST-PAR"
     assert result[0]["city"] == "Paris"
+
+
+def _zone(zone_id: str):
+    return SimpleNamespace(zone_id=zone_id, status=Status.ACTIVE)
+
+
+def _region(region_id: str, *, zones: list[str]):
+    return SimpleNamespace(
+        region_id=region_id,
+        api_reference=region_id,
+        zones=[_zone(z) for z in zones],
+    )
+
+
+def _ovh_vendor(*, regions=None, servers=None, databases=None, database_storages=None):
+    vendor = Mock(vendor_id="ovh")
+    vendor.regions = regions or [
+        _region("GRA", zones=["gra-a"]),
+        _region(
+            "EU-WEST-PAR", zones=["eu-west-par-a", "eu-west-par-b", "eu-west-par-c"]
+        ),
+        _region("SGP", zones=["sgp-a"]),
+    ]
+    vendor.servers = servers or [
+        SimpleNamespace(server_id="b3-8", api_reference="b3-8"),
+    ]
+    vendor.databases = databases or []
+    vendor.database_storages = database_storages or []
+    vendor.progress_tracker = Mock(
+        start_task=Mock(), advance_task=Mock(), hide_task=Mock()
+    )
+    vendor.log = Mock()
+    return vendor
+
+
+def _pg_offer(
+    *,
+    plan="production",
+    flavor="b3-8",
+    region="GRA",
+    version="16",
+    min_nodes=2,
+    max_nodes=2,
+    min_disk=160,
+    max_disk=480,
+    retention_days=14,
+    status="STABLE",
+    engine="postgresql",
+    network="public",
+):
+    plan_code = f"{engine}-{plan}-{flavor}.hour.consumption"
+    return {
+        "engine": engine,
+        "version": version,
+        "plan": plan,
+        "flavor": flavor,
+        "region": region,
+        "planCode": plan_code,
+        "planCodes": {"compute": plan_code},
+        "backup": "automatic",
+        "backupRetentionDays": retention_days,
+        "backups": {"available": True, "retentionDays": retention_days},
+        "minDiskSize": min_disk,
+        "maxDiskSize": max_disk,
+        "minNodeNumber": min_nodes,
+        "maxNodeNumber": max_nodes,
+        "network": network,
+        "lifecycle": {"status": status, "startDate": "2024-01-01"},
+        "status": status,
+        "specifications": {
+            "flavor": flavor,
+            "network": network,
+            "nodes": {"minimum": min_nodes, "maximum": max_nodes},
+            "storage": {
+                "minimum": {"unit": "GB", "value": min_disk},
+                "maximum": {"unit": "GB", "value": max_disk},
+            },
+        },
+    }
+
+
+def _pg_capabilities():
+    return {
+        "engines": [
+            {
+                "name": "postgresql",
+                "versions": ["14", "15", "16", "17"],
+                "sslModes": ["required"],
+            }
+        ],
+        "flavors": [
+            {
+                "name": "b3-8",
+                "core": 2,
+                "memory": 8,
+                "storage": 160,
+                "generation": "gen3",
+                "specifications": {
+                    "core": 2,
+                    "memory": {"unit": "GB", "value": 8},
+                    "storage": {"unit": "GB", "value": 160},
+                },
+            }
+        ],
+        "plans": [
+            {
+                "name": "essential",
+                "backupRetention": "P2D",
+                "description": "Essential",
+            },
+            {
+                "name": "production",
+                "backupRetention": "P14D",
+                "description": "Production",
+            },
+        ],
+    }
+
+
+def _catalog_addon(plan_code: str, price_microcents: int):
+    return {
+        "planCode": plan_code,
+        "pricings": [
+            {
+                "interval": 0,
+                "capacities": ["consumption"],
+                "price": price_microcents,
+            }
+        ],
+    }
+
+
+def _extend_ovh_get(mock_client, *, availability, capabilities, catalog_addons):
+    original = mock_client.get.side_effect
+
+    def fake_get(path, *args, **kwargs):
+        if path.endswith("/database/availability"):
+            return availability
+        if path.endswith("/database/capabilities"):
+            return capabilities
+        if path == "/order/catalog/public/cloud":
+            return {
+                "locale": {"currencyCode": "EUR"},
+                "addons": catalog_addons,
+            }
+        return original(path, *args, **kwargs)
+
+    mock_client.get.side_effect = fake_get
+
+
+def test_inventory_databases_collapses_versions_and_maps_fields(mock_ovh_client):
+    availability = [
+        _pg_offer(version="16", region="GRA"),
+        _pg_offer(version="17", region="GRA"),
+        _pg_offer(
+            plan="essential",
+            version="16",
+            region="GRA",
+            min_nodes=1,
+            max_nodes=1,
+            retention_days=2,
+        ),
+        _pg_offer(
+            plan="discovery",
+            version="16",
+            region="GRA",
+            min_nodes=1,
+            max_nodes=1,
+            retention_days=2,
+        ),
+        _pg_offer(engine="mysql", plan="production", version="8"),
+        _pg_offer(version="16", region="GRA", status="UNAVAILABLE"),
+        _pg_offer(
+            plan="business",
+            version="16",
+            region="GRA",
+            status="END_OF_LIFE",
+        ),
+    ]
+    _extend_ovh_get(
+        mock_ovh_client,
+        availability=availability,
+        capabilities=_pg_capabilities(),
+        catalog_addons=[],
+    )
+    vendor = _ovh_vendor()
+    rows = inventory_databases(vendor)
+    by_id = {row["database_id"]: row for row in rows}
+    assert set(by_id) == {
+        "postgresql-production-b3-8",
+        "postgresql-essential-b3-8",
+        "postgresql-discovery-b3-8",
+        "postgresql-business-b3-8",
+    }
+
+    production = by_id["postgresql-production-b3-8"]
+    assert production["engine"] == DatabaseEngine.POSTGRESQL
+    assert production["wire_protocol"] == DatabaseWireProtocol.POSTGRESQL
+    assert production["engine_versions"] == ["16", "17"]
+    assert production["family"] == "Production"
+    assert production["name"] == "postgresql-production-b3-8"
+    assert production["database_id"] == "postgresql-production-b3-8"
+    assert production["vcpus"] == 2
+    assert production["memory_amount"] == 8 * 1024
+    assert production["storage_size"] == 160
+    assert production["storage_extra_min"] == 0
+    assert production["storage_extra_max"] == 320
+    assert production["storage_extra_autosize"] is False
+    assert production["server_id"] == "b3-8"
+    assert production["api_reference"] == "postgresql-production-b3-8"
+    assert production["api_reference_object"] == {
+        "engine": "postgresql",
+        "plan": "production",
+        "flavor": "b3-8",
+    }
+    assert production["display_name"] == "Production b3-8"
+    assert production["ha"] == [DatabaseHaLevel.SINGLE_ZONE]
+    assert production["ha_strategy"] == [DatabaseHaStrategy.READABLE_CLUSTER]
+    assert production["max_read_replicas"] == 1
+    assert production["scheduled_backups"] is True
+    assert production["continuous_backups"] == 14
+    assert production["custom_config"] is True
+    assert production["custom_extensions"] is True
+    assert production["connection_pool"] is True
+    assert production["disk_encryption"] is True
+    assert production["sla"] == 99.9
+    assert production["status"] == Status.ACTIVE
+    assert DatabaseSecurityFeature.PRIVATE_NETWORK in production["security_features"]
+    assert DatabaseSecurityFeature.AUDIT_LOGGING in production["security_features"]
+
+    essential = by_id["postgresql-essential-b3-8"]
+    assert essential["ha"] == [DatabaseHaLevel.NONE]
+    assert essential["ha_strategy"] == [DatabaseHaStrategy.NONE]
+    assert essential["max_read_replicas"] == 0
+    assert essential["continuous_backups"] == 2
+    assert essential["sla"] is None
+
+    discovery = by_id["postgresql-discovery-b3-8"]
+    assert discovery["ha"] == [DatabaseHaLevel.NONE]
+    assert discovery["ha_strategy"] == [DatabaseHaStrategy.NONE]
+    assert discovery["sla"] is None
+
+    retired = by_id["postgresql-business-b3-8"]
+    assert retired["status"] == Status.RETIRED
+
+
+def test_inventory_databases_merges_multi_az_ha(mock_ovh_client):
+    availability = [
+        _pg_offer(region="GRA", version="16"),
+        _pg_offer(region="EU-WEST-PAR", version="16"),
+    ]
+    _extend_ovh_get(
+        mock_ovh_client,
+        availability=availability,
+        capabilities=_pg_capabilities(),
+        catalog_addons=[],
+    )
+    rows = inventory_databases(_ovh_vendor())
+    assert len(rows) == 1
+    assert rows[0]["ha"] == [
+        DatabaseHaLevel.MULTI_ZONE,
+        DatabaseHaLevel.SINGLE_ZONE,
+    ]
+    assert rows[0]["sla"] == 99.95
+
+
+def test_inventory_database_prices_use_catalog_suffix_and_node_count(mock_ovh_client):
+    availability = [
+        _pg_offer(region="GRA", min_nodes=2),
+        _pg_offer(region="EU-WEST-PAR", min_nodes=2),
+        _pg_offer(region="SGP", min_nodes=2),
+        _pg_offer(region="GRA", version="17", min_nodes=2),
+    ]
+    catalog_addons = [
+        _catalog_addon(
+            "databases.postgresql-production-b3-8.hour.consumption",
+            10_000_000,
+        ),
+        _catalog_addon(
+            "databases.postgresql-production-b3-8.hour.consumption.3az",
+            12_000_000,
+        ),
+        _catalog_addon(
+            "databases.postgresql-production-b3-8.hour.consumption.apac",
+            15_000_000,
+        ),
+    ]
+    _extend_ovh_get(
+        mock_ovh_client,
+        availability=availability,
+        capabilities=_pg_capabilities(),
+        catalog_addons=catalog_addons,
+    )
+    vendor = _ovh_vendor(
+        databases=[SimpleNamespace(database_id="postgresql-production-b3-8")]
+    )
+    prices = inventory_database_prices(vendor)
+    by_region = {row["region_id"]: row for row in prices}
+    assert set(by_region) == {"GRA", "EU-WEST-PAR", "SGP"}
+
+    gra = by_region["GRA"]
+    assert gra["allocation"] == Allocation.ONDEMAND
+    assert gra["unit"] == PriceUnit.HOUR
+    assert gra["currency"] == "EUR"
+    assert gra["ha"] == DatabaseHaLevel.SINGLE_ZONE
+    assert gra["ha_strategy"] == DatabaseHaStrategy.READABLE_CLUSTER
+    assert gra["price"] == pytest.approx(0.2)
+
+    par = by_region["EU-WEST-PAR"]
+    assert par["ha"] == DatabaseHaLevel.MULTI_ZONE
+    assert par["price"] == pytest.approx(0.24)
+
+    sgp = by_region["SGP"]
+    assert sgp["ha"] == DatabaseHaLevel.SINGLE_ZONE
+    assert sgp["price"] == pytest.approx(0.3)
+
+
+def test_inventory_database_prices_skip_unknown_region(mock_ovh_client):
+    _extend_ovh_get(
+        mock_ovh_client,
+        availability=[_pg_offer(region="UNKNOWN")],
+        capabilities=_pg_capabilities(),
+        catalog_addons=[
+            _catalog_addon(
+                "databases.postgresql-production-b3-8.hour.consumption",
+                10_000_000,
+            )
+        ],
+    )
+    vendor = _ovh_vendor(
+        databases=[SimpleNamespace(database_id="postgresql-production-b3-8")]
+    )
+    assert inventory_database_prices(vendor) == []
+    vendor.log.assert_called()
+
+
+def test_inventory_database_storages_additional_disk_bounds(mock_ovh_client):
+    availability = [
+        _pg_offer(region="GRA", min_disk=160, max_disk=800),
+        _pg_offer(region="EU-WEST-PAR", min_disk=160, max_disk=1600),
+        _pg_offer(
+            plan="essential",
+            min_nodes=1,
+            max_nodes=1,
+            min_disk=80,
+            max_disk=80,
+        ),
+        _pg_offer(engine="mysql", plan="production", min_disk=100, max_disk=500),
+    ]
+    _extend_ovh_get(
+        mock_ovh_client,
+        availability=availability,
+        capabilities=_pg_capabilities(),
+        catalog_addons=[],
+    )
+    rows = inventory_database_storages(_ovh_vendor())
+    by_id = {row["database_storage_id"]: row for row in rows}
+    assert set(by_id) == {"postgresql-production-additional"}
+    production = by_id["postgresql-production-additional"]
+    assert production["scope"] == DatabaseStorageScope.DATA
+    assert production["min_size"] == 0
+    assert production["max_size"] == 1440
+
+
+def test_inventory_database_storage_prices_use_catalog_suffix(mock_ovh_client):
+    availability = [
+        _pg_offer(region="GRA"),
+        _pg_offer(region="EU-WEST-PAR"),
+        _pg_offer(region="SGP"),
+        _pg_offer(region="GRA", version="17"),
+    ]
+    catalog_addons = [
+        _catalog_addon(
+            "databases.postgresql-production-additionnal-storage-gb.hour.consumption",
+            60_000,
+        ),
+        _catalog_addon(
+            "databases.postgresql-production-additionnal-storage-gb.hour.consumption.3az",
+            60_000,
+        ),
+        _catalog_addon(
+            "databases.postgresql-production-additionnal-storage-gb.hour.consumption.apac",
+            70_000,
+        ),
+    ]
+    _extend_ovh_get(
+        mock_ovh_client,
+        availability=availability,
+        capabilities=_pg_capabilities(),
+        catalog_addons=catalog_addons,
+    )
+    vendor = _ovh_vendor(
+        database_storages=[
+            SimpleNamespace(database_storage_id="postgresql-production-additional")
+        ]
+    )
+    prices = inventory_database_storage_prices(vendor)
+    by_region = {row["region_id"]: row for row in prices}
+    assert set(by_region) == {"GRA", "EU-WEST-PAR", "SGP"}
+    gra = by_region["GRA"]
+    assert gra["database_storage_id"] == "postgresql-production-additional"
+    assert gra["unit"] == PriceUnit.GB_MONTH
+    assert gra["currency"] == "EUR"
+    assert gra["price"] == pytest.approx(0.0006 * 730)
+    assert by_region["EU-WEST-PAR"]["price"] == pytest.approx(0.0006 * 730)
+    assert by_region["SGP"]["price"] == pytest.approx(0.0007 * 730)
 
 
 if __name__ == "__main__":

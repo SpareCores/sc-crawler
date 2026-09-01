@@ -1419,8 +1419,8 @@ def inventory_databases(vendor):
                 "vcpus": cpu_count,
                 "memory_amount": memory_amount,
                 "storage_size": None,
-                "ha": ha,
-                "ha_strategy": ha_strategy,
+                "ha": DatabaseHaLevel.ordered(ha),
+                "ha_strategy": DatabaseHaStrategy.ordered(ha_strategy),
                 # https://cloud.google.com/sql/docs/postgres/configure-ip
                 # https://cloud.google.com/sql/docs/postgres/private-ip
                 # https://cloud.google.com/sql/docs/postgres/configure-private-service-connect

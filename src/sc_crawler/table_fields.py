@@ -183,6 +183,20 @@ class DatabaseHaLevel(str, Enum):
     MULTI_REGION = "multi-region"
     """Multi-region high availability, meaning multiple databases in multiple regions with failover or multi-master."""
 
+    @classmethod
+    def ordered(cls, levels: Collection["DatabaseHaLevel"]) -> list["DatabaseHaLevel"]:
+        """Return supported HA levels in canonical order (most available first)."""
+        return [
+            level
+            for level in (
+                cls.MULTI_REGION,
+                cls.MULTI_ZONE,
+                cls.SINGLE_ZONE,
+                cls.NONE,
+            )
+            if level in levels
+        ]
+
 
 class DatabaseHaStrategy(str, Enum):
     """High availability replication strategy for a managed database type."""
@@ -195,6 +209,22 @@ class DatabaseHaStrategy(str, Enum):
     """Readable cluster for read scaling and failover, e.g. RDS Multi-AZ Cluster / Aurora with engine replication."""
     MULTI_MASTER = "multi-master"
     """True multi-master, e.g. CockroachDB / Spanner / DynamoDB Global Tables."""
+
+    @classmethod
+    def ordered(
+        cls, strategies: Collection["DatabaseHaStrategy"]
+    ) -> list["DatabaseHaStrategy"]:
+        """Return supported HA strategies in canonical order (most capable first)."""
+        return [
+            strategy
+            for strategy in (
+                cls.MULTI_MASTER,
+                cls.READABLE_CLUSTER,
+                cls.PASSIVE_STANDBY,
+                cls.NONE,
+            )
+            if strategy in strategies
+        ]
 
 
 class DatabaseSecurityFeature(str, Enum):

@@ -1,3 +1,5 @@
+from os import environ
+
 from cachier import cachier
 from requests import get
 
@@ -8,12 +10,17 @@ from ..table_fields import (
     Allocation,
     CpuAllocation,
     CpuArchitecture,
+    DatabaseEngine,
+    DatabaseHaLevel,
+    DatabaseHaStrategy,
+    DatabaseSecurityFeature,
+    DatabaseWireProtocol,
     PriceUnit,
     Status,
     StorageType,
     TrafficDirection,
 )
-from ..utils import _MIB_PER_GIB
+from ..utils import _HOURS_PER_MONTH, _MIB_PER_GIB
 
 _REGION_LOCATIONS: dict[str, dict] = {
     "ams": {"lat": 52.3676, "lon": 4.9041},
@@ -123,6 +130,30 @@ _PLAN_TYPES: dict[str, str] = {
     "vdc": "Dedicated Cloud",
     "SSD": "Bare Metal SSD",
     "NVMe": "Bare Metal NVMe",
+}
+
+_DATABASE_PLAN_TYPES: dict[str, str] = {
+    # Managed DB plan type codes and node-plan tier labels come from:
+    # - GET /v2/databases/plans payload (`type`, `id`)
+    #   https://www.vultr.com/api/
+    # - Node plan naming examples (`vultr-dbaas-[tier]-...`)
+    #   https://docs.vultr.com/support/products/managed-databases/how-do-i-identify-the-node-plan-for-my-vultr-managed-database
+    # - Provisioning examples that use DB plan ids
+    #   https://docs.vultr.com/products/storage/databases/postgresql/provisioning
+    "vdb": "Cloud Compute",
+    "vc2": "Cloud Compute",
+    "cc_hp_amd": "High Performance AMD",
+    "cc_hp_intel": "High Performance Intel",
+    "occ_gp": "Optimized Cloud Compute General Purpose",
+    "occ_so": "Optimized Cloud Compute Storage Optimized",
+}
+
+_DATABASE_TIERS = frozenset({"hobbyist", "startup", "business", "premium"})
+_DATABASE_PITR_DAYS_BY_TIER: dict[str, int | None] = {
+    "hobbyist": None,
+    "startup": 2,
+    "business": 14,
+    "premium": 30,
 }
 
 _CPU_MODEL_PREFIXES: tuple[str, ...] = (
@@ -274,6 +305,32 @@ def _storage_type_from_plan(plan: dict) -> StorageType:
     return _DISK_TYPES.get(plan.get("type"))
 
 
+def _database_plan_tier(database_id: str) -> str:
+    """Return the node-plan tier token from a vultr-dbaas id, or '' if absent."""
+    parts = database_id.split("-")
+    if len(parts) <= 2:
+        return ""
+    tier = parts[2].lower()
+    return tier if tier in _DATABASE_TIERS else ""
+
+
+def _database_family_name(plan: dict) -> str:
+    """Build readable managed database family from plan id and type."""
+    tier = _database_plan_tier(plan.get("id", ""))
+    tier_label = tier.title() if tier else ""
+    plan_type = plan.get("type") or "Unknown"
+    plan_type = _DATABASE_PLAN_TYPES.get(plan_type, plan_type)
+    return f"{tier_label} {plan_type}".strip()
+
+
+def _database_pitr_days(database_id: str) -> int | None:
+    """Map Vultr PostgreSQL node-plan tier to PITR retention days."""
+    tier = _database_plan_tier(database_id)
+    if not tier:
+        return None
+    return _DATABASE_PITR_DAYS_BY_TIER.get(tier)
+
+
 def _server_description(
     family: str | None,
     vcpus: int | None,
@@ -302,6 +359,23 @@ def _server_description(
     return f"{family} ({description_parts_str})" if family else description_parts_str
 
 
+def _database_description(
+    family: str | None,
+    vcpus: int | None,
+    memory_amount_mib: int | None,
+    storage_size: int | None,
+) -> str:
+    """Build managed database plan description in server-style format."""
+    memory_size_gb = memory_amount_mib / _MIB_PER_GIB if memory_amount_mib else None
+    description_parts = [
+        f"{vcpus} vCPUs" if vcpus else None,
+        f"{memory_size_gb} GiB RAM" if memory_size_gb else None,
+        f"{storage_size} GB SSD" if storage_size else None,
+    ]
+    description_parts_str = ", ".join(filter(None, description_parts))
+    return f"{family} ({description_parts_str})" if family else description_parts_str
+
+
 @cachier(separate_files=True)
 def _get_regions():
     response = get(
@@ -324,6 +398,38 @@ def _get_plans_metal():
         "https://api.vultr.com/v2/plans-metal", params={"per_page": 500}, timeout=10
     )
     return response.json()["plans_metal"]
+
+
+def _vultr_auth_headers() -> dict[str, str]:
+    try:
+        api_key = environ["VULTR_API_KEY"]
+    except KeyError:
+        raise KeyError("Missing environment variable: VULTR_API_KEY") from None
+    return {"Authorization": f"Bearer {api_key}"}
+
+
+@cachier(separate_files=True)
+def _get_database_plans():
+    response = get(
+        "https://api.vultr.com/v2/databases/plans",
+        headers=_vultr_auth_headers(),
+        params={"engine": "pg", "per_page": 500},
+        timeout=10,
+    )
+    response.raise_for_status()
+    return response.json().get("plans", [])
+
+
+@cachier(separate_files=True)
+def _get_database_available_services():
+    response = get(
+        "https://api.vultr.com/v2/databases/available-services",
+        headers=_vultr_auth_headers(),
+        params={"per_page": 500},
+        timeout=10,
+    )
+    response.raise_for_status()
+    return response.json()
 
 
 def inventory_compliance_frameworks(vendor):
@@ -739,20 +845,190 @@ def inventory_ipv4_prices(vendor):
     return items
 
 
-# TODO: Implement database collectors
-
-
 def inventory_databases(vendor):
-    return []
+    """List Vultr managed PostgreSQL plans.
+
+    - Provisioning uses POST /v2/databases with `plan` and `database_engine`.
+    - Plan ids come from GET /v2/databases/plans.
+    - Vultr Managed Databases are managed clusters, not plain VM images.
+    https://docs.vultr.com/products/storage/databases/postgresql/provisioning
+    https://docs.vultr.com/products/storage/databases
+    """
+    plans = _get_database_plans()
+    services = _get_database_available_services()
+    # Source: GET /v2/databases/available-services (`available_services.pg`).
+    # https://www.vultr.com/api/
+    versions = services.get("available_services", {}).get("pg", [])
+    items = []
+    for plan in plans:
+        database_id = plan.get("id")
+        vcpus = plan.get("vcpu_count")
+        memory = plan.get("ram")
+        storage_size = plan.get("disk")
+        node_count = plan.get("number_of_nodes")
+        # Replica nodes are read-only failover replicas. We model this as
+        # readable-cluster HA when a plan includes more than one node.
+        # https://docs.vultr.com/support/products/managed-databases/what-are-replica-nodes
+        # https://docs.vultr.com/support/products/managed-databases/what-type-of-replica-nodes-are-attached-to-a-vultr-managed-database
+        # https://docs.vultr.com/support/products/managed-databases/how-does-vultr-managed-databases-handle-automated-failover-in-multi-node-clusters
+        if node_count > 1:
+            ha = [DatabaseHaLevel.SINGLE_ZONE]
+            ha_strategy = [DatabaseHaStrategy.READABLE_CLUSTER]
+        else:
+            ha = [DatabaseHaLevel.NONE]
+            ha_strategy = [DatabaseHaStrategy.NONE]
+        # Plans with zero locations are not currently orderable in any region.
+        status = Status.ACTIVE if plan.get("locations") else Status.INACTIVE
+        family = _database_family_name(plan)
+        items.append(
+            {
+                "vendor_id": vendor.vendor_id,
+                "database_id": database_id,
+                "name": database_id,
+                "display_name": plan.get("name", database_id),
+                "description": _database_description(
+                    f"Vultr PostgreSQL {family}", vcpus, memory, storage_size
+                ),
+                "api_reference": database_id,
+                # API/IaC provisioning references this plan id and engine.
+                # https://docs.vultr.com/products/storage/databases/postgresql/provisioning
+                "api_reference_object": {
+                    "plan": database_id,
+                    "database_engine": "pg",
+                },
+                # Managed Databases are provisioned as managed clusters, not as
+                # plain VM images with a stable 1:1 server SKU mapping.
+                # https://docs.vultr.com/products/storage/databases
+                "server_id": None,
+                "engine": DatabaseEngine.POSTGRESQL,
+                "wire_protocol": DatabaseWireProtocol.POSTGRESQL,
+                "engine_versions": versions,
+                "family": family,
+                "vcpus": vcpus,
+                "memory_amount": memory,
+                "storage_size": storage_size,
+                # Vultr does not expose explicit storage extra min/max/autosize - only bundled storage size is present
+                "storage_extra_min": 0,
+                "storage_extra_max": 0,
+                "storage_extra_autosize": False,
+                "ha": ha,
+                "ha_strategy": ha_strategy,
+                "max_read_replicas": max(node_count - 1, 0),
+                # PostgreSQL settings are configurable via Advanced Configuration.
+                # https://docs.vultr.com/products/storage/databases/postgresql/management/settings/configuration-options
+                "custom_config": True,
+                # Vultr supports enabling PostgreSQL extensions.
+                # https://docs.vultr.com/support/products/managed-databases/how-do-i-enable-extensions-in-a-vultr-managed-postgresql-database
+                "custom_extensions": True,
+                # Vultr documents encryption at rest for Managed Databases.
+                # https://docs.vultr.com/support/products/managed-databases/how-does-vultr-protect-my-database-data-at-rest
+                "disk_encryption": True,
+                # Vultr supports scheduling upgrade windows for managed
+                # PostgreSQL version upgrades.
+                # https://docs.vultr.com/products/storage/databases/postgresql/management/upgrade-databases
+                "auto_upgrade_versions": True,
+                # PostgreSQL plans are automatically backed up.
+                # https://docs.vultr.com/support/products/managed-databases/is-my-vultr-managed-mysql-or-postgresql-database-backed-up
+                "scheduled_backups": True,
+                # PostgreSQL FAQ documents PITR retention by node-plan tier:
+                # Premium=30 days, Business=14 days, Startup=2 days, Hobbyist=None.
+                # https://docs.vultr.com/products/managed-database/postgresql/faq
+                "continuous_backups": _database_pitr_days(database_id),
+                # Vultr Managed PostgreSQL includes PgBouncer and supports
+                # managing connection pools.
+                # https://docs.vultr.com/products/storage/databases/postgresql/management/pgbouncer
+                # https://docs.vultr.com/products/storage/databases/postgresql/management/connection/connection-pools
+                "connection_pool": True,
+                # Usage graphs and API/CLI usage endpoints cover CPU, memory,
+                # disk and network monitoring for managed databases.
+                # https://docs.vultr.com/products/storage/databases/mysql/management/monitor-databases
+                "system_monitoring": True,
+                "database_monitoring": True,
+                # Vultr exposes manual advanced-option tuning, but no documented
+                # built-in auto-tuning advisor or auto-apply feature.
+                # https://docs.vultr.com/reference/vultr-cli/database/advanced-option/update
+                # https://docs.vultr.com/products/storage/databases/postgresql/management/settings/configuration-options
+                "autotuning_advice": None,
+                "autotuning_apply": None,
+                # Managed Databases are advertised with a 99.99% SLA.
+                # https://www.vultr.com/products/managed-databases/
+                "sla": 99.99,
+                "status": status,
+                # Provisioning supports `trusted_ips` and `vpc_id`.
+                # https://docs.vultr.com/products/storage/databases/postgresql/provisioning
+                # Vultr documents TLS in transit for Managed Databases.
+                # https://docs.vultr.com/support/products/managed-databases/is-a-vultr-managed-database-secure
+                "security_features": [
+                    DatabaseSecurityFeature.IP_FILTERING,
+                    DatabaseSecurityFeature.PRIVATE_NETWORK,
+                    DatabaseSecurityFeature.ENFORCED_TLS,
+                ],
+            }
+        )
+    return items
 
 
 def inventory_database_prices(vendor):
-    return []
+    databases = {database.database_id: database for database in vendor.databases}
+    plans = _get_database_plans()
+    items = []
+    for plan in plans:
+        database_id = plan.get("id")
+        if database_id not in databases:
+            continue
+        if not plan.get("locations"):
+            continue
+        node_count = plan.get("number_of_nodes")
+        if node_count > 1:
+            ha = DatabaseHaLevel.SINGLE_ZONE
+            ha_strategy = DatabaseHaStrategy.READABLE_CLUSTER
+        else:
+            ha = DatabaseHaLevel.NONE
+            ha_strategy = DatabaseHaStrategy.NONE
+        hourly_cost = plan.get("hourly_cost")
+        monthly_cost = plan.get("monthly_cost")
+        if hourly_cost is not None:
+            hourly_price = hourly_cost
+        elif monthly_cost is not None:
+            hourly_price = monthly_cost / _HOURS_PER_MONTH
+        else:
+            continue
+        price_tiered = []
+        if monthly_cost is not None and hourly_price:
+            monthly_cap = int(monthly_cost / hourly_price)
+            price_tiered = [
+                {"lower": 0, "upper": monthly_cap, "price": hourly_price},
+                {"lower": monthly_cap + 1, "upper": "Infinity", "price": 0},
+            ]
+        for location in plan.get("locations", []):
+            items.append(
+                {
+                    "vendor_id": vendor.vendor_id,
+                    "region_id": location,
+                    "database_id": database_id,
+                    "allocation": Allocation.ONDEMAND,
+                    "ha": ha,
+                    "ha_strategy": ha_strategy,
+                    "unit": PriceUnit.HOUR,
+                    "price": hourly_price,
+                    "price_upfront": 0,
+                    "price_tiered": price_tiered,
+                    "currency": plan.get("currency", "USD"),
+                }
+            )
+    return items
 
 
 def inventory_database_storages(vendor):
+    """Vultr managed PostgreSQL storage is bundled into DB plans.
+
+    Resizing storage is done by changing the database node plan; there is no
+    separate DB storage catalog product exposed by the public API.
+    https://docs.vultr.com/products/storage/databases/postgresql/management/resize-databases
+    """
     return []
 
 
 def inventory_database_storage_prices(vendor):
+    """No standalone Vultr managed DB storage price meters are exposed."""
     return []

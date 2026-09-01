@@ -1,4 +1,4 @@
-from sc_crawler.table_fields import Status
+from sc_crawler.table_fields import DatabaseHaLevel, DatabaseHaStrategy, Status
 from sc_crawler.vendor_helpers import server_status_from_availability_categories
 
 _ALICLOUD_CATEGORY_TO_SERVER_STATUS = {
@@ -96,3 +96,41 @@ def test_server_status_from_availability_categories_missing_is_inactive():
         )
         == Status.INACTIVE
     )
+
+
+def test_database_ha_level_ordered():
+    assert DatabaseHaLevel.ordered(
+        {DatabaseHaLevel.NONE, DatabaseHaLevel.SINGLE_ZONE}
+    ) == [DatabaseHaLevel.SINGLE_ZONE, DatabaseHaLevel.NONE]
+    assert DatabaseHaLevel.ordered(
+        {
+            DatabaseHaLevel.NONE,
+            DatabaseHaLevel.MULTI_REGION,
+            DatabaseHaLevel.MULTI_ZONE,
+            DatabaseHaLevel.SINGLE_ZONE,
+        }
+    ) == [
+        DatabaseHaLevel.MULTI_REGION,
+        DatabaseHaLevel.MULTI_ZONE,
+        DatabaseHaLevel.SINGLE_ZONE,
+        DatabaseHaLevel.NONE,
+    ]
+
+
+def test_database_ha_strategy_ordered():
+    assert DatabaseHaStrategy.ordered({DatabaseHaStrategy.NONE}) == [
+        DatabaseHaStrategy.NONE
+    ]
+    assert DatabaseHaStrategy.ordered(
+        {
+            DatabaseHaStrategy.NONE,
+            DatabaseHaStrategy.PASSIVE_STANDBY,
+            DatabaseHaStrategy.READABLE_CLUSTER,
+            DatabaseHaStrategy.MULTI_MASTER,
+        }
+    ) == [
+        DatabaseHaStrategy.MULTI_MASTER,
+        DatabaseHaStrategy.READABLE_CLUSTER,
+        DatabaseHaStrategy.PASSIVE_STANDBY,
+        DatabaseHaStrategy.NONE,
+    ]
