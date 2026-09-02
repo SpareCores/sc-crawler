@@ -33,6 +33,9 @@ from sc_crawler.vendors._aws import (
     inventory_databases as aws_databases,
 )
 from sc_crawler.vendors._aws import (
+    _reconcile_server_status as aws_reconcile_server_status,
+)
+from sc_crawler.vendors._aws import (
     inventory_server_prices as aws_server_prices,
 )
 from sc_crawler.vendors._azure import (
@@ -1820,6 +1823,7 @@ def test_aws_inventory_server_prices_deactivates_unoffered_instance_types():
         ),
     ):
         prices = aws_server_prices(vendor)
+        aws_reconcile_server_status(vendor)
     assert {(p["server_id"], p["zone_id"]) for p in prices} == {
         ("m5.large", "use1-az1")
     }
@@ -1828,6 +1832,24 @@ def test_aws_inventory_server_prices_deactivates_unoffered_instance_types():
     assert t1.status == Status.INACTIVE
     # offered, even without a Linux on-demand SKU
     assert mac.status == Status.ACTIVE
+
+
+def test_aws_reconcile_server_status_keeps_spot_only_instance_types_active():
+    region = Mock(
+        region_id="us-east-1",
+        api_reference="us-east-1",
+        aliases=[],
+        status=Status.ACTIVE,
+    )
+    region.name = "US East (N. Virginia)"
+    spot_only = Mock(server_id="p4d.24xlarge", status=Status.INACTIVE)
+    vendor = _aws_vendor(regions=[region], servers=[spot_only])
+    with patch(
+        "sc_crawler.vendors._aws._describe_instance_type_offerings_per_zone_with_progress",
+        return_value={},
+    ):
+        aws_reconcile_server_status(vendor, spot_server_ids={"p4d.24xlarge"})
+    assert spot_only.status == Status.ACTIVE
 
 
 def test_aws_inventory_database_prices_by_ha_deployment():
