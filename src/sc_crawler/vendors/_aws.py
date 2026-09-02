@@ -1145,9 +1145,7 @@ def inventory_server_prices_spot(vendor):
         )
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
-    _reconcile_server_status(
-        vendor, {product["InstanceType"] for product in products}
-    )
+    _reconcile_server_status(vendor, {product["InstanceType"] for product in products})
     return server_prices
 
 
