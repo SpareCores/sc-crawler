@@ -7,7 +7,7 @@ from functools import cache
 from itertools import chain, repeat
 from logging import DEBUG, WARN
 from statistics import mode
-from typing import List, Optional, Tuple
+from typing import Collection, List, Optional, Tuple
 
 import boto3
 from botocore.config import Config
@@ -120,6 +120,51 @@ def _describe_instance_type_offerings_per_zone_with_progress(
     zones = _describe_instance_type_offerings_per_zone(region)
     vendor.progress_tracker.advance_task()
     return zones
+
+
+def _collect_regions_servers(vendor: Vendor) -> dict[str, dict[str, list[str]]]:
+    """Map each ACTIVE region to instance types offered per zone."""
+    active_region_ids = [
+        region.api_reference
+        for region in vendor.regions
+        if region.status == Status.ACTIVE
+    ]
+    vendor.progress_tracker.start_task(
+        name="Look up supported server types in all ACTIVE regions/zones",
+        total=len(active_region_ids),
+    )
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        regions_servers = executor.map(
+            _describe_instance_type_offerings_per_zone_with_progress,
+            active_region_ids,
+            repeat(vendor),
+        )
+    regions_servers = dict(zip(active_region_ids, regions_servers))
+    vendor.progress_tracker.hide_task()
+    return regions_servers
+
+
+def _reconcile_server_status(
+    vendor: Vendor, spot_server_ids: Collection[str] = ()
+) -> None:
+    """Update server status from EC2 offerings and spot availability.
+
+    Not offered in any ACTIVE region/zone and absent from spot -> INACTIVE.
+    AWS does not confirm retirement, so never mark RETIRED here.
+    """
+    regions_servers = _collect_regions_servers(vendor)
+    offered_server_ids = {
+        server_id
+        for zone_servers in regions_servers.values()
+        for server_id in zone_servers
+    }
+    available_server_ids = offered_server_ids | set(spot_server_ids)
+    for server in vendor.servers:
+        server.status = (
+            Status.ACTIVE
+            if server.server_id in available_server_ids
+            else Status.INACTIVE
+        )
 
 
 @cachier()
@@ -951,8 +996,9 @@ def inventory_zones(vendor):
 def inventory_servers(vendor):
     """List all available AWS instance types in all regions via `boto3` calls.
 
-    Lifecycle (`DescribeInstanceTypeOfferings`): not offered in any active
-    region/zone -> INACTIVE. No type-level EC2 retirement API exists.
+    Lifecycle is reconciled after spot price collection via
+    [_reconcile_server_status][sc_crawler.vendors._aws._reconcile_server_status]
+    (offerings + spot in ACTIVE regions -> ACTIVE, else INACTIVE).
     """
     # TODO consider dropping this in favor of pricing.get_products, as
     #      it has info e.g. on instanceFamily although other fields
@@ -990,22 +1036,7 @@ def inventory_server_prices(vendor):
     regions = scmodels_to_dict(vendor.regions, keys=["name", "aliases"])
     servers = scmodels_to_dict(vendor.servers, keys=["server_id"])
 
-    # check all regions for instance types per zone
-    active_region_ids = [
-        r.api_reference for r in regions.values() if r.status == Status.ACTIVE
-    ]
-    vendor.progress_tracker.start_task(
-        name="Look up supported server types in all ACTIVE regions/zones",
-        total=len(active_region_ids),
-    )
-    with ThreadPoolExecutor(max_workers=8) as executor:
-        regions_servers = executor.map(
-            _describe_instance_type_offerings_per_zone_with_progress,
-            active_region_ids,
-            repeat(vendor),
-        )
-    regions_servers = dict(zip(active_region_ids, regions_servers))
-    vendor.progress_tracker.hide_task()
+    regions_servers = _collect_regions_servers(vendor)
 
     server_prices = []
     vendor.progress_tracker.start_task(
@@ -1046,17 +1077,6 @@ def inventory_server_prices(vendor):
         finally:
             vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
-
-    # Not offered in any ACTIVE region/zone. AWS does not confirm retirement,
-    # so mark INACTIVE rather than RETIRED. Prices may still be published.
-    offered_server_ids = {
-        server_id
-        for zone_servers in regions_servers.values()
-        for server_id in zone_servers
-    }
-    for server in vendor.servers:
-        if server.server_id not in offered_server_ids:
-            server.status = Status.INACTIVE
 
     return server_prices
 
@@ -1125,6 +1145,7 @@ def inventory_server_prices_spot(vendor):
         )
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
+    _reconcile_server_status(vendor, {product["InstanceType"] for product in products})
     return server_prices
 
 
