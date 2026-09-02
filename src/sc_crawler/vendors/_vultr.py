@@ -22,6 +22,8 @@ from ..table_fields import (
 )
 from ..utils import _HOURS_PER_MONTH, _MIB_PER_GIB
 
+_API_TIMEOUT = 30
+
 _REGION_LOCATIONS: dict[str, dict] = {
     "ams": {"lat": 52.3676, "lon": 4.9041},
     "atl": {"lat": 33.7490, "lon": -84.3880, "state": "Georgia"},
@@ -379,7 +381,9 @@ def _database_description(
 @cachier(separate_files=True)
 def _get_regions():
     response = get(
-        "https://api.vultr.com/v2/regions", params={"per_page": 500}, timeout=10
+        "https://api.vultr.com/v2/regions",
+        params={"per_page": 500},
+        timeout=_API_TIMEOUT,
     )
     return response.json()["regions"]
 
@@ -387,7 +391,7 @@ def _get_regions():
 @cachier(separate_files=True)
 def _get_plans():
     response = get(
-        "https://api.vultr.com/v2/plans", params={"per_page": 500}, timeout=10
+        "https://api.vultr.com/v2/plans", params={"per_page": 500}, timeout=_API_TIMEOUT
     )
     return response.json()["plans"]
 
@@ -395,7 +399,9 @@ def _get_plans():
 @cachier(separate_files=True)
 def _get_plans_metal():
     response = get(
-        "https://api.vultr.com/v2/plans-metal", params={"per_page": 500}, timeout=10
+        "https://api.vultr.com/v2/plans-metal",
+        params={"per_page": 500},
+        timeout=_API_TIMEOUT,
     )
     return response.json()["plans_metal"]
 
@@ -414,7 +420,7 @@ def _get_database_plans():
         "https://api.vultr.com/v2/databases/plans",
         headers=_vultr_auth_headers(),
         params={"engine": "pg", "per_page": 500},
-        timeout=10,
+        timeout=_API_TIMEOUT,
     )
     response.raise_for_status()
     return response.json().get("plans", [])
@@ -426,7 +432,7 @@ def _get_database_available_services():
         "https://api.vultr.com/v2/databases/available-services",
         headers=_vultr_auth_headers(),
         params={"per_page": 500},
-        timeout=10,
+        timeout=_API_TIMEOUT,
     )
     response.raise_for_status()
     return response.json()
