@@ -21,6 +21,9 @@ from sc_crawler.vendors._aws import (
     _get_storage_bounds_from_orderable_options,
 )
 from sc_crawler.vendors._aws import (
+    _reconcile_server_status as aws_reconcile_server_status,
+)
+from sc_crawler.vendors._aws import (
     inventory_database_prices as aws_database_prices,
 )
 from sc_crawler.vendors._aws import (
@@ -31,9 +34,6 @@ from sc_crawler.vendors._aws import (
 )
 from sc_crawler.vendors._aws import (
     inventory_databases as aws_databases,
-)
-from sc_crawler.vendors._aws import (
-    _reconcile_server_status as aws_reconcile_server_status,
 )
 from sc_crawler.vendors._aws import (
     inventory_server_prices as aws_server_prices,
