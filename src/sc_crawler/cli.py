@@ -868,6 +868,7 @@ def pull(
             for vendor in vendors:
 
                 def on_error():
+                    session.rollback()
                     vendor.log(
                         f"Skipping vendor {vendor.vendor_id} due to vendor API error.",
                         logging.ERROR,

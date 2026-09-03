@@ -91,8 +91,7 @@ def _alibabacloud_config(region_id: str) -> Config:
         if security_token:
             config.security_token = security_token
         return config
-    # The SDK attaches its own stderr handler to the `credentials` logger and
-    # logs a full traceback, the resolved failure is reported once by the caller.
+    # SDK logs a full traceback per credential provider, caller reports the failure once.
     getLogger("credentials").setLevel(CRITICAL)
     return Config(credential=CredClient(), region_id=region_id, **timeout_kwargs)
 
