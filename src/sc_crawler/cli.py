@@ -41,7 +41,7 @@ from .alembic_helpers import alembic_cfg, get_revision
 from .insert import insert_items
 from .logger import ProgressPanel, ScRichHandler, VendorProgressTracker, logger
 from .lookup import benchmarks, compliance_frameworks, countries
-from .sentry import before_send
+from .sentry import before_send, sentry_capture_or_raise
 from .table_fields import Status
 from .tables import Benchmark, ComplianceFramework, Country, Metadata, Vendor, tables
 from .tables_scd import tables_scd
@@ -866,47 +866,61 @@ def pull(
             # get data for each vendor and then add/merge to database
             # TODO each vendor should open its own session and run in parallel
             for vendor in vendors:
-                logger.info("Starting to collect data from vendor: " + vendor.vendor_id)
-                vendor = session.merge(vendor)
-                # register session to the Vendor so that dependen objects can auto-merge
-                vendor.session = session
-                # register progress bars so that helpers can update
-                vendor.progress_tracker = VendorProgressTracker(
-                    vendor=vendor, progress_panel=pbars
-                )
-                vendor.progress_tracker.start_vendor(total=len(records))
-                if Records.compliance_frameworks in records:
-                    vendor.inventory_compliance_frameworks()
-                if Records.regions in records:
-                    vendor.inventory_regions()
-                if Records.zones in records:
-                    vendor.inventory_zones()
-                if Records.servers in records:
-                    vendor.inventory_servers()
-                if Records.server_prices in records:
-                    vendor.inventory_server_prices()
-                if Records.server_prices_spot in records:
-                    vendor.inventory_server_prices_spot()
-                if Records.storages in records:
-                    vendor.inventory_storages()
-                if Records.storage_prices in records:
-                    vendor.inventory_storage_prices()
-                if Records.traffic_prices in records:
-                    vendor.inventory_traffic_prices()
-                if Records.ipv4_prices in records:
-                    vendor.inventory_ipv4_prices()
-                if Records.databases in records:
-                    vendor.inventory_databases()
-                if Records.database_prices in records:
-                    vendor.inventory_database_prices()
-                if Records.database_storages in records:
-                    vendor.inventory_database_storages()
-                if Records.database_storage_prices in records:
-                    vendor.inventory_database_storage_prices()
-                # reset current step name
-                vendor.progress_tracker.update_vendor(step="✔")
-                session.merge(vendor)
-                session.commit()
+
+                def on_error():
+                    vendor.log(
+                        f"Skipping vendor {vendor.vendor_id} due to vendor API error.",
+                        logging.ERROR,
+                    )
+                    vendor.progress_tracker.update_vendor(step="✘")
+
+                with sentry_capture_or_raise(
+                    vendor=vendor,
+                    on_error=on_error,
+                ):
+                    logger.info(
+                        "Starting to collect data from vendor: " + vendor.vendor_id
+                    )
+                    vendor = session.merge(vendor)
+                    # register session to the Vendor so that dependen objects can auto-merge
+                    vendor.session = session
+                    # register progress bars so that helpers can update
+                    vendor.progress_tracker = VendorProgressTracker(
+                        vendor=vendor, progress_panel=pbars
+                    )
+                    vendor.progress_tracker.start_vendor(total=len(records))
+                    if Records.compliance_frameworks in records:
+                        vendor.inventory_compliance_frameworks()
+                    if Records.regions in records:
+                        vendor.inventory_regions()
+                    if Records.zones in records:
+                        vendor.inventory_zones()
+                    if Records.servers in records:
+                        vendor.inventory_servers()
+                    if Records.server_prices in records:
+                        vendor.inventory_server_prices()
+                    if Records.server_prices_spot in records:
+                        vendor.inventory_server_prices_spot()
+                    if Records.storages in records:
+                        vendor.inventory_storages()
+                    if Records.storage_prices in records:
+                        vendor.inventory_storage_prices()
+                    if Records.traffic_prices in records:
+                        vendor.inventory_traffic_prices()
+                    if Records.ipv4_prices in records:
+                        vendor.inventory_ipv4_prices()
+                    if Records.databases in records:
+                        vendor.inventory_databases()
+                    if Records.database_prices in records:
+                        vendor.inventory_database_prices()
+                    if Records.database_storages in records:
+                        vendor.inventory_database_storages()
+                    if Records.database_storage_prices in records:
+                        vendor.inventory_database_storage_prices()
+                    # reset current step name
+                    vendor.progress_tracker.update_vendor(step="✔")
+                    session.merge(vendor)
+                    session.commit()
 
             if Records.servers in records:
                 task_id = pbars.tasks.add_task(
