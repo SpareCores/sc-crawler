@@ -1850,6 +1850,18 @@ def inventory_databases(vendor):
                     for storage_edition in (
                         getattr(edition, "supported_storage_editions", None) or []
                     ):
+                        if (
+                            getattr(storage_edition, "reason", None)
+                            == _PG_UNSUPPORTED_STORAGE_REASON
+                        ):
+                            continue
+                        # Premium SSD v2 is GP/MO only; Burstable is capped by Premium SSD (~32 TiB).
+                        # https://learn.microsoft.com/en-us/azure/postgresql/compute-storage/concepts-storage-premium-ssd-v2
+                        if (
+                            edition.name == "Burstable"
+                            and storage_edition.name == "ManagedDiskV2"
+                        ):
+                            continue
                         for storage_mb in (
                             getattr(storage_edition, "supported_storage_mb", None) or []
                         ):

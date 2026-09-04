@@ -655,14 +655,21 @@ def inventory_databases(vendor):
         memory_amount = plan.get("memory_amount")
         components = plan.get("components", {})
         storage_component = components.get("storage", {})
-        # API sizes are MiB (same as memory_amount); schema storage fields use GB.
-        storage_size_gb = round(plan["storage_size"] / _MIB_PER_GIB * _GIB_TO_GB)
-        storage_step_gb = round(plan["storage_step_size"] / _MIB_PER_GIB * _GIB_TO_GB)
-        storage_extra_max_gb = round(
-            (plan["storage_cap_size"] - plan["storage_size"])
-            / _MIB_PER_GIB
-            * _GIB_TO_GB
+        # API `storage_size` / `included_gib` is cluster-total GiB; UI shows per-node GB.
+        # Store per-node integer GiB (do not apply decimal GiB→GB inflation).
+        # https://upcloud.com/docs/products/managed-postgresql/configurations/
+        nodes = node_count or 1
+        included_gib = storage_component.get("included_gib")
+        bundled_gib = (
+            int(included_gib)
+            if included_gib is not None
+            else plan["storage_size"] // _MIB_PER_GIB
         )
+        storage_size_gb = bundled_gib // nodes
+        storage_step_gb = plan["storage_step_size"] // _MIB_PER_GIB
+        storage_extra_max_gb = (
+            (plan["storage_cap_size"] - plan["storage_size"]) // _MIB_PER_GIB
+        ) // nodes
         dynamic_storage_supported = storage_component.get("dynamic_storage_supported")
         if dynamic_storage_supported:
             storage_extra_min = storage_step_gb

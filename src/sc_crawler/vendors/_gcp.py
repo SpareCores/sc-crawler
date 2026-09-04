@@ -1109,8 +1109,12 @@ def _pg_sqladmin_metadata() -> dict:
         if name in _PG_EXTENSION_FLAGS:
             custom_extensions = True
         for version in flag.get("appliesTo", []):
-            if isinstance(version, str) and version.startswith("POSTGRES_"):
-                engine_versions.add(version.removeprefix("POSTGRES_").replace("_", "."))
+            if not (isinstance(version, str) and version.startswith("POSTGRES_")):
+                continue
+            # flags.list appliesTo can include unreleased majors (e.g. POSTGRES_19).
+            major = version.removeprefix("POSTGRES_").replace("_", ".")
+            if major in _PG_SUPPORTED_MAJOR_VERSIONS:
+                engine_versions.add(major)
     return {
         "tiers": tiers,
         "engine_versions": sorted(
@@ -1129,7 +1133,19 @@ def _cloud_sql_skus():
 
 _PG_CUSTOM_TIER_RE = recompile(r"^db-custom-(\d+)-(\d+)$")
 _PG_NAMED_TIER_CPU_RE = recompile(r"-(\d+)$")
-_PG_N4_TIER_MARKERS = ("c4a", "perf-optimized", "memory-optimized")
+# Enterprise Plus predefined tiers (N2 / C4A), not Enterprise N4 customs.
+# Billing uses distinct Enterprise Plus SKUs.
+# https://cloud.google.com/skus/sku-groups/cloud-sql-cud-eligible-skus
+_PG_ENTERPRISE_PLUS_N_MARKERS = ("perf-optimized", "memory-optimized")
+_PG_ENTERPRISE_PLUS_C4A_MARKERS = ("c4a",)
+_PG_ENTERPRISE_PLUS_FAMILIES = frozenset({"enterprise_plus_n", "enterprise_plus_c4a"})
+# https://cloud.google.com/sql/docs/postgres/faq
+_PG_SUPPORTED_MAJOR_VERSIONS = frozenset(
+    {"9.6", "10", "11", "12", "13", "14", "15", "16", "17", "18"}
+)
+_PG_ENTERPRISE_PLUS_MAJOR_VERSIONS = frozenset(
+    {"12", "13", "14", "15", "16", "17", "18"}
+)
 _PG_SHARED_TIERS = {"db-f1-micro": "f1-micro", "db-g1-small": "g1-small"}
 _PG_STORAGE_METERS = (
     (
@@ -1191,13 +1207,7 @@ _PG_STORAGE_SPECS: dict[str, dict] = {
     },
 }
 _PG_SHARED_INSTANCE_RE = recompile(
-    r": (?:Zonal|Regional) - (?:Extended support )?(f1-micro|g1-small)(?: v\d+)? in "
-)
-_PG_VCPU_RE = recompile(
-    r": (?:Zonal|Regional) - (?:Extended support )?(?:Enterprise N4 )?vCPU in "
-)
-_PG_RAM_RE = recompile(
-    r": (?:Zonal|Regional) - (?:Extended support )?(?:Enterprise N4 )?RAM in "
+    r"(?:Extended support )?(f1-micro|g1-small)(?: v\d+)? in "
 )
 _PG_EXTENSION_FLAGS = frozenset(
     {
@@ -1217,6 +1227,52 @@ _PG_TIER_FAMILY_LABELS = {
     "memory-optimized-N": "Memory Optimized N",
     "custom": "Custom",
 }
+
+
+def _pg_tier_price_family(tier_name: str) -> str:
+    if tier_name in _PG_SHARED_TIERS:
+        return "shared"
+    lower = tier_name.lower()
+    if any(marker in lower for marker in _PG_ENTERPRISE_PLUS_C4A_MARKERS):
+        return "enterprise_plus_c4a"
+    if any(marker in lower for marker in _PG_ENTERPRISE_PLUS_N_MARKERS):
+        return "enterprise_plus_n"
+    return "enterprise"
+
+
+def _pg_compute_sku_class(description: str) -> tuple[str, str] | None:
+    """Map a Cloud SQL Postgres compute SKU description to (price_family, component)."""
+    if "for Postgre" not in description:
+        return None
+    if "vCPU in" in description:
+        component = "vcpu"
+    elif "RAM in" in description:
+        component = "ram"
+    else:
+        return None
+
+    if match := _PG_SHARED_INSTANCE_RE.search(description):
+        return ("shared", match.group(1))
+
+    extended = "Extended support" in description
+    # Match Plus / N4 before plain enterprise.
+    if (
+        "Enterprise Plus Performance Optimized C4A" in description
+        or "Enterprise Plus C4A" in description
+    ):
+        family = "enterprise_plus_c4a"
+    elif "Enterprise Plus N " in description:
+        family = "enterprise_plus_n"
+    elif "Enterprise N4" in description:
+        family = "enterprise_n4"
+    elif extended:
+        family = "enterprise_extended"
+    else:
+        family = "enterprise"
+
+    if extended and family not in ("enterprise_extended", "shared"):
+        return None
+    return (family, component)
 
 
 def _sku_unit_price(sku) -> float | None:
@@ -1253,8 +1309,6 @@ def _pg_billing_catalog() -> tuple[
     ha_families: set[tuple[str, str]] = set()
     for sku in _cloud_sql_skus():
         description = sku.description or ""
-        if "for Postgre" not in description:
-            continue
         if "Regional" in description:
             availability = "regional"
         elif "Zonal" in description:
@@ -1262,28 +1316,7 @@ def _pg_billing_catalog() -> tuple[
         else:
             continue
 
-        sku_class = None
-        if match := _PG_SHARED_INSTANCE_RE.search(description):
-            sku_class = ("shared", match.group(1))
-        else:
-            extended = "Extended support" in description
-            if _PG_VCPU_RE.search(description):
-                family = (
-                    "enterprise_n4" if "Enterprise N4" in description else "enterprise"
-                )
-                if extended and family == "enterprise":
-                    sku_class = ("enterprise_extended", "vcpu")
-                elif not extended:
-                    sku_class = (family, "vcpu")
-            elif _PG_RAM_RE.search(description):
-                family = (
-                    "enterprise_n4" if "Enterprise N4" in description else "enterprise"
-                )
-                if extended and family == "enterprise":
-                    sku_class = ("enterprise_extended", "ram")
-                elif not extended:
-                    sku_class = (family, "ram")
-
+        sku_class = _pg_compute_sku_class(description)
         if not sku_class:
             continue
         family, component = sku_class
@@ -1369,12 +1402,20 @@ def inventory_databases(vendor):
         else:
             tier_regions = []
 
-        if tier_name in _PG_SHARED_TIERS:
-            price_family = "shared"
-        elif any(marker in tier_name.lower() for marker in _PG_N4_TIER_MARKERS):
-            price_family = "enterprise_n4"
-        else:
-            price_family = "enterprise"
+        price_family = _pg_tier_price_family(tier_name)
+        is_enterprise_plus = price_family in _PG_ENTERPRISE_PLUS_FAMILIES
+        # Drop unreleased majors that flags.list may still advertise (e.g. 19).
+        engine_versions = [
+            version
+            for version in meta["engine_versions"]
+            if version in _PG_SUPPORTED_MAJOR_VERSIONS
+        ]
+        if is_enterprise_plus:
+            engine_versions = [
+                version
+                for version in engine_versions
+                if version in _PG_ENTERPRISE_PLUS_MAJOR_VERSIONS
+            ]
 
         ha: list[DatabaseHaLevel] = []
         ha_strategy: list[DatabaseHaStrategy] = []
@@ -1414,7 +1455,7 @@ def inventory_databases(vendor):
                 "server_id": server_id,
                 "engine": DatabaseEngine.POSTGRESQL,
                 "wire_protocol": DatabaseWireProtocol.POSTGRESQL,
-                "engine_versions": meta["engine_versions"],
+                "engine_versions": engine_versions,
                 "family": family_slug,
                 "vcpus": cpu_count,
                 "memory_amount": memory_amount,
@@ -1456,7 +1497,7 @@ def inventory_databases(vendor):
                 # https://cloud.google.com/sql/docs/postgres/backup-recovery/configure-pitr
                 # Max transactionLogRetentionDays for PITR by edition; not in tiers API.
                 # Enterprise: 1-7 days; Enterprise Plus: 1-35 days.
-                "continuous_backups": (35 if price_family == "enterprise_n4" else 7),
+                "continuous_backups": (35 if is_enterprise_plus else 7),
                 "custom_config": meta["custom_config"],
                 "custom_extensions": meta["custom_extensions"],
                 # https://cloud.google.com/sql/docs/postgres/replication
@@ -1471,14 +1512,14 @@ def inventory_databases(vendor):
                 "database_monitoring": True,
                 # https://cloud.google.com/sql/docs/postgres/use-index-advisor
                 # Index advisor recommends CREATE INDEX (Enterprise Plus only); operator applies.
-                "autotuning_advice": price_family == "enterprise_n4",
+                "autotuning_advice": is_enterprise_plus,
                 "autotuning_apply": False,
                 # https://cloud.google.com/sql/sla
                 # Enterprise Plus + HA: 99.99%; Enterprise + HA: 99.95%.
                 # Shared-core and zonal (non-HA) instances are excluded from the SLA.
                 "sla": (
                     99.99
-                    if price_family == "enterprise_n4" and has_regional_ha
+                    if is_enterprise_plus and has_regional_ha
                     else (
                         99.95
                         if DatabaseHaLevel.MULTI_ZONE in ha and price_family != "shared"
@@ -1528,15 +1569,8 @@ def inventory_database_prices(vendor):
         else:
             tier_regions = set()
 
-        if tier_name in _PG_SHARED_TIERS:
-            price_family = "shared"
-            availabilities = ("zonal", "regional")
-        elif any(marker in tier_name.lower() for marker in _PG_N4_TIER_MARKERS):
-            price_family = "enterprise_n4"
-            availabilities = ("zonal", "regional")
-        else:
-            price_family = "enterprise"
-            availabilities = ("zonal", "regional")
+        price_family = _pg_tier_price_family(tier_name)
+        availabilities = ("zonal", "regional")
 
         for region in vendor.regions:
             if tier_regions and region.api_reference not in tier_regions:
@@ -1560,11 +1594,11 @@ def inventory_database_prices(vendor):
                     vcpu_sku = compute_index.get(
                         (region.api_reference, price_family, "vcpu", availability)
                     )
-                    # N4/C4A billing has Enterprise N4 vCPU meters, but RAM uses the
-                    # generic PostgreSQL RAM meters (no "Enterprise N4 RAM" SKU).
                     ram_sku = compute_index.get(
                         (region.api_reference, price_family, "ram", availability)
                     )
+                    # Enterprise N4 customs (if cataloged later) may lack a dedicated
+                    # RAM meter; Plus N / C4A have their own RAM SKUs.
                     if ram_sku is None and price_family == "enterprise_n4":
                         ram_sku = compute_index.get(
                             (region.api_reference, "enterprise", "ram", availability)

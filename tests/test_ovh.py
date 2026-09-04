@@ -539,6 +539,51 @@ def test_inventory_databases_collapses_versions_and_maps_fields(mock_ovh_client)
     assert retired["status"] == Status.RETIRED
 
 
+def test_inventory_databases_uses_availability_storage_not_flavor_nvme(mock_ovh_client):
+    # capabilities.flavors[].storage is compute NVMe (100 GB for b3-16); DBaaS usable
+    # disk is availability specifications.storage.minimum (320 GiB on pricing page).
+    capabilities = {
+        "engines": [
+            {"name": "postgresql", "versions": ["16"], "sslModes": ["required"]}
+        ],
+        "flavors": [
+            {
+                "name": "b3-16",
+                "core": 4,
+                "memory": 16,
+                "storage": 100,
+                "generation": "gen3",
+                "specifications": {
+                    "core": 4,
+                    "memory": {"unit": "GB", "value": 16},
+                    "storage": {"unit": "GB", "value": 100},
+                },
+            }
+        ],
+        "plans": [{"name": "production", "backupRetention": "P14D"}],
+    }
+    _extend_ovh_get(
+        mock_ovh_client,
+        availability=[
+            _pg_offer(
+                flavor="b3-16",
+                min_disk=320,
+                max_disk=1600,
+            )
+        ],
+        capabilities=capabilities,
+        catalog_addons=[],
+    )
+    vendor = _ovh_vendor(
+        servers=[SimpleNamespace(server_id="b3-16", api_reference="b3-16")]
+    )
+    rows = inventory_databases(vendor)
+    assert len(rows) == 1
+    assert rows[0]["database_id"] == "postgresql-production-b3-16"
+    assert rows[0]["storage_size"] == 320
+    assert rows[0]["storage_extra_max"] == 1280
+
+
 def test_inventory_databases_merges_multi_az_ha(mock_ovh_client):
     availability = [
         _pg_offer(region="GRA", version="16"),

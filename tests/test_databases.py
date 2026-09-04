@@ -55,7 +55,9 @@ from sc_crawler.vendors._azure import (
 )
 from sc_crawler.vendors._gcp import (
     _gcp_machine_type_status,
+    _pg_compute_sku_class,
     _pg_storage_id,
+    _pg_tier_price_family,
     inventory_database_prices,
     inventory_databases,
 )
@@ -604,6 +606,106 @@ def test_azure_inventory_databases_ha_from_supported_ha_mode():
     assert by_id["Standard_E2s_v3"]["status"] == Status.ACTIVE
 
 
+def test_azure_burstable_storage_extra_max_excludes_premium_ssd_v2():
+    from sc_crawler.utils import _GIB_TO_GB
+
+    vendor = Mock(vendor_id="azure")
+    vendor.regions = [Mock(region_id="centralus", api_reference="centralus")]
+    vendor.servers = []
+    vendor.progress_tracker = Mock(
+        start_task=Mock(), advance_task=Mock(), hide_task=Mock()
+    )
+    premium_ssd_max_mib = 32_767 * 1024
+    premium_ssd_v2_max_mib = 65_536 * 1024
+    capability = SimpleNamespace(
+        supported_server_versions=[SimpleNamespace(name="16", status="Available")],
+        storage_auto_growth_supported="Enabled",
+        supported_features=[],
+        supported_server_editions=[
+            SimpleNamespace(
+                name="Burstable",
+                supported_storage_editions=[
+                    SimpleNamespace(
+                        name="ManagedDisk",
+                        reason=None,
+                        supported_storage_mb=[
+                            SimpleNamespace(
+                                storage_size_mb=32 * 1024,
+                                maximum_storage_size_mb=premium_ssd_max_mib,
+                            )
+                        ],
+                    ),
+                    SimpleNamespace(
+                        name="ManagedDiskV2",
+                        reason=None,
+                        supported_storage_mb=[
+                            SimpleNamespace(
+                                storage_size_mb=32 * 1024,
+                                maximum_storage_size_mb=premium_ssd_v2_max_mib,
+                            )
+                        ],
+                    ),
+                ],
+                supported_server_skus=[
+                    SimpleNamespace(
+                        name="Standard_B2s",
+                        v_cores=2,
+                        supported_memory_per_vcore_mb=2048,
+                        supported_ha_mode=[],
+                    )
+                ],
+            ),
+            SimpleNamespace(
+                name="GeneralPurpose",
+                supported_storage_editions=[
+                    SimpleNamespace(
+                        name="ManagedDisk",
+                        reason=None,
+                        supported_storage_mb=[
+                            SimpleNamespace(
+                                storage_size_mb=32 * 1024,
+                                maximum_storage_size_mb=premium_ssd_max_mib,
+                            )
+                        ],
+                    ),
+                    SimpleNamespace(
+                        name="ManagedDiskV2",
+                        reason=None,
+                        supported_storage_mb=[
+                            SimpleNamespace(
+                                storage_size_mb=32 * 1024,
+                                maximum_storage_size_mb=premium_ssd_v2_max_mib,
+                            )
+                        ],
+                    ),
+                ],
+                supported_server_skus=[
+                    SimpleNamespace(
+                        name="Standard_D2s_v3",
+                        v_cores=2,
+                        supported_memory_per_vcore_mb=4096,
+                        supported_ha_mode=["SameZone"],
+                    )
+                ],
+            ),
+        ],
+    )
+    with (
+        patch(
+            "sc_crawler.vendors._azure._pg_database_regions",
+            return_value=vendor.regions,
+        ),
+        patch(
+            "sc_crawler.vendors._azure._pg_capabilities",
+            return_value=[capability],
+        ),
+    ):
+        rows = azure_databases(vendor)
+    by_id = {row["database_id"]: row for row in rows}
+    assert by_id["Standard_B2s"]["storage_extra_max"] == round(32_767 * _GIB_TO_GB)
+    assert by_id["Standard_D2s_v3"]["storage_extra_max"] == round(65_536 * _GIB_TO_GB)
+
+
 def test_azure_inventory_database_prices_emit_ha_rows():
     vendor = Mock(vendor_id="azure")
     vendor.regions = [Mock(region_id="centralus", api_reference="centralus")]
@@ -811,7 +913,7 @@ def test_gcp_inventory_databases_ha_uses_own_price_family_only():
         patch(
             "sc_crawler.vendors._gcp._pg_billing_catalog",
             # Only Enterprise Plus regional HA meters — must not imply Enterprise HA.
-            return_value=({}, frozenset({("us-central1", "enterprise_n4")})),
+            return_value=({}, frozenset({("us-central1", "enterprise_plus_n")})),
         ),
     ):
         rows = inventory_databases(vendor)
@@ -865,7 +967,7 @@ def test_gcp_inventory_databases_ha_multi_zone_from_regional_billing():
                 frozenset(
                     {
                         ("us-central1", "enterprise"),
-                        ("us-central1", "enterprise_n4"),
+                        ("us-central1", "enterprise_plus_n"),
                         ("us-central1", "shared"),
                     }
                 ),
@@ -874,6 +976,15 @@ def test_gcp_inventory_databases_ha_multi_zone_from_regional_billing():
     ):
         rows = inventory_databases(vendor)
     by_id = {row["database_id"]: row for row in rows}
+    assert by_id["db-n1-standard-4"]["ha"] == [
+        DatabaseHaLevel.MULTI_ZONE,
+        DatabaseHaLevel.NONE,
+    ]
+    assert by_id["db-n1-standard-4"]["ha_strategy"] == [
+        DatabaseHaStrategy.PASSIVE_STANDBY,
+        DatabaseHaStrategy.NONE,
+    ]
+    assert by_id["db-n1-standard-4"]["sla"] == 99.95
     assert by_id["db-perf-optimized-N-4"]["ha"] == [
         DatabaseHaLevel.MULTI_ZONE,
         DatabaseHaLevel.NONE,
@@ -893,16 +1004,110 @@ def test_gcp_inventory_databases_ha_multi_zone_from_regional_billing():
         DatabaseSecurityFeature.CUSTOMER_MANAGED_KEYS,
         DatabaseSecurityFeature.AUDIT_LOGGING,
     ]
-    assert by_id["db-n1-standard-4"]["ha"] == [
-        DatabaseHaLevel.MULTI_ZONE,
-        DatabaseHaLevel.NONE,
-    ]
     assert by_id["db-n1-standard-4"]["sla"] == 99.95
     assert by_id["db-f1-micro"]["ha"] == [
         DatabaseHaLevel.MULTI_ZONE,
         DatabaseHaLevel.NONE,
     ]
     assert by_id["db-f1-micro"]["sla"] is None
+
+
+def test_gcp_inventory_databases_filters_engine_versions_by_edition():
+    vendor = Mock(vendor_id="gcp")
+    vendor.regions = []
+    vendor.servers = []
+    vendor.progress_tracker = Mock(
+        start_task=Mock(), advance_task=Mock(), hide_task=Mock()
+    )
+    tiers = [
+        {
+            "tier": "db-f1-micro",
+            "RAM": "644245094",
+            "region": ["us-central1"],
+        },
+        {
+            "tier": "db-perf-optimized-N-8",
+            "RAM": str(64 * 1024**3),
+            "region": ["us-central1"],
+        },
+    ]
+    with (
+        patch(
+            "sc_crawler.vendors._gcp._pg_sqladmin_metadata",
+            return_value={
+                "tiers": tiers,
+                # flags.list can advertise unreleased majors; create-instance rejects 19.
+                "engine_versions": [
+                    "9.6",
+                    "10",
+                    "11",
+                    "12",
+                    "13",
+                    "14",
+                    "15",
+                    "16",
+                    "17",
+                    "18",
+                    "19",
+                ],
+                "custom_config": True,
+                "custom_extensions": True,
+            },
+        ),
+        patch(
+            "sc_crawler.vendors._gcp._pg_billing_catalog",
+            return_value=({}, frozenset()),
+        ),
+    ):
+        rows = inventory_databases(vendor)
+    by_id = {row["database_id"]: row for row in rows}
+    assert by_id["db-f1-micro"]["engine_versions"] == [
+        "9.6",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16",
+        "17",
+        "18",
+    ]
+    assert by_id["db-perf-optimized-N-8"]["engine_versions"] == [
+        "12",
+        "13",
+        "14",
+        "15",
+        "16",
+        "17",
+        "18",
+    ]
+
+
+def test_gcp_compute_sku_class_and_tier_price_family():
+    assert _pg_tier_price_family("db-perf-optimized-N-4") == "enterprise_plus_n"
+    assert _pg_tier_price_family("db-memory-optimized-N-8") == "enterprise_plus_n"
+    assert _pg_tier_price_family("db-c4a-highmem-4") == "enterprise_plus_c4a"
+    assert _pg_tier_price_family("db-n1-standard-4") == "enterprise"
+    assert _pg_tier_price_family("db-f1-micro") == "shared"
+    assert _pg_compute_sku_class(
+        "Cloud SQL for PostgreSQL: Zonal - Enterprise Plus N vCPU in Iowa"
+    ) == ("enterprise_plus_n", "vcpu")
+    assert _pg_compute_sku_class(
+        "Cloud SQL for PostgreSQL: Zonal - Enterprise Plus N RAM in Iowa"
+    ) == ("enterprise_plus_n", "ram")
+    assert _pg_compute_sku_class(
+        "Cloud SQL for Postgres: Zonal - Enterprise Plus Performance Optimized C4A vCPU in Iowa"
+    ) == ("enterprise_plus_c4a", "vcpu")
+    assert _pg_compute_sku_class(
+        "Cloud SQL for PostgreSQL: Zonal - Enterprise Plus C4A RAM in Iowa"
+    ) == ("enterprise_plus_c4a", "ram")
+    assert _pg_compute_sku_class(
+        "Cloud SQL for Postgres: Zonal - Enterprise N4 vCPU in Iowa"
+    ) == ("enterprise_n4", "vcpu")
+    assert _pg_compute_sku_class(
+        "Cloud SQL for PostgreSQL: Zonal - vCPU in Americas"
+    ) == ("enterprise", "vcpu")
 
 
 def test_gcp_inventory_databases_enterprise_plus_without_regional_ha():
@@ -1085,33 +1290,64 @@ def test_gcp_database_prices_use_region_name_not_numeric_id():
     assert prices[0]["ha_strategy"] == DatabaseHaStrategy.NONE
 
 
-def test_gcp_n4_family_prices_fall_back_to_enterprise_ram():
-    # Enterprise N4 vCPU + generic PostgreSQL RAM (no Enterprise N4 RAM SKU).
-    # 0.0542 * 4 + 0.0091 * 32 = 0.508
+def test_gcp_enterprise_plus_prices_use_plus_meters_not_enterprise_n4():
+    # Plus N: 0.0537 * 4 + 0.0091 * 32 = 0.506
+    # Plus C4A: 0.054 * 4 + 0.009 * 32 = 0.504
     skus = [
         _gcp_pg_sku(
-            "Cloud SQL for Postgres: Zonal - Enterprise N4 vCPU in Iowa",
+            "Cloud SQL for PostgreSQL: Zonal - Enterprise Plus N vCPU in Iowa",
             regions=["us-central1"],
             units=0,
-            nanos=54_200_000,
+            nanos=53_700_000,
         ),
         _gcp_pg_sku(
-            "Cloud SQL for PostgreSQL: Zonal - RAM in Americas",
+            "Cloud SQL for PostgreSQL: Zonal - Enterprise Plus N RAM in Iowa",
             regions=["us-central1"],
             units=0,
             nanos=9_100_000,
         ),
         _gcp_pg_sku(
-            "Cloud SQL for Postgres: Regional - Enterprise N4 vCPU in Iowa",
+            "Cloud SQL for PostgreSQL: Regional - Enterprise Plus N vCPU in Iowa",
             regions=["us-central1"],
             units=0,
-            nanos=108_400_000,
+            nanos=107_400_000,
         ),
         _gcp_pg_sku(
-            "Cloud SQL for PostgreSQL: Regional - RAM in Americas",
+            "Cloud SQL for PostgreSQL: Regional - Enterprise Plus N RAM in Iowa",
             regions=["us-central1"],
             units=0,
             nanos=18_200_000,
+        ),
+        _gcp_pg_sku(
+            "Cloud SQL for Postgres: Zonal - Enterprise Plus Performance Optimized C4A vCPU in Iowa",
+            regions=["us-central1"],
+            units=0,
+            nanos=54_000_000,
+        ),
+        _gcp_pg_sku(
+            "Cloud SQL for PostgreSQL: Zonal - Enterprise Plus C4A RAM in Iowa",
+            regions=["us-central1"],
+            units=0,
+            nanos=9_000_000,
+        ),
+        _gcp_pg_sku(
+            "Cloud SQL for Postgres: Regional - Enterprise Plus Performance Optimized C4A vCPU in Iowa",
+            regions=["us-central1"],
+            units=0,
+            nanos=108_000_000,
+        ),
+        _gcp_pg_sku(
+            "Cloud SQL for PostgreSQL: Regional - Enterprise Plus C4A RAM in Iowa",
+            regions=["us-central1"],
+            units=0,
+            nanos=18_000_000,
+        ),
+        # Wrong meter for Plus tiers — must not be selected.
+        _gcp_pg_sku(
+            "Cloud SQL for Postgres: Zonal - Enterprise N4 vCPU in Iowa",
+            regions=["us-central1"],
+            units=0,
+            nanos=41_300_000,
         ),
     ]
     vendor = Mock(vendor_id="gcp")
@@ -1145,16 +1381,16 @@ def test_gcp_n4_family_prices_fall_back_to_enterprise_ram():
     ):
         prices = inventory_database_prices(vendor)
     by_id_ha = {(row["database_id"], row["ha"]): row for row in prices}
-    for database_id in (
-        "db-c4a-highmem-4",
-        "db-perf-optimized-N-4",
-        "db-memory-optimized-N-4",
-    ):
+    for database_id in ("db-perf-optimized-N-4", "db-memory-optimized-N-4"):
         zonal = by_id_ha[(database_id, DatabaseHaLevel.NONE)]
         regional = by_id_ha[(database_id, DatabaseHaLevel.MULTI_ZONE)]
-        assert abs(zonal["price"] - 0.508) < 0.001
-        assert abs(regional["price"] - 1.016) < 0.001
+        assert abs(zonal["price"] - 0.506) < 0.001
+        assert abs(regional["price"] - 1.012) < 0.001
         assert regional["ha_strategy"] == DatabaseHaStrategy.PASSIVE_STANDBY
+    c4a_zonal = by_id_ha[("db-c4a-highmem-4", DatabaseHaLevel.NONE)]
+    c4a_regional = by_id_ha[("db-c4a-highmem-4", DatabaseHaLevel.MULTI_ZONE)]
+    assert abs(c4a_zonal["price"] - 0.504) < 0.001
+    assert abs(c4a_regional["price"] - 1.008) < 0.001
 
 
 def test_gcp_database_prices_emit_regional_ha_rows():
