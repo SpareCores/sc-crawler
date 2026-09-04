@@ -1030,6 +1030,11 @@ def test_gcp_inventory_databases_filters_engine_versions_by_edition():
             "RAM": str(64 * 1024**3),
             "region": ["us-central1"],
         },
+        {
+            "tier": "db-c4a-highmem-4",
+            "RAM": str(32 * 1024**3),
+            "region": ["us-central1"],
+        },
     ]
     with (
         patch(
@@ -1082,6 +1087,15 @@ def test_gcp_inventory_databases_filters_engine_versions_by_edition():
         "17",
         "18",
     ]
+    # C4A excludes PostgreSQL 12.
+    assert by_id["db-c4a-highmem-4"]["engine_versions"] == [
+        "13",
+        "14",
+        "15",
+        "16",
+        "17",
+        "18",
+    ]
 
 
 def test_gcp_compute_sku_class_and_tier_price_family():
@@ -1101,6 +1115,18 @@ def test_gcp_compute_sku_class_and_tier_price_family():
     ) == ("enterprise_plus_c4a", "vcpu")
     assert _pg_compute_sku_class(
         "Cloud SQL for PostgreSQL: Zonal - Enterprise Plus C4A RAM in Iowa"
+    ) == ("enterprise_plus_c4a", "ram")
+    assert _pg_compute_sku_class(
+        "Cloud SQL for Postgres: Zonal - Enterprise Plus Performance Optimized C4 vCPU in Iowa"
+    ) == ("enterprise_plus_c4a", "vcpu")
+    assert _pg_compute_sku_class(
+        "Cloud SQL for PostgreSQL: Zonal - Enterprise Plus C4 RAM in Iowa"
+    ) == ("enterprise_plus_c4a", "ram")
+    assert _pg_compute_sku_class(
+        "Cloud SQL for Postgres: Regional - Enterprise Plus Performance Optimized C4 vCPU in Iowa"
+    ) == ("enterprise_plus_c4a", "vcpu")
+    assert _pg_compute_sku_class(
+        "Cloud SQL for PostgreSQL: Regional - Enterprise Plus C4 RAM in Iowa"
     ) == ("enterprise_plus_c4a", "ram")
     assert _pg_compute_sku_class(
         "Cloud SQL for Postgres: Zonal - Enterprise N4 vCPU in Iowa"
@@ -1391,6 +1417,105 @@ def test_gcp_enterprise_plus_prices_use_plus_meters_not_enterprise_n4():
     c4a_regional = by_id_ha[("db-c4a-highmem-4", DatabaseHaLevel.MULTI_ZONE)]
     assert abs(c4a_zonal["price"] - 0.504) < 0.001
     assert abs(c4a_regional["price"] - 1.008) < 0.001
+
+
+def test_gcp_enterprise_plus_c4_label_meters_price_c4a_tiers():
+    # Billing SKU group also uses "C4" (without A) for the same Plus family.
+    skus = [
+        _gcp_pg_sku(
+            "Cloud SQL for Postgres: Zonal - Enterprise Plus Performance Optimized C4 vCPU in Iowa",
+            regions=["us-central1"],
+            units=0,
+            nanos=54_000_000,
+        ),
+        _gcp_pg_sku(
+            "Cloud SQL for PostgreSQL: Zonal - Enterprise Plus C4 RAM in Iowa",
+            regions=["us-central1"],
+            units=0,
+            nanos=9_000_000,
+        ),
+        _gcp_pg_sku(
+            "Cloud SQL for Postgres: Regional - Enterprise Plus Performance Optimized C4 vCPU in Iowa",
+            regions=["us-central1"],
+            units=0,
+            nanos=108_000_000,
+        ),
+        _gcp_pg_sku(
+            "Cloud SQL for PostgreSQL: Regional - Enterprise Plus C4 RAM in Iowa",
+            regions=["us-central1"],
+            units=0,
+            nanos=18_000_000,
+        ),
+    ]
+    vendor = Mock(vendor_id="gcp")
+    vendor.regions = [Mock(region_id="1", api_reference="us-central1")]
+    vendor.progress_tracker = Mock(
+        start_task=Mock(), advance_task=Mock(), hide_task=Mock()
+    )
+    tiers = [
+        {
+            "tier": "db-c4a-highmem-4",
+            "RAM": str(32 * 1024**3),
+            "region": ["us-central1"],
+        },
+    ]
+    with (
+        patch("sc_crawler.vendors._gcp._cloud_sql_skus", return_value=skus),
+        patch(
+            "sc_crawler.vendors._gcp._pg_sqladmin_metadata",
+            return_value={"tiers": tiers},
+        ),
+    ):
+        prices = inventory_database_prices(vendor)
+    by_ha = {row["ha"]: row for row in prices}
+    assert abs(by_ha[DatabaseHaLevel.NONE]["price"] - 0.504) < 0.001
+    assert abs(by_ha[DatabaseHaLevel.MULTI_ZONE]["price"] - 1.008) < 0.001
+
+
+def test_gcp_inventory_skips_custom_tiers():
+    vendor = Mock(vendor_id="gcp")
+    vendor.regions = [Mock(region_id="1", api_reference="us-central1")]
+    vendor.servers = []
+    vendor.progress_tracker = Mock(
+        start_task=Mock(), advance_task=Mock(), hide_task=Mock()
+    )
+    tiers = [
+        {
+            "tier": "db-custom-N4-4-32768",
+            "RAM": str(32 * 1024**3),
+            "region": ["us-central1"],
+        },
+        {
+            "tier": "db-custom-4-16384",
+            "RAM": str(16 * 1024**3),
+            "region": ["us-central1"],
+        },
+        {
+            "tier": "db-n1-standard-4",
+            "RAM": str(15 * 1024**3),
+            "region": ["us-central1"],
+        },
+    ]
+    with (
+        patch(
+            "sc_crawler.vendors._gcp._pg_sqladmin_metadata",
+            return_value={
+                "tiers": tiers,
+                "engine_versions": ["16"],
+                "custom_config": True,
+                "custom_extensions": True,
+            },
+        ),
+        patch(
+            "sc_crawler.vendors._gcp._pg_billing_catalog",
+            return_value=({}, frozenset()),
+        ),
+        patch("sc_crawler.vendors._gcp._cloud_sql_skus", return_value=[]),
+    ):
+        databases = inventory_databases(vendor)
+        prices = inventory_database_prices(vendor)
+    assert [row["database_id"] for row in databases] == ["db-n1-standard-4"]
+    assert prices == []
 
 
 def test_gcp_database_prices_emit_regional_ha_rows():

@@ -1131,13 +1131,13 @@ def _cloud_sql_skus():
     return _skus("Cloud SQL")
 
 
-_PG_CUSTOM_TIER_RE = recompile(r"^db-custom-(\d+)-(\d+)$")
 _PG_NAMED_TIER_CPU_RE = recompile(r"-(\d+)$")
-# Enterprise Plus predefined tiers (N2 / C4A), not Enterprise N4 customs.
-# Billing uses distinct Enterprise Plus SKUs.
+# Enterprise Plus predefined tiers (N2 / C4A).
+# Billing uses distinct Enterprise Plus SKUs, some meters label "C4", others "C4A".
 # https://cloud.google.com/skus/sku-groups/cloud-sql-cud-eligible-skus
+# https://cloud.google.com/skus/sku-groups/cloud-sql-enterprise-plus-compute
 _PG_ENTERPRISE_PLUS_N_MARKERS = ("perf-optimized", "memory-optimized")
-_PG_ENTERPRISE_PLUS_C4A_MARKERS = ("c4a",)
+_PG_ENTERPRISE_PLUS_C4A_MARKERS = ("c4a", "c4")
 _PG_ENTERPRISE_PLUS_FAMILIES = frozenset({"enterprise_plus_n", "enterprise_plus_c4a"})
 # https://cloud.google.com/sql/docs/postgres/faq
 _PG_SUPPORTED_MAJOR_VERSIONS = frozenset(
@@ -1146,6 +1146,9 @@ _PG_SUPPORTED_MAJOR_VERSIONS = frozenset(
 _PG_ENTERPRISE_PLUS_MAJOR_VERSIONS = frozenset(
     {"12", "13", "14", "15", "16", "17", "18"}
 )
+# C4A requires PostgreSQL 13+ (12 is unsupported on that machine series).
+# https://cloud.google.com/sql/docs/postgres/machine-series-overview
+_PG_ENTERPRISE_PLUS_C4A_MAJOR_VERSIONS = frozenset({"13", "14", "15", "16", "17", "18"})
 _PG_SHARED_TIERS = {"db-f1-micro": "f1-micro", "db-g1-small": "g1-small"}
 _PG_STORAGE_METERS = (
     (
@@ -1225,7 +1228,6 @@ _PG_TIER_FAMILY_LABELS = {
     "perf-optimized-N": "Performance Optimized N",
     "c4a-highmem": "C4A High Memory",
     "memory-optimized-N": "Memory Optimized N",
-    "custom": "Custom",
 }
 
 
@@ -1255,10 +1257,12 @@ def _pg_compute_sku_class(description: str) -> tuple[str, str] | None:
         return ("shared", match.group(1))
 
     extended = "Extended support" in description
-    # Match Plus / N4 before plain enterprise.
+    # Match Plus before plain enterprise. Billing may label C4A meters as "C4" or "C4A".
+    # Keep Enterprise N4 in its own family so those meters do not collide with
+    # general Enterprise vCPU/RAM (we do not catalog N4 custom tiers).
     if (
-        "Enterprise Plus Performance Optimized C4A" in description
-        or "Enterprise Plus C4A" in description
+        "Enterprise Plus Performance Optimized C4" in description
+        or "Enterprise Plus C4" in description
     ):
         family = "enterprise_plus_c4a"
     elif "Enterprise Plus N " in description:
@@ -1347,10 +1351,13 @@ def inventory_databases(vendor):
         if not tier_name:
             vendor.progress_tracker.advance_task()
             continue
+        # Skip custom shapes (db-custom-*), catalog predefined tiers only.
+        # https://cloud.google.com/sql/docs/postgres/machine-series-overview
+        if tier_name.startswith("db-custom-"):
+            vendor.progress_tracker.advance_task()
+            continue
 
-        if match := _PG_CUSTOM_TIER_RE.match(tier_name):
-            cpu_count = int(match.group(1))
-        elif match := _PG_NAMED_TIER_CPU_RE.search(tier_name):
+        if match := _PG_NAMED_TIER_CPU_RE.search(tier_name):
             cpu_count = int(match.group(1))
         else:
             cpu_count = None
@@ -1358,14 +1365,11 @@ def inventory_databases(vendor):
         ram_bytes = int(tier.get("RAM") or 0)
         memory_amount = int(ram_bytes / 1_048_576) if ram_bytes else None
 
-        if tier_name.startswith("db-custom-"):
-            family_slug = "custom"
-        else:
-            stripped = tier_name.removeprefix("db-")
-            parts = stripped.split("-")
-            family_slug = (
-                "-".join(parts[:-1]) if parts and parts[-1].isdigit() else stripped
-            )
+        stripped = tier_name.removeprefix("db-")
+        parts = stripped.split("-")
+        family_slug = (
+            "-".join(parts[:-1]) if parts and parts[-1].isdigit() else stripped
+        )
 
         spec_parts: list[str] = []
         if cpu_count is not None:
@@ -1410,7 +1414,13 @@ def inventory_databases(vendor):
             for version in meta["engine_versions"]
             if version in _PG_SUPPORTED_MAJOR_VERSIONS
         ]
-        if is_enterprise_plus:
+        if price_family == "enterprise_plus_c4a":
+            engine_versions = [
+                version
+                for version in engine_versions
+                if version in _PG_ENTERPRISE_PLUS_C4A_MAJOR_VERSIONS
+            ]
+        elif is_enterprise_plus:
             engine_versions = [
                 version
                 for version in engine_versions
@@ -1550,10 +1560,11 @@ def inventory_database_prices(vendor):
         if not tier_name:
             vendor.progress_tracker.advance_task()
             continue
+        if tier_name.startswith("db-custom-"):
+            vendor.progress_tracker.advance_task()
+            continue
 
-        if match := _PG_CUSTOM_TIER_RE.match(tier_name):
-            cpu_count = int(match.group(1))
-        elif match := _PG_NAMED_TIER_CPU_RE.search(tier_name):
+        if match := _PG_NAMED_TIER_CPU_RE.search(tier_name):
             cpu_count = int(match.group(1))
         else:
             cpu_count = None
@@ -1597,12 +1608,6 @@ def inventory_database_prices(vendor):
                     ram_sku = compute_index.get(
                         (region.api_reference, price_family, "ram", availability)
                     )
-                    # Enterprise N4 customs (if cataloged later) may lack a dedicated
-                    # RAM meter; Plus N / C4A have their own RAM SKUs.
-                    if ram_sku is None and price_family == "enterprise_n4":
-                        ram_sku = compute_index.get(
-                            (region.api_reference, "enterprise", "ram", availability)
-                        )
                     if vcpu_sku is not None and ram_sku is not None:
                         vcpu_hourly = _sku_unit_price(vcpu_sku)
                         ram_hourly = _sku_unit_price(ram_sku)
