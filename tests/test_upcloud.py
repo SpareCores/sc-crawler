@@ -146,17 +146,16 @@ def test_upcloud_inventory_databases_maps_pg_service_plans():
     assert by_id["2xCPU-4GB-50GB"]["scheduled_backups"] is True
     assert by_id["2xCPU-4GB-50GB"]["continuous_backups"] == 7
     assert by_id["2xCPU-4GB-50GB"]["memory_amount"] == 4096
-    assert by_id["2xCPU-4GB-50GB"]["storage_extra_min"] == round(
-        10240 / 1024 * _GIB_TO_GB
-    )
-    assert by_id["2xCPU-4GB-50GB"]["storage_extra_max"] == round(
-        (204800 - 51200) / 1024 * _GIB_TO_GB
-    )
+    assert by_id["2xCPU-4GB-50GB"]["storage_size"] == 50
+    assert by_id["2xCPU-4GB-50GB"]["storage_extra_min"] == 10
+    assert by_id["2xCPU-4GB-50GB"]["storage_extra_max"] == 150
     assert by_id["2xCPU-4GB-50GB"]["connection_pool"] is True
     assert by_id["2xCPU-4GB-50GB"]["sla"] == 99.999
     assert by_id["2xCPU-4GB-50GB"]["status"] == Status.ACTIVE
     assert by_id["4xCPU-16GB-200GB-ha"]["family"] == "2-node HA"
     assert by_id["4xCPU-16GB-200GB-ha"]["server_id"] == "4xCPU-16GB"
+    assert by_id["4xCPU-16GB-200GB-ha"]["storage_size"] == 100
+    assert by_id["4xCPU-16GB-200GB-ha"]["storage_extra_max"] == 300
     assert by_id["4xCPU-16GB-200GB-ha"]["ha"] == [DatabaseHaLevel.SINGLE_ZONE]
     assert by_id["4xCPU-16GB-200GB-ha"]["ha_strategy"] == [
         DatabaseHaStrategy.READABLE_CLUSTER
