@@ -3,7 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from functools import cache
 from itertools import chain
-from logging import INFO, WARN
+from logging import CRITICAL, INFO, WARN, getLogger
 from os import environ
 from random import shuffle
 from time import time
@@ -91,6 +91,8 @@ def _alibabacloud_config(region_id: str) -> Config:
         if security_token:
             config.security_token = security_token
         return config
+    # SDK logs a full traceback per credential provider, caller reports the failure once.
+    getLogger("credentials").setLevel(CRITICAL)
     return Config(credential=CredClient(), region_id=region_id, **timeout_kwargs)
 
 
