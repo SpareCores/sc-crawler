@@ -1139,7 +1139,9 @@ _PG_NAMED_TIER_CPU_RE = recompile(r"-(\d+)$")
 _PG_ENTERPRISE_PLUS_N_MARKERS = ("perf-optimized", "memory-optimized")
 _PG_ENTERPRISE_PLUS_C4A_MARKERS = ("c4a", "c4")
 _PG_ENTERPRISE_PLUS_FAMILIES = frozenset({"enterprise_plus_n", "enterprise_plus_c4a"})
+# TODO: if PG19/PG20 become creatable, try using dynamic source again using _sqladmin_service().flags()
 # https://cloud.google.com/sql/docs/postgres/faq
+# https://docs.cloud.google.com/sql/docs/postgres/editions-intro
 _PG_SUPPORTED_MAJOR_VERSIONS = frozenset(
     {"9.6", "10", "11", "12", "13", "14", "15", "16", "17", "18"}
 )
