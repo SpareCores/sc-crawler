@@ -655,8 +655,7 @@ def inventory_databases(vendor):
         memory_amount = plan.get("memory_amount")
         components = plan.get("components", {})
         storage_component = components.get("storage", {})
-        # API `storage_size` / `included_gib` is cluster-total GiB; UI shows per-node GB.
-        # Store per-node integer GiB (do not apply decimal GiB→GB inflation).
+        # UI/plan names say GB, but API values are GiB
         # https://upcloud.com/docs/products/managed-postgresql/configurations/
         nodes = node_count or 1
         included_gib = storage_component.get("included_gib")
@@ -665,11 +664,14 @@ def inventory_databases(vendor):
             if included_gib is not None
             else plan["storage_size"] // _MIB_PER_GIB
         )
-        storage_size_gb = bundled_gib // nodes
-        storage_step_gb = plan["storage_step_size"] // _MIB_PER_GIB
-        storage_extra_max_gb = (
-            (plan["storage_cap_size"] - plan["storage_size"]) // _MIB_PER_GIB
-        ) // nodes
+        storage_size_gb = round((bundled_gib // nodes) * _GIB_TO_GB)
+        storage_step_gb = round(
+            (plan["storage_step_size"] // _MIB_PER_GIB) * _GIB_TO_GB
+        )
+        storage_extra_max_gb = round(
+            ((plan["storage_cap_size"] - plan["storage_size"]) // _MIB_PER_GIB // nodes)
+            * _GIB_TO_GB
+        )
         dynamic_storage_supported = storage_component.get("dynamic_storage_supported")
         if dynamic_storage_supported:
             storage_extra_min = storage_step_gb
@@ -852,7 +854,7 @@ def inventory_database_storages(vendor):
     """List additional managed PostgreSQL disk as a single storage product.
 
     Extra disk is billed uniformly (`managed_database_tiered_storage_standard`) and
-    sold in 10 GiB steps up to 4x each plan's bundled storage.
+    sold in 10 GiB steps (stored as decimal GB) up to 4x each plan's bundled storage.
     https://upcloud.com/docs/changelog/2025-05-26-additional-disk-space-managed-databases/
     https://developers.upcloud.com/1.3/16-managed-database/
     """
