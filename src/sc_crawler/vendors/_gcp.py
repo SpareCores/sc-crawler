@@ -1132,26 +1132,17 @@ def _cloud_sql_skus():
 
 
 _PG_NAMED_TIER_CPU_RE = recompile(r"-(\d+)$")
-# Enterprise Plus predefined tiers (N2 / C4A).
-# Billing uses distinct Enterprise Plus SKUs, some meters label "C4", others "C4A".
-# https://cloud.google.com/skus/sku-groups/cloud-sql-cud-eligible-skus
-# https://cloud.google.com/skus/sku-groups/cloud-sql-enterprise-plus-compute
-_PG_ENTERPRISE_PLUS_N_MARKERS = ("perf-optimized", "memory-optimized")
-_PG_ENTERPRISE_PLUS_C4A_MARKERS = ("c4a", "c4")
-_PG_ENTERPRISE_PLUS_FAMILIES = frozenset({"enterprise_plus_n", "enterprise_plus_c4a"})
 # TODO: if PG19/PG20 become creatable, try using dynamic source again using _sqladmin_service().flags()
 # https://cloud.google.com/sql/docs/postgres/faq
-# https://docs.cloud.google.com/sql/docs/postgres/editions-intro
 _PG_SUPPORTED_MAJOR_VERSIONS = frozenset(
     {"9.6", "10", "11", "12", "13", "14", "15", "16", "17", "18"}
 )
+# https://docs.cloud.google.com/sql/docs/postgres/editions-intro
 _PG_ENTERPRISE_PLUS_MAJOR_VERSIONS = frozenset(
     {"12", "13", "14", "15", "16", "17", "18"}
 )
-# C4A requires PostgreSQL 13+ (12 is unsupported on that machine series).
-# https://cloud.google.com/sql/docs/postgres/machine-series-overview
-_PG_ENTERPRISE_PLUS_C4A_MAJOR_VERSIONS = frozenset({"13", "14", "15", "16", "17", "18"})
 _PG_SHARED_TIERS = {"db-f1-micro": "f1-micro", "db-g1-small": "g1-small"}
+_PG_PLUS_PREFIXES = ("db-perf-optimized-", "db-memory-optimized-")
 _PG_STORAGE_METERS = (
     (
         recompile(r": Zonal - Enterprise Storage Hyperdisk Balanced Capacity in "),
@@ -1233,14 +1224,14 @@ _PG_TIER_FAMILY_LABELS = {
 }
 
 
-def _pg_tier_price_family(tier_name: str) -> str:
+def _pg_sku_family(tier_name: str) -> str:
+    """Billing-index family for a SQL Admin tier, keys match `_pg_compute_sku_class`."""
     if tier_name in _PG_SHARED_TIERS:
         return "shared"
-    lower = tier_name.lower()
-    if any(marker in lower for marker in _PG_ENTERPRISE_PLUS_C4A_MARKERS):
+    if tier_name.startswith("db-c4a-"):
         return "enterprise_plus_c4a"
-    if any(marker in lower for marker in _PG_ENTERPRISE_PLUS_N_MARKERS):
-        return "enterprise_plus_n"
+    if tier_name.startswith(_PG_PLUS_PREFIXES):
+        return "enterprise_plus"
     return "enterprise"
 
 
@@ -1259,16 +1250,10 @@ def _pg_compute_sku_class(description: str) -> tuple[str, str] | None:
         return ("shared", match.group(1))
 
     extended = "Extended support" in description
-    # Match Plus before plain enterprise. Billing may label C4A meters as "C4" or "C4A".
-    # Keep Enterprise N4 in its own family so those meters do not collide with
-    # general Enterprise vCPU/RAM (we do not catalog N4 custom tiers).
-    if (
-        "Enterprise Plus Performance Optimized C4" in description
-        or "Enterprise Plus C4" in description
-    ):
+    if "C4A" in description:
         family = "enterprise_plus_c4a"
-    elif "Enterprise Plus N " in description:
-        family = "enterprise_plus_n"
+    elif "Enterprise Plus" in description:
+        family = "enterprise_plus"
     elif "Enterprise N4" in description:
         family = "enterprise_n4"
     elif extended:
@@ -1408,25 +1393,21 @@ def inventory_databases(vendor):
         else:
             tier_regions = []
 
-        price_family = _pg_tier_price_family(tier_name)
-        is_enterprise_plus = price_family in _PG_ENTERPRISE_PLUS_FAMILIES
-        # Drop unreleased majors that flags.list may still advertise (e.g. 19).
+        sku_family = _pg_sku_family(tier_name)
+        is_enterprise_plus = sku_family.startswith("enterprise_plus")
         engine_versions = [
             version
             for version in meta["engine_versions"]
             if version in _PG_SUPPORTED_MAJOR_VERSIONS
         ]
-        if price_family == "enterprise_plus_c4a":
+        if is_enterprise_plus:
+            plus_versions = _PG_ENTERPRISE_PLUS_MAJOR_VERSIONS
+            if sku_family == "enterprise_plus_c4a":
+                # PostgreSQL 12 is unsupported on C4A only, not on N2 / C4.
+                # https://cloud.google.com/sql/docs/postgres/machine-series-overview
+                plus_versions = plus_versions - {"12"}
             engine_versions = [
-                version
-                for version in engine_versions
-                if version in _PG_ENTERPRISE_PLUS_C4A_MAJOR_VERSIONS
-            ]
-        elif is_enterprise_plus:
-            engine_versions = [
-                version
-                for version in engine_versions
-                if version in _PG_ENTERPRISE_PLUS_MAJOR_VERSIONS
+                version for version in engine_versions if version in plus_versions
             ]
 
         ha: list[DatabaseHaLevel] = []
@@ -1438,7 +1419,7 @@ def inventory_databases(vendor):
             # Zonal billing meters -> non-HA.
             # Enterprise Plus Advanced DR -> cross-region replica promotion (not multi-region HA).
             has_regional_ha = any(
-                (region, price_family) in ha_families for region in tier_regions
+                (region, sku_family) in ha_families for region in tier_regions
             )
             if has_regional_ha:
                 ha.append(DatabaseHaLevel.MULTI_ZONE)
@@ -1534,7 +1515,8 @@ def inventory_databases(vendor):
                     if is_enterprise_plus and has_regional_ha
                     else (
                         99.95
-                        if DatabaseHaLevel.MULTI_ZONE in ha and price_family != "shared"
+                        if DatabaseHaLevel.MULTI_ZONE in ha
+                        and tier_name not in _PG_SHARED_TIERS
                         else None
                     )
                 ),
@@ -1582,7 +1564,7 @@ def inventory_database_prices(vendor):
         else:
             tier_regions = set()
 
-        price_family = _pg_tier_price_family(tier_name)
+        sku_family = _pg_sku_family(tier_name)
         availabilities = ("zonal", "regional")
 
         for region in vendor.regions:
@@ -1591,7 +1573,7 @@ def inventory_database_prices(vendor):
 
             for availability in availabilities:
                 hourly = currency = None
-                if price_family == "shared":
+                if sku_family == "shared":
                     component = _PG_SHARED_TIERS[tier_name]
                     instance_sku = compute_index.get(
                         (region.api_reference, "shared", component, availability)
@@ -1605,10 +1587,10 @@ def inventory_database_prices(vendor):
                             currency = tiered[0].unit_price.currency_code or "USD"
                 elif cpu_count is not None and memory_gib is not None:
                     vcpu_sku = compute_index.get(
-                        (region.api_reference, price_family, "vcpu", availability)
+                        (region.api_reference, sku_family, "vcpu", availability)
                     )
                     ram_sku = compute_index.get(
-                        (region.api_reference, price_family, "ram", availability)
+                        (region.api_reference, sku_family, "ram", availability)
                     )
                     if vcpu_sku is not None and ram_sku is not None:
                         vcpu_hourly = _sku_unit_price(vcpu_sku)
