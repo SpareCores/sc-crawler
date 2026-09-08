@@ -1125,11 +1125,20 @@ def test_gcp_compute_sku_class():
         "Cloud SQL for PostgreSQL: Zonal - Enterprise Plus C4A RAM in Iowa"
     ) == ("enterprise_plus_c4a", "ram")
     assert _pg_compute_sku_class(
+        "Cloud SQL for PostgreSQL: Zonal - Enterprise Plus C4 vCPU in Johannesburg"
+    ) == ("enterprise_plus", "vcpu")
+    assert _pg_compute_sku_class(
         "Cloud SQL for Postgres: Zonal - Enterprise N4 vCPU in Iowa"
     ) == ("enterprise_n4", "vcpu")
     assert _pg_compute_sku_class(
         "Cloud SQL for PostgreSQL: Zonal - vCPU in Americas"
     ) == ("enterprise", "vcpu")
+    assert (
+        _pg_compute_sku_class(
+            "FDC Trial in Cloud SQL for PostgreSQL: Zonal - vCPU in Mexico"
+        )
+        is None
+    )
 
 
 def test_gcp_inventory_databases_enterprise_plus_without_regional_ha():
@@ -1393,6 +1402,11 @@ def test_gcp_enterprise_plus_prices_use_plus_meters_not_enterprise_n4():
             "RAM": str(32 * 1024**3),
             "region": ["us-central1"],
         },
+        {
+            "tier": "db-perf-optimized-C4-4",
+            "RAM": str(32 * 1024**3),
+            "region": ["us-central1"],
+        },
     ]
     with (
         patch("sc_crawler.vendors._gcp._cloud_sql_skus", return_value=skus),
@@ -1403,7 +1417,11 @@ def test_gcp_enterprise_plus_prices_use_plus_meters_not_enterprise_n4():
     ):
         prices = inventory_database_prices(vendor)
     by_id_ha = {(row["database_id"], row["ha"]): row for row in prices}
-    for database_id in ("db-perf-optimized-N-4", "db-memory-optimized-N-4"):
+    for database_id in (
+        "db-perf-optimized-N-4",
+        "db-memory-optimized-N-4",
+        "db-perf-optimized-C4-4",
+    ):
         zonal = by_id_ha[(database_id, DatabaseHaLevel.NONE)]
         regional = by_id_ha[(database_id, DatabaseHaLevel.MULTI_ZONE)]
         assert abs(zonal["price"] - 0.506) < 0.001

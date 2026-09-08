@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from datetime import timedelta
 from functools import cache
 from itertools import chain, repeat
 from logging import DEBUG
@@ -6,7 +7,7 @@ from re import compile as recompile
 from re import match, sub
 from typing import List
 
-from cachier import cachier
+from cachier import cachier, set_global_params
 from google.auth import default
 from google.cloud import billing_v1, compute_v1
 from googleapiclient.discovery import build
@@ -38,6 +39,9 @@ from ..vendor_helpers import (
     parallel_fetch_servers,
     preprocess_servers,
 )
+
+# set stale after to 1 day
+set_global_params(stale_after=timedelta(days=1))
 
 # ##############################################################################
 # Cached gcp client wrappers
@@ -1219,6 +1223,7 @@ _PG_TIER_FAMILY_LABELS = {
     "n1-standard": "N1 Standard",
     "n1-highmem": "N1 High Memory",
     "perf-optimized-N": "Performance Optimized N",
+    "perf-optimized-C4": "Performance Optimized C4",
     "c4a-highmem": "C4A High Memory",
     "memory-optimized-N": "Memory Optimized N",
 }
@@ -1237,7 +1242,7 @@ def _pg_sku_family(tier_name: str) -> str:
 
 def _pg_compute_sku_class(description: str) -> tuple[str, str] | None:
     """Map a Cloud SQL Postgres compute SKU description to (price_family, component)."""
-    if "for Postgre" not in description:
+    if "for Postgre" not in description or "FDC Trial" in description:
         return None
     if "vCPU in" in description:
         component = "vcpu"
