@@ -244,17 +244,24 @@ def test_pg_storage_prices_skip_unsupported_retail_meters():
         start_task=Mock(), advance_task=Mock(), hide_task=Mock()
     )
     ultra_disk_retail = {
-        "productName": "Az DB for PostgreSQL Flexible Server Storage",
+        "productName": "Azure Database for PostgreSQL Flex Server Storage",
         "meterName": "Ultra Disk Storage Data Stored",
         "unitOfMeasure": "1 GB/Month",
         "retailPrice": "0.25",
         "currencyCode": "USD",
     }
     managed_disk_retail = {
-        "productName": "Az DB for PostgreSQL Flexible Server Storage",
+        "productName": "Azure Database for PostgreSQL Flex Server Storage",
         "meterName": "Storage Data Stored",
         "unitOfMeasure": "1 GB/Month",
         "retailPrice": "0.115",
+        "currencyCode": "USD",
+    }
+    managed_disk_v2_retail = {
+        "productName": "Az DB for PostgreSQL Flexible Server Storage",
+        "meterName": "Premium SSD v2 Storage Data Stored",
+        "unitOfMeasure": "1 GB/Month",
+        "retailPrice": "0.131",
         "currencyCode": "USD",
     }
     backup_retail = {
@@ -270,6 +277,10 @@ def test_pg_storage_prices_skip_unsupported_retail_meters():
                 supported_storage_editions=[
                     SimpleNamespace(
                         name="ManagedDisk",
+                        reason=None,
+                    ),
+                    SimpleNamespace(
+                        name="ManagedDiskV2",
                         reason=None,
                     ),
                     SimpleNamespace(
@@ -291,12 +302,17 @@ def test_pg_storage_prices_skip_unsupported_retail_meters():
         ),
         patch(
             "sc_crawler.vendors._azure._pg_retail_prices",
-            return_value=[ultra_disk_retail, managed_disk_retail, backup_retail],
+            return_value=[
+                ultra_disk_retail,
+                managed_disk_retail,
+                managed_disk_v2_retail,
+                backup_retail,
+            ],
         ),
     ):
         prices = azure_database_storage_prices(vendor)
     storage_ids = {row["database_storage_id"] for row in prices}
-    assert storage_ids == {"ManagedDisk", "BackupStorageLRS"}
+    assert storage_ids == {"ManagedDisk", "ManagedDiskV2", "BackupStorageLRS"}
 
 
 def test_pg_engine_versions_from_capability():

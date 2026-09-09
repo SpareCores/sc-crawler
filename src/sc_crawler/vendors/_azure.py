@@ -1668,13 +1668,19 @@ _PG_SKU_NAME_PREFIX = {
     "GeneralPurpose": "GP",
     "MemoryOptimized": "MO",
 }
-_PG_FLEX_STORAGE_PRODUCT = "Az DB for PostgreSQL Flexible Server Storage"
-_PG_FLEX_BACKUP_PRODUCT = "Azure Database for PostgreSQL Flexible Server Backup Storage"
 _PG_STORAGE_RETAIL_TO_ID = {
     "storage data stored": "ManagedDisk",
     "premium ssd v2 storage data stored": "ManagedDiskV2",
     "ultra disk storage data stored": "UltraDisk",
+    "backup storage lrs data stored": "BackupStorageLRS",
 }
+_PG_STORAGE_RETAIL_PRODUCTS = frozenset(
+    {
+        "azure database for postgresql flex server storage",
+        "az db for postgresql flexible server storage",
+        "azure database for postgresql flexible server backup storage",
+    }
+)
 _PG_STORAGE_DESCRIPTIONS = {
     "ManagedDisk": "Premium SSD managed disk",
     "ManagedDiskV2": "Premium SSD v2 managed disk",
@@ -2299,17 +2305,13 @@ def inventory_database_storage_prices(vendor):
         with sentry_capture_or_raise(vendor=vendor):
             supported_storage_ids = _pg_supported_storage_ids(location)
             for item in _pg_retail_prices(location):
-                product = item.get("productName") or ""
+                product = (item.get("productName") or "").lower()
                 meter = (item.get("meterName") or "").lower()
-                if product == _PG_FLEX_STORAGE_PRODUCT:
-                    storage_id = _PG_STORAGE_RETAIL_TO_ID.get(meter)
-                elif (
-                    product == _PG_FLEX_BACKUP_PRODUCT
-                    and meter == "backup storage lrs data stored"
-                ):
-                    storage_id = _PG_BACKUP_STORAGE_ID
-                else:
-                    storage_id = None
+                storage_id = (
+                    _PG_STORAGE_RETAIL_TO_ID.get(meter)
+                    if product in _PG_STORAGE_RETAIL_PRODUCTS
+                    else None
+                )
                 if not storage_id:
                     continue
                 if (
