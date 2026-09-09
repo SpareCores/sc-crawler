@@ -1126,7 +1126,10 @@ def test_gcp_compute_sku_class():
     ) == ("enterprise_plus_c4a", "ram")
     assert _pg_compute_sku_class(
         "Cloud SQL for PostgreSQL: Zonal - Enterprise Plus C4 vCPU in Johannesburg"
-    ) == ("enterprise_plus", "vcpu")
+    ) == ("enterprise_plus_c4", "vcpu")
+    assert _pg_compute_sku_class(
+        "Cloud SQL for PostgreSQL: Regional - Enterprise Plus C4 RAM in Johannesburg"
+    ) == ("enterprise_plus_c4", "ram")
     assert _pg_compute_sku_class(
         "Cloud SQL for Postgres: Zonal - Enterprise N4 vCPU in Iowa"
     ) == ("enterprise_n4", "vcpu")
@@ -1323,7 +1326,7 @@ def test_gcp_database_prices_use_region_name_not_numeric_id():
 
 def test_gcp_enterprise_plus_prices_use_plus_meters_not_enterprise_n4():
     # Plus N: 0.0537 * 4 + 0.0091 * 32 = 0.506
-    # Plus C4A: 0.054 * 4 + 0.009 * 32 = 0.504
+    # Plus C4 / C4A: 0.054 * 4 + 0.009 * 32 = 0.504
     skus = [
         _gcp_pg_sku(
             "Cloud SQL for PostgreSQL: Zonal - Enterprise Plus N vCPU in Iowa",
@@ -1373,6 +1376,30 @@ def test_gcp_enterprise_plus_prices_use_plus_meters_not_enterprise_n4():
             units=0,
             nanos=18_000_000,
         ),
+        _gcp_pg_sku(
+            "Cloud SQL for PostgreSQL: Zonal - Enterprise Plus C4 vCPU in Iowa",
+            regions=["us-central1"],
+            units=0,
+            nanos=54_000_000,
+        ),
+        _gcp_pg_sku(
+            "Cloud SQL for PostgreSQL: Zonal - Enterprise Plus C4 RAM in Iowa",
+            regions=["us-central1"],
+            units=0,
+            nanos=9_000_000,
+        ),
+        _gcp_pg_sku(
+            "Cloud SQL for PostgreSQL: Regional - Enterprise Plus C4 vCPU in Iowa",
+            regions=["us-central1"],
+            units=0,
+            nanos=108_000_000,
+        ),
+        _gcp_pg_sku(
+            "Cloud SQL for PostgreSQL: Regional - Enterprise Plus C4 RAM in Iowa",
+            regions=["us-central1"],
+            units=0,
+            nanos=18_000_000,
+        ),
         # Wrong meter for Plus tiers — must not be selected.
         _gcp_pg_sku(
             "Cloud SQL for Postgres: Zonal - Enterprise N4 vCPU in Iowa",
@@ -1417,11 +1444,7 @@ def test_gcp_enterprise_plus_prices_use_plus_meters_not_enterprise_n4():
     ):
         prices = inventory_database_prices(vendor)
     by_id_ha = {(row["database_id"], row["ha"]): row for row in prices}
-    for database_id in (
-        "db-perf-optimized-N-4",
-        "db-memory-optimized-N-4",
-        "db-perf-optimized-C4-4",
-    ):
+    for database_id in ("db-perf-optimized-N-4", "db-memory-optimized-N-4"):
         zonal = by_id_ha[(database_id, DatabaseHaLevel.NONE)]
         regional = by_id_ha[(database_id, DatabaseHaLevel.MULTI_ZONE)]
         assert abs(zonal["price"] - 0.506) < 0.001
@@ -1431,6 +1454,10 @@ def test_gcp_enterprise_plus_prices_use_plus_meters_not_enterprise_n4():
     c4a_regional = by_id_ha[("db-c4a-highmem-4", DatabaseHaLevel.MULTI_ZONE)]
     assert abs(c4a_zonal["price"] - 0.504) < 0.001
     assert abs(c4a_regional["price"] - 1.008) < 0.001
+    c4_zonal = by_id_ha[("db-perf-optimized-C4-4", DatabaseHaLevel.NONE)]
+    c4_regional = by_id_ha[("db-perf-optimized-C4-4", DatabaseHaLevel.MULTI_ZONE)]
+    assert abs(c4_zonal["price"] - 0.504) < 0.001
+    assert abs(c4_regional["price"] - 1.008) < 0.001
 
 
 def test_gcp_inventory_skips_custom_tiers():

@@ -1231,6 +1231,8 @@ def _pg_sku_family(tier_name: str) -> str:
         return "shared"
     if tier_name.startswith("db-c4a-"):
         return "enterprise_plus_c4a"
+    if tier_name.startswith("db-perf-optimized-C4-"):
+        return "enterprise_plus_c4"
     if tier_name.startswith(_PG_PLUS_PREFIXES):
         return "enterprise_plus"
     return "enterprise"
@@ -1253,6 +1255,8 @@ def _pg_compute_sku_class(description: str) -> tuple[str, str] | None:
     extended = "Extended support" in description
     if "C4A" in description:
         family = "enterprise_plus_c4a"
+    elif "Enterprise Plus C4 " in description:
+        family = "enterprise_plus_c4"
     elif "Enterprise Plus" in description:
         family = "enterprise_plus"
     elif "Enterprise N4" in description:
