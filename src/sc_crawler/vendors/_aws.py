@@ -2,7 +2,7 @@ import json
 import re
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta
+from datetime import datetime
 from functools import cache
 from itertools import chain, repeat
 from logging import DEBUG, WARN
@@ -12,7 +12,7 @@ from typing import Collection, List, Optional, Tuple
 import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
-from cachier import cachier, set_global_params
+from cachier import cachier
 
 from ..inspector import _standardize_gpu_count
 from ..logger import logger
@@ -51,9 +51,6 @@ from ..vendor_helpers import (
     parallel_fetch_servers,
     preprocess_servers,
 )
-
-# disable caching by default
-set_global_params(caching_enabled=False, stale_after=timedelta(days=1))
 
 # ##############################################################################
 # Cached boto3 wrappers

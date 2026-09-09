@@ -1109,8 +1109,12 @@ def _pg_sqladmin_metadata() -> dict:
         if name in _PG_EXTENSION_FLAGS:
             custom_extensions = True
         for version in flag.get("appliesTo", []):
-            if isinstance(version, str) and version.startswith("POSTGRES_"):
-                engine_versions.add(version.removeprefix("POSTGRES_").replace("_", "."))
+            if not (isinstance(version, str) and version.startswith("POSTGRES_")):
+                continue
+            # flags.list appliesTo can include unreleased majors (e.g. POSTGRES_19).
+            major = version.removeprefix("POSTGRES_").replace("_", ".")
+            if major in _PG_SUPPORTED_MAJOR_VERSIONS:
+                engine_versions.add(major)
     return {
         "tiers": tiers,
         "engine_versions": sorted(
@@ -1127,10 +1131,18 @@ def _cloud_sql_skus():
     return _skus("Cloud SQL")
 
 
-_PG_CUSTOM_TIER_RE = recompile(r"^db-custom-(\d+)-(\d+)$")
 _PG_NAMED_TIER_CPU_RE = recompile(r"-(\d+)$")
-_PG_N4_TIER_MARKERS = ("c4a", "perf-optimized", "memory-optimized")
+# TODO: if PG19/PG20 become creatable, try using dynamic source again using _sqladmin_service().flags()
+# https://cloud.google.com/sql/docs/postgres/faq
+_PG_SUPPORTED_MAJOR_VERSIONS = frozenset(
+    {"9.6", "10", "11", "12", "13", "14", "15", "16", "17", "18"}
+)
+# https://docs.cloud.google.com/sql/docs/postgres/editions-intro
+_PG_ENTERPRISE_PLUS_MAJOR_VERSIONS = frozenset(
+    {"12", "13", "14", "15", "16", "17", "18"}
+)
 _PG_SHARED_TIERS = {"db-f1-micro": "f1-micro", "db-g1-small": "g1-small"}
+_PG_PLUS_PREFIXES = ("db-perf-optimized-", "db-memory-optimized-")
 _PG_STORAGE_METERS = (
     (
         recompile(r": Zonal - Enterprise Storage Hyperdisk Balanced Capacity in "),
@@ -1191,13 +1203,7 @@ _PG_STORAGE_SPECS: dict[str, dict] = {
     },
 }
 _PG_SHARED_INSTANCE_RE = recompile(
-    r": (?:Zonal|Regional) - (?:Extended support )?(f1-micro|g1-small)(?: v\d+)? in "
-)
-_PG_VCPU_RE = recompile(
-    r": (?:Zonal|Regional) - (?:Extended support )?(?:Enterprise N4 )?vCPU in "
-)
-_PG_RAM_RE = recompile(
-    r": (?:Zonal|Regional) - (?:Extended support )?(?:Enterprise N4 )?RAM in "
+    r"(?:Extended support )?(f1-micro|g1-small)(?: v\d+)? in "
 )
 _PG_EXTENSION_FLAGS = frozenset(
     {
@@ -1213,10 +1219,56 @@ _PG_TIER_FAMILY_LABELS = {
     "n1-standard": "N1 Standard",
     "n1-highmem": "N1 High Memory",
     "perf-optimized-N": "Performance Optimized N",
+    "perf-optimized-C4": "Performance Optimized C4",
     "c4a-highmem": "C4A High Memory",
     "memory-optimized-N": "Memory Optimized N",
-    "custom": "Custom",
 }
+
+
+def _pg_sku_family(tier_name: str) -> str:
+    """Billing-index family for a SQL Admin tier, keys match `_pg_compute_sku_class`."""
+    if tier_name in _PG_SHARED_TIERS:
+        return "shared"
+    if tier_name.startswith("db-c4a-"):
+        return "enterprise_plus_c4a"
+    if tier_name.startswith("db-perf-optimized-C4-"):
+        return "enterprise_plus_c4"
+    if tier_name.startswith(_PG_PLUS_PREFIXES):
+        return "enterprise_plus"
+    return "enterprise"
+
+
+def _pg_compute_sku_class(description: str) -> tuple[str, str] | None:
+    """Map a Cloud SQL Postgres compute SKU description to (price_family, component)."""
+    if "for Postgre" not in description or "FDC Trial" in description:
+        return None
+    if "vCPU in" in description:
+        component = "vcpu"
+    elif "RAM in" in description:
+        component = "ram"
+    else:
+        return None
+
+    if match := _PG_SHARED_INSTANCE_RE.search(description):
+        return ("shared", match.group(1))
+
+    extended = "Extended support" in description
+    if "C4A" in description:
+        family = "enterprise_plus_c4a"
+    elif "Enterprise Plus C4 " in description:
+        family = "enterprise_plus_c4"
+    elif "Enterprise Plus" in description:
+        family = "enterprise_plus"
+    elif "Enterprise N4" in description:
+        family = "enterprise_n4"
+    elif extended:
+        family = "enterprise_extended"
+    else:
+        family = "enterprise"
+
+    if extended and family not in ("enterprise_extended", "shared"):
+        return None
+    return (family, component)
 
 
 def _sku_unit_price(sku) -> float | None:
@@ -1253,8 +1305,6 @@ def _pg_billing_catalog() -> tuple[
     ha_families: set[tuple[str, str]] = set()
     for sku in _cloud_sql_skus():
         description = sku.description or ""
-        if "for Postgre" not in description:
-            continue
         if "Regional" in description:
             availability = "regional"
         elif "Zonal" in description:
@@ -1262,28 +1312,7 @@ def _pg_billing_catalog() -> tuple[
         else:
             continue
 
-        sku_class = None
-        if match := _PG_SHARED_INSTANCE_RE.search(description):
-            sku_class = ("shared", match.group(1))
-        else:
-            extended = "Extended support" in description
-            if _PG_VCPU_RE.search(description):
-                family = (
-                    "enterprise_n4" if "Enterprise N4" in description else "enterprise"
-                )
-                if extended and family == "enterprise":
-                    sku_class = ("enterprise_extended", "vcpu")
-                elif not extended:
-                    sku_class = (family, "vcpu")
-            elif _PG_RAM_RE.search(description):
-                family = (
-                    "enterprise_n4" if "Enterprise N4" in description else "enterprise"
-                )
-                if extended and family == "enterprise":
-                    sku_class = ("enterprise_extended", "ram")
-                elif not extended:
-                    sku_class = (family, "ram")
-
+        sku_class = _pg_compute_sku_class(description)
         if not sku_class:
             continue
         family, component = sku_class
@@ -1314,10 +1343,13 @@ def inventory_databases(vendor):
         if not tier_name:
             vendor.progress_tracker.advance_task()
             continue
+        # Skip custom shapes (db-custom-*), catalog predefined tiers only.
+        # https://cloud.google.com/sql/docs/postgres/machine-series-overview
+        if tier_name.startswith("db-custom-"):
+            vendor.progress_tracker.advance_task()
+            continue
 
-        if match := _PG_CUSTOM_TIER_RE.match(tier_name):
-            cpu_count = int(match.group(1))
-        elif match := _PG_NAMED_TIER_CPU_RE.search(tier_name):
+        if match := _PG_NAMED_TIER_CPU_RE.search(tier_name):
             cpu_count = int(match.group(1))
         else:
             cpu_count = None
@@ -1325,14 +1357,11 @@ def inventory_databases(vendor):
         ram_bytes = int(tier.get("RAM") or 0)
         memory_amount = int(ram_bytes / 1_048_576) if ram_bytes else None
 
-        if tier_name.startswith("db-custom-"):
-            family_slug = "custom"
-        else:
-            stripped = tier_name.removeprefix("db-")
-            parts = stripped.split("-")
-            family_slug = (
-                "-".join(parts[:-1]) if parts and parts[-1].isdigit() else stripped
-            )
+        stripped = tier_name.removeprefix("db-")
+        parts = stripped.split("-")
+        family_slug = (
+            "-".join(parts[:-1]) if parts and parts[-1].isdigit() else stripped
+        )
 
         spec_parts: list[str] = []
         if cpu_count is not None:
@@ -1369,12 +1398,22 @@ def inventory_databases(vendor):
         else:
             tier_regions = []
 
-        if tier_name in _PG_SHARED_TIERS:
-            price_family = "shared"
-        elif any(marker in tier_name.lower() for marker in _PG_N4_TIER_MARKERS):
-            price_family = "enterprise_n4"
-        else:
-            price_family = "enterprise"
+        sku_family = _pg_sku_family(tier_name)
+        is_enterprise_plus = sku_family.startswith("enterprise_plus")
+        engine_versions = [
+            version
+            for version in meta["engine_versions"]
+            if version in _PG_SUPPORTED_MAJOR_VERSIONS
+        ]
+        if is_enterprise_plus:
+            plus_versions = _PG_ENTERPRISE_PLUS_MAJOR_VERSIONS
+            if sku_family == "enterprise_plus_c4a":
+                # PostgreSQL 12 is unsupported on C4A only, not on N2 / C4.
+                # https://cloud.google.com/sql/docs/postgres/machine-series-overview
+                plus_versions = plus_versions - {"12"}
+            engine_versions = [
+                version for version in engine_versions if version in plus_versions
+            ]
 
         ha: list[DatabaseHaLevel] = []
         ha_strategy: list[DatabaseHaStrategy] = []
@@ -1385,7 +1424,7 @@ def inventory_databases(vendor):
             # Zonal billing meters -> non-HA.
             # Enterprise Plus Advanced DR -> cross-region replica promotion (not multi-region HA).
             has_regional_ha = any(
-                (region, price_family) in ha_families for region in tier_regions
+                (region, sku_family) in ha_families for region in tier_regions
             )
             if has_regional_ha:
                 ha.append(DatabaseHaLevel.MULTI_ZONE)
@@ -1414,7 +1453,7 @@ def inventory_databases(vendor):
                 "server_id": server_id,
                 "engine": DatabaseEngine.POSTGRESQL,
                 "wire_protocol": DatabaseWireProtocol.POSTGRESQL,
-                "engine_versions": meta["engine_versions"],
+                "engine_versions": engine_versions,
                 "family": family_slug,
                 "vcpus": cpu_count,
                 "memory_amount": memory_amount,
@@ -1456,7 +1495,7 @@ def inventory_databases(vendor):
                 # https://cloud.google.com/sql/docs/postgres/backup-recovery/configure-pitr
                 # Max transactionLogRetentionDays for PITR by edition; not in tiers API.
                 # Enterprise: 1-7 days; Enterprise Plus: 1-35 days.
-                "continuous_backups": (35 if price_family == "enterprise_n4" else 7),
+                "continuous_backups": (35 if is_enterprise_plus else 7),
                 "custom_config": meta["custom_config"],
                 "custom_extensions": meta["custom_extensions"],
                 # https://cloud.google.com/sql/docs/postgres/replication
@@ -1471,17 +1510,18 @@ def inventory_databases(vendor):
                 "database_monitoring": True,
                 # https://cloud.google.com/sql/docs/postgres/use-index-advisor
                 # Index advisor recommends CREATE INDEX (Enterprise Plus only); operator applies.
-                "autotuning_advice": price_family == "enterprise_n4",
+                "autotuning_advice": is_enterprise_plus,
                 "autotuning_apply": False,
                 # https://cloud.google.com/sql/sla
                 # Enterprise Plus + HA: 99.99%; Enterprise + HA: 99.95%.
                 # Shared-core and zonal (non-HA) instances are excluded from the SLA.
                 "sla": (
                     99.99
-                    if price_family == "enterprise_n4" and has_regional_ha
+                    if is_enterprise_plus and has_regional_ha
                     else (
                         99.95
-                        if DatabaseHaLevel.MULTI_ZONE in ha and price_family != "shared"
+                        if DatabaseHaLevel.MULTI_ZONE in ha
+                        and tier_name not in _PG_SHARED_TIERS
                         else None
                     )
                 ),
@@ -1509,10 +1549,11 @@ def inventory_database_prices(vendor):
         if not tier_name:
             vendor.progress_tracker.advance_task()
             continue
+        if tier_name.startswith("db-custom-"):
+            vendor.progress_tracker.advance_task()
+            continue
 
-        if match := _PG_CUSTOM_TIER_RE.match(tier_name):
-            cpu_count = int(match.group(1))
-        elif match := _PG_NAMED_TIER_CPU_RE.search(tier_name):
+        if match := _PG_NAMED_TIER_CPU_RE.search(tier_name):
             cpu_count = int(match.group(1))
         else:
             cpu_count = None
@@ -1528,15 +1569,8 @@ def inventory_database_prices(vendor):
         else:
             tier_regions = set()
 
-        if tier_name in _PG_SHARED_TIERS:
-            price_family = "shared"
-            availabilities = ("zonal", "regional")
-        elif any(marker in tier_name.lower() for marker in _PG_N4_TIER_MARKERS):
-            price_family = "enterprise_n4"
-            availabilities = ("zonal", "regional")
-        else:
-            price_family = "enterprise"
-            availabilities = ("zonal", "regional")
+        sku_family = _pg_sku_family(tier_name)
+        availabilities = ("zonal", "regional")
 
         for region in vendor.regions:
             if tier_regions and region.api_reference not in tier_regions:
@@ -1544,7 +1578,7 @@ def inventory_database_prices(vendor):
 
             for availability in availabilities:
                 hourly = currency = None
-                if price_family == "shared":
+                if sku_family == "shared":
                     component = _PG_SHARED_TIERS[tier_name]
                     instance_sku = compute_index.get(
                         (region.api_reference, "shared", component, availability)
@@ -1558,17 +1592,11 @@ def inventory_database_prices(vendor):
                             currency = tiered[0].unit_price.currency_code or "USD"
                 elif cpu_count is not None and memory_gib is not None:
                     vcpu_sku = compute_index.get(
-                        (region.api_reference, price_family, "vcpu", availability)
+                        (region.api_reference, sku_family, "vcpu", availability)
                     )
-                    # N4/C4A billing has Enterprise N4 vCPU meters, but RAM uses the
-                    # generic PostgreSQL RAM meters (no "Enterprise N4 RAM" SKU).
                     ram_sku = compute_index.get(
-                        (region.api_reference, price_family, "ram", availability)
+                        (region.api_reference, sku_family, "ram", availability)
                     )
-                    if ram_sku is None and price_family == "enterprise_n4":
-                        ram_sku = compute_index.get(
-                            (region.api_reference, "enterprise", "ram", availability)
-                        )
                     if vcpu_sku is not None and ram_sku is not None:
                         vcpu_hourly = _sku_unit_price(vcpu_sku)
                         ram_hourly = _sku_unit_price(ram_sku)

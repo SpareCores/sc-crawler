@@ -655,12 +655,21 @@ def inventory_databases(vendor):
         memory_amount = plan.get("memory_amount")
         components = plan.get("components", {})
         storage_component = components.get("storage", {})
-        # API sizes are MiB (same as memory_amount); schema storage fields use GB.
-        storage_size_gb = round(plan["storage_size"] / _MIB_PER_GIB * _GIB_TO_GB)
-        storage_step_gb = round(plan["storage_step_size"] / _MIB_PER_GIB * _GIB_TO_GB)
+        # UI/plan names say GB, but API values are GiB
+        # https://upcloud.com/docs/products/managed-postgresql/configurations/
+        nodes = node_count or 1
+        included_gib = storage_component.get("included_gib")
+        bundled_gib = (
+            int(included_gib)
+            if included_gib is not None
+            else plan["storage_size"] // _MIB_PER_GIB
+        )
+        storage_size_gb = round((bundled_gib // nodes) * _GIB_TO_GB)
+        storage_step_gb = round(
+            (plan["storage_step_size"] // _MIB_PER_GIB) * _GIB_TO_GB
+        )
         storage_extra_max_gb = round(
-            (plan["storage_cap_size"] - plan["storage_size"])
-            / _MIB_PER_GIB
+            ((plan["storage_cap_size"] - plan["storage_size"]) // _MIB_PER_GIB // nodes)
             * _GIB_TO_GB
         )
         dynamic_storage_supported = storage_component.get("dynamic_storage_supported")
@@ -845,7 +854,7 @@ def inventory_database_storages(vendor):
     """List additional managed PostgreSQL disk as a single storage product.
 
     Extra disk is billed uniformly (`managed_database_tiered_storage_standard`) and
-    sold in 10 GiB steps up to 4x each plan's bundled storage.
+    sold in 10 GiB steps (stored as decimal GB) up to 4x each plan's bundled storage.
     https://upcloud.com/docs/changelog/2025-05-26-additional-disk-space-managed-databases/
     https://developers.upcloud.com/1.3/16-managed-database/
     """

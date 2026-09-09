@@ -1074,18 +1074,18 @@ def inventory_databases(vendor):
         flavor_specs = flavor.get("specifications", {})
         vcpus = flavor_specs.get("core")
         memory = flavor_specs.get("memory", {}).get("value")
-        storage_size = flavor_specs.get("storage", {}).get("value")
+        # Do not use capabilities.flavors[].storage — that is the compute VM NVMe size
+        # (e.g. b3-16 = 100 GB), not DBaaS usable disk. Usable storage comes from
+        # availability specifications.storage.minimum / maximum (pricing: "From X GiB").
+        # https://www.ovhcloud.com/en/public-cloud/prices/
+        # https://docs.ovhcloud.com/en/guides/public-cloud/databases/postgresql-capabilities
         plan_label = plan.replace("-", " ").title()
-        spec_parts = [
-            f"{vcpus} vCPU{'s' if vcpus != 1 else ''}" if vcpus else None,
-            f"{memory} GB RAM" if memory else None,
-            f"{storage_size} GB SSD" if storage_size else None,
-        ]
 
         engine_versions: set[str] = set()
         ha: set[DatabaseHaLevel] = set()
         ha_strategy: set[DatabaseHaStrategy] = set()
         max_read_replicas = 0
+        storage_size = None
         storage_extra_max = None
         scheduled_backups = False
         continuous_backups = 0
@@ -1118,6 +1118,12 @@ def inventory_databases(vendor):
             max_read_replicas = max(max_read_replicas, max_nodes - 1)
             scheduled_backups = scheduled_backups or bool(scheduled)
             continuous_backups = max(continuous_backups, retention)
+            if storage_min is not None:
+                storage_size = (
+                    storage_min
+                    if storage_size is None
+                    else max(storage_size, storage_min)
+                )
             if (
                 storage_min is not None
                 and storage_max is not None
@@ -1153,6 +1159,11 @@ def inventory_databases(vendor):
                 sla = offer_sla if sla is None else max(sla, offer_sla)
 
         status = Status.best(offer_statuses) if offer_statuses else Status.INACTIVE
+        spec_parts = [
+            f"{vcpus} vCPU{'s' if vcpus != 1 else ''}" if vcpus else None,
+            f"{memory} GB RAM" if memory else None,
+            f"{storage_size} GB SSD" if storage_size else None,
+        ]
 
         items.append(
             {
