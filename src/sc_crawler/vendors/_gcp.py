@@ -1,5 +1,4 @@
 from concurrent.futures import ThreadPoolExecutor
-from datetime import timedelta
 from functools import cache
 from itertools import chain, repeat
 from logging import DEBUG
@@ -7,7 +6,7 @@ from re import compile as recompile
 from re import match, sub
 from typing import List
 
-from cachier import cachier, set_global_params
+from cachier import cachier
 from google.auth import default
 from google.cloud import billing_v1, compute_v1
 from googleapiclient.discovery import build
@@ -39,9 +38,6 @@ from ..vendor_helpers import (
     parallel_fetch_servers,
     preprocess_servers,
 )
-
-# set stale after to 1 day
-set_global_params(stale_after=timedelta(days=1))
 
 # ##############################################################################
 # Cached gcp client wrappers

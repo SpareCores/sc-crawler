@@ -796,12 +796,11 @@ def pull(
     Vendor API calls are optionally cached as Pickle objects in `~/.cachier`.
     """
 
-    # enable caching
-    if cache:
-        set_global_params(
-            caching_enabled=True,
-            stale_after=timedelta(minutes=cache_ttl),
-        )
+    # cachier caches by default, so need to disable explicitly
+    set_global_params(
+        caching_enabled=cache,
+        stale_after=timedelta(minutes=cache_ttl),
+    )
 
     # enable logging
     channel = ScRichHandler()
