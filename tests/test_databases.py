@@ -350,8 +350,15 @@ def test_azure_sku_lifecycle_status_from_retired_sizes_list():
         "Standard_NP10s",
         "Standard_HC44rs",
         "Standard_HC44-16rs",
+        "Standard_HB120rs_v2",
         "Standard_M192ims_v2",
         "Standard_M192ids_v2",
+        "Standard_DC2s_v3",
+        "Standard_DC8ds_v3",
+        "Standard_DC4as_cc_v5",
+        "Standard_DC8ads_cc_v5",
+        "Standard_EC4as_cc_v5",
+        "Standard_EC4ads_cc_v5",
     ]
     retired = [
         "Standard_A2",
@@ -369,6 +376,8 @@ def test_azure_sku_lifecycle_status_from_retired_sizes_list():
         "Standard_D4s_v5",
         "Standard_B2als_v2",
         "Standard_E2s_v3",
+        "Standard_E4s_v3",
+        "Standard_DC4as_v5",
         "Standard_L8s_v3",
         "Standard_NC4as_T4_v3",
         "Standard_NV4ads_V710_v5",
@@ -430,6 +439,24 @@ def test_azure_sku_lifecycle_status_transitions_on_retirement_date():
     )
     assert (
         _azure_sku_lifecycle_status("Standard_NP10s", as_of=date(2027, 5, 31))
+        == Status.RETIRED
+    )
+    # DCas_cc_v5 / ECas_cc_v5: retires 2026-09-01
+    assert (
+        _azure_sku_lifecycle_status("Standard_DC4as_cc_v5", as_of=date(2026, 8, 31))
+        == Status.PLANNED_FOR_RETIREMENT
+    )
+    assert (
+        _azure_sku_lifecycle_status("Standard_DC4as_cc_v5", as_of=date(2026, 9, 1))
+        == Status.RETIRED
+    )
+    # DCsv3 / DCdsv3: retires 2029-10-31
+    assert (
+        _azure_sku_lifecycle_status("Standard_DC2s_v3", as_of=date(2029, 10, 30))
+        == Status.PLANNED_FOR_RETIREMENT
+    )
+    assert (
+        _azure_sku_lifecycle_status("Standard_DC8ds_v3", as_of=date(2029, 10, 31))
         == Status.RETIRED
     )
 
