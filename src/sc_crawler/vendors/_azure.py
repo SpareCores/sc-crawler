@@ -301,18 +301,26 @@ STORAGE_PRICE_UNIT_MAPPING: dict[str, float | None] = {
 }
 """Storage capacity units → multiplier to convert the raw API price to $/GB/month."""
 
-# VM size series lifecycle. Previous-gen is not retirement.
+# VM size series lifecycle. Previous-gen without a retirement date stays ACTIVE
+# (Dv3/Dsv3, Ev3/Esv3, Ev4/Esv4, Eav4/Easv4, Edv4/Edsv4, Preview DC).
 # https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retired-sizes-list
 # https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/previous-gen-sizes-list
-# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/d-ds-dv2-dsv2-ls-series-migration-guide
-# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/nvv4-retirement
-# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/hbv2-series-retirement
-# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/hc-series-retirement
-# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/dcsv2-series-retirement
-# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/n-series-migration
 # https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/av1-series-retirement
-# Rule format: (compiled regex or exact size, retired_on date or None).
-# - If retired_on is set and as_of >= retired_on -> RETIRED.
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/n-series-migration
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/ncv3-retirement
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/dcsv2-series-retirement
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/retirement/dcsv3-series-retirement
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/dcccv5-series-retirement
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/ecccv5-series-retirement
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/d-ds-dv2-dsv2-ls-series-migration-guide
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/nvv3-series-retirement
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/nvv4-retirement
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/np-series-retirement
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/hc-series-retirement
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/hbv2-series-retirement
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/msv2-mdsv2-retirement
+# Rule format: (compiled regex, retired_on date).
+# - If as_of >= retired_on -> RETIRED.
 # - Else matched -> PLANNED_FOR_RETIREMENT.
 # - No match -> ACTIVE.
 _AZURE_SKU_LIFECYCLE_RULES = (
@@ -321,11 +329,14 @@ _AZURE_SKU_LIFECYCLE_RULES = (
     (recompile(r"^NC\d+r?s_v2$", IGNORECASE), date(2023, 8, 31)),  # NCv2-series
     (recompile(r"^ND\d+r?s?$", IGNORECASE), date(2023, 8, 31)),  # ND v1-series
     (recompile(r"^DC\d+s?_v2$", IGNORECASE), date(2026, 6, 30)),  # DCsv2-series
+    (recompile(r"^DC\d+d?s_v3$", IGNORECASE), date(2029, 10, 31)),  # noqa: E501  # DCsv3/DCdsv3-series
+    (recompile(r"^DC\d+a[d]?s_cc_v5$", IGNORECASE), date(2026, 9, 1)),  # noqa: E501  # DCas/DCads_cc_v5
+    (recompile(r"^EC\d+a[d]?s_cc_v5$", IGNORECASE), date(2026, 9, 1)),  # noqa: E501  # ECas/ECads_cc_v5
     (recompile(r"^NC(?:6s|12s|24s|24rs)_v3$", IGNORECASE), date(2025, 9, 30)),  # noqa: E501  # NCv3-series
     (recompile(r"^D\d+(-\d+)?$", IGNORECASE), date(2028, 5, 1)),  # D-series
     (recompile(r"^DS\d+(-\d+)?$", IGNORECASE), date(2028, 5, 1)),  # Ds-series
-    (recompile(r"^D\d+(-\d+)?_v2$", IGNORECASE), date(2028, 5, 1)),  # Dv2-series
-    (recompile(r"^DS\d+(-\d+)?_v2$", IGNORECASE), date(2028, 5, 1)),  # Dsv2-series
+    (recompile(r"^D\d+(-\d+)?_v2$", IGNORECASE), date(2028, 5, 1)),  # noqa: E501  # Dv2-series (incl. memory D11-D15)
+    (recompile(r"^DS\d+(-\d+)?_v2$", IGNORECASE), date(2028, 5, 1)),  # noqa: E501  # Dsv2-series (incl. memory DS11-DS15)
     (recompile(r"^L\d+s$", IGNORECASE), date(2028, 5, 1)),  # Ls-series
     (recompile(r"^A\d+_v2$", IGNORECASE), date(2028, 11, 15)),  # Av2-series
     (recompile(r"^A\d+m_v2$", IGNORECASE), date(2028, 11, 15)),  # Amv2-series
@@ -336,12 +347,12 @@ _AZURE_SKU_LIFECYCLE_RULES = (
     (recompile(r"^G\d+$", IGNORECASE), date(2028, 11, 15)),  # G-series
     (recompile(r"^GS\d+(-\d+)?$", IGNORECASE), date(2028, 11, 15)),  # Gs-series
     (recompile(r"^L\d+s_v2$", IGNORECASE), date(2028, 11, 15)),  # Lsv2-series
-    (recompile(r"^NV\d+s_v3$", IGNORECASE), date(2026, 9, 30)),  # NVv3-series
+    (recompile(r"^NV\d+s_v3$", IGNORECASE), date(2026, 9, 30)),  # noqa: E501  # NVv3-series (M60), not NCasT4_v3
     (recompile(r"^NV\d+a[h]?s_v4$", IGNORECASE), date(2026, 9, 30)),  # NVv4-series
     (recompile(r"^NP\d+s$", IGNORECASE), date(2027, 5, 31)),  # NP-series
     (recompile(r"^HC44(-\d+)?rs$", IGNORECASE), date(2027, 5, 31)),  # HC-series
     (recompile(r"^HB120(-\d+)?rs_v2$", IGNORECASE), date(2027, 5, 31)),  # HBv2-series
-    (recompile(r"^M192i(?:dm?|m)?s_v2$", IGNORECASE), date(2027, 3, 31)),  # noqa: E501  # Mv2 isolated sizes
+    (recompile(r"^M192i(?:dm?|m)?s_v2$", IGNORECASE), date(2027, 3, 31)),  # noqa: E501  # Msv2/Mdsv2 isolated
 )
 
 
