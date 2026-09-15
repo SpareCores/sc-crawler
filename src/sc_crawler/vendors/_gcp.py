@@ -32,7 +32,7 @@ from ..tables import (
     Vendor,
     Zone,
 )
-from ..utils import _MIB_PER_GIB, nesteddefaultdict, scmodels_to_dict
+from ..utils import _HOURS_PER_MONTH, _MIB_PER_GIB, nesteddefaultdict, scmodels_to_dict
 from ..vendor_helpers import (
     add_vendor_id,
     parallel_fetch_servers,
@@ -291,10 +291,17 @@ def _skus_dict():
             if sku.category.usage_type not in ["OnDemand", "Preemptible"]:
                 continue
         if sku.category.resource_family == "Storage":
-            # Local SSD has both OnDemand and Spot (Preemptible) SKUs; PD-style
-            # capacity SKUs are OnDemand-only and billed monthly separately
+            # Local SSD has both OnDemand and Spot (Preemptible) SKUs (resource
+            # group LocalSSD); PD-style capacity SKUs are OnDemand-only. All of
+            # these Catalog prices are GiB-month.
             if sku.category.usage_type == "OnDemand":
-                if sku.category.resource_group not in ["HDD", "SSD", "HDBSP", "HDTSP"]:
+                if sku.category.resource_group not in [
+                    "HDD",
+                    "SSD",
+                    "HDBSP",
+                    "HDTSP",
+                    "LocalSSD",
+                ]:
                     continue
             elif sku.category.usage_type == "Preemptible":
                 if "SSD backed Local Storage" not in sku.description:
@@ -398,6 +405,12 @@ def _skus_dict():
                     storage_name = v
                     break
             else:
+                continue
+            # skip commitment / DWS variants of Local SSD; keep the plain
+            # OnDemand and Spot Preemptible capacity SKUs (GiB-month)
+            if storage_name == "local-ssd" and (
+                "Reserved" in sku.description or "DWS" in sku.description
+            ):
                 continue
             for region in regions:
                 lookup["storage"][storage_name][region][allocation] = (price, currency)
@@ -626,6 +639,7 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
 
             # bundled Local SSD is billed for the life of the VM
             # https://cloud.google.com/compute/docs/accelerator-optimized-machines
+            # Catalog Local SSD SKUs are GiB-month; convert to hourly for PriceUnit.HOUR
             local_ssd_gib = _server_bundled_local_ssd_gib().get(server.name)
             if local_ssd_gib:
                 alloc = allocation.value.lower()
@@ -644,7 +658,7 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
                             DEBUG,
                         )
                         continue
-                price += ssd_price * local_ssd_gib
+                price += ssd_price * local_ssd_gib / _HOURS_PER_MONTH
 
             for zone in region.zones:
                 # server might not be actually available in the the region

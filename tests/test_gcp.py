@@ -20,8 +20,10 @@ from sc_crawler.vendors._gcp import (
 A3_CORE = (0, 32_220_000)
 A3_RAM = (0, 2_817_000)
 H100 = (11, 60_000_000)
+# Catalog Local SSD is GiB-month ($0.08); server prices convert with /730
 # https://cloud.google.com/products/compute/pricing/storage-optimized
-LOCAL_SSD = (0, 109_589)
+LOCAL_SSD_MONTHLY = (0, 80_000_000)
+LOCAL_SSD_HOURLY = 0.08 / 730
 A3_HIGHGPU_4G_LOCAL_SSD_GIB = 3000
 
 
@@ -95,11 +97,12 @@ def _a3_highgpu_4g_skus(usage_type: str = "OnDemand"):
         ),
         _sku(
             local_ssd_description,
-            resource_group="SSD",
+            # live Catalog uses LocalSSD (not the PD "SSD" group)
+            resource_group="LocalSSD",
             resource_family="Storage",
             regions=["us-central1"],
-            units=LOCAL_SSD[0],
-            nanos=LOCAL_SSD[1],
+            units=LOCAL_SSD_MONTHLY[0],
+            nanos=LOCAL_SSD_MONTHLY[1],
             usage_type=usage_type,
         ),
     ]
@@ -252,12 +255,13 @@ def test_gcp_skus_dict_indexes_local_ssd_spot_and_ondemand():
     with patch("sc_crawler.vendors._gcp._skus", return_value=skus):
         lookup = _skus_dict()
 
+    # Catalog keeps GiB-month; hourly conversion happens in inventory_server_prices
     assert lookup["storage"]["local-ssd"]["us-central1"]["ondemand"] == (
-        pytest.approx(0.000109589),
+        pytest.approx(0.08),
         "USD",
     )
     assert lookup["storage"]["local-ssd"]["us-central1"]["spot"] == (
-        pytest.approx(0.000109589),
+        pytest.approx(0.08),
         "USD",
     )
 
@@ -278,7 +282,7 @@ def test_gcp_inventory_server_prices_includes_gpus_and_bundled_local_ssd():
 
     cpu_and_ram = 0.03222 * 104 + 0.002817 * 936
     gpus = 11.06 * 4
-    local_ssd = 0.000109589 * A3_HIGHGPU_4G_LOCAL_SSD_GIB
+    local_ssd = LOCAL_SSD_HOURLY * A3_HIGHGPU_4G_LOCAL_SSD_GIB
     assert len(prices) == 1
     assert prices[0]["price"] == pytest.approx(cpu_and_ram + gpus + local_ssd)
     assert prices[0]["allocation"] == Allocation.ONDEMAND
@@ -298,8 +302,10 @@ def test_gcp_inventory_server_prices_spot_includes_gpus_and_bundled_local_ssd():
         0.03222 * 104
         + 0.002817 * 936
         + 11.06 * 4
-        + 0.000109589 * A3_HIGHGPU_4G_LOCAL_SSD_GIB
+        + LOCAL_SSD_HOURLY * A3_HIGHGPU_4G_LOCAL_SSD_GIB
     )
+    # Local SSD must not be applied as a raw GiB-month rate (that made Spot ≫ OnDemand)
+    assert prices[0]["price"] < 0.08 * A3_HIGHGPU_4G_LOCAL_SSD_GIB
 
 
 def test_gcp_inventory_server_prices_keys_gpu_skus_on_accelerator_type():
