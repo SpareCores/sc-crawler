@@ -108,6 +108,36 @@ def _server_accelerators() -> dict:
     return accelerators
 
 
+# Most Local SSD partitions are 375 GiB; Z3 Titanium SSD uses 3,000 GiB.
+# https://cloud.google.com/compute/docs/disks/local-ssd
+_LOCAL_SSD_PARTITION_GIB = {
+    "z3": 3000,
+}
+_DEFAULT_LOCAL_SSD_PARTITION_GIB = 375
+
+
+@cache
+def _server_bundled_local_ssd_gib() -> dict:
+    """Map server names to bundled Local SSD capacity in GiB.
+
+    Capacity = `bundledLocalSsds.partitionCount` * partition size. Only machines
+    with bundled Local SSD are billed for it as part of the VM
+    (accelerator- and storage-optimized machines).
+    """
+    sizes = {}
+    for zone in _zones():
+        for server in _servers(zone.name):
+            bundled = server.bundled_local_ssds
+            if not bundled or not bundled.partition_count:
+                continue
+            family = server.name.split("-")[0].lower()
+            partition_gib = _LOCAL_SSD_PARTITION_GIB.get(
+                family, _DEFAULT_LOCAL_SSD_PARTITION_GIB
+            )
+            sizes[server.name] = bundled.partition_count * partition_gib
+    return sizes
+
+
 @cachier(separate_files=True)
 def _storages(zone: str) -> List[compute_v1.types.compute.DiskType]:
     return _paginate_list(compute_v1.services.disk_types.DiskTypesClient(), zone)
@@ -261,9 +291,15 @@ def _skus_dict():
             if sku.category.usage_type not in ["OnDemand", "Preemptible"]:
                 continue
         if sku.category.resource_family == "Storage":
-            if sku.category.usage_type != "OnDemand":
-                continue
-            if sku.category.resource_group not in ["HDD", "SSD", "HDBSP", "HDTSP"]:
+            # Local SSD has both OnDemand and Spot (Preemptible) SKUs; PD-style
+            # capacity SKUs are OnDemand-only and billed monthly separately
+            if sku.category.usage_type == "OnDemand":
+                if sku.category.resource_group not in ["HDD", "SSD", "HDBSP", "HDTSP"]:
+                    continue
+            elif sku.category.usage_type == "Preemptible":
+                if "SSD backed Local Storage" not in sku.description:
+                    continue
+            else:
                 continue
 
         # helper variables
@@ -344,6 +380,18 @@ def _skus_dict():
                     lookup["gpu"][accelerator][region][allocation] = (price, currency)
                 continue
 
+            # family-specific Local SSD (e.g. G4), billed per GiB-hour on top of
+            # the generic "SSD backed Local Storage" SKU when present
+            if (
+                "Instance Local SSD running in" in sku.description
+                and "vGPU" not in sku.description
+            ):
+                family = sub(r"^Spot Preemptible ", "", sku.description)
+                family = sub(r" Instance Local SSD.*", "", family).lower()
+                for region in regions:
+                    lookup["local_ssd"][family][region][allocation] = (price, currency)
+                continue
+
         if sku.category.resource_family == "Storage":
             for k, v in STORAGE_DESCRIPTION_TO_FAMILY.items():
                 if k in sku.description:
@@ -352,7 +400,7 @@ def _skus_dict():
             else:
                 continue
             for region in regions:
-                lookup["storage"][storage_name][region]["ondemand"] = (price, currency)
+                lookup["storage"][storage_name][region][allocation] = (price, currency)
             continue
 
     # m2 prices are actually premium on the top of m1
@@ -409,8 +457,6 @@ def _search_servers(zone_name: str) -> List[dict]:
                 "gpu_family": None,
                 "gpu_model": None,
                 "gpus": [],
-                # TODO machineTypes.bundledLocalSsds only reports a partition
-                # count, and the partition size varies by machine family
                 "storage_size": 0,
                 "storage_type": None,
                 "storages": [],
@@ -457,6 +503,27 @@ def _search_servers(zone_name: str) -> List[dict]:
                 # unset so inspector can still fill it later
                 zone_servers[-1]["gpu_memory_min"] = None
                 zone_servers[-1]["gpu_memory_total"] = None
+        bundled = server.bundled_local_ssds
+        if bundled and bundled.partition_count:
+            family = server.name.split("-")[0].lower()
+            partition_gib = _LOCAL_SSD_PARTITION_GIB.get(
+                family, _DEFAULT_LOCAL_SSD_PARTITION_GIB
+            )
+            storage_size = bundled.partition_count * partition_gib
+            zone_servers[-1].update(
+                {
+                    "storage_size": storage_size,
+                    # third-gen+ Local SSD (incl. Titanium) is NVMe-only
+                    # https://cloud.google.com/compute/docs/disks/local-ssd
+                    "storage_type": StorageType.NVME_SSD,
+                    "storages": [
+                        {
+                            "storage_type": StorageType.NVME_SSD,
+                            "size": storage_size,
+                        }
+                    ],
+                }
+            )
     return zone_servers
 
 
@@ -556,6 +623,28 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
                     )
                     continue
                 price += gpu_price * server.gpu_count
+
+            # bundled Local SSD is billed for the life of the VM
+            # https://cloud.google.com/compute/docs/accelerator-optimized-machines
+            local_ssd_gib = _server_bundled_local_ssd_gib().get(server.name)
+            if local_ssd_gib:
+                alloc = allocation.value.lower()
+                try:
+                    # prefer family-specific Local SSD SKU (e.g. G4) when present
+                    ssd_price, _ = skus["local_ssd"][family][server_region][alloc]
+                except ValueError:
+                    try:
+                        ssd_price, _ = skus["storage"]["local-ssd"][server_region][
+                            alloc
+                        ]
+                    except ValueError:
+                        vendor.log(
+                            f"{allocation.value} Local SSD price not found for "
+                            f"'{server.name}' ({local_ssd_gib} GiB) in '{server_region}'",
+                            DEBUG,
+                        )
+                        continue
+                price += ssd_price * local_ssd_gib
 
             for zone in region.zones:
                 # server might not be actually available in the the region
@@ -1058,12 +1147,8 @@ def inventory_servers(vendor):
 def inventory_server_prices(vendor):
     """List all available GCP server ondemand prices in all regions.
 
-    Prices cover the predefined vCPU, memory and attached GPUs, but not the
-    bundled Local SSD of the storage- and accelerator-optimized machines:
-    `machineTypes.bundledLocalSsds` reports only a partition count, and the
-    partition size varies by machine family (375 GiB for most, 3,000 GiB for
-    Z3), so the capacity cannot be derived reliably.
-    <https://cloud.google.com/compute/disks-image-pricing#localssdpricing>
+    Prices cover the predefined vCPU, memory, attached GPUs, and bundled Local
+    SSD (from `machineTypes.bundledLocalSsds`).
     """
     return _inventory_server_prices(vendor, Allocation.ONDEMAND)
 
@@ -1071,7 +1156,8 @@ def inventory_server_prices(vendor):
 def inventory_server_prices_spot(vendor):
     """List all available GCP server spot prices in all regions.
 
-    Excludes bundled Local SSD, see `inventory_server_prices`."""
+    Same components as `inventory_server_prices` (including bundled Local SSD).
+    """
     return _inventory_server_prices(vendor, Allocation.SPOT)
 
 

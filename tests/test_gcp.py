@@ -1,12 +1,15 @@
+from contextlib import ExitStack, contextmanager
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import pytest
 
 from sc_crawler.inspector import _standardize_gpu_family, _standardize_gpu_model
-from sc_crawler.table_fields import Allocation, PriceUnit
+from sc_crawler.table_fields import Allocation, PriceUnit, StorageType
 from sc_crawler.vendors._gcp import (
     _search_servers,
+    _server_accelerators,
+    _server_bundled_local_ssd_gib,
     _skus_dict,
     inventory_server_prices,
     inventory_server_prices_spot,
@@ -17,6 +20,9 @@ from sc_crawler.vendors._gcp import (
 A3_CORE = (0, 32_220_000)
 A3_RAM = (0, 2_817_000)
 H100 = (11, 60_000_000)
+# https://cloud.google.com/products/compute/pricing/storage-optimized
+LOCAL_SSD = (0, 109_589)
+A3_HIGHGPU_4G_LOCAL_SSD_GIB = 3000
 
 
 def _sku(
@@ -57,6 +63,11 @@ def _a3_highgpu_4g_skus(usage_type: str = "OnDemand"):
     spot = usage_type == "Preemptible"
     prefix = "Spot Preemptible " if spot else ""
     gpu_suffix = "attached to Spot Preemptible VMs running in" if spot else "running in"
+    local_ssd_description = (
+        "SSD backed Local Storage attached to Spot Preemptible VMs"
+        if spot
+        else "SSD backed Local Storage"
+    )
     return [
         _sku(
             f"{prefix}A3 Instance Core running in Americas",
@@ -82,6 +93,15 @@ def _a3_highgpu_4g_skus(usage_type: str = "OnDemand"):
             nanos=H100[1],
             usage_type=usage_type,
         ),
+        _sku(
+            local_ssd_description,
+            resource_group="SSD",
+            resource_family="Storage",
+            regions=["us-central1"],
+            units=LOCAL_SSD[0],
+            nanos=LOCAL_SSD[1],
+            usage_type=usage_type,
+        ),
     ]
 
 
@@ -89,6 +109,13 @@ def _gcp_accelerators(accelerators):
     """Patch the machineTypes name -> guestAcceleratorType lookup."""
     return patch(
         "sc_crawler.vendors._gcp._server_accelerators", return_value=accelerators
+    )
+
+
+def _gcp_bundled_local_ssd(sizes):
+    """Patch server name -> bundled Local SSD GiB lookup."""
+    return patch(
+        "sc_crawler.vendors._gcp._server_bundled_local_ssd_gib", return_value=sizes
     )
 
 
@@ -117,11 +144,33 @@ def _a3_highgpu_4g(gpu_count=4):
     )
 
 
+@contextmanager
+def _a3_price_patches(
+    skus, *, accelerator="nvidia-h100-80gb", local_ssd_gib=A3_HIGHGPU_4G_LOCAL_SSD_GIB
+):
+    with ExitStack() as stack:
+        stack.enter_context(patch("sc_crawler.vendors._gcp._skus", return_value=skus))
+        stack.enter_context(
+            patch("sc_crawler.vendors._gcp._server_in_zone", return_value=True)
+        )
+        stack.enter_context(_gcp_accelerators({"a3-highgpu-4g": accelerator}))
+        stack.enter_context(
+            _gcp_bundled_local_ssd(
+                {"a3-highgpu-4g": local_ssd_gib} if local_ssd_gib else {}
+            )
+        )
+        yield
+
+
 @pytest.fixture(autouse=True)
-def _clear_skus_cache():
+def _clear_caches():
     _skus_dict.cache_clear()
+    _server_accelerators.cache_clear()
+    _server_bundled_local_ssd_gib.cache_clear()
     yield
     _skus_dict.cache_clear()
+    _server_accelerators.cache_clear()
+    _server_bundled_local_ssd_gib.cache_clear()
 
 
 def test_gcp_skus_dict_indexes_gpu_skus():
@@ -198,6 +247,21 @@ def test_gcp_skus_dict_indexes_gpu_skus():
     assert "nvidia-tesla-t4" not in lookup["gpu"]
 
 
+def test_gcp_skus_dict_indexes_local_ssd_spot_and_ondemand():
+    skus = _a3_highgpu_4g_skus() + _a3_highgpu_4g_skus("Preemptible")
+    with patch("sc_crawler.vendors._gcp._skus", return_value=skus):
+        lookup = _skus_dict()
+
+    assert lookup["storage"]["local-ssd"]["us-central1"]["ondemand"] == (
+        pytest.approx(0.000109589),
+        "USD",
+    )
+    assert lookup["storage"]["local-ssd"]["us-central1"]["spot"] == (
+        pytest.approx(0.000109589),
+        "USD",
+    )
+
+
 def test_gcp_skus_dict_price_includes_whole_units():
     """The per GPU hourly rates have a non-zero whole-dollar part."""
     with patch("sc_crawler.vendors._gcp._skus", return_value=_a3_highgpu_4g_skus()):
@@ -207,52 +271,41 @@ def test_gcp_skus_dict_price_includes_whole_units():
     assert price == pytest.approx(11.06)
 
 
-def test_gcp_inventory_server_prices_includes_gpus():
+def test_gcp_inventory_server_prices_includes_gpus_and_bundled_local_ssd():
     vendor = _gcp_vendor(servers=[_a3_highgpu_4g()])
-    with (
-        patch("sc_crawler.vendors._gcp._skus", return_value=_a3_highgpu_4g_skus()),
-        patch("sc_crawler.vendors._gcp._server_in_zone", return_value=True),
-        _gcp_accelerators({"a3-highgpu-4g": "nvidia-h100-80gb"}),
-    ):
+    with _a3_price_patches(_a3_highgpu_4g_skus()):
         prices = inventory_server_prices(vendor)
 
     cpu_and_ram = 0.03222 * 104 + 0.002817 * 936
     gpus = 11.06 * 4
+    local_ssd = 0.000109589 * A3_HIGHGPU_4G_LOCAL_SSD_GIB
     assert len(prices) == 1
-    assert prices[0]["price"] == pytest.approx(cpu_and_ram + gpus)
+    assert prices[0]["price"] == pytest.approx(cpu_and_ram + gpus + local_ssd)
     assert prices[0]["allocation"] == Allocation.ONDEMAND
     assert prices[0]["unit"] == PriceUnit.HOUR
     # the 4 H100s dominate the bill
     assert prices[0]["price"] > 5 * cpu_and_ram
 
 
-def test_gcp_inventory_server_prices_spot_includes_gpus():
+def test_gcp_inventory_server_prices_spot_includes_gpus_and_bundled_local_ssd():
     vendor = _gcp_vendor(servers=[_a3_highgpu_4g()])
-    with (
-        patch(
-            "sc_crawler.vendors._gcp._skus",
-            return_value=_a3_highgpu_4g_skus("Preemptible"),
-        ),
-        patch("sc_crawler.vendors._gcp._server_in_zone", return_value=True),
-        _gcp_accelerators({"a3-highgpu-4g": "nvidia-h100-80gb"}),
-    ):
+    with _a3_price_patches(_a3_highgpu_4g_skus("Preemptible")):
         prices = inventory_server_prices_spot(vendor)
 
     assert len(prices) == 1
     assert prices[0]["allocation"] == Allocation.SPOT
     assert prices[0]["price"] == pytest.approx(
-        0.03222 * 104 + 0.002817 * 936 + 11.06 * 4
+        0.03222 * 104
+        + 0.002817 * 936
+        + 11.06 * 4
+        + 0.000109589 * A3_HIGHGPU_4G_LOCAL_SSD_GIB
     )
 
 
 def test_gcp_inventory_server_prices_keys_gpu_skus_on_accelerator_type():
     """Server.gpu_model is standardized ("H100"), so it cannot key the SKU lookup."""
     vendor = _gcp_vendor(servers=[_a3_highgpu_4g()])
-    with (
-        patch("sc_crawler.vendors._gcp._skus", return_value=_a3_highgpu_4g_skus()),
-        patch("sc_crawler.vendors._gcp._server_in_zone", return_value=True),
-        _gcp_accelerators({"a3-highgpu-4g": "nvidia-h100-80gb"}),
-    ):
+    with _a3_price_patches(_a3_highgpu_4g_skus()):
         prices = inventory_server_prices(vendor)
 
     assert vendor.servers[0].gpu_model not in _skus_dict()["gpu"]
@@ -262,12 +315,7 @@ def test_gcp_inventory_server_prices_keys_gpu_skus_on_accelerator_type():
 def test_gcp_inventory_server_prices_skips_gpu_server_without_gpu_sku():
     """Publishing a CPU + RAM only price for a GPU machine understates the bill."""
     vendor = _gcp_vendor(servers=[_a3_highgpu_4g()])
-    with (
-        patch("sc_crawler.vendors._gcp._skus", return_value=_a3_highgpu_4g_skus()),
-        patch("sc_crawler.vendors._gcp._server_in_zone", return_value=True),
-        # no H200 SKU in the fixtures
-        _gcp_accelerators({"a3-highgpu-4g": "nvidia-h200-141gb"}),
-    ):
+    with _a3_price_patches(_a3_highgpu_4g_skus(), accelerator="nvidia-h200-141gb"):
         prices = inventory_server_prices(vendor)
 
     assert prices == []
@@ -306,6 +354,7 @@ def test_gcp_inventory_server_prices_without_gpus():
         patch("sc_crawler.vendors._gcp._skus", return_value=skus),
         patch("sc_crawler.vendors._gcp._server_in_zone", return_value=True),
         _gcp_accelerators({}),
+        _gcp_bundled_local_ssd({}),
     ):
         prices = inventory_server_prices(vendor)
 
@@ -313,7 +362,7 @@ def test_gcp_inventory_server_prices_without_gpus():
     assert prices[0]["price"] == pytest.approx(0.031611 * 8 + 0.004237 * 32)
 
 
-def test_gcp_search_servers_fills_gpu_fields():
+def test_gcp_search_servers_fills_gpu_and_bundled_local_ssd_fields():
     machine = SimpleNamespace(
         id=1724003,
         name="a4x-maxgpu-4g-metal",
@@ -329,6 +378,7 @@ def test_gcp_search_servers_fills_gpu_fields():
                 guest_accelerator_count=4,
             )
         ],
+        bundled_local_ssds=SimpleNamespace(partition_count=32),
     )
     with patch("sc_crawler.vendors._gcp._servers", return_value=[machine]):
         rows = _search_servers("us-central1-a")
@@ -347,6 +397,9 @@ def test_gcp_search_servers_fills_gpu_fields():
         "model": "GB300",
         "memory": 279 * 1024,
     }
+    assert row["storage_size"] == 32 * 375
+    assert row["storage_type"] == StorageType.NVME_SSD
+    assert row["storages"] == [{"storage_type": StorageType.NVME_SSD, "size": 32 * 375}]
 
 
 def test_standardize_gpu_model_maps_nvidia_gb300():
