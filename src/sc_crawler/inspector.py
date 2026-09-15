@@ -1136,6 +1136,8 @@ def _standardize_gpu_model(model, server=None):
         model = "RTX Pro 6000"
     if model == "nvidia-gb200":
         model = "GB200"
+    if model == "nvidia-gb300":
+        model = "GB300"
     if server and server["vendor_id"] and server["server_id"] == "p4de.24xlarge":
         model = "A100-SXM4-40GB"
     if model in ["RTX 5880 Ada", "RTX5880"]:
@@ -1162,17 +1164,40 @@ def _standardize_gpu_model(model, server=None):
 
 def _standardize_gpu_family(server):
     family = server.get("gpu_family")
-    if "A100" in server.get("gpu_model"):
+    model = server.get("gpu_model") or ""
+    if "A100" in model:
         family = "Ampere"
-    if "K80" in server.get("gpu_model"):
+    if "K80" in model:
         family = "Kepler"
-    if "H100" in server.get("gpu_model") or "H200" in server.get("gpu_model"):
+    if "H100" in model or "H200" in model:
         family = "Hopper"
-    if "V520" in server.get("gpu_model"):
+    if "B200" in model or "GB200" in model or "GB300" in model:
+        family = "Blackwell"
+    if "L4" in model or "RTX Pro 6000" in model:
+        family = "Ada Lovelace"
+    if "V520" in model:
         family = "Radeon Pro Navi"
-    if "HL-205" in server.get("gpu_model"):
+    if "HL-205" in model:
         family = "Gaudi"
     return family
+
+
+_NVIDIA_GPU_MODELS = {
+    "A100",
+    "B200",
+    "GB200",
+    "GB300",
+    "H100",
+    "H200",
+    "L4",
+    "T4",
+    "T4G",
+    "V100",
+    "P100",
+    "P4",
+    "K80",
+    "RTX Pro 6000",
+}
 
 
 def _dropna(text: str) -> str:
@@ -1588,7 +1613,10 @@ def inspect_update_server_dict(server: dict) -> dict:
     if server.get("gpu_model"):
         server["gpu_model"] = _standardize_gpu_model(server["gpu_model"], server)
         server["gpu_family"] = _standardize_gpu_family(server)
-        if not server.get("gpu_manufacturer") and server["gpu_model"] == "A100":
+        if (
+            not server.get("gpu_manufacturer")
+            and server["gpu_model"] in _NVIDIA_GPU_MODELS
+        ):
             server["gpu_manufacturer"] = "NVIDIA"
 
     return server

@@ -1,7 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from functools import cache
 from itertools import chain, repeat
-from logging import DEBUG
+from logging import DEBUG, WARNING
 from re import compile as recompile
 from re import match, sub
 from typing import List
@@ -32,7 +32,7 @@ from ..tables import (
     Vendor,
     Zone,
 )
-from ..utils import nesteddefaultdict, scmodels_to_dict
+from ..utils import _MIB_PER_GIB, nesteddefaultdict, scmodels_to_dict
 from ..vendor_helpers import (
     add_vendor_id,
     parallel_fetch_servers,
@@ -90,6 +90,24 @@ def _server_in_zone(server: str, zone: str) -> bool:
     return server in _servers_in_zone(zone)
 
 
+@cache
+def _server_accelerators() -> dict:
+    """Map server names to their `accelerators.guestAcceleratorType`.
+
+    Needed for the GPU SKU lookup, as `Server.gpu_model` is standardized for
+    cross-vendor comparison, which drops the distinction between differently
+    priced GPUs, e.g. both `nvidia-tesla-a100` (A2 High) and `nvidia-a100-80gb`
+    (A2 Ultra) end up as "A100"."""
+    accelerators = {}
+    for zone in _zones():
+        for server in _servers(zone.name):
+            if server.accelerators:
+                accelerators[server.name] = server.accelerators[
+                    0
+                ].guest_accelerator_type
+    return accelerators
+
+
 @cachier(separate_files=True)
 def _storages(zone: str) -> List[compute_v1.types.compute.DiskType]:
     return _paginate_list(compute_v1.services.disk_types.DiskTypesClient(), zone)
@@ -137,6 +155,59 @@ SERVER_DESCRIPTION_TO_FAMILY = {
     "Memory-optimized": "M1",
     "Memory Optimized Upgrade Premium for Memory-optimized": "M2",
     "M3 Memory-optimized": "M3",
+}
+
+# GPU SKU descriptions, e.g. "Nvidia H100 80GB GPU running in Americas",
+# "Nvidia Tesla T4 GPU attached to Spot Preemptible VMs running in Warsaw",
+# or G4's "RTX 6000 96GB running in Belgium" (no "GPU" token).
+# https://cloud.google.com/billing/docs/how-to/get-pricing-information-api
+# https://cloud.google.com/skus/sku-groups/g4-on-demand-vms
+GPU_DESCRIPTION = recompile(
+    r"^(.+?)(?: GPU)? (?:running in|attached to Spot Preemptible VMs running in) "
+)
+
+# GPU names of the above SKU descriptions (after dropping the optional
+# "Nvidia"/"Tesla" prefixes, as newer SKUs are e.g. "H200 141GB GPU running in
+# Netherlands") mapped to machineTypes.accelerators.guestAcceleratorType.
+# https://cloud.google.com/compute/docs/gpus
+GPU_DESCRIPTION_TO_ACCELERATOR = {
+    "K80": "nvidia-tesla-k80",
+    "P4": "nvidia-tesla-p4",
+    "P100": "nvidia-tesla-p100",
+    "V100": "nvidia-tesla-v100",
+    "T4": "nvidia-tesla-t4",
+    "L4": "nvidia-l4",
+    "A100": "nvidia-tesla-a100",
+    "A100 80GB": "nvidia-a100-80gb",
+    "H100 80GB": "nvidia-h100-80gb",
+    "H100 80GB Mega": "nvidia-h100-mega-80gb",
+    "H200 141GB": "nvidia-h200-141gb",
+    "B200": "nvidia-b200",
+    "GB200": "nvidia-gb200",
+    "GB300": "nvidia-gb300",
+    # catalog name for nvidia-rtx-pro-6000 (G4)
+    "RTX 6000 96GB": "nvidia-rtx-pro-6000",
+}
+
+# Per-GPU memory (MiB), family and display model from
+# https://cloud.google.com/compute/docs/gpus — used when sc-inspector has not
+# yet measured the machine. Inspector data still overrides when present.
+_GCP_ACCELERATOR = {
+    "nvidia-tesla-k80": ("K80", "Kepler", 12 * _MIB_PER_GIB),
+    "nvidia-tesla-p4": ("P4", "Pascal", 8 * _MIB_PER_GIB),
+    "nvidia-tesla-p100": ("P100", "Pascal", 16 * _MIB_PER_GIB),
+    "nvidia-tesla-v100": ("V100", "Volta", 16 * _MIB_PER_GIB),
+    "nvidia-tesla-t4": ("T4", "Turing", 16 * _MIB_PER_GIB),
+    "nvidia-l4": ("L4", "Ada Lovelace", 24 * _MIB_PER_GIB),
+    "nvidia-tesla-a100": ("A100", "Ampere", 40 * _MIB_PER_GIB),
+    "nvidia-a100-80gb": ("A100", "Ampere", 80 * _MIB_PER_GIB),
+    "nvidia-h100-80gb": ("H100", "Hopper", 80 * _MIB_PER_GIB),
+    "nvidia-h100-mega-80gb": ("H100", "Hopper", 80 * _MIB_PER_GIB),
+    "nvidia-h200-141gb": ("H200", "Hopper", 141 * _MIB_PER_GIB),
+    "nvidia-b200": ("B200", "Blackwell", 180 * _MIB_PER_GIB),
+    "nvidia-gb200": ("GB200", "Blackwell", 186 * _MIB_PER_GIB),
+    "nvidia-gb300": ("GB300", "Blackwell", 279 * _MIB_PER_GIB),
+    "nvidia-rtx-pro-6000": ("RTX Pro 6000", "Ada Lovelace", 96 * _MIB_PER_GIB),
 }
 
 STORAGE_DESCRIPTION_TO_FAMILY = {
@@ -203,8 +274,11 @@ def _skus_dict():
             allocation = "spot"
         price_tiers = sku.pricing_info[0].pricing_expression.tiered_rates
         assert len(price_tiers) == 1
-        price = price_tiers[0].unit_price.nanos / 1e9
-        currency = price_tiers[0].unit_price.currency_code
+        unit_price = price_tiers[0].unit_price
+        # Catalog Money is units + nanos, and the whole-dollar part is non-zero
+        # for e.g. the per GPU hourly rates
+        price = unit_price.units + unit_price.nanos / 1e9
+        currency = unit_price.currency_code
 
         if sku.category.resource_family == "Compute":
             # servers with pricing as-is
@@ -253,6 +327,21 @@ def _skus_dict():
 
                 for region in regions:
                     lookup[resource][family][region][allocation] = (price, currency)
+                continue
+
+            # GPUs attached to accelerator-optimized and N1 machines are billed
+            # as separate per GPU hourly SKUs
+            if sku.category.resource_group == "GPU":
+                gpu_name = GPU_DESCRIPTION.match(sku.description)
+                if not gpu_name:
+                    continue
+                accelerator = GPU_DESCRIPTION_TO_ACCELERATOR.get(
+                    sub(r"^(Nvidia )?(Tesla )?", "", gpu_name.group(1))
+                )
+                if accelerator is None:
+                    continue
+                for region in regions:
+                    lookup["gpu"][accelerator][region][allocation] = (price, currency)
                 continue
 
         if sku.category.resource_family == "Storage":
@@ -313,21 +402,15 @@ def _search_servers(zone_name: str) -> List[dict]:
                 "cpu_model": None,
                 "cpus": [],
                 "memory_amount": server.memory_mb,
-                "gpu_count": (
-                    server.accelerators[0].guest_accelerator_count
-                    if server.accelerators
-                    else 0
-                ),
-                "gpu_memory_min": 0 if not server.accelerators else None,
-                "gpu_memory_total": 0 if not server.accelerators else None,
+                "gpu_count": 0,
+                "gpu_memory_min": 0,
+                "gpu_memory_total": 0,
                 "gpu_manufacturer": None,
-                "gpu_model": (
-                    server.accelerators[0].guest_accelerator_type
-                    if server.accelerators
-                    else None
-                ),
+                "gpu_family": None,
+                "gpu_model": None,
                 "gpus": [],
-                # TODO no API to get local disks for an instance type
+                # TODO machineTypes.bundledLocalSsds only reports a partition
+                # count, and the partition size varies by machine family
                 "storage_size": 0,
                 "storage_type": None,
                 "storages": [],
@@ -342,6 +425,38 @@ def _search_servers(zone_name: str) -> List[dict]:
                 "status": _gcp_machine_type_status(server.deprecated.state),
             }
         )
+        if server.accelerators:
+            accel = server.accelerators[0]
+            gpu_count = accel.guest_accelerator_count
+            info = _GCP_ACCELERATOR.get(accel.guest_accelerator_type)
+            zone_servers[-1]["gpu_count"] = gpu_count
+            zone_servers[-1]["gpu_model"] = (
+                info[0] if info else accel.guest_accelerator_type
+            )
+            if info:
+                model, family, memory = info
+                zone_servers[-1].update(
+                    {
+                        "gpu_manufacturer": "NVIDIA",
+                        "gpu_family": family,
+                        "gpu_memory_min": memory,
+                        "gpu_memory_total": memory * gpu_count,
+                        "gpus": [
+                            {
+                                "manufacturer": "NVIDIA",
+                                "family": family,
+                                "model": model,
+                                "memory": memory,
+                            }
+                            for _ in range(gpu_count)
+                        ],
+                    }
+                )
+            else:
+                # known accelerator type missing from the catalog: leave memory
+                # unset so inspector can still fill it later
+                zone_servers[-1]["gpu_memory_min"] = None
+                zone_servers[-1]["gpu_memory_total"] = None
     return zone_servers
 
 
@@ -367,6 +482,18 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
             vendor.log(
                 f"Skip instance: no SKU found for family '{family}' ({server.name})",
                 DEBUG,
+            )
+            continue
+
+        # accelerator-optimized machines are billed for the attached GPUs on the
+        # top of the predefined vCPU and memory, and the GPUs dominate the bill:
+        # <https://cloud.google.com/compute/docs/accelerator-optimized-machines>
+        accelerator = _server_accelerators().get(server.name)
+        if server.gpu_count and accelerator not in skus["gpu"]:
+            # rather skip than publish a vCPU + memory only price for a GPU machine
+            vendor.log(
+                f"Skip instance: no GPU SKU found for '{accelerator}' ({server.name})",
+                WARNING,
             )
             continue
 
@@ -415,6 +542,20 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
                     continue
             else:
                 raise KeyError(f"SKU not found for {server.name}")
+
+            if server.gpu_count:
+                try:
+                    gpu_price, _ = skus["gpu"][accelerator][server_region][
+                        allocation.value.lower()
+                    ]
+                except ValueError:
+                    vendor.log(
+                        f"{allocation.value} GPU price not found for '{accelerator}' "
+                        f"of '{server.name}' in '{server_region}'",
+                        DEBUG,
+                    )
+                    continue
+                price += gpu_price * server.gpu_count
 
             for zone in region.zones:
                 # server might not be actually available in the the region
@@ -915,12 +1056,22 @@ def inventory_servers(vendor):
 
 
 def inventory_server_prices(vendor):
-    """List all available GCP server ondemand prices in all regions."""
+    """List all available GCP server ondemand prices in all regions.
+
+    Prices cover the predefined vCPU, memory and attached GPUs, but not the
+    bundled Local SSD of the storage- and accelerator-optimized machines:
+    `machineTypes.bundledLocalSsds` reports only a partition count, and the
+    partition size varies by machine family (375 GiB for most, 3,000 GiB for
+    Z3), so the capacity cannot be derived reliably.
+    <https://cloud.google.com/compute/disks-image-pricing#localssdpricing>
+    """
     return _inventory_server_prices(vendor, Allocation.ONDEMAND)
 
 
 def inventory_server_prices_spot(vendor):
-    """List all available GCP server spot prices in all regions."""
+    """List all available GCP server spot prices in all regions.
+
+    Excludes bundled Local SSD, see `inventory_server_prices`."""
     return _inventory_server_prices(vendor, Allocation.SPOT)
 
 
