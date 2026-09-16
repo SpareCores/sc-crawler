@@ -1155,6 +1155,21 @@ def _standardize_gpu_model(model, server=None):
         model = "GB200"
     if model == "nvidia-gb300":
         model = "GB300"
+    # GCP TPU VMs expose the machine-series accelerator type, not the version
+    if model in ["ct3", "ct3p"]:
+        model = "v3"
+    if model in ["ct5l", "ct5lp"]:
+        model = "v5e"
+    if model == "ct5p":
+        model = "v5p"
+    if model == "ct6e":
+        model = "v6e"
+    # Google writes "TPU7x", normalize to v7x to match v5e/v6e
+    if model in ["tpu7x", "TPU7x"]:
+        model = "v7x"
+    # migrate earlier "TPU v5e"-style display names
+    if model.startswith("TPU "):
+        model = model.removeprefix("TPU ")
     if server and server["vendor_id"] and server["server_id"] == "p4de.24xlarge":
         model = "A100-SXM4-40GB"
     if model in ["RTX 5880 Ada", "RTX5880"]:
@@ -1193,6 +1208,8 @@ def _standardize_gpu_family(server):
         family = "Blackwell"
     if "L4" in model or "RTX Pro 6000" in model:
         family = "Ada Lovelace"
+    if model in ["v3", "v5e", "v5p", "v6e", "v7x"] or model.startswith("TPU"):
+        family = "TPU"
     if "V520" in model:
         family = "Radeon Pro Navi"
     if "HL-205" in model:

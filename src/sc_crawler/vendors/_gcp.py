@@ -237,9 +237,10 @@ GPU_DESCRIPTION_TO_ACCELERATOR = {
     "RTX 6000 96GB": "nvidia-rtx-pro-6000",
 }
 
-# Per-GPU memory (MiB), family and display model from
-# https://cloud.google.com/compute/docs/gpus — used when sc-inspector has not
-# yet measured the machine. Inspector data still overrides when present.
+# Per-accelerator memory (MiB), family and display model - used when
+# sc-inspector has not yet measured the machine. Inspector data still overrides.
+# NVIDIA: https://cloud.google.com/compute/docs/gpus
+# TPU: https://cloud.google.com/compute/docs/tpus/tpu-machines
 _GCP_ACCELERATOR = {
     "nvidia-tesla-k80": ("K80", "Kepler", 12 * _MIB_PER_GIB),
     "nvidia-tesla-p4": ("P4", "Pascal", 8 * _MIB_PER_GIB),
@@ -256,6 +257,20 @@ _GCP_ACCELERATOR = {
     "nvidia-gb200": ("GB200", "Blackwell", 186 * _MIB_PER_GIB),
     "nvidia-gb300": ("GB300", "Blackwell", 279 * _MIB_PER_GIB),
     "nvidia-rtx-pro-6000": ("RTX Pro 6000", "Ada Lovelace", 96 * _MIB_PER_GIB),
+    # machineTypes.accelerators.guestAcceleratorType for TPU VMs.
+    # Google writes "TPU7x" with no space, we store v7x to match v5e/v6e.
+    # https://cloud.google.com/tpu/docs/v3
+    "ct3": ("v3", "TPU", 32 * _MIB_PER_GIB),
+    "ct3p": ("v3", "TPU", 32 * _MIB_PER_GIB),
+    # https://cloud.google.com/tpu/docs/v5e
+    "ct5l": ("v5e", "TPU", 16 * _MIB_PER_GIB),
+    "ct5lp": ("v5e", "TPU", 16 * _MIB_PER_GIB),
+    # https://cloud.google.com/tpu/docs/v5p
+    "ct5p": ("v5p", "TPU", 95 * _MIB_PER_GIB),
+    # https://cloud.google.com/tpu/docs/v6e
+    "ct6e": ("v6e", "TPU", 32 * _MIB_PER_GIB),
+    # https://cloud.google.com/tpu/docs/tpu7x
+    "tpu7x": ("v7x", "TPU", 192 * _MIB_PER_GIB),
 }
 
 STORAGE_DESCRIPTION_TO_FAMILY = {
@@ -564,12 +579,13 @@ def _search_servers(zone_name: str) -> List[dict]:
             )
             if info:
                 model, family, memory = info
+                manufacturer = "Google" if family == "TPU" else "NVIDIA"
                 if gpu_count < 1:
                     # one vGPU slice with proportional VRAM (e.g. 1/8 of 96 GiB)
                     slice_memory = int(memory * gpu_count)
                     gpus = [
                         {
-                            "manufacturer": "NVIDIA",
+                            "manufacturer": manufacturer,
                             "family": family,
                             "model": model,
                             "memory": slice_memory,
@@ -581,7 +597,7 @@ def _search_servers(zone_name: str) -> List[dict]:
                     n = int(gpu_count)
                     gpus = [
                         {
-                            "manufacturer": "NVIDIA",
+                            "manufacturer": manufacturer,
                             "family": family,
                             "model": model,
                             "memory": memory,
@@ -592,7 +608,7 @@ def _search_servers(zone_name: str) -> List[dict]:
                     gpu_memory_total = memory * n
                 zone_servers[-1].update(
                     {
-                        "gpu_manufacturer": "NVIDIA",
+                        "gpu_manufacturer": manufacturer,
                         "gpu_family": family,
                         "gpu_memory_min": gpu_memory_min,
                         "gpu_memory_total": gpu_memory_total,

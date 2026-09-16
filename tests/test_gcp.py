@@ -816,6 +816,64 @@ def test_gcp_inventory_server_prices_uses_specialized_ultramem_skus(
     assert prices[0]["price"] == pytest.approx(expected)
 
 
+def test_gcp_search_servers_fills_tpu_fields():
+    machine = SimpleNamespace(
+        id=7001,
+        name="ct5lp-hightpu-4t",
+        description="112 vCPUs, 192 GB RAM, 4 Google TPUs",
+        guest_cpus=112,
+        is_shared_cpu=False,
+        architecture="X86_64",
+        memory_mb=192 * 1024,
+        deprecated=SimpleNamespace(state=""),
+        accelerators=[
+            SimpleNamespace(guest_accelerator_type="ct5lp", guest_accelerator_count=4)
+        ],
+        bundled_local_ssds=None,
+    )
+    with patch("sc_crawler.vendors._gcp._servers", return_value=[machine]):
+        rows = _search_servers("us-central1-a")
+
+    row = rows[0]
+    assert row["gpu_count"] == 4
+    assert row["gpu_model"] == "v5e"
+    assert row["gpu_manufacturer"] == "Google"
+    assert row["gpu_family"] == "TPU"
+    assert row["gpu_memory_min"] == 16 * 1024
+    assert row["gpu_memory_total"] == 4 * 16 * 1024
+    assert (
+        row["gpus"]
+        == [
+            {
+                "manufacturer": "Google",
+                "family": "TPU",
+                "model": "v5e",
+                "memory": 16 * 1024,
+            }
+        ]
+        * 4
+    )
+
+
 def test_standardize_gpu_model_maps_nvidia_gb300():
     assert _standardize_gpu_model("nvidia-gb300") == "GB300"
     assert _standardize_gpu_family({"gpu_model": "GB300"}) == "Blackwell"
+
+
+@pytest.mark.parametrize(
+    ("raw", "model", "family"),
+    [
+        ("ct5l", "v5e", "TPU"),
+        ("ct5lp", "v5e", "TPU"),
+        ("ct5p", "v5p", "TPU"),
+        ("ct6e", "v6e", "TPU"),
+        ("tpu7x", "v7x", "TPU"),
+        ("TPU7x", "v7x", "TPU"),
+        ("TPU v5e", "v5e", "TPU"),
+        ("ct3", "v3", "TPU"),
+        ("ct3p", "v3", "TPU"),
+    ],
+)
+def test_standardize_gpu_model_and_family_maps_gcp_tpu(raw, model, family):
+    assert _standardize_gpu_model(raw) == model
+    assert _standardize_gpu_family({"gpu_model": _standardize_gpu_model(raw)}) == family
