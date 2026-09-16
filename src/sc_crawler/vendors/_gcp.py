@@ -11,6 +11,7 @@ from google.auth import default
 from google.cloud import billing_v1, compute_v1
 from googleapiclient.discovery import build
 
+from ..inspector import _standardize_gpu_count
 from ..lookup import map_compliance_frameworks_to_vendor
 from ..sentry import sentry_capture_or_raise
 from ..table_fields import (
@@ -32,7 +33,13 @@ from ..tables import (
     Vendor,
     Zone,
 )
-from ..utils import _HOURS_PER_MONTH, _MIB_PER_GIB, nesteddefaultdict, scmodels_to_dict
+from ..utils import (
+    _GIB_TO_GB,
+    _HOURS_PER_MONTH,
+    _MIB_PER_GIB,
+    nesteddefaultdict,
+    scmodels_to_dict,
+)
 from ..vendor_helpers import (
     add_vendor_id,
     parallel_fetch_servers,
@@ -108,12 +115,14 @@ def _server_accelerators() -> dict:
     return accelerators
 
 
-# Most Local SSD partitions are 375 GiB; Z3 Titanium SSD uses 3,000 GiB.
 # https://cloud.google.com/compute/docs/disks/local-ssd
-_LOCAL_SSD_PARTITION_GIB = {
-    "z3": 3000,
-}
-_DEFAULT_LOCAL_SSD_PARTITION_GIB = 375
+def _local_ssd_partition_gib(server_name: str) -> int:
+    family = server_name.split("-")[0].lower()
+    if family == "z3" and server_name.endswith("-metal"):
+        return 6000
+    if family in ["a4x", "z3"] or (family == "c4" and server_name.endswith("-metal")):
+        return 3000
+    return 375
 
 
 @cache
@@ -130,10 +139,7 @@ def _server_bundled_local_ssd_gib() -> dict:
             bundled = server.bundled_local_ssds
             if not bundled or not bundled.partition_count:
                 continue
-            family = server.name.split("-")[0].lower()
-            partition_gib = _LOCAL_SSD_PARTITION_GIB.get(
-                family, _DEFAULT_LOCAL_SSD_PARTITION_GIB
-            )
+            partition_gib = _local_ssd_partition_gib(server.name)
             sizes[server.name] = bundled.partition_count * partition_gib
     return sizes
 
@@ -486,7 +492,12 @@ def _search_servers(zone_name: str) -> List[dict]:
         )
         if server.accelerators:
             accel = server.accelerators[0]
-            gpu_count = accel.guest_accelerator_count
+            # G4 fractional vGPUs report count=1 in the API; parse "1/8" etc.
+            # from the description so inventory and pricing use the slice size
+            gpu_count = _standardize_gpu_count(
+                gpu_count=accel.guest_accelerator_count,
+                description=server.description,
+            )
             info = _GCP_ACCELERATOR.get(accel.guest_accelerator_type)
             zone_servers[-1]["gpu_count"] = gpu_count
             zone_servers[-1]["gpu_model"] = (
@@ -494,21 +505,39 @@ def _search_servers(zone_name: str) -> List[dict]:
             )
             if info:
                 model, family, memory = info
+                if gpu_count < 1:
+                    # one vGPU slice with proportional VRAM (e.g. 1/8 of 96 GiB)
+                    slice_memory = int(memory * gpu_count)
+                    gpus = [
+                        {
+                            "manufacturer": "NVIDIA",
+                            "family": family,
+                            "model": model,
+                            "memory": slice_memory,
+                        }
+                    ]
+                    gpu_memory_min = slice_memory
+                    gpu_memory_total = slice_memory
+                else:
+                    n = int(gpu_count)
+                    gpus = [
+                        {
+                            "manufacturer": "NVIDIA",
+                            "family": family,
+                            "model": model,
+                            "memory": memory,
+                        }
+                        for _ in range(n)
+                    ]
+                    gpu_memory_min = memory
+                    gpu_memory_total = memory * n
                 zone_servers[-1].update(
                     {
                         "gpu_manufacturer": "NVIDIA",
                         "gpu_family": family,
-                        "gpu_memory_min": memory,
-                        "gpu_memory_total": memory * gpu_count,
-                        "gpus": [
-                            {
-                                "manufacturer": "NVIDIA",
-                                "family": family,
-                                "model": model,
-                                "memory": memory,
-                            }
-                            for _ in range(gpu_count)
-                        ],
+                        "gpu_memory_min": gpu_memory_min,
+                        "gpu_memory_total": gpu_memory_total,
+                        "gpus": gpus,
                     }
                 )
             else:
@@ -518,11 +547,11 @@ def _search_servers(zone_name: str) -> List[dict]:
                 zone_servers[-1]["gpu_memory_total"] = None
         bundled = server.bundled_local_ssds
         if bundled and bundled.partition_count:
-            family = server.name.split("-")[0].lower()
-            partition_gib = _LOCAL_SSD_PARTITION_GIB.get(
-                family, _DEFAULT_LOCAL_SSD_PARTITION_GIB
+            storage_size = round(
+                bundled.partition_count
+                * _local_ssd_partition_gib(server.name)
+                * _GIB_TO_GB
             )
-            storage_size = bundled.partition_count * partition_gib
             zone_servers[-1].update(
                 {
                     "storage_size": storage_size,

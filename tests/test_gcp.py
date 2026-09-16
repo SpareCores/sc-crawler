@@ -7,6 +7,7 @@ import pytest
 from sc_crawler.inspector import _standardize_gpu_family, _standardize_gpu_model
 from sc_crawler.table_fields import Allocation, PriceUnit, StorageType
 from sc_crawler.vendors._gcp import (
+    _local_ssd_partition_gib,
     _search_servers,
     _server_accelerators,
     _server_bundled_local_ssd_gib,
@@ -384,7 +385,7 @@ def test_gcp_search_servers_fills_gpu_and_bundled_local_ssd_fields():
                 guest_accelerator_count=4,
             )
         ],
-        bundled_local_ssds=SimpleNamespace(partition_count=32),
+        bundled_local_ssds=SimpleNamespace(partition_count=4),
     )
     with patch("sc_crawler.vendors._gcp._servers", return_value=[machine]):
         rows = _search_servers("us-central1-a")
@@ -403,9 +404,109 @@ def test_gcp_search_servers_fills_gpu_and_bundled_local_ssd_fields():
         "model": "GB300",
         "memory": 279 * 1024,
     }
-    assert row["storage_size"] == 32 * 375
+    assert row["storage_size"] == round(4 * 3000 * 1024**3 / 1000**3)
     assert row["storage_type"] == StorageType.NVME_SSD
-    assert row["storages"] == [{"storage_type": StorageType.NVME_SSD, "size": 32 * 375}]
+    assert row["storages"] == [
+        {
+            "storage_type": StorageType.NVME_SSD,
+            "size": round(4 * 3000 * 1024**3 / 1000**3),
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    ("server_name", "expected"),
+    [
+        ("c4-standard-4-lssd", 375),
+        ("c4-standard-288-lssd-metal", 3000),
+        ("a4x-highgpu-4g", 3000),
+        ("a4x-maxgpu-4g-metal", 3000),
+        ("z3-highmem-8-highlssd", 3000),
+        ("z3-highmem-192-highlssd-metal", 6000),
+    ],
+)
+def test_gcp_local_ssd_partition_gib(server_name, expected):
+    assert _local_ssd_partition_gib(server_name) == expected
+
+
+def test_gcp_search_servers_parses_fractional_g4_vgpu():
+    """MachineTypes API reports count=1 for G4 vGPU slices; fraction is in description."""
+    machine = SimpleNamespace(
+        id=999935024,
+        name="g4-standard-6",
+        description="Graphics Optimized: 1/8 NVIDIA RTX PRO 6000 GPU, 6 vCPUs, 22GB RAM",
+        guest_cpus=6,
+        is_shared_cpu=False,
+        architecture="X86_64",
+        memory_mb=22528,
+        deprecated=SimpleNamespace(state=""),
+        accelerators=[
+            SimpleNamespace(
+                guest_accelerator_type="nvidia-rtx-pro-6000",
+                guest_accelerator_count=1,
+            )
+        ],
+        bundled_local_ssds=None,
+    )
+    with patch("sc_crawler.vendors._gcp._servers", return_value=[machine]):
+        row = _search_servers("us-east1-b")[0]
+
+    assert row["gpu_count"] == 0.125
+    assert row["gpu_model"] == "RTX Pro 6000"
+    assert row["gpu_memory_min"] == 12 * 1024
+    assert row["gpu_memory_total"] == 12 * 1024
+    assert len(row["gpus"]) == 1
+    assert row["gpus"][0]["memory"] == 12 * 1024
+
+
+def test_gcp_inventory_server_prices_scales_fractional_gpu():
+    vendor = _gcp_vendor(
+        servers=[
+            SimpleNamespace(
+                name="g4-standard-6",
+                server_id="g4-standard-6",
+                vcpus=6,
+                memory_amount=22 * 1024,
+                gpu_count=0.125,
+                gpu_model="RTX Pro 6000",
+            )
+        ]
+    )
+    skus = [
+        _sku(
+            "G4 Instance Core running in Americas",
+            resource_group="CPU",
+            regions=["us-central1"],
+            units=0,
+            nanos=48_870_000,
+        ),
+        _sku(
+            "G4 Instance Ram running in Americas",
+            resource_group="RAM",
+            regions=["us-central1"],
+            units=0,
+            nanos=5_860_000,
+        ),
+        _sku(
+            "RTX 6000 96GB running in Americas",
+            resource_group="GPU",
+            regions=["us-central1"],
+            units=1,
+            nanos=95_700_000,
+        ),
+    ]
+    with (
+        patch("sc_crawler.vendors._gcp._skus", return_value=skus),
+        patch("sc_crawler.vendors._gcp._server_in_zone", return_value=True),
+        _gcp_accelerators({"g4-standard-6": "nvidia-rtx-pro-6000"}),
+        _gcp_bundled_local_ssd({}),
+    ):
+        prices = inventory_server_prices(vendor)
+
+    assert len(prices) == 1
+    assert prices[0]["price"] == pytest.approx(
+        0.04887 * 6 + 0.00586 * 22 + 1.0957 * 0.125
+    )
 
 
 def test_standardize_gpu_model_maps_nvidia_gb300():
