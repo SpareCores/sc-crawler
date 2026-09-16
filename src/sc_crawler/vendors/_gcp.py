@@ -3,7 +3,7 @@ from functools import cache
 from itertools import chain, repeat
 from logging import DEBUG, WARNING
 from re import compile as recompile
-from re import match, sub
+from re import sub
 from typing import List
 
 from cachier import cachier
@@ -202,6 +202,16 @@ GPU_DESCRIPTION = recompile(
     r"^(.+?)(?: GPU)? (?:running in|attached to Spot Preemptible VMs running in) "
 )
 
+# Machine-level GPU slice SKUs cover the complete share of the VM, not just the
+# accelerator. G4: "1/8 vGPU no lssd running in Iowa". A4 Spot: "Spot
+# Preemptible A4 Nvidia B200 (1 gpu slice) running in Americas". A4 OnDemand and
+# DWS variants are excluded.
+# https://cloud.google.com/skus/sku-groups/g4-on-demand-vms
+GPU_SLICE_DESCRIPTION = recompile(
+    r"^(?:(?:Spot Preemptible )?1/(\d+) vGPU no lssd|"
+    r"Spot Preemptible (A4) Nvidia B200 \((\d+) gpu slice\)) running in "
+)
+
 # GPU names of the above SKU descriptions (after dropping the optional
 # "Nvidia"/"Tesla" prefixes, as newer SKUs are e.g. "H200 141GB GPU running in
 # Netherlands") mapped to machineTypes.accelerators.guestAcceleratorType.
@@ -217,6 +227,8 @@ GPU_DESCRIPTION_TO_ACCELERATOR = {
     "A100 80GB": "nvidia-a100-80gb",
     "H100 80GB": "nvidia-h100-80gb",
     "H100 80GB Mega": "nvidia-h100-mega-80gb",
+    # current OnDemand and Spot catalog name for A3 Mega
+    "H100 80GB Plus": "nvidia-h100-mega-80gb",
     "H200 141GB": "nvidia-h200-141gb",
     "B200": "nvidia-b200",
     "GB200": "nvidia-gb200",
@@ -278,8 +290,25 @@ def _gcp_machine_type_status(deprecated_state: str | None) -> Status:
     return _GCP_DEPRECATION_STATE_TO_STATUS.get(deprecated_state or "", Status.ACTIVE)
 
 
+# machine types billed with their own Core/Ram SKUs instead of the ones named
+# after the series, e.g. "A3Ultra Instance Core running in Americas" for
+# a3-ultragpu-8g and "M4Ultramem224 Instance Ram running in Americas" for
+# m4-ultramem-224. N1 mega/ultramem were renamed to M1.
+# https://cloud.google.com/compute/docs/memory-optimized-machines#m1_series
+_SERVER_NAME_SKU_FAMILIES = (
+    (recompile(r"^n1-(?:mega|ultra)mem-\d+$"), "m1"),
+    (recompile(r"^a3-megagpu-"), "a3plus"),
+    (recompile(r"^a3-ultragpu-"), "a3ultra"),
+    (recompile(r"^m4-ultramem-224$"), "m4ultramem224"),
+    (recompile(r"^m4n-ultramem-224$"), "m4nultramem224"),
+)
+
+
 def _server_family(server_name: str) -> str:
     """Look up server family based on server name to build the SKU lookup key."""
+    for pattern, family in _SERVER_NAME_SKU_FAMILIES:
+        if pattern.match(server_name):
+            return family
     # example server names: f1-micro, n2d-standard-96
     return server_name.lower().split("-")[0]
 
@@ -361,8 +390,10 @@ def _skus_dict():
                 # - M3 Memory-optimized Instance Core running in Warsaw
                 # - Spot Preemptible T2A Arm Instance Ram running in Netherlands
                 # - N1 Predefined Instance Ram running in EMEA
+                # the space before "Instance" is missing in some descriptions,
+                # e.g. "M4NUltramem224Instance Ram running in Iowa"
                 family = sub(r"^Spot Preemptible ", "", sku.description)
-                family = sub(r" Instance.*", "", family)
+                family = sub(r" ?Instance.*", "", family)
                 family = sub(r" Predefined$", "", family)
                 family = sub(r" AMD$", "", family)
                 family = sub(r" Arm$", "", family)
@@ -370,6 +401,14 @@ def _skus_dict():
                 resource = sku.category.resource_group.lower()
                 if sku.category.resource_group == "N1Standard":
                     resource = "ram" if "Instance Ram" in sku.description else "cpu"
+
+                # most memory SKUs are GiB-hour, but a few (e.g. C4D,
+                # M4Ultramem224) are billed per decimal GB-hour
+                if (
+                    resource == "ram"
+                    and sku.pricing_info[0].pricing_expression.usage_unit == "GBy.h"
+                ):
+                    price *= _GIB_TO_GB
 
                 # extract instance family from description (?!)
                 family = SERVER_DESCRIPTION_TO_FAMILY.get(family, family).lower()
@@ -381,6 +420,26 @@ def _skus_dict():
             # GPUs attached to accelerator-optimized and N1 machines are billed
             # as separate per GPU hourly SKUs
             if sku.category.resource_group == "GPU":
+                # normalize fractional / per-slice machine SKUs to a whole-GPU
+                # rate so inventory can scale them with gpu_count
+                gpu_slice = GPU_SLICE_DESCRIPTION.match(sku.description)
+                if gpu_slice:
+                    if gpu_slice.group(2):
+                        # A4 is Spot-only despite an OnDemand catalog usage_type
+                        family = gpu_slice.group(2).lower()
+                        slice_allocation = "spot"
+                        price *= int(gpu_slice.group(3))
+                    else:
+                        family = "g4"
+                        slice_allocation = allocation
+                        price *= int(gpu_slice.group(1))
+                    for region in regions:
+                        lookup["gpu_slice"][family][region][slice_allocation] = (
+                            price,
+                            currency,
+                        )
+                    continue
+
                 gpu_name = GPU_DESCRIPTION.match(sku.description)
                 if not gpu_name:
                     continue
@@ -393,8 +452,8 @@ def _skus_dict():
                     lookup["gpu"][accelerator][region][allocation] = (price, currency)
                 continue
 
-            # family-specific Local SSD (e.g. G4), billed per GiB-hour on top of
-            # the generic "SSD backed Local Storage" SKU when present
+            # family-specific Local SSD, billed per GiB-month instead of the
+            # generic "SSD backed Local Storage" SKU when present
             if (
                 "Instance Local SSD running in" in sku.description
                 and "vGPU" not in sku.description
@@ -577,13 +636,21 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
     for server in vendor.servers:
         family = _server_family(server.name)
 
-        # https://cloud.google.com/compute/docs/memory-optimized-machines#m1_series
-        # N1 -> M1 rename "to more clearly identify the machines"
-        if match("n1-(mega|ultra)mem-[0-9]{2}", server.name):
-            family = "m1"
+        # shapes with a GPU slice have a single machine-level SKU instead of
+        # separate vCPU, memory and GPU ones
+        gpu_slice = bool(
+            server.gpu_count
+            and ((server.gpu_count < 1 and family == "g4") or family == "a4")
+        )
 
         # price per instance or cpu/ram
-        server_regions = [*skus["instance"][family].keys(), *skus["cpu"][family].keys()]
+        if gpu_slice:
+            server_regions = [*skus["gpu_slice"][family].keys()]
+        else:
+            server_regions = [
+                *skus["instance"][family].keys(),
+                *skus["cpu"][family].keys(),
+            ]
         if not server_regions:
             # some newer/exotic families (e.g. A4X, M4N, X4, TPU VM series as of
             # 2026-08) have no Instance Core/Ram (or instance-level) SKUs at all
@@ -598,7 +665,7 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
         # top of the predefined vCPU and memory, and the GPUs dominate the bill:
         # <https://cloud.google.com/compute/docs/accelerator-optimized-machines>
         accelerator = _server_accelerators().get(server.name)
-        if server.gpu_count and accelerator not in skus["gpu"]:
+        if server.gpu_count and not gpu_slice and accelerator not in skus["gpu"]:
             # rather skip than publish a vCPU + memory only price for a GPU machine
             vendor.log(
                 f"Skip instance: no GPU SKU found for '{accelerator}' ({server.name})",
@@ -616,8 +683,22 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
                 )
                 continue
 
+            # try the machine-level GPU slice pricing
+            if gpu_slice:
+                try:
+                    price, currency = skus["gpu_slice"][family][server_region][
+                        allocation.value.lower()
+                    ]
+                except ValueError:
+                    vendor.log(
+                        f"{allocation.value} GPU slice price not found for "
+                        f"'{server.name}' in '{server_region}'",
+                        DEBUG,
+                    )
+                    continue
+                price *= server.gpu_count
             # try instance-level pricing
-            if skus["instance"][family]:
+            elif skus["instance"][family]:
                 try:
                     price, currency = skus["instance"][family][server_region][
                         allocation.value.lower()
@@ -652,7 +733,7 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
             else:
                 raise KeyError(f"SKU not found for {server.name}")
 
-            if server.gpu_count:
+            if server.gpu_count and not gpu_slice:
                 try:
                     gpu_price, _ = skus["gpu"][accelerator][server_region][
                         allocation.value.lower()
@@ -670,7 +751,7 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
             # https://cloud.google.com/compute/docs/accelerator-optimized-machines
             # Catalog Local SSD SKUs are GiB-month; convert to hourly for PriceUnit.HOUR
             local_ssd_gib = _server_bundled_local_ssd_gib().get(server.name)
-            if local_ssd_gib:
+            if local_ssd_gib and not gpu_slice:
                 alloc = allocation.value.lower()
                 try:
                     # prefer family-specific Local SSD SKU (e.g. G4) when present

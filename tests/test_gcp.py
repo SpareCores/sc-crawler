@@ -6,11 +6,13 @@ import pytest
 
 from sc_crawler.inspector import _standardize_gpu_family, _standardize_gpu_model
 from sc_crawler.table_fields import Allocation, PriceUnit, StorageType
+from sc_crawler.utils import _GIB_TO_GB
 from sc_crawler.vendors._gcp import (
     _local_ssd_partition_gib,
     _search_servers,
     _server_accelerators,
     _server_bundled_local_ssd_gib,
+    _server_family,
     _skus_dict,
     inventory_server_prices,
     inventory_server_prices_spot,
@@ -37,7 +39,10 @@ def _sku(
     nanos: int,
     resource_family: str = "Compute",
     usage_type: str = "OnDemand",
+    usage_unit: str | None = None,
 ):
+    if usage_unit is None:
+        usage_unit = {"RAM": "GiBy.h", "LocalSSD": "GiBy.mo"}.get(resource_group, "h")
     return SimpleNamespace(
         description=description,
         category=SimpleNamespace(
@@ -49,6 +54,7 @@ def _sku(
         pricing_info=[
             SimpleNamespace(
                 pricing_expression=SimpleNamespace(
+                    usage_unit=usage_unit,
                     tiered_rates=[
                         SimpleNamespace(
                             unit_price=SimpleNamespace(
@@ -195,6 +201,13 @@ def test_gcp_skus_dict_indexes_gpu_skus():
             nanos=272_460_000,
             usage_type="Preemptible",
         ),
+        _sku(
+            "Nvidia H100 80GB Plus GPU running in Americas",
+            resource_group="GPU",
+            regions=["us-central1"],
+            units=10,
+            nanos=344_275_712,
+        ),
         # G4 catalog name has no "GPU" token
         # https://cloud.google.com/skus/sku-groups/g4-on-demand-vms
         _sku(
@@ -240,6 +253,10 @@ def test_gcp_skus_dict_indexes_gpu_skus():
         pytest.approx(9.27246),
         "USD",
     )
+    assert lookup["gpu"]["nvidia-h100-mega-80gb"]["us-central1"]["ondemand"] == (
+        pytest.approx(10.344275712),
+        "USD",
+    )
     assert lookup["gpu"]["nvidia-rtx-pro-6000"]["europe-west1"]["ondemand"] == (
         pytest.approx(4.5),
         "USD",
@@ -252,7 +269,27 @@ def test_gcp_skus_dict_indexes_gpu_skus():
 
 
 def test_gcp_skus_dict_indexes_local_ssd_spot_and_ondemand():
-    skus = _a3_highgpu_4g_skus() + _a3_highgpu_4g_skus("Preemptible")
+    skus = [
+        *_a3_highgpu_4g_skus(),
+        *_a3_highgpu_4g_skus("Preemptible"),
+        _sku(
+            "C4D Instance Local SSD running in Americas",
+            resource_group="LocalSSD",
+            regions=["us-central1"],
+            units=0,
+            nanos=160_000_000,
+            usage_unit="GiBy.mo",
+        ),
+        _sku(
+            "Spot Preemptible C4D Instance Local SSD running in Americas",
+            resource_group="LocalSSD",
+            regions=["us-central1"],
+            units=0,
+            nanos=65_000_000,
+            usage_type="Preemptible",
+            usage_unit="GiBy.mo",
+        ),
+    ]
     with patch("sc_crawler.vendors._gcp._skus", return_value=skus):
         lookup = _skus_dict()
 
@@ -265,6 +302,71 @@ def test_gcp_skus_dict_indexes_local_ssd_spot_and_ondemand():
         pytest.approx(0.08),
         "USD",
     )
+    assert lookup["local_ssd"]["c4d"]["us-central1"]["ondemand"] == (
+        pytest.approx(0.16),
+        "USD",
+    )
+    assert lookup["local_ssd"]["c4d"]["us-central1"]["spot"] == (
+        pytest.approx(0.065),
+        "USD",
+    )
+
+
+def test_gcp_inventory_server_prices_prefers_c4d_local_ssd_sku():
+    server = SimpleNamespace(
+        name="c4d-standard-8-lssd",
+        server_id="c4d-standard-8-lssd",
+        vcpus=8,
+        memory_amount=31 * 1024,
+        gpu_count=0,
+        gpu_model=None,
+    )
+    skus = [
+        _sku(
+            "C4D Instance Core running in Americas",
+            resource_group="CPU",
+            regions=["us-central1"],
+            units=0,
+            nanos=32_703_500,
+        ),
+        _sku(
+            "C4D Instance Ram running in Americas",
+            resource_group="RAM",
+            regions=["us-central1"],
+            units=0,
+            nanos=3_495_578,
+            usage_unit="GBy.h",
+        ),
+        _sku(
+            "C4D Instance Local SSD running in Americas",
+            resource_group="LocalSSD",
+            regions=["us-central1"],
+            units=0,
+            nanos=160_000_000,
+            usage_unit="GiBy.mo",
+        ),
+        _sku(
+            "SSD backed Local Storage",
+            resource_group="LocalSSD",
+            resource_family="Storage",
+            regions=["us-central1"],
+            units=0,
+            nanos=80_000_000,
+            usage_unit="GiBy.mo",
+        ),
+    ]
+    vendor = _gcp_vendor(servers=[server])
+    with (
+        patch("sc_crawler.vendors._gcp._skus", return_value=skus),
+        patch("sc_crawler.vendors._gcp._server_in_zone", return_value=True),
+        _gcp_accelerators({}),
+        _gcp_bundled_local_ssd({"c4d-standard-8-lssd": 375}),
+    ):
+        prices = inventory_server_prices(vendor)
+
+    expected = 8 * 0.0327035 + 31 * _GIB_TO_GB * 0.003495578 + 375 * 0.16 / 730
+    assert len(prices) == 1
+    assert prices[0]["price"] == pytest.approx(expected)
 
 
 def test_gcp_skus_dict_price_includes_whole_units():
@@ -459,54 +561,259 @@ def test_gcp_search_servers_parses_fractional_g4_vgpu():
     assert row["gpus"][0]["memory"] == 12 * 1024
 
 
-def test_gcp_inventory_server_prices_scales_fractional_gpu():
-    vendor = _gcp_vendor(
-        servers=[
-            SimpleNamespace(
-                name="g4-standard-6",
-                server_id="g4-standard-6",
-                vcpus=6,
-                memory_amount=22 * 1024,
-                gpu_count=0.125,
-                gpu_model="RTX Pro 6000",
-            )
-        ]
+def _g4_server(name, vcpus, memory_gib, gpu_count):
+    return SimpleNamespace(
+        name=name,
+        server_id=name,
+        vcpus=vcpus,
+        memory_amount=memory_gib * 1024,
+        gpu_count=gpu_count,
+        gpu_model="RTX Pro 6000",
     )
-    skus = [
-        _sku(
-            "G4 Instance Core running in Americas",
-            resource_group="CPU",
-            regions=["us-central1"],
-            units=0,
-            nanos=48_870_000,
-        ),
-        _sku(
-            "G4 Instance Ram running in Americas",
-            resource_group="RAM",
-            regions=["us-central1"],
-            units=0,
-            nanos=5_860_000,
-        ),
-        _sku(
-            "RTX 6000 96GB running in Americas",
-            resource_group="GPU",
-            regions=["us-central1"],
-            units=1,
-            nanos=95_700_000,
-        ),
-    ]
+
+
+# us-central1 rates
+# https://cloud.google.com/skus/sku-groups/g4-on-demand-vms
+G4_SKUS = [
+    _sku(
+        "G4 Instance Core running in Iowa",
+        resource_group="CPU",
+        regions=["us-central1"],
+        units=0,
+        nanos=48_910_000,
+    ),
+    _sku(
+        "G4 Instance Ram running in Iowa",
+        resource_group="RAM",
+        regions=["us-central1"],
+        units=0,
+        nanos=5_870_000,
+    ),
+    _sku(
+        "RTX 6000 96GB running in Iowa",
+        resource_group="GPU",
+        regions=["us-central1"],
+        units=1,
+        nanos=95_650_000,
+    ),
+    # covers vCPUs, memory and the GPU slice of a g4-standard-6
+    _sku(
+        "1/8 vGPU no lssd running in Iowa",
+        resource_group="GPU",
+        regions=["us-central1"],
+        units=0,
+        nanos=646_880_000,
+    ),
+    _sku(
+        "1/8 vGPU no lssd attached to DWS Defined Duration VMs running in Iowa",
+        resource_group="GPU",
+        regions=["us-central1"],
+        units=0,
+        nanos=323_440_000,
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("server", "expected"),
+    [
+        (_g4_server("g4-standard-6", 6, 22, 0.125), 0.646880),
+        (_g4_server("g4-standard-12", 12, 45, 0.25), 1.293760),
+        (_g4_server("g4-standard-24", 24, 90, 0.5), 2.587520),
+        # whole GPU shapes keep the Core + Ram + GPU composition
+        (_g4_server("g4-standard-48", 48, 180, 1.0), 4.499930),
+    ],
+)
+def test_gcp_inventory_server_prices_fractional_gpu_uses_slice_sku(server, expected):
+    """Google does not price fractional G4 shapes by scaling the whole GPU SKU."""
+    vendor = _gcp_vendor(servers=[server])
     with (
-        patch("sc_crawler.vendors._gcp._skus", return_value=skus),
+        patch("sc_crawler.vendors._gcp._skus", return_value=G4_SKUS),
         patch("sc_crawler.vendors._gcp._server_in_zone", return_value=True),
-        _gcp_accelerators({"g4-standard-6": "nvidia-rtx-pro-6000"}),
+        _gcp_accelerators({server.name: "nvidia-rtx-pro-6000"}),
         _gcp_bundled_local_ssd({}),
     ):
         prices = inventory_server_prices(vendor)
 
     assert len(prices) == 1
-    assert prices[0]["price"] == pytest.approx(
-        0.04887 * 6 + 0.00586 * 22 + 1.0957 * 0.125
+    assert prices[0]["price"] == pytest.approx(expected)
+
+
+def test_gcp_inventory_server_prices_a4_uses_spot_machine_slice_sku():
+    server = SimpleNamespace(
+        name="a4-highgpu-8g",
+        server_id="a4-highgpu-8g",
+        vcpus=224,
+        memory_amount=3968 * 1024,
+        gpu_count=8,
+        gpu_model="B200",
     )
+    skus = [
+        _sku(
+            "Spot Preemptible A4 Nvidia B200 (1 gpu slice) running in Americas",
+            resource_group="GPU",
+            regions=["us-central1"],
+            units=4,
+            nanos=954_200_000,
+            # This live SKU is categorized as OnDemand despite its description.
+            usage_type="OnDemand",
+        )
+    ]
+    vendor = _gcp_vendor(servers=[server])
+    with (
+        patch("sc_crawler.vendors._gcp._skus", return_value=skus),
+        patch("sc_crawler.vendors._gcp._server_in_zone", return_value=True),
+        _gcp_accelerators({"a4-highgpu-8g": "nvidia-b200"}),
+        _gcp_bundled_local_ssd({"a4-highgpu-8g": 12000}),
+    ):
+        ondemand_prices = inventory_server_prices(vendor)
+        spot_prices = inventory_server_prices_spot(vendor)
+
+    assert ondemand_prices == []
+    assert len(spot_prices) == 1
+    assert spot_prices[0]["price"] == pytest.approx(39.6336)
+
+
+@pytest.mark.parametrize(
+    ("server_name", "expected"),
+    [
+        ("n2d-standard-96", "n2d"),
+        ("n1-megamem-96", "m1"),
+        ("n1-ultramem-40", "m1"),
+        ("n1-ultramem-160", "m1"),
+        ("a3-highgpu-8g", "a3"),
+        ("a3-megagpu-8g", "a3plus"),
+        ("a3-ultragpu-8g", "a3ultra"),
+        ("m4-ultramem-112", "m4"),
+        ("m4-ultramem-224", "m4ultramem224"),
+        ("m4n-ultramem-224", "m4nultramem224"),
+    ],
+)
+def test_gcp_server_family(server_name, expected):
+    assert _server_family(server_name) == expected
+
+
+@pytest.mark.parametrize(
+    ("description", "usage_unit", "nanos", "expected"),
+    [
+        ("C4 Instance Ram running in Americas", "GiBy.h", 3_938_000, 0.003938),
+        # a few families are billed per decimal GB-hour
+        (
+            "C4D Instance Ram running in Americas",
+            "GBy.h",
+            3_495_578,
+            0.003495578 * _GIB_TO_GB,
+        ),
+        (
+            "M4Ultramem224 Instance Ram running in Americas",
+            "GBy.h",
+            5_675_880,
+            0.00567588 * _GIB_TO_GB,
+        ),
+        # the space before "Instance" is missing in some descriptions
+        (
+            "M4NUltramem224Instance Ram running in Iowa",
+            "GiBy.h",
+            10_216_600,
+            0.0102166,
+        ),
+    ],
+)
+def test_gcp_skus_dict_normalizes_ram_to_gib(description, usage_unit, nanos, expected):
+    skus = [
+        _sku(
+            description,
+            resource_group="RAM",
+            regions=["us-central1"],
+            units=0,
+            nanos=nanos,
+            usage_unit=usage_unit,
+        )
+    ]
+    with patch("sc_crawler.vendors._gcp._skus", return_value=skus):
+        lookup = _skus_dict()
+
+    family = description.split(" ")[0].replace("Instance", "").lower()
+    price, _ = lookup["ram"][family]["us-central1"]["ondemand"]
+    assert price == pytest.approx(expected)
+
+
+@pytest.mark.parametrize(
+    (
+        "server_name",
+        "cpu_description",
+        "cpu_nanos",
+        "ram_description",
+        "ram_nanos",
+        "ram_unit",
+        "expected",
+    ),
+    [
+        (
+            "m4-ultramem-224",
+            "M4Ultramem224 Instance Core running in Americas",
+            23_170_000,
+            "M4Ultramem224 Instance Ram running in Americas",
+            5_675_880,
+            "GBy.h",
+            41.464125836,
+        ),
+        (
+            "m4n-ultramem-224",
+            "M4NUltramem224 Instance Core running in Iowa",
+            41_706_000,
+            "M4NUltramem224Instance Ram running in Iowa",
+            10_216_600,
+            "GiBy.h",
+            70.1513472,
+        ),
+    ],
+)
+def test_gcp_inventory_server_prices_uses_specialized_ultramem_skus(
+    server_name,
+    cpu_description,
+    cpu_nanos,
+    ram_description,
+    ram_nanos,
+    ram_unit,
+    expected,
+):
+    server = SimpleNamespace(
+        name=server_name,
+        server_id=server_name,
+        vcpus=224,
+        memory_amount=5952 * 1024,
+        gpu_count=0,
+        gpu_model=None,
+    )
+    skus = [
+        _sku(
+            cpu_description,
+            resource_group="CPU",
+            regions=["us-central1"],
+            units=0,
+            nanos=cpu_nanos,
+        ),
+        _sku(
+            ram_description,
+            resource_group="RAM",
+            regions=["us-central1"],
+            units=0,
+            nanos=ram_nanos,
+            usage_unit=ram_unit,
+        ),
+    ]
+    vendor = _gcp_vendor(servers=[server])
+    with (
+        patch("sc_crawler.vendors._gcp._skus", return_value=skus),
+        patch("sc_crawler.vendors._gcp._server_in_zone", return_value=True),
+        _gcp_accelerators({}),
+        _gcp_bundled_local_ssd({}),
+    ):
+        prices = inventory_server_prices(vendor)
+
+    assert len(prices) == 1
+    assert prices[0]["price"] == pytest.approx(expected)
 
 
 def test_standardize_gpu_model_maps_nvidia_gb300():
