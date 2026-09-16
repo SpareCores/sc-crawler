@@ -1068,44 +1068,61 @@ def _standardize_cpu_model(model):
 
 
 def _standardize_gpu_count(
-    gpu_model: str, gpu_count: int = 0, gpu_memory: int = 0
+    gpu_model: str | None = None,
+    gpu_count: int | float = 0,
+    gpu_memory: int = 0,
+    description: str | None = None,
 ) -> float:
-    """Extract GPU count from model name suffixes.
+    """Extract GPU count from model name suffixes or machine description.
 
-    Parses patterns like:
+    Parses model patterns like:
         "/4" -> 0.25
         "*1/2" -> 0.5
         "*1/12" -> 0.0833
         "*1" -> 1
-        (no suffix) -> gpu_count
+        (no suffix) -> fall through
+
+    And description patterns (e.g. GCP G4 vGPU machine types):
+        "1/8 NVIDIA RTX PRO 6000 GPU" -> 0.125
+        "4 NVIDIA H100 GPU" -> 4
 
     Returns:
-        Float representing GPU count, rounded to 4 decimal places.
-        If no suffix is found, returns the original gpu_count.
+        Fractional GPU counts rounded to 4 decimal places, whole counts as int.
+        If no fraction is found, returns the original gpu_count.
     """
-    if not gpu_model:
-        return gpu_count
+    if gpu_model:
+        gpu_model = gpu_model.strip()
 
-    if gpu_model and gpu_memory and not gpu_count:
-        # AWS g6f and gr6f instances
-        if gpu_model == "L4":
-            # L4 GPU has 22888 MiB total memory
-            return round(gpu_memory / 22888, 4)
+        if gpu_memory and not gpu_count:
+            # AWS g6f and gr6f instances
+            if gpu_model == "L4":
+                # L4 GPU has 22888 MiB total memory
+                return round(gpu_memory / 22888, 4)
 
-    gpu_model = gpu_model.strip()
+        # Match patterns like "*1/4" or "/4" at the end
+        fractional_match = match(r".*(\*(\d+))?/(\d+)$", gpu_model)
+        if fractional_match:
+            numerator = (
+                int(fractional_match.group(2)) if fractional_match.group(2) else 1
+            )
+            denominator = int(fractional_match.group(3))
+            if denominator > 0:
+                return round(numerator / denominator, 4)
 
-    # Match patterns like "*1/4" or "/4" at the end
-    fractional_match = match(r".*(\*(\d+))?/(\d+)$", gpu_model)
-    if fractional_match:
-        numerator = int(fractional_match.group(2)) if fractional_match.group(2) else 1
-        denominator = int(fractional_match.group(3))
-        if denominator > 0:
-            return round(numerator / denominator, 4)
+        # Match pattern like "*1" at the end (whole number multiplier)
+        multiplier_match = match(r".*\*(\d+)$", gpu_model)
+        if multiplier_match:
+            return int(multiplier_match.group(1))
 
-    # Match pattern like "*1" at the end (whole number multiplier)
-    multiplier_match = match(r".*\*(\d+)$", gpu_model)
-    if multiplier_match:
-        return int(multiplier_match.group(1))
+    # GCP encodes fractional vGPUs only in the machine type description
+    # https://cloud.google.com/compute/docs/accelerator-optimized-machines#g4_machine_types
+    if description:
+        description_match = search(r"(\d+)(?:/(\d+))? NVIDIA\b", description)
+        if description_match:
+            numerator = int(description_match.group(1))
+            if description_match.group(2):
+                return round(numerator / int(description_match.group(2)), 4)
+            return numerator
 
     return gpu_count
 
@@ -1136,6 +1153,23 @@ def _standardize_gpu_model(model, server=None):
         model = "RTX Pro 6000"
     if model == "nvidia-gb200":
         model = "GB200"
+    if model == "nvidia-gb300":
+        model = "GB300"
+    # GCP TPU VMs expose the machine-series accelerator type, not the version
+    if model in ["ct3", "ct3p"]:
+        model = "v3"
+    if model in ["ct5l", "ct5lp"]:
+        model = "v5e"
+    if model == "ct5p":
+        model = "v5p"
+    if model == "ct6e":
+        model = "v6e"
+    # Google writes "TPU7x", normalize to v7x to match v5e/v6e
+    if model in ["tpu7x", "TPU7x"]:
+        model = "v7x"
+    # migrate earlier "TPU v5e"-style display names
+    if model.startswith("TPU "):
+        model = model.removeprefix("TPU ")
     if server and server["vendor_id"] and server["server_id"] == "p4de.24xlarge":
         model = "A100-SXM4-40GB"
     if model in ["RTX 5880 Ada", "RTX5880"]:
@@ -1153,7 +1187,8 @@ def _standardize_gpu_model(model, server=None):
     model = sub(r"( |-)[0-9]*GB?$", "", model)
     model = sub(r"-PCI(e|E)$", "", model)
     model = sub(r"-virt1$", "", model)
-    # we don't support fractional GPUs (e.g. "P4*1/4" or "T4/8")in the schema yet
+    # strip fractional suffixes already handled by _standardize_gpu_count
+    # (e.g. AliCloud "P4*1/4" or "T4/8")
     model = sub(r"(\*1)?/\d+$", "", model)
     # yes, sometimes it's written out that there's 1
     model = sub(r"\*1$", "", model)
@@ -1162,17 +1197,42 @@ def _standardize_gpu_model(model, server=None):
 
 def _standardize_gpu_family(server):
     family = server.get("gpu_family")
-    if "A100" in server.get("gpu_model"):
+    model = server.get("gpu_model") or ""
+    if "A100" in model:
         family = "Ampere"
-    if "K80" in server.get("gpu_model"):
+    if "K80" in model:
         family = "Kepler"
-    if "H100" in server.get("gpu_model") or "H200" in server.get("gpu_model"):
+    if "H100" in model or "H200" in model:
         family = "Hopper"
-    if "V520" in server.get("gpu_model"):
+    if "B200" in model or "GB200" in model or "GB300" in model:
+        family = "Blackwell"
+    if "L4" in model or "RTX Pro 6000" in model:
+        family = "Ada Lovelace"
+    if model in ["v3", "v5e", "v5p", "v6e", "v7x"] or model.startswith("TPU"):
+        family = "TPU"
+    if "V520" in model:
         family = "Radeon Pro Navi"
-    if "HL-205" in server.get("gpu_model"):
+    if "HL-205" in model:
         family = "Gaudi"
     return family
+
+
+_NVIDIA_GPU_MODELS = {
+    "A100",
+    "B200",
+    "GB200",
+    "GB300",
+    "H100",
+    "H200",
+    "L4",
+    "T4",
+    "T4G",
+    "V100",
+    "P100",
+    "P4",
+    "K80",
+    "RTX Pro 6000",
+}
 
 
 def _dropna(text: str) -> str:
@@ -1584,11 +1644,20 @@ def inspect_update_server_dict(server: dict) -> dict:
         except Exception as e:
             _log_cannot_update_server(server_obj, k, e)
 
-    # standardize GPU model
+    # standardize GPU model / fractional count (suffixes stripped from model)
     if server.get("gpu_model"):
+        server["gpu_count"] = _standardize_gpu_count(
+            server["gpu_model"],
+            server.get("gpu_count", 0),
+            server.get("gpu_memory_total", 0),
+            description=server.get("description"),
+        )
         server["gpu_model"] = _standardize_gpu_model(server["gpu_model"], server)
         server["gpu_family"] = _standardize_gpu_family(server)
-        if not server.get("gpu_manufacturer") and server["gpu_model"] == "A100":
+        if (
+            not server.get("gpu_manufacturer")
+            and server["gpu_model"] in _NVIDIA_GPU_MODELS
+        ):
             server["gpu_manufacturer"] = "NVIDIA"
 
     return server
