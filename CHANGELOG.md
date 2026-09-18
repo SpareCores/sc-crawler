@@ -2,6 +2,14 @@
 
 - Implement database inventories for `OVH`, `UpCloud` and `Vultr`.
 
+Fix(es):
+
+- GCP: fix accelerator pricing against Billing Catalog SKUs
+  (specialized Core/Ram families, GPU slice SKUs, GBy.h memory units, and
+  bundled Local SSD GiB-month rates).
+- Standardize GPU/TPU model and count handling (including TPU family and
+  version naming: `v3` / `v5e` / `v5p` / `v6e` / `v7x`).
+
 ## v0.9.2 (August 17, 2026)
 
 New feature(s):
