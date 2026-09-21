@@ -1021,7 +1021,6 @@ def inventory_servers(vendor):
                 "vcpus": vcpus,
                 "hypervisor": "KVM",
                 "cpu_allocation": _determine_cpu_allocation_type(instance_type),
-                "cpu_cores": instance_type.get("CpuCoreCount", 0),
                 "cpu_speed": drop_zero_value(instance_type.get("CpuSpeedFrequency")),
                 "cpu_architecture": CPU_ARCH_MAP[instance_type.get("CpuArchitecture")],
                 "cpu_manufacturer": _extract_manufacturer(cpu_model),
