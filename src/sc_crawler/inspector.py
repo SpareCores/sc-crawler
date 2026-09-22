@@ -1552,7 +1552,7 @@ def inspect_update_server_dict(server: dict) -> dict:
         )
 
     mappings = {
-        "vcpus": lambda: lscpu_lookup("CPU(s):"),
+        "vcpus": lambda: int(lscpu_lookup("CPU(s):")),
         "cpu_cores": lambda: (
             int(lscpu_lookup("Core(s) per socket:")) * int(lscpu_lookup("Socket(s):"))
         ),
