@@ -1552,7 +1552,7 @@ def inspect_update_server_dict(server: dict) -> dict:
         )
 
     mappings = {
-        "vcpus": lambda: lscpu_lookup("CPU(s):"),
+        "vcpus": lambda: int(lscpu_lookup("CPU(s):")),
         "cpu_cores": lambda: (
             int(lscpu_lookup("Core(s) per socket:")) * int(lscpu_lookup("Socket(s):"))
         ),
@@ -1571,8 +1571,8 @@ def inspect_update_server_dict(server: dict) -> dict:
         "cpu_flags": lambda: lscpu_lookup("Flags:").split(" "),
         "ecpus": calculate_ecpus,
         "scalability": lambda: (
-            round(server["ecpus"] / server["cpu_cores"] * 100, 2)
-            if server.get("ecpus") is not None and server.get("cpu_cores") is not None
+            round(server["ecpus"] / server["vcpus"] * 100, 2)
+            if server.get("ecpus") is not None and server.get("vcpus") is not None
             else None
         ),
         "hw_virt": lambda: lookups["virtualization"].get("kvm", None),
