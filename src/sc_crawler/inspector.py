@@ -299,7 +299,8 @@ def _observed_at(resource: Union["Server", "Database"], framework: str) -> dict:
     else:
         ts = _database_framework_meta(resource, framework)["end"]
     assert ts is not None
-    ts = datetime.fromisoformat(ts)
+    if isinstance(ts, str):
+        ts = datetime.fromisoformat(ts)
     if ts.tzinfo is None:
         ts = ts.replace(tzinfo=UTC)
     return {"observed_at": ts}
