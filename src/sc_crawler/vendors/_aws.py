@@ -2,7 +2,7 @@ import json
 import re
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime
+from datetime import datetime
 from functools import cache
 from itertools import chain, repeat
 from logging import DEBUG, WARN
@@ -1137,9 +1137,7 @@ def inventory_server_prices_spot(vendor):
                 "currency": "USD",
                 "unit": PriceUnit.HOUR,
                 # use reported time instead of current timestamp
-                "observed_at": product["Timestamp"].replace(tzinfo=UTC)
-                if product["Timestamp"].tzinfo is None
-                else product["Timestamp"],
+                "observed_at": product["Timestamp"],
             }
         )
         vendor.progress_tracker.advance_task()

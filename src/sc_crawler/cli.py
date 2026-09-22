@@ -864,12 +864,10 @@ def pull(
             logger.info("%d Benchmarks synced." % len(benchmarks))
             # get data for each vendor and then add/merge to database
             # TODO each vendor should open its own session and run in parallel
-            failed_vendors = []
             for vendor in vendors:
 
                 def on_error():
                     session.rollback()
-                    failed_vendors.append(vendor.vendor_id)
                     vendor.log(
                         f"Skipping vendor {vendor.vendor_id} due to vendor API error.",
                         logging.ERROR,
@@ -923,11 +921,6 @@ def pull(
                     vendor.progress_tracker.update_vendor(step="✔")
                     session.merge(vendor)
                     session.commit()
-
-            if vendors and len(failed_vendors) == len(vendors):
-                raise RuntimeError(
-                    "All vendors failed due to errors: " + ", ".join(failed_vendors)
-                )
 
             if Records.servers in records:
                 task_id = pbars.tasks.add_task(
