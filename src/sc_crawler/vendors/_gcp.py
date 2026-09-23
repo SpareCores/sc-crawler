@@ -70,11 +70,80 @@ def _paginate_list(client, zone=None):
 
 @cachier()
 def _regions() -> List[compute_v1.types.compute.Region]:
+    # example regions.list response:
+    # {
+    #     'kind': 'compute#regionList',
+    #     'id': 'projects/example-project/regions',
+    #     'items': [
+    #         {
+    #             'kind': 'compute#region',
+    #             'id': '1610',
+    #             'creationTimestamp': '1969-12-31T16:00:00.000-08:00',
+    #             'name': 'africa-south1',
+    #             'description': 'africa-south1',
+    #             'status': 'UP',
+    #             'zones': [
+    #                 'https://www.googleapis.com/compute/v1/projects/example-project/zones/africa-south1-b',
+    #                 'https://www.googleapis.com/compute/v1/projects/example-project/zones/africa-south1-a',
+    #                 'https://www.googleapis.com/compute/v1/projects/example-project/zones/africa-south1-c'
+    #             ],
+    #             'quotas': [
+    #                 {
+    #                     'metric': 'CPUS',
+    #                     'limit': 300,
+    #                     'usage': 0
+    #                 },
+    #                 {
+    #                     'metric': 'DISKS_TOTAL_GB',
+    #                     'limit': 102400,
+    #                     'usage': 0
+    #                 },
+    #                 {
+    #                     'metric': 'SNAPSHOTS',
+    #                     'limit': 10000,
+    #                     'usage': 0
+    #                 },
+    #                 # ...
+    #             ],
+    #             'selfLink': 'https://www.googleapis.com/compute/v1/projects/example-project/regions/africa-south1',
+    #             'supportsPzs': True
+    #         },
+    #         # ...
+    #     ],
+    #     'selfLink': 'https://www.googleapis.com/compute/v1/projects/example-project/regions'
+    # }
     return _paginate_list(compute_v1.RegionsClient())
 
 
 @cachier()
 def _zones() -> List[compute_v1.types.compute.Zone]:
+    # example zones.list response:
+    # {
+    #     'kind': 'compute#zoneList',
+    #     'id': 'projects/example-project/zones',
+    #     'items': [
+    #         {
+    #             'kind': 'compute#zone',
+    #             'id': '2231',
+    #             'creationTimestamp': '1969-12-31T16:00:00.000-08:00',
+    #             'name': 'us-east1-b',
+    #             'description': 'us-east1-b',
+    #             'status': 'UP',
+    #             'region': 'https://www.googleapis.com/compute/v1/projects/example-project/regions/us-east1',
+    #             'selfLink': 'https://www.googleapis.com/compute/v1/projects/example-project/zones/us-east1-b',
+    #             'availableCpuPlatforms': [
+    #                 'ARM Generic',
+    #                 'Intel Broadwell',
+    #                 'Intel Cascade Lake',
+    #                 'Intel Emerald Rapids',
+    #                 # ...
+    #             ],
+    #             'supportsPzs': False
+    #         },
+    #         # ...
+    #     ],
+    #     'selfLink': 'https://www.googleapis.com/compute/v1/projects/example-project/zones'
+    # }
     return _paginate_list(compute_v1.ZonesClient())
 
 
@@ -83,6 +152,42 @@ def _servers(zone: str) -> List[compute_v1.types.compute.MachineType]:
     """List all machine types available in a Zone.
 
     Reference: <https://cloud.google.com/compute/docs/reference/rest/v1/machineTypes>."""
+    # example machineTypes.list response:
+    # {
+    #     'kind': 'compute#machineTypeList',
+    #     'id': 'projects/example-project/zones/us-central1-a/machineTypes',
+    #     'items': [
+    #         {
+    #             'kind': 'compute#machineType',
+    #             'id': '1720367',
+    #             'creationTimestamp': '1969-12-31T16:00:00.000-08:00',
+    #             'name': 'a3-edgegpu-8g',
+    #             'description': 'Accelerator Optimized: 8 NVIDIA H100 GPU, 208 vCPUs, 1872GB RAM',
+    #             'guestCpus': 208,
+    #             'memoryMb': 1916928,
+    #             'imageSpaceGb': 0,
+    #             'maximumPersistentDisks': 128,
+    #             'maximumPersistentDisksSizeGb': '524288',
+    #             'zone': 'us-central1-a',
+    #             'selfLink': 'https://www.googleapis.com/compute/v1/projects/example-project/zones/us-central1-a/machineTypes/a3-edgegpu-8g',
+    #             'isSharedCpu': False,
+    #             'accelerators': [
+    #                 {
+    #                     'guestAcceleratorType': 'nvidia-h100-80gb',
+    #                     'guestAcceleratorCount': 8
+    #                 }
+    #             ],
+    #             'architecture': 'X86_64',
+    #             'bundledLocalSsds': {
+    #                 'partitionCount': 16,
+    #                 'defaultInterface': 'NVME'
+    #             }
+    #         },
+    #         # ...
+    #     ],
+    #     'nextPageToken': 'Cg9uNGEtc3RhbmRhcmQt...',
+    #     'selfLink': 'https://www.googleapis.com/compute/v1/projects/example-project/zones/us-central1-a/machineTypes'
+    # }
     return _paginate_list(compute_v1.services.machine_types.MachineTypesClient(), zone)
 
 
@@ -146,6 +251,26 @@ def _server_bundled_local_ssd_gib() -> dict:
 
 @cachier(separate_files=True)
 def _storages(zone: str) -> List[compute_v1.types.compute.DiskType]:
+    # example diskTypes.list response:
+    # {
+    #     'kind': 'compute#diskTypeList',
+    #     'id': 'projects/example-project/zones/us-central1-a/diskTypes',
+    #     'items': [
+    #         {
+    #             'kind': 'compute#diskType',
+    #             'id': '30002',
+    #             'creationTimestamp': '1969-12-31T16:00:00.000-08:00',
+    #             'name': 'pd-ssd',
+    #             'description': 'SSD Persistent Disk',
+    #             'validDiskSize': '10GB-65536GB',
+    #             'zone': 'https://www.googleapis.com/compute/v1/projects/example-project/zones/us-central1-a',
+    #             'selfLink': 'https://www.googleapis.com/compute/v1/projects/example-project/zones/us-central1-a/diskTypes/pd-ssd',
+    #             'defaultDiskSizeGb': '100'
+    #         },
+    #         # ...
+    #     ],
+    #     'selfLink': 'https://www.googleapis.com/compute/v1/projects/example-project/zones/us-central1-a/diskTypes'
+    # }
     return _paginate_list(compute_v1.services.disk_types.DiskTypesClient(), zone)
 
 
@@ -157,6 +282,19 @@ def _service_name_to_id(service_name: str) -> str:
         >>> _service_name_to_id("Compute Engine")  # doctest: +SKIP
         'services/6F81-5844-456A'
     """
+    # example services.list response:
+    # {
+    #     'services': [
+    #         {
+    #             'name': 'services/6F81-5844-456A',
+    #             'serviceId': '6F81-5844-456A',
+    #             'displayName': 'Compute Engine',
+    #             'businessEntityName': 'businessEntities/GCP'
+    #         },
+    #         # ...
+    #     ],
+    #     'nextPageToken': ''
+    # }
     client = billing_v1.CloudCatalogClient()
     pager = client.list_services()
     for page in pager.pages:
@@ -167,11 +305,101 @@ def _service_name_to_id(service_name: str) -> str:
 
 @cachier(separate_files=True)
 def _skus(service_name: str) -> List[compute_v1.types.compute.Zone]:
-    """List all products under a GCP Service.
+    """List all public SKUs of a GCP service.
+
+    `services.skus.list` has no instance, disk, or database filter: one call
+    returns the whole service (Compute Engine or Cloud SQL). Server, storage,
+    traffic, and database prices are selected afterwards by `category` and
+    `description`. Product shape and availability come from other APIs:
+    `machineTypes`, `diskTypes`, and Cloud SQL `tiers`.
+
+    https://cloud.google.com/billing/docs/reference/rest/v1/services.skus/list
 
     Args:
         service_name: Human-friendly service name, e.g. "Compute Engine".
     """
+    # example services.skus.list response:
+    # {
+    #     'skus': [
+    #         {
+    #             'name': 'services/6F81-5844-456A/skus/003A-21C5-CA77',
+    #             'skuId': '003A-21C5-CA77',
+    #             'description': 'Network Standard Data Transfer Out to Internet from Seoul',
+    #             'category': {
+    #                 'serviceDisplayName': 'Compute Engine',
+    #                 'resourceFamily': 'Network',
+    #                 'resourceGroup': 'StandardInternetEgress',
+    #                 'usageType': 'OnDemand'
+    #             },
+    #             'serviceRegions': [
+    #                 'asia-northeast3'
+    #             ],
+    #             'pricingInfo': [
+    #                 {
+    #                     'summary': '',
+    #                     'pricingExpression': {
+    #                         'usageUnit': 'GiBy',
+    #                         'displayQuantity': 1,
+    #                         'tieredRates': [
+    #                             {
+    #                                 'startUsageAmount': 0,
+    #                                 'unitPrice': {
+    #                                     'currencyCode': 'USD',
+    #                                     'units': '0',
+    #                                     'nanos': 0
+    #                                 }
+    #                             },
+    #                             {
+    #                                 'startUsageAmount': 200,
+    #                                 'unitPrice': {
+    #                                     'currencyCode': 'USD',
+    #                                     'units': '0',
+    #                                     'nanos': 119000000
+    #                                 }
+    #                             },
+    #                             {
+    #                                 'startUsageAmount': 10240,
+    #                                 'unitPrice': {
+    #                                     'currencyCode': 'USD',
+    #                                     'units': '0',
+    #                                     'nanos': 109000000
+    #                                 }
+    #                             },
+    #                             {
+    #                                 'startUsageAmount': 153600,
+    #                                 'unitPrice': {
+    #                                     'currencyCode': 'USD',
+    #                                     'units': '0',
+    #                                     'nanos': 97000000
+    #                                 }
+    #                             }
+    #                         ],
+    #                         'usageUnitDescription': 'gibibyte',
+    #                         'baseUnit': 'By',
+    #                         'baseUnitDescription': 'byte',
+    #                         'baseUnitConversionFactor': 1073741824
+    #                     },
+    #                     'aggregationInfo': {
+    #                         'aggregationLevel': 'ACCOUNT',
+    #                         'aggregationInterval': 'MONTHLY',
+    #                         'aggregationCount': 1
+    #                     },
+    #                     'currencyConversionRate': 1,
+    #                     'effectiveTime': '2026-09-23T07:00:00Z'
+    #                 }
+    #             ],
+    #             'serviceProviderName': 'Google',
+    #             'geoTaxonomy': {
+    #                 'type': 'REGIONAL',
+    #                 'regions': [
+    #                     'asia-northeast3'
+    #                 ]
+    #             }
+    #         },
+    #         # ...
+    #     ],
+    #     'nextPageToken': 'NTAwMA=='
+    # }
     client = billing_v1.CloudCatalogClient()
     pager = client.list_skus(parent=_service_name_to_id(service_name))
     items = []
@@ -1475,7 +1703,52 @@ def _sqladmin_service():
 @cachier(separate_files=True)
 def _pg_sqladmin_metadata() -> dict:
     service = _sqladmin_service()
+    # example tiers.list response:
+    # {
+    #     'kind': 'sql#tiersList',
+    #     'items': [
+    #         {
+    #             'tier': 'db-f1-micro',
+    #             'RAM': '644245094',
+    #             'kind': 'sql#tier',
+    #             'DiskQuota': '3279207530496',
+    #             'region': [
+    #                 'africa-south1',
+    #                 'asia-east1',
+    #                 'asia-east2',
+    #                 # ...
+    #             ]
+    #         },
+    #         # ...
+    #     ]
+    # }
     tiers = service.tiers().list(project=_project_id()).execute().get("items", [])
+    # example flags.list response:
+    # {
+    #     'kind': 'sql#flagsList',
+    #     'items': [
+    #         {
+    #             'name': 'audit_log',
+    #             'type': 'STRING',
+    #             'appliesTo': [
+    #                 'MYSQL_5_6',
+    #                 'MYSQL_5_7',
+    #                 'MYSQL_8_0',
+    #                 # ...
+    #             ],
+    #             'allowedStringValues': [
+    #                 'ON',
+    #                 'OFF',
+    #                 'FORCE',
+    #                 'FORCE_PLUS_PERMANENT'
+    #             ],
+    #             'requiresRestart': True,
+    #             'kind': 'sql#flag',
+    #             'inBeta': True
+    #         },
+    #         # ...
+    #     ]
+    # }
     flags = service.flags().list().execute().get("items", [])
     engine_versions: set[str] = set()
     custom_config = custom_extensions = False
@@ -1505,6 +1778,72 @@ def _pg_sqladmin_metadata() -> dict:
 
 @cachier(separate_files=True)
 def _cloud_sql_skus():
+    # example services.skus.list response:
+    # {
+    #     'skus': [
+    #         {
+    #             'name': 'services/9662-B51E-5089/skus/0636-5997-91DB',
+    #             'skuId': '0636-5997-91DB',
+    #             'description': 'Cloud SQL for PostgreSQL: Developer Storage in Frankfurt',
+    #             'category': {
+    #                 'serviceDisplayName': 'Cloud SQL',
+    #                 'resourceFamily': 'ApplicationServices',
+    #                 'resourceGroup': 'StorageUnit-DeveloperEdition',
+    #                 'usageType': 'OnDemand'
+    #             },
+    #             'serviceRegions': [
+    #                 'europe-west3'
+    #             ],
+    #             'pricingInfo': [
+    #                 {
+    #                     'summary': '',
+    #                     'pricingExpression': {
+    #                         'usageUnit': 'GiBy.mo',
+    #                         'displayQuantity': 1,
+    #                         'tieredRates': [
+    #                             {
+    #                                 'startUsageAmount': 0,
+    #                                 'unitPrice': {
+    #                                     'currencyCode': 'USD',
+    #                                     'units': '0',
+    #                                     'nanos': 0
+    #                                 }
+    #                             },
+    #                             {
+    #                                 'startUsageAmount': 10,
+    #                                 'unitPrice': {
+    #                                     'currencyCode': 'USD',
+    #                                     'units': '0',
+    #                                     'nanos': 138000000
+    #                                 }
+    #                             }
+    #                         ],
+    #                         'usageUnitDescription': 'gibibyte month',
+    #                         'baseUnit': 'By.s',
+    #                         'baseUnitDescription': 'byte second',
+    #                         'baseUnitConversionFactor': 2783138807808000.0
+    #                     },
+    #                     'aggregationInfo': {
+    #                         'aggregationLevel': 'ACCOUNT',
+    #                         'aggregationInterval': 'MONTHLY',
+    #                         'aggregationCount': 1
+    #                     },
+    #                     'currencyConversionRate': 1,
+    #                     'effectiveTime': '2026-09-23T07:00:00Z'
+    #                 }
+    #             ],
+    #             'serviceProviderName': 'Google',
+    #             'geoTaxonomy': {
+    #                 'type': 'REGIONAL',
+    #                 'regions': [
+    #                     'europe-west3'
+    #                 ]
+    #             }
+    #         },
+    #         # ...
+    #     ],
+    #     'nextPageToken': 'NTAwMA=='
+    # }
     return _skus("Cloud SQL")
 
 
