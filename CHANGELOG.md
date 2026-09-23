@@ -10,6 +10,11 @@ Fix(es):
 - Standardize GPU/TPU model and count handling (including TPU family and
   version naming: `v3` / `v5e` / `v5p` / `v6e` / `v7x`).
 
+Maintenance update:
+
+- Comment example API responses next to vendor requests, and move those
+  calls into helper functions.
+
 ## v0.9.2 (August 17, 2026)
 
 New feature(s):
