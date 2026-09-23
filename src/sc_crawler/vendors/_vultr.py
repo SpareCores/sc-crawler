@@ -380,6 +380,40 @@ def _database_description(
 
 @cachier(separate_files=True)
 def _get_regions():
+    """List regions (GET /v2/regions).
+
+    Reference: <https://www.vultr.com/api/#tag/region>
+    """
+    # example GET /v2/regions response:
+    # {
+    #     'regions': [
+    #         {
+    #             'id': 'ams',
+    #             'city': 'Amsterdam',
+    #             'country': 'NL',
+    #             'continent': 'Europe',
+    #             'options': [
+    #                 'ddos_protection',
+    #                 'block_storage_storage_opt',
+    #                 'block_storage_high_perf',
+    #                 'load_balancers',
+    #                 'kubernetes',
+    #             ],
+    #             'connectivity': [
+    #                 'public_ip',
+    #                 'nat_gateway',
+    #             ],
+    #         },
+    #         # ...
+    #     ],
+    #     'meta': {
+    #         'total': 33,
+    #         'links': {
+    #             'next': '',
+    #             'prev': '',
+    #         },
+    #     },
+    # }
     response = get(
         "https://api.vultr.com/v2/regions",
         params={"per_page": 500},
@@ -390,6 +424,91 @@ def _get_regions():
 
 @cachier(separate_files=True)
 def _get_plans():
+    """List cloud compute plans (GET /v2/plans).
+
+    Reference: <https://www.vultr.com/api/#tag/plans>
+    """
+    # example GET /v2/plans response:
+    # {
+    #     'plans': [
+    #         {
+    #             'id': 'vc2-1c-1gb',
+    #             'vcpu_count': 1,
+    #             'ram': 1024,
+    #             'disk': 25,
+    #             'disk_type': 'SSD',
+    #             'disk_count': 1,
+    #             'bandwidth': 1024,
+    #             'monthly_cost': 5,
+    #             'hourly_cost': 0.007,
+    #             'monthly_cost_preemptible': 5,
+    #             'hourly_cost_preemptible': 0.007,
+    #             'invoice_type': 'monthly',
+    #             'type': 'vc2',
+    #             'locations': [
+    #                 'ewr',
+    #                 'ord',
+    #                 'dfw',
+    #                 'sea',
+    #                 # ...
+    #             ],
+    #             'cpu_vendor': 'Intel',
+    #             'storage_type': 'local_storage',
+    #             'vcpu_type': 'thread',
+    #             'deploy_ondemand': True,
+    #             'deploy_preemptible': False,
+    #             'location_cost': {
+    #                 'sao': {
+    #                     'monthly_cost': 7.5,
+    #                     'hourly_cost': 0.01,
+    #                     'monthly_cost_preemptible': 7.5,
+    #                     'hourly_cost_preemptible': 0.01,
+    #                 },
+    #             },
+    #             'gpu_brand': 'none',
+    #         },
+    #         {
+    #             'id': 'vcg-a16-2c-16g-4vram',
+    #             'vcpu_count': 2,
+    #             'ram': 16384,
+    #             'disk': 80,
+    #             'disk_type': 'CLOUDGPU',
+    #             'disk_count': 1,
+    #             'bandwidth': 2048,
+    #             'monthly_cost': 86,
+    #             'hourly_cost': 0.118,
+    #             'monthly_cost_preemptible': 86,
+    #             'hourly_cost_preemptible': 0.118,
+    #             'invoice_type': 'hourly',
+    #             'type': 'vcg',
+    #             'locations': [
+    #                 'ewr',
+    #                 'ord',
+    #                 'fra',
+    #                 'sjc',
+    #                 # ...
+    #             ],
+    #             'cpu_vendor': 'Intel',
+    #             'storage_type': 'local_storage',
+    #             'vcpu_type': 'thread',
+    #             'deploy_ondemand': True,
+    #             'deploy_preemptible': False,
+    #             'location_cost': {},
+    #             'gpu_brand': 'NVIDIA',
+    #             'gpu_vram_gb': 4,
+    #             'gpu_type': 'NVIDIA_A16',
+    #             'gpu_count': '1/4',
+    #         },
+    #         # ...
+    #     ],
+    #     'meta': {
+    #         'total': 151,
+    #         'links': {
+    #             'next': '',
+    #             'prev': '',
+    #         },
+    #     },
+    # }
     response = get(
         "https://api.vultr.com/v2/plans", params={"per_page": 500}, timeout=_API_TIMEOUT
     )
@@ -398,6 +517,80 @@ def _get_plans():
 
 @cachier(separate_files=True)
 def _get_plans_metal():
+    """List bare metal plans (GET /v2/plans-metal).
+
+    Reference: <https://www.vultr.com/api/#tag/plans>
+    """
+    # example GET /v2/plans-metal response:
+    # {
+    #     'plans_metal': [
+    #         {
+    #             'id': 'vbm-6c-32gb',
+    #             'physical_cpus': 1,
+    #             'cpu_count': 6,
+    #             'cpu_cores': 6,
+    #             'cpu_threads': 12,
+    #             'cpu_manufacturer': 'Intel',
+    #             'cpu_model': 'E-2286G',
+    #             'cpu_mhz': 4000,
+    #             'ram': 32768,
+    #             'disk': 960,
+    #             'disk_count': 2,
+    #             'bandwidth': 5120,
+    #             'monthly_cost': 185,
+    #             'hourly_cost': 0.253,
+    #             'monthly_cost_preemptible': 185,
+    #             'hourly_cost_preemptible': 0.253,
+    #             'invoice_type': 'monthly',
+    #             'type': 'SSD',
+    #             'deploy_ondemand': True,
+    #             'deploy_preemptible': False,
+    #             'locations': [
+    #                 'ewr',
+    #                 'ord',
+    #                 'dfw',
+    #                 'sea',
+    #                 # ...
+    #             ],
+    #             'gpu_brand': 'none',
+    #         },
+    #         {
+    #             'id': 'vbm-112c-2048gb-8-a100-gpu',
+    #             'physical_cpus': 2,
+    #             'cpu_count': 112,
+    #             'cpu_cores': 112,
+    #             'cpu_threads': 224,
+    #             'cpu_manufacturer': 'Intel',
+    #             'cpu_model': 'Platinum 8480+',
+    #             'cpu_mhz': 2000,
+    #             'ram': 2097152,
+    #             'disk': 960,
+    #             'disk_count': 4,
+    #             'bandwidth': 15360,
+    #             'monthly_cost': 15052.8,
+    #             'hourly_cost': 22.4,
+    #             'monthly_cost_preemptible': 12042.24,
+    #             'hourly_cost_preemptible': 11.92,
+    #             'invoice_type': 'hourly',
+    #             'type': 'NVMe',
+    #             'deploy_ondemand': False,
+    #             'deploy_preemptible': True,
+    #             'locations': [],
+    #             'gpu_brand': 'NVIDIA',
+    #             'gpu_vram_gb': 640,
+    #             'gpu_type': 'NVIDIA_A100_SXM',
+    #             'gpu_count': 8,
+    #         },
+    #         # ...
+    #     ],
+    #     'meta': {
+    #         'total': 23,
+    #         'links': {
+    #             'next': '',
+    #             'prev': '',
+    #         },
+    #     },
+    # }
     response = get(
         "https://api.vultr.com/v2/plans-metal",
         params={"per_page": 500},
@@ -416,6 +609,71 @@ def _vultr_auth_headers() -> dict[str, str]:
 
 @cachier(separate_files=True)
 def _get_database_plans():
+    """List managed database plans (GET /v2/databases/plans).
+
+    Reference: <https://www.vultr.com/api/#tag/managed-databases>
+    """
+    # example GET /v2/databases/plans response:
+    # {
+    #     'plans': [
+    #         {
+    #             'id': 'vultr-dbaas-hobbyist-cc-1-25-1',
+    #             'number_of_nodes': 1,
+    #             'disk': 25,
+    #             'locations': [
+    #                 'AMS',
+    #                 'ATL',
+    #                 'BLR',
+    #                 'BOM',
+    #                 # ...
+    #             ],
+    #             'max_connections': {
+    #                 'mysql': 75,
+    #                 'pg': 22,
+    #             },
+    #             'monthly_cost': 15,
+    #             'ram': 1024,
+    #             'supported_engines': {
+    #                 'mysql': True,
+    #                 'pg': True,
+    #                 'valkey': False,
+    #                 'kafka': False,
+    #             },
+    #             'type': 'vc2',
+    #             'vcpu_count': 1,
+    #         },
+    #         {
+    #             'id': 'vultr-dbaas-business-occ-so-1-150-8',
+    #             'number_of_nodes': 2,
+    #             'disk': 150,
+    #             'locations': [
+    #                 'AMS',
+    #                 'ATL',
+    #                 'BLR',
+    #                 'BOM',
+    #                 # ...
+    #             ],
+    #             'max_connections': {
+    #                 'mysql': 800,
+    #                 'pg': 197,
+    #             },
+    #             'monthly_cost': 375,
+    #             'ram': 8192,
+    #             'supported_engines': {
+    #                 'mysql': True,
+    #                 'pg': True,
+    #                 'valkey': False,
+    #                 'kafka': False,
+    #             },
+    #             'type': 'occ_so',
+    #             'vcpu_count': 1,
+    #         },
+    #         # ...
+    #     ],
+    #     'meta': {
+    #         'total': 138,
+    #     },
+    # }
     response = get(
         "https://api.vultr.com/v2/databases/plans",
         headers=_vultr_auth_headers(),
@@ -428,6 +686,36 @@ def _get_database_plans():
 
 @cachier(separate_files=True)
 def _get_database_available_services():
+    """List managed database engines and versions (GET /v2/databases/available-services).
+
+    Reference: <https://www.vultr.com/api/#tag/managed-databases/operation/available-services>
+    """
+    # example GET /v2/databases/available-services response:
+    # {
+    #     'available_services': {
+    #         'kafka': [
+    #             '3.8',
+    #             '3.9',
+    #             '4.0',
+    #             '4.1',
+    #         ],
+    #         'mysql': [
+    #             '8',
+    #             '8.4',
+    #         ],
+    #         'pg': [
+    #             '14',
+    #             '15',
+    #             '16',
+    #             '17',
+    #             '18',
+    #         ],
+    #         'valkey': [
+    #             '8.1',
+    #             '9.0',
+    #         ],
+    #     },
+    # }
     response = get(
         "https://api.vultr.com/v2/databases/available-services",
         headers=_vultr_auth_headers(),
