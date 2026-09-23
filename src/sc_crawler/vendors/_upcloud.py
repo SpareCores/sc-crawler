@@ -45,12 +45,313 @@ def _client() -> CloudManager:
     return manager
 
 
+def _get_zones() -> dict:
+    """List available zones (GET /1.3/zone).
+
+    Reference: <https://developers.upcloud.com/1.3/5-zones/>
+    """
+    # example List zones response:
+    # {
+    #     'zones': {
+    #         'zone': [
+    #             {
+    #                 'description': 'Sydney #1',
+    #                 'id': 'au-syd1',
+    #                 'public': 'yes'
+    #             },
+    #             {
+    #                 'description': 'Frankfurt #1',
+    #                 'id': 'de-fra1',
+    #                 'public': 'yes'
+    #             },
+    #             # ...
+    #         ]
+    #     }
+    # }
+    return _client().get_zones()
+
+
+def _get_server_plans() -> dict:
+    """List available server plans (GET /1.3/plan).
+
+    Reference: <https://developers.upcloud.com/1.3/7-plans/>
+    """
+    # example List available plans response:
+    # {
+    #     'plans': {
+    #         'plan': [
+    #             {
+    #                 'core_number': 1,
+    #                 'current_offering': 'yes',
+    #                 'family': 'premium',
+    #                 'memory_amount': 2048,
+    #                 'name': 'PREMIUM-1xCPU-2GB',
+    #                 'public_traffic_out': 1024,
+    #                 'storage_size': 25,
+    #                 'storage_tier': 'maxiops'
+    #             },
+    #             {
+    #                 'core_number': 8,
+    #                 'current_offering': 'yes',
+    #                 'family': 'gpu',
+    #                 'gpu_amount': 1,
+    #                 'gpu_model': 'NVIDIA L40S',
+    #                 'memory_amount': 65536,
+    #                 'name': 'GPU-8xCPU-64GB-1xL40S',
+    #                 'public_traffic_out': 12288,
+    #                 'storage_size': 0,
+    #                 'storage_tier': None
+    #             },
+    #             # ...
+    #         ]
+    #     }
+    # }
+    return _client().get_server_plans()
+
+
+def _get_prices() -> dict:
+    """List resource prices (GET /1.3/price).
+
+    Reference: <https://developers.upcloud.com/1.3/4-pricing/>
+    """
+    # example List prices response:
+    # {
+    #     'prices': {
+    #         'currency': 'EUR',
+    #         'zone': [
+    #             {
+    #                 'name': 'au-syd1',
+    #                 'firewall': {
+    #                     'amount': 1,
+    #                     'price': 0
+    #                 },
+    #                 'ipv4_address': {
+    #                     'amount': 1,
+    #                     'price': 0.4812
+    #                 },
+    #                 'ipv6_address': {
+    #                     'amount': 1,
+    #                     'price': 0
+    #                 },
+    #                 'public_ipv4_bandwidth_in': {
+    #                     'amount': 1,
+    #                     'price': 0
+    #                 },
+    #                 'public_ipv4_bandwidth_out': {
+    #                     'amount': 1,
+    #                     'price': 1
+    #                 },
+    #                 'server_core': {
+    #                     'amount': 1,
+    #                     'price': 1.12
+    #                 },
+    #                 'server_memory': {
+    #                     'amount': 256,
+    #                     'price': 0.14
+    #                 },
+    #                 'server_plan_1xCPU-1GB': {
+    #                     'amount': 1,
+    #                     'price': 1.1309
+    #                 },
+    #                 'server_plan_GPU-8xCPU-64GB-1xL40S': {
+    #                     'amount': 1,
+    #                     'price': 111.1607
+    #                 },
+    #                 'server_plan_GPU-SPOT-8xCPU-64GB-1xL4': {
+    #                     'amount': 1,
+    #                     'price': 57
+    #                 },
+    #                 'storage_hdd': {
+    #                     'amount': 1,
+    #                     'price': 0.0078
+    #                 },
+    #                 'storage_maxiops': {
+    #                     'amount': 1,
+    #                     'price': 0.031
+    #                 },
+    #                 'storage_standard': {
+    #                     'amount': 1,
+    #                     'price': 0.0118
+    #                 },
+    #                 'managed_database_1x1xCPU-1GB-10GB': {
+    #                     'amount': 1,
+    #                     'price': 1.1111
+    #                 },
+    #                 'managed_database_tiered_storage_standard': {
+    #                     'amount': 1,
+    #                     'price': 0.0055
+    #                 },
+    #                 # ...
+    #             },
+    #             # ...
+    #         ]
+    #     }
+    # }
+    return _client().get_prices()
+
+
+def _get_pg_service_type() -> dict:
+    """PostgreSQL managed database type details (GET /1.3/database/service-types/pg).
+
+    Reference: <https://developers.upcloud.com/1.3/16-managed-database/>
+    """
+    # example Get Managed Database type details response:
+    # {
+    #     'name': 'pg',
+    #     'description': 'PostgreSQL - High-performance relational database with advanced extensions',
+    #     'latest_available_version': '18.6',
+    #     'service_plans': [
+    #         {
+    #             'backup_config': {
+    #                 'interval': 24,
+    #                 'max_count': 15,
+    #                 'recovery_mode': 'pitr'
+    #             },
+    #             'backup_config_pg': {
+    #                 'interval': 24,
+    #                 'max_count': 15,
+    #                 'recovery_mode': 'pitr'
+    #             },
+    #             'node_count': 2,
+    #             'zones': {
+    #                 'zone': [
+    #                     {
+    #                         'name': 'au-syd1'
+    #                     },
+    #                     {
+    #                         'name': 'de-fra1'
+    #                     },
+    #                     # ...
+    #                 ]
+    #             },
+    #             'plan': '2x16xCPU-64GB-1000GB',
+    #             'core_number': 16,
+    #             'storage_size': 1024000,
+    #             'storage_step_size': 10240,
+    #             'storage_cap_size': 5120000,
+    #             'memory_amount': 65536,
+    #             'components': {
+    #                 'compute': {
+    #                     'cpu': 16,
+    #                     'memory_gb': 64,
+    #                     'name': '16CPU-64GB',
+    #                     'node_count': 2
+    #                 },
+    #                 'storage': {
+    #                     'dynamic_storage_supported': True,
+    #                     'included_gib': 1000
+    #                 }
+    #             },
+    #             'legacy': True
+    #         },
+    #         # ...
+    #     ],
+    #     'properties': {
+    #         'version': {
+    #             'title': 'PostgreSQL major version',
+    #             'type': [
+    #                 'string',
+    #                 'null'
+    #             ],
+    #             'enum': [
+    #                 '15',
+    #                 '16',
+    #                 '17',
+    #                 '18'
+    #             ]
+    #         },
+    #         'ip_filter': {
+    #             'default': [],
+    #             'title': 'IP filter',
+    #             'type': 'array',
+    #             'items': {
+    #                 'example': [
+    #                     '10.0.0.0/24'
+    #                 ],
+    #                 'maxLength': 18,
+    #                 'title': 'CIDR address block',
+    #                 'type': 'string'
+    #             },
+    #             'maxItems': 1024,
+    #             'description': "Allow incoming connections from CIDR address block, e.g. '10.20.0.0/16'"
+    #         },
+    #         'automatic_utility_network_ip_filter': {
+    #             'default': True,
+    #             'title': 'Automatic utility network IP Filter',
+    #             'type': 'boolean',
+    #             'description': 'Automatically allow connections from servers in the utility network within the same zone'
+    #         },
+    #         'service_log': {
+    #             'example': True,
+    #             'title': 'Service logging',
+    #             'type': [
+    #                 'boolean',
+    #                 'null'
+    #             ],
+    #             'description': 'Store logs for the service so that they are available in the HTTP API and console.'
+    #         },
+    #         'pgbouncer': {
+    #             'title': 'PGBouncer connection pooling settings',
+    #             'type': 'object',
+    #             'properties': {
+    #                 'autodb_pool_mode': {
+    #                     'title': 'PGBouncer pool mode',
+    #                     'type': 'string',
+    #                     'enum': [
+    #                         'transaction',
+    #                         'session',
+    #                         'statement'
+    #                     ]
+    #                 },
+    #                 # ...
+    #             },
+    #             'description': 'System-wide settings for pgbouncer.'
+    #         },
+    #         'pgaudit': {
+    #             'title': 'PGAudit settings',
+    #             'type': 'object',
+    #             'properties': {
+    #                 'feature_enabled': {
+    #                     'title': 'Enable pgaudit extension.',
+    #                     'type': 'boolean',
+    #                     'description': 'Enable pgaudit extension. When enabled, pgaudit extension will be automatically installed.Otherwise, extension will be uninstalled but auditing configurations will be preserved.'
+    #                 },
+    #                 # ...
+    #             },
+    #             'description': 'System-wide settings for the pgaudit extension.'
+    #         },
+    #         'pg_stat_monitor_enable': {
+    #             'default': False,
+    #             'title': 'Enable pg_stat_monitor extension if available for the current cluster',
+    #             'type': 'boolean',
+    #             'description': 'Enable the pg_stat_monitor extension. Changing this parameter causes a service restart. When this extension is enabled, pg_stat_statements results for utility commands are unreliable'
+    #         },
+    #         # ...
+    #     }
+    # }
+    return _client().api.get_request("/database/service-types/pg")
+
+
 @cachier(hash_func=jsoned_hash, separate_files=True)
 def _get_device_region_availability(region_id: str, device_type: str = "gpu") -> dict:
     """Return available passthrough devices (GET /1.3/device/availability).
 
     See https://upcloudltd.github.io/upcloud-openapi-spec/api/device#get-available-passthrough-devices
     """
+    # example Get available passthrough devices response:
+    # {
+    #     'fi-hel2': {
+    #         'gpu_plans': {
+    #             'GPU-12xCPU-128GB-1xL4': {
+    #                 'amount': 1
+    #             },
+    #             'GPU-12xCPU-128GB-1xL40S': {
+    #                 'amount': 10
+    #             },
+    #             # ...
+    #         }
+    #     }
+    # }
     params: dict[str, str] = {"type": device_type}
     params["zone"] = region_id
     return _client().api.get_request("/device/availability", params=params)
@@ -356,7 +657,7 @@ def inventory_regions(vendor):
         },
     }
     items = []
-    regions = _client().get_zones()["zones"]["zone"]
+    regions = _get_zones()["zones"]["zone"]
     for region in regions:
         with sentry_capture_or_raise(vendor=vendor):
             if region["public"] == "yes":
@@ -416,7 +717,7 @@ def inventory_servers(vendor):
     in `/device/availability` across all regions -> INACTIVE; otherwise ACTIVE.
     See `_upcloud_server_status`.
     """
-    servers = _client().get_server_plans()["plans"]["plan"]
+    servers = _get_server_plans()["plans"]["plan"]
     items = []
     for server in servers:
         with sentry_capture_or_raise(vendor=vendor):
@@ -476,7 +777,7 @@ def inventory_servers(vendor):
 
 def inventory_server_prices(vendor):
     items = []
-    prices = _client().get_prices()
+    prices = _get_prices()
     for zone_prices in prices["prices"]["zone"]:
         region_id = zone_prices["name"]
         gpu_region_availability = _get_gpu_region_availability(region_id)
@@ -518,7 +819,7 @@ def inventory_server_prices(vendor):
 
 def inventory_server_prices_spot(vendor):
     items = []
-    prices = _client().get_prices()
+    prices = _get_prices()
     for zone_prices in prices["prices"]["zone"]:
         region_id = zone_prices["name"]
         gpu_region_availability = _get_gpu_region_availability(region_id)
@@ -571,7 +872,7 @@ def inventory_storages(vendor):
 
 def inventory_storage_prices(vendor):
     items = []
-    prices = _client().get_prices()
+    prices = _get_prices()
     for zone_prices in prices["prices"]["zone"]:
         for k, v in zone_prices.items():
             if k in ["storage_" + s["id"] for s in UPCLOUD_STORAGES]:
@@ -591,7 +892,7 @@ def inventory_storage_prices(vendor):
 
 def inventory_traffic_prices(vendor):
     items = []
-    prices = _client().get_prices()
+    prices = _get_prices()
     for zone_prices in prices["prices"]["zone"]:
         for k, v in zone_prices.items():
             if k == "public_ipv4_bandwidth_out":
@@ -616,7 +917,7 @@ def inventory_traffic_prices(vendor):
 
 def inventory_ipv4_prices(vendor):
     items = []
-    prices = _client().get_prices()
+    prices = _get_prices()
     for zone_prices in prices["prices"]["zone"]:
         for k, v in zone_prices.items():
             if k == "ipv4_address":
@@ -641,7 +942,7 @@ def inventory_databases(vendor):
     https://developers.upcloud.com/1.3/16-managed-database/
     https://upcloud.com/docs/products/managed-postgresql/configurations/
     """
-    payload = _client().api.get_request("/database/service-types/pg")
+    payload = _get_pg_service_type()
     plans = payload.get("service_plans", [])
     properties = payload.get("properties", {})
     versions = properties.get("version", {}).get("enum", [])
@@ -821,7 +1122,7 @@ def inventory_databases(vendor):
 
 def inventory_database_prices(vendor):
     items = []
-    prices = _client().get_prices()
+    prices = _get_prices()
     databases = {database.database_id: database for database in vendor.databases}
     prefix = "managed_database_"
     currency = prices["prices"].get("currency", "EUR")
@@ -858,7 +1159,7 @@ def inventory_database_storages(vendor):
     https://upcloud.com/docs/changelog/2025-05-26-additional-disk-space-managed-databases/
     https://developers.upcloud.com/1.3/16-managed-database/
     """
-    payload = _client().api.get_request("/database/service-types/pg")
+    payload = _get_pg_service_type()
     plans = payload.get("service_plans", [])
     if not plans:
         return []
@@ -895,7 +1196,7 @@ def inventory_database_storage_prices(vendor):
     if not vendor.database_storages:
         return []
     storage_id = vendor.database_storages[0].database_storage_id
-    prices = _client().get_prices()
+    prices = _get_prices()
     currency = prices["prices"].get("currency", "EUR")
     items = []
     for zone_prices in prices["prices"]["zone"]:
