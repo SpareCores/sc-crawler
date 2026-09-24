@@ -11,6 +11,7 @@ from sqlalchemy.dialects.sqlite import insert as insert_sqlite
 from sqlmodel import Session, SQLModel
 
 from .str_utils import space_after
+from .table_bases import jsonable
 from .utils import chunk_list, is_postgresql, is_sqlite
 
 # session.info: table name -> {primary-key JSON: content hash}, ignoring observed_at.
@@ -227,7 +228,7 @@ def insert_items(
     changed = []
     unchanged = []
     for item in items:
-        keys_id = dumps({pk: item.get(pk) for pk in pks}, sort_keys=True)
+        keys_id = dumps(jsonable({pk: item.get(pk) for pk in pks}), sort_keys=True)
         if hashes.get(keys_id) == incoming_hashes[keys_id]:
             unchanged.append(item)
         else:

@@ -1,3 +1,5 @@
+from json import dumps
+
 from alembic import command
 from sqlalchemy import update
 from sqlmodel import Session, select
@@ -10,13 +12,14 @@ from sc_crawler.insert import (
     _primary_key_tuple,
     insert_items,
 )
-from sc_crawler.tables import Country
-from sc_crawler.utils import create_sc_engine
 from sc_crawler.table_bases import (
     BenchmarkScoreBase,
     DatabaseBase,
     DatabasePriceBase,
+    jsonable,
 )
+from sc_crawler.tables import BenchmarkScore, Country
+from sc_crawler.utils import create_sc_engine
 from sc_crawler.table_fields import (
     Allocation,
     DatabaseEngine,
@@ -144,6 +147,23 @@ def _country_db(tmp_path):
     with engine.begin() as conn:
         command.upgrade(alembic_cfg(conn, force_logging=False), "heads")
     return engine
+
+
+def test_benchmark_score_hash_key_matches_lookup_with_whole_float():
+    item = BenchmarkScoreBase.model_validate(
+        {
+            "vendor_id": "aws",
+            "server_id": "a1.2xlarge",
+            "benchmark_id": "bw_mem",
+            "config": {"operation": "rd", "size": 1.0},
+            "score": 1.0,
+            "status": Status.ACTIVE,
+        }
+    ).model_dump()
+    hashes = BenchmarkScore.hash(None, rows=[item])
+    pks = sorted(BenchmarkScore.get_columns()["primary_keys"])
+    keys_id = dumps(jsonable({pk: item.get(pk) for pk in pks}), sort_keys=True)
+    assert keys_id in hashes
 
 
 def test_hash_treats_whole_number_floats_as_equal():

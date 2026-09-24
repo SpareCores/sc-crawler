@@ -48,6 +48,21 @@ from .table_fields import (
 from .workload_profiles import BenchmarkSource, MeasuredSource
 
 
+def jsonable(value):
+    """Make values stable for JSON hashing.
+
+    SQLite returns 0.0 for float columns; model defaults and JSON primary keys
+    often keep 0 or 1.0. Those compare equal in Python, but json.dumps does not.
+    """
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, dict):
+        return {k: jsonable(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [jsonable(v) for v in value]
+    return value
+
+
 class ScMetaModel(SQLModel.__class__):
     """Custom class factory to auto-update table models.
 
@@ -202,17 +217,6 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
                 cls.get_table_name(),
                 total=row_count,
             )
-
-        def jsonable(value):
-            # SQLite returns 0.0 for float columns; model defaults keep 0.
-            # 0 == 0.0, but json.dumps does not, so the hash would always differ.
-            if isinstance(value, float) and value.is_integer():
-                return int(value)
-            if isinstance(value, dict):
-                return {k: jsonable(v) for k, v in value.items()}
-            if isinstance(value, (list, tuple)):
-                return [jsonable(v) for v in value]
-            return value
 
         # no use of a generator as will need to serialize to JSON anyway
         hashes = {}
