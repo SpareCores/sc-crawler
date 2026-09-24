@@ -272,6 +272,11 @@ def _server_stressngfull(server: "Server") -> List[tuple[int, float]]:
         ]
 
 
+def _server_nvbandwidth(server: "Server") -> dict:
+    with open(_server_framework_path(server, "nvbandwidth", "stdout"), "r") as fp:
+        return json.load(fp)["nvbandwidth"]
+
+
 def _server_timing_value(server: "Server", run_id: str, key: str) -> datetime | None:
     try:
         with open(_server_framework_path(server, "timing", [run_id, key]), "r") as fp:
