@@ -178,6 +178,7 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
         session: Session,
         ignored: List[str] = ["observed_at"],
         progress: Optional[Progress] = None,
+        rows: Optional[List[dict]] = None,
     ) -> dict:
         """Hash the content of the rows.
 
@@ -185,13 +186,17 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
             session: Database connection to use for object lookups.
             ignored: List of column names to exclude from hashing.
             progress: Optional progress bar to track the status of the hashing.
+            rows: Optional row dicts to hash instead of reading the table.
 
         Returns:
             Dictionary of the row hashes keyed by the JSON dump of primary keys.
         """
         pks = sorted(cls.get_columns()["primary_keys"])
-        rows = session.exec(statement=select(cls))
-        row_count = session.query(cls).count()
+        if rows is None:
+            rows = session.exec(statement=select(cls))
+            row_count = session.query(cls).count()
+        else:
+            row_count = len(rows)
         if progress:
             table_task_id = progress.add_task(
                 cls.get_table_name(),
@@ -202,7 +207,10 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
         for i, row in enumerate(rows):
             # NOTE Pydantic is warning when read Gpu/Storage as dict
             # https://github.com/tiangolo/sqlmodel/issues/63#issuecomment-1081555082
-            rowdict = row.model_dump(warnings=False)
+            if isinstance(row, dict):
+                rowdict = dict(row)
+            else:
+                rowdict = row.model_dump(warnings=False)
             keys = {pk: rowdict.get(pk) for pk in pks}
             keys_id = dumps(keys, sort_keys=True)
             for dropkey in [*ignored, *pks]:

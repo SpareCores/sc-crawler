@@ -5,12 +5,20 @@ from typing import TYPE_CHECKING, List, Optional
 
 from pydantic import BaseModel
 from rich.progress import Progress
+from sqlalchemy import tuple_, update
 from sqlalchemy.dialects.postgresql import insert as insert_postgresql
 from sqlalchemy.dialects.sqlite import insert as insert_sqlite
 from sqlmodel import Session, SQLModel
 
 from .str_utils import space_after
 from .utils import chunk_list, is_postgresql, is_sqlite
+
+# session.info: table name -> {primary-key JSON: content hash}, ignoring observed_at.
+# Filled before a pull marks rows inactive, then reused so unchanged rows are not rewritten.
+ROW_CONTENT_HASHES = "row_content_hashes"
+# session.info: table names whose rows were just marked inactive.
+# Unchanged rows in these tables are set back to the incoming status without touching observed_at.
+INACTIVE_CONTENT_FLIPS = "row_content_hash_inactive_flips"
 
 if TYPE_CHECKING:
     from .tables import Vendor
@@ -207,6 +215,43 @@ def insert_items(
     # are canonicalized before deduplication.
     items = validate_items(model, items, vendor, prefix)
     items = _dedupe_items(items, primary_keys, vendor, model_name, prefix)
+
+    cache = session.info.setdefault(ROW_CONTENT_HASHES, {})
+    table_name = model.get_table_name()
+    hashes = cache.get(table_name)
+    if hashes is None:
+        hashes = model.hash(session)
+        cache[table_name] = hashes
+    incoming_hashes = model.hash(session, rows=items)
+    pks = sorted(primary_keys)
+    changed = []
+    unchanged = []
+    for item in items:
+        keys_id = dumps({pk: item.get(pk) for pk in pks}, sort_keys=True)
+        if hashes.get(keys_id) == incoming_hashes[keys_id]:
+            unchanged.append(item)
+        else:
+            changed.append(item)
+            hashes[keys_id] = incoming_hashes[keys_id]
+    if unchanged and table_name in session.info.get(INACTIVE_CONTENT_FLIPS, ()):
+        pk_cols = [getattr(model, pk) for pk in primary_keys]
+        grouped = defaultdict(list)
+        for item in unchanged:
+            grouped[item["status"]].append(tuple(item[pk] for pk in primary_keys))
+        for status, keys in grouped.items():
+            for chunk in chunk_list(keys, 100):
+                session.exec(
+                    update(model)
+                    .where(tuple_(*pk_cols).in_(chunk))
+                    .values(status=status, observed_at=model.observed_at)
+                )
+    if vendor and unchanged:
+        vendor.log(
+            f"Skipped {len(unchanged)} unchanged {space_after(prefix)}{model_name}(s)."
+        )
+    items = changed
+    if not items:
+        return
 
     if can_bulk_insert(session):
         bulk_insert_items(model, items, vendor, session, progress, prefix)

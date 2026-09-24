@@ -1,4 +1,17 @@
-from sc_crawler.insert import _dedupe_items, _primary_key_tuple
+from alembic import command
+from sqlalchemy import update
+from sqlmodel import Session, select
+
+from sc_crawler.alembic_helpers import alembic_cfg
+from sc_crawler.insert import (
+    INACTIVE_CONTENT_FLIPS,
+    ROW_CONTENT_HASHES,
+    _dedupe_items,
+    _primary_key_tuple,
+    insert_items,
+)
+from sc_crawler.tables import Country
+from sc_crawler.utils import create_sc_engine
 from sc_crawler.table_bases import (
     BenchmarkScoreBase,
     DatabaseBase,
@@ -124,3 +137,67 @@ def test_database_benchmark_score_via_database_id_key():
     assert item.database_id == "db-n1-standard-4"
     assert item.config == {"clients": 4, "scale": 100}
     assert item.score == 1234.5
+
+
+def _country_db(tmp_path):
+    engine = create_sc_engine(f"sqlite:///{tmp_path / 'insert.db'}")
+    with engine.begin() as conn:
+        command.upgrade(alembic_cfg(conn, force_logging=False), "heads")
+    return engine
+
+
+def test_insert_items_skips_rows_unchanged_except_observed_at(tmp_path):
+    item = {"country_id": "US", "continent": "North America", "status": Status.ACTIVE}
+    engine = _country_db(tmp_path)
+    with Session(engine) as session:
+        insert_items(Country, [item], session=session)
+        session.commit()
+        observed_at = session.exec(select(Country)).one().observed_at
+
+    with Session(engine) as session:
+        insert_items(Country, [dict(item)], session=session)
+        session.commit()
+        row = session.exec(select(Country)).one()
+        assert row.continent == "North America"
+        assert row.observed_at == observed_at
+
+        insert_items(
+            Country,
+            [{**item, "continent": "Americas"}],
+            session=session,
+        )
+        session.commit()
+        session.expire_all()
+        row = session.exec(select(Country)).one()
+        assert row.continent == "Americas"
+        assert row.observed_at != observed_at
+
+
+def test_insert_items_restores_status_without_changing_observed_at(tmp_path):
+    item = {"country_id": "US", "continent": "North America", "status": Status.ACTIVE}
+    engine = _country_db(tmp_path)
+    with Session(engine) as session:
+        insert_items(Country, [item], session=session)
+        session.commit()
+        observed_at = session.exec(select(Country)).one().observed_at
+
+        session.expire_all()
+        session.info.pop(ROW_CONTENT_HASHES, None)
+        session.info[ROW_CONTENT_HASHES] = {
+            Country.get_table_name(): Country.hash(session)
+        }
+        session.info.setdefault(INACTIVE_CONTENT_FLIPS, set()).add(
+            Country.get_table_name()
+        )
+        session.exec(
+            update(Country).values(
+                status=Status.INACTIVE, observed_at=Country.observed_at
+            )
+        )
+        insert_items(Country, [dict(item)], session=session)
+        session.commit()
+        session.expire_all()
+        row = session.exec(select(Country)).one()
+        assert row.status == Status.ACTIVE
+        assert row.observed_at == observed_at
+        assert row.continent == "North America"

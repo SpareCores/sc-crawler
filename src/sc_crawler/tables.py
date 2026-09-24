@@ -13,7 +13,7 @@ from .description_ingestor import (
     descriptions_data_path,
     ingest_server_description,
 )
-from .insert import insert_items
+from .insert import INACTIVE_CONTENT_FLIPS, ROW_CONTENT_HASHES, insert_items
 from .inspector import (
     inspect_database_benchmarks,
     inspect_server_benchmarks,
@@ -234,10 +234,17 @@ class Vendor(VendorBase, table=True):
             >>> aws.set_table_rows_inactive(ServerPrice, ServerPrice.price < 10)  # doctest: +SKIP
         """
         if self.session:
+            cache = self.session.info.setdefault(ROW_CONTENT_HASHES, {})
+            table_name = model.get_table_name()
+            if table_name not in cache:
+                cache[table_name] = model.hash(self.session)
+            self.session.info.setdefault(INACTIVE_CONTENT_FLIPS, set()).add(table_name)
             query = update(model).where(model.vendor_id == self.vendor_id)
             for arg in args:
                 query = query.where(arg)
-            self.session.exec(query.values(status=Status.INACTIVE))
+            self.session.exec(
+                query.values(status=Status.INACTIVE, observed_at=model.observed_at)
+            )
 
     def set_table_rows_active(self, model: str, *args) -> None:
         """Set this vendor's records to [ACTIVE][sc_crawler.table_fields.Status] in a table.
@@ -253,7 +260,9 @@ class Vendor(VendorBase, table=True):
             query = update(model).where(model.vendor_id == self.vendor_id)
             for arg in args:
                 query = query.where(arg)
-            self.session.exec(query.values(status=Status.ACTIVE))
+            self.session.exec(
+                query.values(status=Status.ACTIVE, observed_at=model.observed_at)
+            )
 
     def _inventory(self, table: ScModel, inventory: Callable):
         """Mark all rows in a table inactive, then insert new/updated items."""
