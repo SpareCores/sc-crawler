@@ -15,6 +15,8 @@ from .utils import chunk_list, is_postgresql, is_sqlite
 if TYPE_CHECKING:
     from .tables import Vendor
 
+_DEDUPE_DIFF_LOG_SKIP_MODELS = ["benchmark_score"]
+
 
 def can_bulk_insert(session: Session) -> bool:
     """Checks if bulk insert is supported for the engine dialect of a SQLModel session."""
@@ -48,18 +50,29 @@ def _dedupe_items(
         item_keys.append(key)
         seen[key].append(item)
 
-    duplicates_found = False
-    for occurrences in seen.values():
-        if len(occurrences) > 1:
-            if not duplicates_found:
-                if vendor:
-                    duplicates_count = sum(
-                        len(v) - 1 for v in seen.values() if len(v) > 1
-                    )
-                    vendor.log(
-                        f"Found {duplicates_count} duplicate(s) in {space_after(prefix)}{model_name} items",
-                    )
-                duplicates_found = True
+    if vendor:
+        duplicates_count = sum(len(v) - 1 for v in seen.values() if len(v) > 1)
+        if duplicates_count:
+            vendor.log(
+                f"Found {duplicates_count} duplicate(s) in {space_after(prefix)}{model_name} items",
+            )
+            pk_set = set(primary_keys)
+            for key, occurrences in seen.items():
+                if len(occurrences) < 2:
+                    continue
+                fields = set()
+                for occ in occurrences:
+                    fields.update(occ)
+                diffs = []
+                for field in sorted(fields - pk_set):
+                    values = [occ.get(field) for occ in occurrences]
+                    if any(v != values[0] for v in values[1:]):
+                        diffs.append(f"{field}={values}")
+                if not diffs:
+                    continue
+                pk_label = dict(zip(primary_keys, key))
+                if model_name not in _DEDUPE_DIFF_LOG_SKIP_MODELS:
+                    vendor.log(f"Duplicate {pk_label}: {'; '.join(diffs)}", DEBUG)
 
     unique_items = []
     seen_keys = set()

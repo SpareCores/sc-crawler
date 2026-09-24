@@ -1,3 +1,5 @@
+from unittest.mock import Mock
+
 from sc_crawler.insert import _dedupe_items, _primary_key_tuple
 from sc_crawler.table_bases import (
     BenchmarkScoreBase,
@@ -82,6 +84,42 @@ def test_dedupe_items_collapses_duplicate_database_prices():
     )
     assert len(deduped) == 1
     assert deduped[0]["price"] == 0.03
+
+
+def test_dedupe_items_logs_non_pk_differences():
+    base = {
+        "vendor_id": "aws",
+        "region_id": "us-east-1",
+        "database_id": "db.t3.micro",
+        "allocation": Allocation.ONDEMAND,
+        "ha": DatabaseHaLevel.SINGLE_ZONE,
+        "ha_strategy": DatabaseHaStrategy.NONE,
+        "unit": PriceUnit.HOUR,
+        "price": 0.02,
+        "price_upfront": 0,
+        "price_tiered": [],
+        "currency": "USD",
+        "status": Status.ACTIVE,
+    }
+    items = [
+        base,
+        {**base, "price": 0.03},
+    ]
+    validated = [DatabasePriceBase.model_validate(item).model_dump() for item in items]
+    vendor = Mock()
+    _dedupe_items(
+        validated,
+        ["vendor_id", "region_id", "database_id", "allocation", "ha", "ha_strategy"],
+        vendor=vendor,
+        model_name="database_price",
+    )
+    messages = [call.args[0] for call in vendor.log.call_args_list]
+    assert any("Found 1 duplicate(s)" in msg for msg in messages)
+    assert any(
+        "Duplicate" in msg and "price=" in msg and "0.02" in msg and "0.03" in msg
+        for msg in messages
+    )
+    assert not any("vendor_id=" in msg for msg in messages)
 
 
 def test_database_base_round_trip():
