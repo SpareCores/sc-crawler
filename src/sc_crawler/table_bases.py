@@ -13,7 +13,7 @@ from pydantic import (
     model_validator,
 )
 from rich.progress import Progress
-from sqlalchemy import and_, case
+from sqlalchemy import and_, case, func
 from sqlalchemy.ext.hybrid import Comparator, hybrid_property
 from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import declared_attr, reconstructor
@@ -194,7 +194,7 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
         pks = sorted(cls.get_columns()["primary_keys"])
         if rows is None:
             rows = session.exec(statement=select(cls))
-            row_count = session.query(cls).count()
+            row_count = session.exec(select(func.count()).select_from(cls)).one()
         else:
             row_count = len(rows)
         if progress:
@@ -202,6 +202,18 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
                 cls.get_table_name(),
                 total=row_count,
             )
+
+        def jsonable(value):
+            # SQLite returns 0.0 for float columns; model defaults keep 0.
+            # 0 == 0.0, but json.dumps does not, so the hash would always differ.
+            if isinstance(value, float) and value.is_integer():
+                return int(value)
+            if isinstance(value, dict):
+                return {k: jsonable(v) for k, v in value.items()}
+            if isinstance(value, (list, tuple)):
+                return [jsonable(v) for v in value]
+            return value
+
         # no use of a generator as will need to serialize to JSON anyway
         hashes = {}
         for i, row in enumerate(rows):
@@ -212,10 +224,12 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
             else:
                 rowdict = row.model_dump(warnings=False)
             keys = {pk: rowdict.get(pk) for pk in pks}
-            keys_id = dumps(keys, sort_keys=True)
+            keys_id = dumps(jsonable(keys), sort_keys=True)
             for dropkey in [*ignored, *pks]:
                 rowdict.pop(dropkey, None)
-            rowhash = sha1(dumps(rowdict, sort_keys=True).encode()).hexdigest()
+            rowhash = sha1(
+                dumps(jsonable(rowdict), sort_keys=True).encode()
+            ).hexdigest()
             hashes[keys_id] = rowhash
             if progress:
                 # updating the progress bar is expensive, so limit with manu iterations

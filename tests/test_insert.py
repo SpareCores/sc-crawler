@@ -146,6 +146,14 @@ def _country_db(tmp_path):
     return engine
 
 
+def test_hash_treats_whole_number_floats_as_equal():
+    whole = {"country_id": "US", "continent": "North America", "n": 0.0}
+    integer = {"country_id": "US", "continent": "North America", "n": 0}
+    fraction = {"country_id": "US", "continent": "North America", "n": 0.5}
+    assert Country.hash(None, rows=[whole]) == Country.hash(None, rows=[integer])
+    assert Country.hash(None, rows=[whole]) != Country.hash(None, rows=[fraction])
+
+
 def test_insert_items_skips_rows_unchanged_except_observed_at(tmp_path):
     item = {"country_id": "US", "continent": "North America", "status": Status.ACTIVE}
     engine = _country_db(tmp_path)
