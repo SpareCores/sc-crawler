@@ -1757,14 +1757,11 @@ def inventory_storages(vendor):
         product_id = attributes["volumeApiName"]
 
         def get_attr(key: str) -> float:
-            return extract_last_number(
-                str(
-                    attributes.get(
-                        key,
-                        storage_manual_data[product_id][key],
-                    )
-                )
-            )
+            raw = str(attributes.get(key, storage_manual_data[product_id][key]))
+            # "250 - based on 1 MiB I/O size" -> "250"
+            # "40 - 200" and "40 - 90 MB/sec" stay intact
+            raw = re.sub(r"\s+-\s+(?!\d).*", "", raw)
+            return extract_last_number(raw)
 
         storage_type = (
             StorageType.HDD if "HDD" in attributes["storageMedia"] else StorageType.SSD
