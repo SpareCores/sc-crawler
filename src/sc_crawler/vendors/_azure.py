@@ -84,6 +84,48 @@ def _compute_client() -> ComputeManagementClient:
 
 @cachier()
 def _regions() -> List[dict]:
+    # example Subscriptions - List Locations response:
+    # {
+    #     'value': [
+    #         {
+    #             'id': '/subscriptions/00000000-0000-0000-0000-000000000000/locations/eastus',
+    #             'name': 'eastus',
+    #             'type': 'Region',
+    #             'displayName': 'East US',
+    #             'regionalDisplayName': '(US) East US',
+    #             'metadata': {
+    #                 'regionType': 'Physical',
+    #                 'regionCategory': 'Recommended',
+    #                 'geography': 'United States',
+    #                 'geographyGroup': 'US',
+    #                 'longitude': '-79.8164',
+    #                 'latitude': '37.3719',
+    #                 'physicalLocation': 'Virginia',
+    #                 'pairedRegion': [
+    #                     {
+    #                         'name': 'westus',
+    #                         'id': '/subscriptions/00000000-0000-0000-0000-000000000000/locations/westus'
+    #                     }
+    #                 ]
+    #             },
+    #             'availabilityZoneMappings': [
+    #                 {
+    #                     'logicalZone': '1',
+    #                     'physicalZone': 'eastus-az2'
+    #                 },
+    #                 {
+    #                     'logicalZone': '2',
+    #                     'physicalZone': 'eastus-az3'
+    #                 },
+    #                 {
+    #                     'logicalZone': '3',
+    #                     'physicalZone': 'eastus-az1'
+    #                 }
+    #             ]
+    #         },
+    #         # ...
+    #     ]
+    # }
     locations = []
     for location in _subscription_client().subscriptions.list_locations(
         _subscription_id()
@@ -94,6 +136,73 @@ def _regions() -> List[dict]:
 
 @cachier()
 def _resources(namespace: str) -> List[dict]:
+    # example Providers - Get response:
+    # {
+    #     'id': '/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.Compute',
+    #     'namespace': 'Microsoft.Compute',
+    #     'authorizations': [
+    #         {
+    #             'applicationId': '45164d96-544d-4a64-a1ca-3fb4bbb6eb18',
+    #             'roleDefinitionId': '2206ff6f-2860-49b8-9b29-f54b9bc675ed'
+    #         },
+    #         # ...
+    #     ],
+    #     'resourceTypes': [
+    #         {
+    #             'resourceType': 'virtualMachines',
+    #             'locations': [
+    #                 'East US',
+    #                 'East US 2',
+    #                 'West US',
+    #                 # ...
+    #             ],
+    #             'apiVersions': [
+    #                 '2026-04-01',
+    #                 '2026-03-01',
+    #                 '2025-11-01',
+    #                 # ...
+    #             ],
+    #             'defaultApiVersion': '2023-09-01',
+    #             'apiProfiles': [
+    #                 {
+    #                     'profileVersion': '2017-03-09-profile',
+    #                     'apiVersion': '2016-03-30'
+    #                 },
+    #                 {
+    #                     'profileVersion': '2018-03-01-hybrid',
+    #                     'apiVersion': '2017-03-30'
+    #                 },
+    #                 {
+    #                     'profileVersion': '2018-06-01-profile',
+    #                     'apiVersion': '2017-12-01'
+    #                 },
+    #                 {
+    #                     'profileVersion': '2019-03-01-hybrid',
+    #                     'apiVersion': '2017-12-01'
+    #                 },
+    #                 {
+    #                     'profileVersion': '2020-09-01-hybrid',
+    #                     'apiVersion': '2020-06-01'
+    #                 }
+    #             ],
+    #             'zoneMappings': [
+    #                 {
+    #                     'location': 'Australia East',
+    #                     'zones': [
+    #                         '3',
+    #                         '1',
+    #                         '2'
+    #                     ]
+    #                 },
+    #                 # ...
+    #             ],
+    #             'capabilities': 'CrossResourceGroupResourceMove, CrossSubscriptionResourceMove, SystemAssignedResourceIdentity, SupportsTags, SupportsLocation'
+    #         },
+    #         # ...
+    #     ],
+    #     'registrationState': 'Registered',
+    #     'registrationPolicy': 'RegistrationRequired'
+    # }
     resources = []
     for resource in _resource_client().providers.get(namespace).resource_types:
         resources.append(resource.as_dict())
@@ -102,6 +211,79 @@ def _resources(namespace: str) -> List[dict]:
 
 @cachier()
 def _compute_resources() -> List[dict]:
+    # example Resource Skus - List response:
+    # {
+    #     'value': [
+    #         {
+    #             'resourceType': 'virtualMachines',
+    #             'name': 'Standard_E80is_v4',
+    #             'tier': 'Standard',
+    #             'size': 'E80is_v4',
+    #             'family': 'standardXEISv4Family',
+    #             'locations': ['WestUS3'],
+    #             'locationInfo': [
+    #                 {
+    #                     'location': 'WestUS3',
+    #                     'zones': ['3', '1', '2'],
+    #                     'zoneDetails': [
+    #                         {
+    #                             'Name': ['3', '1', '2'],
+    #                             'capabilities': [
+    #                                 {'name': 'UltraSSDAvailable', 'value': 'True'}
+    #                             ]
+    #                         }
+    #                     ]
+    #                 }
+    #             ],
+    #             'capabilities': [
+    #                 {'name': 'MaxResourceVolumeMB', 'value': '0'},
+    #                 {'name': 'OSVhdSizeMB', 'value': '1047552'},
+    #                 {'name': 'vCPUs', 'value': '80'},
+    #                 {'name': 'MemoryPreservingMaintenanceSupported', 'value': 'True'},
+    #                 {'name': 'HyperVGenerations', 'value': 'V1,V2'},
+    #                 {'name': 'MemoryGB', 'value': '504'},
+    #                 {'name': 'MaxDataDiskCount', 'value': '64'},
+    #                 {'name': 'CpuArchitectureType', 'value': 'x64'},
+    #                 {'name': 'LowPriorityCapable', 'value': 'True'},
+    #                 {'name': 'PremiumIO', 'value': 'True'},
+    #                 {'name': 'VMDeploymentTypes', 'value': 'IaaS,PaaS'},
+    #                 {'name': 'vCPUsConstraintsAllowed', 'value': '1, 2, 4, 6, 8, 10, 12, 15, 16, 18, 20, 24, 28, 30, 32, 36, 40, 44, 45, 48, 60, 64, 72, 80'},
+    #                 {'name': 'vCPUsAvailable', 'value': '80'},
+    #                 {'name': 'vCPUsPerCore', 'value': '2'},
+    #                 {'name': 'CombinedTempDiskAndCachedIOPS', 'value': '2000000'},
+    #                 {'name': 'CombinedTempDiskAndCachedReadBytesPerSecond', 'value': '4194304000'},
+    #                 {'name': 'CombinedTempDiskAndCachedWriteBytesPerSecond', 'value': '4194304000'},
+    #                 {'name': 'CachedDiskBytes', 'value': '1717986918400'},
+    #                 {'name': 'UncachedDiskIOPS', 'value': '80000'},
+    #                 {'name': 'UncachedDiskBytesPerSecond', 'value': '1500000000'},
+    #                 {'name': 'EphemeralOSDiskSupported', 'value': 'False'},
+    #                 {'name': 'EncryptionAtHostSupported', 'value': 'True'},
+    #                 {'name': 'CapacityReservationSupported', 'value': 'False'},
+    #                 {'name': 'AcceleratedNetworkingEnabled', 'value': 'True'},
+    #                 {'name': 'RdmaEnabled', 'value': 'False'},
+    #                 {'name': 'MaxNetworkInterfaces', 'value': '8'}
+    #             ],
+    #             'restrictions': [
+    #                 {
+    #                     'type': 'Location',
+    #                     'values': ['WestUS3'],
+    #                     'restrictionInfo': {'locations': ['WestUS3']},
+    #                     'reasonCode': 'NotAvailableForSubscription'
+    #                 },
+    #                 {
+    #                     'type': 'Zone',
+    #                     'values': ['WestUS3'],
+    #                     'restrictionInfo': {
+    #                         'locations': ['WestUS3'],
+    #                         'zones': ['3', '1']
+    #                     },
+    #                     'reasonCode': 'NotAvailableForSubscription'
+    #                 }
+    #             ]
+    #         },
+    #         # ...
+    #     ]
+    # }
     resources = []
     for resource in _compute_client().resource_skus.list():
         resources.append(resource.as_dict())
@@ -148,6 +330,214 @@ def _prices(url_params: Optional[str] = None) -> List[dict]:
         else:
             raise HttpResponseError(response.content)
     return data
+
+
+def _get_server_retail_prices() -> List[dict]:
+    """Fetch server prices using the Azure Retail Prices API."""
+
+    # example Azure Retail Prices response:
+    # {
+    #     'BillingCurrency': 'USD',
+    #     'CustomerEntityId': 'Default',
+    #     'CustomerEntityType': 'Retail',
+    #     'Items': [
+    #         {
+    #             'currencyCode': 'USD',
+    #             'tierMinimumUnits': 0.0,
+    #             'retailPrice': 0.547888,
+    #             'unitPrice': 0.547888,
+    #             'armRegionName': 'southindia',
+    #             'location': 'IN South',
+    #             'effectiveStartDate': '2026-09-01T00:00:00Z',
+    #             'effectiveEndDate': '2026-09-30T23:59:00Z',
+    #             'meterId': '000009d0-057f-5f2b-b7e9-9e26add324a8',
+    #             'meterName': 'D14/DS14 Spot',
+    #             'productId': 'DZH318Z0BPVW',
+    #             'skuId': 'DZH318Z0BPVW/00QZ',
+    #             'productName': 'Virtual Machines D Series Windows',
+    #             'skuName': 'D14 Spot',
+    #             'serviceName': 'Virtual Machines',
+    #             'serviceId': 'DZH313Z7MMC8',
+    #             'serviceFamily': 'Compute',
+    #             'unitOfMeasure': '1 Hour',
+    #             'type': 'Consumption',
+    #             'isPrimaryMeterRegion': True,
+    #             'armSkuName': 'Standard_D14'
+    #         },
+    #         # ...
+    #     ],
+    #     'NextPageLink': 'https://prices.azure.com:443/api/retail/prices?$filter=serviceName%20eq%20%27Virtual%20Machines%27%20and%20priceType%20eq%20%27Consumption%27&$skip=1000',
+    #     'Count': 1000
+    # }
+    return _prices(
+        "$filter=serviceName eq 'Virtual Machines' and priceType eq 'Consumption'"
+    )
+
+
+def _get_storage_retail_prices() -> List[dict]:
+    """Fetch storage prices using the Azure Retail Prices API."""
+
+    # example Azure Retail Prices response:
+    # {
+    #     'BillingCurrency': 'USD',
+    #     'CustomerEntityId': 'Default',
+    #     'CustomerEntityType': 'Retail',
+    #     'Items': [
+    #         {
+    #             'currencyCode': 'USD',
+    #             'tierMinimumUnits': 0.0,
+    #             'retailPrice': 0.0,
+    #             'unitPrice': 0.0,
+    #             'armRegionName': 'westus2',
+    #             'location': 'US West 2',
+    #             'effectiveStartDate': '2018-03-01T00:00:00Z',
+    #             'meterId': 'b377a40a-afdd-4b7c-9ec8-af53e2b0c314',
+    #             'meterName': 'Archive Data Write',
+    #             'productId': 'DZH318Z0BNZJ',
+    #             'skuId': 'DZH318Z0BNZJ/0044',
+    #             'productName': 'Blob Storage',
+    #             'skuName': 'Archive GRS',
+    #             'serviceName': 'Storage',
+    #             'serviceId': 'DZH317F1HKN0',
+    #             'serviceFamily': 'Storage',
+    #             'unitOfMeasure': '1 GB',
+    #             'type': 'Consumption',
+    #             'isPrimaryMeterRegion': False,
+    #             'armSkuName': ''
+    #         },
+    #         # ...
+    #     ],
+    #     'NextPageLink': 'https://prices.azure.com:443/api/retail/prices?$filter=serviceName%20eq%20%27Storage%27&$skip=1000',
+    #     'Count': 1000
+    # }
+    return _prices("$filter=serviceName eq 'Storage'")
+
+
+def _get_inbound_traffic_retail_prices() -> List[dict]:
+    """Fetch inbound traffic prices using the Azure Retail Prices API."""
+
+    # example Azure Retail Prices response:
+    # {
+    #     'BillingCurrency': 'USD',
+    #     'CustomerEntityId': 'Default',
+    #     'CustomerEntityType': 'Retail',
+    #     'Items': [
+    #         {
+    #             'currencyCode': 'USD',
+    #             'tierMinimumUnits': 0.0,
+    #             'retailPrice': 0.0,
+    #             'unitPrice': 0.0,
+    #             'armRegionName': 'norwaywest',
+    #             'location': 'NO West',
+    #             'effectiveStartDate': '2015-07-01T00:00:00Z',
+    #             'meterId': '32c3ebec-1646-49e3-8127-2cafbd3a04d8',
+    #             'meterName': 'Standard Data Transfer In',
+    #             'productId': 'DZH318Z0BNVX',
+    #             'skuId': 'DZH318Z0BNVX/002J',
+    #             'productName': 'Rtn Preference: MGN',
+    #             'skuName': 'Standard',
+    #             'serviceName': 'Bandwidth',
+    #             'serviceId': 'DZH318FHKQ5W',
+    #             'serviceFamily': 'Networking',
+    #             'unitOfMeasure': '1 GB',
+    #             'type': 'Consumption',
+    #             'isPrimaryMeterRegion': False,
+    #             'armSkuName': ''
+    #         },
+    #         # ...
+    #     ],
+    #     'NextPageLink': None,
+    #     'Count': 84
+    # }
+    return _prices(
+        "$filter=serviceFamily eq 'Networking' and meterName eq 'Standard Data Transfer In'"
+    )
+
+
+def _get_outbound_traffic_retail_prices() -> List[dict]:
+    """Fetch outbound traffic prices using the Azure Retail Prices API."""
+
+    # example Azure Retail Prices response:
+    # {
+    #     'BillingCurrency': 'USD',
+    #     'CustomerEntityId': 'Default',
+    #     'CustomerEntityType': 'Retail',
+    #     'Items': [
+    #         {
+    #             'currencyCode': 'USD',
+    #             'tierMinimumUnits': 0.0,
+    #             'retailPrice': 0.0,
+    #             'unitPrice': 0.0,
+    #             'armRegionName': 'switzerlandnorth',
+    #             'location': 'CH North',
+    #             'effectiveStartDate': '2022-03-01T00:00:00Z',
+    #             'meterId': '6bd64e8e-5cb9-49d3-893d-800c9b28dca3',
+    #             'meterName': 'Standard Data Transfer Out',
+    #             'productId': 'DZH318Z0C8ZQ',
+    #             'skuId': 'DZH318Z0C8ZQ/001F',
+    #             'productName': 'Bandwidth - Routing Preference: Internet',
+    #             'skuName': 'Standard',
+    #             'serviceName': 'Bandwidth',
+    #             'serviceId': 'DZH318FHKQ5W',
+    #             'serviceFamily': 'Networking',
+    #             'unitOfMeasure': '1 GB',
+    #             'type': 'Consumption',
+    #             'isPrimaryMeterRegion': False,
+    #             'armSkuName': ''
+    #         },
+    #         # ...
+    #     ],
+    #     'NextPageLink': None,
+    #     'Count': 315
+    # }
+    return _prices(
+        "$filter=serviceFamily eq 'Networking' and "
+        "meterName eq 'Standard Data Transfer Out' and "
+        "productName eq 'Bandwidth - Routing Preference: Internet'"
+    )
+
+
+def _get_ipv4_retail_prices() -> List[dict]:
+    """Fetch public IPv4 address prices using the Azure Retail Prices API."""
+
+    # example Azure Retail Prices response:
+    # {
+    #     'BillingCurrency': 'USD',
+    #     'CustomerEntityId': 'Default',
+    #     'CustomerEntityType': 'Retail',
+    #     'Items': [
+    #         {
+    #             'currencyCode': 'USD',
+    #             'tierMinimumUnits': 0.0,
+    #             'retailPrice': 0.004,
+    #             'unitPrice': 0.004,
+    #             'armRegionName': 'francecentral',
+    #             'location': 'FR Central',
+    #             'effectiveStartDate': '2014-12-01T00:00:00Z',
+    #             'meterId': 'f114cb19-ea64-40b5-bcd7-aee474b62853',
+    #             'meterName': 'Basic IPv4 Dynamic Public IP',
+    #             'productId': 'DZH318Z0BNXN',
+    #             'skuId': 'DZH318Z0BNXN/001N',
+    #             'productName': 'IP Addresses',
+    #             'skuName': 'Basic',
+    #             'serviceName': 'Virtual Network',
+    #             'serviceId': 'DZH314HC0WV9',
+    #             'serviceFamily': 'Networking',
+    #             'unitOfMeasure': '1 Hour',
+    #             'type': 'Consumption',
+    #             'isPrimaryMeterRegion': False,
+    #             'armSkuName': ''
+    #         },
+    #         # ...
+    #     ],
+    #     'NextPageLink': None,
+    #     'Count': 69
+    # }
+    return _prices(
+        "$filter=serviceFamily eq 'Networking' and "
+        "meterName eq 'Basic IPv4 Dynamic Public IP' and "
+        "type eq 'Consumption'"
+    )
 
 
 # ##############################################################################
@@ -526,49 +916,7 @@ def _parse_server_name(name):
 
 
 def _standardize_server(server: dict, vendor) -> dict:
-    # example server dict:
-    # {
-    #     'resourceType': 'virtualMachines',
-    #     'name': 'Standard_L80as_v3',
-    #     'tier': 'Standard',
-    #     'size': 'L80as_v3',
-    #     'family': 'standardLASv3Family',
-    #     'locations': ['WestUS3'],
-    #     'locationInfo': [{'location': 'WestUS3', 'zones': ['1', '3', '2'], 'zoneDetails': [{'capabilities': [{'name': 'UltraSSDAvailable', 'value': 'True'}]}]}],
-    #     'capabilities': [
-    #         {'name': 'MaxResourceVolumeMB', 'value': '819200'},
-    #         {'name': 'OSVhdSizeMB', 'value': '1047552'},
-    #         {'name': 'vCPUs', 'value': '80'},
-    #         {'name': 'MemoryPreservingMaintenanceSupported', 'value': 'True'},
-    #         {'name': 'HyperVGenerations', 'value': 'V1,V2'},
-    #         {'name': 'SupportedEphemeralOSDiskPlacements', 'value': 'ResourceDisk'},
-    #         {'name': 'MemoryGB', 'value': '640'},
-    #         {'name': 'MaxDataDiskCount', 'value': '32'},
-    #         {'name': 'CpuArchitectureType', 'value': 'x64'},
-    #         {'name': 'LowPriorityCapable', 'value': 'True'},
-    #         {'name': 'PremiumIO', 'value': 'True'},
-    #         {'name': 'VMDeploymentTypes', 'value': 'IaaS'},
-    #         {'name': 'vCPUsAvailable', 'value': '80'},
-    #         {'name': 'vCPUsPerCore', 'value': '2'},
-    #         {'name': 'CombinedTempDiskAndCachedIOPS', 'value': '40000'},
-    #         {'name': 'CombinedTempDiskAndCachedReadBytesPerSecond', 'value': '800000000'},
-    #         {'name': 'CombinedTempDiskAndCachedWriteBytesPerSecond', 'value': '800000000'},
-    #         {'name': 'UncachedDiskIOPS', 'value': '80000'},
-    #         {'name': 'UncachedDiskBytesPerSecond', 'value': '1400000000'},
-    #         {'name': 'NvmeDiskSizeInMiB', 'value': '18310546'},
-    #         {'name': 'NvmeSizePerDiskInMiB', 'value': '1831054'},
-    #         {'name': 'EphemeralOSDiskSupported', 'value': 'True'},
-    #         {'name': 'EncryptionAtHostSupported', 'value': 'True'},
-    #         {'name': 'CapacityReservationSupported', 'value': 'False'},
-    #         {'name': 'AcceleratedNetworkingEnabled', 'value': 'True'},
-    #         {'name': 'RdmaEnabled', 'value': 'False'},
-    #         {'name': 'MaxNetworkInterfaces', 'value': '8'}
-    #     ],
-    #     'restrictions': [
-    #         {'type': 'Location', 'values': ['WestUS3'], 'restrictionInfo': {'locations': ['WestUS3']}, 'reasonCode': 'NotAvailableForSubscription'},
-    #         {'type': 'Zone', 'values': ['WestUS3'], 'restrictionInfo': {'locations': ['WestUS3'], 'zones': ['1', '2', '3']}, 'reasonCode': 'NotAvailableForSubscription'}
-    #     ]
-    # }
+    # example Resource Skus - List response moved to _compute_resources
     family, features, gpus, gpu_model, gpu_memory = _parse_server_name(server["name"])
     # override family from SKU listing
     family = recompile(r"(?i)family$").sub(
@@ -666,9 +1014,7 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
     #   - not(endswith(productName, 'CloudServices'))
     retail_prices = []
     with sentry_capture_or_raise(vendor=vendor):
-        retail_prices = _prices(
-            "$filter=serviceName eq 'Virtual Machines' and priceType eq 'Consumption'"
-        )
+        retail_prices = _get_server_retail_prices()
     vendor.progress_tracker.hide_task()
 
     if not retail_prices:
@@ -1415,7 +1761,7 @@ def inventory_storage_prices(vendor):
     )
     retail_prices = []
     with sentry_capture_or_raise(vendor=vendor):
-        retail_prices = _prices("$filter=serviceName eq 'Storage'")
+        retail_prices = _get_storage_retail_prices()
     vendor.progress_tracker.hide_task()
 
     if not retail_prices:
@@ -1528,14 +1874,8 @@ def inventory_traffic_prices(vendor):
     inbound_prices = []
     outbound_prices = []
     with sentry_capture_or_raise(vendor=vendor):
-        inbound_prices = _prices(
-            "$filter=serviceFamily eq 'Networking' and meterName eq 'Standard Data Transfer In'"
-        )
-        outbound_prices = _prices(
-            "$filter=serviceFamily eq 'Networking' and "
-            "meterName eq 'Standard Data Transfer Out' and "
-            "productName eq 'Bandwidth - Routing Preference: Internet'"
-        )
+        inbound_prices = _get_inbound_traffic_retail_prices()
+        outbound_prices = _get_outbound_traffic_retail_prices()
     vendor.progress_tracker.hide_task()
 
     if not inbound_prices and not outbound_prices:
@@ -1577,11 +1917,7 @@ def inventory_ipv4_prices(vendor):
     )
     prices = []
     with sentry_capture_or_raise(vendor=vendor):
-        prices = _prices(
-            "$filter=serviceFamily eq 'Networking' and "
-            "meterName eq 'Basic IPv4 Dynamic Public IP' and "
-            "type eq 'Consumption'"
-        )
+        prices = _get_ipv4_retail_prices()
     vendor.progress_tracker.hide_task()
 
     if not prices:
@@ -1638,6 +1974,90 @@ def _pg_database_regions(vendor):
 
 @cachier(separate_files=True)
 def _pg_capabilities_by_location(location: str) -> list[dict]:
+    # example Capabilities - List By Location response:
+    # {
+    #     'value': [
+    #         {
+    #             'name': 'FlexibleServerCapabilities',
+    #             'supportedServerEditions': [
+    #                 {
+    #                     'supportedServerSkus': [
+    #                         {
+    #                             'supportedFeatures': [],
+    #                             'name': 'Standard_B1ms',
+    #                             'vCores': 1,
+    #                             'supportedIops': 640,
+    #                             'supportedMemoryPerVcoreMb': 2048,
+    #                             'supportedZones': ['1', '2', '3'],
+    #                             'supportedHaMode': ['SameZone', 'ZoneRedundant']
+    #                         },
+    #                         # ...
+    #                     ],
+    #                     'name': 'Burstable',
+    #                     'defaultSkuName': 'Standard_B2s',
+    #                     'supportedStorageEditions': [
+    #                         {
+    #                             'name': 'ManagedDisk',
+    #                             'defaultStorageSizeMb': 32768,
+    #                             'supportedStorageMb': [
+    #                                 {
+    #                                     'supportedIops': 120,
+    #                                     'storageSizeMb': 32768,
+    #                                     'defaultIopsTier': 'P4',
+    #                                     'supportedIopsTiers': [
+    #                                         {'name': 'P4', 'iops': 120},
+    #                                         {'name': 'P6', 'iops': 240},
+    #                                         # ...
+    #                                     ]
+    #                                 },
+    #                                 # ...
+    #                             ]
+    #                         },
+    #                         # ...
+    #                     ]
+    #                 },
+    #                 # ...
+    #             ],
+    #             'supportedServerVersions': [
+    #                 {
+    #                     'supportedFeatures': [],
+    #                     'name': '11',
+    #                     'supportedVersionsToUpgrade': [
+    #                         '12',
+    #                         '13',
+    #                         '14',
+    #                         '15',
+    #                         '16',
+    #                         '17',
+    #                         '18'
+    #                     ]
+    #                 },
+    #                 # ...
+    #             ],
+    #             'supportedFastProvisioningEditions': [],
+    #             'supportedFeatures': [
+    #                 {'name': 'FastProvisioning', 'status': 'Disabled'},
+    #                 {'name': 'ZoneRedundantHa', 'status': 'Enabled'},
+    #                 {'name': 'GeoBackup', 'status': 'Enabled'},
+    #                 {'name': 'ZoneRedundantHaAndGeoBackup', 'status': 'Enabled'},
+    #                 {'name': 'StorageAutoGrowth', 'status': 'Enabled'},
+    #                 {'name': 'OnlineResize', 'status': 'Enabled'},
+    #                 {'name': 'OfferRestricted', 'status': 'Disabled'},
+    #                 {'name': 'IndexTuning', 'status': 'Enabled'},
+    #                 {'name': 'Clusters', 'status': 'Enabled'},
+    #                 {'name': 'AdaptiveAutoVacuumAutoApply', 'status': 'Enabled'},
+    #                 {'name': 'ConfigTuning', 'status': 'Disabled'}
+    #             ],
+    #             'fastProvisioningSupported': 'Disabled',
+    #             'geoBackupSupported': 'Enabled',
+    #             'zoneRedundantHaSupported': 'Enabled',
+    #             'zoneRedundantHaAndGeoBackupSupported': 'Enabled',
+    #             'storageAutoGrowthSupported': 'Enabled',
+    #             'onlineResizeSupported': 'Enabled',
+    #             'indexTuningSupported': 'Enabled'
+    #         }
+    #     ]
+    # }
     capabilities = []
     for capability in _postgresql_client().capabilities_by_location.list(
         location_name=location
@@ -1660,6 +2080,39 @@ def _pg_capabilities(location: str) -> list[SimpleNamespace]:
 
 
 def _pg_retail_prices(location: str) -> list[dict]:
+    # example Azure Retail Prices response:
+    # {
+    #     'BillingCurrency': 'USD',
+    #     'CustomerEntityId': 'Default',
+    #     'CustomerEntityType': 'Retail',
+    #     'Items': [
+    #         {
+    #             'currencyCode': 'USD',
+    #             'tierMinimumUnits': 0.0,
+    #             'retailPrice': 0.09,
+    #             'unitPrice': 0.09,
+    #             'armRegionName': 'eastus',
+    #             'location': 'US East',
+    #             'effectiveStartDate': '2026-08-01T00:00:00Z',
+    #             'meterId': '0011f5c1-c6ee-50c2-9990-2d73251cf1c2',
+    #             'meterName': 'Ultra Disk IOPS Provisioned IOPS',
+    #             'productId': 'DZH318Z0DCRX',
+    #             'skuId': 'DZH318Z0DCRX/00R2',
+    #             'productName': 'Azure Database for PostgreSQL Flex Server Storage',
+    #             'skuName': 'Ultra Disk IOPS',
+    #             'serviceName': 'Azure Database for PostgreSQL',
+    #             'serviceId': 'DZH3199QPQTD',
+    #             'serviceFamily': 'Databases',
+    #             'unitOfMeasure': '1/Month',
+    #             'type': 'Consumption',
+    #             'isPrimaryMeterRegion': True,
+    #             'armSkuName': 'Ultra Disk IOPS'
+    #         },
+    #         # ...
+    #     ],
+    #     'NextPageLink': None,
+    #     'Count': 140
+    # }
     return _prices(
         "$filter=serviceName eq 'Azure Database for PostgreSQL' "
         f"and armRegionName eq '{location}' "

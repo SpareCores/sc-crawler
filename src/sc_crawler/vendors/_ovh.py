@@ -64,6 +64,10 @@ def _get_project_id() -> str:
         return project_id.strip()
 
     # fall back to first project in account (if any)
+    # example GET /cloud/project response:
+    # [
+    #     '00000000000000000000000000000000'
+    # ]
     projects = _client().get("/cloud/project")
     if not projects:
         raise RuntimeError("No projects defined/found in OVHcloud account")
@@ -86,6 +90,13 @@ def _get_regions(project_id: Optional[str] = None) -> list[str]:
     """
     project_id = project_id or _get_project_id()
     try:
+        # example GET /cloud/project/{serviceName}/region response:
+        # [
+        #     'AP-SOUTH-MUM',
+        #     'AP-SOUTH-MUM-1',
+        #     'AP-SOUTHEAST-SYD',
+        #     # ...
+        # ]
         return _client().get(f"/cloud/project/{project_id}/region")
     except Exception as e:
         raise Exception(f"Failed to fetch regions for project {project_id}: {e}") from e
@@ -103,7 +114,92 @@ def _get_region(region_name: str, project_id: Optional[str] = None) -> dict:
         Region dictionary.
     """
     project_id = project_id or _get_project_id()
+    # example GET /cloud/project/{serviceName}/region/{regionName} response:
+    # {
+    #     'name': 'EU-SOUTH-MIL',
+    #     'continentCode': 'EU',
+    #     'datacenterLocation': 'MIL',
+    #     'status': 'UP',
+    #     'type': 'region-3-az',
+    #     'services': [
+    #         {
+    #             'name': 'share',
+    #             'status': 'UP',
+    #             'endpoint': 'https://share.eu-south-mil.caas.ovh.net/v2'
+    #         },
+    #         # ...
+    #         {
+    #             'name': 'instance',
+    #             'status': 'UP',
+    #             'endpoint': 'https://compute.eu-south-mil.cloud.ovh.net/v2.1/00000000000000000000000000000000'
+    #         },
+    #         # ...
+    #     ],
+    #     'ipCountries': [
+    #         'it'
+    #     ],
+    #     'countryCode': 'it',
+    #     'availabilityZones': [
+    #         'eu-south-mil-a',
+    #         'eu-south-mil-b',
+    #         'eu-south-mil-c'
+    #     ]
+    # }
     return _client().get(f"/cloud/project/{project_id}/region/{region_name}")
+
+
+def _get_flavors(project_id: Optional[str] = None) -> list[dict]:
+    """Fetch instance flavors available to a project.
+
+    Args:
+        project_id: Project ID to use for listing flavors. Defaults to the first project in the account if not provided.
+
+    Returns:
+        List of flavor dictionaries.
+    """
+    project_id = project_id or _get_project_id()
+    # example GET /cloud/project/{serviceName}/flavor response:
+    # [
+    #     {
+    #         'id': 'b9ce7433-fbc9-47a4-a369-f789f3c5607e',
+    #         'name': 'b2-7',
+    #         'region': 'SBG7',
+    #         'ram': 7,
+    #         'disk': 50,
+    #         'vcpus': 2,
+    #         'type': 'ovh.ssd.eg',
+    #         'osType': 'linux',
+    #         'inboundBandwidth': 250,
+    #         'outboundBandwidth': 250,
+    #         'available': True,
+    #         'planCodes': {
+    #             'monthly': 'b2-7.monthly.postpaid',
+    #             'hourly': 'b2-7.consumption',
+    #             'license': None
+    #         },
+    #         'capabilities': [
+    #             {
+    #                 'name': 'resize',
+    #                 'enabled': True
+    #             },
+    #             {
+    #                 'name': 'snapshot',
+    #                 'enabled': True
+    #             },
+    #             {
+    #                 'name': 'volume',
+    #                 'enabled': True
+    #             },
+    #             {
+    #                 'name': 'failoverip',
+    #                 'enabled': True
+    #             }
+    #         ],
+    #         'quota': 800
+    #     },
+    #     # ...
+    # ]
+    return _client().get(f"/cloud/project/{project_id}/flavor")
 
 
 @cache
@@ -116,6 +212,213 @@ def _get_catalog(subsidiary: str = getenv("OVH_SUBSIDIARY", "IE")) -> dict:
     Returns:
         Catalog dictionary with plans and addons.
     """
+    # example GET /order/catalog/public/cloud response:
+    # {
+    #     'catalogId': 9694,
+    #     'locale': {
+    #         'currencyCode': 'EUR',
+    #         'subsidiary': 'IE',
+    #         'taxRate': 23
+    #     },
+    #     'plans': [
+    #         {
+    #             'planCode': 'credit',
+    #             'invoiceName': 'Public Cloud credit',
+    #             'addonFamilies': [],
+    #             'product': 'voucher',
+    #             'pricingType': 'purchase',
+    #             'consumptionConfiguration': None,
+    #             'pricings': [
+    #                 {
+    #                     'phase': 0,
+    #                     'capacities': [
+    #                         'installation'
+    #                     ],
+    #                     'commitment': 0,
+    #                     'description': 'purchase (only applicable 1 time)',
+    #                     'interval': 0,
+    #                     'intervalUnit': 'none',
+    #                     'quantity': {
+    #                         'min': 1,
+    #                         'max': None
+    #                     },
+    #                     'repeat': {
+    #                         'min': 1,
+    #                         'max': 1
+    #                     },
+    #                     'price': 1000000,
+    #                     'formattedPrice': '€ 0.01',
+    #                     'tax': 230000,
+    #                     'mode': 'default',
+    #                     'strategy': 'tiered',
+    #                     'mustBeCompleted': False,
+    #                     'type': 'purchase',
+    #                     'promotions': [],
+    #                     'engagementConfiguration': None
+    #                 }
+    #             ],
+    #             'configurations': [
+    #                 {
+    #                     'name': 'type',
+    #                     'isCustom': False,
+    #                     'isMandatory': True,
+    #                     'values': [
+    #                         'public_cloud'
+    #                     ]
+    #                 }
+    #             ],
+    #             'family': None,
+    #             'blobs': None
+    #         },
+    #         # ...
+    #     ],
+    #     'products': [
+    #         {
+    #             'name': 'publiccloud-instance',
+    #             'description': 'Public Cloud Instance',
+    #             'blobs': None,
+    #             'configurations': [
+    #                 {
+    #                     'name': 'instanceParams',
+    #                     'isCustom': True,
+    #                     'isMandatory': False,
+    #                     'values': None
+    #                 },
+    #                 {
+    #                     'name': 'instanceId',
+    #                     'isCustom': True,
+    #                     'isMandatory': False,
+    #                     'values': None
+    #                 }
+    #             ]
+    #         },
+    #         # ...
+    #     ],
+    #     'addons': [
+    #         {
+    #             'planCode': 'h100-760.consumption',
+    #             'invoiceName': 'h100-760',
+    #             'addonFamilies': [
+    #                 {
+    #                     'name': 'local-storage',
+    #                     'exclusive': False,
+    #                     'mandatory': False,
+    #                     'addons': [
+    #                         'instance.local-storage-free-gb.hour.consumption'
+    #                     ],
+    #                     'default': None
+    #                 }
+    #             ],
+    #             'product': 'publiccloud-instance',
+    #             'pricingType': 'consumption',
+    #             'consumptionConfiguration': {
+    #                 'billingStrategy': 'ping',
+    #                 'prorataUnit': 'second',
+    #                 'pingEndPolicy': 'prorata'
+    #             },
+    #             'pricings': [
+    #                 {
+    #                     'phase': 0,
+    #                     'capacities': [
+    #                         'consumption'
+    #                     ],
+    #                     'commitment': 0,
+    #                     'description': 'hourly prices',
+    #                     'interval': 1,
+    #                     'intervalUnit': 'hour',
+    #                     'quantity': {
+    #                         'min': 1,
+    #                         'max': None
+    #                     },
+    #                     'repeat': {
+    #                         'min': 1,
+    #                         'max': None
+    #                     },
+    #                     'price': 560000000,
+    #                     'formattedPrice': '€ 5.60',
+    #                     'tax': 128800000,
+    #                     'mode': 'default',
+    #                     'strategy': 'tiered',
+    #                     'mustBeCompleted': False,
+    #                     'type': 'consumption',
+    #                     'promotions': [],
+    #                     'engagementConfiguration': None
+    #                 }
+    #             ],
+    #             'configurations': [],
+    #             'family': None,
+    #             'blobs': {
+    #                 'commercial': {
+    #                     'brick': 'gpu',
+    #                     'brickSubtype': None,
+    #                     'name': 'h100-760',
+    #                     'price': {
+    #                         'interval': 'PT1H',
+    #                         'precision': 4,
+    #                         'unit': 'h'
+    #                     }
+    #                 },
+    #                 'tags': [
+    #                     'active'
+    #                 ],
+    #                 'technical': {
+    #                     'bandwidth': {
+    #                         'guaranteed': False,
+    #                         'level': 16000,
+    #                         'unlimited': False
+    #                     },
+    #                     'cpu': {
+    #                         'cores': 60,
+    #                         'frequency': 3,
+    #                         'model': 'vCore',
+    #                         'type': 'vCore'
+    #                     },
+    #                     'gpu': {
+    #                         'memory': {
+    #                             'interface': 'HBM2',
+    #                             'size': 80
+    #                         },
+    #                         'model': 'H100',
+    #                         'number': 2
+    #                     },
+    #                     'memory': {
+    #                         'size': 760
+    #                     },
+    #                     'name': 'h100-760',
+    #                     'os': {
+    #                         'family': 'linux'
+    #                     },
+    #                     'storage': {
+    #                         'disks': [
+    #                             {
+    #                                 'capacity': 200,
+    #                                 'number': 1,
+    #                                 'technology': 'NVMe'
+    #                             },
+    #                             {
+    #                                 'capacity': 3840,
+    #                                 'number': 2,
+    #                                 'technology': 'NVMe Passthrough'
+    #                             }
+    #                         ],
+    #                         'raid': 'local'
+    #                     },
+    #                     'vrack': {
+    #                         'guaranteed': False,
+    #                         'level': 16000,
+    #                         'unlimited': False
+    #                     }
+    #                 }
+    #             }
+    #         },
+    #         # ...
+    #     ],
+    #     'planFamilies': [
+    #         {
+    #             'name': 'project'
+    #         }
+    #     ]
+    # }
     return _client().get("/order/catalog/public/cloud", ovhSubsidiary=subsidiary)
 
 
@@ -127,6 +430,78 @@ def _get_database_availability(project_id: Optional[str] = None) -> list[dict]:
     https://eu.api.ovh.com/console/?section=%2Fcloud&branch=v1#get-/cloud/project/-serviceName-/database/availability
     """
     project_id = project_id or _get_project_id()
+    # example GET /cloud/project/{serviceName}/database/availability response:
+    # [
+    #     {
+    #         'category': 'operational',
+    #         'engine': 'postgresql',
+    #         'version': '15',
+    #         'region': 'AP-SOUTH-MUM',
+    #         'plan': 'production',
+    #         'backups': {
+    #             'available': True,
+    #             'retentionDays': 14
+    #         },
+    #         'lifecycle': {
+    #             'status': 'STABLE',
+    #             'startDate': '2026-02-16',
+    #             'endOfLife': '2027-11-11',
+    #             'endOfSale': '2027-05-12'
+    #         },
+    #         'specifications': {
+    #             'flavor': 'b3-8',
+    #             'network': 'private',
+    #             'nodes': {
+    #                 'minimum': 2,
+    #                 'maximum': 2
+    #             },
+    #             'storage': {
+    #                 'minimum': {
+    #                     'unit': 'GB',
+    #                     'value': 160
+    #                 },
+    #                 'maximum': {
+    #                     'unit': 'GB',
+    #                     'value': 800
+    #                 },
+    #                 'step': {
+    #                     'unit': 'GB',
+    #                     'value': 10
+    #                 },
+    #                 'typeSelection': [
+    #                     {
+    #                         'if': [
+    #                             {
+    #                                 'key': 'size',
+    #                                 'operation': 'gt',
+    #                                 'value': 100
+    #                             }
+    #                         ],
+    #                         'then': 'high-speed-gen2'
+    #                     }
+    #                 ]
+    #             }
+    #         },
+    #         'planCode': 'postgresql-production-b3-8.hour.consumption',
+    #         'planCodeStorage': 'postgresql-production-additionnal-storage-gb.hour.consumption',
+    #         'planCodes': None,
+    #         'default': False,
+    #         'backup': 'automatic',
+    #         'backupRetentionDays': 14,
+    #         'status': 'STABLE',
+    #         'startDate': '2026-02-16',
+    #         'endOfLife': None,
+    #         'upstreamEndOfLife': None,
+    #         'flavor': 'b3-8',
+    #         'network': 'private',
+    #         'minNodeNumber': 2,
+    #         'maxNodeNumber': 2,
+    #         'minDiskSize': 160,
+    #         'maxDiskSize': 800,
+    #         'stepDiskSize': 10
+    #     },
+    #     # ...
+    # ]
     return _client().get(f"/cloud/project/{project_id}/database/availability")
 
 
@@ -138,6 +513,110 @@ def _get_database_capabilities(project_id: Optional[str] = None) -> dict:
     https://eu.api.ovh.com/console/?section=%2Fcloud&branch=v1#get-/cloud/project/-serviceName-/database/capabilities
     """
     project_id = project_id or _get_project_id()
+    # example GET /cloud/project/{serviceName}/database/capabilities response:
+    # {
+    #     'engines': [
+    #         {
+    #             'name': 'postgresql',
+    #             'storage': 'replicated',
+    #             'versions': [
+    #                 '14',
+    #                 '15',
+    #                 '16',
+    #                 '17',
+    #                 '18'
+    #             ],
+    #             'defaultVersion': '18',
+    #             'description': 'object-relational database management system',
+    #             'sslModes': [
+    #                 'require'
+    #             ],
+    #             'category': 'operational'
+    #         },
+    #         # ...
+    #     ],
+    #     'plans': [
+    #         {
+    #             'lifecycle': {
+    #                 'status': 'STABLE',
+    #                 'startDate': '2023-12-07'
+    #             },
+    #             'name': 'production',
+    #             'description': 'Production grade plan',
+    #             'backupRetention': 'P14D',
+    #             'order': 4,
+    #             'tags': []
+    #         },
+    #         # ...
+    #     ],
+    #     'flavors': [
+    #         {
+    #             'lifecycle': {
+    #                 'status': 'STABLE',
+    #                 'startDate': '2024-02-01'
+    #             },
+    #             'name': 'b3-8',
+    #             'generation': 'Gen 3',
+    #             'core': 2,
+    #             'memory': 8,
+    #             'storage': 50,
+    #             'specifications': {
+    #                 'core': 2,
+    #                 'memory': {
+    #                     'unit': 'GB',
+    #                     'value': 8
+    #                 },
+    #                 'storage': {
+    #                     'unit': 'GB',
+    #                     'value': 50
+    #                 }
+    #             },
+    #             'order': 0,
+    #             'tags': []
+    #         },
+    #         # ...
+    #     ],
+    #     'options': [
+    #         {
+    #             'name': 'databaseName',
+    #             'type': 'string'
+    #         }
+    #     ],
+    #     'regions': [
+    #         'SGP',
+    #         'EU-WEST-PAR',
+    #         'EU-SOUTH-MIL',
+    #         # ...
+    #     ],
+    #     'disks': [
+    #         'high-speed-gen2',
+    #         'high-speed'
+    #     ],
+    #     'diskTypes': [
+    #         {
+    #             'name': 'high-speed-gen2',
+    #             'regions': [
+    #                 'AP-SOUTH-MUM',
+    #                 'BHS',
+    #                 'DE',
+    #                 # ...
+    #             ],
+    #             'specs': {
+    #                 'iops': {
+    #                     'min': 3000,
+    #                     'max': 20000,
+    #                     'perGB': 30
+    #                 },
+    #                 'throughput': {
+    #                     'min': 50,
+    #                     'max': 512,
+    #                     'perGB': 0.5
+    #                 }
+    #             }
+    #         },
+    #         # ...
+    #     ]
+    # }
     return _client().get(f"/cloud/project/{project_id}/database/capabilities")
 
 
@@ -794,7 +1273,7 @@ def inventory_server_prices(vendor) -> list[dict]:
     catalog = _get_catalog()
     addons = {addon["planCode"]: addon for addon in catalog["addons"]}
     # list all server <> region offers with a link to the price list
-    offers = _client().get(f"/cloud/project/{_get_project_id()}/flavor")
+    offers = _get_flavors()
     offers = [o for o in offers if o["osType"] == "linux"]
     items = []
     vendor.progress_tracker.start_task(name="Fetching server offers", total=len(offers))

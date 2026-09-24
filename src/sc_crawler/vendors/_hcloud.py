@@ -38,6 +38,168 @@ def _client() -> Client:
 # Internal helpers
 
 
+def _get_datacenters():
+    """List all datacenters via API call.
+
+    Reference: <https://docs.hetzner.cloud/reference/cloud#tag/datacenters/GET/datacenters>
+    """
+    # example list_datacenters response:
+    # {
+    #     'datacenters': [
+    #         {
+    #             'description': 'Nuremberg 1 virtual DC 3',
+    #             'id': 2,
+    #             'location': {
+    #                 'city': 'Nuremberg',
+    #                 'country': 'DE',
+    #                 'description': 'Nuremberg DC Park 1',
+    #                 'id': 2,
+    #                 'latitude': 49.452102,
+    #                 'longitude': 11.076665,
+    #                 'name': 'nbg1',
+    #                 'network_zone': 'eu-central'
+    #             },
+    #             'name': 'nbg1-dc3',
+    #             'server_types': {
+    #                 'available': [
+    #                     97,
+    #                     94,
+    #                     96,
+    #                     109,
+    #                     99,
+    #                     # ...
+    #                 ],
+    #                 'available_for_migration': [
+    #                     97,
+    #                     94,
+    #                     96,
+    #                     109,
+    #                     99,
+    #                     # ...
+    #                 ],
+    #                 'supported': [
+    #                     23,
+    #                     26,
+    #                     97,
+    #                     115,
+    #                     116,
+    #                     # ...
+    #                 ]
+    #             }
+    #         },
+    #         # ...
+    #     ],
+    #     'meta': {
+    #         'pagination': {
+    #             'last_page': 1,
+    #             'next_page': None,
+    #             'page': 1,
+    #             'per_page': 25,
+    #             'previous_page': None,
+    #             'total_entries': 6
+    #         }
+    #     },
+    #     'recommendation': 3
+    # }
+    return _client().datacenters.get_all()
+
+
+def _get_server_types():
+    """List all server types via API call.
+
+    Reference: <https://docs.hetzner.cloud/reference/cloud#tag/server-types/GET/server_types>
+    """
+    # example list_server_types response:
+    # {
+    #     'server_types': [
+    #         {
+    #             'id': 22,
+    #             'name': 'cpx11',
+    #             'architecture': 'x86',
+    #             'cores': 2,
+    #             'cpu_type': 'shared',
+    #             'category': 'regular_purpose',
+    #             'deprecated': False,
+    #             'deprecation': None,
+    #             'description': 'CPX 11',
+    #             'disk': 40,
+    #             'memory': 2,
+    #             'prices': [
+    #                 {
+    #                     'location': 'ash',
+    #                     'price_hourly': {
+    #                         'gross': '0.0280000000000000',
+    #                         'net': '0.0280000000'
+    #                     },
+    #                     'price_monthly': {
+    #                         'gross': '17.4900000000000000',
+    #                         'net': '17.4900000000'
+    #                     },
+    #                     'included_traffic': 1099511627776,
+    #                     'price_per_tb_traffic': {
+    #                         'gross': '1.0000000000000000',
+    #                         'net': '1.0000000000'
+    #                     }
+    #                 },
+    #                 {
+    #                     'location': 'fsn1',
+    #                     'price_hourly': {
+    #                         'gross': '0.0088000000000000',
+    #                         'net': '0.0088000000'
+    #                     },
+    #                     'price_monthly': {
+    #                         'gross': '5.4900000000000000',
+    #                         'net': '5.4900000000'
+    #                     },
+    #                     'included_traffic': 21990232555520,
+    #                     'price_per_tb_traffic': {
+    #                         'gross': '1.0000000000000000',
+    #                         'net': '1.0000000000'
+    #                     }
+    #                 },
+    #                 # ...
+    #             ],
+    #             'storage_type': 'local',
+    #             'locations': [
+    #                 {
+    #                     'id': 1,
+    #                     'name': 'fsn1',
+    #                     'available': False,
+    #                     'recommended': False,
+    #                     'deprecation': {
+    #                         'announced': '2025-10-16T06:00:00Z',
+    #                         'unavailable_after': '2025-12-31T23:59:59Z'
+    #                     }
+    #                 },
+    #                 {
+    #                     'id': 2,
+    #                     'name': 'nbg1',
+    #                     'available': False,
+    #                     'recommended': False,
+    #                     'deprecation': {
+    #                         'announced': '2025-10-16T06:00:00Z',
+    #                         'unavailable_after': '2025-12-31T23:59:59Z'
+    #                     }
+    #                 },
+    #                 # ...
+    #             ]
+    #         },
+    #         # ...
+    #     ],
+    #     'meta': {
+    #         'pagination': {
+    #             'last_page': 1,
+    #             'next_page': None,
+    #             'page': 1,
+    #             'per_page': 50,
+    #             'previous_page': None,
+    #             'total_entries': 25
+    #         }
+    #     }
+    # }
+    return _client().server_types.get_all()
+
+
 def _server_cpu(server_name):
     """Manual mapping of CPU info for server types.
 
@@ -157,7 +319,7 @@ def inventory_regions(vendor):
     }
 
     items = []
-    for region in _client().datacenters.get_all():
+    for region in _get_datacenters():
         with sentry_capture_or_raise(vendor=vendor):
             items.append(
                 {
@@ -219,7 +381,7 @@ def inventory_servers(vendor):
     """
     now = datetime.now(UTC)
     items = []
-    for server in _client().server_types.get_all():
+    for server in _get_server_types():
         # CPU info not available via the API,
         # collected from https://www.hetzner.com/cloud/
         cpu = _server_cpu(server.name)
@@ -290,7 +452,7 @@ def inventory_server_prices(vendor):
     regions = scmodels_to_dict(vendor.regions, keys=["name", "aliases"])
     now = datetime.now(UTC)
     items = []
-    for server in _client().server_types.get_all():
+    for server in _get_server_types():
         locations_by_name = {}
         if server.locations:
             locations_by_name = {
