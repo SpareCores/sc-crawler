@@ -14,7 +14,7 @@ dependencies = [
   "PyYAML",
   "requests",
   "rich",
-  "sqlmodel==0.0.44",
+  "sqlmodel",
   "typer",
 ]
 authors = [
