@@ -1764,7 +1764,7 @@ def inventory_storages(vendor):
             elif raw == "500 - based on 1 MiB I/O size":
                 raw = "500"
             elif raw == "40 - 90 MB/sec":
-                raw = "90"
+                raw = str(round(90 / _MIB_TO_MB))
             raw = raw.removesuffix(" MiB/s").removesuffix(" TiB")
             parsed = None
             with sentry_capture_or_raise(vendor=vendor):
