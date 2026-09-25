@@ -272,11 +272,6 @@ def _server_stressngfull(server: "Server") -> List[tuple[int, float]]:
         ]
 
 
-def _server_nvbandwidth(server: "Server") -> dict:
-    with open(_server_framework_path(server, "nvbandwidth", "stdout"), "r") as fp:
-        return json.load(fp)["nvbandwidth"]
-
-
 def _server_timing_value(server: "Server", run_id: str, key: str) -> datetime | None:
     try:
         with open(_server_framework_path(server, "timing", [run_id, key]), "r") as fp:
@@ -830,6 +825,107 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                         "score": float(record["avg_ts"]),
                     }
                 )
+    except Exception as e:
+        _log_cannot_load_benchmarks(server, framework, e, True)
+
+    framework = "nvbandwidth"
+    try:
+        with open(_server_framework_stdout_path(server, framework), "r") as fp:
+            data = json.load(fp)["nvbandwidth"]
+        passed = {
+            testcase["name"]: testcase
+            for testcase in data["testcases"]
+            if testcase.get("status") == "Passed"
+        }
+        gpu_count = 0
+        for testcase in passed.values():
+            matrix = testcase.get("bandwidth_matrix")
+            if matrix:
+                gpu_count = max(gpu_count, len(matrix), len(matrix[0]))
+        extend_environment = {
+            "driver_version": data["Driver Version"],
+            "cuda_runtime_version": data["CUDA Runtime Version"],
+            "nvbandwidth_version": data["version"],
+            "gpu_count": gpu_count,
+            "p2p_supported": any(
+                name.startswith("device_to_device_") for name in passed
+            ),
+        }
+        for metric, source in (
+            ("host_to_gpu", "host_to_all_memcpy_ce"),
+            ("gpu_to_host", "all_to_host_memcpy_ce"),
+        ):
+            if source not in passed:
+                continue
+            benchmarks.append(
+                {
+                    **_benchmark_metafields(
+                        server,
+                        framework=framework,
+                        benchmark_id=":".join([framework, "all", metric]),
+                        extend_environment=extend_environment,
+                    ),
+                    "score": passed[source]["sum"],
+                }
+            )
+        duplex_sources = [
+            "host_to_all_bidirectional_memcpy_ce",
+            "all_to_host_bidirectional_memcpy_ce",
+        ]
+        if all(source in passed for source in duplex_sources):
+            benchmarks.append(
+                {
+                    **_benchmark_metafields(
+                        server,
+                        framework=framework,
+                        benchmark_id=":".join([framework, "all", "duplex"]),
+                        extend_environment=extend_environment,
+                    ),
+                    "score": min(passed[source]["sum"] for source in duplex_sources),
+                }
+            )
+        for group, metric, source in (
+            ("slot", "host_to_gpu", "host_to_device_memcpy_ce"),
+            ("slot", "gpu_to_host", "device_to_host_memcpy_ce"),
+            ("slot", "latency", "host_device_latency_sm"),
+            ("p2p", "single", "device_to_device_memcpy_write_ce"),
+            ("p2p", "duplex", "device_to_device_bidirectional_memcpy_write_ce"),
+            ("p2p", "latency", "device_to_device_latency_sm"),
+            ("p2p", "gather", "all_to_one_write_ce"),
+        ):
+            testcase = passed.get(source)
+            if testcase is None:
+                continue
+            cell_count = sum(
+                cell != "N/A" for row in testcase["bandwidth_matrix"] for cell in row
+            )
+            if not cell_count:
+                continue
+            benchmarks.append(
+                {
+                    **_benchmark_metafields(
+                        server,
+                        framework=framework,
+                        benchmark_id=":".join([framework, group, metric]),
+                        extend_environment=extend_environment,
+                    ),
+                    "score": testcase["sum"] / cell_count,
+                }
+            )
+        sm = passed.get("host_to_device_memcpy_sm")
+        ce = passed.get("host_to_device_memcpy_ce")
+        if sm is not None and ce is not None and ce["sum"]:
+            benchmarks.append(
+                {
+                    **_benchmark_metafields(
+                        server,
+                        framework=framework,
+                        benchmark_id=":".join([framework, "efficiency", "sm_ce_ratio"]),
+                        extend_environment=extend_environment,
+                    ),
+                    "score": min(sm["sum"] / ce["sum"], 1.0),
+                }
+            )
     except Exception as e:
         _log_cannot_load_benchmarks(server, framework, e, True)
 
