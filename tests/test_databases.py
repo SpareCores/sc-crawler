@@ -237,6 +237,61 @@ def test_pg_lookup_retail_price_uses_capability_database_id():
     assert general["armSkuName"] == "Standard_D16ads_v5"
 
 
+def test_pg_lookup_retail_price_series_match_is_exact():
+    """Dsv6 must not win when looking up Ddsv6 (substring false positive)."""
+    prices_by_arm = {
+        "Azure_Database_for_PostgreSQL_Flexible_Server_General_Purpose_Dsv6_Series_Compute_vCore": [
+            {
+                "armSkuName": (
+                    "Azure_Database_for_PostgreSQL_Flexible_Server_"
+                    "General_Purpose_Dsv6_Series_Compute_vCore"
+                ),
+                "productName": (
+                    "Azure Database for PostgreSQL Flexible Server "
+                    "General Purpose Dsv6 Series Compute"
+                ),
+                "skuName": "vCore",
+                "meterName": "vCore",
+                "retailPrice": 0.122,
+            }
+        ],
+        "AzureDB_PostgreSQL_Flexible_Server_General_Purpose_Ddsv6_Series_Compute": [
+            {
+                "armSkuName": (
+                    "AzureDB_PostgreSQL_Flexible_Server_"
+                    "General_Purpose_Ddsv6_Series_Compute"
+                ),
+                "productName": (
+                    "Azure Database for PostgreSQL Flexible Server "
+                    "General Purpose Ddsv6 Series Compute"
+                ),
+                "skuName": "vCore",
+                "meterName": "vCore",
+                "retailPrice": 0.1535,
+            }
+        ],
+    }
+
+    ddsv6 = _pg_lookup_retail_price(
+        database_id="Standard_D16ds_v6",
+        edition_name="GeneralPurpose",
+        prices_by_arm=prices_by_arm,
+    )
+    assert ddsv6 is not None
+    assert ddsv6["retailPrice"] == 0.1535
+    assert "Ddsv6" in ddsv6["armSkuName"]
+
+    dsv6 = _pg_lookup_retail_price(
+        database_id="Standard_D16s_v6",
+        edition_name="GeneralPurpose",
+        prices_by_arm=prices_by_arm,
+    )
+    assert dsv6 is not None
+    assert dsv6["retailPrice"] == 0.122
+    assert "Dsv6" in dsv6["armSkuName"]
+    assert "Ddsv6" not in dsv6["armSkuName"]
+
+
 def test_pg_storage_prices_skip_unsupported_retail_meters():
     vendor = Mock(vendor_id="azure")
     vendor.regions = [Mock(region_id="centralus", api_reference="centralus")]
@@ -751,32 +806,26 @@ def test_azure_burstable_storage_extra_max_excludes_premium_ssd_v2():
 def test_azure_inventory_database_prices_emit_ha_rows():
     vendor = Mock(vendor_id="azure")
     vendor.regions = [Mock(region_id="centralus", api_reference="centralus")]
+    vendor.databases = [
+        Mock(
+            database_id="Standard_B1ms",
+            family="Burstable",
+            vcpus=1,
+            ha=[DatabaseHaLevel.NONE],
+        ),
+        Mock(
+            database_id="Standard_D2s_v3",
+            family="GeneralPurpose",
+            vcpus=2,
+            ha=[
+                DatabaseHaLevel.MULTI_ZONE,
+                DatabaseHaLevel.SINGLE_ZONE,
+                DatabaseHaLevel.NONE,
+            ],
+        ),
+    ]
     vendor.progress_tracker = Mock(
         start_task=Mock(), advance_task=Mock(), hide_task=Mock()
-    )
-    capability = SimpleNamespace(
-        supported_server_editions=[
-            SimpleNamespace(
-                name="Burstable",
-                supported_server_skus=[
-                    SimpleNamespace(
-                        name="Standard_B1ms",
-                        v_cores=1,
-                        supported_ha_mode=["SameZone", "ZoneRedundant"],
-                    )
-                ],
-            ),
-            SimpleNamespace(
-                name="GeneralPurpose",
-                supported_server_skus=[
-                    SimpleNamespace(
-                        name="Standard_D2s_v3",
-                        v_cores=2,
-                        supported_ha_mode=["SameZone", "ZoneRedundant"],
-                    )
-                ],
-            ),
-        ],
     )
     retail = [
         {
@@ -805,10 +854,6 @@ def test_azure_inventory_database_prices_emit_ha_rows():
         patch(
             "sc_crawler.vendors._azure._pg_database_regions",
             return_value=vendor.regions,
-        ),
-        patch(
-            "sc_crawler.vendors._azure._pg_capabilities",
-            return_value=[capability],
         ),
         patch(
             "sc_crawler.vendors._azure._pg_retail_prices",
@@ -864,6 +909,97 @@ def test_azure_inventory_database_prices_emit_ha_rows():
             )
         ]
         == 0.29
+    )
+
+
+def test_azure_inventory_database_prices_without_regional_capabilities():
+    """Retail meters are enough; OfferRestricted empty capabilities must not block prices."""
+    vendor = Mock(vendor_id="azure")
+    vendor.regions = [Mock(region_id="eastus", api_reference="eastus")]
+    vendor.databases = [
+        Mock(
+            database_id="Standard_D16ds_v5",
+            family="GeneralPurpose",
+            vcpus=16,
+            ha=[DatabaseHaLevel.NONE],
+        ),
+        Mock(
+            database_id="Standard_D16ds_v6",
+            family="GeneralPurpose",
+            vcpus=16,
+            ha=[
+                DatabaseHaLevel.MULTI_ZONE,
+                DatabaseHaLevel.SINGLE_ZONE,
+                DatabaseHaLevel.NONE,
+            ],
+        ),
+    ]
+    vendor.progress_tracker = Mock(
+        start_task=Mock(), advance_task=Mock(), hide_task=Mock()
+    )
+    retail = [
+        {
+            "armSkuName": "Standard_D16ds_v5",
+            "productName": (
+                "Azure Database for PostgreSQL Flexible Server "
+                "General Purpose Ddsv5 Series Compute"
+            ),
+            "meterName": "vCore",
+            "skuName": "16 vCore",
+            "retailPrice": 1.424,
+            "currencyCode": "USD",
+        },
+        {
+            "armSkuName": (
+                "AzureDB_PostgreSQL_Flexible_Server_"
+                "General_Purpose_Ddsv6_Series_Compute"
+            ),
+            "productName": (
+                "Azure Database for PostgreSQL Flexible Server "
+                "General Purpose Ddsv6 Series Compute"
+            ),
+            "meterName": "vCore",
+            "skuName": "vCore",
+            "retailPrice": 0.112,
+            "currencyCode": "USD",
+        },
+    ]
+    with (
+        patch(
+            "sc_crawler.vendors._azure._pg_database_regions",
+            return_value=vendor.regions,
+        ),
+        patch(
+            "sc_crawler.vendors._azure._pg_retail_prices",
+            return_value=retail,
+        ),
+        patch(
+            "sc_crawler.vendors._azure._pg_capabilities",
+            side_effect=AssertionError("prices must not use capabilities"),
+        ),
+    ):
+        prices = azure_database_prices(vendor)
+    by_key = {
+        (row["database_id"], row["ha"], row["ha_strategy"]): row["price"]
+        for row in prices
+    }
+    assert (
+        by_key[("Standard_D16ds_v5", DatabaseHaLevel.NONE, DatabaseHaStrategy.NONE)]
+        == 1.424
+    )
+    assert (
+        by_key[("Standard_D16ds_v6", DatabaseHaLevel.NONE, DatabaseHaStrategy.NONE)]
+        == 1.792
+    )
+    assert (
+        by_key[
+            (
+                "Standard_D16ds_v6",
+                DatabaseHaLevel.MULTI_ZONE,
+                DatabaseHaStrategy.PASSIVE_STANDBY,
+            )
+        ]
+        == 3.584
     )
 
 

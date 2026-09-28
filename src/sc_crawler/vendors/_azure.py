@@ -2225,7 +2225,8 @@ def _pg_lookup_retail_price(
         if series_match is None:
             continue
         arm_series = series_match.group(1).replace("_", "").lower()
-        if target_series not in arm_series and arm_series not in target_series:
+        # Exact match only: substring would let dsv6 match ddsv6 / dasv6.
+        if arm_series != target_series:
             continue
         if not edition_matches(rows[0].get("productName") or ""):
             continue
@@ -2490,13 +2491,25 @@ def inventory_databases(vendor):
 
 
 def inventory_database_prices(vendor):
-    """List all known Azure Database for PostgreSQL Flexible Server on-demand prices in all regions using the Azure Retail Pricing API.
+    """List Azure Database for PostgreSQL Flexible Server on-demand prices from the Retail Pricing API.
+
+    SKU catalog comes from ``vendor.databases`` (built by ``inventory_databases`` /
+    capabilities). Per-region capabilities are not used for pricing: emit a row
+    whenever Retail has a meter for a known instance in that region.
+
+    OfferRestricted=Enabled means this subscription cannot list or provision
+    Flexible Server SKUs there (empty supported_server_editions), so capabilities
+    give no confirmed region availability. Retail list prices may still exist;
+    we keep those rows.
+    https://learn.microsoft.com/en-us/azure/postgresql/troubleshoot/how-to-resolve-capacity-errors
+    https://learn.microsoft.com/en-us/rest/api/postgresql/capabilities-by-location/list
 
     More information: <https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices>.
     """
     items = []
     seen: set[tuple[str, str, DatabaseHaLevel, DatabaseHaStrategy]] = set()
     regions = _pg_database_regions(vendor)
+    databases = list(getattr(vendor, "databases", None) or [])
     vendor.progress_tracker.start_task(
         name="Scanning region(s) for database_price(s)", total=len(regions)
     )
@@ -2518,81 +2531,78 @@ def inventory_database_prices(vendor):
                 if arm:
                     prices_by_arm.setdefault(arm, []).append(item)
 
-            for capability in _pg_capabilities(location):
-                for edition in (
-                    getattr(capability, "supported_server_editions", None) or []
-                ):
-                    edition_name = edition.name
-                    for sku in getattr(edition, "supported_server_skus", None) or []:
-                        database_id = sku.name
-                        if not database_id:
-                            continue
-                        price_item = _pg_lookup_retail_price(
-                            database_id=database_id,
-                            edition_name=edition_name,
-                            prices_by_arm=prices_by_arm,
+            for database in databases:
+                database_id = database.database_id
+                if not database_id:
+                    continue
+                edition_name = database.family
+                price_item = _pg_lookup_retail_price(
+                    database_id=database_id,
+                    edition_name=edition_name,
+                    prices_by_arm=prices_by_arm,
+                )
+                if price_item is None:
+                    continue
+                vcpus = database.vcpus
+                base_price = _pg_hourly_compute_price(
+                    price_item, vcpus, database_id=database_id
+                )
+                currency = price_item.get("currencyCode", "USD")
+                # https://azure.microsoft.com/pricing/details/postgresql/flexible-server/
+                # HA bills primary + standby at the same rate (exactly 2x); SameZone
+                # and ZoneRedundant cost the same. No separate retail HA meters.
+                ha_levels = {
+                    (
+                        level
+                        if isinstance(level, DatabaseHaLevel)
+                        else DatabaseHaLevel(level)
+                    )
+                    for level in (database.ha or [DatabaseHaLevel.NONE])
+                }
+                price_rows: list[tuple[DatabaseHaLevel, DatabaseHaStrategy, float]] = [
+                    (DatabaseHaLevel.NONE, DatabaseHaStrategy.NONE, base_price)
+                ]
+                if DatabaseHaLevel.MULTI_ZONE in ha_levels:
+                    price_rows.append(
+                        (
+                            DatabaseHaLevel.MULTI_ZONE,
+                            DatabaseHaStrategy.PASSIVE_STANDBY,
+                            base_price * 2,
                         )
-                        if price_item is None:
-                            continue
-                        vcpus = int(sku.v_cores) if sku.v_cores else None
-                        base_price = _pg_hourly_compute_price(
-                            price_item, vcpus, database_id=database_id
+                    )
+                if DatabaseHaLevel.SINGLE_ZONE in ha_levels:
+                    price_rows.append(
+                        (
+                            DatabaseHaLevel.SINGLE_ZONE,
+                            DatabaseHaStrategy.PASSIVE_STANDBY,
+                            base_price * 2,
                         )
-                        currency = price_item.get("currencyCode", "USD")
-                        # https://azure.microsoft.com/pricing/details/postgresql/flexible-server/
-                        # HA bills primary + standby at the same rate (exactly 2x); SameZone
-                        # and ZoneRedundant cost the same. No separate retail HA meters.
-                        ha_modes = {
-                            (mode.value if hasattr(mode, "value") else str(mode))
-                            for mode in (getattr(sku, "supported_ha_mode", None) or [])
+                    )
+                for ha, ha_strategy, price in price_rows:
+                    key = (
+                        region.region_id,
+                        database_id,
+                        ha,
+                        ha_strategy,
+                    )
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    items.append(
+                        {
+                            "vendor_id": vendor.vendor_id,
+                            "region_id": region.region_id,
+                            "database_id": database_id,
+                            "allocation": Allocation.ONDEMAND,
+                            "ha": ha,
+                            "ha_strategy": ha_strategy,
+                            "unit": PriceUnit.HOUR,
+                            "price": price,
+                            "price_upfront": 0,
+                            "price_tiered": [],
+                            "currency": currency,
                         }
-                        price_rows: list[
-                            tuple[DatabaseHaLevel, DatabaseHaStrategy, float]
-                        ] = [
-                            (DatabaseHaLevel.NONE, DatabaseHaStrategy.NONE, base_price)
-                        ]
-                        if edition_name != "Burstable":
-                            if "ZoneRedundant" in ha_modes:
-                                price_rows.append(
-                                    (
-                                        DatabaseHaLevel.MULTI_ZONE,
-                                        DatabaseHaStrategy.PASSIVE_STANDBY,
-                                        base_price * 2,
-                                    )
-                                )
-                            if "SameZone" in ha_modes:
-                                price_rows.append(
-                                    (
-                                        DatabaseHaLevel.SINGLE_ZONE,
-                                        DatabaseHaStrategy.PASSIVE_STANDBY,
-                                        base_price * 2,
-                                    )
-                                )
-                        for ha, ha_strategy, price in price_rows:
-                            key = (
-                                region.region_id,
-                                database_id,
-                                ha,
-                                ha_strategy,
-                            )
-                            if key in seen:
-                                continue
-                            seen.add(key)
-                            items.append(
-                                {
-                                    "vendor_id": vendor.vendor_id,
-                                    "region_id": region.region_id,
-                                    "database_id": database_id,
-                                    "allocation": Allocation.ONDEMAND,
-                                    "ha": ha,
-                                    "ha_strategy": ha_strategy,
-                                    "unit": PriceUnit.HOUR,
-                                    "price": price,
-                                    "price_upfront": 0,
-                                    "price_tiered": [],
-                                    "currency": currency,
-                                }
-                            )
+                    )
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
     return items
