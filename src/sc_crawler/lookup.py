@@ -753,9 +753,9 @@ benchmarks: List[Benchmark] = [
     ),
     Benchmark(
         benchmark_id="nvbandwidth:all:duplex",
-        name="Node bidirectional bandwidth (nvbandwidth)",
+        name="Node baseline directional bandwidth (nvbandwidth)",
         category="GPU bandwidth",
-        description="Worst-case node capacity under simultaneous bi-directional saturation utilizing CE (Copy Engine).",
+        description="Conservative per-direction bandwidth (GB/s) under simultaneous bi-directional saturation utilizing CE (Copy Engine).",
         framework="nvbandwidth",
         measurement="gpu_bandwidth",
         unit="GB/s",
