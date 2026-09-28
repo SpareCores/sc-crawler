@@ -18,7 +18,6 @@ from ..inspector import _standardize_gpu_count
 from ..logger import logger
 from ..lookup import map_compliance_frameworks_to_vendor
 from ..sentry import sentry_capture_or_raise
-from ..str_utils import extract_last_number
 from ..table_fields import (
     Allocation,
     CpuAllocation,
@@ -1756,19 +1755,26 @@ def inventory_storages(vendor):
         attributes = product["product"]["attributes"]
         product_id = attributes["volumeApiName"]
 
-        def get_attr(key: str) -> float:
-            return extract_last_number(
-                str(
-                    attributes.get(
-                        key,
-                        storage_manual_data[product_id][key],
-                    )
-                )
-            )
+        def get_attr(key: str, multiplier: int = 1) -> Optional[int]:
+            raw = str(attributes.get(key, storage_manual_data[product_id][key]))
+            if raw == "40 - 200":
+                raw = "200"
+            elif raw == "250 - based on 1 MiB I/O size":
+                raw = "250"
+            elif raw == "500 - based on 1 MiB I/O size":
+                raw = "500"
+            elif raw == "40 - 90 MB/sec":
+                raw = str(round(90 / _MIB_TO_MB))
+            raw = raw.removesuffix(" MiB/s").removesuffix(" TiB")
+            parsed = None
+            with sentry_capture_or_raise(vendor=vendor):
+                parsed = round(int(raw) * multiplier)
+            return parsed
 
         storage_type = (
             StorageType.HDD if "HDD" in attributes["storageMedia"] else StorageType.SSD
         )
+
         storages.append(
             {
                 "storage_id": product_id,
@@ -1777,9 +1783,9 @@ def inventory_storages(vendor):
                 "description": attributes["storageMedia"],
                 "storage_type": storage_type,
                 "max_iops": get_attr("maxIopsvolume"),
-                "max_throughput": round(get_attr("maxThroughputvolume") * _MIB_TO_MB),
-                "min_size": round(get_attr("minVolumeSize") * _GIB_TO_GB),
-                "max_size": round(get_attr("maxVolumeSize") * 1024 * _GIB_TO_GB),
+                "max_throughput": get_attr("maxThroughputvolume", _MIB_TO_MB),
+                "min_size": get_attr("minVolumeSize", _GIB_TO_GB),
+                "max_size": get_attr("maxVolumeSize", 1024 * _GIB_TO_GB),
             }
         )
 
