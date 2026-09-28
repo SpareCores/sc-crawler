@@ -2,6 +2,10 @@
 
 - Implement database inventories for `OVH`, `UpCloud` and `Vultr`.
 
+New benchmark(s):
+
+- nvbandwidth
+
 Fix(es):
 
 - GCP: fix accelerator pricing against Billing Catalog SKUs
@@ -14,6 +18,7 @@ Maintenance update:
 
 - Comment example API responses next to vendor requests, and move those
   calls into helper functions.
+- Merge benchmark unit tests into `tests/test_benchmarks.py`.
 
 ## v0.9.2 (August 17, 2026)
 
