@@ -13,6 +13,7 @@ Fix(es):
   bundled Local SSD GiB-month rates).
 - Standardize GPU/TPU model and count handling (including TPU family and
   version naming: `v3` / `v5e` / `v5p` / `v6e` / `v7x`).
+- AWS: fix parsed EBS max IOPS, throughput, and size.
 
 Maintenance update:
 
