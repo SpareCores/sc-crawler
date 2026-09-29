@@ -425,7 +425,7 @@ def inventory_servers(vendor):
                     "storage_type": (
                         StorageType.NVME_SSD
                         if server.storage_type == "local"
-                        else StorageType.NETWORK
+                        else StorageType.SSD
                     ),
                     "storages": [],
                     # TODO: have to implement manual mapping for network_speed related fields
@@ -514,7 +514,7 @@ def inventory_storages(vendor):
             "vendor_id": vendor.vendor_id,
             "name": "Block storage volume",
             "description": None,
-            "storage_type": StorageType.NETWORK,
+            "storage_type": StorageType.SSD,
             "max_iops": None,
             "max_throughput": None,
             "min_size": 10,

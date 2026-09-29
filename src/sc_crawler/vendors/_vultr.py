@@ -175,7 +175,7 @@ _DISK_TYPES: dict[str, StorageType] = {
     "DEDICATEDOPTIMIZED": StorageType.NVME_SSD,
     "CLOUDGPU": StorageType.NVME_SSD,
     "DEDICATEDMETAL": StorageType.NVME_SSD,
-    "VX": StorageType.NETWORK,
+    "VX": StorageType.NVME_SSD,
     "NVMe": StorageType.NVME_SSD,
 }
 
@@ -300,7 +300,7 @@ def _storage_type_from_plan(plan: dict) -> StorageType:
     if api_storage in ["local_and_block_storage", "local_storage"]:
         return StorageType.NVME_SSD
     if api_storage == "block_storage":
-        return StorageType.NETWORK
+        return StorageType.NVME_SSD
     disk_type = plan.get("disk_type")
     if disk_type:
         return _DISK_TYPES.get(disk_type)
