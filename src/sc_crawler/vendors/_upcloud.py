@@ -332,6 +332,15 @@ def _get_pg_service_type() -> dict:
     return _client().api.get_request("/database/service-types/pg")
 
 
+def _get_database_plans() -> dict:
+    """
+    List available database plans (GET /v2/database/plans).
+
+    Reference: <https://developers.upcloud.com/1.3/16-managed-database/>
+    """
+    return _client().api.get_request("/v2/database/plans")
+
+
 @cachier(hash_func=jsoned_hash, separate_files=True)
 def _get_device_region_availability(region_id: str, device_type: str = "gpu") -> dict:
     """Return available passthrough devices (GET /1.3/device/availability).
