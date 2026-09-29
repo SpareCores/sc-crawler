@@ -2360,13 +2360,10 @@ def inventory_databases(vendor):
             continue
         servers_by_id[name] = server
         match = _PG_DATABASE_NAME_RE.match(name)
-        if match is None:
-            continue
-        features = (match.group("features") or "").lower()
         # i/m/l/t are stripped from the retail series name, so those VM shapes are not this series.
-        if any(char in _PG_SERIES_SKIP_FEATURES for char in features):
-            continue
-        servers_by_series[_parse_database_name(name)[0]].append(server)
+        if match and not _PG_SERIES_SKIP_FEATURES & set(match["features"].lower()):
+            servers_by_series[_parse_database_name(name)[0]].append(server)
+
     regions = _pg_database_regions(vendor)
     vendor.progress_tracker.start_task(
         name="Scanning region(s) for database(s)", total=len(regions)
@@ -2375,138 +2372,114 @@ def inventory_databases(vendor):
         location = region.api_reference
         with sentry_capture_or_raise(vendor=vendor):
             for capability in _pg_capabilities(location):
-                engine_versions = _pg_engine_versions(capability)
-                storage_extra_autosize = None
-                storage_auto_growth = getattr(
-                    capability, "storage_auto_growth_supported", None
-                )
-                if storage_auto_growth == "Enabled":
-                    storage_extra_autosize = True
-                elif storage_auto_growth == "Disabled":
-                    storage_extra_autosize = False
-                # IndexTuning → advice; AdaptiveAutoVacuumAutoApply → apply (vacuum GUCs).
-                # https://learn.microsoft.com/en-us/azure/postgresql/monitor/concepts-autonomous-tuning
-                # https://learn.microsoft.com/en-us/azure/postgresql/monitor/concepts-adaptive-autovacuum
-                autotuning_advice = False
-                autotuning_apply = False
-                for feature in getattr(capability, "supported_features", None) or []:
-                    feature_name = getattr(feature, "name", None)
-                    enabled = getattr(feature, "status", None) == "Enabled"
-                    if (
-                        feature_name == "StorageAutoGrowth"
-                        and storage_extra_autosize is None
-                    ):
-                        storage_extra_autosize = enabled
-                    elif feature_name == "IndexTuning":
-                        autotuning_advice = enabled
-                    elif feature_name == "AdaptiveAutoVacuumAutoApply":
-                        autotuning_apply = enabled
-                    # Maybe this the indicator for Writes tuning, but it's not documented.
+                features = {
+                    getattr(feature, "name", None): getattr(feature, "status", None)
+                    == "Enabled"
+                    for feature in getattr(capability, "supported_features", None) or []
+                }
+                shared = {
+                    "engine_versions": _pg_engine_versions(capability),
+                    "storage_extra_autosize": {"Enabled": True, "Disabled": False}.get(
+                        getattr(capability, "storage_auto_growth_supported", None),
+                        features.get("StorageAutoGrowth"),
+                    ),
+                    # IndexTuning → advice; AdaptiveAutoVacuumAutoApply → apply (vacuum GUCs).
+                    # ConfigTuning may be Writes tuning, but it's not documented.
+                    # https://learn.microsoft.com/en-us/azure/postgresql/monitor/concepts-autonomous-tuning
+                    # https://learn.microsoft.com/en-us/azure/postgresql/monitor/concepts-adaptive-autovacuum
                     # https://learn.microsoft.com/en-us/azure/postgresql/monitor/concepts-intelligent-tuning
-                    # elif feature_name == "ConfigTuning":
-                    #     autotuning_apply = enabled
+                    "autotuning_advice": features.get("IndexTuning", False),
+                    "autotuning_apply": features.get(
+                        "AdaptiveAutoVacuumAutoApply", False
+                    ),
+                }
                 for edition in (
                     getattr(capability, "supported_server_editions", None) or []
                 ):
-                    sizes_gb = []
-                    for storage_edition in (
-                        getattr(edition, "supported_storage_editions", None) or []
-                    ):
-                        if (
-                            getattr(storage_edition, "reason", None)
-                            == _PG_UNSUPPORTED_STORAGE_REASON
-                        ):
-                            continue
-                        # Premium SSD v2 is General Purpose and Memory Optimized only, Burstable is capped by Premium SSD (~32 TiB).
-                        # https://learn.microsoft.com/en-us/azure/postgresql/compute-storage/concepts-storage-premium-ssd-v2
-                        if (
+                    # Azure storage_size_mb values are MiB.
+                    # Premium SSD v2 is General Purpose and Memory Optimized only, Burstable is capped by Premium SSD (~32 TiB).
+                    # https://learn.microsoft.com/en-us/azure/postgresql/compute-storage/concepts-storage-premium-ssd-v2
+                    sizes_gb = [
+                        round(int(size_mb) / 1024 * _GIB_TO_GB)
+                        for storage_edition in (
+                            getattr(edition, "supported_storage_editions", None) or []
+                        )
+                        if getattr(storage_edition, "reason", None)
+                        != _PG_UNSUPPORTED_STORAGE_REASON
+                        and not (
                             edition.name == "Burstable"
                             and storage_edition.name == "ManagedDiskV2"
-                        ):
-                            continue
+                        )
                         for storage_mb in (
                             getattr(storage_edition, "supported_storage_mb", None) or []
-                        ):
-                            size_mb = getattr(storage_mb, "storage_size_mb", None)
-                            max_mb = getattr(
-                                storage_mb, "maximum_storage_size_mb", None
-                            )
-                            # Azure storage_size_mb values are MiB
-                            if size_mb is not None:
-                                sizes_gb.append(round(int(size_mb) / 1024 * _GIB_TO_GB))
-                            if max_mb is not None:
-                                sizes_gb.append(round(int(max_mb) / 1024 * _GIB_TO_GB))
-                    storage_extra_min = min(sizes_gb) if sizes_gb else None
-                    storage_extra_max = max(sizes_gb) if sizes_gb else None
-                    for sku in getattr(edition, "supported_server_skus", None) or []:
-                        database_id = sku.name
-                        vcpus = int(sku.v_cores) if sku.v_cores else None
-                        memory_amount = (
-                            int(sku.supported_memory_per_vcore_mb * sku.v_cores)
-                            if sku.v_cores and sku.supported_memory_per_vcore_mb
-                            else None
                         )
+                        for size_mb in (
+                            getattr(storage_mb, "storage_size_mb", None),
+                            getattr(storage_mb, "maximum_storage_size_mb", None),
+                        )
+                        if size_mb is not None
+                    ]
+                    shared["storage_extra_min"] = min(sizes_gb, default=None)
+                    shared["storage_extra_max"] = max(sizes_gb, default=None)
+                    for sku in getattr(edition, "supported_server_skus", None) or []:
                         # https://learn.microsoft.com/en-us/azure/postgresql/high-availability/concepts-high-availability
                         # Burstable does not support HA (the API may still list modes).
                         ha_modes = {
-                            (mode.value if hasattr(mode, "value") else str(mode))
-                            for mode in (getattr(sku, "supported_ha_mode", None) or [])
+                            getattr(mode, "value", str(mode))
+                            for mode in getattr(sku, "supported_ha_mode", None) or []
                         }
-                        ha: list[DatabaseHaLevel] = []
-                        ha_strategy: list[DatabaseHaStrategy] = []
+                        ha = [DatabaseHaLevel.NONE]
                         if edition.name != "Burstable":
                             if "ZoneRedundant" in ha_modes:
                                 ha.append(DatabaseHaLevel.MULTI_ZONE)
                             if "SameZone" in ha_modes:
                                 ha.append(DatabaseHaLevel.SINGLE_ZONE)
-                            if ha:
-                                ha_strategy.append(DatabaseHaStrategy.PASSIVE_STANDBY)
-                        ha.append(DatabaseHaLevel.NONE)
-                        ha_strategy.append(DatabaseHaStrategy.NONE)
-                        previous = caps_by_id.get(database_id)
+                        ha_strategy = [DatabaseHaStrategy.NONE]
+                        if len(ha) > 1:
+                            ha_strategy.append(DatabaseHaStrategy.PASSIVE_STANDBY)
+                        previous = caps_by_id.get(sku.name)
                         if previous and DatabaseHaLevel.MULTI_ZONE in previous["ha"]:
                             ha = previous["ha"]
                         else:
                             ha = DatabaseHaLevel.ordered(ha)
-                        # https://learn.microsoft.com/en-us/azure/reliability/reliability-database-postgresql
-                        if DatabaseHaLevel.MULTI_ZONE in ha:
-                            sla = 99.99
-                        elif DatabaseHaLevel.SINGLE_ZONE in ha:
-                            sla = 99.95
-                        else:
-                            sla = 99.9
                         facts = {
+                            **shared,
                             "edition": edition.name,
-                            "vcpus": vcpus,
-                            "memory_amount": memory_amount,
+                            "vcpus": int(sku.v_cores) if sku.v_cores else None,
+                            "memory_amount": (
+                                int(sku.supported_memory_per_vcore_mb * sku.v_cores)
+                                if sku.v_cores and sku.supported_memory_per_vcore_mb
+                                else None
+                            ),
                             "ha": ha,
                             "ha_strategy": DatabaseHaStrategy.ordered(ha_strategy),
-                            "sla": sla,
-                            "engine_versions": engine_versions,
-                            "storage_extra_autosize": storage_extra_autosize,
-                            "storage_extra_min": storage_extra_min,
-                            "storage_extra_max": storage_extra_max,
-                            "autotuning_advice": autotuning_advice,
-                            "autotuning_apply": autotuning_apply,
+                            # https://learn.microsoft.com/en-us/azure/reliability/reliability-database-postgresql
+                            "sla": (
+                                99.99
+                                if DatabaseHaLevel.MULTI_ZONE in ha
+                                else 99.95
+                                if DatabaseHaLevel.SINGLE_ZONE in ha
+                                else 99.9
+                            ),
                         }
-                        caps_by_id[database_id] = facts
+                        caps_by_id[sku.name] = facts
                         edition_caps[edition.name] = facts
         with sentry_capture_or_raise(vendor=vendor):
             for item in _pg_retail_prices(location):
-                product = item.get("productName") or ""
+                product = item.get("productName", "")
                 product_l = product.lower()
-                if "cosmos" in product_l or "single server" in product_l:
-                    continue
                 if (
-                    "flexible server" not in product_l
-                    and "flex server" not in product_l
+                    "compute" not in product_l
+                    or "cosmos" in product_l
+                    or "single server" in product_l
+                    or not (
+                        "flexible server" in product_l or "flex server" in product_l
+                    )
                 ):
                     continue
-                if "compute" not in product_l:
-                    continue
-                arm = item.get("armSkuName") or ""
+                arm = item.get("armSkuName", "")
                 series_match = _PG_PRODUCT_SERIES_RE.search(product)
-                series_name = series_match.group("series") if series_match else ""
+                series_name = series_match["series"] if series_match else ""
                 edition_name = next(
                     (
                         edition
@@ -2518,17 +2491,15 @@ def inventory_databases(vendor):
                     else "GeneralPurpose",
                 )
                 if arm.startswith("Standard_") or arm.upper() in _PG_FLAT_COMPUTE_SKUS:
-                    name_match = _PG_DATABASE_NAME_RE.match(arm)
-                    if name_match is None:
+                    match = _PG_DATABASE_NAME_RE.match(arm)
+                    if match is None:
                         continue
-                    features = (name_match.group("features") or "").lower()
-                    version = name_match.group("version")
                     database_id = (
-                        f"Standard_{name_match.group('family').upper()}"
-                        f"{name_match.group('vcpus')}{features}"
+                        f"Standard_{match['family'].upper()}"
+                        f"{match['vcpus']}{match['features'].lower()}"
                     )
-                    if version:
-                        database_id = f"{database_id}_v{version}"
+                    if match["version"]:
+                        database_id += f"_v{match['version']}"
                     retail_concrete.setdefault(database_id, edition_name)
                 elif series_name:
                     retail_series.setdefault(series_name, edition_name)
@@ -2537,50 +2508,45 @@ def inventory_databases(vendor):
 
     # Capabilities SKUs, plus retail SKUs quota hid. Series meters name no size,
     # so the VM catalog fills those database_ids.
-    wanted: dict[str, str] = {
+    wanted = {
         database_id: facts["edition"] for database_id, facts in caps_by_id.items()
     }
     for database_id, edition_name in retail_concrete.items():
         wanted.setdefault(database_id, edition_name)
     present_series = {_parse_database_name(database_id)[0] for database_id in wanted}
     for series_name, edition_name in retail_series.items():
-        if series_name in present_series:
-            continue
-        for server in servers_by_series.get(series_name, []):
-            wanted.setdefault(server.api_reference, edition_name)
+        if series_name not in present_series:
+            for server in servers_by_series.get(series_name, []):
+                wanted.setdefault(server.api_reference, edition_name)
 
     rows = []
     for database_id, edition_name in wanted.items():
         own = caps_by_id.get(database_id)
-        facts = own or edition_caps.get(edition_name)
-        if facts is None and edition_caps:
-            facts = next(iter(edition_caps.values()))
+        facts = (
+            own
+            or edition_caps.get(edition_name)
+            or next(iter(edition_caps.values()), None)
+        )
         if facts is None:
             continue
         server = servers_by_id.get(database_id)
-        server_id = server.server_id if server is not None else None
-        series, _family, parsed_vcpus, _version = _parse_database_name(database_id)
+        series, _family, vcpus, _version = _parse_database_name(database_id)
+        ha, ha_strategy, sla = facts["ha"], facts["ha_strategy"], facts["sla"]
         if own:
             edition_name = own["edition"]
-            vcpus = own["vcpus"]
-            memory_amount = own["memory_amount"]
-            ha = own["ha"]
-            ha_strategy = own["ha_strategy"]
-            sla = own["sla"]
+            vcpus, memory_amount = own["vcpus"], own["memory_amount"]
         else:
-            vcpus = parsed_vcpus
-            memory_amount = None
-            if server is not None and server.vcpus:
+            if server and server.vcpus:
                 vcpus = server.vcpus
-            if server is not None and server.memory_amount:
-                memory_amount = int(server.memory_amount)
-            ha = facts["ha"]
-            ha_strategy = facts["ha_strategy"]
-            sla = facts["sla"]
+            memory_amount = (
+                int(server.memory_amount) if server and server.memory_amount else None
+            )
             if edition_name == "Burstable" and edition_name not in edition_caps:
-                ha = [DatabaseHaLevel.NONE]
-                ha_strategy = [DatabaseHaStrategy.NONE]
-                sla = 99.9
+                ha, ha_strategy, sla = (
+                    [DatabaseHaLevel.NONE],
+                    [DatabaseHaStrategy.NONE],
+                    99.9,
+                )
         spec_parts = []
         if vcpus is not None:
             spec_parts.append(f"{vcpus} vCPU{'s' if vcpus != 1 else ''}")
@@ -2588,24 +2554,24 @@ def inventory_databases(vendor):
             spec_parts.append(f"{memory_amount // 1024} GB RAM")
         description = f"PostgreSQL {edition_name}"
         if spec_parts:
-            description = f"{description} ({', '.join(spec_parts)})"
+            description += f" ({', '.join(spec_parts)})"
+        name = database_id.removeprefix("Standard_")
+        sku_prefix = _PG_SKU_NAME_PREFIX.get(edition_name)
         rows.append(
             {
                 "vendor_id": vendor.vendor_id,
                 "database_id": database_id,
-                "name": database_id.removeprefix("Standard_"),
+                "name": name,
                 "api_reference": database_id,
                 # https://www.pulumi.com/registry/packages/azure/api-docs/postgresql/flexibleserver/
                 "api_reference_object": {
                     "sku_name": (
-                        f"{_PG_SKU_NAME_PREFIX[edition_name]}_{database_id}"
-                        if edition_name in _PG_SKU_NAME_PREFIX
-                        else database_id
+                        f"{sku_prefix}_{database_id}" if sku_prefix else database_id
                     )
                 },
-                "display_name": database_id.removeprefix("Standard_"),
+                "display_name": name,
                 "description": description,
-                "server_id": server_id,
+                "server_id": server.server_id if server else None,
                 "engine": DatabaseEngine.POSTGRESQL,
                 "wire_protocol": DatabaseWireProtocol.POSTGRESQL,
                 "engine_versions": facts["engine_versions"],
@@ -2679,28 +2645,23 @@ def inventory_database_prices(vendor):
     More information: <https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices>.
     """
     items = []
-    seen: set[tuple[str, str, DatabaseHaLevel, DatabaseHaStrategy]] = set()
+    seen = set()
     regions = _pg_database_regions(vendor)
     vendor.progress_tracker.start_task(
         name="Scanning region(s) for database_price(s)", total=len(regions)
     )
     for region in regions:
-        location = region.api_reference
         with sentry_capture_or_raise(vendor=vendor):
-            prices_by_arm: dict[str, list[dict]] = {}
-            for item in _pg_retail_prices(location):
-                product = (item.get("productName") or "").lower()
-                arm = item.get("armSkuName") or ""
-                meter = item.get("meterName") or ""
-                if not (
-                    "compute" in product
+            prices_by_arm: dict[str, list[dict]] = defaultdict(list)
+            for item in _pg_retail_prices(region.api_reference):
+                arm = item.get("armSkuName", "")
+                if arm and (
+                    "compute" in item.get("productName", "").lower()
                     or arm.startswith("Standard_")
                     or arm.upper() in _PG_FLAT_COMPUTE_SKUS
-                    or meter.upper() in _PG_FLAT_COMPUTE_SKUS
+                    or item.get("meterName", "").upper() in _PG_FLAT_COMPUTE_SKUS
                 ):
-                    continue
-                if arm:
-                    prices_by_arm.setdefault(arm, []).append(item)
+                    prices_by_arm[arm].append(item)
 
             for database in vendor.databases:
                 if not database.status.is_orderable:
@@ -2716,44 +2677,22 @@ def inventory_database_prices(vendor):
                 base_price = _pg_hourly_compute_price(
                     price_item, database.vcpus, database_id=database.database_id
                 )
-                currency = price_item.get("currencyCode", "USD")
                 # https://azure.microsoft.com/pricing/details/postgresql/flexible-server/
                 # HA bills primary + standby at the same rate (exactly 2x); SameZone
                 # and ZoneRedundant cost the same. No separate retail HA meters.
-                ha_levels = {
-                    (
-                        level
-                        if isinstance(level, DatabaseHaLevel)
-                        else DatabaseHaLevel(level)
-                    )
-                    for level in (database.ha or [DatabaseHaLevel.NONE])
-                }
-                price_rows: list[tuple[DatabaseHaLevel, DatabaseHaStrategy, float]] = [
+                ha_levels = {DatabaseHaLevel(level) for level in database.ha or []}
+                price_rows = [
                     (DatabaseHaLevel.NONE, DatabaseHaStrategy.NONE, base_price)
+                ] + [
+                    (level, DatabaseHaStrategy.PASSIVE_STANDBY, base_price * 2)
+                    for level in (
+                        DatabaseHaLevel.MULTI_ZONE,
+                        DatabaseHaLevel.SINGLE_ZONE,
+                    )
+                    if level in ha_levels
                 ]
-                if DatabaseHaLevel.MULTI_ZONE in ha_levels:
-                    price_rows.append(
-                        (
-                            DatabaseHaLevel.MULTI_ZONE,
-                            DatabaseHaStrategy.PASSIVE_STANDBY,
-                            base_price * 2,
-                        )
-                    )
-                if DatabaseHaLevel.SINGLE_ZONE in ha_levels:
-                    price_rows.append(
-                        (
-                            DatabaseHaLevel.SINGLE_ZONE,
-                            DatabaseHaStrategy.PASSIVE_STANDBY,
-                            base_price * 2,
-                        )
-                    )
                 for ha, ha_strategy, price in price_rows:
-                    key = (
-                        region.region_id,
-                        database.database_id,
-                        ha,
-                        ha_strategy,
-                    )
+                    key = (region.region_id, database.database_id, ha, ha_strategy)
                     if key in seen:
                         continue
                     seen.add(key)
@@ -2769,7 +2708,7 @@ def inventory_database_prices(vendor):
                             "price": price,
                             "price_upfront": 0,
                             "price_tiered": [],
-                            "currency": currency,
+                            "currency": price_item.get("currencyCode", "USD"),
                         }
                     )
         vendor.progress_tracker.advance_task()
