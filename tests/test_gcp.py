@@ -502,6 +502,112 @@ def test_gcp_inventory_server_prices_z4d(
     assert prices[0]["allocation"] == Allocation.ONDEMAND
 
 
+def test_gcp_skus_dict_indexes_tpu_chip_skus():
+    skus = [
+        _sku(
+            "TpuV5e running in Americas",
+            resource_group="TPU",
+            regions=["us-central1", "us-east1"],
+            units=1,
+            nanos=200_000_000,
+        ),
+        _sku(
+            "TpuV5e attached to Spot Preemptible VMs running in Americas",
+            resource_group="TPU",
+            regions=["us-central1"],
+            units=0,
+            nanos=342_218_000,
+            usage_type="Preemptible",
+        ),
+        _sku(
+            "TPU7x running in Americas",
+            resource_group="TPU",
+            regions=["us-central1"],
+            units=12,
+            nanos=0,
+        ),
+        _sku(
+            "DWS Defined Duration TPU7x running in Columbus",
+            resource_group="TPU",
+            regions=["us-east5"],
+            units=6,
+            nanos=0,
+        ),
+        _sku(
+            "Capacity Optimized TpuV6e running in Americas",
+            resource_group="TPU",
+            regions=["us-central1"],
+            units=4,
+            nanos=0,
+        ),
+    ]
+    with patch("sc_crawler.vendors._gcp._skus", return_value=skus):
+        lookup = _skus_dict()
+
+    assert lookup["tpu"]["v5e"]["us-central1"]["ondemand"] == (
+        pytest.approx(1.2),
+        "USD",
+    )
+    assert lookup["tpu"]["v5e"]["us-east1"]["ondemand"] == (pytest.approx(1.2), "USD")
+    assert lookup["tpu"]["v5e"]["us-central1"]["spot"] == (
+        pytest.approx(0.342218),
+        "USD",
+    )
+    assert lookup["tpu"]["v7x"]["us-central1"]["ondemand"] == (pytest.approx(12), "USD")
+    assert "us-east5" not in lookup["tpu"]["v7x"]
+    assert "v6e" not in lookup["tpu"]
+
+
+@pytest.mark.parametrize(
+    ("name", "chips", "version", "chip_price", "official"),
+    [
+        # https://cloud.google.com/tpu/pricing — per chip-hour, host VM included
+        ("ct5lp-hightpu-4t", 4, "v5e", 1.2, 4.8),
+        ("ct5l-hightpu-1t", 1, "v5e", 1.2, 1.2),
+        ("ct5p-hightpu-4t", 4, "v5p", 4.2, 16.8),
+        ("ct6e-standard-4t", 4, "v6e", 2.7, 10.8),
+        ("tpu7x-standard-4t", 4, "v7x", 12, 48),
+    ],
+)
+def test_gcp_inventory_server_prices_tpu_chips(
+    name, chips, version, chip_price, official
+):
+    server = SimpleNamespace(
+        name=name,
+        server_id=name,
+        vcpus=112,
+        memory_amount=192 * 1024,
+        gpu_count=chips,
+        gpu_model=version,
+    )
+    sku_name = {"v5e": "TpuV5e", "v5p": "TpuV5p", "v6e": "TpuV6e", "v7x": "TPU7x"}[
+        version
+    ]
+    units = int(chip_price)
+    nanos = round((chip_price - units) * 1_000_000_000)
+    skus = [
+        _sku(
+            f"{sku_name} running in Americas",
+            resource_group="TPU",
+            regions=["us-central1"],
+            units=units,
+            nanos=nanos,
+        )
+    ]
+    vendor = _gcp_vendor(servers=[server])
+    with (
+        patch("sc_crawler.vendors._gcp._skus", return_value=skus),
+        patch("sc_crawler.vendors._gcp._server_in_zone", return_value=True),
+        _gcp_bundled_local_ssd({}),
+    ):
+        prices = inventory_server_prices(vendor)
+
+    assert len(prices) == 1
+    assert prices[0]["price"] == pytest.approx(chips * chip_price)
+    assert prices[0]["price"] == pytest.approx(official)
+    assert prices[0]["allocation"] == Allocation.ONDEMAND
+
+
 def test_gcp_skus_dict_price_includes_whole_units():
     """The per GPU hourly rates have a non-zero whole-dollar part."""
     with patch("sc_crawler.vendors._gcp._skus", return_value=_a3_highgpu_4g_skus()):
