@@ -1,6 +1,4 @@
-from concurrent.futures import ThreadPoolExecutor
 from functools import cache
-from itertools import chain, repeat
 from logging import DEBUG, WARNING
 from re import compile as recompile
 from re import sub
@@ -31,7 +29,6 @@ from ..table_fields import (
 )
 from ..tables import (
     Vendor,
-    Zone,
 )
 from ..utils import (
     _GIB_TO_GB,
