@@ -56,9 +56,11 @@ def _project_id() -> str:
     return default()[1]
 
 
-def _paginate_list(client, zone=None):
+def _paginate_list(client, zone=None, region=None):
     if zone:
         pager = client.list(project=_project_id(), zone=zone)
+    elif region:
+        pager = client.list(project=_project_id(), region=region)
     else:
         pager = client.list(project=_project_id())
     items = []
@@ -276,6 +278,18 @@ def _storages(zone: str) -> List[compute_v1.types.compute.DiskType]:
     #     'selfLink': 'https://www.googleapis.com/compute/v1/projects/example-project/zones/us-central1-a/diskTypes'
     # }
     return _paginate_list(compute_v1.services.disk_types.DiskTypesClient(), zone)
+
+
+@cachier(separate_files=True)
+def _region_storages(region: str) -> List[compute_v1.types.compute.DiskType]:
+    """Regional disk types (e.g. hyperdisk-balanced-high-availability).
+
+    https://cloud.google.com/compute/docs/reference/rest/v1/regionDiskTypes
+    """
+    return _paginate_list(
+        compute_v1.services.region_disk_types.RegionDiskTypesClient(),
+        region=region,
+    )
 
 
 @cache
@@ -537,11 +551,38 @@ STORAGE_DESCRIPTION_TO_FAMILY = {
     "Extreme PD Capacity": "pd-extreme",
     "Hyperdisk Extreme Capacity": "hyperdisk-extreme",
     "Hyperdisk Throughput Capacity": "hyperdisk-throughput",
+    "Hyperdisk Balanced High Availability Capacity": (
+        "hyperdisk-balanced-high-availability"
+    ),
     "Hyperdisk Balanced Capacity": "hyperdisk-balanced",
+    "Hyperdisk ML Capacity": "hyperdisk-ml",
 }
 
-# partial list of storages to exclude options with extra pricing on IOPS/throughput
-STORAGE_ALLOWLIST = ["pd-standard", "pd-ssd", "pd-balanced"]
+# Max IOPS and throughput (MiB/s) per volume — Google's max provisionable / type peak.
+# Schema stores these as MB/s integers; GCP docs quote MiB/s (same as Cloud SQL rows).
+# PD (zonal type caps): https://cloud.google.com/compute/docs/disks/performance
+# Hyperdisk overview: https://cloud.google.com/compute/docs/disks/hyperdisks
+# https://cloud.google.com/compute/docs/disks/hd-types/hyperdisk-balanced
+# https://cloud.google.com/compute/docs/disks/hd-types/hyperdisk-balanced-ha
+# https://cloud.google.com/compute/docs/disks/hd-types/hyperdisk-extreme
+# https://cloud.google.com/compute/docs/disks/hd-types/hyperdisk-ml
+# https://cloud.google.com/compute/docs/disks/hd-types/hyperdisk-throughput
+STORAGE_PERFORMANCE = {
+    "pd-standard": {"max_iops": 15_000, "max_throughput": 1_200},
+    "pd-balanced": {"max_iops": 80_000, "max_throughput": 1_200},
+    "pd-ssd": {"max_iops": 100_000, "max_throughput": 1_200},
+    "hyperdisk-balanced": {"max_iops": 160_000, "max_throughput": 2_400},
+    "hyperdisk-balanced-high-availability": {
+        "max_iops": 100_000,
+        "max_throughput": 2_400,
+    },
+    "hyperdisk-extreme": {"max_iops": 350_000, "max_throughput": 5_000},
+    "hyperdisk-throughput": {"max_iops": 9_600, "max_throughput": 2_400},
+    "hyperdisk-ml": {"max_iops": 33_554_432, "max_throughput": 2_097_152},
+}
+
+# Capacity-priced disk types. Provisioned IOPS/throughput meters are not tracked.
+STORAGE_ALLOWLIST = list(STORAGE_PERFORMANCE)
 
 # Compute Engine machineTypes.deprecated.state.
 # https://cloud.google.com/compute/docs/reference/rest/v1/machineTypes
@@ -612,6 +653,7 @@ def _skus_dict():
                 if sku.category.resource_group not in [
                     "HDD",
                     "SSD",
+                    "PDStandard",
                     "HDBSP",
                     "HDTSP",
                     "LocalSSD",
@@ -630,8 +672,10 @@ def _skus_dict():
         else:
             allocation = "spot"
         price_tiers = sku.pricing_info[0].pricing_expression.tiered_rates
-        assert len(price_tiers) == 1
-        unit_price = price_tiers[0].unit_price
+        # Standard PD (and a few others) use a free tier then a paid tier;
+        # take the last tier as the ongoing capacity rate.
+        assert price_tiers
+        unit_price = price_tiers[-1].unit_price
         # Catalog Money is units + nanos, and the whole-dollar part is non-zero
         # for e.g. the per GPU hourly rates
         price = unit_price.units + unit_price.nanos / 1e9
@@ -753,9 +797,12 @@ def _skus_dict():
                 continue
 
         if sku.category.resource_family == "Storage":
-            for k, v in STORAGE_DESCRIPTION_TO_FAMILY.items():
-                if k in sku.description:
-                    storage_name = v
+            # Match capacity needles at the start of the description so
+            # "Regional …" and "Asynchronous Replication Protection - …"
+            # cannot overwrite zonal capacity rates.
+            for needle, family in STORAGE_DESCRIPTION_TO_FAMILY.items():
+                if sku.description.startswith(needle):
+                    storage_name = family
                     break
             else:
                 continue
@@ -764,6 +811,9 @@ def _skus_dict():
             if storage_name == "local-ssd" and (
                 "Reserved" in sku.description or "DWS" in sku.description
             ):
+                continue
+            # Confidential Mode is a separate premium capacity meter
+            if "Confidential Mode" in sku.description:
                 continue
             for region in regions:
                 lookup["storage"][storage_name][region][allocation] = (price, currency)
@@ -1595,48 +1645,57 @@ def inventory_server_prices_spot(vendor):
 
 
 def inventory_storages(vendor):
-    """List all available GCP disk storage options available in all zones.
+    """List GCP disk types for the storage catalog.
 
-    For more details on the disk types, check <https://cloud.google.com/compute/docs/disks#disk-types>."""
-    vendor.progress_tracker.start_task(
-        name="Scanning zone(s) for storage(s)", total=len(vendor.zones)
-    )
+    Disk types are keyed by name and identical across zones/regions, so one
+    successful zone (and one region for regional-only Hyperdisk Balanced HA)
+    is enough. See <https://cloud.google.com/compute/docs/disks#disk-types>
+    and <https://cloud.google.com/compute/docs/disks/hyperdisks>.
+    """
 
-    def search_storages(zone: Zone, vendor: Vendor) -> List[dict]:
-        zone_storages = []
+    def _record(storage) -> dict:
+        valid_sizes = storage.valid_disk_size.replace("GB", "").split("-")
+        perf = STORAGE_PERFORMANCE[storage.name]
+        return {
+            "storage_id": str(storage.id),
+            "vendor_id": vendor.vendor_id,
+            "name": storage.name,
+            "description": storage.description,
+            "storage_type": (
+                StorageType.HDD if storage.name == "pd-standard" else StorageType.SSD
+            ),
+            "max_iops": perf["max_iops"],
+            "max_throughput": perf["max_throughput"],
+            "min_size": int(valid_sizes[0]),
+            "max_size": int(valid_sizes[1]),
+        }
+
+    by_name: dict[str, dict] = {}
+    for zone in vendor.zones:
         for storage in _storages(zone.name):
-            valid_sizes = storage.valid_disk_size.replace("GB", "").split("-")
-            zone_storages.append(
-                {
-                    "storage_id": str(storage.id),
-                    "vendor_id": vendor.vendor_id,
-                    "name": storage.name,
-                    "description": storage.description,
-                    "storage_type": (
-                        StorageType.SSD
-                        if storage.name != "pd-standard"
-                        else StorageType.HDD
-                    ),
-                    "max_iops": None,
-                    "max_throughput": None,
-                    "min_size": int(valid_sizes[0]),
-                    "max_size": int(valid_sizes[1]),
-                }
-            )
-        vendor.log(f"{len(zone_storages)} storage(s) found in {zone.name}.")
-        vendor.progress_tracker.advance_task()
-        return zone_storages
+            if storage.name in STORAGE_ALLOWLIST:
+                by_name[storage.name] = _record(storage)
+        if by_name:
+            vendor.log(f"{len(by_name)} storage(s) found in {zone.name}.")
+            break
 
-    with ThreadPoolExecutor(max_workers=8) as executor:
-        storages = executor.map(search_storages, vendor.zones, repeat(vendor))
-    storages = list(chain.from_iterable(storages))
+    # Hyperdisk Balanced HA is regional-only (regionDiskTypes).
+    missing = {n for n in STORAGE_ALLOWLIST if n not in by_name}
+    for region in vendor.regions:
+        if not missing:
+            break
+        added = 0
+        for storage in _region_storages(region.name):
+            if storage.name not in missing:
+                continue
+            by_name[storage.name] = _record(storage)
+            added += 1
+        if added:
+            vendor.log(f"{added} regional storage(s) found in {region.name}.")
+            missing = {n for n in STORAGE_ALLOWLIST if n not in by_name}
 
-    vendor.log(f"{len(storages)} storage(s) found in {len(vendor.zones)} zones.")
-    storages = list({p["name"]: p for p in storages}.values())
+    storages = list(by_name.values())
     vendor.log(f"{len(storages)} unique storage(s) found.")
-    storages = [s for s in storages if s["name"] in STORAGE_ALLOWLIST]
-    vendor.log(f"{len(storages)} storage(s) after dropping items with complex pricing.")
-    vendor.progress_tracker.hide_task()
     return storages
 
 
@@ -1646,8 +1705,14 @@ def inventory_storage_prices(vendor):
     skus = _skus_dict()
     items = []
     for storage in vendor.storages:
-        storage_regions = skus["storage"][storage.name].keys()
-        for storage_region in storage_regions:
+        storage_skus = skus["storage"].get(storage.name)
+        if not storage_skus:
+            vendor.log(
+                f"Skip '{storage.name}': no capacity SKU in billing catalog",
+                DEBUG,
+            )
+            continue
+        for storage_region in storage_skus.keys():
             # skip edge regions
             region = regions.get(storage_region)
             if region is None:
@@ -1657,7 +1722,7 @@ def inventory_storage_prices(vendor):
                 )
                 continue
 
-            price, currency = skus["storage"][storage.name][storage_region]["ondemand"]
+            price, currency = storage_skus[storage_region]["ondemand"]
             for zone in region.zones:
                 items.append(
                     {

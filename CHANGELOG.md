@@ -3,6 +3,8 @@
 - Implement database inventories for `OVH`, `UpCloud` and `Vultr`.
 - Remove `StorageType.NETWORK`. Map former network-attached block storage to
   media/performance classes (`HDD` / `SSD` / `NVME_SSD`) instead.
+- `GCP`: warehouse Hyperdisk types into `storage` (capacity prices) and set
+  max IOPS/throughput for Persistent Disk and Hyperdisk from docs.
 
 New benchmark(s):
 
