@@ -369,6 +369,245 @@ def test_gcp_inventory_server_prices_prefers_c4d_local_ssd_sku():
     assert prices[0]["price"] == pytest.approx(expected)
 
 
+# us-central1 OnDemand rates from the Billing Catalog. standardlssd and highlssd
+# share Core/Ram and differ on Local SSD.
+# https://cloud.google.com/products/compute/pricing/storage-optimized
+_Z4D_CORE = 0.032704
+_Z4D_RAM = 0.003496
+_Z4D_STANDARD_SSD_MONTHLY = 0.2464
+_Z4D_HIGH_SSD_MONTHLY = 0.1632
+
+
+def _z4d_skus():
+    return [
+        _sku(
+            "Z4D-HIGHMEM-STANDARDLSSD Instance Core running in Iowa",
+            resource_group="CPU",
+            regions=["us-central1"],
+            units=0,
+            nanos=32_704_000,
+        ),
+        _sku(
+            "Z4D-HIGHMEM-STANDARDLSSD Instance Ram running in Iowa",
+            resource_group="RAM",
+            regions=["us-central1"],
+            units=0,
+            nanos=3_496_000,
+        ),
+        _sku(
+            "Z4D-HIGHMEM-STANDARDLSSD Instance Local SSD running in Iowa",
+            resource_group="LocalSSD",
+            regions=["us-central1"],
+            units=0,
+            nanos=246_400_000,
+        ),
+        _sku(
+            "Z4D-HIGHMEM-HIGHLSSD Instance Core running in Iowa",
+            resource_group="CPU",
+            regions=["us-central1"],
+            units=0,
+            nanos=32_704_000,
+        ),
+        _sku(
+            "Z4D-HIGHMEM-HIGHLSSD Instance Ram running in Iowa",
+            resource_group="RAM",
+            regions=["us-central1"],
+            units=0,
+            nanos=3_496_000,
+        ),
+        _sku(
+            "Z4D-HIGHMEM-HIGHLSSD Instance Local SSD running in Iowa",
+            resource_group="LocalSSD",
+            regions=["us-central1"],
+            units=0,
+            nanos=163_200_000,
+        ),
+        _sku(
+            "Z4D-HIGHMEM-HIGHLSSD Sole Tenancy Instance Local SSD running in Iowa",
+            resource_group="LocalSSD",
+            regions=["us-central1"],
+            units=0,
+            nanos=1,
+        ),
+    ]
+
+
+def test_gcp_skus_dict_indexes_z4d_ssd_ratios_separately():
+    with patch("sc_crawler.vendors._gcp._skus", return_value=_z4d_skus()):
+        lookup = _skus_dict()
+
+    assert "z4d" not in lookup["cpu"]
+    assert lookup["cpu"]["z4d-highmem-standardlssd"]["us-central1"]["ondemand"] == (
+        pytest.approx(_Z4D_CORE),
+        "USD",
+    )
+    assert lookup["ram"]["z4d-highmem-highlssd"]["us-central1"]["ondemand"] == (
+        pytest.approx(_Z4D_RAM),
+        "USD",
+    )
+    assert lookup["local_ssd"]["z4d-highmem-standardlssd"]["us-central1"][
+        "ondemand"
+    ] == (pytest.approx(_Z4D_STANDARD_SSD_MONTHLY), "USD")
+    assert lookup["local_ssd"]["z4d-highmem-highlssd"]["us-central1"]["ondemand"] == (
+        pytest.approx(_Z4D_HIGH_SSD_MONTHLY),
+        "USD",
+    )
+
+
+@pytest.mark.parametrize(
+    ("name", "vcpus", "memory_gib", "ssd_gib", "ssd_monthly", "official"),
+    [
+        (
+            "z4d-highmem-16-standardlssd",
+            16,
+            126,
+            3500,
+            _Z4D_STANDARD_SSD_MONTHLY,
+            2.145129863,
+        ),
+        (
+            "z4d-highmem-192-highlssd",
+            192,
+            1512,
+            84_000,
+            _Z4D_HIGH_SSD_MONTHLY,
+            30.344298082,
+        ),
+    ],
+)
+def test_gcp_inventory_server_prices_z4d(
+    name, vcpus, memory_gib, ssd_gib, ssd_monthly, official
+):
+    server = SimpleNamespace(
+        name=name,
+        server_id=name,
+        vcpus=vcpus,
+        memory_amount=memory_gib * 1024,
+        gpu_count=0,
+        gpu_model=None,
+    )
+    vendor = _gcp_vendor(servers=[server])
+    with (
+        patch("sc_crawler.vendors._gcp._skus", return_value=_z4d_skus()),
+        patch("sc_crawler.vendors._gcp._server_in_zone", return_value=True),
+        _gcp_accelerators({}),
+        _gcp_bundled_local_ssd({name: ssd_gib}),
+    ):
+        prices = inventory_server_prices(vendor)
+
+    expected = vcpus * _Z4D_CORE + memory_gib * _Z4D_RAM + ssd_gib * ssd_monthly / 730
+    assert len(prices) == 1
+    assert prices[0]["price"] == pytest.approx(expected)
+    assert prices[0]["price"] == pytest.approx(official)
+    assert prices[0]["allocation"] == Allocation.ONDEMAND
+
+
+def test_gcp_skus_dict_indexes_tpu_chip_skus():
+    skus = [
+        _sku(
+            "TpuV5e running in Americas",
+            resource_group="TPU",
+            regions=["us-central1", "us-east1"],
+            units=1,
+            nanos=200_000_000,
+        ),
+        _sku(
+            "TpuV5e attached to Spot Preemptible VMs running in Americas",
+            resource_group="TPU",
+            regions=["us-central1"],
+            units=0,
+            nanos=342_218_000,
+            usage_type="Preemptible",
+        ),
+        _sku(
+            "TPU7x running in Americas",
+            resource_group="TPU",
+            regions=["us-central1"],
+            units=12,
+            nanos=0,
+        ),
+        _sku(
+            "DWS Defined Duration TPU7x running in Columbus",
+            resource_group="TPU",
+            regions=["us-east5"],
+            units=6,
+            nanos=0,
+        ),
+        _sku(
+            "Capacity Optimized TpuV6e running in Americas",
+            resource_group="TPU",
+            regions=["us-central1"],
+            units=4,
+            nanos=0,
+        ),
+    ]
+    with patch("sc_crawler.vendors._gcp._skus", return_value=skus):
+        lookup = _skus_dict()
+
+    assert lookup["tpu"]["v5e"]["us-central1"]["ondemand"] == (
+        pytest.approx(1.2),
+        "USD",
+    )
+    assert lookup["tpu"]["v5e"]["us-east1"]["ondemand"] == (pytest.approx(1.2), "USD")
+    assert lookup["tpu"]["v5e"]["us-central1"]["spot"] == (
+        pytest.approx(0.342218),
+        "USD",
+    )
+    assert lookup["tpu"]["v7x"]["us-central1"]["ondemand"] == (pytest.approx(12), "USD")
+    assert "us-east5" not in lookup["tpu"]["v7x"]
+    assert "v6e" not in lookup["tpu"]
+
+
+@pytest.mark.parametrize(
+    ("name", "chips", "version", "chip_price", "official"),
+    [
+        # https://cloud.google.com/tpu/pricing — per chip-hour, host VM included
+        ("ct5lp-hightpu-4t", 4, "v5e", 1.2, 4.8),
+        ("ct5l-hightpu-1t", 1, "v5e", 1.2, 1.2),
+        ("ct5p-hightpu-4t", 4, "v5p", 4.2, 16.8),
+        ("ct6e-standard-4t", 4, "v6e", 2.7, 10.8),
+        ("tpu7x-standard-4t", 4, "v7x", 12, 48),
+    ],
+)
+def test_gcp_inventory_server_prices_tpu_chips(
+    name, chips, version, chip_price, official
+):
+    server = SimpleNamespace(
+        name=name,
+        server_id=name,
+        vcpus=112,
+        memory_amount=192 * 1024,
+        gpu_count=chips,
+        gpu_model=version,
+    )
+    sku_name = {"v5e": "TpuV5e", "v5p": "TpuV5p", "v6e": "TpuV6e", "v7x": "TPU7x"}[
+        version
+    ]
+    units = int(chip_price)
+    nanos = round((chip_price - units) * 1_000_000_000)
+    skus = [
+        _sku(
+            f"{sku_name} running in Americas",
+            resource_group="TPU",
+            regions=["us-central1"],
+            units=units,
+            nanos=nanos,
+        )
+    ]
+    vendor = _gcp_vendor(servers=[server])
+    with (
+        patch("sc_crawler.vendors._gcp._skus", return_value=skus),
+        patch("sc_crawler.vendors._gcp._server_in_zone", return_value=True),
+        _gcp_bundled_local_ssd({}),
+    ):
+        prices = inventory_server_prices(vendor)
+
+    assert len(prices) == 1
+    assert prices[0]["price"] == pytest.approx(chips * chip_price)
+    assert prices[0]["price"] == pytest.approx(official)
+    assert prices[0]["allocation"] == Allocation.ONDEMAND
+
+
 def test_gcp_skus_dict_price_includes_whole_units():
     """The per GPU hourly rates have a non-zero whole-dollar part."""
     with patch("sc_crawler.vendors._gcp._skus", return_value=_a3_highgpu_4g_skus()):
@@ -525,10 +764,32 @@ def test_gcp_search_servers_fills_gpu_and_bundled_local_ssd_fields():
         ("a4x-maxgpu-4g-metal", 3000),
         ("z3-highmem-8-highlssd", 3000),
         ("z3-highmem-192-highlssd-metal", 6000),
+        ("z4d-highmem-16-standardlssd", 3500),
+        ("z4d-highmem-192-highlssd", 3500),
     ],
 )
 def test_gcp_local_ssd_partition_gib(server_name, expected):
     assert _local_ssd_partition_gib(server_name) == expected
+
+
+def test_gcp_search_servers_z4d_titanium_ssd_size():
+    machine = SimpleNamespace(
+        id=1,
+        name="z4d-highmem-192-highlssd",
+        description="",
+        guest_cpus=192,
+        is_shared_cpu=False,
+        architecture="X86_64",
+        memory_mb=1512 * 1024,
+        deprecated=SimpleNamespace(state=""),
+        accelerators=[],
+        bundled_local_ssds=SimpleNamespace(partition_count=24),
+    )
+    with patch("sc_crawler.vendors._gcp._servers", return_value=[machine]):
+        rows = _search_servers("us-central1-a")
+
+    assert rows[0]["storage_size"] == round(24 * 3500 * _GIB_TO_GB)
+    assert rows[0]["storage_type"] == StorageType.NVME_SSD
 
 
 def test_gcp_search_servers_parses_fractional_g4_vgpu():
@@ -687,6 +948,8 @@ def test_gcp_inventory_server_prices_a4_uses_spot_machine_slice_sku():
         ("m4-ultramem-112", "m4"),
         ("m4-ultramem-224", "m4ultramem224"),
         ("m4n-ultramem-224", "m4nultramem224"),
+        ("z4d-highmem-16-standardlssd", "z4d-highmem-standardlssd"),
+        ("z4d-highmem-192-highlssd", "z4d-highmem-highlssd"),
     ],
 )
 def test_gcp_server_family(server_name, expected):

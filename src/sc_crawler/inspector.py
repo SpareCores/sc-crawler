@@ -1696,9 +1696,15 @@ def inspect_update_server_dict(server: dict) -> dict:
         "gpu_memory_min": lambda: min([gpu["memory"] for gpu in server["gpus"]]),
         "gpu_memory_total": lambda: sum([gpu["memory"] for gpu in server["gpus"]]),
         # skip storage update if lshw parsing failed or API data is present
-        "storage_type": lambda: getattr(inspector_storage_info, "storage_type"),
-        "storage_size": lambda: getattr(inspector_storage_info, "storage_size"),
-        "storages": lambda: getattr(inspector_storage_info, "storages"),
+        "storage_type": lambda: (
+            inspector_storage_info.storage_type if inspector_storage_info else None
+        ),
+        "storage_size": lambda: (
+            inspector_storage_info.storage_size if inspector_storage_info else None
+        ),
+        "storages": lambda: (
+            inspector_storage_info.storages if inspector_storage_info else None
+        ),
         "average_time_to_start": lambda: _server_average_time_to_start(server_obj),
     }
 

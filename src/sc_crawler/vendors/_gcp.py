@@ -221,8 +221,12 @@ def _server_accelerators() -> dict:
 
 
 # https://cloud.google.com/compute/docs/disks/local-ssd
+# Z4D Titanium SSD partitions are 3,500 GiB (both standardlssd and highlssd):
+# https://cloud.google.com/compute/docs/storage-optimized-machines
 def _local_ssd_partition_gib(server_name: str) -> int:
     family = server_name.split("-")[0].lower()
+    if family == "z4d":
+        return 3500
     if family == "z3" and server_name.endswith("-metal"):
         return 6000
     if family in ["a4x", "z3"] or (family == "c4" and server_name.endswith("-metal")):
@@ -440,6 +444,30 @@ GPU_SLICE_DESCRIPTION = recompile(
     r"Spot Preemptible (A4) Nvidia B200 \((\d+) gpu slice\)) running in "
 )
 
+# Cloud TPU VMs are billed per chip-hour, and the chip price includes the host
+# VM. "TpuV5e running in Delhi", "TPU7x running in Americas", or
+# "TpuV6e attached to Spot Preemptible VMs running in Americas".
+# DWS, Calendar, Commitment, and Capacity Optimized variants do not match.
+# https://cloud.google.com/tpu/pricing
+TPU_DESCRIPTION = recompile(
+    r"^(TpuV5e|TpuV5p|TpuV6e|TPU7x)"
+    r"(?: attached to Spot Preemptible VMs)? running in "
+)
+_TPU_SKU_NAME_TO_VERSION = {
+    "TpuV5e": "v5e",
+    "TpuV5p": "v5p",
+    "TpuV6e": "v6e",
+    "TPU7x": "v7x",
+}
+# ct5l and ct5lp are both v5e chips and share the TpuV5e SKU.
+_TPU_FAMILY_TO_VERSION = {
+    "ct5l": "v5e",
+    "ct5lp": "v5e",
+    "ct5p": "v5p",
+    "ct6e": "v6e",
+    "tpu7x": "v7x",
+}
+
 # GPU names of the above SKU descriptions (after dropping the optional
 # "Nvidia"/"Tesla" prefixes, as newer SKUs are e.g. "H200 141GB GPU running in
 # Netherlands") mapped to machineTypes.accelerators.guestAcceleratorType.
@@ -537,13 +565,21 @@ def _gcp_machine_type_status(deprecated_state: str | None) -> Status:
 # after the series, e.g. "A3Ultra Instance Core running in Americas" for
 # a3-ultragpu-8g and "M4Ultramem224 Instance Ram running in Americas" for
 # m4-ultramem-224. N1 mega/ultramem were renamed to M1.
+# Z4D SKUs include the Titanium SSD ratio, e.g.
+# "Z4D-HIGHMEM-HIGHLSSD Instance Core running in Iowa" for
+# z4d-highmem-192-highlssd. standardlssd and highlssd Local SSD rates differ,
+# so they cannot share the "z4d" series key.
 # https://cloud.google.com/compute/docs/memory-optimized-machines#m1_series
+# https://cloud.google.com/compute/docs/storage-optimized-machines
+# https://cloud.google.com/products/compute/pricing/storage-optimized
 _SERVER_NAME_SKU_FAMILIES = (
     (recompile(r"^n1-(?:mega|ultra)mem-\d+$"), "m1"),
     (recompile(r"^a3-megagpu-"), "a3plus"),
     (recompile(r"^a3-ultragpu-"), "a3ultra"),
     (recompile(r"^m4-ultramem-224$"), "m4ultramem224"),
     (recompile(r"^m4n-ultramem-224$"), "m4nultramem224"),
+    (recompile(r"^z4d-highmem-\d+-standardlssd$"), "z4d-highmem-standardlssd"),
+    (recompile(r"^z4d-highmem-\d+-highlssd$"), "z4d-highmem-highlssd"),
 )
 
 
@@ -693,6 +729,15 @@ def _skus_dict():
                     continue
                 for region in regions:
                     lookup["gpu"][accelerator][region][allocation] = (price, currency)
+                continue
+
+            if sku.category.resource_group == "TPU":
+                tpu_name = TPU_DESCRIPTION.match(sku.description)
+                if not tpu_name:
+                    continue
+                version = _TPU_SKU_NAME_TO_VERSION[tpu_name.group(1)]
+                for region in regions:
+                    lookup["tpu"][version][region][allocation] = (price, currency)
                 continue
 
             # family-specific Local SSD, billed per GiB-month instead of the
@@ -887,8 +932,14 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
             and ((server.gpu_count < 1 and family == "g4") or family == "a4")
         )
 
+        # TPU VMs are priced per chip. A4X, X4, and TPU v3 still have no
+        # OnDemand or Spot Core/Ram or chip SKU in the Billing Catalog.
+        tpu_version = _TPU_FAMILY_TO_VERSION.get(family)
+
         # price per instance or cpu/ram
-        if gpu_slice:
+        if tpu_version:
+            server_regions = [*skus["tpu"][tpu_version].keys()]
+        elif gpu_slice:
             server_regions = [*skus["gpu_slice"][family].keys()]
         else:
             server_regions = [
@@ -896,26 +947,25 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
                 *skus["cpu"][family].keys(),
             ]
         if not server_regions:
-            # some newer/exotic families (e.g. A4X, M4N, X4, TPU VM series as of
-            # 2026-08) have no Instance Core/Ram (or instance-level) SKUs at all
-            # yet in the live Billing Catalog
             vendor.log(
                 f"Skip instance: no SKU found for family '{family}' ({server.name})",
-                DEBUG,
+                WARNING,
             )
             continue
 
         # accelerator-optimized machines are billed for the attached GPUs on the
         # top of the predefined vCPU and memory, and the GPUs dominate the bill:
         # <https://cloud.google.com/compute/docs/accelerator-optimized-machines>
-        accelerator = _server_accelerators().get(server.name)
-        if server.gpu_count and not gpu_slice and accelerator not in skus["gpu"]:
-            # rather skip than publish a vCPU + memory only price for a GPU machine
-            vendor.log(
-                f"Skip instance: no GPU SKU found for '{accelerator}' ({server.name})",
-                WARNING,
-            )
-            continue
+        accelerator = None
+        if server.gpu_count and not gpu_slice and not tpu_version:
+            accelerator = _server_accelerators().get(server.name)
+            if accelerator not in skus["gpu"]:
+                # rather skip than publish a vCPU + memory only price for a GPU machine
+                vendor.log(
+                    f"Skip instance: no GPU SKU found for '{accelerator}' ({server.name})",
+                    WARNING,
+                )
+                continue
 
         for server_region in server_regions:
             # skip edge regions
@@ -927,8 +977,23 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
                 )
                 continue
 
+            # TPU chip-hour SKU already includes the host VM
+            # https://cloud.google.com/tpu/pricing
+            if tpu_version:
+                try:
+                    price, currency = skus["tpu"][tpu_version][server_region][
+                        allocation.value.lower()
+                    ]
+                except ValueError:
+                    vendor.log(
+                        f"{allocation.value} TPU price not found for "
+                        f"'{server.name}' in '{server_region}'",
+                        WARNING,
+                    )
+                    continue
+                price *= server.gpu_count
             # try the machine-level GPU slice pricing
-            if gpu_slice:
+            elif gpu_slice:
                 try:
                     price, currency = skus["gpu_slice"][family][server_region][
                         allocation.value.lower()
@@ -977,7 +1042,7 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
             else:
                 raise KeyError(f"SKU not found for {server.name}")
 
-            if server.gpu_count and not gpu_slice:
+            if server.gpu_count and not gpu_slice and not tpu_version:
                 try:
                     gpu_price, _ = skus["gpu"][accelerator][server_region][
                         allocation.value.lower()
