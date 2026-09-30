@@ -1644,9 +1644,10 @@ def inventory_server_prices_spot(vendor):
 def inventory_storages(vendor):
     """List GCP disk types for the storage catalog.
 
-    Disk types are keyed by name and identical across zones/regions, so one
-    successful zone (and one region for regional-only Hyperdisk Balanced HA)
-    is enough. See <https://cloud.google.com/compute/docs/disks#disk-types>
+    Allowlisted zonal types (PD + Hyperdisk) share the same name/specs in every
+    zone, so one zone is enough. Hyperdisk Balanced HA is regional-only
+    (`regionDiskTypes`) and is not a zonal type.
+    See <https://cloud.google.com/compute/docs/disks#disk-types>
     and <https://cloud.google.com/compute/docs/disks/hyperdisks>.
     """
 
@@ -1667,29 +1668,27 @@ def inventory_storages(vendor):
             "max_size": int(valid_sizes[1]),
         }
 
+    ha_name = "hyperdisk-balanced-high-availability"
     by_name: dict[str, dict] = {}
     for zone in vendor.zones:
         for storage in _storages(zone.name):
-            if storage.name in STORAGE_ALLOWLIST:
-                by_name[storage.name] = _record(storage)
+            if storage.name not in STORAGE_ALLOWLIST or storage.name == ha_name:
+                continue
+            by_name[storage.name] = _record(storage)
         if by_name:
             vendor.log(f"{len(by_name)} storage(s) found in {zone.name}.")
             break
 
     # Hyperdisk Balanced HA is regional-only (regionDiskTypes).
-    missing = {n for n in STORAGE_ALLOWLIST if n not in by_name}
     for region in vendor.regions:
-        if not missing:
-            break
-        added = 0
         for storage in _region_storages(region.name):
-            if storage.name not in missing:
+            if storage.name != ha_name:
                 continue
-            by_name[storage.name] = _record(storage)
-            added += 1
-        if added:
-            vendor.log(f"{added} regional storage(s) found in {region.name}.")
-            missing = {n for n in STORAGE_ALLOWLIST if n not in by_name}
+            by_name[ha_name] = _record(storage)
+            vendor.log(f"1 regional storage(s) found in {region.name}.")
+            break
+        if ha_name in by_name:
+            break
 
     storages = list(by_name.values())
     vendor.log(f"{len(storages)} unique storage(s) found.")

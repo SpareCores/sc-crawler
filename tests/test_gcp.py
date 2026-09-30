@@ -1399,12 +1399,6 @@ def test_gcp_inventory_storages_maps_pd_and_hyperdisk_performance():
             description="Hyperdisk Balanced High Availability",
             valid_disk_size="4GB-65536GB",
         ),
-        SimpleNamespace(
-            id=30007,
-            name="pd-balanced",
-            description="Balanced Persistent Disk",
-            valid_disk_size="10GB-65536GB",
-        ),
     ]
 
     with (
@@ -1427,6 +1421,86 @@ def test_gcp_inventory_storages_maps_pd_and_hyperdisk_performance():
     assert by_name["hyperdisk-ml"]["max_throughput"] == 2_097_152
     assert "pd-extreme" not in by_name
     assert "local-ssd" not in by_name
+
+
+def test_gcp_inventory_storages_stops_after_first_zone_and_region():
+    zone_a = SimpleNamespace(name="us-central1-a", zone_id="us-central1-a")
+    zone_b = SimpleNamespace(name="us-central1-b", zone_id="us-central1-b")
+    region_a = SimpleNamespace(
+        name="us-central1", region_id="us-central1", zones=[zone_a]
+    )
+    region_b = SimpleNamespace(name="us-west1", region_id="us-west1", zones=[zone_b])
+    vendor = Mock(vendor_id="gcp")
+    vendor.zones = [zone_a, zone_b]
+    vendor.regions = [region_a, region_b]
+    vendor.log = Mock()
+
+    zonal = [
+        SimpleNamespace(
+            id=30001,
+            name="pd-standard",
+            description="Standard Persistent Disk",
+            valid_disk_size="10GB-65536GB",
+        ),
+        SimpleNamespace(
+            id=30002,
+            name="pd-ssd",
+            description="SSD Persistent Disk",
+            valid_disk_size="10GB-65536GB",
+        ),
+        SimpleNamespace(
+            id=30007,
+            name="pd-balanced",
+            description="Balanced Persistent Disk",
+            valid_disk_size="10GB-65536GB",
+        ),
+        SimpleNamespace(
+            id=40001,
+            name="hyperdisk-balanced",
+            description="Hyperdisk Balanced",
+            valid_disk_size="4GB-65536GB",
+        ),
+        SimpleNamespace(
+            id=40002,
+            name="hyperdisk-extreme",
+            description="Hyperdisk Extreme",
+            valid_disk_size="64GB-65536GB",
+        ),
+        SimpleNamespace(
+            id=40003,
+            name="hyperdisk-throughput",
+            description="Hyperdisk Throughput",
+            valid_disk_size="2048GB-32768GB",
+        ),
+        SimpleNamespace(
+            id=40004,
+            name="hyperdisk-ml",
+            description="Hyperdisk ML",
+            valid_disk_size="4GB-65536GB",
+        ),
+    ]
+    regional = [
+        SimpleNamespace(
+            id=50001,
+            name="hyperdisk-balanced-high-availability",
+            description="Hyperdisk Balanced High Availability",
+            valid_disk_size="4GB-65536GB",
+        ),
+    ]
+
+    with (
+        patch("sc_crawler.vendors._gcp._storages", return_value=zonal) as zonal_mock,
+        patch(
+            "sc_crawler.vendors._gcp._region_storages", return_value=regional
+        ) as regional_mock,
+    ):
+        items = inventory_storages(vendor)
+
+    assert zonal_mock.call_count == 1
+    zonal_mock.assert_called_once_with("us-central1-a")
+    assert regional_mock.call_count == 1
+    regional_mock.assert_called_once_with("us-central1")
+    assert {s["name"] for s in items} == set(STORAGE_ALLOWLIST)
 
 
 def test_gcp_inventory_storage_prices_use_capacity_skus():
