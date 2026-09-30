@@ -422,11 +422,7 @@ def inventory_servers(vendor):
                     "gpu_model": None,
                     "gpus": [],
                     "storage_size": server.disk,
-                    "storage_type": (
-                        StorageType.NVME_SSD
-                        if server.storage_type == "local"
-                        else StorageType.SSD
-                    ),
+                    "storage_type": StorageType.NVME_SSD,
                     "storages": [],
                     # TODO: have to implement manual mapping for network_speed related fields
                     "network_speed_baseline": None,
