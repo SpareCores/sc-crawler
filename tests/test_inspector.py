@@ -104,15 +104,15 @@ def _z4d_server():
 
 
 def test_gcp_keeps_api_storage_when_inspector_has_no_sample():
-    server = _z4d_server()
+    expected = _z4d_server()
     with ExitStack() as stack:
         _patch_missing_inspector_lookups(stack)
-        updated = inspect_update_server_dict(server)
+        updated = inspect_update_server_dict(_z4d_server())
 
-    assert updated["memory_amount"] == 1548288
-    assert updated["storage_size"] == server["storage_size"]
-    assert updated["storage_type"] == StorageType.NVME_SSD
-    assert updated["storages"] == server["storages"]
+    assert updated["memory_amount"] == expected["memory_amount"]
+    assert updated["storage_size"] == expected["storage_size"]
+    assert updated["storage_type"] == expected["storage_type"]
+    assert updated["storages"] == expected["storages"]
 
 
 def test_gcp_inspector_lsblk_still_overrides_api_storage():
