@@ -221,8 +221,12 @@ def _server_accelerators() -> dict:
 
 
 # https://cloud.google.com/compute/docs/disks/local-ssd
+# Z4D Titanium SSD partitions are 3,500 GiB (both standardlssd and highlssd):
+# https://cloud.google.com/compute/docs/storage-optimized-machines
 def _local_ssd_partition_gib(server_name: str) -> int:
     family = server_name.split("-")[0].lower()
+    if family == "z4d":
+        return 3500
     if family == "z3" and server_name.endswith("-metal"):
         return 6000
     if family in ["a4x", "z3"] or (family == "c4" and server_name.endswith("-metal")):
@@ -537,13 +541,21 @@ def _gcp_machine_type_status(deprecated_state: str | None) -> Status:
 # after the series, e.g. "A3Ultra Instance Core running in Americas" for
 # a3-ultragpu-8g and "M4Ultramem224 Instance Ram running in Americas" for
 # m4-ultramem-224. N1 mega/ultramem were renamed to M1.
+# Z4D SKUs include the Titanium SSD ratio, e.g.
+# "Z4D-HIGHMEM-HIGHLSSD Instance Core running in Iowa" for
+# z4d-highmem-192-highlssd. standardlssd and highlssd Local SSD rates differ,
+# so they cannot share the "z4d" series key.
 # https://cloud.google.com/compute/docs/memory-optimized-machines#m1_series
+# https://cloud.google.com/compute/docs/storage-optimized-machines
+# https://cloud.google.com/products/compute/pricing/storage-optimized
 _SERVER_NAME_SKU_FAMILIES = (
     (recompile(r"^n1-(?:mega|ultra)mem-\d+$"), "m1"),
     (recompile(r"^a3-megagpu-"), "a3plus"),
     (recompile(r"^a3-ultragpu-"), "a3ultra"),
     (recompile(r"^m4-ultramem-224$"), "m4ultramem224"),
     (recompile(r"^m4n-ultramem-224$"), "m4nultramem224"),
+    (recompile(r"^z4d-highmem-\d+-standardlssd$"), "z4d-highmem-standardlssd"),
+    (recompile(r"^z4d-highmem-\d+-highlssd$"), "z4d-highmem-highlssd"),
 )
 
 
