@@ -793,7 +793,7 @@ class ServerFields(
     )
     storage_type: Optional[StorageType] = Field(
         default=None,
-        description="Primary disk type, e.g. HDD, SSD, NVMe SSD, or network).",
+        description="Primary disk type, e.g. HDD, SSD, or NVMe SSD.",
     )
     storages: List[Disk] = Field(
         default=[],

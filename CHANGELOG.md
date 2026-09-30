@@ -1,6 +1,8 @@
 ## v0.9.x (DEVELOPMENT)
 
 - Implement database inventories for `OVH`, `UpCloud` and `Vultr`.
+- Remove `StorageType.NETWORK`. Map former network-attached block storage to
+  media/performance classes (`HDD` / `SSD` / `NVME_SSD`) instead.
 
 New benchmark(s):
 

@@ -940,25 +940,34 @@ def _standardize_server(server: dict, vendor) -> dict:
     description = description + " " + capability("vCPUs") + " vCPU"
     if int(capability("vCPUs")) > 1:
         description = description + "s"
-    # no info on actual drives, but at least split for temp and NVMe disks
+    # Bundled local disks only. OS disk is a managed disk chosen at deploy time.
+    # SKUs without a temp disk report MaxResourceVolumeMB "0" (truthy string).
     storages = []
-    # temp disk, values might be off, see e.g. DC1s_v2 reporting 51200 MB and showing 50 GiB in docs
-    if capability("MaxResourceVolumeMB"):
+    temp_mb = capability("MaxResourceVolumeMB")
+    # values might be off, see e.g. DC1s_v2 reporting 51200 MB and showing 50 GiB in docs
+    if temp_mb and float(temp_mb) > 0:
         storages.append(
             Disk(
-                size=round(float(capability("MaxResourceVolumeMB")) / 1e3),
-                storage_type="ssd",
+                size=round(float(temp_mb) / 1e3),
+                storage_type=StorageType.SSD,
                 description="temp disk",
             )
         )
     # NVMe disks are explicitely reported in base 2 unit
-    if capability("NvmeDiskSizeInMiB"):
+    nvme_mib = capability("NvmeDiskSizeInMiB")
+    if nvme_mib and float(nvme_mib) > 0:
         storages.append(
             Disk(
-                size=round(float(capability("NvmeDiskSizeInMiB")) * 1024**2 / 1e9),
-                storage_type="nvme ssd",
+                size=round(float(nvme_mib) * 1024**2 / 1e9),
+                storage_type=StorageType.NVME_SSD,
             )
         )
+    if any(disk.storage_type == StorageType.NVME_SSD for disk in storages):
+        storage_type = StorageType.NVME_SSD
+    elif storages:
+        storage_type = StorageType.SSD
+    else:
+        storage_type = None
     return {
         "vendor_id": vendor.vendor_id,
         "server_id": server["name"],
@@ -989,6 +998,7 @@ def _standardize_server(server: dict, vendor) -> dict:
         ),
         "gpu_memory_total": int(gpu_memory * gpus) if gpus and gpu_memory else 0,
         "storage_size": round(sum([s.size for s in storages])),  # int GB
+        "storage_type": storage_type,
         "storages": storages,
         # TODO: have to implement manual mapping for network_speed related fields
         "network_speed_baseline": None,
