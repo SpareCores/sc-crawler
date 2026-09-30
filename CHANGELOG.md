@@ -12,6 +12,7 @@ Fix(es):
   On-demand and spot prices now cover `z4d`, `ct5l`, `ct5lp`, `ct5p`, `ct6e`, and `tpu7x`,
   plus specialized Core/Ram families, GPU slice SKUs, GBy.h memory units, and bundled
   Local SSD GiB-month rates. TPU models use `v3` / `v5e` / `v5p` / `v6e` / `v7x`.
+- Keep vendor API storage when the inspector has no disk sample (e.g. GCP `z4d`).
 - `AWS`: fix parsed EBS max IOPS, throughput, and size.
 - `Azure`: take PostgreSQL Flexible Server SKUs from retail prices.
 
