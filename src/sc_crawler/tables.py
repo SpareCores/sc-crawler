@@ -20,6 +20,7 @@ from .inspector import (
     inspect_update_server_dict,
     inspector_data_path,
 )
+from .inspector_rules import block_reasons
 from .logger import VendorProgressTracker, VoidProgressTracker, log_start_end, logger
 from .table_bases import (
     BenchmarkBase,
@@ -526,6 +527,10 @@ class Storage(StorageBase, table=True):
 
 class Server(ServerBase, table=True):
     """Server types."""
+
+    def check_inspector_task_block_reasons(self, tasks: List[str]):
+        """Check if the server should run inspector task(s) and return block reasons."""
+        return block_reasons(self, tasks)
 
     vendor: Vendor = Relationship(back_populates="servers")
     prices: List["ServerPrice"] = Relationship(
