@@ -153,8 +153,6 @@ class StorageType(str, Enum):
     """Solid-state drive."""
     NVME_SSD = "nvme ssd"
     """NVMe based solid-state drive."""
-    NETWORK = "network"
-    """Network-attached block storage."""
 
 
 class DatabaseEngine(str, Enum):
