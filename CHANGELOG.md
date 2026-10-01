@@ -1,6 +1,10 @@
 ## v0.9.x (DEVELOPMENT)
 
 - Implement database inventories for `OVH`, `UpCloud` and `Vultr`.
+- Remove `StorageType.NETWORK`. Map former network-attached block storage to
+  media/performance classes (`HDD` / `SSD` / `NVME_SSD`) instead.
+- `GCP`: warehouse Hyperdisk types into `storage` (capacity prices) and set
+  max IOPS/throughput for Persistent Disk and Hyperdisk from docs.
 
 New benchmark(s):
 
@@ -8,12 +12,13 @@ New benchmark(s):
 
 Fix(es):
 
-- GCP: fix accelerator pricing against Billing Catalog SKUs
-  (specialized Core/Ram families, GPU slice SKUs, GBy.h memory units, and
-  bundled Local SSD GiB-month rates).
-- Standardize GPU/TPU model and count handling (including TPU family and
-  version naming: `v3` / `v5e` / `v5p` / `v6e` / `v7x`).
-- AWS: fix parsed EBS max IOPS, throughput, and size.
+- `GCP`: fix Compute Engine prices and GPU/TPU naming against Billing Catalog SKUs.
+  On-demand and spot prices now cover `z4d`, `ct5l`, `ct5lp`, `ct5p`, `ct6e`, and `tpu7x`,
+  plus specialized Core/Ram families, GPU slice SKUs, GBy.h memory units, and bundled
+  Local SSD GiB-month rates. TPU models use `v3` / `v5e` / `v5p` / `v6e` / `v7x`.
+- Keep vendor API storage when the inspector has no disk sample (e.g. GCP `z4d`).
+- `AWS`: fix parsed EBS max IOPS, throughput, and size.
+- `Azure`: take PostgreSQL Flexible Server SKUs from retail prices.
 
 Maintenance update:
 

@@ -1337,7 +1337,7 @@ def inventory_storages(vendor) -> list[dict]:
             "name": "Classic Volume",
             # quote from homepage
             "description": "Perfect for the daily application needs of databases, virtual machines, and backups.",
-            "storage_type": StorageType.NETWORK,
+            "storage_type": StorageType.NVME_SSD,
             "max_iops": 500,
             "max_throughput": 64,
             "min_size": 10,
@@ -1349,7 +1349,7 @@ def inventory_storages(vendor) -> list[dict]:
             "name": "High Speed Volume Gen 1",
             # quote from homepage
             "description": "Offers optimised and scalable performance, and is recommended for intensive workloads.",
-            "storage_type": StorageType.NETWORK,
+            "storage_type": StorageType.NVME_SSD,
             "max_iops": 3_000,
             "max_throughput": 128,
             "min_size": 10,
@@ -1361,7 +1361,7 @@ def inventory_storages(vendor) -> list[dict]:
             "name": "High Speed Volume Gen 2",
             # quote from homepage
             "description": "Offers optimised and scalable performance, and is recommended for intensive workloads.",
-            "storage_type": StorageType.NETWORK,
+            "storage_type": StorageType.NVME_SSD,
             "max_iops": 20_000,
             "max_throughput": 320,
             "min_size": 10,
