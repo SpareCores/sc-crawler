@@ -223,12 +223,16 @@ def _load_scores(
     return per_server, entry_medians
 
 
-def _normalise(raw: float, fleet_median: float, higher_is_better: bool) -> float | None:
+def _normalise(
+    raw: float, fleet_median: float, higher_is_better: bool, sig: int = 2
+) -> float | None:
     """Normalise *raw* to a ratio to the per-benchmark median, or None if invalid."""
     if raw <= 0 or fleet_median <= 0:
         return None
+    raw = _round_sigfigs(raw, sig=sig)
+    fleet_median = _round_sigfigs(fleet_median, sig=sig)
     ratio = raw / fleet_median if higher_is_better else fleet_median / raw
-    return ratio
+    return _round_sigfigs(ratio, sig=sig)
 
 
 def _component_note_for_invalid(raw: float | None) -> str | None:
@@ -293,7 +297,7 @@ def _compute_workload_score_rows(
                             weight_share=0.0,  # filled after total_weight known
                             raw=_round_measurement(raw),
                             reference=_round_measurement(fleet_median),
-                            normalized=_round_sigfigs(norm),
+                            normalized=norm,
                             higher_is_better=higher,
                             note=None,
                         )
