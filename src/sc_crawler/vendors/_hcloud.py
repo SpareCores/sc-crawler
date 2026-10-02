@@ -464,8 +464,8 @@ def inventory_storages(vendor):
             "name": "Block storage volume",
             "description": None,
             "storage_type": StorageType.SSD,
-            "max_iops": None,
-            "max_throughput": None,
+            "max_iops": 7500,
+            "max_throughput": 300,
             "min_size": 10,
             "max_size": 10000,
         }
