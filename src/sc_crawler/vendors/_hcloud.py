@@ -456,6 +456,7 @@ def inventory_storages(vendor):
 
     - <https://www.hetzner.com/cloud/>
     - <https://docs.hetzner.cloud/#volumes-create-a-volume>
+    - <https://docs.hetzner.com/cloud/volumes/overview/>
     """
     items = [
         {
