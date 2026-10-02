@@ -12,6 +12,10 @@ New benchmark(s):
 
 Fix(es):
 
+- `UpCloud`: inventory componentised `rdb.*` Developer / Standard / High Memory
+  PostgreSQL plans from `/database/plans`. Replace managed DB storage id `additional-disk`
+  with `standard` (Developer plans and legacy additional disk) and `maxiops`
+  (Standard / High Memory plans), matching block-storage storage ids.
 - `GCP`: fix Compute Engine prices and GPU/TPU naming against Billing Catalog SKUs.
   On-demand and spot prices now cover `z4d`, `ct5l`, `ct5lp`, `ct5p`, `ct6e`, and `tpu7x`,
   plus specialized Core/Ram families, GPU slice SKUs, GBy.h memory units, and bundled

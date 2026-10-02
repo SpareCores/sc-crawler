@@ -460,6 +460,10 @@ def _get_gpu_region_availability(region_id: str) -> dict[str, dict]:
     )
 
 
+# Block storage tiers. IOPS from docs, MaxIOPS throughput ~400 MB/s (workload-
+# dependent). MaxIOPS v2 is in progress and aims ~2–3× that throughput.
+# https://upcloud.com/docs/products/block-storage/tiers/
+# https://upcloud.com/docs/roadmap/#ready-to-use
 UPCLOUD_STORAGES = [
     {
         "id": "hdd",
@@ -469,6 +473,7 @@ UPCLOUD_STORAGES = [
         "min_size": 1,
         "max_size": 4096,
         "max_iops": 600,
+        "max_throughput": None,
     },
     {
         "id": "standard",
@@ -478,6 +483,7 @@ UPCLOUD_STORAGES = [
         "min_size": 1,
         "max_size": 4096,
         "max_iops": 10000,
+        "max_throughput": None,
     },
     {
         "id": "maxiops",
@@ -487,6 +493,7 @@ UPCLOUD_STORAGES = [
         "min_size": 1,
         "max_size": 4096,
         "max_iops": 100000,
+        "max_throughput": 400,
     },
 ]
 
@@ -957,7 +964,7 @@ def inventory_storages(vendor):
                 "description": storage["description"],
                 "storage_type": storage["storage_type"],
                 "max_iops": storage["max_iops"],
-                "max_throughput": None,
+                "max_throughput": storage["max_throughput"],
                 "min_size": storage["min_size"],
                 "max_size": storage["max_size"],
             }
@@ -1449,7 +1456,7 @@ def inventory_database_prices(vendor):
 # https://upcloud.com/docs/products/block-storage/tiers/
 _DATABASE_STORAGE_TIERS = [
     {
-        "database_storage_id": "tiered_storage_standard",
+        "database_storage_id": "standard",
         "name": "Standard",
         "description": (
             "Managed database Standard SSD storage "
@@ -1457,15 +1464,19 @@ _DATABASE_STORAGE_TIERS = [
         ),
         "price_key": "managed_database_tiered_storage_standard",
         "max_iops": 10000,
+        "max_throughput": None,
     },
     {
-        "database_storage_id": "tiered_storage_maxiops",
+        "database_storage_id": "maxiops",
         "name": "MaxIOPS",
         "description": (
             "Managed database MaxIOPS storage (Standard and High Memory plans)"
         ),
         "price_key": "managed_database_tiered_storage_maxiops",
         "max_iops": 100000,
+        # Same MaxIOPS block platform as server storage (~400 MB/s today).
+        # https://upcloud.com/docs/roadmap/#ready-to-use
+        "max_throughput": 400,
     },
 ]
 
@@ -1531,7 +1542,7 @@ def inventory_database_storages(vendor):
             "min_size": min_size,
             "max_size": max_size,
             "max_iops": tier["max_iops"],
-            "max_throughput": None,
+            "max_throughput": tier["max_throughput"],
         }
         for tier in _DATABASE_STORAGE_TIERS
     ]

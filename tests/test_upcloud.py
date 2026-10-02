@@ -501,22 +501,22 @@ def test_upcloud_inventory_database_storages_from_service_plans():
     ):
         rows = inventory_database_storages(vendor)
     by_id = {row["database_storage_id"]: row for row in rows}
-    assert set(by_id) == {"tiered_storage_standard", "tiered_storage_maxiops"}
-    assert by_id["tiered_storage_standard"]["scope"] == DatabaseStorageScope.DATA
-    assert by_id["tiered_storage_standard"]["max_iops"] == 10000
-    assert by_id["tiered_storage_maxiops"]["max_iops"] == 100000
+    assert set(by_id) == {"standard", "maxiops"}
+    assert by_id["standard"]["scope"] == DatabaseStorageScope.DATA
+    assert by_id["standard"]["max_iops"] == 10000
+    assert by_id["maxiops"]["max_iops"] == 100000
     # Legacy per-node floor 50 GiB; componentised floor 80 GiB → min 50 GiB.
-    assert by_id["tiered_storage_standard"]["min_size"] == round(50 * _GIB_TO_GB)
+    assert by_id["standard"]["min_size"] == round(50 * _GIB_TO_GB)
     # Componentised max 640 GiB beats legacy per-node cap 400 GiB.
-    assert by_id["tiered_storage_maxiops"]["max_size"] == round(640 * _GIB_TO_GB)
-    assert by_id["tiered_storage_maxiops"]["max_throughput"] is None
+    assert by_id["maxiops"]["max_size"] == round(640 * _GIB_TO_GB)
+    assert by_id["maxiops"]["max_throughput"] == 400
 
 
 def test_upcloud_inventory_database_storage_prices_from_zone_list():
     vendor = Mock(vendor_id="upcloud")
     vendor.database_storages = [
-        Mock(database_storage_id="tiered_storage_standard"),
-        Mock(database_storage_id="tiered_storage_maxiops"),
+        Mock(database_storage_id="standard"),
+        Mock(database_storage_id="maxiops"),
     ]
     mock_client = Mock()
     mock_client.get_prices.return_value = {
@@ -541,15 +541,15 @@ def test_upcloud_inventory_database_storage_prices_from_zone_list():
     assert len(rows) == 4
     by_key = {(row["region_id"], row["database_storage_id"]): row for row in rows}
     assert set(by_key) == {
-        ("fi-hel1", "tiered_storage_standard"),
-        ("fi-hel1", "tiered_storage_maxiops"),
-        ("de-fra1", "tiered_storage_standard"),
-        ("de-fra1", "tiered_storage_maxiops"),
+        ("fi-hel1", "standard"),
+        ("fi-hel1", "maxiops"),
+        ("de-fra1", "standard"),
+        ("de-fra1", "maxiops"),
     }
-    assert by_key[("fi-hel1", "tiered_storage_standard")]["unit"] == PriceUnit.GB_MONTH
-    assert round(by_key[("fi-hel1", "tiered_storage_standard")]["price"], 4) == round(
+    assert by_key[("fi-hel1", "standard")]["unit"] == PriceUnit.GB_MONTH
+    assert round(by_key[("fi-hel1", "standard")]["price"], 4) == round(
         0.0055 * 730, 4
     )
-    assert round(by_key[("fi-hel1", "tiered_storage_maxiops")]["price"], 4) == round(
+    assert round(by_key[("fi-hel1", "maxiops")]["price"], 4) == round(
         0.0138 * 730, 4
     )
