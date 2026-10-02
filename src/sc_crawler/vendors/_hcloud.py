@@ -38,54 +38,35 @@ def _client() -> Client:
 # Internal helpers
 
 
-def _get_datacenters():
-    """List all datacenters via API call.
+def _get_locations():
+    """List all locations via API call.
 
-    Reference: <https://docs.hetzner.cloud/reference/cloud#tag/datacenters/GET/datacenters>
+    Replaces the deprecated datacenters endpoint.
+    Reference: <https://docs.hetzner.cloud/reference/cloud#tag/locations/GET/locations>
+    Changelog: <https://docs.hetzner.cloud/changelog#2026-06-02-datacenters-deprecated>
     """
-    # example list_datacenters response:
+    # example list_locations response:
     # {
-    #     'datacenters': [
+    #     'locations': [
     #         {
-    #             'description': 'Nuremberg 1 virtual DC 3',
+    #             'id': 1,
+    #             'name': 'fsn1',
+    #             'description': 'Falkenstein DC Park 1',
+    #             'country': 'DE',
+    #             'city': 'Falkenstein',
+    #             'latitude': 50.47612,
+    #             'longitude': 12.370071,
+    #             'network_zone': 'eu-central'
+    #         },
+    #         {
     #             'id': 2,
-    #             'location': {
-    #                 'city': 'Nuremberg',
-    #                 'country': 'DE',
-    #                 'description': 'Nuremberg DC Park 1',
-    #                 'id': 2,
-    #                 'latitude': 49.452102,
-    #                 'longitude': 11.076665,
-    #                 'name': 'nbg1',
-    #                 'network_zone': 'eu-central'
-    #             },
-    #             'name': 'nbg1-dc3',
-    #             'server_types': {
-    #                 'available': [
-    #                     97,
-    #                     94,
-    #                     96,
-    #                     109,
-    #                     99,
-    #                     # ...
-    #                 ],
-    #                 'available_for_migration': [
-    #                     97,
-    #                     94,
-    #                     96,
-    #                     109,
-    #                     99,
-    #                     # ...
-    #                 ],
-    #                 'supported': [
-    #                     23,
-    #                     26,
-    #                     97,
-    #                     115,
-    #                     116,
-    #                     # ...
-    #                 ]
-    #             }
+    #             'name': 'nbg1',
+    #             'description': 'Nuremberg DC Park 1',
+    #             'country': 'DE',
+    #             'city': 'Nuremberg',
+    #             'latitude': 49.452102,
+    #             'longitude': 11.076665,
+    #             'network_zone': 'eu-central'
     #         },
     #         # ...
     #     ],
@@ -98,10 +79,9 @@ def _get_datacenters():
     #             'previous_page': None,
     #             'total_entries': 6
     #         }
-    #     },
-    #     'recommendation': 3
+    #     }
     # }
-    return _client().datacenters.get_all()
+    return _client().locations.get_all()
 
 
 def _get_server_types():
@@ -275,10 +255,10 @@ def inventory_compliance_frameworks(vendor):
 def inventory_regions(vendor):
     """List all regions via API call.
 
-    Hetzner Cloud uses integers for the region (virtual datacenter) id
-    that we convert into string. Best to use the unique `name`, which
-    can be also passed instead of the `id` in most `hcloud` API
-    endpoints via the `id_or_name` method.
+    Hetzner Cloud uses integers for the location id that we convert
+    into string. Best to use the unique `name`, which can be also
+    passed instead of the `id` in most `hcloud` API endpoints via the
+    `id_or_name` method.
 
     Not taking the Hetzner unique `name` as id, as it's not
     stated to be unique for other resources, and uniqueness
@@ -286,59 +266,32 @@ def inventory_regions(vendor):
 
     All regions are powered by green energy as per
     <https://www.hetzner.com/unternehmen/umweltschutz/>.
-
-    Lon/lat coordinates were collected by searching for Hetzner
-    locations in the Region's city.
-
     """
-    regions = {
-        "2": {  # Nuremberg
-            "lat": 49.4498349,
-            "lon": 11.0128772,
-        },
-        "3": {  # Helsinki
-            "lat": 60.3433291,
-            "lon": 25.02683,
-        },
-        "4": {  # Falkenstein
-            "lat": 50.4793313,
-            "lon": 12.3331105,
-        },
-        "5": {  # Ashburn, VA
-            "lat": 39.0176685,
-            "lon": -77.468102,
-        },
-        "6": {  # Hillsboro, OR
-            "lat": 45.558319,
-            "lon": -122.9306602,
-        },
-        "7": {  # Singapore
-            "lat": 1.290270,
-            "lon": 103.851959,
-        },
-    }
-
     items = []
-    for region in _get_datacenters():
+    for location in _get_locations():
         with sentry_capture_or_raise(vendor=vendor):
+            city = location.city
+            state = None
+            if ", " in city:
+                city_part, maybe_state = city.rsplit(", ", 1)
+                if len(maybe_state) == 2 and maybe_state.isalpha():
+                    city = city_part
+                    state = maybe_state
             items.append(
                 {
                     "vendor_id": vendor.vendor_id,
-                    "region_id": str(region.id),
-                    "name": region.name,
-                    "api_reference": region.name,
-                    "display_name": (
-                        region.location.city + f" ({region.location.country})"
-                    ),
-                    # TODO add region.description
-                    "aliases": [region.location.name],
-                    "country_id": region.location.country,
-                    "state": None,
-                    "city": region.location.city,
-                    "address_line": None,
+                    "region_id": str(location.id),
+                    "name": location.name,
+                    "api_reference": location.name,
+                    "display_name": f"{city} ({location.country})",
+                    "aliases": [],
+                    "country_id": location.country,
+                    "state": state,
+                    "city": city,
+                    "address_line": location.description,
                     "zip_code": None,
-                    "lat": regions[str(region.id)]["lat"],
-                    "lon": regions[str(region.id)]["lon"],
+                    "lat": location.latitude,
+                    "lon": location.longitude,
                     "founding_year": None,
                     "green_energy": True,
                 }
@@ -349,9 +302,9 @@ def inventory_regions(vendor):
 def inventory_zones(vendor):
     """List all regions as availability zones.
 
-    There is no concept of having multiple availability zones withing
-    a region (virtual datacenter) at Hetzner Cloud, so creating 1-1
-    dummy Zones reusing the Region id and name.
+    There is no concept of having multiple availability zones within
+    a location at Hetzner Cloud, so creating 1-1 dummy Zones reusing
+    the Region id and name.
 
     """
     items = []
