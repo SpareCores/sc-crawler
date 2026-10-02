@@ -547,9 +547,5 @@ def test_upcloud_inventory_database_storage_prices_from_zone_list():
         ("de-fra1", "maxiops"),
     }
     assert by_key[("fi-hel1", "standard")]["unit"] == PriceUnit.GB_MONTH
-    assert round(by_key[("fi-hel1", "standard")]["price"], 4) == round(
-        0.0055 * 730, 4
-    )
-    assert round(by_key[("fi-hel1", "maxiops")]["price"], 4) == round(
-        0.0138 * 730, 4
-    )
+    assert round(by_key[("fi-hel1", "standard")]["price"], 4) == round(0.0055 * 730, 4)
+    assert round(by_key[("fi-hel1", "maxiops")]["price"], 4) == round(0.0138 * 730, 4)
