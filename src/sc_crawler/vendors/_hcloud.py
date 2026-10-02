@@ -288,7 +288,7 @@ def inventory_regions(vendor):
                     "country_id": location.country,
                     "state": state,
                     "city": city,
-                    "address_line": location.description,
+                    "address_line": None,
                     "zip_code": None,
                     "lat": location.latitude,
                     "lon": location.longitude,
