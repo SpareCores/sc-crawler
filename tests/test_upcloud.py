@@ -505,9 +505,11 @@ def test_upcloud_inventory_database_storages_from_service_plans():
     assert by_id["standard"]["scope"] == DatabaseStorageScope.DATA
     assert by_id["standard"]["max_iops"] == 10000
     assert by_id["maxiops"]["max_iops"] == 100000
-    # Legacy per-node floor 50 GiB; componentised floor 80 GiB → min 50 GiB.
+    # Standard: legacy only in this fixture (50–400 GiB per node).
     assert by_id["standard"]["min_size"] == round(50 * _GIB_TO_GB)
-    # Componentised max 640 GiB beats legacy per-node cap 400 GiB.
+    assert by_id["standard"]["max_size"] == round(400 * _GIB_TO_GB)
+    # MaxIOPS: rdb.standard shape options (80–640 GiB).
+    assert by_id["maxiops"]["min_size"] == round(80 * _GIB_TO_GB)
     assert by_id["maxiops"]["max_size"] == round(640 * _GIB_TO_GB)
     assert by_id["maxiops"]["max_throughput"] == 400
 

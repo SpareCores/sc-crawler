@@ -1481,28 +1481,54 @@ _DATABASE_STORAGE_TIERS = [
 ]
 
 
-def _database_storage_size_bounds() -> tuple[int, int]:
-    """Min/max provisionable managed DB disk (GB) from legacy + componentised plans."""
+# Componentised plan families that bill disk on each managed DB storage tier.
+# Legacy bundled plans use Standard for additional disk only.
+# https://upcloud.com/global/pricing/
+_DATABASE_STORAGE_TIER_SHAPE_FAMILIES = {
+    "standard": frozenset({"development"}),
+    "maxiops": frozenset({"standard", "memory"}),
+}
+
+
+def _database_storage_size_bounds(tier_id: str) -> tuple[int, int] | None:
+    """Min/max provisionable managed DB disk (GB) for one storage tier.
+
+    ``standard``: legacy plans + Developer (``development``) shapes.
+    ``maxiops``: Standard / High Memory shapes.
+    """
+    families = _DATABASE_STORAGE_TIER_SHAPE_FAMILIES.get(tier_id)
+    if families is None:
+        return None
     min_gib: int | None = None
     max_gib = 0
-    payload = _get_pg_service_type()
-    for plan in payload.get("service_plans", []):
-        nodes = plan.get("node_count") or 1
-        included = (plan.get("components") or {}).get("storage", {}).get("included_gib")
-        base_gib = (
-            int(included)
-            if included is not None
-            else plan["storage_size"] // _MIB_PER_GIB
-        )
-        # Per-node floor; cap is cluster storage_cap converted per node.
-        floor_gib = base_gib // nodes
-        cap_gib = plan["storage_cap_size"] // _MIB_PER_GIB // nodes
-        min_gib = floor_gib if min_gib is None else min(min_gib, floor_gib)
-        max_gib = max(max_gib, cap_gib)
+    if tier_id == "standard":
+        for plan in _get_pg_service_type().get("service_plans", []):
+            nodes = plan.get("node_count") or 1
+            included = (
+                (plan.get("components") or {}).get("storage", {}).get("included_gib")
+            )
+            base_gib = (
+                int(included)
+                if included is not None
+                else plan["storage_size"] // _MIB_PER_GIB
+            )
+            # Per-node floor; cap is cluster storage_cap converted per node.
+            floor_gib = base_gib // nodes
+            cap_gib = plan["storage_cap_size"] // _MIB_PER_GIB // nodes
+            min_gib = floor_gib if min_gib is None else min(min_gib, floor_gib)
+            max_gib = max(max_gib, cap_gib)
     for service_type in _get_database_plans().get("service_types", []):
         if service_type.get("type") not in ("pg", "postgresql"):
             continue
         for shape in service_type.get("compute_shapes", []):
+            family = shape.get("family")
+            if family is None:
+                compute = shape.get("compute") or ""
+                parts = compute.split(".")
+                if len(parts) >= 2 and parts[0] == "rdb":
+                    family = parts[1]
+            if family not in families:
+                continue
             storage = shape.get("storage") or {}
             for option in storage.get("options") or []:
                 min_gib = (
@@ -1514,8 +1540,10 @@ def _database_storage_size_bounds() -> tuple[int, int]:
             total_cap = storage.get("total_cap_gib")
             if total_cap:
                 max_gib = max(max_gib, total_cap)
+    if min_gib is None or max_gib <= 0:
+        return None
     return (
-        round((min_gib or 0) * _GIB_TO_GB),
+        round(min_gib * _GIB_TO_GB),
         round(max_gib * _GIB_TO_GB),
     )
 
@@ -1525,27 +1553,31 @@ def inventory_database_storages(vendor):
 
     Componentised plans bill all disk via these meters; legacy plans also use
     Standard tiered storage for additional disk above the bundled size.
+    Size bounds are per tier (Developer/legacy → Standard; Std/HM → MaxIOPS).
     https://upcloud.com/global/pricing/
     https://upcloud.com/docs/products/block-storage/tiers/
     https://developers.upcloud.com/1.3/16-managed-database/
     """
-    min_size, max_size = _database_storage_size_bounds()
-    if max_size <= 0:
-        return []
-    return [
-        {
-            "vendor_id": vendor.vendor_id,
-            "database_storage_id": tier["database_storage_id"],
-            "name": tier["name"],
-            "description": tier["description"],
-            "scope": DatabaseStorageScope.DATA,
-            "min_size": min_size,
-            "max_size": max_size,
-            "max_iops": tier["max_iops"],
-            "max_throughput": tier["max_throughput"],
-        }
-        for tier in _DATABASE_STORAGE_TIERS
-    ]
+    items = []
+    for tier in _DATABASE_STORAGE_TIERS:
+        bounds = _database_storage_size_bounds(tier["database_storage_id"])
+        if bounds is None:
+            continue
+        min_size, max_size = bounds
+        items.append(
+            {
+                "vendor_id": vendor.vendor_id,
+                "database_storage_id": tier["database_storage_id"],
+                "name": tier["name"],
+                "description": tier["description"],
+                "scope": DatabaseStorageScope.DATA,
+                "min_size": min_size,
+                "max_size": max_size,
+                "max_iops": tier["max_iops"],
+                "max_throughput": tier["max_throughput"],
+            }
+        )
+    return items
 
 
 def inventory_database_storage_prices(vendor):
