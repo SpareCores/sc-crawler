@@ -1276,13 +1276,45 @@ def inventory_server_prices(vendor) -> list[dict]:
     offers = _get_flavors()
     offers = [o for o in offers if o["osType"] == "linux"]
     items = []
+    # the same flavor/region can be listed multiple times by the flavor API
+    seen_offers: set[tuple[str, str]] = set()
+    price_by_server: dict[tuple[str, str], tuple[str, float]] = {}
+    excluded: set[str] = set()
     vendor.progress_tracker.start_task(name="Fetching server offers", total=len(offers))
     for offer in offers:
+        vendor.progress_tracker.advance_task()
         region = regions.get(offer["region"])
-        addon = addons[offer["planCodes"]["hourly"]]
+        plan_code = (offer.get("planCodes") or {}).get("hourly")
+        addon = addons.get(plan_code)
+        if addon is None:
+            # e.g. private/ephemeral flavors (h200-1920-eph) are listed by the
+            # flavor API, but have no price in the public catalog
+            msg = (
+                f"Excluding offer for {offer.get('name')} ({plan_code}) in "
+                f"{offer['region']}: no matching addon in the public catalog"
+            )
+            if msg not in excluded:
+                excluded.add(msg)
+                vendor.log(msg)
+            continue
         if region is None:
+            msg = f"Excluding offer for {addon['invoiceName']} from unknown region: {offer['region']}"
+            if msg not in excluded:
+                excluded.add(msg)
+                vendor.log(msg)
+            continue
+        if (offer["region"], plan_code) in seen_offers:
+            continue
+        seen_offers.add((offer["region"], plan_code))
+        price = addon["pricings"][0]["price"] / _MICROCENTS_PER_CURRENCY_UNIT
+        # different plan codes resolving to the same server id would silently
+        # overwrite each other on insert, so flag them
+        server_key = (offer["region"], addon["invoiceName"])
+        previous = price_by_server.setdefault(server_key, (plan_code, price))
+        if previous[0] != plan_code:
             vendor.log(
-                f"Excluding offer for {addon['invoiceName']} from unknown region: {offer['region']}"
+                f"Multiple plans for {addon['invoiceName']} in {offer['region']}: "
+                f"{previous[0]} ({previous[1]}) vs {plan_code} ({price})"
             )
             continue
         # TODO check if server id is known for this vendor?
@@ -1299,16 +1331,13 @@ def inventory_server_prices(vendor) -> list[dict]:
                     "allocation": Allocation.ONDEMAND,
                     # we already filtered for hourly plan
                     "unit": PriceUnit.HOUR,
-                    "price": (
-                        addon["pricings"][0]["price"] / _MICROCENTS_PER_CURRENCY_UNIT
-                    ),
+                    "price": price,
                     "price_upfront": 0,
                     "price_tiered": [],
                     "currency": catalog["locale"]["currencyCode"],
                     "status": Status.ACTIVE,
                 }
             )
-        vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
     return items
 
@@ -1724,6 +1753,7 @@ def inventory_database_prices(vendor):
     currency = catalog.get("locale", {}).get("currencyCode", "EUR")
     items = []
     seen: set[tuple[str, str, DatabaseHaLevel, DatabaseHaStrategy]] = set()
+    excluded: set[str] = set()
     for offer in availability:
         if offer.get("engine") != "postgresql":
             continue
@@ -1755,9 +1785,11 @@ def inventory_database_prices(vendor):
             if addon:
                 break
         if addon is None:
-            vendor.log(
-                f"Excluding {database_id} in {region.region_id}: no catalog addon"
-            )
+            # availability has one row per version/network mode, log only once
+            msg = f"Excluding {database_id} in {region.region_id}: no catalog addon"
+            if msg not in excluded:
+                excluded.add(msg)
+                vendor.log(msg)
             continue
         node_price = None
         for pricing in addon.get("pricings", []):
