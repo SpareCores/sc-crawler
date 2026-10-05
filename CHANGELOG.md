@@ -1,14 +1,20 @@
-## v0.9.x (DEVELOPMENT)
+## v0.9.3 (October 02, 2026)
+
+New benchmark(s):
+
+- nvbandwidth
+
+New feature(s):
+
+- Port inspector task ruleset from `sc-inspector`.
+
+Maintenance update:
 
 - Implement database inventories for `OVH`, `UpCloud` and `Vultr`.
 - Remove `StorageType.NETWORK`. Map former network-attached block storage to
   media/performance classes (`HDD` / `SSD` / `NVME_SSD`) instead.
 - `GCP`: warehouse Hyperdisk types into `storage` (capacity prices) and set
   max IOPS/throughput for Persistent Disk and Hyperdisk from docs.
-
-New benchmark(s):
-
-- nvbandwidth
 
 Fix(es):
 
