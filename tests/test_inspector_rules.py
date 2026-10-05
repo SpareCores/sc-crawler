@@ -9,7 +9,7 @@ def _server(**overrides):
     defaults = dict(
         vendor_id="hcloud",
         api_reference="cx22",
-        gpu_count=1,
+        accelerator_count=1,
         memory_amount=8 * 1024,
         vcpus=4,
         storage_size_actual=100,
@@ -39,7 +39,7 @@ def test_cloud_credit_not_applied_outside_big_clouds():
 
 
 def test_nvidia_tasks_blocked_without_gpus():
-    server = _server(gpu_count=0)
+    server = _server(accelerator_count=0)
     reasons = block_reasons(server, ["nvidia_smi", "nvbandwidth", "membench"])
     assert reasons["nvidia_smi"] == ["No GPUs available."]
     assert reasons["nvbandwidth"] == ["No GPUs available."]
@@ -47,7 +47,7 @@ def test_nvidia_tasks_blocked_without_gpus():
 
 
 def test_nvidia_tasks_blocked_for_unsupported_skus():
-    server = _server(vendor_id="aws", api_reference="g3.4xlarge", gpu_count=1)
+    server = _server(vendor_id="aws", api_reference="g3.4xlarge", accelerator_count=1)
     reasons = block_reasons(server, "nvidia_smi")
     assert reasons["nvidia_smi"] == [
         "Cloud credit/budget exhausted.",
@@ -56,7 +56,7 @@ def test_nvidia_tasks_blocked_for_unsupported_skus():
 
 
 def test_nvidia_tasks_allowed_for_supported_gpu_sku():
-    server = _server(vendor_id="aws", api_reference="g4dn.xlarge", gpu_count=1)
+    server = _server(vendor_id="aws", api_reference="g4dn.xlarge", accelerator_count=1)
     reasons = block_reasons(server, "nvbandwidth")
     assert reasons["nvbandwidth"] == ["Cloud credit/budget exhausted."]
 
@@ -138,7 +138,7 @@ def test_multiple_reasons_can_stack():
     server = _server(
         vendor_id="aws",
         api_reference="g3.4xlarge",
-        gpu_count=0,
+        accelerator_count=0,
         memory_amount=512,
         vcpus=64,
     )

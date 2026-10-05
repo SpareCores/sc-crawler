@@ -19,6 +19,8 @@ from ..logger import logger
 from ..lookup import map_compliance_frameworks_to_vendor
 from ..sentry import sentry_capture_or_raise
 from ..table_fields import (
+    AcceleratorType,
+    Accelerator,
     Allocation,
     CpuAllocation,
     DatabaseEngine,
@@ -28,7 +30,6 @@ from ..table_fields import (
     DatabaseStorageScope,
     DatabaseWireProtocol,
     Disk,
-    Gpu,
     PriceTier,
     PriceUnit,
     Status,
@@ -610,7 +611,7 @@ def _get_gpus_of_instance_type(instance_type):
     info = instance_type["GpuInfo"]
 
     def to_gpu(gpu):
-        return Gpu(
+        return Accelerator(
             manufacturer=gpu["Manufacturer"],
             model=gpu["Name"],
             memory=gpu["MemoryInfo"]["SizeInMiB"],
@@ -650,12 +651,14 @@ def _make_server_from_instance_type(instance_type, vendor) -> dict:
         "cpu_architecture": cpu_info["SupportedArchitectures"][0],
         "cpu_manufacturer": cpu_info.get("Manufacturer", None),
         "memory_amount": instance_type["MemoryInfo"]["SizeInMiB"],
-        "gpu_count": gpu_info[0],
-        "gpu_memory_min": gpu_info[1],
-        "gpu_memory_total": gpu_info[2],
-        "gpu_manufacturer": gpu_info[3],
-        "gpu_model": gpu_info[4],
-        "gpus": _get_gpus_of_instance_type(instance_type),
+        "accelerator_count": gpu_info[0],
+        "accelerator_memory_min": gpu_info[1],
+        "accelerator_memory_total": gpu_info[2],
+        # GpuInfo lists GPUs only (no Inferentia/Trainium or FPGA accelerators)
+        "accelerator_type": AcceleratorType.GPU if gpu_info[0] else None,
+        "accelerator_manufacturer": gpu_info[3],
+        "accelerator_model": gpu_info[4],
+        "accelerators": _get_gpus_of_instance_type(instance_type),
         "storage_size": storage_info[0],
         "storage_type": storage_info[1],
         "storages": _get_storages_of_instance_type(instance_type),

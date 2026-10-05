@@ -900,9 +900,36 @@ benchmarks: List[Benchmark] = [
         framework="pgbench",
         measurement="heavy_read_only:peak",
         source={"kind": "measured"},
+        environment_fields={
+            "peak_concurrency": "Client concurrency at which the peak throughput was measured.",
+        },
         unit="Transactions per minute (TPM)",
     ),
 ]
+
+# document the keys recorded in BenchmarkScore.environment
+_ENVIRONMENT_FIELDS = {
+    "kernel_version": "Linux kernel version of the server running the benchmark (not recorded for managed databases).",
+}
+_FRAMEWORK_ENVIRONMENT_FIELDS = {
+    "nvbandwidth": {
+        "driver_version": "NVIDIA driver version.",
+        "cuda_runtime_version": "CUDA runtime version.",
+        "nvbandwidth_version": "Version of the nvbandwidth tool.",
+        "gpu_count": "Number of GPUs seen by nvbandwidth.",
+        "p2p_supported": "Whether peer-to-peer (device-to-device) GPU transfers were supported.",
+    },
+    "pgbench": {
+        "database_engine_version": "PostgreSQL server version.",
+        "latency_avg_ms": "Average transaction latency (ms).",
+    },
+}
+for benchmark in benchmarks:
+    benchmark.environment_fields = {
+        **_ENVIRONMENT_FIELDS,
+        **_FRAMEWORK_ENVIRONMENT_FIELDS.get(benchmark.framework, {}),
+        **benchmark.environment_fields,
+    }
 
 # dynamically add synthetic compound/augmented workloads
 for workload_name, workload in WORKLOADS.items():

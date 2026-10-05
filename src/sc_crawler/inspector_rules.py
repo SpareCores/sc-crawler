@@ -19,7 +19,7 @@ def block_reasons(server: "Server", tasks: str | List[str]):
             results[task].append("Cloud credit/budget exhausted.")
 
         if task in ["nvidia_smi", "nvbandwidth"]:
-            if server.gpu_count == 0:
+            if server.accelerator_count == 0:
                 results[task].append("No GPUs available.")
             # TODO these failed in the past, we should revisit if recent updates (e.g. newer drivers) fixed them
             if (server.vendor_id, server.api_reference) in [

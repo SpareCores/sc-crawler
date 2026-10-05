@@ -9,6 +9,7 @@ from ..inspector import _standardize_gpu_family, _standardize_gpu_model
 from ..lookup import map_compliance_frameworks_to_vendor
 from ..sentry import sentry_capture_or_raise
 from ..table_fields import (
+    AcceleratorType,
     Allocation,
     CpuAllocation,
     CpuArchitecture,
@@ -466,11 +467,11 @@ _UPCLOUD_GPU_FAMILY = {
 def _parse_gpu_model(gpu_model: str | None, gpu_count: float = 0) -> dict:
     """Derive GPU inventory fields from the UpCloud gpu_model string."""
     empty = {
-        "gpu_memory_min": 0,
-        "gpu_memory_total": 0,
-        "gpu_manufacturer": None,
-        "gpu_family": None,
-        "gpu_model": None,
+        "accelerator_memory_min": 0,
+        "accelerator_memory_total": 0,
+        "accelerator_manufacturer": None,
+        "accelerator_family": None,
+        "accelerator_model": None,
     }
     if not gpu_model:
         return empty
@@ -481,19 +482,19 @@ def _parse_gpu_model(gpu_model: str | None, gpu_count: float = 0) -> dict:
 
     memory_per_gpu = _UPCLOUD_GPU_MEMORY_MIB.get(model)
     manufacturer = "NVIDIA" if gpu_model.strip().upper().startswith("NVIDIA") else None
-    family = _standardize_gpu_family({"gpu_model": model}) or _UPCLOUD_GPU_FAMILY.get(
-        model
-    )
+    family = _standardize_gpu_family(
+        {"accelerator_model": model}
+    ) or _UPCLOUD_GPU_FAMILY.get(model)
     gpu_memory_total = (
         int(gpu_count * memory_per_gpu) if memory_per_gpu and gpu_count else None
     )
 
     return {
-        "gpu_memory_min": memory_per_gpu,
-        "gpu_memory_total": gpu_memory_total,
-        "gpu_manufacturer": manufacturer,
-        "gpu_family": family,
-        "gpu_model": model,
+        "accelerator_memory_min": memory_per_gpu,
+        "accelerator_memory_total": gpu_memory_total,
+        "accelerator_manufacturer": manufacturer,
+        "accelerator_family": family,
+        "accelerator_model": model,
     }
 
 
@@ -753,9 +754,10 @@ def inventory_servers(vendor):
                     "memory_generation": None,
                     "memory_speed": None,
                     "memory_ecc": None,
-                    "gpu_count": gpu_count,
+                    "accelerator_count": gpu_count,
+                    "accelerator_type": AcceleratorType.GPU if gpu_count else None,
                     **gpu_fields,
-                    "gpus": [],  # TODO fill this array
+                    "accelerators": [],  # TODO fill this array
                     "storage_size": server["storage_size"],
                     "storage_type": (
                         StorageType.SSD if server["storage_tier"] else None

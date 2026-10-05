@@ -5,11 +5,12 @@ from unittest.mock import Mock, patch
 import pytest
 
 from sc_crawler.inspector import _standardize_gpu_family, _standardize_gpu_model
-from sc_crawler.table_fields import Allocation, PriceUnit, StorageType
+from sc_crawler.table_fields import AcceleratorType, Allocation, PriceUnit, StorageType
 from sc_crawler.utils import _GIB_TO_GB
 from sc_crawler.vendors._gcp import (
     STORAGE_ALLOWLIST,
     STORAGE_PERFORMANCE,
+    _gcp_accelerator_type,
     _local_ssd_partition_gib,
     _search_servers,
     _server_accelerators,
@@ -162,9 +163,9 @@ def _a3_highgpu_4g(gpu_count=4):
         server_id="a3-highgpu-4g",
         vcpus=104,
         memory_amount=936 * 1024,
-        gpu_count=gpu_count,
+        accelerator_count=gpu_count,
         # standardized for cross-vendor comparison, see _standardize_gpu_model
-        gpu_model="H100",
+        accelerator_model="H100",
     )
 
 
@@ -332,8 +333,8 @@ def test_gcp_inventory_server_prices_prefers_c4d_local_ssd_sku():
         server_id="c4d-standard-8-lssd",
         vcpus=8,
         memory_amount=31 * 1024,
-        gpu_count=0,
-        gpu_model=None,
+        accelerator_count=0,
+        accelerator_model=None,
     )
     skus = [
         _sku(
@@ -497,8 +498,8 @@ def test_gcp_inventory_server_prices_z4d(
         server_id=name,
         vcpus=vcpus,
         memory_amount=memory_gib * 1024,
-        gpu_count=0,
-        gpu_model=None,
+        accelerator_count=0,
+        accelerator_model=None,
     )
     vendor = _gcp_vendor(servers=[server])
     with (
@@ -591,8 +592,8 @@ def test_gcp_inventory_server_prices_tpu_chips(
         server_id=name,
         vcpus=112,
         memory_amount=192 * 1024,
-        gpu_count=chips,
-        gpu_model=version,
+        accelerator_count=chips,
+        accelerator_model=version,
     )
     sku_name = {"v5e": "TpuV5e", "v5p": "TpuV5p", "v6e": "TpuV6e", "v7x": "TPU7x"}[
         version
@@ -665,12 +666,12 @@ def test_gcp_inventory_server_prices_spot_includes_gpus_and_bundled_local_ssd():
 
 
 def test_gcp_inventory_server_prices_keys_gpu_skus_on_accelerator_type():
-    """Server.gpu_model is standardized ("H100"), so it cannot key the SKU lookup."""
+    """Server.accelerator_model is standardized ("H100"), so it cannot key the SKU lookup."""
     vendor = _gcp_vendor(servers=[_a3_highgpu_4g()])
     with _a3_price_patches(_a3_highgpu_4g_skus()):
         prices = inventory_server_prices(vendor)
 
-    assert vendor.servers[0].gpu_model not in _skus_dict()["gpu"]
+    assert vendor.servers[0].accelerator_model not in _skus_dict()["gpu"]
     assert len(prices) == 1
 
 
@@ -691,8 +692,8 @@ def test_gcp_inventory_server_prices_without_gpus():
                 server_id="n2-standard-8",
                 vcpus=8,
                 memory_amount=32 * 1024,
-                gpu_count=0,
-                gpu_model=None,
+                accelerator_count=0,
+                accelerator_model=None,
             )
         ]
     )
@@ -746,14 +747,15 @@ def test_gcp_search_servers_fills_gpu_and_bundled_local_ssd_fields():
         rows = _search_servers("us-central1-a")
 
     row = rows[0]
-    assert row["gpu_count"] == 4
-    assert row["gpu_model"] == "GB300"
-    assert row["gpu_manufacturer"] == "NVIDIA"
-    assert row["gpu_family"] == "Blackwell"
-    assert row["gpu_memory_min"] == 279 * 1024
-    assert row["gpu_memory_total"] == 4 * 279 * 1024
-    assert len(row["gpus"]) == 4
-    assert row["gpus"][0] == {
+    assert row["accelerator_count"] == 4
+    assert row["accelerator_type"] == AcceleratorType.GPU
+    assert row["accelerator_model"] == "GB300"
+    assert row["accelerator_manufacturer"] == "NVIDIA"
+    assert row["accelerator_family"] == "Blackwell"
+    assert row["accelerator_memory_min"] == 279 * 1024
+    assert row["accelerator_memory_total"] == 4 * 279 * 1024
+    assert len(row["accelerators"]) == 4
+    assert row["accelerators"][0] == {
         "manufacturer": "NVIDIA",
         "family": "Blackwell",
         "model": "GB300",
@@ -828,12 +830,12 @@ def test_gcp_search_servers_parses_fractional_g4_vgpu():
     with patch("sc_crawler.vendors._gcp._servers", return_value=[machine]):
         row = _search_servers("us-east1-b")[0]
 
-    assert row["gpu_count"] == 0.125
-    assert row["gpu_model"] == "RTX Pro 6000"
-    assert row["gpu_memory_min"] == 12 * 1024
-    assert row["gpu_memory_total"] == 12 * 1024
-    assert len(row["gpus"]) == 1
-    assert row["gpus"][0]["memory"] == 12 * 1024
+    assert row["accelerator_count"] == 0.125
+    assert row["accelerator_model"] == "RTX Pro 6000"
+    assert row["accelerator_memory_min"] == 12 * 1024
+    assert row["accelerator_memory_total"] == 12 * 1024
+    assert len(row["accelerators"]) == 1
+    assert row["accelerators"][0]["memory"] == 12 * 1024
 
 
 def _g4_server(name, vcpus, memory_gib, gpu_count):
@@ -842,8 +844,8 @@ def _g4_server(name, vcpus, memory_gib, gpu_count):
         server_id=name,
         vcpus=vcpus,
         memory_amount=memory_gib * 1024,
-        gpu_count=gpu_count,
-        gpu_model="RTX Pro 6000",
+        accelerator_count=gpu_count,
+        accelerator_model="RTX Pro 6000",
     )
 
 
@@ -920,8 +922,8 @@ def test_gcp_inventory_server_prices_a4_uses_spot_machine_slice_sku():
         server_id="a4-highgpu-8g",
         vcpus=224,
         memory_amount=3968 * 1024,
-        gpu_count=8,
-        gpu_model="B200",
+        accelerator_count=8,
+        accelerator_model="B200",
     )
     skus = [
         _sku(
@@ -1060,8 +1062,8 @@ def test_gcp_inventory_server_prices_uses_specialized_ultramem_skus(
         server_id=server_name,
         vcpus=224,
         memory_amount=5952 * 1024,
-        gpu_count=0,
-        gpu_model=None,
+        accelerator_count=0,
+        accelerator_model=None,
     )
     skus = [
         _sku(
@@ -1112,14 +1114,15 @@ def test_gcp_search_servers_fills_tpu_fields():
         rows = _search_servers("us-central1-a")
 
     row = rows[0]
-    assert row["gpu_count"] == 4
-    assert row["gpu_model"] == "v5e"
-    assert row["gpu_manufacturer"] == "Google"
-    assert row["gpu_family"] == "TPU"
-    assert row["gpu_memory_min"] == 16 * 1024
-    assert row["gpu_memory_total"] == 4 * 16 * 1024
+    assert row["accelerator_count"] == 4
+    assert row["accelerator_type"] == AcceleratorType.TPU
+    assert row["accelerator_model"] == "v5e"
+    assert row["accelerator_manufacturer"] == "Google"
+    assert row["accelerator_family"] == "TPU"
+    assert row["accelerator_memory_min"] == 16 * 1024
+    assert row["accelerator_memory_total"] == 4 * 16 * 1024
     assert (
-        row["gpus"]
+        row["accelerators"]
         == [
             {
                 "manufacturer": "Google",
@@ -1134,7 +1137,7 @@ def test_gcp_search_servers_fills_tpu_fields():
 
 def test_standardize_gpu_model_maps_nvidia_gb300():
     assert _standardize_gpu_model("nvidia-gb300") == "GB300"
-    assert _standardize_gpu_family({"gpu_model": "GB300"}) == "Blackwell"
+    assert _standardize_gpu_family({"accelerator_model": "GB300"}) == "Blackwell"
 
 
 @pytest.mark.parametrize(
@@ -1153,7 +1156,10 @@ def test_standardize_gpu_model_maps_nvidia_gb300():
 )
 def test_standardize_gpu_model_and_family_maps_gcp_tpu(raw, model, family):
     assert _standardize_gpu_model(raw) == model
-    assert _standardize_gpu_family({"gpu_model": _standardize_gpu_model(raw)}) == family
+    assert (
+        _standardize_gpu_family({"accelerator_model": _standardize_gpu_model(raw)})
+        == family
+    )
 
 
 def test_gcp_storage_allowlist_matches_performance_map():
@@ -1546,3 +1552,17 @@ def test_gcp_inventory_storage_prices_use_capacity_skus():
     assert by_id["40001"]["price"] == pytest.approx(0.08)
     assert by_id["40001"]["unit"] == PriceUnit.GB_MONTH
     assert by_id["50001"]["price"] == pytest.approx(0.16)
+
+
+@pytest.mark.parametrize(
+    "guest_accelerator_type,expected",
+    [
+        ("nvidia-h100-80gb", AcceleratorType.GPU),
+        ("nvidia-future-gpu", AcceleratorType.GPU),
+        ("ct5lp", AcceleratorType.TPU),
+        ("tpu7x", AcceleratorType.TPU),
+        ("unknown-accelerator", None),
+    ],
+)
+def test_gcp_accelerator_type(guest_accelerator_type, expected):
+    assert _gcp_accelerator_type(guest_accelerator_type) == expected
