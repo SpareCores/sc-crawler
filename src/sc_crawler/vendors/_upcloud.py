@@ -1189,7 +1189,7 @@ def inventory_databases(vendor):
                 storage_extra_min = 0
                 storage_extra_max = 0
             display_name = (
-                f"{vcpus}CPU-{memory_gb}GB"
+                f"{family}: {vcpus} vCPU, {memory_gb} GiB RAM"
                 if vcpus is not None and memory_gb is not None
                 else database_id
             )
@@ -1277,14 +1277,8 @@ def inventory_databases(vendor):
         else:
             storage_extra_min = 0
             storage_extra_max = 0
-        if node_count == 1:
-            family = "Single node"
-        elif node_count == 2:
-            family = "2-node HA"
-        else:
-            family = "3-node HA"
+        family = "Legacy"
         compute = components.get("compute", {})
-        display_name = compute.get("name")
         cpu = compute.get("cpu")
         memory_gb = compute.get("memory_gb")
         memory_gib = memory_amount / _MIB_PER_GIB
@@ -1293,6 +1287,11 @@ def inventory_databases(vendor):
             f"{int(memory_gib)} GiB RAM" if memory_gib else None,
             f"{int(storage_size_gb)} GB storage" if storage_size_gb else None,
         ]
+        display_name = (
+            f"{family}: {', '.join(filter(None, description_parts))}, "
+            f"{nodes} node{'s' if nodes > 1 else ''}"
+        )
+        description_parts.append(f"{nodes} node{'s' if nodes > 1 else ''}")
         description = (
             f"UpCloud PostgreSQL {family} "
             f"({', '.join(filter(None, description_parts))})"

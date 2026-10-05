@@ -145,8 +145,10 @@ def test_upcloud_inventory_databases_maps_pg_service_plans():
         rows = inventory_databases(vendor)
     by_id = {row["database_id"]: row for row in rows}
     assert by_id["2xCPU-4GB-50GB"]["engine"] == DatabaseEngine.POSTGRESQL
-    assert by_id["2xCPU-4GB-50GB"]["family"] == "Single node"
-    assert by_id["2xCPU-4GB-50GB"]["display_name"] == "2CPU-4GB"
+    assert by_id["2xCPU-4GB-50GB"]["family"] == "Legacy"
+    assert by_id["2xCPU-4GB-50GB"]["display_name"] == (
+        "Legacy: 2 vCPUs, 4 GiB RAM, 54 GB storage, 1 node"
+    )
     assert by_id["2xCPU-4GB-50GB"]["server_id"] == "2xCPU-4GB"
     assert by_id["2xCPU-4GB-50GB"]["ha"] == [DatabaseHaLevel.NONE]
     assert by_id["2xCPU-4GB-50GB"]["ha_strategy"] == [DatabaseHaStrategy.NONE]
@@ -160,7 +162,7 @@ def test_upcloud_inventory_databases_maps_pg_service_plans():
     assert by_id["2xCPU-4GB-50GB"]["connection_pool"] is True
     assert by_id["2xCPU-4GB-50GB"]["sla"] == 99.999
     assert by_id["2xCPU-4GB-50GB"]["status"] == Status.ACTIVE
-    assert by_id["4xCPU-16GB-200GB-ha"]["family"] == "2-node HA"
+    assert by_id["4xCPU-16GB-200GB-ha"]["family"] == "Legacy"
     assert by_id["4xCPU-16GB-200GB-ha"]["server_id"] == "4xCPU-16GB"
     # Cluster 200 GiB / 2 nodes = 100 GiB per node → decimal GB.
     assert by_id["4xCPU-16GB-200GB-ha"]["storage_size"] == round(100 * _GIB_TO_GB)
@@ -258,6 +260,9 @@ def test_upcloud_inventory_databases_maps_flexible_plans():
     assert by_id["rdb.development.1CPU-1GB"]["continuous_backups"] == 3
     assert by_id["rdb.development.1CPU-1GB"]["max_read_replicas"] == 0
     assert by_id["rdb.standard.2CPU-8GB"]["family"] == "Standard"
+    assert (
+        by_id["rdb.standard.2CPU-8GB"]["display_name"] == "Standard: 2 vCPU, 8 GiB RAM"
+    )
     assert by_id["rdb.standard.2CPU-8GB"]["ha"] == [
         DatabaseHaLevel.SINGLE_ZONE,
         DatabaseHaLevel.NONE,
