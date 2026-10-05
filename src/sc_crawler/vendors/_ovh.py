@@ -1278,7 +1278,21 @@ def inventory_server_prices(vendor) -> list[dict]:
     items = []
     # the same flavor/region can be listed multiple times by the flavor API
     seen_offers: set[tuple[str, str]] = set()
-    price_by_server: dict[tuple[str, str], tuple[str, float]] = {}
+    # Plan codes sharing an invoiceName (e.g. `.3AZ` variants) are priced
+    # differently per region. If a region offers more than one, keep the one
+    # that is last in the catalog addon list (as inventory_servers does),
+    # regardless of the order in which the flavor API returns the offers.
+    catalog_order = {addon["planCode"]: i for i, addon in enumerate(catalog["addons"])}
+    region_plans: dict[tuple[str, str], str] = {}
+    for offer in offers:
+        plan_code = (offer.get("planCodes") or {}).get("hourly")
+        addon = addons.get(plan_code)
+        if addon is None:
+            continue
+        key = (offer["region"], addon["invoiceName"])
+        current = region_plans.get(key)
+        if current is None or catalog_order[plan_code] > catalog_order[current]:
+            region_plans[key] = plan_code
     excluded: set[str] = set()
     vendor.progress_tracker.start_task(name="Fetching server offers", total=len(offers))
     for offer in offers:
@@ -1306,17 +1320,17 @@ def inventory_server_prices(vendor) -> list[dict]:
         if (offer["region"], plan_code) in seen_offers:
             continue
         seen_offers.add((offer["region"], plan_code))
-        price = addon["pricings"][0]["price"] / _MICROCENTS_PER_CURRENCY_UNIT
-        # different plan codes resolving to the same server id would silently
-        # overwrite each other on insert, so flag them
-        server_key = (offer["region"], addon["invoiceName"])
-        previous = price_by_server.setdefault(server_key, (plan_code, price))
-        if previous[0] != plan_code:
-            vendor.log(
-                f"Multiple plans for {addon['invoiceName']} in {offer['region']}: "
-                f"{previous[0]} ({previous[1]}) vs {plan_code} ({price})"
+        chosen = region_plans[(offer["region"], addon["invoiceName"])]
+        if chosen != plan_code:
+            msg = (
+                f"Excluding price of {plan_code} in {offer['region']}: "
+                f"{addon['invoiceName']} is priced by {chosen}"
             )
+            if msg not in excluded:
+                excluded.add(msg)
+                vendor.log(msg)
             continue
+        price = addon["pricings"][0]["price"] / _MICROCENTS_PER_CURRENCY_UNIT
         # TODO check if server id is known for this vendor?
         for zone in region.zones:
             if zone.status != Status.ACTIVE:
