@@ -19,8 +19,8 @@ from ..logger import logger
 from ..lookup import map_compliance_frameworks_to_vendor
 from ..sentry import sentry_capture_or_raise
 from ..table_fields import (
-    AcceleratorType,
     Accelerator,
+    AcceleratorType,
     Allocation,
     CpuAllocation,
     DatabaseEngine,
