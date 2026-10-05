@@ -173,7 +173,7 @@ def test_upcloud_inventory_databases_maps_pg_service_plans():
     assert by_id["4xCPU-16GB-200GB-ha"]["continuous_backups"] == 14
 
 
-def test_upcloud_inventory_databases_maps_componentised_plans():
+def test_upcloud_inventory_databases_maps_flexible_plans():
     vendor = Mock(vendor_id="upcloud")
     vendor.servers = [
         Mock(server_id="2xCPU-8GB"),

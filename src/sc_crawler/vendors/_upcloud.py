@@ -333,7 +333,7 @@ def _get_pg_service_type() -> dict:
 
 
 def _get_database_plans() -> dict:
-    """List componentised database plans (GET /1.3/database/plans).
+    """List flexible database plans (GET /1.3/database/plans).
 
     Reference: <https://developers.upcloud.com/1.3/16-managed-database/>
     """
@@ -403,7 +403,7 @@ def _get_database_plans() -> dict:
     return _client().api.get_request("/database/plans")
 
 
-# Componentised plan families (Developer / Standard / High Memory).
+# Flexible plan families (Developer / Standard / High Memory).
 # https://upcloud.com/global/pricing/
 _DATABASE_PLAN_FAMILIES = {
     "development": "Developer",
@@ -1036,7 +1036,7 @@ def inventory_ipv4_prices(vendor):
 
 
 def _database_shared_capabilities(properties: dict) -> dict:
-    """Capability flags shared by legacy and componentised PostgreSQL plans."""
+    """Capability flags shared by legacy and flexible PostgreSQL plans."""
     return {
         # Service settings expose PostgreSQL parameters in `properties`.
         # https://upcloud.com/docs/products/managed-postgresql/configurations/
@@ -1093,7 +1093,7 @@ def _database_ha_from_node_counts(
     multi-node plan, so ``node_count >= 2`` maps to ``READABLE_CLUSTER``.
     https://upcloud.com/docs/products/managed-postgresql/high-availability/
 
-    When both 2 and 3 nodes are orderable on one compute shape (componentised
+    When both 2 and 3 nodes are orderable on one compute shape (flexible
     plans), also include ``PASSIVE_STANDBY`` as the 2-node package price key
     (1.9x vs 2.6x billing tiers).
     https://upcloud.com/global/pricing/
@@ -1136,7 +1136,7 @@ def _match_database_server_id(
 def inventory_databases(vendor):
     """List UpCloud managed PostgreSQL service plans.
 
-    - Componentised Developer/Standard/High Memory shapes from GET /1.3/database/plans.
+    - Flexible Developer/Standard/High Memory shapes from GET /1.3/database/plans.
     - Legacy bundled plans from GET /1.3/database/service-types/pg.
     - Supported versions come from service-types/pg `properties.version.enum`.
     https://developers.upcloud.com/1.3/16-managed-database/
@@ -1150,7 +1150,7 @@ def inventory_databases(vendor):
     server_ids = {server.server_id for server in vendor.servers}
     items = []
 
-    # Componentised plans: compute is independent of node count (1–3 for Standard /
+    # Flexible plans: compute is independent of node count (1–3 for Standard /
     # High Memory; Developer is single-node only).
     plans_payload = _get_database_plans()
     for service_type in plans_payload.get("service_types", []):
@@ -1215,7 +1215,7 @@ def inventory_databases(vendor):
                     "display_name": display_name,
                     "description": description,
                     "api_reference": database_id,
-                    # Componentised plans use plan_compute / plan_node_count /
+                    # Flexible plans use plan_compute / plan_node_count /
                     # plan_storage_gib / plan_backups instead of a fixed plan name.
                     # https://developers.upcloud.com/1.3/16-managed-database/
                     "api_reference_object": {
@@ -1363,7 +1363,7 @@ def inventory_database_prices(vendor):
     """List UpCloud managed PostgreSQL compute prices.
 
     Legacy plans bill the full cluster under ``managed_database_{plan}``.
-    Componentised plans bill per-node compute under
+    Flexible plans bill per-node compute under
     ``managed_database_compute_{plan_compute}``. Node topology maps to:
     1 node NONE/NONE, 2-node package SINGLE_ZONE/PASSIVE_STANDBY (1.9x),
     3-node package SINGLE_ZONE/READABLE_CLUSTER (2.6x) with published
@@ -1481,7 +1481,7 @@ _DATABASE_STORAGE_TIERS = [
 ]
 
 
-# Componentised plan families that bill disk on each managed DB storage tier.
+# Flexible plan families that bill disk on each managed DB storage tier.
 # Legacy bundled plans use Standard for additional disk only.
 # https://upcloud.com/global/pricing/
 _DATABASE_STORAGE_TIER_SHAPE_FAMILIES = {
@@ -1551,7 +1551,7 @@ def _database_storage_size_bounds(tier_id: str) -> tuple[int, int] | None:
 def inventory_database_storages(vendor):
     """List managed PostgreSQL disk tiers (Standard SSD and MaxIOPS).
 
-    Componentised plans bill all disk via these meters; legacy plans also use
+    Flexible plans bill all disk via these meters; legacy plans also use
     Standard tiered storage for additional disk above the bundled size.
     Size bounds are per tier (Developer/legacy → Standard; Std/HM → MaxIOPS).
     https://upcloud.com/global/pricing/

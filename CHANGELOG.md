@@ -18,7 +18,7 @@ Maintenance update:
 
 Fix(es):
 
-- `UpCloud`: inventory componentised `rdb.*` Developer / Standard / High Memory
+- `UpCloud`: inventory flexible `rdb.*` Developer / Standard / High Memory
   PostgreSQL plans from `/database/plans`. Replace managed DB storage id `additional-disk`
   with `standard` (Developer plans and legacy additional disk) and `maxiops`
   (Standard / High Memory plans), matching block-storage storage ids.
