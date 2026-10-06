@@ -12,7 +12,7 @@ def _server(**overrides):
         accelerator_count=1,
         memory_amount=8 * 1024,
         vcpus=4,
-        storage_size_actual=100,
+        storage_size=100,
     )
     defaults.update(overrides)
     return SimpleNamespace(**defaults)
@@ -96,14 +96,14 @@ def test_geekbench_and_passmark_allowed_at_32_vcpus():
 
 
 def test_storage_blocked_without_bundled_disk():
-    server = _server(storage_size_actual=0)
+    server = _server(storage_size=0)
     assert block_reasons(server, "storage")["storage"] == [
         "No bundled storage available."
     ]
 
 
 def test_storage_allowed_with_bundled_disk():
-    server = _server(storage_size_actual=1)
+    server = _server(storage_size=1)
     assert block_reasons(server, "storage")["storage"] == []
 
 

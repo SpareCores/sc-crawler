@@ -55,7 +55,7 @@ def block_reasons(server: "Server", tasks: str | List[str]):
                 results[task].append("Benchmark doesn't scale beyond 32 cores.")
 
         if task == "storage":
-            if server.storage_size_actual == 0:
+            if server.storage_size == 0:
                 results[task].append("No bundled storage available.")
 
         # runs for a full day, so limited to a very few SKUs
