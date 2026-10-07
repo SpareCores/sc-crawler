@@ -832,6 +832,107 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
     except Exception as e:
         _log_cannot_load_benchmarks(server, framework, e, True)
 
+    framework = "nvbandwidth"
+    try:
+        with open(_server_framework_stdout_path(server, framework), "r") as fp:
+            data = json.load(fp)["nvbandwidth"]
+        passed = {
+            testcase["name"]: testcase
+            for testcase in data["testcases"]
+            if testcase.get("status") == "Passed"
+        }
+        gpu_count = 0
+        for testcase in passed.values():
+            matrix = testcase.get("bandwidth_matrix")
+            if matrix:
+                gpu_count = max(gpu_count, len(matrix), len(matrix[0]))
+        extend_environment = {
+            "driver_version": data["Driver Version"],
+            "cuda_runtime_version": data["CUDA Runtime Version"],
+            "nvbandwidth_version": data["version"],
+            "gpu_count": gpu_count,
+            "p2p_supported": any(
+                name.startswith("device_to_device_") for name in passed
+            ),
+        }
+        for metric, source in (
+            ("host_to_gpu", "host_to_all_memcpy_ce"),
+            ("gpu_to_host", "all_to_host_memcpy_ce"),
+        ):
+            if source not in passed:
+                continue
+            benchmarks.append(
+                {
+                    **_benchmark_metafields(
+                        server,
+                        framework=framework,
+                        benchmark_id=":".join([framework, "all", metric]),
+                        extend_environment=extend_environment,
+                    ),
+                    "score": passed[source]["sum"],
+                }
+            )
+        duplex_sources = [
+            "host_to_all_bidirectional_memcpy_ce",
+            "all_to_host_bidirectional_memcpy_ce",
+        ]
+        if all(source in passed for source in duplex_sources):
+            benchmarks.append(
+                {
+                    **_benchmark_metafields(
+                        server,
+                        framework=framework,
+                        benchmark_id=":".join([framework, "all", "duplex"]),
+                        extend_environment=extend_environment,
+                    ),
+                    "score": min(passed[source]["sum"] for source in duplex_sources),
+                }
+            )
+        for group, metric, source in (
+            ("slot", "host_to_gpu", "host_to_device_memcpy_ce"),
+            ("slot", "gpu_to_host", "device_to_host_memcpy_ce"),
+            ("slot", "latency", "host_device_latency_sm"),
+            ("p2p", "single", "device_to_device_memcpy_write_ce"),
+            ("p2p", "duplex", "device_to_device_bidirectional_memcpy_write_ce"),
+            ("p2p", "latency", "device_to_device_latency_sm"),
+            ("p2p", "gather", "all_to_one_write_ce"),
+        ):
+            testcase = passed.get(source)
+            if testcase is None:
+                continue
+            cell_count = sum(
+                cell != "N/A" for row in testcase["bandwidth_matrix"] for cell in row
+            )
+            if not cell_count:
+                continue
+            benchmarks.append(
+                {
+                    **_benchmark_metafields(
+                        server,
+                        framework=framework,
+                        benchmark_id=":".join([framework, group, metric]),
+                        extend_environment=extend_environment,
+                    ),
+                    "score": testcase["sum"] / cell_count,
+                }
+            )
+        sm = passed.get("host_to_device_memcpy_sm")
+        ce = passed.get("host_to_device_memcpy_ce")
+        if sm is not None and ce is not None and ce["sum"]:
+            benchmarks.append(
+                {
+                    **_benchmark_metafields(
+                        server,
+                        framework=framework,
+                        benchmark_id=":".join([framework, "efficiency", "sm_ce_ratio"]),
+                        extend_environment=extend_environment,
+                    ),
+                    "score": min(sm["sum"] / ce["sum"], 1.0),
+                }
+            )
+    except Exception as e:
+        _log_cannot_load_benchmarks(server, framework, e, True)
+
     # add server related pgbench benchmark scores
     benchmarks.extend(_pgbench_benchmark_scores(server))
 
@@ -1298,6 +1399,12 @@ def _find_storage_disks_from_lsblk(
         "upcloud": True,
         "vultr": False,
     }
+    # Performance class for virtio-scsi root disks (vendors above with False)
+    _virtio_root_storage_type = {
+        "hcloud": StorageType.NVME_SSD,
+        "ovh": StorageType.SSD,
+        "vultr": StorageType.NVME_SSD,
+    }
 
     for d in lsblk_data.get("blockdevices", []):
         subsystems = d.get("subsystems", "")
@@ -1318,7 +1425,7 @@ def _find_storage_disks_from_lsblk(
                     description=str(nvme_storage_count),
                 )
             )
-        # Hetzner/OVH virtio-scsi
+        # Local/root disk presented as virtio-scsi (Hetzner, OVH, Vultr)
         if (
             not _boot_from_attached_network_drive[server.vendor_id]
             and name == "sda"
@@ -1327,7 +1434,7 @@ def _find_storage_disks_from_lsblk(
             disks.append(
                 Disk(
                     size=size_gb,
-                    storage_type=StorageType.NETWORK,
+                    storage_type=_virtio_root_storage_type[server.vendor_id],
                 )
             )
 
@@ -1345,8 +1452,8 @@ def _find_storage_disks_from_lshw(
             if child.get("class") == "disk" and "size" in child:
                 size_gb = child.get("size", 0) // 1000**3
                 device_type = _determine_storage_type(node, child, server)
-                # GCP network disks are added manually, not bundled, so skip them
-                if server.vendor_id == "gcp" and device_type == StorageType.NETWORK:
+                # GCP Persistent Disk is added manually, not bundled
+                if device_type is None:
                     continue
                 disks.append(
                     Disk(
@@ -1363,20 +1470,20 @@ def _find_storage_disks_from_lshw(
 
 def _determine_storage_type(
     parent_node: dict, disk_node: dict, server: ServerBase
-) -> StorageType:
+) -> StorageType | None:
     """Determine disk type based on parent controller and disk properties."""
     vendor_id = server.vendor_id
     storage_product = parent_node.get("product", "").lower()
     disk_description = disk_node.get("description", "").lower()
 
     if vendor_id == "gcp" and "-pd" in storage_product:
-        return StorageType.NETWORK
+        return None
 
     if vendor_id == "aws" and "amazon elastic block store" in storage_product:
-        return StorageType.NETWORK
+        return StorageType.SSD
 
     if vendor_id == "upcloud" and "virtio block device" in storage_product:
-        return StorageType.NETWORK
+        return StorageType.SSD
 
     if "nvme" in disk_description:
         return StorageType.NVME_SSD
@@ -1593,9 +1700,15 @@ def inspect_update_server_dict(server: dict) -> dict:
         "gpu_memory_min": lambda: min([gpu["memory"] for gpu in server["gpus"]]),
         "gpu_memory_total": lambda: sum([gpu["memory"] for gpu in server["gpus"]]),
         # skip storage update if lshw parsing failed or API data is present
-        "storage_type": lambda: getattr(inspector_storage_info, "storage_type"),
-        "storage_size": lambda: getattr(inspector_storage_info, "storage_size"),
-        "storages": lambda: getattr(inspector_storage_info, "storages"),
+        "storage_type": lambda: (
+            inspector_storage_info.storage_type if inspector_storage_info else None
+        ),
+        "storage_size": lambda: (
+            inspector_storage_info.storage_size if inspector_storage_info else None
+        ),
+        "storages": lambda: (
+            inspector_storage_info.storages if inspector_storage_info else None
+        ),
         "average_time_to_start": lambda: _server_average_time_to_start(server_obj),
     }
 

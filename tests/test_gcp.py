@@ -8,6 +8,8 @@ from sc_crawler.inspector import _standardize_gpu_family, _standardize_gpu_model
 from sc_crawler.table_fields import Allocation, PriceUnit, StorageType
 from sc_crawler.utils import _GIB_TO_GB
 from sc_crawler.vendors._gcp import (
+    STORAGE_ALLOWLIST,
+    STORAGE_PERFORMANCE,
     _local_ssd_partition_gib,
     _search_servers,
     _server_accelerators,
@@ -16,6 +18,8 @@ from sc_crawler.vendors._gcp import (
     _skus_dict,
     inventory_server_prices,
     inventory_server_prices_spot,
+    inventory_storage_prices,
+    inventory_storages,
 )
 
 # us-central1 rates, rounded to the catalog's units + nanos pairs
@@ -40,9 +44,25 @@ def _sku(
     resource_family: str = "Compute",
     usage_type: str = "OnDemand",
     usage_unit: str | None = None,
+    extra_tiers: list[tuple[float, int, int]] | None = None,
 ):
     if usage_unit is None:
         usage_unit = {"RAM": "GiBy.h", "LocalSSD": "GiBy.mo"}.get(resource_group, "h")
+    tiers = [
+        SimpleNamespace(
+            start_usage_amount=0.0,
+            unit_price=SimpleNamespace(units=units, nanos=nanos, currency_code="USD"),
+        )
+    ]
+    for start, tier_units, tier_nanos in extra_tiers or []:
+        tiers.append(
+            SimpleNamespace(
+                start_usage_amount=start,
+                unit_price=SimpleNamespace(
+                    units=tier_units, nanos=tier_nanos, currency_code="USD"
+                ),
+            )
+        )
     return SimpleNamespace(
         description=description,
         category=SimpleNamespace(
@@ -55,13 +75,7 @@ def _sku(
             SimpleNamespace(
                 pricing_expression=SimpleNamespace(
                     usage_unit=usage_unit,
-                    tiered_rates=[
-                        SimpleNamespace(
-                            unit_price=SimpleNamespace(
-                                units=units, nanos=nanos, currency_code="USD"
-                            )
-                        )
-                    ],
+                    tiered_rates=tiers,
                 )
             )
         ],
@@ -369,6 +383,245 @@ def test_gcp_inventory_server_prices_prefers_c4d_local_ssd_sku():
     assert prices[0]["price"] == pytest.approx(expected)
 
 
+# us-central1 OnDemand rates from the Billing Catalog. standardlssd and highlssd
+# share Core/Ram and differ on Local SSD.
+# https://cloud.google.com/products/compute/pricing/storage-optimized
+_Z4D_CORE = 0.032704
+_Z4D_RAM = 0.003496
+_Z4D_STANDARD_SSD_MONTHLY = 0.2464
+_Z4D_HIGH_SSD_MONTHLY = 0.1632
+
+
+def _z4d_skus():
+    return [
+        _sku(
+            "Z4D-HIGHMEM-STANDARDLSSD Instance Core running in Iowa",
+            resource_group="CPU",
+            regions=["us-central1"],
+            units=0,
+            nanos=32_704_000,
+        ),
+        _sku(
+            "Z4D-HIGHMEM-STANDARDLSSD Instance Ram running in Iowa",
+            resource_group="RAM",
+            regions=["us-central1"],
+            units=0,
+            nanos=3_496_000,
+        ),
+        _sku(
+            "Z4D-HIGHMEM-STANDARDLSSD Instance Local SSD running in Iowa",
+            resource_group="LocalSSD",
+            regions=["us-central1"],
+            units=0,
+            nanos=246_400_000,
+        ),
+        _sku(
+            "Z4D-HIGHMEM-HIGHLSSD Instance Core running in Iowa",
+            resource_group="CPU",
+            regions=["us-central1"],
+            units=0,
+            nanos=32_704_000,
+        ),
+        _sku(
+            "Z4D-HIGHMEM-HIGHLSSD Instance Ram running in Iowa",
+            resource_group="RAM",
+            regions=["us-central1"],
+            units=0,
+            nanos=3_496_000,
+        ),
+        _sku(
+            "Z4D-HIGHMEM-HIGHLSSD Instance Local SSD running in Iowa",
+            resource_group="LocalSSD",
+            regions=["us-central1"],
+            units=0,
+            nanos=163_200_000,
+        ),
+        _sku(
+            "Z4D-HIGHMEM-HIGHLSSD Sole Tenancy Instance Local SSD running in Iowa",
+            resource_group="LocalSSD",
+            regions=["us-central1"],
+            units=0,
+            nanos=1,
+        ),
+    ]
+
+
+def test_gcp_skus_dict_indexes_z4d_ssd_ratios_separately():
+    with patch("sc_crawler.vendors._gcp._skus", return_value=_z4d_skus()):
+        lookup = _skus_dict()
+
+    assert "z4d" not in lookup["cpu"]
+    assert lookup["cpu"]["z4d-highmem-standardlssd"]["us-central1"]["ondemand"] == (
+        pytest.approx(_Z4D_CORE),
+        "USD",
+    )
+    assert lookup["ram"]["z4d-highmem-highlssd"]["us-central1"]["ondemand"] == (
+        pytest.approx(_Z4D_RAM),
+        "USD",
+    )
+    assert lookup["local_ssd"]["z4d-highmem-standardlssd"]["us-central1"][
+        "ondemand"
+    ] == (pytest.approx(_Z4D_STANDARD_SSD_MONTHLY), "USD")
+    assert lookup["local_ssd"]["z4d-highmem-highlssd"]["us-central1"]["ondemand"] == (
+        pytest.approx(_Z4D_HIGH_SSD_MONTHLY),
+        "USD",
+    )
+
+
+@pytest.mark.parametrize(
+    ("name", "vcpus", "memory_gib", "ssd_gib", "ssd_monthly", "official"),
+    [
+        (
+            "z4d-highmem-16-standardlssd",
+            16,
+            126,
+            3500,
+            _Z4D_STANDARD_SSD_MONTHLY,
+            2.145129863,
+        ),
+        (
+            "z4d-highmem-192-highlssd",
+            192,
+            1512,
+            84_000,
+            _Z4D_HIGH_SSD_MONTHLY,
+            30.344298082,
+        ),
+    ],
+)
+def test_gcp_inventory_server_prices_z4d(
+    name, vcpus, memory_gib, ssd_gib, ssd_monthly, official
+):
+    server = SimpleNamespace(
+        name=name,
+        server_id=name,
+        vcpus=vcpus,
+        memory_amount=memory_gib * 1024,
+        gpu_count=0,
+        gpu_model=None,
+    )
+    vendor = _gcp_vendor(servers=[server])
+    with (
+        patch("sc_crawler.vendors._gcp._skus", return_value=_z4d_skus()),
+        patch("sc_crawler.vendors._gcp._server_in_zone", return_value=True),
+        _gcp_accelerators({}),
+        _gcp_bundled_local_ssd({name: ssd_gib}),
+    ):
+        prices = inventory_server_prices(vendor)
+
+    expected = vcpus * _Z4D_CORE + memory_gib * _Z4D_RAM + ssd_gib * ssd_monthly / 730
+    assert len(prices) == 1
+    assert prices[0]["price"] == pytest.approx(expected)
+    assert prices[0]["price"] == pytest.approx(official)
+    assert prices[0]["allocation"] == Allocation.ONDEMAND
+
+
+def test_gcp_skus_dict_indexes_tpu_chip_skus():
+    skus = [
+        _sku(
+            "TpuV5e running in Americas",
+            resource_group="TPU",
+            regions=["us-central1", "us-east1"],
+            units=1,
+            nanos=200_000_000,
+        ),
+        _sku(
+            "TpuV5e attached to Spot Preemptible VMs running in Americas",
+            resource_group="TPU",
+            regions=["us-central1"],
+            units=0,
+            nanos=342_218_000,
+            usage_type="Preemptible",
+        ),
+        _sku(
+            "TPU7x running in Americas",
+            resource_group="TPU",
+            regions=["us-central1"],
+            units=12,
+            nanos=0,
+        ),
+        _sku(
+            "DWS Defined Duration TPU7x running in Columbus",
+            resource_group="TPU",
+            regions=["us-east5"],
+            units=6,
+            nanos=0,
+        ),
+        _sku(
+            "Capacity Optimized TpuV6e running in Americas",
+            resource_group="TPU",
+            regions=["us-central1"],
+            units=4,
+            nanos=0,
+        ),
+    ]
+    with patch("sc_crawler.vendors._gcp._skus", return_value=skus):
+        lookup = _skus_dict()
+
+    assert lookup["tpu"]["v5e"]["us-central1"]["ondemand"] == (
+        pytest.approx(1.2),
+        "USD",
+    )
+    assert lookup["tpu"]["v5e"]["us-east1"]["ondemand"] == (pytest.approx(1.2), "USD")
+    assert lookup["tpu"]["v5e"]["us-central1"]["spot"] == (
+        pytest.approx(0.342218),
+        "USD",
+    )
+    assert lookup["tpu"]["v7x"]["us-central1"]["ondemand"] == (pytest.approx(12), "USD")
+    assert "us-east5" not in lookup["tpu"]["v7x"]
+    assert "v6e" not in lookup["tpu"]
+
+
+@pytest.mark.parametrize(
+    ("name", "chips", "version", "chip_price", "official"),
+    [
+        # https://cloud.google.com/tpu/pricing — per chip-hour, host VM included
+        ("ct5lp-hightpu-4t", 4, "v5e", 1.2, 4.8),
+        ("ct5l-hightpu-1t", 1, "v5e", 1.2, 1.2),
+        ("ct5p-hightpu-4t", 4, "v5p", 4.2, 16.8),
+        ("ct6e-standard-4t", 4, "v6e", 2.7, 10.8),
+        ("tpu7x-standard-4t", 4, "v7x", 12, 48),
+    ],
+)
+def test_gcp_inventory_server_prices_tpu_chips(
+    name, chips, version, chip_price, official
+):
+    server = SimpleNamespace(
+        name=name,
+        server_id=name,
+        vcpus=112,
+        memory_amount=192 * 1024,
+        gpu_count=chips,
+        gpu_model=version,
+    )
+    sku_name = {"v5e": "TpuV5e", "v5p": "TpuV5p", "v6e": "TpuV6e", "v7x": "TPU7x"}[
+        version
+    ]
+    units = int(chip_price)
+    nanos = round((chip_price - units) * 1_000_000_000)
+    skus = [
+        _sku(
+            f"{sku_name} running in Americas",
+            resource_group="TPU",
+            regions=["us-central1"],
+            units=units,
+            nanos=nanos,
+        )
+    ]
+    vendor = _gcp_vendor(servers=[server])
+    with (
+        patch("sc_crawler.vendors._gcp._skus", return_value=skus),
+        patch("sc_crawler.vendors._gcp._server_in_zone", return_value=True),
+        _gcp_bundled_local_ssd({}),
+    ):
+        prices = inventory_server_prices(vendor)
+
+    assert len(prices) == 1
+    assert prices[0]["price"] == pytest.approx(chips * chip_price)
+    assert prices[0]["price"] == pytest.approx(official)
+    assert prices[0]["allocation"] == Allocation.ONDEMAND
+
+
 def test_gcp_skus_dict_price_includes_whole_units():
     """The per GPU hourly rates have a non-zero whole-dollar part."""
     with patch("sc_crawler.vendors._gcp._skus", return_value=_a3_highgpu_4g_skus()):
@@ -525,10 +778,32 @@ def test_gcp_search_servers_fills_gpu_and_bundled_local_ssd_fields():
         ("a4x-maxgpu-4g-metal", 3000),
         ("z3-highmem-8-highlssd", 3000),
         ("z3-highmem-192-highlssd-metal", 6000),
+        ("z4d-highmem-16-standardlssd", 3500),
+        ("z4d-highmem-192-highlssd", 3500),
     ],
 )
 def test_gcp_local_ssd_partition_gib(server_name, expected):
     assert _local_ssd_partition_gib(server_name) == expected
+
+
+def test_gcp_search_servers_z4d_titanium_ssd_size():
+    machine = SimpleNamespace(
+        id=1,
+        name="z4d-highmem-192-highlssd",
+        description="",
+        guest_cpus=192,
+        is_shared_cpu=False,
+        architecture="X86_64",
+        memory_mb=1512 * 1024,
+        deprecated=SimpleNamespace(state=""),
+        accelerators=[],
+        bundled_local_ssds=SimpleNamespace(partition_count=24),
+    )
+    with patch("sc_crawler.vendors._gcp._servers", return_value=[machine]):
+        rows = _search_servers("us-central1-a")
+
+    assert rows[0]["storage_size"] == round(24 * 3500 * _GIB_TO_GB)
+    assert rows[0]["storage_type"] == StorageType.NVME_SSD
 
 
 def test_gcp_search_servers_parses_fractional_g4_vgpu():
@@ -687,6 +962,8 @@ def test_gcp_inventory_server_prices_a4_uses_spot_machine_slice_sku():
         ("m4-ultramem-112", "m4"),
         ("m4-ultramem-224", "m4ultramem224"),
         ("m4n-ultramem-224", "m4nultramem224"),
+        ("z4d-highmem-16-standardlssd", "z4d-highmem-standardlssd"),
+        ("z4d-highmem-192-highlssd", "z4d-highmem-highlssd"),
     ],
 )
 def test_gcp_server_family(server_name, expected):
@@ -877,3 +1154,395 @@ def test_standardize_gpu_model_maps_nvidia_gb300():
 def test_standardize_gpu_model_and_family_maps_gcp_tpu(raw, model, family):
     assert _standardize_gpu_model(raw) == model
     assert _standardize_gpu_family({"gpu_model": _standardize_gpu_model(raw)}) == family
+
+
+def test_gcp_storage_allowlist_matches_performance_map():
+    assert set(STORAGE_ALLOWLIST) == set(STORAGE_PERFORMANCE)
+    assert "hyperdisk-balanced" in STORAGE_ALLOWLIST
+    assert "hyperdisk-ml" in STORAGE_ALLOWLIST
+    assert STORAGE_PERFORMANCE["pd-ssd"] == {
+        "max_iops": 100_000,
+        "max_throughput": 1_200,
+    }
+    assert STORAGE_PERFORMANCE["hyperdisk-balanced"] == {
+        "max_iops": 160_000,
+        "max_throughput": 2_400,
+    }
+
+
+def test_gcp_skus_dict_indexes_hyperdisk_capacity_skus():
+    skus = [
+        _sku(
+            "Hyperdisk Balanced Capacity in Iowa",
+            resource_group="SSD",
+            resource_family="Storage",
+            regions=["us-central1"],
+            units=0,
+            nanos=80_000_000,
+            usage_unit="GiBy.mo",
+        ),
+        _sku(
+            "Hyperdisk Balanced High Availability Capacity in Iowa",
+            resource_group="SSD",
+            resource_family="Storage",
+            regions=["us-central1"],
+            units=0,
+            nanos=160_000_000,
+            usage_unit="GiBy.mo",
+        ),
+        _sku(
+            "Hyperdisk ML Capacity in Iowa",
+            resource_group="SSD",
+            resource_family="Storage",
+            regions=["us-central1"],
+            units=0,
+            nanos=80_000_000,
+            usage_unit="GiBy.mo",
+        ),
+        _sku(
+            "SSD backed PD Capacity",
+            resource_group="SSD",
+            resource_family="Storage",
+            regions=["us-central1"],
+            units=0,
+            nanos=170_000_000,
+            usage_unit="GiBy.mo",
+        ),
+        _sku(
+            "Balanced PD Capacity",
+            resource_group="SSD",
+            resource_family="Storage",
+            regions=["us-central1"],
+            units=0,
+            nanos=100_000_000,
+            usage_unit="GiBy.mo",
+        ),
+        # free tier then paid tier — use the paid rate
+        _sku(
+            "Storage PD Capacity",
+            resource_group="PDStandard",
+            resource_family="Storage",
+            regions=["us-central1"],
+            units=0,
+            nanos=0,
+            usage_unit="GiBy.mo",
+            extra_tiers=[(30.0, 0, 40_000_000)],
+        ),
+        # IOPS add-ons must not overwrite capacity prices
+        _sku(
+            "Hyperdisk Balanced Iops in Iowa",
+            resource_group="SSD",
+            resource_family="Storage",
+            regions=["us-central1"],
+            units=0,
+            nanos=5_000_000,
+            usage_unit="h",
+        ),
+        # Confidential Mode must not overwrite standard capacity
+        _sku(
+            "Hyperdisk Balanced Capacity Confidential Mode in Iowa",
+            resource_group="SSD",
+            resource_family="Storage",
+            regions=["us-central1"],
+            units=0,
+            nanos=200_000_000,
+            usage_unit="GiBy.mo",
+        ),
+        # Async Replication must not overwrite capacity (was ~40% of capacity)
+        _sku(
+            "Asynchronous Replication Protection - Hyperdisk Balanced Capacity in Iowa",
+            resource_group="SSD",
+            resource_family="Storage",
+            regions=["us-central1"],
+            units=0,
+            nanos=32_000_000,
+            usage_unit="GiBy.mo",
+        ),
+        _sku(
+            "Asynchronous Replication Protection - Hyperdisk Balanced High Availability Capacity in Iowa",
+            resource_group="SSD",
+            resource_family="Storage",
+            regions=["us-central1"],
+            units=0,
+            nanos=64_000_000,
+            usage_unit="GiBy.mo",
+        ),
+        # Regional PD must not overwrite zonal capacity (was 2x)
+        _sku(
+            "Regional SSD backed PD Capacity",
+            resource_group="SSD",
+            resource_family="Storage",
+            regions=["us-central1"],
+            units=0,
+            nanos=340_000_000,
+            usage_unit="GiBy.mo",
+        ),
+        _sku(
+            "Regional Balanced PD Capacity",
+            resource_group="SSD",
+            resource_family="Storage",
+            regions=["us-central1"],
+            units=0,
+            nanos=200_000_000,
+            usage_unit="GiBy.mo",
+        ),
+        _sku(
+            "Regional Storage PD Capacity",
+            resource_group="PDStandard",
+            resource_family="Storage",
+            regions=["us-central1"],
+            units=0,
+            nanos=80_000_000,
+            usage_unit="GiBy.mo",
+        ),
+    ]
+    with patch("sc_crawler.vendors._gcp._skus", return_value=skus):
+        lookup = _skus_dict()
+
+    assert lookup["storage"]["hyperdisk-balanced"]["us-central1"]["ondemand"] == (
+        pytest.approx(0.08),
+        "USD",
+    )
+    assert lookup["storage"]["hyperdisk-balanced-high-availability"]["us-central1"][
+        "ondemand"
+    ] == (pytest.approx(0.16), "USD")
+    assert lookup["storage"]["hyperdisk-ml"]["us-central1"]["ondemand"] == (
+        pytest.approx(0.08),
+        "USD",
+    )
+    assert lookup["storage"]["pd-ssd"]["us-central1"]["ondemand"] == (
+        pytest.approx(0.17),
+        "USD",
+    )
+    assert lookup["storage"]["pd-balanced"]["us-central1"]["ondemand"] == (
+        pytest.approx(0.1),
+        "USD",
+    )
+    assert lookup["storage"]["pd-standard"]["us-central1"]["ondemand"] == (
+        pytest.approx(0.04),
+        "USD",
+    )
+
+
+def test_gcp_inventory_storages_maps_pd_and_hyperdisk_performance():
+    zone = SimpleNamespace(name="us-central1-a", zone_id="us-central1-a")
+    region = SimpleNamespace(name="us-central1", region_id="us-central1", zones=[zone])
+    vendor = Mock(vendor_id="gcp")
+    vendor.zones = [zone]
+    vendor.regions = [region]
+    vendor.progress_tracker = Mock(
+        start_task=Mock(), advance_task=Mock(), hide_task=Mock()
+    )
+    vendor.log = Mock()
+
+    zonal_types = [
+        SimpleNamespace(
+            id=30001,
+            name="pd-standard",
+            description="Standard Persistent Disk",
+            valid_disk_size="10GB-65536GB",
+        ),
+        SimpleNamespace(
+            id=30002,
+            name="pd-ssd",
+            description="SSD Persistent Disk",
+            valid_disk_size="10GB-65536GB",
+        ),
+        SimpleNamespace(
+            id=30007,
+            name="pd-balanced",
+            description="Balanced Persistent Disk",
+            valid_disk_size="10GB-65536GB",
+        ),
+        SimpleNamespace(
+            id=40001,
+            name="hyperdisk-balanced",
+            description="Hyperdisk Balanced",
+            valid_disk_size="4GB-65536GB",
+        ),
+        SimpleNamespace(
+            id=40002,
+            name="hyperdisk-extreme",
+            description="Hyperdisk Extreme",
+            valid_disk_size="64GB-65536GB",
+        ),
+        SimpleNamespace(
+            id=40003,
+            name="hyperdisk-throughput",
+            description="Hyperdisk Throughput",
+            valid_disk_size="2048GB-32768GB",
+        ),
+        SimpleNamespace(
+            id=40004,
+            name="hyperdisk-ml",
+            description="Hyperdisk ML",
+            valid_disk_size="4GB-65536GB",
+        ),
+        # excluded: complex Extreme PD / local SSD not in allowlist
+        SimpleNamespace(
+            id=30005,
+            name="pd-extreme",
+            description="Extreme Persistent Disk",
+            valid_disk_size="500GB-65536GB",
+        ),
+        SimpleNamespace(
+            id=10001,
+            name="local-ssd",
+            description="Local SSD",
+            valid_disk_size="375GB-375GB",
+        ),
+    ]
+    regional_types = [
+        SimpleNamespace(
+            id=50001,
+            name="hyperdisk-balanced-high-availability",
+            description="Hyperdisk Balanced High Availability",
+            valid_disk_size="4GB-65536GB",
+        ),
+    ]
+
+    with (
+        patch("sc_crawler.vendors._gcp._storages", return_value=zonal_types),
+        patch("sc_crawler.vendors._gcp._region_storages", return_value=regional_types),
+    ):
+        items = inventory_storages(vendor)
+
+    by_name = {s["name"]: s for s in items}
+    assert set(by_name) == set(STORAGE_ALLOWLIST)
+    assert by_name["pd-standard"]["storage_type"] == StorageType.HDD
+    assert by_name["pd-standard"]["max_iops"] == 15_000
+    assert by_name["pd-standard"]["max_throughput"] == 1_200
+    assert by_name["pd-ssd"]["max_iops"] == 100_000
+    assert by_name["hyperdisk-balanced"]["max_iops"] == 160_000
+    assert by_name["hyperdisk-balanced"]["max_throughput"] == 2_400
+    assert by_name["hyperdisk-balanced"]["min_size"] == 4
+    assert by_name["hyperdisk-balanced-high-availability"]["storage_id"] == "50001"
+    assert by_name["hyperdisk-balanced-high-availability"]["max_iops"] == 100_000
+    assert by_name["hyperdisk-ml"]["max_throughput"] == 2_097_152
+    assert "pd-extreme" not in by_name
+    assert "local-ssd" not in by_name
+
+
+def test_gcp_inventory_storages_stops_after_first_zone_and_region():
+    zone_a = SimpleNamespace(name="us-central1-a", zone_id="us-central1-a")
+    zone_b = SimpleNamespace(name="us-central1-b", zone_id="us-central1-b")
+    region_a = SimpleNamespace(
+        name="us-central1", region_id="us-central1", zones=[zone_a]
+    )
+    region_b = SimpleNamespace(name="us-west1", region_id="us-west1", zones=[zone_b])
+    vendor = Mock(vendor_id="gcp")
+    vendor.zones = [zone_a, zone_b]
+    vendor.regions = [region_a, region_b]
+    vendor.log = Mock()
+
+    zonal = [
+        SimpleNamespace(
+            id=30001,
+            name="pd-standard",
+            description="Standard Persistent Disk",
+            valid_disk_size="10GB-65536GB",
+        ),
+        SimpleNamespace(
+            id=30002,
+            name="pd-ssd",
+            description="SSD Persistent Disk",
+            valid_disk_size="10GB-65536GB",
+        ),
+        SimpleNamespace(
+            id=30007,
+            name="pd-balanced",
+            description="Balanced Persistent Disk",
+            valid_disk_size="10GB-65536GB",
+        ),
+        SimpleNamespace(
+            id=40001,
+            name="hyperdisk-balanced",
+            description="Hyperdisk Balanced",
+            valid_disk_size="4GB-65536GB",
+        ),
+        SimpleNamespace(
+            id=40002,
+            name="hyperdisk-extreme",
+            description="Hyperdisk Extreme",
+            valid_disk_size="64GB-65536GB",
+        ),
+        SimpleNamespace(
+            id=40003,
+            name="hyperdisk-throughput",
+            description="Hyperdisk Throughput",
+            valid_disk_size="2048GB-32768GB",
+        ),
+        SimpleNamespace(
+            id=40004,
+            name="hyperdisk-ml",
+            description="Hyperdisk ML",
+            valid_disk_size="4GB-65536GB",
+        ),
+    ]
+    regional = [
+        SimpleNamespace(
+            id=50001,
+            name="hyperdisk-balanced-high-availability",
+            description="Hyperdisk Balanced High Availability",
+            valid_disk_size="4GB-65536GB",
+        ),
+    ]
+
+    with (
+        patch("sc_crawler.vendors._gcp._storages", return_value=zonal) as zonal_mock,
+        patch(
+            "sc_crawler.vendors._gcp._region_storages", return_value=regional
+        ) as regional_mock,
+    ):
+        items = inventory_storages(vendor)
+
+    assert zonal_mock.call_count == 1
+    zonal_mock.assert_called_once_with("us-central1-a")
+    assert regional_mock.call_count == 1
+    regional_mock.assert_called_once_with("us-central1")
+    assert {s["name"] for s in items} == set(STORAGE_ALLOWLIST)
+
+
+def test_gcp_inventory_storage_prices_use_capacity_skus():
+    vendor = Mock(vendor_id="gcp")
+    vendor.regions = [
+        SimpleNamespace(
+            name="us-central1",
+            region_id="us-central1",
+            zones=[SimpleNamespace(name="us-central1-a")],
+        )
+    ]
+    vendor.storages = [
+        SimpleNamespace(storage_id="40001", name="hyperdisk-balanced"),
+        SimpleNamespace(
+            storage_id="50001", name="hyperdisk-balanced-high-availability"
+        ),
+    ]
+    vendor.log = Mock()
+    skus = [
+        _sku(
+            "Hyperdisk Balanced Capacity in Iowa",
+            resource_group="SSD",
+            resource_family="Storage",
+            regions=["us-central1"],
+            units=0,
+            nanos=80_000_000,
+            usage_unit="GiBy.mo",
+        ),
+        _sku(
+            "Hyperdisk Balanced High Availability Capacity in Iowa",
+            resource_group="SSD",
+            resource_family="Storage",
+            regions=["us-central1"],
+            units=0,
+            nanos=160_000_000,
+            usage_unit="GiBy.mo",
+        ),
+    ]
+    with patch("sc_crawler.vendors._gcp._skus", return_value=skus):
+        prices = inventory_storage_prices(vendor)
+
+    by_id = {p["storage_id"]: p for p in prices}
+    assert by_id["40001"]["price"] == pytest.approx(0.08)
+    assert by_id["40001"]["unit"] == PriceUnit.GB_MONTH
+    assert by_id["50001"]["price"] == pytest.approx(0.16)

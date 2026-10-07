@@ -1,0 +1,23 @@
+# Rebuild the Navigator API (sc-keeper) whenever inspector rules change,
+# so the deployed API picks up the updated rule definitions.
+name: Trigger API rebuild
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - src/sc_crawler/inspector_rules.py
+
+jobs:
+  dispatch:
+    name: Dispatch API rebuild workflow
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger SpareCores/sc-keeper docker.yaml
+        env:
+          GH_TOKEN: ${{ secrets.SC_KEEPER_DISPATCH_TOKEN }}
+        run: >
+          gh workflow run docker.yaml
+          --repo SpareCores/sc-keeper
+          --ref main

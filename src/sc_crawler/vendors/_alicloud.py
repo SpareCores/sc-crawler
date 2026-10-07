@@ -196,6 +196,155 @@ def _get_sku_prices(
     return skus
 
 
+def _get_server_sku_prices(vendor: Vendor) -> list[dict]:
+    """Fetch server SKU prices using the `QuerySkuPriceList` API endpoint."""
+
+    # example QuerySkuPriceList response:
+    # {
+    #     'Code': 'Success',
+    #     'Data': {
+    #         'SkuPricePage': {
+    #             'NextPageToken': '2',
+    #             'SkuPriceList': [
+    #                 {
+    #                     'CskuPriceList': [
+    #                         {
+    #                             'CskuCode': '63523368f2665ac9bdf26535c6410b65',
+    #                             'Currency': 'USD',
+    #                             'Price': '0.015',
+    #                             'PriceMode': 'NORMAL_PRICE',
+    #                             'PriceType': 'hourPrice',
+    #                             'PriceUnit': 'USD',
+    #                             'RangeList': [],
+    #                             'UsageUnit': 'Set'
+    #                         }
+    #                     ],
+    #                     'SkuCode': 'fd06adca15836eefceb723a91219f0a4',
+    #                     'SkuFactorMap': {
+    #                         'vm_region_no': 'us-west-ot7-a01',
+    #                         'iooptimized': 'optimized',
+    #                         'vm_os_kind': 'linux',
+    #                         'instance_type': 'ecs.xn4.small'
+    #                     }
+    #                 }
+    #             ],
+    #             'TotalCount': 9491
+    #         }
+    #     },
+    #     'Message': 'Successful!',
+    #     'RequestId': '01A0CDD0-742A-3D9D-9618-207DDF19E404',
+    #     'Success': True
+    # }
+    return _get_sku_prices(
+        sku_type="server",
+        extra_request_params={
+            "price_entity_code": "instance_type",
+            # filter for Linux prices only for now
+            "price_factor_condition_map": {"vm_os_kind": ["linux"]},
+        },
+        vendor=vendor,
+    )
+
+
+def _get_storage_sku_prices(vendor: Vendor) -> list[dict]:
+    """Fetch disk SKU prices using the `QuerySkuPriceList` API endpoint."""
+
+    # example QuerySkuPriceList response:
+    # {
+    #     'Code': 'Success',
+    #     'Data': {
+    #         'SkuPricePage': {
+    #             'NextPageToken': '2',
+    #             'SkuPriceList': [
+    #                 {
+    #                     'CskuPriceList': [
+    #                         {
+    #                             'CskuCode': '8a4e8d6c9a94d3301d16d0210fae3dae',
+    #                             'Currency': 'USD',
+    #                             'Price': '0.0002',
+    #                             'PriceMode': 'NORMAL_PRICE',
+    #                             'PriceType': 'hourPrice',
+    #                             'PriceUnit': 'USD/GB',
+    #                             'RangeList': [],
+    #                             'UsageUnit': 'GB'
+    #                         }
+    #                     ],
+    #                     'SkuCode': 'aacf8bc78944707f354af04fba62badb',
+    #                     'SkuFactorMap': {
+    #                         'datadisk_category': 'cloud_ssd',
+    #                         'vm_region_no': 'us-west-ot7-a01',
+    #                         'datadisk_performance_level': 'NOT_EXIST'
+    #                     }
+    #                 }
+    #             ],
+    #             'TotalCount': 2800
+    #         }
+    #     },
+    #     'Message': 'Successful!',
+    #     'RequestId': '01A0CDD0-758B-3221-A830-0600CA3A1222',
+    #     'Success': True
+    # }
+    return _get_sku_prices(
+        sku_type="storage",
+        extra_request_params={"price_entity_code": "datadisk"},
+        vendor=vendor,
+    )
+
+
+def _get_traffic_sku_prices(vendor: Vendor) -> list[dict]:
+    """Fetch traffic SKU prices using the `QuerySkuPriceList` API endpoint."""
+
+    # example QuerySkuPriceList response:
+    # {
+    #     'Code': 'Success',
+    #     'Data': {
+    #         'SkuPricePage': {
+    #             'NextPageToken': '2',
+    #             'SkuPriceList': [
+    #                 {
+    #                     'CskuPriceList': [
+    #                         {
+    #                             'CskuCode': '4138936ae510f76ff504ff7d35d2d3dd',
+    #                             'Currency': 'USD',
+    #                             'Price': '0.123',
+    #                             'PriceMode': 'STEP_ARRIVE',
+    #                             'PriceType': 'usagePrice',
+    #                             'PriceUnit': 'USD/GB',
+    #                             'RangeList': [],
+    #                             'UsageUnit': 'GB'
+    #                         },
+    #                         {
+    #                             'CskuCode': '9bc498b33492f9ff7793b63f385a9de8',
+    #                             'Currency': 'USD',
+    #                             'Price': '0',
+    #                             'PriceMode': 'STEP_ARRIVE',
+    #                             'PriceType': 'hourPrice',
+    #                             'PriceUnit': 'USD/GB',
+    #                             'RangeList': [],
+    #                             'UsageUnit': 'GB'
+    #                         }
+    #                     ],
+    #                     'SkuCode': '75081341965736dd4a2b8b6782a3d195',
+    #                     'SkuFactorMap': {
+    #                         'vm_region_no': 'NOT_EXIST',
+    #                         'isp_type': 'NOT_EXIST'
+    #                     }
+    #                 }
+    #             ],
+    #             'TotalCount': 63
+    #         }
+    #     },
+    #     'Message': 'Successful!',
+    #     'RequestId': '01A0CDD0-769E-30E2-A32E-096FB0867351',
+    #     'Success': True
+    # }
+    return _get_sku_prices(
+        sku_type="traffic",
+        extra_request_params={"price_entity_code": "vm_flow_out"},
+        vendor=vendor,
+    )
+
+
 def _get_region_availability_info(
     vendor: Vendor,
     instance_charge_type: str = "PostPaid",
@@ -242,6 +391,38 @@ def _get_region_availability_info(
             response = client.describe_available_resource_with_options(request, runtime)
             available_zones = response.body.available_zones
             if available_zones and available_zones.available_zone:
+                # example DescribeAvailableResource response:
+                # {
+                #     'AvailableZones': {
+                #         'AvailableZone': [
+                #             {
+                #                 'AvailableResources': {
+                #                     'AvailableResource': [
+                #                         {
+                #                             'SupportedResources': {
+                #                                 'SupportedResource': [
+                #                                     {
+                #                                         'Status': 'Available',
+                #                                         'StatusCategory': 'WithStock',
+                #                                         'Value': 'ecs.hfc9i.6xlarge'
+                #                                     },
+                #                                     # ...
+                #                                 ]
+                #                             },
+                #                             'Type': 'InstanceType'
+                #                         }
+                #                     ]
+                #                 },
+                #                 'RegionId': 'eu-central-1',
+                #                 'Status': 'Available',
+                #                 'StatusCategory': 'WithStock',
+                #                 'ZoneId': 'eu-central-1c'
+                #             },
+                #             # ...
+                #         ]
+                #     },
+                #     'RequestId': '01A0CDD0-6AAD-34DA-8B8A-50E07069C1D5'
+                # }
                 resources = [
                     resource.to_map()
                     for resource in response.body.available_zones.available_zone
@@ -343,6 +524,41 @@ def _get_spot_advices(
             if response.body:
                 spot_zones = response.body.available_spot_zones
                 if spot_zones and spot_zones.available_spot_zone:
+                    # example DescribeSpotAdvice response:
+                    # {
+                    #     'AvailableSpotZones': {
+                    #         'AvailableSpotZone': [
+                    #             {
+                    #                 'AvailableSpotResources': {
+                    #                     'AvailableSpotResource': [
+                    #                         {
+                    #                             'AverageSpotDiscount': 19,
+                    #                             'InstanceType': 'ecs.g7.large',
+                    #                             'InterruptRateDesc': '3-5%',
+                    #                             'InterruptionRate': 3.61
+                    #                         }
+                    #                     ]
+                    #                 },
+                    #                 'ZoneId': 'eu-central-1a'
+                    #             },
+                    #             {
+                    #                 'AvailableSpotResources': {
+                    #                     'AvailableSpotResource': [
+                    #                         {
+                    #                             'AverageSpotDiscount': 19,
+                    #                             'InstanceType': 'ecs.g7.large',
+                    #                             'InterruptRateDesc': '0-3%',
+                    #                             'InterruptionRate': 1
+                    #                         }
+                    #                     ]
+                    #                 },
+                    #                 'ZoneId': 'eu-central-1c'
+                    #             }
+                    #         ]
+                    #     },
+                    #     'RegionId': 'eu-central-1',
+                    #     'RequestId': '01A0CDD0-6B65-3724-93F5-EF03BA926EB4'
+                    # }
                     resources = [
                         spot_zone.to_map()
                         for spot_zone in spot_zones.available_spot_zone
@@ -389,6 +605,56 @@ def _get_instance_price(
     Returns:
         The price response body.
     """
+
+    # example DescribePrice response:
+    # {
+    #     'PriceInfo': {
+    #         'Price': {
+    #             'Currency': 'USD',
+    #             'DetailInfos': {
+    #                 'DetailInfo': [
+    #                     {
+    #                         'DiscountPrice': 0.0,
+    #                         'OriginalPrice': 0.0,
+    #                         'Resource': 'image',
+    #                         'TradePrice': 0.0
+    #                     },
+    #                     {
+    #                         'DiscountPrice': 0.0,
+    #                         'OriginalPrice': 0.0,
+    #                         'Resource': 'bandwidth',
+    #                         'TradePrice': 0.0
+    #                     },
+    #                     {
+    #                         'DiscountPrice': 0.0,
+    #                         'OriginalPrice': 0.005024,
+    #                         'Resource': 'systemDisk',
+    #                         'TradePrice': 0.005024
+    #                     },
+    #                     {
+    #                         'DiscountPrice': 0.08424,
+    #                         'OriginalPrice': 0.104,
+    #                         'Resource': 'instanceType',
+    #                         'TradePrice': 0.01976
+    #                     }
+    #                 ]
+    #             },
+    #             'DiscountPrice': 0.08424,
+    #             'OriginalPrice': 0.109024,
+    #             'ReservedInstanceHourPrice': 0.0,
+    #             'TradePrice': 0.024784
+    #         },
+    #         'Rules': {
+    #             'Rule': [
+    #                 {
+    #                     'Description': 'Preemptible Instance discount',
+    #                     'RuleId': 2
+    #                 }
+    #             ]
+    #         }
+    #     },
+    #     'RequestId': '01A0CDD0-6D81-3C8C-AE07-A297D396D994'
+    # }
     request = DescribePriceRequest(
         region_id=region_id,
         zone_id=zone_id,
@@ -429,6 +695,279 @@ def _get_instance_price(
                     f"Failed to get price for {instance_type} in {region_id}/{zone_id}: {e}"
                 )
                 return None
+
+
+def _get_regions() -> list[dict]:
+    """Fetch regions using the `DescribeRegions` API endpoint."""
+
+    # example DescribeRegions response:
+    # {
+    #     'Regions': {
+    #         'Region': [
+    #             {
+    #                 'LocalName': 'China (Qingdao)',
+    #                 'RegionEndpoint': 'ecs.cn-qingdao.aliyuncs.com',
+    #                 'RegionId': 'cn-qingdao'
+    #             },
+    #             # ...
+    #         ]
+    #     },
+    #     'RequestId': '01A0CDD0-6911-30C1-9447-5E0405C4955B'
+    # }
+    request = DescribeRegionsRequest(accept_language="en-US")
+    response = _ecs_client().describe_regions(request)
+    return [region.to_map() for region in response.body.regions.region]
+
+
+def _get_zones(client: EcsClient, region_id: str) -> list[dict]:
+    """Fetch availability zones for a region using the `DescribeZones` API endpoint."""
+
+    # example DescribeZones response:
+    # {
+    #     'RequestId': '01A0CDD0-6999-3D2B-B8EF-15E114D778BC',
+    #     'Zones': {
+    #         'Zone': [
+    #             {
+    #                 'AvailableDedicatedHostTypes': {
+    #                     'DedicatedHostType': [
+    #                         'ddh.ebmr6-inc',
+    #                         # ...
+    #                     ]
+    #                 },
+    #                 'AvailableDiskCategories': {
+    #                     'DiskCategories': [
+    #                         'cloud_efficiency',
+    #                         # ...
+    #                     ]
+    #                 },
+    #                 'AvailableInstanceTypes': {
+    #                     'InstanceTypes': [
+    #                         'ecs.c5-prio.16xlarge',
+    #                         # ...
+    #                     ]
+    #                 },
+    #                 'AvailableResourceCreation': {
+    #                     'ResourceTypes': [
+    #                         'VSwitch',
+    #                         # ...
+    #                     ]
+    #                 },
+    #                 'AvailableResources': {
+    #                     'ResourcesInfo': [
+    #                         {
+    #                             'DataDiskCategories': {
+    #                                 'supportedDataDiskCategory': [
+    #                                     'cloud_efficiency',
+    #                                     # ...
+    #                                 ]
+    #                             },
+    #                             'InstanceGenerations': {
+    #                                 'supportedInstanceGeneration': [
+    #                                     'ecs-5',
+    #                                     # ...
+    #                                 ]
+    #                             },
+    #                             'InstanceTypeFamilies': {
+    #                                 'supportedInstanceTypeFamily': [
+    #                                     'ecs.i5e',
+    #                                     # ...
+    #                                 ]
+    #                             },
+    #                             'InstanceTypes': {
+    #                                 'supportedInstanceType': [
+    #                                     'ecs.u2i-c1m8.2xlarge',
+    #                                     # ...
+    #                                 ]
+    #                             },
+    #                             'IoOptimized': True,
+    #                             'NetworkTypes': {
+    #                                 'supportedNetworkCategory': [
+    #                                     'vpc'
+    #                                 ]
+    #                             },
+    #                             'SystemDiskCategories': {
+    #                                 'supportedSystemDiskCategory': [
+    #                                     'cloud_efficiency',
+    #                                     # ...
+    #                                 ]
+    #                             }
+    #                         }
+    #                     ]
+    #                 },
+    #                 'AvailableVolumeCategories': {
+    #                     'VolumeCategories': []
+    #                 },
+    #                 'DedicatedHostGenerations': {
+    #                     'DedicatedHostGeneration': [
+    #                         'ddh-5',
+    #                         # ...
+    #                     ]
+    #                 },
+    #                 'LocalName': 'Frankfurt Zone A',
+    #                 'ZoneId': 'eu-central-1a',
+    #                 'ZoneType': 'AvailabilityZone'
+    #             },
+    #             # ...
+    #         ]
+    #     }
+    # }
+    request = DescribeZonesRequest(region_id=region_id, accept_language="en-US")
+    response = client.describe_zones(request)
+    return response.body.to_map()["Zones"]["Zone"]
+
+
+def _get_instance_types() -> list[dict]:
+    """Fetch instance types using the `DescribeInstanceTypes` API endpoint."""
+
+    # example DescribeInstanceTypes response:
+    # {
+    #     'InstanceTypes': {
+    #         'InstanceType': [
+    #             {
+    #                 'Attributes': {
+    #                     'Attribute': []
+    #                 },
+    #                 'Clock': {},
+    #                 'CpuArchitecture': 'X86',
+    #                 'CpuCoreCount': 4,
+    #                 'CpuOptions': {},
+    #                 'CpuSpeedFrequency': 0.0,
+    #                 'CpuTurboFrequency': 0.0,
+    #                 'DiskQuantity': 17,
+    #                 'EnhancedNetwork': {},
+    #                 'EniIpv6AddressQuantity': 0,
+    #                 'EniPrivateIpAddressQuantity': 10,
+    #                 'EniQuantity': 3,
+    #                 'EniTotalQuantity': 3,
+    #                 'EniTrunkSupported': False,
+    #                 'EriQuantity': 0,
+    #                 'GPUAmount': 1,
+    #                 'GPUMemorySize': 16,
+    #                 'GPUSpec': 'NVIDIA P100',
+    #                 'InstanceBandwidthRx': 3072000,
+    #                 'InstanceBandwidthTx': 3072000,
+    #                 'InstanceCategory': 'Compute-optimized with GPU',
+    #                 'InstanceFamilyLevel': 'EnterpriseLevel',
+    #                 'InstancePpsRx': 300000,
+    #                 'InstancePpsTx': 300000,
+    #                 'InstanceTypeFamily': 'ecs.gn5',
+    #                 'InstanceTypeId': 'ecs.gn5-c4g1.xlarge',
+    #                 'JumboFrameSupport': False,
+    #                 'LocalStorageAmount': 1,
+    #                 'LocalStorageCapacity': 440,
+    #                 'LocalStorageCategory': 'local_ssd_pro',
+    #                 'MemorySize': 30.0,
+    #                 'NetworkEncryptionSupport': False,
+    #                 'NetworkInfo': {
+    #                     'BandwidthWeighting': {}
+    #                 },
+    #                 'NvmeSupport': 'unsupported',
+    #                 'PhysicalProcessorModel': '',
+    #                 'PrimaryEniQueueNumber': 1,
+    #                 'SecondaryEniQueueNumber': 1,
+    #                 'SecurityOptions': {},
+    #                 'SupportedBootModes': {
+    #                     'SupportedBootMode': [
+    #                         'BIOS'
+    #                     ]
+    #                 },
+    #                 'TotalEniQueueQuantity': 3
+    #             },
+    #             {
+    #                 'Attributes': {
+    #                     'Attribute': []
+    #                 },
+    #                 'Clock': {},
+    #                 'CpuArchitecture': 'ARM',
+    #                 'CpuCoreCount': 32,
+    #                 'CpuOptions': {
+    #                     'Core': 32,
+    #                     'CoreFactor': 2,
+    #                     'ThreadsPerCore': 1
+    #                 },
+    #                 'CpuSpeedFrequency': 2.75,
+    #                 'CpuTurboFrequency': 2.75,
+    #                 'DiskQuantity': 17,
+    #                 'EnhancedNetwork': {},
+    #                 'EniIpv6AddressQuantity': 30,
+    #                 'EniPrivateIpAddressQuantity': 30,
+    #                 'EniQuantity': 8,
+    #                 'EniTotalQuantity': 40,
+    #                 'EniTrunkSupported': True,
+    #                 'EriQuantity': 1,
+    #                 'GPUAmount': 0,
+    #                 'GPUSpec': '',
+    #                 'InstanceBandwidthRx': 16384000,
+    #                 'InstanceBandwidthTx': 16384000,
+    #                 'InstanceCategory': 'General-purpose',
+    #                 'InstanceFamilyLevel': 'EnterpriseLevel',
+    #                 'InstancePpsRx': 5000000,
+    #                 'InstancePpsTx': 5000000,
+    #                 'InstanceTypeFamily': 'ecs.g8y',
+    #                 'InstanceTypeId': 'ecs.g8yse.8xlarge',
+    #                 'JumboFrameSupport': True,
+    #                 'LocalStorageCategory': '',
+    #                 'MaximumQueueNumberPerEni': 32,
+    #                 'MemorySize': 128.0,
+    #                 'NetworkEncryptionSupport': False,
+    #                 'NetworkInfo': {
+    #                     'BandwidthWeighting': {
+    #                         'WeightingInfos': {
+    #                             'WeightingInfo': [
+    #                                 {
+    #                                     'EbsBandwidth': 1500000,
+    #                                     'Name': 'Default',
+    #                                     'VpcBandwidth': 16384000,
+    #                                     'VpcBurstBandwidth': 32768000
+    #                                 },
+    #                                 {
+    #                                     'EbsBandwidth': 2500000,
+    #                                     'Name': 'Ebs-L1',
+    #                                     'VpcBandwidth': 8192000,
+    #                                     'VpcBurstBandwidth': 24576000
+    #                                 }
+    #                             ]
+    #                         }
+    #                     }
+    #                 },
+    #                 'NvmeSupport': 'required',
+    #                 'PhysicalProcessorModel': 'YiTian710',
+    #                 'PrimaryEniQueueNumber': 32,
+    #                 'QueuePairNumber': 15,
+    #                 'SecondaryEniQueueNumber': 32,
+    #                 'SecurityOptions': {},
+    #                 'SupportedBootModes': {
+    #                     'SupportedBootMode': [
+    #                         'UEFI'
+    #                     ]
+    #                 },
+    #                 'TotalEniQueueQuantity': 256
+    #             }
+    #         ]
+    #     },
+    #     'NextToken': '',
+    #     'RequestId': '01A0CDD2-422C-39F2-80F0-DA15E54EE980'
+    # }
+    client = _ecs_client()
+    additional_attributes = ["NetworkInfo.BandwidthWeighting"]
+    request = DescribeInstanceTypesRequest(
+        max_results=1000, additional_attributes=additional_attributes
+    )
+    response = client.describe_instance_types(request)
+    instance_types = [
+        instance_type.to_map()
+        for instance_type in response.body.instance_types.instance_type
+    ]
+    while response.body.next_token:
+        request = DescribeInstanceTypesRequest(
+            max_results=1000,
+            additional_attributes=additional_attributes,
+            next_token=response.body.next_token,
+        )
+        response = client.describe_instance_types(request)
+        for instance_type in response.body.instance_types.instance_type:
+            instance_types.append(instance_type.to_map())
+    return instance_types
 
 
 def _determine_cpu_allocation_type(instance_type: dict) -> CpuAllocation:
@@ -755,9 +1294,7 @@ def inventory_regions(vendor):
     - Foundation year collected from <https://www.alibabacloud.com/en/global-locations?_p_lc=1>
     - Aliases (old region names) collected from <https://help.aliyun.com/zh/user-center/product-overview/regional-name-change-announcement>
     """
-    request = DescribeRegionsRequest(accept_language="en-US")
-    response = _ecs_client().describe_regions(request)
-    regions = [region.to_map() for region in response.body.regions.region]
+    regions = _get_regions()
 
     items = []
     for region in regions:
@@ -810,9 +1347,7 @@ def inventory_zones(vendor):
                 )
 
         with sentry_capture_or_raise(vendor=vendor, on_error=on_error):
-            request = DescribeZonesRequest(region_id=region_id, accept_language="en-US")
-            response = clients[region_id].describe_zones(request)
-            for zone in response.body.to_map()["Zones"]["Zone"]:
+            for zone in _get_zones(clients[region_id], region_id):
                 zone_items.append(
                     {
                         "vendor_id": vendor.vendor_id,
@@ -842,25 +1377,7 @@ def inventory_servers(vendor):
     ClosedWithStock -> PLANNED_FOR_RETIREMENT, WithoutStock -> INACTIVE,
     ClosedWithoutStock -> RETIRED; missing in availability response -> INACTIVE.
     """
-    client = _ecs_client()
-    additional_attributes = ["NetworkInfo.BandwidthWeighting"]
-    request = DescribeInstanceTypesRequest(
-        max_results=1000, additional_attributes=additional_attributes
-    )
-    response = client.describe_instance_types(request)
-    instance_types = [
-        instance_type.to_map()
-        for instance_type in response.body.instance_types.instance_type
-    ]
-    while response.body.next_token:
-        request = DescribeInstanceTypesRequest(
-            max_results=1000,
-            additional_attributes=additional_attributes,
-            next_token=response.body.next_token,
-        )
-        response = client.describe_instance_types(request)
-        for instance_type in response.body.instance_types.instance_type:
-            instance_types.append(instance_type.to_map())
+    instance_types = _get_instance_types()
 
     region_availability_info: dict[str, list[dict]] = _get_region_availability_info(
         vendor
@@ -1061,15 +1578,7 @@ def inventory_server_prices(vendor):
 
     Alternative approach could be looking at <https://g.alicdn.com/aliyun/ecs-price-info-intl/2.0.375/price/download/instancePrice.json>.
     """
-    skus = _get_sku_prices(
-        sku_type="server",
-        extra_request_params={
-            "price_entity_code": "instance_type",
-            # filter for Linux prices only for now
-            "price_factor_condition_map": {"vm_os_kind": ["linux"]},
-        },
-        vendor=vendor,
-    )
+    skus = _get_server_sku_prices(vendor)
 
     items = []
     unsupported_regions = set()
@@ -1361,11 +1870,7 @@ def inventory_storages(vendor):
 
 def inventory_storage_prices(vendor):
     """Fetch server prices using the `QuerySkuPriceListRequest` API endpoint."""
-    skus = _get_sku_prices(
-        sku_type="storage",
-        extra_request_params={"price_entity_code": "datadisk"},
-        vendor=vendor,
-    )
+    skus = _get_storage_sku_prices(vendor)
 
     items = []
     unsupported_regions = set()
@@ -1414,11 +1919,7 @@ def inventory_traffic_prices(vendor):
     Account level tiering information can be found at <https://www.alibabacloud.com/help/en/cdt/internet-data-transfers/#4a98c9ee8eemn>.
     """
     items = []
-    skus = _get_sku_prices(
-        sku_type="traffic",
-        extra_request_params={"price_entity_code": "vm_flow_out"},
-        # vendor=vendor,
-    )
+    skus = _get_traffic_sku_prices(vendor)
     unsupported_regions = set()
     for sku in skus:
         region_id = sku["SkuFactorMap"]["vm_region_no"]

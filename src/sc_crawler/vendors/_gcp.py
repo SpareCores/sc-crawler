@@ -1,6 +1,4 @@
-from concurrent.futures import ThreadPoolExecutor
 from functools import cache
-from itertools import chain, repeat
 from logging import DEBUG, WARNING
 from re import compile as recompile
 from re import sub
@@ -31,7 +29,6 @@ from ..table_fields import (
 )
 from ..tables import (
     Vendor,
-    Zone,
 )
 from ..utils import (
     _GIB_TO_GB,
@@ -56,9 +53,11 @@ def _project_id() -> str:
     return default()[1]
 
 
-def _paginate_list(client, zone=None):
+def _paginate_list(client, zone=None, region=None):
     if zone:
         pager = client.list(project=_project_id(), zone=zone)
+    elif region:
+        pager = client.list(project=_project_id(), region=region)
     else:
         pager = client.list(project=_project_id())
     items = []
@@ -70,11 +69,80 @@ def _paginate_list(client, zone=None):
 
 @cachier()
 def _regions() -> List[compute_v1.types.compute.Region]:
+    # example regions.list response:
+    # {
+    #     'kind': 'compute#regionList',
+    #     'id': 'projects/example-project/regions',
+    #     'items': [
+    #         {
+    #             'kind': 'compute#region',
+    #             'id': '1610',
+    #             'creationTimestamp': '1969-12-31T16:00:00.000-08:00',
+    #             'name': 'africa-south1',
+    #             'description': 'africa-south1',
+    #             'status': 'UP',
+    #             'zones': [
+    #                 'https://www.googleapis.com/compute/v1/projects/example-project/zones/africa-south1-b',
+    #                 'https://www.googleapis.com/compute/v1/projects/example-project/zones/africa-south1-a',
+    #                 'https://www.googleapis.com/compute/v1/projects/example-project/zones/africa-south1-c'
+    #             ],
+    #             'quotas': [
+    #                 {
+    #                     'metric': 'CPUS',
+    #                     'limit': 300,
+    #                     'usage': 0
+    #                 },
+    #                 {
+    #                     'metric': 'DISKS_TOTAL_GB',
+    #                     'limit': 102400,
+    #                     'usage': 0
+    #                 },
+    #                 {
+    #                     'metric': 'SNAPSHOTS',
+    #                     'limit': 10000,
+    #                     'usage': 0
+    #                 },
+    #                 # ...
+    #             ],
+    #             'selfLink': 'https://www.googleapis.com/compute/v1/projects/example-project/regions/africa-south1',
+    #             'supportsPzs': True
+    #         },
+    #         # ...
+    #     ],
+    #     'selfLink': 'https://www.googleapis.com/compute/v1/projects/example-project/regions'
+    # }
     return _paginate_list(compute_v1.RegionsClient())
 
 
 @cachier()
 def _zones() -> List[compute_v1.types.compute.Zone]:
+    # example zones.list response:
+    # {
+    #     'kind': 'compute#zoneList',
+    #     'id': 'projects/example-project/zones',
+    #     'items': [
+    #         {
+    #             'kind': 'compute#zone',
+    #             'id': '2231',
+    #             'creationTimestamp': '1969-12-31T16:00:00.000-08:00',
+    #             'name': 'us-east1-b',
+    #             'description': 'us-east1-b',
+    #             'status': 'UP',
+    #             'region': 'https://www.googleapis.com/compute/v1/projects/example-project/regions/us-east1',
+    #             'selfLink': 'https://www.googleapis.com/compute/v1/projects/example-project/zones/us-east1-b',
+    #             'availableCpuPlatforms': [
+    #                 'ARM Generic',
+    #                 'Intel Broadwell',
+    #                 'Intel Cascade Lake',
+    #                 'Intel Emerald Rapids',
+    #                 # ...
+    #             ],
+    #             'supportsPzs': False
+    #         },
+    #         # ...
+    #     ],
+    #     'selfLink': 'https://www.googleapis.com/compute/v1/projects/example-project/zones'
+    # }
     return _paginate_list(compute_v1.ZonesClient())
 
 
@@ -83,6 +151,42 @@ def _servers(zone: str) -> List[compute_v1.types.compute.MachineType]:
     """List all machine types available in a Zone.
 
     Reference: <https://cloud.google.com/compute/docs/reference/rest/v1/machineTypes>."""
+    # example machineTypes.list response:
+    # {
+    #     'kind': 'compute#machineTypeList',
+    #     'id': 'projects/example-project/zones/us-central1-a/machineTypes',
+    #     'items': [
+    #         {
+    #             'kind': 'compute#machineType',
+    #             'id': '1720367',
+    #             'creationTimestamp': '1969-12-31T16:00:00.000-08:00',
+    #             'name': 'a3-edgegpu-8g',
+    #             'description': 'Accelerator Optimized: 8 NVIDIA H100 GPU, 208 vCPUs, 1872GB RAM',
+    #             'guestCpus': 208,
+    #             'memoryMb': 1916928,
+    #             'imageSpaceGb': 0,
+    #             'maximumPersistentDisks': 128,
+    #             'maximumPersistentDisksSizeGb': '524288',
+    #             'zone': 'us-central1-a',
+    #             'selfLink': 'https://www.googleapis.com/compute/v1/projects/example-project/zones/us-central1-a/machineTypes/a3-edgegpu-8g',
+    #             'isSharedCpu': False,
+    #             'accelerators': [
+    #                 {
+    #                     'guestAcceleratorType': 'nvidia-h100-80gb',
+    #                     'guestAcceleratorCount': 8
+    #                 }
+    #             ],
+    #             'architecture': 'X86_64',
+    #             'bundledLocalSsds': {
+    #                 'partitionCount': 16,
+    #                 'defaultInterface': 'NVME'
+    #             }
+    #         },
+    #         # ...
+    #     ],
+    #     'nextPageToken': 'Cg9uNGEtc3RhbmRhcmQt...',
+    #     'selfLink': 'https://www.googleapis.com/compute/v1/projects/example-project/zones/us-central1-a/machineTypes'
+    # }
     return _paginate_list(compute_v1.services.machine_types.MachineTypesClient(), zone)
 
 
@@ -116,8 +220,12 @@ def _server_accelerators() -> dict:
 
 
 # https://cloud.google.com/compute/docs/disks/local-ssd
+# Z4D Titanium SSD partitions are 3,500 GiB (both standardlssd and highlssd):
+# https://cloud.google.com/compute/docs/storage-optimized-machines
 def _local_ssd_partition_gib(server_name: str) -> int:
     family = server_name.split("-")[0].lower()
+    if family == "z4d":
+        return 3500
     if family == "z3" and server_name.endswith("-metal"):
         return 6000
     if family in ["a4x", "z3"] or (family == "c4" and server_name.endswith("-metal")):
@@ -146,7 +254,39 @@ def _server_bundled_local_ssd_gib() -> dict:
 
 @cachier(separate_files=True)
 def _storages(zone: str) -> List[compute_v1.types.compute.DiskType]:
+    # example diskTypes.list response:
+    # {
+    #     'kind': 'compute#diskTypeList',
+    #     'id': 'projects/example-project/zones/us-central1-a/diskTypes',
+    #     'items': [
+    #         {
+    #             'kind': 'compute#diskType',
+    #             'id': '30002',
+    #             'creationTimestamp': '1969-12-31T16:00:00.000-08:00',
+    #             'name': 'pd-ssd',
+    #             'description': 'SSD Persistent Disk',
+    #             'validDiskSize': '10GB-65536GB',
+    #             'zone': 'https://www.googleapis.com/compute/v1/projects/example-project/zones/us-central1-a',
+    #             'selfLink': 'https://www.googleapis.com/compute/v1/projects/example-project/zones/us-central1-a/diskTypes/pd-ssd',
+    #             'defaultDiskSizeGb': '100'
+    #         },
+    #         # ...
+    #     ],
+    #     'selfLink': 'https://www.googleapis.com/compute/v1/projects/example-project/zones/us-central1-a/diskTypes'
+    # }
     return _paginate_list(compute_v1.services.disk_types.DiskTypesClient(), zone)
+
+
+@cachier(separate_files=True)
+def _region_storages(region: str) -> List[compute_v1.types.compute.DiskType]:
+    """Regional disk types (e.g. hyperdisk-balanced-high-availability).
+
+    https://cloud.google.com/compute/docs/reference/rest/v1/regionDiskTypes
+    """
+    return _paginate_list(
+        compute_v1.services.region_disk_types.RegionDiskTypesClient(),
+        region=region,
+    )
 
 
 @cache
@@ -157,6 +297,19 @@ def _service_name_to_id(service_name: str) -> str:
         >>> _service_name_to_id("Compute Engine")  # doctest: +SKIP
         'services/6F81-5844-456A'
     """
+    # example services.list response:
+    # {
+    #     'services': [
+    #         {
+    #             'name': 'services/6F81-5844-456A',
+    #             'serviceId': '6F81-5844-456A',
+    #             'displayName': 'Compute Engine',
+    #             'businessEntityName': 'businessEntities/GCP'
+    #         },
+    #         # ...
+    #     ],
+    #     'nextPageToken': ''
+    # }
     client = billing_v1.CloudCatalogClient()
     pager = client.list_services()
     for page in pager.pages:
@@ -167,11 +320,101 @@ def _service_name_to_id(service_name: str) -> str:
 
 @cachier(separate_files=True)
 def _skus(service_name: str) -> List[compute_v1.types.compute.Zone]:
-    """List all products under a GCP Service.
+    """List all public SKUs of a GCP service.
+
+    `services.skus.list` has no instance, disk, or database filter: one call
+    returns the whole service (Compute Engine or Cloud SQL). Server, storage,
+    traffic, and database prices are selected afterwards by `category` and
+    `description`. Product shape and availability come from other APIs:
+    `machineTypes`, `diskTypes`, and Cloud SQL `tiers`.
+
+    https://cloud.google.com/billing/docs/reference/rest/v1/services.skus/list
 
     Args:
         service_name: Human-friendly service name, e.g. "Compute Engine".
     """
+    # example services.skus.list response:
+    # {
+    #     'skus': [
+    #         {
+    #             'name': 'services/6F81-5844-456A/skus/003A-21C5-CA77',
+    #             'skuId': '003A-21C5-CA77',
+    #             'description': 'Network Standard Data Transfer Out to Internet from Seoul',
+    #             'category': {
+    #                 'serviceDisplayName': 'Compute Engine',
+    #                 'resourceFamily': 'Network',
+    #                 'resourceGroup': 'StandardInternetEgress',
+    #                 'usageType': 'OnDemand'
+    #             },
+    #             'serviceRegions': [
+    #                 'asia-northeast3'
+    #             ],
+    #             'pricingInfo': [
+    #                 {
+    #                     'summary': '',
+    #                     'pricingExpression': {
+    #                         'usageUnit': 'GiBy',
+    #                         'displayQuantity': 1,
+    #                         'tieredRates': [
+    #                             {
+    #                                 'startUsageAmount': 0,
+    #                                 'unitPrice': {
+    #                                     'currencyCode': 'USD',
+    #                                     'units': '0',
+    #                                     'nanos': 0
+    #                                 }
+    #                             },
+    #                             {
+    #                                 'startUsageAmount': 200,
+    #                                 'unitPrice': {
+    #                                     'currencyCode': 'USD',
+    #                                     'units': '0',
+    #                                     'nanos': 119000000
+    #                                 }
+    #                             },
+    #                             {
+    #                                 'startUsageAmount': 10240,
+    #                                 'unitPrice': {
+    #                                     'currencyCode': 'USD',
+    #                                     'units': '0',
+    #                                     'nanos': 109000000
+    #                                 }
+    #                             },
+    #                             {
+    #                                 'startUsageAmount': 153600,
+    #                                 'unitPrice': {
+    #                                     'currencyCode': 'USD',
+    #                                     'units': '0',
+    #                                     'nanos': 97000000
+    #                                 }
+    #                             }
+    #                         ],
+    #                         'usageUnitDescription': 'gibibyte',
+    #                         'baseUnit': 'By',
+    #                         'baseUnitDescription': 'byte',
+    #                         'baseUnitConversionFactor': 1073741824
+    #                     },
+    #                     'aggregationInfo': {
+    #                         'aggregationLevel': 'ACCOUNT',
+    #                         'aggregationInterval': 'MONTHLY',
+    #                         'aggregationCount': 1
+    #                     },
+    #                     'currencyConversionRate': 1,
+    #                     'effectiveTime': '2026-09-23T07:00:00Z'
+    #                 }
+    #             ],
+    #             'serviceProviderName': 'Google',
+    #             'geoTaxonomy': {
+    #                 'type': 'REGIONAL',
+    #                 'regions': [
+    #                     'asia-northeast3'
+    #                 ]
+    #             }
+    #         },
+    #         # ...
+    #     ],
+    #     'nextPageToken': 'NTAwMA=='
+    # }
     client = billing_v1.CloudCatalogClient()
     pager = client.list_skus(parent=_service_name_to_id(service_name))
     items = []
@@ -211,6 +454,30 @@ GPU_SLICE_DESCRIPTION = recompile(
     r"^(?:(?:Spot Preemptible )?1/(\d+) vGPU no lssd|"
     r"Spot Preemptible (A4) Nvidia B200 \((\d+) gpu slice\)) running in "
 )
+
+# Cloud TPU VMs are billed per chip-hour, and the chip price includes the host
+# VM. "TpuV5e running in Delhi", "TPU7x running in Americas", or
+# "TpuV6e attached to Spot Preemptible VMs running in Americas".
+# DWS, Calendar, Commitment, and Capacity Optimized variants do not match.
+# https://cloud.google.com/tpu/pricing
+TPU_DESCRIPTION = recompile(
+    r"^(TpuV5e|TpuV5p|TpuV6e|TPU7x)"
+    r"(?: attached to Spot Preemptible VMs)? running in "
+)
+_TPU_SKU_NAME_TO_VERSION = {
+    "TpuV5e": "v5e",
+    "TpuV5p": "v5p",
+    "TpuV6e": "v6e",
+    "TPU7x": "v7x",
+}
+# ct5l and ct5lp are both v5e chips and share the TpuV5e SKU.
+_TPU_FAMILY_TO_VERSION = {
+    "ct5l": "v5e",
+    "ct5lp": "v5e",
+    "ct5p": "v5p",
+    "ct6e": "v6e",
+    "tpu7x": "v7x",
+}
 
 # GPU names of the above SKU descriptions (after dropping the optional
 # "Nvidia"/"Tesla" prefixes, as newer SKUs are e.g. "H200 141GB GPU running in
@@ -281,11 +548,38 @@ STORAGE_DESCRIPTION_TO_FAMILY = {
     "Extreme PD Capacity": "pd-extreme",
     "Hyperdisk Extreme Capacity": "hyperdisk-extreme",
     "Hyperdisk Throughput Capacity": "hyperdisk-throughput",
+    "Hyperdisk Balanced High Availability Capacity": (
+        "hyperdisk-balanced-high-availability"
+    ),
     "Hyperdisk Balanced Capacity": "hyperdisk-balanced",
+    "Hyperdisk ML Capacity": "hyperdisk-ml",
 }
 
-# partial list of storages to exclude options with extra pricing on IOPS/throughput
-STORAGE_ALLOWLIST = ["pd-standard", "pd-ssd", "pd-balanced"]
+# Max IOPS and throughput (MiB/s) per volume — Google's max provisionable / type peak.
+# Schema stores these as MB/s integers; GCP docs quote MiB/s (same as Cloud SQL rows).
+# PD (zonal type caps): https://cloud.google.com/compute/docs/disks/performance
+# Hyperdisk overview: https://cloud.google.com/compute/docs/disks/hyperdisks
+# https://cloud.google.com/compute/docs/disks/hd-types/hyperdisk-balanced
+# https://cloud.google.com/compute/docs/disks/hd-types/hyperdisk-balanced-ha
+# https://cloud.google.com/compute/docs/disks/hd-types/hyperdisk-extreme
+# https://cloud.google.com/compute/docs/disks/hd-types/hyperdisk-ml
+# https://cloud.google.com/compute/docs/disks/hd-types/hyperdisk-throughput
+STORAGE_PERFORMANCE = {
+    "pd-standard": {"max_iops": 15_000, "max_throughput": 1_200},
+    "pd-balanced": {"max_iops": 80_000, "max_throughput": 1_200},
+    "pd-ssd": {"max_iops": 100_000, "max_throughput": 1_200},
+    "hyperdisk-balanced": {"max_iops": 160_000, "max_throughput": 2_400},
+    "hyperdisk-balanced-high-availability": {
+        "max_iops": 100_000,
+        "max_throughput": 2_400,
+    },
+    "hyperdisk-extreme": {"max_iops": 350_000, "max_throughput": 5_000},
+    "hyperdisk-throughput": {"max_iops": 9_600, "max_throughput": 2_400},
+    "hyperdisk-ml": {"max_iops": 33_554_432, "max_throughput": 2_097_152},
+}
+
+# Capacity-priced disk types. Provisioned IOPS/throughput meters are not tracked.
+STORAGE_ALLOWLIST = list(STORAGE_PERFORMANCE)
 
 # Compute Engine machineTypes.deprecated.state.
 # https://cloud.google.com/compute/docs/reference/rest/v1/machineTypes
@@ -309,13 +603,21 @@ def _gcp_machine_type_status(deprecated_state: str | None) -> Status:
 # after the series, e.g. "A3Ultra Instance Core running in Americas" for
 # a3-ultragpu-8g and "M4Ultramem224 Instance Ram running in Americas" for
 # m4-ultramem-224. N1 mega/ultramem were renamed to M1.
+# Z4D SKUs include the Titanium SSD ratio, e.g.
+# "Z4D-HIGHMEM-HIGHLSSD Instance Core running in Iowa" for
+# z4d-highmem-192-highlssd. standardlssd and highlssd Local SSD rates differ,
+# so they cannot share the "z4d" series key.
 # https://cloud.google.com/compute/docs/memory-optimized-machines#m1_series
+# https://cloud.google.com/compute/docs/storage-optimized-machines
+# https://cloud.google.com/products/compute/pricing/storage-optimized
 _SERVER_NAME_SKU_FAMILIES = (
     (recompile(r"^n1-(?:mega|ultra)mem-\d+$"), "m1"),
     (recompile(r"^a3-megagpu-"), "a3plus"),
     (recompile(r"^a3-ultragpu-"), "a3ultra"),
     (recompile(r"^m4-ultramem-224$"), "m4ultramem224"),
     (recompile(r"^m4n-ultramem-224$"), "m4nultramem224"),
+    (recompile(r"^z4d-highmem-\d+-standardlssd$"), "z4d-highmem-standardlssd"),
+    (recompile(r"^z4d-highmem-\d+-highlssd$"), "z4d-highmem-highlssd"),
 )
 
 
@@ -348,6 +650,7 @@ def _skus_dict():
                 if sku.category.resource_group not in [
                     "HDD",
                     "SSD",
+                    "PDStandard",
                     "HDBSP",
                     "HDTSP",
                     "LocalSSD",
@@ -366,8 +669,10 @@ def _skus_dict():
         else:
             allocation = "spot"
         price_tiers = sku.pricing_info[0].pricing_expression.tiered_rates
-        assert len(price_tiers) == 1
-        unit_price = price_tiers[0].unit_price
+        # Standard PD (and a few others) use a free tier then a paid tier;
+        # take the last tier as the ongoing capacity rate.
+        assert price_tiers
+        unit_price = price_tiers[-1].unit_price
         # Catalog Money is units + nanos, and the whole-dollar part is non-zero
         # for e.g. the per GPU hourly rates
         price = unit_price.units + unit_price.nanos / 1e9
@@ -467,6 +772,15 @@ def _skus_dict():
                     lookup["gpu"][accelerator][region][allocation] = (price, currency)
                 continue
 
+            if sku.category.resource_group == "TPU":
+                tpu_name = TPU_DESCRIPTION.match(sku.description)
+                if not tpu_name:
+                    continue
+                version = _TPU_SKU_NAME_TO_VERSION[tpu_name.group(1)]
+                for region in regions:
+                    lookup["tpu"][version][region][allocation] = (price, currency)
+                continue
+
             # family-specific Local SSD, billed per GiB-month instead of the
             # generic "SSD backed Local Storage" SKU when present
             if (
@@ -480,9 +794,12 @@ def _skus_dict():
                 continue
 
         if sku.category.resource_family == "Storage":
-            for k, v in STORAGE_DESCRIPTION_TO_FAMILY.items():
-                if k in sku.description:
-                    storage_name = v
+            # Match capacity needles at the start of the description so
+            # "Regional …" and "Asynchronous Replication Protection - …"
+            # cannot overwrite zonal capacity rates.
+            for needle, family in STORAGE_DESCRIPTION_TO_FAMILY.items():
+                if sku.description.startswith(needle):
+                    storage_name = family
                     break
             else:
                 continue
@@ -491,6 +808,9 @@ def _skus_dict():
             if storage_name == "local-ssd" and (
                 "Reserved" in sku.description or "DWS" in sku.description
             ):
+                continue
+            # Confidential Mode is a separate premium capacity meter
+            if "Confidential Mode" in sku.description:
                 continue
             for region in regions:
                 lookup["storage"][storage_name][region][allocation] = (price, currency)
@@ -659,8 +979,14 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
             and ((server.gpu_count < 1 and family == "g4") or family == "a4")
         )
 
+        # TPU VMs are priced per chip. A4X, X4, and TPU v3 still have no
+        # OnDemand or Spot Core/Ram or chip SKU in the Billing Catalog.
+        tpu_version = _TPU_FAMILY_TO_VERSION.get(family)
+
         # price per instance or cpu/ram
-        if gpu_slice:
+        if tpu_version:
+            server_regions = [*skus["tpu"][tpu_version].keys()]
+        elif gpu_slice:
             server_regions = [*skus["gpu_slice"][family].keys()]
         else:
             server_regions = [
@@ -668,26 +994,25 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
                 *skus["cpu"][family].keys(),
             ]
         if not server_regions:
-            # some newer/exotic families (e.g. A4X, M4N, X4, TPU VM series as of
-            # 2026-08) have no Instance Core/Ram (or instance-level) SKUs at all
-            # yet in the live Billing Catalog
             vendor.log(
                 f"Skip instance: no SKU found for family '{family}' ({server.name})",
-                DEBUG,
+                WARNING,
             )
             continue
 
         # accelerator-optimized machines are billed for the attached GPUs on the
         # top of the predefined vCPU and memory, and the GPUs dominate the bill:
         # <https://cloud.google.com/compute/docs/accelerator-optimized-machines>
-        accelerator = _server_accelerators().get(server.name)
-        if server.gpu_count and not gpu_slice and accelerator not in skus["gpu"]:
-            # rather skip than publish a vCPU + memory only price for a GPU machine
-            vendor.log(
-                f"Skip instance: no GPU SKU found for '{accelerator}' ({server.name})",
-                WARNING,
-            )
-            continue
+        accelerator = None
+        if server.gpu_count and not gpu_slice and not tpu_version:
+            accelerator = _server_accelerators().get(server.name)
+            if accelerator not in skus["gpu"]:
+                # rather skip than publish a vCPU + memory only price for a GPU machine
+                vendor.log(
+                    f"Skip instance: no GPU SKU found for '{accelerator}' ({server.name})",
+                    WARNING,
+                )
+                continue
 
         for server_region in server_regions:
             # skip edge regions
@@ -699,8 +1024,23 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
                 )
                 continue
 
+            # TPU chip-hour SKU already includes the host VM
+            # https://cloud.google.com/tpu/pricing
+            if tpu_version:
+                try:
+                    price, currency = skus["tpu"][tpu_version][server_region][
+                        allocation.value.lower()
+                    ]
+                except ValueError:
+                    vendor.log(
+                        f"{allocation.value} TPU price not found for "
+                        f"'{server.name}' in '{server_region}'",
+                        WARNING,
+                    )
+                    continue
+                price *= server.gpu_count
             # try the machine-level GPU slice pricing
-            if gpu_slice:
+            elif gpu_slice:
                 try:
                     price, currency = skus["gpu_slice"][family][server_region][
                         allocation.value.lower()
@@ -749,7 +1089,7 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
             else:
                 raise KeyError(f"SKU not found for {server.name}")
 
-            if server.gpu_count and not gpu_slice:
+            if server.gpu_count and not gpu_slice and not tpu_version:
                 try:
                     gpu_price, _ = skus["gpu"][accelerator][server_region][
                         allocation.value.lower()
@@ -1302,48 +1642,56 @@ def inventory_server_prices_spot(vendor):
 
 
 def inventory_storages(vendor):
-    """List all available GCP disk storage options available in all zones.
+    """List GCP disk types for the storage catalog.
 
-    For more details on the disk types, check <https://cloud.google.com/compute/docs/disks#disk-types>."""
-    vendor.progress_tracker.start_task(
-        name="Scanning zone(s) for storage(s)", total=len(vendor.zones)
-    )
+    Allowlisted zonal types (PD + Hyperdisk) share the same name/specs in every
+    zone, so one zone is enough. Hyperdisk Balanced HA is regional-only
+    (`regionDiskTypes`) and is not a zonal type.
+    See <https://cloud.google.com/compute/docs/disks#disk-types>
+    and <https://cloud.google.com/compute/docs/disks/hyperdisks>.
+    """
 
-    def search_storages(zone: Zone, vendor: Vendor) -> List[dict]:
-        zone_storages = []
+    def _record(storage) -> dict:
+        valid_sizes = storage.valid_disk_size.replace("GB", "").split("-")
+        perf = STORAGE_PERFORMANCE[storage.name]
+        return {
+            "storage_id": str(storage.id),
+            "vendor_id": vendor.vendor_id,
+            "name": storage.name,
+            "description": storage.description,
+            "storage_type": (
+                StorageType.HDD if storage.name == "pd-standard" else StorageType.SSD
+            ),
+            "max_iops": perf["max_iops"],
+            "max_throughput": perf["max_throughput"],
+            "min_size": int(valid_sizes[0]),
+            "max_size": int(valid_sizes[1]),
+        }
+
+    ha_name = "hyperdisk-balanced-high-availability"
+    by_name: dict[str, dict] = {}
+    for zone in vendor.zones:
         for storage in _storages(zone.name):
-            valid_sizes = storage.valid_disk_size.replace("GB", "").split("-")
-            zone_storages.append(
-                {
-                    "storage_id": str(storage.id),
-                    "vendor_id": vendor.vendor_id,
-                    "name": storage.name,
-                    "description": storage.description,
-                    "storage_type": (
-                        StorageType.SSD
-                        if storage.name != "pd-standard"
-                        else StorageType.HDD
-                    ),
-                    "max_iops": None,
-                    "max_throughput": None,
-                    "min_size": int(valid_sizes[0]),
-                    "max_size": int(valid_sizes[1]),
-                }
-            )
-        vendor.log(f"{len(zone_storages)} storage(s) found in {zone.name}.")
-        vendor.progress_tracker.advance_task()
-        return zone_storages
+            if storage.name not in STORAGE_ALLOWLIST or storage.name == ha_name:
+                continue
+            by_name[storage.name] = _record(storage)
+        if by_name:
+            vendor.log(f"{len(by_name)} storage(s) found in {zone.name}.")
+            break
 
-    with ThreadPoolExecutor(max_workers=8) as executor:
-        storages = executor.map(search_storages, vendor.zones, repeat(vendor))
-    storages = list(chain.from_iterable(storages))
+    # Hyperdisk Balanced HA is regional-only (regionDiskTypes).
+    for region in vendor.regions:
+        for storage in _region_storages(region.name):
+            if storage.name != ha_name:
+                continue
+            by_name[ha_name] = _record(storage)
+            vendor.log(f"1 regional storage(s) found in {region.name}.")
+            break
+        if ha_name in by_name:
+            break
 
-    vendor.log(f"{len(storages)} storage(s) found in {len(vendor.zones)} zones.")
-    storages = list({p["name"]: p for p in storages}.values())
+    storages = list(by_name.values())
     vendor.log(f"{len(storages)} unique storage(s) found.")
-    storages = [s for s in storages if s["name"] in STORAGE_ALLOWLIST]
-    vendor.log(f"{len(storages)} storage(s) after dropping items with complex pricing.")
-    vendor.progress_tracker.hide_task()
     return storages
 
 
@@ -1353,8 +1701,14 @@ def inventory_storage_prices(vendor):
     skus = _skus_dict()
     items = []
     for storage in vendor.storages:
-        storage_regions = skus["storage"][storage.name].keys()
-        for storage_region in storage_regions:
+        storage_skus = skus["storage"].get(storage.name)
+        if not storage_skus:
+            vendor.log(
+                f"Skip '{storage.name}': no capacity SKU in billing catalog",
+                DEBUG,
+            )
+            continue
+        for storage_region in storage_skus.keys():
             # skip edge regions
             region = regions.get(storage_region)
             if region is None:
@@ -1364,7 +1718,7 @@ def inventory_storage_prices(vendor):
                 )
                 continue
 
-            price, currency = skus["storage"][storage.name][storage_region]["ondemand"]
+            price, currency = storage_skus[storage_region]["ondemand"]
             for zone in region.zones:
                 items.append(
                     {
@@ -1475,7 +1829,52 @@ def _sqladmin_service():
 @cachier(separate_files=True)
 def _pg_sqladmin_metadata() -> dict:
     service = _sqladmin_service()
+    # example tiers.list response:
+    # {
+    #     'kind': 'sql#tiersList',
+    #     'items': [
+    #         {
+    #             'tier': 'db-f1-micro',
+    #             'RAM': '644245094',
+    #             'kind': 'sql#tier',
+    #             'DiskQuota': '3279207530496',
+    #             'region': [
+    #                 'africa-south1',
+    #                 'asia-east1',
+    #                 'asia-east2',
+    #                 # ...
+    #             ]
+    #         },
+    #         # ...
+    #     ]
+    # }
     tiers = service.tiers().list(project=_project_id()).execute().get("items", [])
+    # example flags.list response:
+    # {
+    #     'kind': 'sql#flagsList',
+    #     'items': [
+    #         {
+    #             'name': 'audit_log',
+    #             'type': 'STRING',
+    #             'appliesTo': [
+    #                 'MYSQL_5_6',
+    #                 'MYSQL_5_7',
+    #                 'MYSQL_8_0',
+    #                 # ...
+    #             ],
+    #             'allowedStringValues': [
+    #                 'ON',
+    #                 'OFF',
+    #                 'FORCE',
+    #                 'FORCE_PLUS_PERMANENT'
+    #             ],
+    #             'requiresRestart': True,
+    #             'kind': 'sql#flag',
+    #             'inBeta': True
+    #         },
+    #         # ...
+    #     ]
+    # }
     flags = service.flags().list().execute().get("items", [])
     engine_versions: set[str] = set()
     custom_config = custom_extensions = False
@@ -1505,6 +1904,72 @@ def _pg_sqladmin_metadata() -> dict:
 
 @cachier(separate_files=True)
 def _cloud_sql_skus():
+    # example services.skus.list response:
+    # {
+    #     'skus': [
+    #         {
+    #             'name': 'services/9662-B51E-5089/skus/0636-5997-91DB',
+    #             'skuId': '0636-5997-91DB',
+    #             'description': 'Cloud SQL for PostgreSQL: Developer Storage in Frankfurt',
+    #             'category': {
+    #                 'serviceDisplayName': 'Cloud SQL',
+    #                 'resourceFamily': 'ApplicationServices',
+    #                 'resourceGroup': 'StorageUnit-DeveloperEdition',
+    #                 'usageType': 'OnDemand'
+    #             },
+    #             'serviceRegions': [
+    #                 'europe-west3'
+    #             ],
+    #             'pricingInfo': [
+    #                 {
+    #                     'summary': '',
+    #                     'pricingExpression': {
+    #                         'usageUnit': 'GiBy.mo',
+    #                         'displayQuantity': 1,
+    #                         'tieredRates': [
+    #                             {
+    #                                 'startUsageAmount': 0,
+    #                                 'unitPrice': {
+    #                                     'currencyCode': 'USD',
+    #                                     'units': '0',
+    #                                     'nanos': 0
+    #                                 }
+    #                             },
+    #                             {
+    #                                 'startUsageAmount': 10,
+    #                                 'unitPrice': {
+    #                                     'currencyCode': 'USD',
+    #                                     'units': '0',
+    #                                     'nanos': 138000000
+    #                                 }
+    #                             }
+    #                         ],
+    #                         'usageUnitDescription': 'gibibyte month',
+    #                         'baseUnit': 'By.s',
+    #                         'baseUnitDescription': 'byte second',
+    #                         'baseUnitConversionFactor': 2783138807808000.0
+    #                     },
+    #                     'aggregationInfo': {
+    #                         'aggregationLevel': 'ACCOUNT',
+    #                         'aggregationInterval': 'MONTHLY',
+    #                         'aggregationCount': 1
+    #                     },
+    #                     'currencyConversionRate': 1,
+    #                     'effectiveTime': '2026-09-23T07:00:00Z'
+    #                 }
+    #             ],
+    #             'serviceProviderName': 'Google',
+    #             'geoTaxonomy': {
+    #                 'type': 'REGIONAL',
+    #                 'regions': [
+    #                     'europe-west3'
+    #                 ]
+    #             }
+    #         },
+    #         # ...
+    #     ],
+    #     'nextPageToken': 'NTAwMA=='
+    # }
     return _skus("Cloud SQL")
 
 
