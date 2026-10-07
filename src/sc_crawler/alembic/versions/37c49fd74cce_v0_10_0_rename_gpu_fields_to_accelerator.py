@@ -1,4 +1,4 @@
-"""v0.10.0 rename gpu fields to accelerator, add compatible storage ids and benchmark environment fields
+"""v0.10.0 rename gpu fields to accelerator, add compatible storage ids, benchmark environment fields and subcategory
 
 Revision ID: 37c49fd74cce
 Revises: b1c2d3e4f5a6
@@ -47,6 +47,8 @@ def _foreign_keys(table_name: str, is_scd: bool) -> tuple:
         ),
     )
 
+
+_SUBCATEGORY_COMMENT = "Subcategory of the benchmark within its category, e.g. the scope of an nvbandwidth test."
 
 _ACCELERATOR_TYPE_VALUES = ("GPU", "TPU")
 
@@ -98,14 +100,10 @@ _RENAMED_SERVER_COLUMNS = (
 
 _ACCELERATOR_TYPE_COMMENT = "The type of the primary accelerator, e.g. GPU or TPU."
 _SERVER_COMPATIBLE_STORAGE_IDS_COMMENT = (
-    "List of storage_ids that can be attached to the server as extra storage. "
-    "An empty list means no extra storage can be attached, "
-    "while null means all storage types of the vendor are compatible."
+    "List of storage_ids that can be attached to the server as extra storage."
 )
 _DATABASE_COMPATIBLE_STORAGE_IDS_COMMENT = (
-    "List of database_storage_ids that can be attached to the database as extra storage. "
-    "An empty list means no extra storage can be attached, "
-    "while null means all database storage types of the vendor are compatible."
+    "List of database_storage_ids that can be attached to the database as extra storage."
 )
 _ENVIRONMENT_FIELDS_COMMENT = (
     "A dictionary of descriptions on the environment details recorded with the "
@@ -795,6 +793,32 @@ def get_benchmark_table(is_scd: bool) -> sa.Table:
     )
 
 
+def _backfill_compatible_storage_ids(
+    table_name: str, storage_table_name: str, storage_id_column: str
+) -> None:
+    bind = op.get_bind()
+    storage_ids: dict[str, list[str]] = {}
+    for vendor_id, storage_id in bind.execute(
+        sa.text(
+            f"SELECT vendor_id, {storage_id_column} FROM {storage_table_name} "
+            "WHERE status = 'ACTIVE' ORDER BY vendor_id, "
+            f"{storage_id_column}"
+        )
+    ):
+        storage_ids.setdefault(vendor_id, []).append(storage_id)
+    table = sa.table(
+        table_name,
+        sa.column("vendor_id", sa.String()),
+        sa.column("compatible_storage_ids", sa.JSON()),
+    )
+    for vendor_id, ids in storage_ids.items():
+        bind.execute(
+            table.update()
+            .where(table.c.vendor_id == vendor_id)
+            .values(compatible_storage_ids=ids)
+        )
+
+
 def upgrade() -> None:
     is_scd = is_scd_migration()
     is_postgresql = op.get_context().dialect.name == "postgresql"
@@ -819,13 +843,15 @@ def upgrade() -> None:
     server_compatible_storage_ids_column = sa.Column(
         "compatible_storage_ids",
         sa.JSON(),
-        nullable=True,
+        nullable=False,
+        server_default="[]",
         comment=_SERVER_COMPATIBLE_STORAGE_IDS_COMMENT,
     )
     database_compatible_storage_ids_column = sa.Column(
         "compatible_storage_ids",
         json_type(),
-        nullable=True,
+        nullable=False,
+        server_default="[]",
         comment=_DATABASE_COMPATIBLE_STORAGE_IDS_COMMENT,
     )
     environment_fields_column = sa.Column(
@@ -834,6 +860,13 @@ def upgrade() -> None:
         nullable=False,
         server_default="{}",
         comment=_ENVIRONMENT_FIELDS_COMMENT,
+    )
+
+    subcategory_column = sa.Column(
+        "subcategory",
+        sqlmodel.sql.sqltypes.AutoString(),
+        nullable=True,
+        comment=_SUBCATEGORY_COMMENT,
     )
 
     if do_recreate_tables:
@@ -871,6 +904,7 @@ def upgrade() -> None:
             recreate="always",
         ) as batch_op:
             batch_op.add_column(environment_fields_column, insert_after="config_fields")
+            batch_op.add_column(subcategory_column, insert_after="category")
     else:
         for old_name, new_name, _, comment in _RENAMED_SERVER_COLUMNS:
             op.alter_column(
@@ -883,6 +917,14 @@ def upgrade() -> None:
         op.add_column(server_table_name, server_compatible_storage_ids_column)
         op.add_column(database_table_name, database_compatible_storage_ids_column)
         op.add_column(benchmark_table_name, environment_fields_column)
+        op.add_column(benchmark_table_name, subcategory_column)
+
+    # existing rows default to all (active) storage types of the vendor
+    if not is_scd:
+        _backfill_compatible_storage_ids(server_table_name, "storage", "storage_id")
+        _backfill_compatible_storage_ids(
+            database_table_name, "database_storage", "database_storage_id"
+        )
 
     # SQLite cannot DROP DEFAULT via ALTER COLUMN; leave the migration default there.
     if is_postgresql:
@@ -892,6 +934,13 @@ def upgrade() -> None:
             server_default=None,
             existing_nullable=False,
         )
+        for table_name in (server_table_name, database_table_name):
+            op.alter_column(
+                table_name,
+                "compatible_storage_ids",
+                server_default=None,
+                existing_nullable=False,
+            )
 
 
 def downgrade() -> None:
@@ -902,6 +951,7 @@ def downgrade() -> None:
 
     with op.batch_alter_table(benchmark_table_name, schema=None) as batch_op:
         batch_op.drop_column("environment_fields")
+        batch_op.drop_column("subcategory")
     with op.batch_alter_table(database_table_name, schema=None) as batch_op:
         batch_op.drop_column("compatible_storage_ids")
     with op.batch_alter_table(server_table_name, schema=None) as batch_op:

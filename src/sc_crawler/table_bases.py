@@ -808,13 +808,11 @@ class ServerFields(
             "the size (GB) and type of each disk."
         ),
     )
-    compatible_storage_ids: Optional[List[str]] = Field(
-        default=None,
+    compatible_storage_ids: List[str] = Field(
+        default=[],
         sa_type=JSON,
         description=(
-            "List of storage_ids that can be attached to the server as extra storage. "
-            "An empty list means no extra storage can be attached, "
-            "while null means all storage types of the vendor are compatible."
+            "List of storage_ids that can be attached to the server as extra storage."
         ),
     )
     network_speed_baseline: Optional[float] = Field(
@@ -1011,13 +1009,11 @@ class DatabaseFields(
         default=None,
         description="Whether storage capacity can automatically expand as disk usage grows.",
     )
-    compatible_storage_ids: Optional[List[str]] = Field(
-        default=None,
+    compatible_storage_ids: List[str] = Field(
+        default=[],
         sa_type=JSON,
         description=(
-            "List of database_storage_ids that can be attached to the database as extra storage. "
-            "An empty list means no extra storage can be attached, "
-            "while null means all database storage types of the vendor are compatible."
+            "List of database_storage_ids that can be attached to the database as extra storage."
         ),
     )
     disk_encryption: Optional[bool] = Field(
@@ -1224,6 +1220,10 @@ _BENCHMARK_SOURCE_ADAPTER = TypeAdapter(BenchmarkSource)
 
 class BenchmarkFields(HasBenchmarkIdPK):
     category: Optional[str] = Field(description="Category of the resource.")
+    subcategory: Optional[str] = Field(
+        default=None,
+        description="Subcategory of the benchmark within its category, e.g. the scope of an nvbandwidth test.",
+    )
     source: BenchmarkSource = Field(
         default_factory=MeasuredSource,
         sa_type=JSON,

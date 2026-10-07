@@ -204,6 +204,7 @@ def _passmark(
     unit: str,
     higher_is_better: bool = True,
     note: str | None = None,
+    subcategory: str = "CPU",
 ):
     measurement = sub(r"\W+", "_", name.lower())
     return Benchmark(
@@ -212,6 +213,7 @@ def _passmark(
         measurement=measurement,
         name="PassMark: " + name,
         category="Passmark",
+        subcategory=subcategory,
         description=description,
         unit=unit,
         higher_is_better=higher_is_better,
@@ -233,6 +235,7 @@ benchmarks: List[Benchmark] = [
         benchmark_id="bw_mem",
         name="Memory bandwidth (bw_mem)",
         category="Memory bandwidth",
+        subcategory="bw_mem",
         description="bw_mem allocates twice the specified amount of memory, zeros it, and then times the copying of the first half to the second half. Results are reported in megabytes moved per second (MB/sec). bw_mem is provided by lmbench. For more details, see the man pages.",
         framework="bw_mem",
         config_fields={
@@ -367,7 +370,8 @@ benchmarks: List[Benchmark] = [
     Benchmark(
         benchmark_id="openssl",
         name="OpenSSL speed",
-        category="OpenSSL",
+        category="Cryptography",
+        subcategory="OpenSSL",
         description="Measures the performance of OpenSSL's selected hash functions and block ciphers with different block sizes of data.",
         framework="openssl",
         config_fields={
@@ -515,7 +519,8 @@ benchmarks: List[Benchmark] = [
     Benchmark(
         benchmark_id="redis:rps",
         name="Redis server+client speed",
-        category="Redis",
+        category="Database",
+        subcategory="Redis",
         description="Running a pair of redis server and benchmarking client (memtier_benchmark) on each vCPU to evaluate the performance of SET operations, using different number of concurrent pipelined requests. The measured RPS (ops/sec) is the sum of RPS measured in all parallel processes, but is not the maximum expected redis server speed, as the server(s) share CPU with the client(s).",
         framework="redis",
         measurement="rps",
@@ -528,7 +533,8 @@ benchmarks: List[Benchmark] = [
     Benchmark(
         benchmark_id="redis:rps-extrapolated",
         name="Redis server (extrapolated) speed",
-        category="Redis",
+        category="Database",
+        subcategory="Redis",
         description="Running a pair of redis server and benchmarking client (memtier_benchmark) on each vCPU to evaluate the performance of SET operations, using different number of concurrent pipelined requests. The extrapolated server speed is based on the measured speed adjusted by the server's and client's time spent executing in user/system mode, so trying to control for the client resource usage.",
         framework="redis",
         measurement="rps-extrapolated",
@@ -548,7 +554,8 @@ benchmarks: List[Benchmark] = [
     Benchmark(
         benchmark_id="redis:latency",
         name="Redis latency",
-        category="Redis",
+        category="Database",
+        subcategory="Redis",
         description="Running a pair of redis server and benchmarking client (memtier_benchmark) on each vCPU to evaluate the performance of SET operations, using different number of concurrent pipelined requests. The average latency reported by memtier_benchmark.",
         framework="redis",
         measurement="latency",
@@ -618,6 +625,7 @@ benchmarks: List[Benchmark] = [
         description="A composite score of PassMark's Database and Memory test cases",
         unit=None,
         note=_benchmark_plateau_note(16),
+        subcategory="Memory",
     ),
     _passmark(
         name="Database Operations",
@@ -625,6 +633,7 @@ benchmarks: List[Benchmark] = [
         description="Single threaded and multi-threaded CRUD operations, such as INSERT (40%), SELECT (26%), UPDATE (24%), and DELETE (10%) on a relational database with 4 tables and 1k rows per table.",
         unit="Thousands of operations per second (Kops/s)",
         note=_benchmark_plateau_note(32),
+        subcategory="Memory",
     ),
     # https://www.memorybenchmark.net/graph_notes.html
     _passmark(
@@ -632,18 +641,21 @@ benchmarks: List[Benchmark] = [
         description="Read a combination of 32-bit and 64-bit data from memory.",
         unit="Megabytes per second (MB/s)",
         note=_BENCHMARK_FAMILY_INDEPENDENT_NOTE,
+        subcategory="Memory",
     ),
     _passmark(
         name="Memory Read Uncached",
         description="Read a combination of 32-bit and 64-bit data from memory using a 512 MB block size.",
         unit="Megabytes per second (MB/s)",
         note=_BENCHMARK_FAMILY_INDEPENDENT_NOTE,
+        subcategory="Memory",
     ),
     _passmark(
         name="Memory Write",
         description="Write a combination of 32-bit and 64-bit data to the memory using a 512 MB block size.",
         unit="Megabytes per second (MB/s)",
         note=_BENCHMARK_FAMILY_INDEPENDENT_NOTE,
+        subcategory="Memory",
     ),
     _passmark(
         name="Memory Latency",
@@ -651,11 +663,13 @@ benchmarks: List[Benchmark] = [
         unit="Nanoseconds (ns)",
         higher_is_better=False,
         note=_BENCHMARK_FAMILY_INDEPENDENT_NOTE,
+        subcategory="Memory",
     ),
     Benchmark(
         benchmark_id="membench:bandwidth_read",
         name="Memory read bandwidth (sc-membench)",
         category="Memory bandwidth",
+        subcategory="membench",
         description="Measures aggregate sequential read bandwidth across all threads using OpenMP parallelization.",
         framework="membench",
         measurement="memory_bandwidth",
@@ -669,6 +683,7 @@ benchmarks: List[Benchmark] = [
         benchmark_id="membench:bandwidth_write",
         name="Memory write bandwidth (sc-membench)",
         category="Memory bandwidth",
+        subcategory="membench",
         description="Measures aggregate sequential write bandwidth across all threads using OpenMP parallelization.",
         framework="membench",
         measurement="memory_bandwidth",
@@ -682,6 +697,7 @@ benchmarks: List[Benchmark] = [
         benchmark_id="membench:bandwidth_copy",
         name="Memory copy bandwidth (sc-membench)",
         category="Memory bandwidth",
+        subcategory="membench",
         description="Measures aggregate memory copy bandwidth across all threads using OpenMP parallelization.",
         framework="membench",
         measurement="memory_bandwidth",
@@ -695,6 +711,7 @@ benchmarks: List[Benchmark] = [
         benchmark_id="membench:latency",
         name="Memory latency (sc-membench)",
         category="Memory latency",
+        subcategory="membench",
         description="Measures median memory latency using pointer chasing with randomized access to defeat hardware prefetching.",
         framework="membench",
         measurement="memory_latency",
@@ -709,6 +726,7 @@ benchmarks: List[Benchmark] = [
         benchmark_id="llm_speed:text_generation",
         name="LLM inference speed for text generation",
         category="LLM inference speed",
+        subcategory="Text generation",
         description="Running llama-bench from llama.cpp using various quantized model files to measure the speed of generating 16 to 4k tokens.",
         framework="llm_speed",
         measurement="text_generation",
@@ -723,6 +741,7 @@ benchmarks: List[Benchmark] = [
         benchmark_id="llm_speed:prompt_processing",
         name="LLM inference speed for prompt processing",
         category="LLM inference speed",
+        subcategory="Prompt processing",
         description="Running llama-bench from llama.cpp using various quantized model files to measure the speed of processing 16 to 16k tokens.",
         framework="llm_speed",
         measurement="prompt_processing",
@@ -737,6 +756,7 @@ benchmarks: List[Benchmark] = [
         benchmark_id="nvbandwidth:all:host_to_gpu",
         name="Node host-to-GPU bandwidth (nvbandwidth)",
         category="GPU bandwidth",
+        subcategory="Node (all GPUs)",
         description="Total node ingest rate (GB/s) when CPU streams to ALL GPUs concurrently utilizing CE (Copy Engine).",
         framework="nvbandwidth",
         measurement="gpu_bandwidth",
@@ -746,6 +766,7 @@ benchmarks: List[Benchmark] = [
         benchmark_id="nvbandwidth:all:gpu_to_host",
         name="Node GPU-to-host bandwidth (nvbandwidth)",
         category="GPU bandwidth",
+        subcategory="Node (all GPUs)",
         description="Total node egress rate (GB/s) when ALL GPUs stream to CPU concurrently utilizing CE (Copy Engine).",
         framework="nvbandwidth",
         measurement="gpu_bandwidth",
@@ -755,6 +776,7 @@ benchmarks: List[Benchmark] = [
         benchmark_id="nvbandwidth:all:duplex",
         name="Node baseline directional bandwidth (nvbandwidth)",
         category="GPU bandwidth",
+        subcategory="Node (all GPUs)",
         description="Conservative per-direction bandwidth (GB/s) under simultaneous bi-directional saturation utilizing CE (Copy Engine).",
         framework="nvbandwidth",
         measurement="gpu_bandwidth",
@@ -764,6 +786,7 @@ benchmarks: List[Benchmark] = [
         benchmark_id="nvbandwidth:slot:host_to_gpu",
         name="Per-GPU host-to-GPU bandwidth (nvbandwidth)",
         category="GPU bandwidth",
+        subcategory="Single GPU slot",
         description="Average physical PCIe slot ingest speed (GB/s) per single GPU utilizing CE (Copy Engine).",
         framework="nvbandwidth",
         measurement="gpu_bandwidth",
@@ -773,6 +796,7 @@ benchmarks: List[Benchmark] = [
         benchmark_id="nvbandwidth:slot:gpu_to_host",
         name="Per-GPU GPU-to-host bandwidth (nvbandwidth)",
         category="GPU bandwidth",
+        subcategory="Single GPU slot",
         description="Average physical PCIe slot egress speed (GB/s) per single GPU utilizing CE (Copy Engine).",
         framework="nvbandwidth",
         measurement="gpu_bandwidth",
@@ -782,6 +806,7 @@ benchmarks: List[Benchmark] = [
         benchmark_id="nvbandwidth:slot:latency",
         name="Per-GPU host-device latency (nvbandwidth)",
         category="GPU latency",
+        subcategory="Single GPU slot",
         description="Average round-trip transit time (ns) between CPU and individual GPUs utilizing SM (Streaming Multiprocessor).",
         framework="nvbandwidth",
         measurement="gpu_latency",
@@ -792,6 +817,7 @@ benchmarks: List[Benchmark] = [
         benchmark_id="nvbandwidth:p2p:single",
         name="GPU-to-GPU P2P bandwidth (nvbandwidth)",
         category="GPU bandwidth",
+        subcategory="Peer-to-peer",
         description="Single NVLink/P2P lane write speed (GB/s) between any two GPUs utilizing CE (Copy Engine).",
         framework="nvbandwidth",
         measurement="gpu_bandwidth",
@@ -801,6 +827,7 @@ benchmarks: List[Benchmark] = [
         benchmark_id="nvbandwidth:p2p:duplex",
         name="GPU-to-GPU P2P duplex bandwidth (nvbandwidth)",
         category="GPU bandwidth",
+        subcategory="Peer-to-peer",
         description="Full-duplex NVLink/P2P lane speed (GB/s) during simultaneous dual-GPU transfers utilizing CE (Copy Engine).",
         framework="nvbandwidth",
         measurement="gpu_bandwidth",
@@ -810,6 +837,7 @@ benchmarks: List[Benchmark] = [
         benchmark_id="nvbandwidth:p2p:latency",
         name="GPU-to-GPU P2P latency (nvbandwidth)",
         category="GPU latency",
+        subcategory="Peer-to-peer",
         description="Direct transit latency (ns) between GPU pairs over NVLink/P2P utilizing SM (Streaming Multiprocessor).",
         framework="nvbandwidth",
         measurement="gpu_latency",
@@ -820,6 +848,7 @@ benchmarks: List[Benchmark] = [
         benchmark_id="nvbandwidth:p2p:gather",
         name="GPU-to-GPU P2P gather bandwidth (nvbandwidth)",
         category="GPU bandwidth",
+        subcategory="Peer-to-peer",
         description="Intake bandwidth (GB/s) on a single target GPU when all peer GPUs send to it at once utilizing CE (Copy Engine).",
         framework="nvbandwidth",
         measurement="gpu_bandwidth",
@@ -829,6 +858,7 @@ benchmarks: List[Benchmark] = [
         benchmark_id="nvbandwidth:efficiency:sm_ce_ratio",
         name="SM/CE copy efficiency (nvbandwidth)",
         category="GPU bandwidth",
+        subcategory="Efficiency",
         description="Ratio (between 0.0 and 1.0) showing compute-core copy efficiency vs. raw DMA Copy Engine capacity, or in other terms, the ratio between CE (Copy Engine) and Streaming Multiprocessor (SM).",
         framework="nvbandwidth",
         measurement="gpu_efficiency",
@@ -838,6 +868,7 @@ benchmarks: List[Benchmark] = [
         benchmark_id="pgbench:heavy_read_only",
         name="PostgreSQL heavy read-only throughput",
         category="Database",
+        subcategory="PostgreSQL",
         description=(
             "Measures PostgreSQL throughput with a remote pgbench client against "
             "a custom, cache-resident, read-only transaction (joins, aggregates, "
@@ -865,6 +896,7 @@ benchmarks: List[Benchmark] = [
         benchmark_id="pgbench:heavy_read_only:single",
         name="PostgreSQL heavy read-only baseline (single connection)",
         category="Database",
+        subcategory="PostgreSQL",
         description=(
             "Baseline PostgreSQL throughput with a single remote pgbench client "
             "connection against a custom, cache-resident, read-only transaction "
@@ -887,6 +919,7 @@ benchmarks: List[Benchmark] = [
         benchmark_id="pgbench:heavy_read_only:peak",
         name="PostgreSQL heavy read-only peak throughput",
         category="Database",
+        subcategory="PostgreSQL",
         description=(
             "Maximum PostgreSQL throughput over the pgbench concurrency profile "
             "(typically 1, vCPUs/2, vCPUs, and 2*vCPUs) with a remote client against "
