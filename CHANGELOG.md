@@ -1,3 +1,15 @@
+## v0.9.4 (October 07, 2026)
+
+Fix(es):
+
+- `UpCloud`: inventory flexible `rdb.*` Developer / Standard / High Memory
+  PostgreSQL plans from `/database/plans`. Replace managed DB storage id `additional-disk`
+  with `standard` (Developer plans and legacy additional disk) and `maxiops`
+  (Standard / High Memory plans), matching block-storage storage ids.
+- `OVH`: skip server offers without a public catalog price, deduplicate repeated 
+  flavor/region offers (when plan codes share an invoice name, e.g. `.3AZ` variants, 
+  use the same catalog plan as the server inventory), and log excluded offers only once.
+
 ## v0.9.3 (October 02, 2026)
 
 New benchmark(s):
@@ -18,10 +30,6 @@ Maintenance update:
 
 Fix(es):
 
-- `UpCloud`: inventory flexible `rdb.*` Developer / Standard / High Memory
-  PostgreSQL plans from `/database/plans`. Replace managed DB storage id `additional-disk`
-  with `standard` (Developer plans and legacy additional disk) and `maxiops`
-  (Standard / High Memory plans), matching block-storage storage ids.
 - `GCP`: fix Compute Engine prices and GPU/TPU naming against Billing Catalog SKUs.
   On-demand and spot prices now cover `z4d`, `ct5l`, `ct5lp`, `ct5p`, `ct6e`, and `tpu7x`,
   plus specialized Core/Ram families, GPU slice SKUs, GBy.h memory units, and bundled
