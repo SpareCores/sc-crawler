@@ -3,12 +3,11 @@
 Fix(es):
 
 - `UpCloud`: inventory flexible `rdb.*` Developer / Standard / High Memory
-  PostgreSQL plans from `/database/plans`. Replace managed DB storage id `additional-disk`
-  with `standard` (Developer plans and legacy additional disk) and `maxiops`
-  (Standard / High Memory plans), matching block-storage storage ids.
-- `OVH`: skip server offers without a public catalog price, deduplicate repeated 
-  flavor/region offers (when plan codes share an invoice name, e.g. `.3AZ` variants, 
-  use the same catalog plan as the server inventory), and log excluded offers only once.
+  PostgreSQL plans from `/database/plans`. Replace managed DB storage id
+  `additional-disk` with `standard` (Developer plans and legacy additional disk)
+  and `maxiops` (Standard / High Memory plans), matching block-storage storage ids.
+- `OVH`: skip server offers without a public catalog price, deduplicate repeated
+  flavor/region offers, and log excluded offers only once.
 
 ## v0.9.3 (October 02, 2026)
 

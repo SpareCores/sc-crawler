@@ -32,6 +32,7 @@ from sc_crawler.vendors._ovh import (
     inventory_database_storages,
     inventory_databases,
     inventory_regions,
+    inventory_server_prices,
 )
 
 _MIB_PER_GIB = 1024
@@ -748,3 +749,55 @@ def test_inventory_database_storage_prices_use_catalog_suffix(mock_ovh_client):
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+def _server_addon(plan_code: str, price_microcents: int):
+    return {
+        **_catalog_addon(plan_code, price_microcents),
+        "invoiceName": plan_code.split(".")[0],
+        "blobs": {"technical": {"os": {"family": "linux"}}},
+    }
+
+
+def _flavor_offer(region: str, plan_code: str):
+    return {
+        "name": plan_code.split(".")[0],
+        "region": region,
+        "osType": "linux",
+        "planCodes": {"hourly": plan_code},
+    }
+
+
+def test_inventory_server_prices_skip_duplicates_and_unknown_plans(mock_ovh_client):
+    catalog_addons = [
+        _server_addon("b3-8.consumption", 10_000_000),
+        _server_addon("b3-8.consumption.3AZ", 12_000_000),
+    ]
+    flavors = [
+        _flavor_offer("GRA", "b3-8.consumption"),
+        _flavor_offer("EU-WEST-PAR", "b3-8.consumption.3AZ"),
+        # duplicated listing
+        _flavor_offer("GRA", "b3-8.consumption"),
+        # no addon in the public catalog
+        _flavor_offer("GRA", "h200-1920-eph.consumption"),
+    ]
+    original = mock_ovh_client.get.side_effect
+
+    def fake_get(path, *args, **kwargs):
+        if path == "/cloud/project/test-project/flavor":
+            return flavors
+        if path == "/order/catalog/public/cloud":
+            return {"locale": {"currencyCode": "EUR"}, "addons": catalog_addons}
+        return original(path, *args, **kwargs)
+
+    mock_ovh_client.get.side_effect = fake_get
+    prices = inventory_server_prices(_ovh_vendor())
+    by_region = {}
+    for row in prices:
+        by_region.setdefault(row["region_id"], []).append(row)
+
+    assert set(by_region) == {"GRA", "EU-WEST-PAR"}
+    assert [r["zone_id"] for r in by_region["GRA"]] == ["gra-a"]
+    assert by_region["GRA"][0]["price"] == pytest.approx(0.1)
+    assert len(by_region["EU-WEST-PAR"]) == 3
+    assert all(r["price"] == pytest.approx(0.12) for r in by_region["EU-WEST-PAR"])
