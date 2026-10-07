@@ -6,8 +6,10 @@ Fix(es):
   PostgreSQL plans from `/database/plans`. Replace managed DB storage id
   `additional-disk` with `standard` (Developer plans and legacy additional disk)
   and `maxiops` (Standard / High Memory plans), matching block-storage storage ids.
-- `OVH`: skip server offers without a public catalog price, deduplicate repeated
-  flavor/region offers, and log excluded offers only once.
+- `OVH`: skip server offers without a public catalog price and deduplicate
+  repeated flavor/region offers. Skip regions without instances or managed
+  databases (e.g. `RBX-ARCHIVE`), list IPv4 prices only in compute regions and
+  block storage prices only where the volume type is offered.
 
 ## v0.9.3 (October 02, 2026)
 

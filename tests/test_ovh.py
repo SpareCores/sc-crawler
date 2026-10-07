@@ -25,6 +25,7 @@ from sc_crawler.vendors._ovh import (
     _get_project_id,
     _get_region,
     _get_regions,
+    _get_volume_types,
     _get_server_family,
     inventory_compliance_frameworks,
     inventory_database_prices,
@@ -33,6 +34,7 @@ from sc_crawler.vendors._ovh import (
     inventory_databases,
     inventory_regions,
     inventory_server_prices,
+    inventory_storage_prices,
 )
 
 _MIB_PER_GIB = 1024
@@ -48,6 +50,7 @@ def mock_ovh_client():
     _get_catalog.cache_clear()
     _get_database_availability.cache_clear()
     _get_database_capabilities.cache_clear()
+    _get_volume_types.cache_clear()
 
     with (
         patch("sc_crawler.vendors._ovh._client") as mock_client_factory,
@@ -74,6 +77,7 @@ def mock_ovh_client():
             if path == "/cloud/project/test-project/region/EU-WEST-PAR":
                 return {
                     "datacenterLocation": "PAR",
+                    "services": [{"name": "instance"}],
                     "availabilityZones": [
                         "eu-west-par-a",
                         "eu-west-par-b",
@@ -83,6 +87,7 @@ def mock_ovh_client():
             if path == "/cloud/project/test-project/region/AP-SOUTH-MUM":
                 return {
                     "datacenterLocation": "YNM",
+                    "services": [{"name": "instance"}, {"name": "volume"}],
                     "availabilityZones": ["ap-south-mum-a"],
                 }
             raise RuntimeError(f"Unmocked OVH API call: {path}")
@@ -801,3 +806,75 @@ def test_inventory_server_prices_skip_duplicates_and_unknown_plans(mock_ovh_clie
     assert by_region["GRA"][0]["price"] == pytest.approx(0.1)
     assert len(by_region["EU-WEST-PAR"]) == 3
     assert all(r["price"] == pytest.approx(0.12) for r in by_region["EU-WEST-PAR"])
+
+
+def test_get_regions_skips_regions_without_compute_or_databases(mock_ovh_client):
+    services = {
+        "GRA11": ["instance", "volume"],
+        # 3AZ regions do not list the volume service
+        "EU-WEST-PAR": ["instance", "storage-s3-standard"],
+        # storage-only regions, one with managed databases
+        "GRA": ["storage", "storage-s3-standard"],
+        "RBX-ARCHIVE": ["storage-s3-coldarchive"],
+    }
+    original = mock_ovh_client.get.side_effect
+
+    def fake_get(path, *args, **kwargs):
+        if path == "/cloud/project/test-project/region":
+            return list(services)
+        prefix = "/cloud/project/test-project/region/"
+        if path.startswith(prefix):
+            region = path.removeprefix(prefix)
+            return {"services": [{"name": name} for name in services[region]]}
+        if path.endswith("/database/availability"):
+            return [_pg_offer(region="GRA"), _pg_offer(region="EU-WEST-PAR")]
+        return original(path, *args, **kwargs)
+
+    mock_ovh_client.get.side_effect = fake_get
+    assert _get_regions() == ["GRA11", "EU-WEST-PAR", "GRA"]
+
+
+def test_inventory_storage_prices_skip_unavailable_storages(mock_ovh_client):
+    original = mock_ovh_client.get.side_effect
+
+    volume_types = {
+        "EU-WEST-PAR": ["classic-multiattach", "high-speed-gen2-luks"],
+        "AP-SOUTH-MUM": ["classic", "classic-luks"],
+    }
+
+    def fake_get(path, *args, **kwargs):
+        if path == "/order/catalog/public/cloud":
+            return {
+                "locale": {"currencyCode": "EUR"},
+                "addons": [
+                    _catalog_addon(f"volume.{storage_id}.consumption{suffix}", 1_000)
+                    for storage_id in ["classic", "high-speed-gen2"]
+                    for suffix in ["", ".3AZ"]
+                ],
+            }
+        if path.endswith("/volumeType"):
+            region = path.split("/")[-2]
+            return [{"name": name} for name in volume_types[region]]
+        return original(path, *args, **kwargs)
+
+    mock_ovh_client.get.side_effect = fake_get
+    vendor = _ovh_vendor(
+        regions=[
+            _region(
+                "EU-WEST-PAR",
+                zones=["eu-west-par-a", "eu-west-par-b", "eu-west-par-c"],
+            ),
+            # no High Speed Gen2
+            _region("AP-SOUTH-MUM", zones=["ap-south-mum-a"]),
+        ]
+    )
+    vendor.storages = [
+        SimpleNamespace(storage_id="classic"),
+        SimpleNamespace(storage_id="high-speed-gen2"),
+    ]
+    prices = inventory_storage_prices(vendor)
+    assert {(row["region_id"], row["storage_id"]) for row in prices} == {
+        ("EU-WEST-PAR", "classic"),
+        ("EU-WEST-PAR", "high-speed-gen2"),
+        ("AP-SOUTH-MUM", "classic"),
+    }

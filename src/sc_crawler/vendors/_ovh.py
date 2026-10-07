@@ -82,6 +82,9 @@ def _get_regions(project_id: Optional[str] = None) -> list[str]:
     general, as it's more complete: not all regions might be enabled for a
     project.
 
+    Regions offering neither compute (see `_is_compute_region`) nor managed
+    databases (e.g. the `RBX-ARCHIVE` Cold Archive storage region) are skipped.
+
     Args:
         project_id: Project ID to use for listing regions. Defaults to the first project in the account if not provided.
 
@@ -97,9 +100,17 @@ def _get_regions(project_id: Optional[str] = None) -> list[str]:
         #     'AP-SOUTHEAST-SYD',
         #     # ...
         # ]
-        return _client().get(f"/cloud/project/{project_id}/region")
+        regions = _client().get(f"/cloud/project/{project_id}/region")
     except Exception as e:
         raise Exception(f"Failed to fetch regions for project {project_id}: {e}") from e
+    compute_regions = {r for r in regions if _is_compute_region(r, project_id)}
+    if len(compute_regions) == len(regions):
+        return regions
+    # managed databases are not listed as a region service
+    database_regions = {
+        offer["region"] for offer in _get_database_availability(project_id)
+    }
+    return [r for r in regions if r in compute_regions or r in database_regions]
 
 
 @cache
@@ -146,6 +157,54 @@ def _get_region(region_name: str, project_id: Optional[str] = None) -> dict:
     #     ]
     # }
     return _client().get(f"/cloud/project/{project_id}/region/{region_name}")
+
+
+def _is_compute_region(region_name: str, project_id: Optional[str] = None) -> bool:
+    """Check if a region offers instances and block storage.
+
+    3AZ regions do not list the `volume` service, but offer block storage
+    as per <https://www.ovhcloud.com/en/public-cloud/regions-availability/>.
+    Storage-only regions (e.g. `GRA`, `RBX-ARCHIVE`) list only Object Storage
+    related services.
+    """
+    services = {s["name"] for s in _get_region(region_name, project_id)["services"]}
+    return bool(services & {"instance", "volume"})
+
+
+@cache
+def _get_volume_types(region_name: str, project_id: Optional[str] = None) -> list[dict]:
+    """Fetch block storage volume types available in a region.
+
+    Args:
+        region_name: Name of the region to list volume types for.
+        project_id: Project ID to use for listing volume types. Defaults to the first project in the account if not provided.
+
+    Returns:
+        List of volume type dictionaries.
+    """
+    project_id = project_id or _get_project_id()
+    # example GET /cloud/project/{serviceName}/region/{regionName}/volumeType response:
+    # [
+    #     {'name': 'high-speed-gen2-luks'},
+    #     {'name': 'high-speed-luks'},
+    #     {'name': 'classic-luks'},
+    #     {'name': 'high-speed-gen2'},
+    #     {'name': 'high-speed'},
+    #     {'name': 'classic'}
+    # ]
+    return _client().get(f"/cloud/project/{project_id}/region/{region_name}/volumeType")
+
+
+def _get_region_storage_ids(region_name: str) -> set[str]:
+    """Storage ids available in a region.
+
+    Encrypted (`-luks`) volume types are variants of the same storage. 3AZ
+    regions list `classic-multiattach` instead of `classic`.
+    """
+    return {
+        t["name"].removesuffix("-luks").removesuffix("-multiattach")
+        for t in _get_volume_types(region_name)
+    }
 
 
 def _get_flavors(project_id: Optional[str] = None) -> list[dict]:
@@ -1395,7 +1454,7 @@ def inventory_storage_prices(vendor) -> list[dict]:
 
     The catalog does not provide a detailed price list, only differentiates the
     prices of the known 3 storage types between regions with a single or three
-    zones, so we assume all storage types are available in all regions.
+    zones. Availability is checked per region via `_get_region_storage_ids`.
     """
     catalog = _get_catalog()
     addons = {addon["planCode"]: addon for addon in catalog["addons"]}
@@ -1403,6 +1462,10 @@ def inventory_storage_prices(vendor) -> list[dict]:
     items = []
     for storage in vendor.storages:
         for region in vendor.regions:
+            if not _is_compute_region(region.api_reference):
+                continue
+            if storage.storage_id not in _get_region_storage_ids(region.api_reference):
+                continue
             addon_name = f"volume.{storage.storage_id}.consumption"
             if len(region.zones) > 1:
                 addon_name += ".3AZ"
@@ -1499,6 +1562,8 @@ def inventory_ipv4_prices(vendor) -> list[dict]:
     """
     items = []
     for region in vendor.regions:
+        if not _is_compute_region(region.api_reference):
+            continue
         # NOTE local zone prices are different, but these are skipped for now
         items.append(
             {
