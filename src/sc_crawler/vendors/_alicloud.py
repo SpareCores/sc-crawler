@@ -1,6 +1,6 @@
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from functools import cache
 from itertools import chain
 from logging import CRITICAL, INFO, WARN, getLogger
@@ -1768,7 +1768,7 @@ def inventory_server_prices_spot(vendor):
     vendor.set_table_rows_active(
         ServerPrice,
         ServerPrice.allocation == Allocation.SPOT,
-        ServerPrice.observed_at >= datetime.now() - timedelta(days=30),
+        ServerPrice.observed_at >= datetime.now(UTC) - timedelta(days=30),
     )
 
     return items
