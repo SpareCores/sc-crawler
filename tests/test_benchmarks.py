@@ -141,6 +141,10 @@ def test_pgbench_benchmark_scores_raw_single_and_peak(tmp_path, monkeypatch):
     assert [r["environment"]["latency_avg_ms"] for r in raw] == [2.1, 4.2, 8.5, 12.0]
     assert all(r["environment"]["database_engine_version"] == "16.3" for r in raw)
     assert all(r["environment"]["kernel_version"] == "6.8.0" for r in raw)
+    assert all("observed_at" not in r for r in raw)
+    assert all(
+        r["environment"]["measured_at"] == "2026-01-01T00:00:00+00:00" for r in raw
+    )
     # Prove each row got its own environment dict (no shared-aliasing).
     raw[0]["environment"]["latency_avg_ms"] = 999.0
     assert raw[1]["environment"]["latency_avg_ms"] == 4.2

@@ -102,9 +102,7 @@ _ACCELERATOR_TYPE_COMMENT = "The type of the primary accelerator, e.g. GPU or TP
 _SERVER_COMPATIBLE_STORAGE_IDS_COMMENT = (
     "List of storage_ids that can be attached to the server as extra storage."
 )
-_DATABASE_COMPATIBLE_STORAGE_IDS_COMMENT = (
-    "List of database_storage_ids that can be attached to the database as extra storage."
-)
+_DATABASE_COMPATIBLE_STORAGE_IDS_COMMENT = "List of database_storage_ids that can be attached to the database as extra storage."
 _ENVIRONMENT_FIELDS_COMMENT = (
     "A dictionary of descriptions on the environment details recorded with the "
     'benchmark scores, e.g. {"kernel_version": "Linux kernel version of the server."}.'

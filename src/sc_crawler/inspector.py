@@ -3,7 +3,7 @@ import json
 import xml.etree.ElementTree as xmltree
 from atexit import register
 from contextlib import suppress
-from datetime import datetime
+from datetime import UTC, datetime
 from functools import cache
 from itertools import groupby
 from operator import itemgetter
@@ -293,13 +293,21 @@ def _server_average_time_to_start(server: "Server") -> float | None:
     return round(sum(durations) / len(durations), 2) if durations else None
 
 
-def _observed_at(resource: Union["Server", "Database"], framework: str) -> dict:
+def _measured_at(resource: Union["Server", "Database"], framework: str) -> str:
+    """End timestamp of the benchmark run, as recorded in its meta.json.
+
+    sc-inspector records naive timestamps in UTC, so make that explicit.
+    """
     if isinstance(resource, ServerBase):
         ts = _server_framework_meta(resource, framework)["end"]
     else:
         ts = _database_framework_meta(resource, framework)["end"]
     assert ts is not None
-    return {"observed_at": ts}
+    if isinstance(ts, str):
+        ts = datetime.fromisoformat(ts)
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=UTC)
+    return ts.isoformat()
 
 
 def _framework_version(resource: Union["Server", "Database"], framework: str) -> dict:
@@ -335,7 +343,7 @@ def _benchmark_metafields(
     kernel_version_fallback: str | dict | None = None,
     override_framework_version: bool = False,
     override_kernel_version: bool = False,
-    extend_environment: dict | None = None,
+    extend_environment: dict = {},
 ) -> dict:
     if benchmark_id is None:
         if framework is None:
@@ -359,17 +367,19 @@ def _benchmark_metafields(
             if isinstance(kernel_version_fallback, str)
             else {"environment": kernel_version_fallback}
         )
-    if extend_environment:
-        kernel_version.setdefault("environment", {}).update(extend_environment)
+    environment = {
+        **kernel_version.get("environment", {}),
+        "measured_at": _measured_at(resource, framework),
+        **extend_environment,
+    }
     if isinstance(resource, ServerBase):
         _resource_ids = _server_ids(resource)
     else:
         _resource_ids = _database_ids(resource)
     return {
         **_resource_ids,
-        **_observed_at(resource, framework),
         **framework_version,
-        **kernel_version,
+        "environment": environment,
         "benchmark_id": benchmark_id,
     }
 
