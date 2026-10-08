@@ -2,6 +2,10 @@ import math
 from types import SimpleNamespace
 
 from sc_crawler.inspector_rules import block_reasons
+from sc_crawler.table_bases import DatabaseBase
+from sc_crawler.table_fields import DatabaseHaLevel, DatabaseHaStrategy, Status
+
+_SINGLE_NODE_BLOCK = "Database doesn't support single-node deployment."
 
 
 def _server(**overrides):
@@ -18,12 +22,85 @@ def _server(**overrides):
     return SimpleNamespace(**defaults)
 
 
+def _database(**overrides):
+    """Minimal DatabaseBase that supports single-node deployment by default."""
+    defaults = dict(
+        vendor_id="hcloud",
+        database_id="db-dedicated-2",
+        name="db-dedicated-2",
+        api_reference="db-dedicated-2",
+        display_name="db-dedicated-2",
+        description="test database",
+        status=Status.ACTIVE,
+        ha=[DatabaseHaLevel.NONE],
+        ha_strategy=[DatabaseHaStrategy.NONE],
+    )
+    defaults.update(overrides)
+    return DatabaseBase(**defaults)
+
+
 def test_block_reasons_accepts_string_or_list():
     server = _server()
     assert block_reasons(server, "membench") == {"membench": []}
     assert block_reasons(server, ["membench", "ffmpeg"]) == {
         "membench": [],
         "ffmpeg": [],
+    }
+
+
+def test_database_allows_tasks_when_single_node_supported():
+    database = _database(
+        ha=[DatabaseHaLevel.MULTI_ZONE, DatabaseHaLevel.NONE],
+        ha_strategy=[DatabaseHaStrategy.PASSIVE_STANDBY, DatabaseHaStrategy.NONE],
+    )
+    assert block_reasons(database, "membench") == {"membench": []}
+    assert block_reasons(database, ["nvidia_smi", "membench", "storage"]) == {
+        "nvidia_smi": [],
+        "membench": [],
+        "storage": [],
+    }
+
+
+def test_database_blocked_without_ha_none():
+    database = _database(ha=[DatabaseHaLevel.MULTI_ZONE])
+    assert block_reasons(database, "membench")["membench"] == [_SINGLE_NODE_BLOCK]
+
+
+def test_database_blocked_without_ha_strategy_none():
+    database = _database(ha_strategy=[DatabaseHaStrategy.PASSIVE_STANDBY])
+    assert block_reasons(database, "membench")["membench"] == [_SINGLE_NODE_BLOCK]
+
+
+def test_database_blocked_without_either_none():
+    database = _database(
+        ha=[DatabaseHaLevel.SINGLE_ZONE],
+        ha_strategy=[DatabaseHaStrategy.READABLE_CLUSTER],
+    )
+    reasons = block_reasons(database, ["membench", "storage"])
+    assert reasons == {
+        "membench": [_SINGLE_NODE_BLOCK],
+        "storage": [_SINGLE_NODE_BLOCK],
+    }
+
+
+def test_database_vendor_and_single_node_reasons_stack():
+    database = _database(
+        vendor_id="aws",
+        ha=[DatabaseHaLevel.MULTI_ZONE],
+    )
+    assert block_reasons(database, "membench")["membench"] == [
+        "Cloud credit/budget exhausted.",
+        _SINGLE_NODE_BLOCK,
+    ]
+
+
+def test_database_skips_server_only_rules():
+    # Would fail mem/storage/GPU server rules if those ran; Database continues early
+    database = _database(memory_amount=1, storage_size=0, vcpus=64)
+    assert block_reasons(database, ["membench", "storage", "geekbench"]) == {
+        "membench": [],
+        "storage": [],
+        "geekbench": [],
     }
 
 
@@ -67,7 +144,7 @@ def test_memory_requirements():
         ("compression_text", 1.0),
         ("ffmpeg", 1.0),
         ("llm", 1.0),
-        ("vllm", 1.0),
+        ("vllm", 2.0),
         ("geekbench", 2.1),
         ("pgbench_postgres_ro_durable", 2.0),
     ]
