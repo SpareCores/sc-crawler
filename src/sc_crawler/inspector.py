@@ -305,8 +305,7 @@ def _measured_at(resource: Union["Server", "Database"], framework: str) -> str:
     assert ts is not None
     if isinstance(ts, str):
         ts = datetime.fromisoformat(ts)
-    if ts.tzinfo is None:
-        ts = ts.replace(tzinfo=UTC)
+    ts = ts.replace(tzinfo=UTC) if ts.tzinfo is None else ts.astimezone(UTC)
     return ts.isoformat()
 
 

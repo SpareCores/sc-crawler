@@ -998,9 +998,9 @@ def _standardize_server(server: dict, vendor) -> dict:
             if gpus <= 1
             else int(gpu_memory)
         ),
-        "accelerator_memory_total": int(gpu_memory * gpus)
-        if gpus and gpu_memory
-        else 0,
+        "accelerator_memory_total": (
+            int(gpu_memory * gpus) if gpus and gpu_memory else 0
+        ),
         "storage_size": round(sum([s.size for s in storages])),  # int GB
         "storage_type": storage_type,
         "storages": storages,

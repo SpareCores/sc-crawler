@@ -1,7 +1,13 @@
 import json
 from datetime import datetime, timezone
 
-from sc_crawler.inspector import _pgbench_benchmark_scores, inspect_server_benchmarks
+import pytest
+
+from sc_crawler.inspector import (
+    _measured_at,
+    _pgbench_benchmark_scores,
+    inspect_server_benchmarks,
+)
 from sc_crawler.lookup import (
     _BENCHMARK_FAMILY_INDEPENDENT_NOTE,
     _BENCHMARK_LLM_SPEED_NOTE,
@@ -321,3 +327,20 @@ def test_nvbandwidth_multi_gpu_averages_cells(tmp_path, monkeypatch):
     environment = scores["nvbandwidth:p2p:single"]["environment"]
     assert environment["gpu_count"] == 2
     assert environment["p2p_supported"] is True
+
+
+@pytest.mark.parametrize(
+    "end,expected",
+    [
+        # sc-inspector records naive timestamps in UTC
+        ("2024-07-03T14:05:37.725920", "2024-07-03T14:05:37.725920+00:00"),
+        ("2024-07-03T16:05:37+02:00", "2024-07-03T14:05:37+00:00"),
+    ],
+)
+def test_measured_at_is_utc(monkeypatch, end, expected):
+    monkeypatch.setattr(
+        "sc_crawler.inspector._server_framework_meta",
+        lambda server, framework: {"end": end},
+    )
+    server = ServerBase.model_construct(vendor_id="aws", server_id="m5.large")
+    assert _measured_at(server, "lscpu") == expected
