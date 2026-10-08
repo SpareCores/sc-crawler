@@ -54,10 +54,6 @@ _SUBCATEGORY_COMMENT = "Subcategory of the benchmark within its category, e.g. t
 # (as used in the database and benchmark tables)
 _SERVER_JSON_COLUMNS = ("cpu_flags", "cpus", "accelerators", "storages")
 
-# nullable JSON columns of benchmark_score stored Python None as the JSON `null`
-# literal before switching the models to `none_as_null=True`
-_BENCHMARK_SCORE_NULLABLE_JSON_COLUMNS = ("environment", "score_breakdown")
-
 _ACCELERATOR_TYPE_VALUES = ("GPU", "TPU")
 
 # (old name, new name, old comment, new comment)
@@ -802,34 +798,6 @@ def get_benchmark_table(is_scd: bool) -> sa.Table:
     )
 
 
-def _backfill_compatible_storage_ids(
-    table_name: str, storage_table_name: str, storage_id_column: str
-) -> None:
-    bind = op.get_bind()
-    storage_ids: dict[str, list[str]] = {}
-    for vendor_id, storage_id in bind.execute(
-        sa.text(
-            f"SELECT vendor_id, {storage_id_column} FROM {storage_table_name} "
-            "WHERE status = 'ACTIVE' ORDER BY vendor_id, "
-            f"{storage_id_column}"
-        )
-    ):
-        storage_ids.setdefault(vendor_id, []).append(storage_id)
-    is_postgresql = bind.dialect.name == "postgresql"
-    json_type = sa.dialects.postgresql.JSONB if is_postgresql else sa.JSON
-    table = sa.table(
-        table_name,
-        sa.column("vendor_id", sa.String()),
-        sa.column("compatible_storage_ids", json_type()),
-    )
-    for vendor_id, ids in storage_ids.items():
-        bind.execute(
-            table.update()
-            .where(table.c.vendor_id == vendor_id)
-            .values(compatible_storage_ids=ids)
-        )
-
-
 def upgrade() -> None:
     is_scd = is_scd_migration()
     is_postgresql = op.get_context().dialect.name == "postgresql"
@@ -952,26 +920,6 @@ def upgrade() -> None:
         op.add_column(database_table_name, database_compatible_storage_ids_column)
         op.add_column(benchmark_table_name, environment_fields_column)
         op.add_column(benchmark_table_name, subcategory_column)
-
-    # existing rows default to all (active) storage types of the vendor,
-    # historical SCD rows are left NULL (unknown)
-    if not is_scd:
-        _backfill_compatible_storage_ids(server_table_name, "storage", "storage_id")
-        _backfill_compatible_storage_ids(
-            database_table_name, "database_storage", "database_storage_id"
-        )
-
-    # replace JSON `null` literals with SQL NULL
-    benchmark_score_table_name = scdize_suffix("benchmark_score")
-    for column in _BENCHMARK_SCORE_NULLABLE_JSON_COLUMNS:
-        is_json_null = (
-            f"jsonb_typeof({column}::jsonb) = 'null'"
-            if is_postgresql
-            else f"{column} = 'null'"
-        )
-        op.execute(
-            f"UPDATE {benchmark_score_table_name} SET {column} = NULL WHERE {is_json_null}"
-        )
 
     # SQLite cannot DROP DEFAULT via ALTER COLUMN; leave the migration default there.
     if is_postgresql:

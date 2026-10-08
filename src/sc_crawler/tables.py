@@ -7,7 +7,7 @@ from typing import Callable, List, Optional
 
 from pydantic import PrivateAttr
 from sqlalchemy import ForeignKeyConstraint, update
-from sqlmodel import Relationship, Session, SQLModel, select
+from sqlmodel import Relationship, Session, SQLModel
 
 from .description_ingestor import (
     descriptions_data_path,
@@ -256,17 +256,6 @@ class Vendor(VendorBase, table=True):
                 query = query.where(arg)
             self.session.exec(query.values(status=Status.ACTIVE))
 
-    def _default_compatible_storage_ids(self, table: ScModel, id_column) -> List[str]:
-        """Active storage ids of the vendor, the default of `compatible_storage_ids`."""
-        return list(
-            self.session.exec(
-                select(id_column).where(
-                    table.vendor_id == self.vendor_id,
-                    table.status == Status.ACTIVE,
-                )
-            ).all()
-        )
-
     def _inventory(self, table: ScModel, inventory: Callable):
         """Mark all rows in a table inactive, then insert new/updated items."""
         new_records = inventory(self)
@@ -318,12 +307,6 @@ class Vendor(VendorBase, table=True):
         """Get the vendor's all server types."""
         self.set_table_rows_inactive(Server)
         servers = self._get_methods().inventory_servers(self)
-        default_storage_ids = self._default_compatible_storage_ids(
-            Storage, Storage.storage_id
-        )
-        for server in servers:
-            if server.get("compatible_storage_ids") is None:
-                server["compatible_storage_ids"] = list(default_storage_ids)
         # show progress bar while downloading
         self.progress_tracker.start_task(
             name="Downloading sc-inspector-data", total=None
@@ -419,12 +402,6 @@ class Vendor(VendorBase, table=True):
         """Get the vendor's all managed database types."""
         self.set_table_rows_inactive(Database)
         databases = self._get_methods().inventory_databases(self)
-        default_storage_ids = self._default_compatible_storage_ids(
-            DatabaseStorage, DatabaseStorage.database_storage_id
-        )
-        for database in databases:
-            if database.get("compatible_storage_ids") is None:
-                database["compatible_storage_ids"] = list(default_storage_ids)
         # show progress bar while downloading
         self.progress_tracker.start_task(
             name="Downloading sc-inspector-data", total=None
