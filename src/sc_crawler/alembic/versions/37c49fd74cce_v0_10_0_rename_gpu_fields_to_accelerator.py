@@ -1,4 +1,4 @@
-"""v0.10.0 rename gpu fields to accelerator, add compatible storage ids, benchmark environment fields and subcategory
+"""v0.10.0 rename gpu fields to accelerator, add compatible storage ids, benchmark environment fields, subcategory and series
 
 Revision ID: 37c49fd74cce
 Revises: b1c2d3e4f5a6
@@ -50,6 +50,10 @@ def _foreign_keys(table_name: str, is_scd: bool) -> tuple:
 
 _SUBCATEGORY_COMMENT = "Subcategory of the benchmark within its category, e.g. the scope of an nvbandwidth test."
 
+# pre-existing JSON columns of the server table, converted to JSONB in PostgreSQL
+# (as used in the database and benchmark tables)
+_SERVER_JSON_COLUMNS = ("cpu_flags", "cpus", "accelerators", "storages")
+
 _ACCELERATOR_TYPE_VALUES = ("GPU", "TPU")
 
 # (old name, new name, old comment, new comment)
@@ -99,6 +103,8 @@ _RENAMED_SERVER_COLUMNS = (
 )
 
 _ACCELERATOR_TYPE_COMMENT = "The type of the primary accelerator, e.g. GPU or TPU."
+_SERIES_COMMENT = "Server series within the family, e.g. b3 (OVH General Purpose)."
+_DATABASE_SERIES_COMMENT = "Hardware series within the family."
 _SERVER_COMPATIBLE_STORAGE_IDS_COMMENT = (
     "List of storage_ids that can be attached to the server as extra storage."
 )
@@ -804,10 +810,12 @@ def _backfill_compatible_storage_ids(
         )
     ):
         storage_ids.setdefault(vendor_id, []).append(storage_id)
+    is_postgresql = bind.dialect.name == "postgresql"
+    json_type = sa.dialects.postgresql.JSONB if is_postgresql else sa.JSON
     table = sa.table(
         table_name,
         sa.column("vendor_id", sa.String()),
-        sa.column("compatible_storage_ids", sa.JSON()),
+        sa.column("compatible_storage_ids", json_type()),
     )
     for vendor_id, ids in storage_ids.items():
         bind.execute(
@@ -837,13 +845,24 @@ def upgrade() -> None:
         nullable=True,
         comment=_ACCELERATOR_TYPE_COMMENT,
     )
-    # JSON columns of the server table are plain JSON (not JSONB) in PostgreSQL
+    series_column = sa.Column(
+        "series",
+        sqlmodel.sql.sqltypes.AutoString(),
+        nullable=True,
+        comment=_SERIES_COMMENT,
+    )
     server_compatible_storage_ids_column = sa.Column(
         "compatible_storage_ids",
-        sa.JSON(),
+        json_type(),
         nullable=False,
         server_default="[]",
         comment=_SERVER_COMPATIBLE_STORAGE_IDS_COMMENT,
+    )
+    database_series_column = sa.Column(
+        "series",
+        sqlmodel.sql.sqltypes.AutoString(),
+        nullable=True,
+        comment=_DATABASE_SERIES_COMMENT,
     )
     database_compatible_storage_ids_column = sa.Column(
         "compatible_storage_ids",
@@ -878,6 +897,7 @@ def upgrade() -> None:
             batch_op.add_column(
                 accelerator_type_column, insert_after="gpu_memory_total"
             )
+            batch_op.add_column(series_column, insert_after="family")
             batch_op.add_column(
                 server_compatible_storage_ids_column, insert_after="storages"
             )
@@ -891,6 +911,7 @@ def upgrade() -> None:
             copy_from=get_database_table(is_scd),
             recreate="always",
         ) as batch_op:
+            batch_op.add_column(database_series_column, insert_after="family")
             batch_op.add_column(
                 database_compatible_storage_ids_column,
                 insert_after="storage_extra_autosize",
@@ -912,7 +933,9 @@ def upgrade() -> None:
                 comment=comment,
             )
         op.add_column(server_table_name, accelerator_type_column)
+        op.add_column(server_table_name, series_column)
         op.add_column(server_table_name, server_compatible_storage_ids_column)
+        op.add_column(database_table_name, database_series_column)
         op.add_column(database_table_name, database_compatible_storage_ids_column)
         op.add_column(benchmark_table_name, environment_fields_column)
         op.add_column(benchmark_table_name, subcategory_column)
@@ -939,6 +962,14 @@ def upgrade() -> None:
                 server_default=None,
                 existing_nullable=False,
             )
+        for column in _SERVER_JSON_COLUMNS:
+            op.alter_column(
+                server_table_name,
+                column,
+                type_=sa.dialects.postgresql.JSONB(),
+                existing_type=sa.JSON(),
+                postgresql_using=f"{column}::jsonb",
+            )
 
 
 def downgrade() -> None:
@@ -947,14 +978,26 @@ def downgrade() -> None:
     database_table_name = scdize_suffix("database")
     benchmark_table_name = scdize_suffix("benchmark")
 
+    if is_postgresql:
+        for column in _SERVER_JSON_COLUMNS:
+            op.alter_column(
+                server_table_name,
+                column,
+                type_=sa.JSON(),
+                existing_type=sa.dialects.postgresql.JSONB(),
+                postgresql_using=f"{column}::json",
+            )
+
     with op.batch_alter_table(benchmark_table_name, schema=None) as batch_op:
         batch_op.drop_column("environment_fields")
         batch_op.drop_column("subcategory")
     with op.batch_alter_table(database_table_name, schema=None) as batch_op:
         batch_op.drop_column("compatible_storage_ids")
+        batch_op.drop_column("series")
     with op.batch_alter_table(server_table_name, schema=None) as batch_op:
         batch_op.drop_column("compatible_storage_ids")
         batch_op.drop_column("accelerator_type")
+        batch_op.drop_column("series")
         for old_name, new_name, comment, _ in _RENAMED_SERVER_COLUMNS:
             batch_op.alter_column(new_name, new_column_name=old_name, comment=comment)
 

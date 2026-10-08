@@ -642,6 +642,11 @@ class ServerFields(
         default=None,
         description="Server family, e.g. General-purpose machine (GCP), or M5g (AWS).",
     )
+    # TODO populate in the vendor modules
+    series: Optional[str] = Field(
+        default=None,
+        description="Server series within the family, e.g. b3 (OVH General Purpose).",
+    )
     # inspector_status: str = Field(
     #     default=None,
     #     description="Server family, e.g. General-purpose machine (GCP), or M5g (AWS).",
@@ -943,6 +948,11 @@ class DatabaseFields(
     family: Optional[str] = Field(
         default=None,
         description="Hardware family or class classification.",
+    )
+    # TODO populate in the vendor modules
+    series: Optional[str] = Field(
+        default=None,
+        description="Hardware series within the family.",
     )
     server_id: Optional[str] = Field(
         default=None,

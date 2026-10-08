@@ -14,12 +14,22 @@ New feature(s):
   `Server` for the type of the primary accelerator. `GCP` TPU machine types are
   marked as `TPU`, all other vendors' accelerators (and the ones found by
   `nvidia-smi`) as `GPU`.
-- Add optional `compatible_storage_ids` JSON column to `Server` and `Database`
-  listing the `storage_id`s (or `database_storage_id`s) that can be attached as
-  extra storage. An empty list means no extra storage can be attached, while
-  null means all storage types of the vendor are compatible.
+- Add `compatible_storage_ids` JSON column to `Server` and `Database` listing
+  the `storage_id`s (or `database_storage_id`s) that can be attached as extra
+  storage, defaulting to all active storage types of the vendor.
 - Add `environment_fields` JSON column to `Benchmark` documenting the keys
   recorded in `BenchmarkScore.environment`, similar to `config_fields`.
+- Add optional `subcategory` column to `Benchmark` for grouping benchmarks
+  within a category, e.g. the nvbandwidth scopes or Passmark CPU / Memory tests.
+- Add optional `series` column to `Server` and `Database` for a sub-type within
+  the `family` (not populated yet).
+
+Fix(es):
+
+- `BenchmarkScore.observed_at` is now the crawl timestamp (like in other
+  tables). The end of the benchmark run is recorded in `environment.measured_at`.
+- Benchmark category changes: `redis:*` moved to `Database`, and `openssl` to
+  `Cryptography`.
 
 ## v0.9.4 (October 07, 2026)
 
