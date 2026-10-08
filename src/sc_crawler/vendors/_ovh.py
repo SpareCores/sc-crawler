@@ -1444,7 +1444,7 @@ def inventory_storages(vendor) -> list[dict]:
             "description": "Offers optimised and scalable performance, and is recommended for intensive workloads.",
             "storage_type": StorageType.NVME_SSD,
             "max_iops": 20_000,
-            "max_throughput": 320,
+            "max_throughput": 512,
             "min_size": 10,
             "max_size": 12_000,
         },
