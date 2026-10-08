@@ -34,6 +34,7 @@ Fix(es):
   `Cryptography`.
 - Store missing values of optional JSON columns as `NULL` instead of the JSON
   `null` literal (existing records are kept as is).
+- Skip the `nvidia_smi` and `nvbandwidth` inspector tasks on TPU machines.
 
 Maintenance update:
 

@@ -2,6 +2,7 @@ import math
 from types import SimpleNamespace
 
 from sc_crawler.inspector_rules import block_reasons
+from sc_crawler.table_fields import AcceleratorType
 
 
 def _server(**overrides):
@@ -10,6 +11,7 @@ def _server(**overrides):
         vendor_id="hcloud",
         api_reference="cx22",
         accelerator_count=1,
+        accelerator_type=AcceleratorType.GPU,
         memory_amount=8 * 1024,
         vcpus=4,
         storage_size=100,
@@ -44,6 +46,13 @@ def test_nvidia_tasks_blocked_without_gpus():
     assert reasons["nvidia_smi"] == ["No GPUs available."]
     assert reasons["nvbandwidth"] == ["No GPUs available."]
     assert reasons["membench"] == []
+
+
+def test_nvidia_tasks_blocked_for_tpus():
+    server = _server(accelerator_count=4, accelerator_type=AcceleratorType.TPU)
+    reasons = block_reasons(server, ["nvidia_smi", "nvbandwidth"])
+    assert reasons["nvidia_smi"] == ["No GPUs available."]
+    assert reasons["nvbandwidth"] == ["No GPUs available."]
 
 
 def test_nvidia_tasks_blocked_for_unsupported_skus():
