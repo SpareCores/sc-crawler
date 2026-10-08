@@ -190,6 +190,7 @@ def _get_prices() -> dict:
     return _client().get_prices()
 
 
+@cache
 def _get_pg_service_type() -> dict:
     """PostgreSQL managed database type details (GET /1.3/database/service-types/pg).
 
@@ -332,6 +333,102 @@ def _get_pg_service_type() -> dict:
     return _client().api.get_request("/database/service-types/pg")
 
 
+@cache
+def _get_database_plans() -> dict:
+    """List flexible database plans (GET /1.3/database/plans).
+
+    Reference: <https://developers.upcloud.com/1.3/16-managed-database/>
+    """
+    # example List database plans response:
+    # {
+    #     'service_types': [
+    #         {
+    #             'type': 'pg',
+    #             'latest_version': '18',
+    #             'componentised': True,
+    #             'zones': ['de-fra1', 'fi-hel1'],
+    #             'backup_tiers': ['mini', 'regular', 'extended'],
+    #             'node_counts': [1, 2, 3],
+    #             'compute_shapes': [
+    #                 {
+    #                     'compute': 'rdb.standard.2CPU-8GB',
+    #                     'family': 'standard',
+    #                     'cpu': 2,
+    #                     'memory_gb': 8,
+    #                     'dynamic_storage_supported': True,
+    #                     'node_counts': [1, 2, 3],
+    #                     'backups': ['regular', 'extended'],
+    #                     'storage': {
+    #                         'step_gib': 10,
+    #                         'dynamic_max_multiplier': 4,
+    #                         'total_cap_gib': 4096,
+    #                         'options': [
+    #                             {'base_gib': 80, 'max_gib': 320},
+    #                             {'base_gib': 160, 'max_gib': 640},
+    #                         ],
+    #                     },
+    #                 },
+    #                 {
+    #                     'compute': 'rdb.development.1CPU-1GB',
+    #                     'family': 'development',
+    #                     'cpu': 1,
+    #                     'memory_gb': 1,
+    #                     'dynamic_storage_supported': True,
+    #                     'node_counts': [1],
+    #                     'backups': ['mini'],
+    #                     'storage': {
+    #                         'step_gib': 10,
+    #                         'dynamic_max_multiplier': 4,
+    #                         'total_cap_gib': 2560,
+    #                         'options': [{'base_gib': 10, 'max_gib': 40}],
+    #                     },
+    #                 },
+    #                 {
+    #                     'compute': 'rdb.memory.64CPU-512GB',
+    #                     'family': 'memory',
+    #                     'cpu': 64,
+    #                     'memory_gb': 512,
+    #                     'dynamic_storage_supported': True,
+    #                     'node_counts': [1, 2, 3],
+    #                     'backups': ['regular', 'extended'],
+    #                     'storage': {
+    #                         'step_gib': 10,
+    #                         'dynamic_max_multiplier': 4,
+    #                         'total_cap_gib': 15360,
+    #                         'options': [{'base_gib': 1000, 'max_gib': 4000}],
+    #                     },
+    #                 },
+    #             ],
+    #         },
+    #     ]
+    # }
+    return _client().api.get_request("/database/plans")
+
+
+# Flexible plan families (Developer / Standard / High Memory).
+# https://upcloud.com/global/pricing/
+_DATABASE_PLAN_FAMILIES = {
+    "development": "Developer",
+    "standard": "Standard",
+    "memory": "High Memory",
+}
+# Included PITR retention by backup tier name from /database/plans.
+# https://upcloud.com/global/pricing/
+_DATABASE_BACKUP_RETENTION_DAYS = {
+    "mini": 3,
+    "regular": 15,
+    "extended": 31,
+}
+# Multi-node compute billing: 2nd node -10%, 3rd node -30%.
+# https://upcloud.com/global/pricing/
+# https://upcloud.com/global/blog/flexible-scaling-affordable-zero-hidden-fees-updated-managed-database-plans/
+_DATABASE_HA_NODE_PRICE_FACTOR = {
+    1: 1.0,
+    2: 1.9,
+    3: 2.6,
+}
+
+
 @cachier(hash_func=jsoned_hash, separate_files=True)
 def _get_device_region_availability(region_id: str, device_type: str = "gpu") -> dict:
     """Return available passthrough devices (GET /1.3/device/availability).
@@ -365,6 +462,10 @@ def _get_gpu_region_availability(region_id: str) -> dict[str, dict]:
     )
 
 
+# Block storage tiers. IOPS from docs, MaxIOPS throughput ~400 MB/s (workload-
+# dependent). MaxIOPS v2 is in progress and aims ~2–3× that throughput.
+# https://upcloud.com/docs/products/block-storage/tiers/
+# https://upcloud.com/docs/roadmap/#ready-to-use
 UPCLOUD_STORAGES = [
     {
         "id": "hdd",
@@ -374,6 +475,7 @@ UPCLOUD_STORAGES = [
         "min_size": 1,
         "max_size": 4096,
         "max_iops": 600,
+        "max_throughput": None,
     },
     {
         "id": "standard",
@@ -383,6 +485,7 @@ UPCLOUD_STORAGES = [
         "min_size": 1,
         "max_size": 4096,
         "max_iops": 10000,
+        "max_throughput": None,
     },
     {
         "id": "maxiops",
@@ -392,6 +495,7 @@ UPCLOUD_STORAGES = [
         "min_size": 1,
         "max_size": 4096,
         "max_iops": 100000,
+        "max_throughput": 400,
     },
 ]
 
@@ -862,7 +966,7 @@ def inventory_storages(vendor):
                 "description": storage["description"],
                 "storage_type": storage["storage_type"],
                 "max_iops": storage["max_iops"],
-                "max_throughput": None,
+                "max_throughput": storage["max_throughput"],
                 "min_size": storage["min_size"],
                 "max_size": storage["max_size"],
             }
@@ -933,23 +1037,220 @@ def inventory_ipv4_prices(vendor):
     return items
 
 
+def _database_shared_capabilities(properties: dict) -> dict:
+    """Capability flags shared by legacy and flexible PostgreSQL plans."""
+    return {
+        # Service settings expose PostgreSQL parameters in `properties`.
+        # https://upcloud.com/docs/products/managed-postgresql/configurations/
+        "custom_config": True,
+        # Product page advertises 70+ pre-installed extensions.
+        # https://upcloud.com/global/postgresql-managed-databases/
+        "custom_extensions": True,
+        # Managed PostgreSQL docs describe encryption at rest.
+        # https://upcloud.com/docs/products/managed-postgresql/encryption/
+        "disk_encryption": True,
+        # Product page advertises automatic updates with zero downtime.
+        # https://upcloud.com/global/postgresql-managed-databases/
+        "auto_upgrade_versions": True,
+        # Connection pools are managed via API; `properties.pgbouncer` exists.
+        # https://upcloud.com/docs/guides/postgresql-connection-pool-api/
+        "connection_pool": "pgbouncer" in properties,
+        # `properties.service_log` and `public_access_prometheus` exist.
+        "system_monitoring": "service_log" in properties,
+        # `properties.pg_stat_monitor_*` tuning knobs exist.
+        "database_monitoring": any(
+            key.startswith("pg_stat_monitor") for key in properties
+        ),
+        # Manual PostgreSQL tuning is documented; no auto-tune API signal.
+        # https://upcloud.com/docs/products/managed-postgresql/configurations/
+        "autotuning_advice": None,
+        "autotuning_apply": None,
+        # Managed Databases are advertised with a 99.999% uptime SLA.
+        # https://upcloud.com/global/products/managed-databases/
+        "sla": 99.999,
+        # `properties.ip_filter` and `automatic_utility_network_ip_filter`.
+        # https://upcloud.com/docs/products/managed-postgresql/connecting/
+        # Utility network (default) and SDN private network attachment.
+        # https://upcloud.com/docs/guides/connect-managed-databases-sdn-private-networks/
+        # Connection URIs use sslmode=require; CA cert via GET /database/certificate.
+        # https://upcloud.com/docs/guides/postgresql-connection-pool-api/
+        # https://developers.upcloud.com/1.3/16-managed-database/
+        # `properties.pgaudit` enables pgAudit session logging.
+        # https://upcloud.com/docs/products/managed-postgresql/supported-extensions/
+        "security_features": [
+            DatabaseSecurityFeature.IP_FILTERING,
+            DatabaseSecurityFeature.PRIVATE_NETWORK,
+            DatabaseSecurityFeature.ENFORCED_TLS,
+            DatabaseSecurityFeature.AUDIT_LOGGING,
+        ],
+    }
+
+
+def _database_ha_from_node_counts(
+    node_counts: list[int],
+) -> tuple[list[DatabaseHaLevel], list[DatabaseHaStrategy]]:
+    """Map supported node counts to HA level/strategy lists (highest first).
+
+    UpCloud standbys accept read-only queries via a separate DNS entry for any
+    multi-node plan, so ``node_count >= 2`` maps to ``READABLE_CLUSTER``.
+    https://upcloud.com/docs/products/managed-postgresql/high-availability/
+
+    When both 2 and 3 nodes are orderable on one compute shape (flexible
+    plans), also include ``PASSIVE_STANDBY`` as the 2-node package price key
+    (1.9x vs 2.6x billing tiers).
+    https://upcloud.com/global/pricing/
+    """
+    counts = set(node_counts)
+    ha: set[DatabaseHaLevel] = set()
+    ha_strategy: set[DatabaseHaStrategy] = set()
+    if any(count <= 1 for count in counts):
+        ha.add(DatabaseHaLevel.NONE)
+        ha_strategy.add(DatabaseHaStrategy.NONE)
+    if any(count >= 2 for count in counts):
+        ha.add(DatabaseHaLevel.SINGLE_ZONE)
+        ha_strategy.add(DatabaseHaStrategy.READABLE_CLUSTER)
+        if 2 in counts and any(count >= 3 for count in counts):
+            ha_strategy.add(DatabaseHaStrategy.PASSIVE_STANDBY)
+    if not ha:
+        ha.add(DatabaseHaLevel.NONE)
+        ha_strategy.add(DatabaseHaStrategy.NONE)
+    return DatabaseHaLevel.ordered(ha), DatabaseHaStrategy.ordered(ha_strategy)
+
+
+def _match_database_server_id(
+    server_ids: set[str],
+    cpu: int | None,
+    memory_gb: int | None,
+    family: str | None = None,
+) -> str | None:
+    if cpu is None or memory_gb is None:
+        return None
+    candidates = [f"{cpu}xCPU-{memory_gb}GB"]
+    if family == "development":
+        candidates.insert(0, f"DEV-{cpu}xCPU-{memory_gb}GB")
+    elif family == "memory":
+        candidates.insert(0, f"HIMEM-{cpu}xCPU-{memory_gb}GB")
+    return next(
+        (candidate for candidate in candidates if candidate in server_ids), None
+    )
+
+
+def _shape_family(shape: dict) -> str | None:
+    """Family of a flexible plan compute shape, e.g. `rdb.standard.2xCPU-4GB` -> `standard`."""
+    family = shape.get("family")
+    if family is None:
+        parts = (shape.get("compute") or "").split(".")
+        if len(parts) >= 2 and parts[0] == "rdb":
+            family = parts[1]
+    return family
+
+
 def inventory_databases(vendor):
     """List UpCloud managed PostgreSQL service plans.
 
-    - Plan ids and topology come from GET /1.3/database/service-types/pg.
-    - Supported versions come from the payload `properties.version.enum`.
-    - UpCloud Managed Databases are DBaaS clusters, not plain VM images.
+    - Flexible Developer/Standard/High Memory shapes from GET /1.3/database/plans.
+    - Legacy bundled plans from GET /1.3/database/service-types/pg.
+    - Supported versions come from service-types/pg `properties.version.enum`.
     https://developers.upcloud.com/1.3/16-managed-database/
     https://upcloud.com/docs/products/managed-postgresql/configurations/
+    https://upcloud.com/global/pricing/
     """
     payload = _get_pg_service_type()
-    plans = payload.get("service_plans", [])
     properties = payload.get("properties", {})
     versions = properties.get("version", {}).get("enum", [])
+    shared = _database_shared_capabilities(properties)
     server_ids = {server.server_id for server in vendor.servers}
-
     items = []
-    for plan in plans:
+
+    # Flexible plans: compute is independent of node count (1–3 for Standard /
+    # High Memory; Developer is single-node only).
+    plans_payload = _get_database_plans()
+    for service_type in plans_payload.get("service_types", []):
+        if service_type.get("type") not in ("pg", "postgresql"):
+            continue
+        zones = service_type.get("zones") or []
+        status = Status.ACTIVE if zones else Status.INACTIVE
+        for shape in service_type.get("compute_shapes", []):
+            database_id = shape["compute"]
+            family_key = _shape_family(shape)
+            family = _DATABASE_PLAN_FAMILIES.get(family_key, family_key)
+            vcpus = shape.get("cpu")
+            memory_gb = shape.get("memory_gb")
+            memory_amount = memory_gb * _MIB_PER_GIB if memory_gb is not None else None
+            node_counts = shape.get("node_counts") or [1]
+            ha, ha_strategy = _database_ha_from_node_counts(node_counts)
+            storage = shape.get("storage") or {}
+            options = storage.get("options") or []
+            if options:
+                min_base_gib = min(option["base_gib"] for option in options)
+                max_gib = max(option["max_gib"] for option in options)
+            else:
+                min_base_gib = 0
+                max_gib = storage.get("total_cap_gib") or 0
+            # Storage is billed separately (not bundled into compute).
+            # https://upcloud.com/global/pricing/
+            can_extend = shape.get("dynamic_storage_supported") or min_base_gib
+            storage_extra_min = round(min_base_gib * _GIB_TO_GB)
+            storage_extra_max = round(max_gib * _GIB_TO_GB) if can_extend else 0
+            display_name = (
+                f"{family}: {vcpus} vCPU, {memory_gb} GiB RAM"
+                if vcpus is not None and memory_gb is not None
+                else database_id
+            )
+            description_parts = [
+                f"{vcpus} vCPUs" if vcpus else None,
+                f"{memory_gb} GiB RAM" if memory_gb else None,
+            ]
+            description = (
+                f"UpCloud PostgreSQL {family} "
+                f"({', '.join(filter(None, description_parts))})"
+            )
+            backup_days = [
+                _DATABASE_BACKUP_RETENTION_DAYS[name]
+                for name in shape.get("backups") or []
+                if name in _DATABASE_BACKUP_RETENTION_DAYS
+            ]
+            continuous_backups = min(backup_days) if backup_days else None
+            items.append(
+                {
+                    "vendor_id": vendor.vendor_id,
+                    "database_id": database_id,
+                    "name": database_id,
+                    "display_name": display_name,
+                    "description": description,
+                    "api_reference": database_id,
+                    # Flexible plans use plan_compute / plan_node_count /
+                    # plan_storage_gib / plan_backups instead of a fixed plan name.
+                    # https://developers.upcloud.com/1.3/16-managed-database/
+                    "api_reference_object": {
+                        "service_type": "pg",
+                        "plan_compute": database_id,
+                    },
+                    "server_id": _match_database_server_id(
+                        server_ids, vcpus, memory_gb, family_key
+                    ),
+                    "engine": DatabaseEngine.POSTGRESQL,
+                    "wire_protocol": DatabaseWireProtocol.POSTGRESQL,
+                    "engine_versions": versions,
+                    "family": family,
+                    "vcpus": vcpus,
+                    "memory_amount": memory_amount,
+                    "storage_size": None,
+                    "storage_extra_min": storage_extra_min,
+                    "storage_extra_max": storage_extra_max,
+                    "storage_extra_autosize": False,
+                    "ha": ha,
+                    "ha_strategy": ha_strategy,
+                    "max_read_replicas": max(max(node_counts) - 1, 0),
+                    "scheduled_backups": bool(backup_days),
+                    "continuous_backups": continuous_backups,
+                    "status": status,
+                    **shared,
+                }
+            )
+
+    # Legacy bundled plans (fixed compute + storage + node count).
+    for plan in payload.get("service_plans", []):
         database_id = plan["plan"]
         node_count = plan.get("node_count")
         vcpus = plan.get("core_number")
@@ -980,30 +1281,21 @@ def inventory_databases(vendor):
         else:
             storage_extra_min = 0
             storage_extra_max = 0
-        if node_count == 1:
-            family = "Single node"
-        elif node_count == 2:
-            family = "2-node HA"
-        else:
-            family = "3-node HA"
+        family = "Legacy"
         compute = components.get("compute", {})
-        display_name = compute.get("name")
         cpu = compute.get("cpu")
         memory_gb = compute.get("memory_gb")
-        # Per-node compute profile from service-types/pg `components.compute`.
-        server_id = (
-            f"{cpu}xCPU-{memory_gb}GB"
-            if cpu is not None and memory_gb is not None
-            else None
-        )
-        if server_id not in server_ids:
-            server_id = None
         memory_gib = memory_amount / _MIB_PER_GIB
         description_parts = [
             f"{vcpus} vCPUs" if vcpus else None,
             f"{int(memory_gib)} GiB RAM" if memory_gib else None,
             f"{int(storage_size_gb)} GB storage" if storage_size_gb else None,
         ]
+        display_name = (
+            f"{family}: {', '.join(filter(None, description_parts))}, "
+            f"{nodes} node{'s' if nodes > 1 else ''}"
+        )
+        description_parts.append(f"{nodes} node{'s' if nodes > 1 else ''}")
         description = (
             f"UpCloud PostgreSQL {family} "
             f"({', '.join(filter(None, description_parts))})"
@@ -1020,15 +1312,7 @@ def inventory_databases(vendor):
             continuous_backups = None
         zones = plan.get("zones", {}).get("zone", [])
         status = Status.ACTIVE if zones else Status.INACTIVE
-        # Multi-node plans include primary and standby nodes; standbys accept
-        # read-only queries via a separate DNS entry.
-        # https://upcloud.com/docs/products/managed-postgresql/high-availability/
-        if node_count > 1:
-            ha = [DatabaseHaLevel.SINGLE_ZONE]
-            ha_strategy = [DatabaseHaStrategy.READABLE_CLUSTER]
-        else:
-            ha = [DatabaseHaLevel.NONE]
-            ha_strategy = [DatabaseHaStrategy.NONE]
+        ha, ha_strategy = _database_ha_from_node_counts([node_count or 1])
 
         items.append(
             {
@@ -1045,7 +1329,7 @@ def inventory_databases(vendor):
                     "service_plan": database_id,
                 },
                 # Per-node sizing from service-types/pg `components.compute`.
-                "server_id": server_id,
+                "server_id": _match_database_server_id(server_ids, cpu, memory_gb),
                 "engine": DatabaseEngine.POSTGRESQL,
                 "wire_protocol": DatabaseWireProtocol.POSTGRESQL,
                 "engine_versions": versions,
@@ -1063,159 +1347,267 @@ def inventory_databases(vendor):
                 "storage_extra_autosize": False,
                 "ha": ha,
                 "ha_strategy": ha_strategy,
-                "max_read_replicas": max(node_count - 1, 0),
-                # Service settings expose PostgreSQL parameters in `properties`.
-                # https://upcloud.com/docs/products/managed-postgresql/configurations/
-                "custom_config": True,
-                # Product page advertises 70+ pre-installed extensions.
-                # https://upcloud.com/global/postgresql-managed-databases/
-                "custom_extensions": True,
-                # Managed PostgreSQL docs describe encryption at rest.
-                # https://upcloud.com/docs/products/managed-postgresql/encryption/
-                "disk_encryption": True,
-                # Product page advertises automatic updates with zero downtime.
-                # https://upcloud.com/global/postgresql-managed-databases/
-                "auto_upgrade_versions": True,
+                "max_read_replicas": max((node_count or 1) - 1, 0),
                 # Plans include daily full backups (`backup_config.interval`).
                 # https://upcloud.com/docs/products/managed-postgresql/backups/
                 "scheduled_backups": bool(backup_cfg.get("interval")),
                 # PITR retention days from backup_config_pg interval * max_count.
                 # https://upcloud.com/docs/products/managed-postgresql/backups/
                 "continuous_backups": continuous_backups,
-                # Connection pools are managed via API; `properties.pgbouncer` exists.
-                # https://upcloud.com/docs/guides/postgresql-connection-pool-api/
-                "connection_pool": "pgbouncer" in properties,
-                # `properties.service_log` and `public_access_prometheus` exist.
-                "system_monitoring": "service_log" in properties,
-                # `properties.pg_stat_monitor_*` tuning knobs exist.
-                "database_monitoring": any(
-                    key.startswith("pg_stat_monitor") for key in properties
-                ),
-                # Manual PostgreSQL tuning is documented; no auto-tune API signal.
-                # https://upcloud.com/docs/products/managed-postgresql/configurations/
-                "autotuning_advice": None,
-                "autotuning_apply": None,
-                # Managed Databases are advertised with a 99.999% uptime SLA.
-                # https://upcloud.com/global/products/managed-databases/
-                "sla": 99.999,
                 # Plans list orderable zones under `zones.zone`.
                 "status": status,
-                # `properties.ip_filter` and `automatic_utility_network_ip_filter`.
-                # https://upcloud.com/docs/products/managed-postgresql/connecting/
-                # Utility network (default) and SDN private network attachment.
-                # https://upcloud.com/docs/guides/connect-managed-databases-sdn-private-networks/
-                # Connection URIs use sslmode=require; CA cert via GET /database/certificate.
-                # https://upcloud.com/docs/guides/postgresql-connection-pool-api/
-                # https://developers.upcloud.com/1.3/16-managed-database/
-                # `properties.pgaudit` enables pgAudit session logging.
-                # https://upcloud.com/docs/products/managed-postgresql/supported-extensions/
-                "security_features": [
-                    DatabaseSecurityFeature.IP_FILTERING,
-                    DatabaseSecurityFeature.PRIVATE_NETWORK,
-                    DatabaseSecurityFeature.ENFORCED_TLS,
-                    DatabaseSecurityFeature.AUDIT_LOGGING,
-                ],
+                **shared,
             }
         )
     return items
 
 
 def inventory_database_prices(vendor):
+    """List UpCloud managed PostgreSQL compute prices.
+
+    Legacy plans bill the full cluster under ``managed_database_{plan}``.
+    Flexible plans bill per-node compute under
+    ``managed_database_compute_{plan_compute}``. Node topology maps to:
+    1 node NONE/NONE, 2-node package SINGLE_ZONE/PASSIVE_STANDBY (1.9x),
+    3-node package SINGLE_ZONE/READABLE_CLUSTER (2.6x) with published
+    multi-node discounts (PASSIVE is only a price key when both 2 and 3
+    are orderable on the same compute shape).
+    https://upcloud.com/global/pricing/
+    """
     items = []
     prices = _get_prices()
     databases = {database.database_id: database for database in vendor.databases}
-    prefix = "managed_database_"
+    legacy_prefix = "managed_database_"
+    compute_prefix = "managed_database_compute_"
     currency = prices["prices"].get("currency", "EUR")
     for zone_prices in prices["prices"]["zone"]:
         region_id = zone_prices["name"]
         for k, v in zone_prices.items():
-            if not k.startswith(prefix):
+            if k.startswith(compute_prefix):
+                database_id = k[len(compute_prefix) :]
+                per_node = True
+            elif k.startswith(legacy_prefix):
+                database_id = k[len(legacy_prefix) :]
+                # Skip non-plan meters (storage, backups, …).
+                if database_id.startswith(("tiered_storage", "backup_", "storage_")):
+                    continue
+                per_node = False
+            else:
                 continue
-            database_id = k[len(prefix) :]
             database = databases.get(database_id)
             if database is None:
+                continue
+            base_price = v["price"] / 100
+            if per_node:
+                strategies = {
+                    DatabaseHaStrategy(strategy)
+                    for strategy in database.ha_strategy or []
+                }
+                price_rows = []
+                if DatabaseHaStrategy.NONE in strategies:
+                    price_rows.append(
+                        (
+                            DatabaseHaLevel.NONE,
+                            DatabaseHaStrategy.NONE,
+                            base_price * _DATABASE_HA_NODE_PRICE_FACTOR[1],
+                        )
+                    )
+                if DatabaseHaStrategy.PASSIVE_STANDBY in strategies:
+                    price_rows.append(
+                        (
+                            DatabaseHaLevel.SINGLE_ZONE,
+                            DatabaseHaStrategy.PASSIVE_STANDBY,
+                            base_price * _DATABASE_HA_NODE_PRICE_FACTOR[2],
+                        )
+                    )
+                if DatabaseHaStrategy.READABLE_CLUSTER in strategies:
+                    price_rows.append(
+                        (
+                            DatabaseHaLevel.SINGLE_ZONE,
+                            DatabaseHaStrategy.READABLE_CLUSTER,
+                            base_price * _DATABASE_HA_NODE_PRICE_FACTOR[3],
+                        )
+                    )
+            else:
+                price_rows = [
+                    (database.ha[0], database.ha_strategy[0], base_price),
+                ]
+            for ha, ha_strategy, price in price_rows:
+                items.append(
+                    {
+                        "vendor_id": vendor.vendor_id,
+                        "region_id": region_id,
+                        "database_id": database_id,
+                        "allocation": Allocation.ONDEMAND,
+                        "ha": ha,
+                        "ha_strategy": ha_strategy,
+                        "unit": PriceUnit.HOUR,
+                        "price": price,
+                        "currency": currency,
+                    }
+                )
+    return items
+
+
+# Managed DB disk tiers from the price list / pricing page.
+# Developer (+) legacy additional disk → Standard SSD;
+# Standard/High Memory → MaxIOPS.
+# https://upcloud.com/global/pricing/
+# https://upcloud.com/docs/changelog/2025-05-26-additional-disk-space-managed-databases/
+# https://upcloud.com/docs/products/block-storage/tiers/
+_DATABASE_STORAGE_TIERS = [
+    {
+        "database_storage_id": "standard",
+        "name": "Standard",
+        "description": (
+            "Managed database Standard SSD storage "
+            "(Developer plans, also additional disk on legacy plans)"
+        ),
+        "price_key": "managed_database_tiered_storage_standard",
+        "max_iops": 10000,
+        "max_throughput": None,
+    },
+    {
+        "database_storage_id": "maxiops",
+        "name": "MaxIOPS",
+        "description": (
+            "Managed database MaxIOPS storage (Standard and High Memory plans)"
+        ),
+        "price_key": "managed_database_tiered_storage_maxiops",
+        "max_iops": 100000,
+        # Same MaxIOPS block platform as server storage (~400 MB/s today).
+        # https://upcloud.com/docs/roadmap/#ready-to-use
+        "max_throughput": 400,
+    },
+]
+
+
+# Flexible plan families that bill disk on each managed DB storage tier.
+# Legacy bundled plans use Standard for additional disk only.
+# https://upcloud.com/global/pricing/
+_DATABASE_STORAGE_TIER_SHAPE_FAMILIES = {
+    "standard": frozenset({"development"}),
+    "maxiops": frozenset({"standard", "memory"}),
+}
+
+
+def _database_storage_size_bounds(tier_id: str) -> tuple[int, int] | None:
+    """Min/max provisionable managed DB disk (GB) for one storage tier.
+
+    ``standard``: legacy plans + Developer (``development``) shapes.
+    ``maxiops``: Standard / High Memory shapes.
+    """
+    families = _DATABASE_STORAGE_TIER_SHAPE_FAMILIES.get(tier_id)
+    if families is None:
+        return None
+    min_gib: int | None = None
+    max_gib = 0
+    if tier_id == "standard":
+        for plan in _get_pg_service_type().get("service_plans", []):
+            nodes = plan.get("node_count") or 1
+            included = (
+                (plan.get("components") or {}).get("storage", {}).get("included_gib")
+            )
+            base_gib = (
+                int(included)
+                if included is not None
+                else plan["storage_size"] // _MIB_PER_GIB
+            )
+            # Per-node floor; cap is cluster storage_cap converted per node.
+            floor_gib = base_gib // nodes
+            cap_gib = plan["storage_cap_size"] // _MIB_PER_GIB // nodes
+            min_gib = floor_gib if min_gib is None else min(min_gib, floor_gib)
+            max_gib = max(max_gib, cap_gib)
+    for service_type in _get_database_plans().get("service_types", []):
+        if service_type.get("type") not in ("pg", "postgresql"):
+            continue
+        for shape in service_type.get("compute_shapes", []):
+            if _shape_family(shape) not in families:
+                continue
+            storage = shape.get("storage") or {}
+            for option in storage.get("options") or []:
+                min_gib = (
+                    option["base_gib"]
+                    if min_gib is None
+                    else min(min_gib, option["base_gib"])
+                )
+                max_gib = max(max_gib, option["max_gib"])
+            total_cap = storage.get("total_cap_gib")
+            if total_cap:
+                max_gib = max(max_gib, total_cap)
+    if min_gib is None or max_gib <= 0:
+        return None
+    return (
+        round(min_gib * _GIB_TO_GB),
+        round(max_gib * _GIB_TO_GB),
+    )
+
+
+def inventory_database_storages(vendor):
+    """List managed PostgreSQL disk tiers (Standard SSD and MaxIOPS).
+
+    Flexible plans bill all disk via these meters; legacy plans also use
+    Standard tiered storage for additional disk above the bundled size.
+    Size bounds are per tier (Developer/legacy → Standard; Std/HM → MaxIOPS).
+    https://upcloud.com/global/pricing/
+    https://upcloud.com/docs/products/block-storage/tiers/
+    https://developers.upcloud.com/1.3/16-managed-database/
+    """
+    items = []
+    for tier in _DATABASE_STORAGE_TIERS:
+        bounds = _database_storage_size_bounds(tier["database_storage_id"])
+        if bounds is None:
+            continue
+        min_size, max_size = bounds
+        items.append(
+            {
+                "vendor_id": vendor.vendor_id,
+                "database_storage_id": tier["database_storage_id"],
+                "name": tier["name"],
+                "description": tier["description"],
+                "scope": DatabaseStorageScope.DATA,
+                "min_size": min_size,
+                "max_size": max_size,
+                "max_iops": tier["max_iops"],
+                "max_throughput": tier["max_throughput"],
+            }
+        )
+    return items
+
+
+def inventory_database_storage_prices(vendor):
+    """List managed PostgreSQL disk tier prices from the UpCloud zone price list."""
+    if not vendor.database_storages:
+        return []
+    price_key_by_id = {
+        tier["database_storage_id"]: tier["price_key"]
+        for tier in _DATABASE_STORAGE_TIERS
+    }
+    prices = _get_prices()
+    currency = prices["prices"].get("currency", "EUR")
+    items = []
+    for zone_prices in prices["prices"]["zone"]:
+        region_id = zone_prices["name"]
+        for storage in vendor.database_storages:
+            storage_id = storage.database_storage_id
+            price_key = price_key_by_id.get(storage_id)
+            if price_key is None:
+                continue
+            value = zone_prices.get(price_key)
+            if value is None:
+                continue
+            raw_price = value.get("price") if isinstance(value, dict) else value
+            if raw_price is None:
                 continue
             items.append(
                 {
                     "vendor_id": vendor.vendor_id,
                     "region_id": region_id,
-                    "database_id": database_id,
-                    "allocation": Allocation.ONDEMAND,
-                    "ha": database.ha[0],
-                    "ha_strategy": database.ha_strategy[0],
-                    "unit": PriceUnit.HOUR,
-                    "price": v["price"] / 100,
+                    "database_storage_id": storage_id,
+                    "unit": PriceUnit.GB_MONTH,
+                    # UpCloud list prices are hourly; normalize to GB/month.
+                    "price": (float(raw_price) / 100) * _HOURS_PER_MONTH,
                     "currency": currency,
                 }
             )
-    return items
-
-
-def inventory_database_storages(vendor):
-    """List additional managed PostgreSQL disk as a single storage product.
-
-    Extra disk is billed uniformly (`managed_database_tiered_storage_standard`) and
-    sold in 10 GiB steps (stored as decimal GB) up to 4x each plan's bundled storage.
-    https://upcloud.com/docs/changelog/2025-05-26-additional-disk-space-managed-databases/
-    https://developers.upcloud.com/1.3/16-managed-database/
-    """
-    payload = _get_pg_service_type()
-    plans = payload.get("service_plans", [])
-    if not plans:
-        return []
-    max_extra_gb = max(
-        round((p["storage_cap_size"] - p["storage_size"]) / _MIB_PER_GIB * _GIB_TO_GB)
-        for p in plans
-    )
-    if max_extra_gb <= 0:
-        return []
-    step_size_gb = round(plans[0]["storage_step_size"] / _MIB_PER_GIB * _GIB_TO_GB)
-    # MaxIOPS read/write limits for managed PostgreSQL storage.
-    # https://upcloud.com/docs/products/block-storage/tiers/
-    # https://upcloud.com/global/blog/flexible-scaling-affordable-zero-hidden-fees-updated-managed-database-plans/
-    return [
-        {
-            "vendor_id": vendor.vendor_id,
-            "database_storage_id": "additional-disk",
-            "name": "Additional disk",
-            "description": (
-                "Additional managed PostgreSQL disk in "
-                f"{step_size_gb} GB increments up to 4x bundled storage"
-            ),
-            "scope": DatabaseStorageScope.DATA,
-            "min_size": 0,
-            "max_size": max_extra_gb,
-            "max_iops": 100000,
-            "max_throughput": None,
-        }
-    ]
-
-
-def inventory_database_storage_prices(vendor):
-    """List additional PostgreSQL disk prices from the UpCloud zone price list."""
-    if not vendor.database_storages:
-        return []
-    storage_id = vendor.database_storages[0].database_storage_id
-    prices = _get_prices()
-    currency = prices["prices"].get("currency", "EUR")
-    items = []
-    for zone_prices in prices["prices"]["zone"]:
-        region_id = zone_prices["name"]
-        value = zone_prices.get("managed_database_tiered_storage_standard")
-        if value is None:
-            continue
-        raw_price = value.get("price") if isinstance(value, dict) else value
-        if raw_price is None:
-            continue
-        items.append(
-            {
-                "vendor_id": vendor.vendor_id,
-                "region_id": region_id,
-                "database_storage_id": storage_id,
-                "unit": PriceUnit.GB_MONTH,
-                # UpCloud list prices are hourly; normalize to GB/month.
-                "price": (float(raw_price) / 100) * _HOURS_PER_MONTH,
-                "currency": currency,
-            }
-        )
     return items
