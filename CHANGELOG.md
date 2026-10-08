@@ -14,15 +14,18 @@ New feature(s):
   `Server` for the type of the primary accelerator. `GCP` TPU machine types are
   marked as `TPU`, all other vendors' accelerators (and the ones found by
   `nvidia-smi`) as `GPU`.
-- Add `compatible_storage_ids` JSON column to `Server` and `Database` listing
-  the `storage_id`s (or `database_storage_id`s) that can be attached as extra
-  storage, defaulting to all active storage types of the vendor.
+- Add optional `compatible_storage_ids` JSON column to `Server` and `Database`
+  listing the `storage_id`s (or `database_storage_id`s) that can be attached as
+  extra storage, defaulting to all active storage types of the vendor. Null for
+  historical records.
 - Add `environment_fields` JSON column to `Benchmark` documenting the keys
   recorded in `BenchmarkScore.environment`, similar to `config_fields`.
 - Add optional `subcategory` column to `Benchmark` for grouping benchmarks
   within a category, e.g. the nvbandwidth scopes or Passmark CPU / Memory tests.
 - Add optional `series` column to `Server` and `Database` for a sub-type within
   the `family` (not populated yet).
+- Add optional `api_reference_object` JSON column to `Server` (not populated
+  yet), as already available for `Database`.
 
 Fix(es):
 
@@ -30,6 +33,9 @@ Fix(es):
   tables). The end of the benchmark run is recorded in `environment.measured_at`.
 - Benchmark category changes: `redis:*` moved to `Database`, and `openssl` to
   `Cryptography`.
+- Store missing values of optional JSON columns as `NULL` instead of the JSON
+  `null` literal, and convert the existing literals in
+  `BenchmarkScore.environment` and `BenchmarkScore.score_breakdown`.
 
 ## v0.9.4 (October 07, 2026)
 

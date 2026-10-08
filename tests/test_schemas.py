@@ -1,6 +1,7 @@
 import warnings
 
 import pytest
+from sqlalchemy import JSON
 
 from sc_crawler.table_bases import ServerBase, ServerDescriptionFields, StoragePriceBase
 from sc_crawler.table_fields import (
@@ -634,3 +635,11 @@ def test_status_retired_only_allowed_on_server_and_database():
             price=0.1,
             status=Status.PLANNED_FOR_RETIREMENT,
         )
+
+
+@pytest.mark.parametrize("table", tables + tables_scd, ids=lambda t: t.__tablename__)
+def test_nullable_json_columns_store_none_as_sql_null(table):
+    # JSON(none_as_null=False) would store Python None as the JSON `null` literal
+    for column in table.__table__.c:
+        if isinstance(column.type, JSON) and column.nullable:
+            assert column.type.none_as_null, column.name

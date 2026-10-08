@@ -1,4 +1,4 @@
-"""v0.10.0 rename gpu fields to accelerator, add compatible storage ids, benchmark environment fields, subcategory and series
+"""v0.10.0 rename gpu fields to accelerator, add compatible storage ids, benchmark environment fields, subcategory, series and server api reference object
 
 Revision ID: 37c49fd74cce
 Revises: b1c2d3e4f5a6
@@ -54,6 +54,10 @@ _SUBCATEGORY_COMMENT = "Subcategory of the benchmark within its category, e.g. t
 # (as used in the database and benchmark tables)
 _SERVER_JSON_COLUMNS = ("cpu_flags", "cpus", "accelerators", "storages")
 
+# nullable JSON columns of benchmark_score stored Python None as the JSON `null`
+# literal before switching the models to `none_as_null=True`
+_BENCHMARK_SCORE_NULLABLE_JSON_COLUMNS = ("environment", "score_breakdown")
+
 _ACCELERATOR_TYPE_VALUES = ("GPU", "TPU")
 
 # (old name, new name, old comment, new comment)
@@ -103,6 +107,7 @@ _RENAMED_SERVER_COLUMNS = (
 )
 
 _ACCELERATOR_TYPE_COMMENT = "The type of the primary accelerator, e.g. GPU or TPU."
+_API_REFERENCE_OBJECT_COMMENT = "How this resource is referenced in the vendor API calls, including the parameter name(s)."
 _SERIES_COMMENT = "Server series within the family, e.g. b3 (OVH General Purpose)."
 _DATABASE_SERIES_COMMENT = "Hardware series within the family."
 _SERVER_COMPATIBLE_STORAGE_IDS_COMMENT = (
@@ -845,6 +850,12 @@ def upgrade() -> None:
         nullable=True,
         comment=_ACCELERATOR_TYPE_COMMENT,
     )
+    server_api_reference_object_column = sa.Column(
+        "api_reference_object",
+        json_type(none_as_null=True),
+        nullable=True,
+        comment=_API_REFERENCE_OBJECT_COMMENT,
+    )
     series_column = sa.Column(
         "series",
         sqlmodel.sql.sqltypes.AutoString(),
@@ -854,8 +865,7 @@ def upgrade() -> None:
     server_compatible_storage_ids_column = sa.Column(
         "compatible_storage_ids",
         json_type(),
-        nullable=False,
-        server_default="[]",
+        nullable=True,
         comment=_SERVER_COMPATIBLE_STORAGE_IDS_COMMENT,
     )
     database_series_column = sa.Column(
@@ -867,8 +877,7 @@ def upgrade() -> None:
     database_compatible_storage_ids_column = sa.Column(
         "compatible_storage_ids",
         json_type(),
-        nullable=False,
-        server_default="[]",
+        nullable=True,
         comment=_DATABASE_COMPATIBLE_STORAGE_IDS_COMMENT,
     )
     environment_fields_column = sa.Column(
@@ -896,6 +905,9 @@ def upgrade() -> None:
         ) as batch_op:
             batch_op.add_column(
                 accelerator_type_column, insert_after="gpu_memory_total"
+            )
+            batch_op.add_column(
+                server_api_reference_object_column, insert_after="api_reference"
             )
             batch_op.add_column(series_column, insert_after="family")
             batch_op.add_column(
@@ -933,6 +945,7 @@ def upgrade() -> None:
                 comment=comment,
             )
         op.add_column(server_table_name, accelerator_type_column)
+        op.add_column(server_table_name, server_api_reference_object_column)
         op.add_column(server_table_name, series_column)
         op.add_column(server_table_name, server_compatible_storage_ids_column)
         op.add_column(database_table_name, database_series_column)
@@ -940,11 +953,24 @@ def upgrade() -> None:
         op.add_column(benchmark_table_name, environment_fields_column)
         op.add_column(benchmark_table_name, subcategory_column)
 
-    # existing rows default to all (active) storage types of the vendor
+    # existing rows default to all (active) storage types of the vendor,
+    # historical SCD rows are left NULL (unknown)
     if not is_scd:
         _backfill_compatible_storage_ids(server_table_name, "storage", "storage_id")
         _backfill_compatible_storage_ids(
             database_table_name, "database_storage", "database_storage_id"
+        )
+
+    # replace JSON `null` literals with SQL NULL
+    benchmark_score_table_name = scdize_suffix("benchmark_score")
+    for column in _BENCHMARK_SCORE_NULLABLE_JSON_COLUMNS:
+        is_json_null = (
+            f"jsonb_typeof({column}::jsonb) = 'null'"
+            if is_postgresql
+            else f"{column} = 'null'"
+        )
+        op.execute(
+            f"UPDATE {benchmark_score_table_name} SET {column} = NULL WHERE {is_json_null}"
         )
 
     # SQLite cannot DROP DEFAULT via ALTER COLUMN; leave the migration default there.
@@ -955,13 +981,6 @@ def upgrade() -> None:
             server_default=None,
             existing_nullable=False,
         )
-        for table_name in (server_table_name, database_table_name):
-            op.alter_column(
-                table_name,
-                "compatible_storage_ids",
-                server_default=None,
-                existing_nullable=False,
-            )
         for column in _SERVER_JSON_COLUMNS:
             op.alter_column(
                 server_table_name,
@@ -998,6 +1017,7 @@ def downgrade() -> None:
         batch_op.drop_column("compatible_storage_ids")
         batch_op.drop_column("accelerator_type")
         batch_op.drop_column("series")
+        batch_op.drop_column("api_reference_object")
         for old_name, new_name, comment, _ in _RENAMED_SERVER_COLUMNS:
             batch_op.alter_column(new_name, new_column_name=old_name, comment=comment)
 

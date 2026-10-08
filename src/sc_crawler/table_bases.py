@@ -324,7 +324,7 @@ class HasApiReference(ScModel):
 class HasApiReferenceObject(ScModel):
     api_reference_object: Optional[dict] = Field(
         default=None,
-        sa_type=JSON,
+        sa_type=JSON(none_as_null=True),
         description="How this resource is referenced in the vendor API calls, including the parameter name(s).",
     )
 
@@ -632,6 +632,7 @@ class StorageBase(MetaColumns, StorageFields):
 
 class ServerFields(
     HasDisplayName,
+    HasApiReferenceObject,
     HasApiReference,
     HasName,
     HasServerIdPK,
@@ -813,9 +814,9 @@ class ServerFields(
             "the size (GB) and type of each disk."
         ),
     )
-    compatible_storage_ids: List[str] = Field(
-        default=[],
-        sa_type=JSON,
+    compatible_storage_ids: Optional[List[str]] = Field(
+        default=None,
+        sa_type=JSON(none_as_null=True),
         description=(
             "List of storage_ids that can be attached to the server as extra storage."
         ),
@@ -1019,9 +1020,9 @@ class DatabaseFields(
         default=None,
         description="Whether storage capacity can automatically expand as disk usage grows.",
     )
-    compatible_storage_ids: List[str] = Field(
-        default=[],
-        sa_type=JSON,
+    compatible_storage_ids: Optional[List[str]] = Field(
+        default=None,
+        sa_type=JSON(none_as_null=True),
         description=(
             "List of database_storage_ids that can be attached to the database as extra storage."
         ),
@@ -1492,7 +1493,7 @@ class BenchmarkScoreFields(HasBenchmarkPKFK, HasVendorPKFK):
     )
     environment: Optional[dict] = Field(
         default=None,
-        sa_type=JSON,
+        sa_type=JSON(none_as_null=True),
         description=(
             "Extensible environment details "
             "(e.g. kernel_version, database_engine_version)."
@@ -1503,7 +1504,7 @@ class BenchmarkScoreFields(HasBenchmarkPKFK, HasVendorPKFK):
     )
     score_breakdown: Optional[WorkloadScoreBreakdown] = Field(
         default=None,
-        sa_type=JSON,
+        sa_type=JSON(none_as_null=True),
         description=(
             "Structured derivation of composite scores (e.g. workload profiles): "
             "per-component raw values, references, normalized values, weights, and "
