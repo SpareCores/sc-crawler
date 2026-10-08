@@ -1,4 +1,4 @@
-## v0.10.0 (October 5, 2026)
+## v0.10.0 (October 08, 2026)
 
 ‼ Breaking changes:
 
@@ -20,6 +20,19 @@ New feature(s):
   null means all storage types of the vendor are compatible.
 - Add `environment_fields` JSON column to `Benchmark` documenting the keys
   recorded in `BenchmarkScore.environment`, similar to `config_fields`.
+
+## v0.9.4 (October 07, 2026)
+
+Fix(es):
+
+- `UpCloud`: inventory flexible `rdb.*` Developer / Standard / High Memory
+  PostgreSQL plans from `/database/plans`. Replace managed DB storage id
+  `additional-disk` with `standard` (Developer plans and legacy additional disk)
+  and `maxiops` (Standard / High Memory plans), matching block-storage storage ids.
+- `OVH`: skip server offers without a public catalog price and deduplicate
+  repeated flavor/region offers. Skip regions without instances or managed
+  databases (e.g. `RBX-ARCHIVE`), list IPv4 prices only in compute regions and
+  block storage prices only where the volume type is offered.
 
 ## v0.9.3 (October 02, 2026)
 
