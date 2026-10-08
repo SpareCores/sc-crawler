@@ -1710,7 +1710,11 @@ def inspect_update_server_dict(server: dict) -> dict:
             len(server["accelerators"]) if len(server["accelerators"]) else None
         ),
         # nvidia-smi only reports GPUs
-        "accelerator_type": lambda: AcceleratorType.GPU if lookups["gpus"] else None,
+        "accelerator_type": lambda: (
+            AcceleratorType.GPU
+            if isinstance(lookups["gpus"], list) and lookups["gpus"]
+            else None
+        ),
         "accelerator_memory_min": lambda: min(
             [gpu["memory"] for gpu in server["accelerators"]]
         ),
