@@ -18,6 +18,21 @@ def block_reasons(server: "Server", tasks: str | List[str]):
         if server.vendor_id in ["alicloud", "aws", "azure", "gcp"]:
             results[task].append("Cloud credit/budget exhausted.")
 
+        if (
+            task == "bw_mem"
+            and (server.vendor_id, server.api_reference)
+            in [
+                ("ovh", "a10-180"),
+                ("ovh", "l4-360"),
+            ]
+        ) or (
+            task == "membench"
+            and (server.vendor_id, server.api_reference) in [("ovh", "r3-128")]
+        ):
+            results[task].append(
+                "We experienced performance issues while running this task on this server type."
+            )
+
         if task in ["nvidia_smi", "nvbandwidth"]:
             if server.gpu_count == 0:
                 results[task].append("No GPUs available.")
