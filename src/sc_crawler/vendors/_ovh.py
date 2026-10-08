@@ -91,7 +91,6 @@ def _get_regions(project_id: Optional[str] = None) -> list[str]:
     Returns:
         List of region codes
     """
-    project_id = project_id or _get_project_id()
     try:
         # example GET /cloud/project/{serviceName}/region response:
         # [
@@ -100,15 +99,19 @@ def _get_regions(project_id: Optional[str] = None) -> list[str]:
         #     'AP-SOUTHEAST-SYD',
         #     # ...
         # ]
-        regions = _client().get(f"/cloud/project/{project_id}/region")
+        regions = _client().get(
+            f"/cloud/project/{project_id or _get_project_id()}/region"
+        )
     except Exception as e:
         raise Exception(f"Failed to fetch regions for project {project_id}: {e}") from e
-    compute_regions = {r for r in regions if _is_compute_region(r, project_id)}
+    # pass the project id on only when provided to reuse the cached responses
+    project_args = (project_id,) if project_id else ()
+    compute_regions = {r for r in regions if _is_compute_region(r, *project_args)}
     if len(compute_regions) == len(regions):
         return regions
     # managed databases are not listed as a region service
     database_regions = {
-        offer["region"] for offer in _get_database_availability(project_id)
+        offer["region"] for offer in _get_database_availability(*project_args)
     }
     return [r for r in regions if r in compute_regions or r in database_regions]
 
@@ -167,7 +170,8 @@ def _is_compute_region(region_name: str, project_id: Optional[str] = None) -> bo
     Storage-only regions (e.g. `GRA`, `RBX-ARCHIVE`) list only Object Storage
     related services.
     """
-    services = {s["name"] for s in _get_region(region_name, project_id)["services"]}
+    project_args = (project_id,) if project_id else ()
+    services = {s["name"] for s in _get_region(region_name, *project_args)["services"]}
     return bool(services & {"instance", "volume"})
 
 
@@ -1123,7 +1127,7 @@ def inventory_zones(vendor) -> list[dict]:
     regions = _get_regions()
     vendor.progress_tracker.start_task(name="Fetching zones", total=len(regions))
     for region in regions:
-        zones = _get_region(region, _get_project_id())["availabilityZones"]
+        zones = _get_region(region)["availabilityZones"]
         if not zones:
             # single zone regions have a standard "a" suffix
             zones = [region.lower() + "-a"]
@@ -1337,7 +1341,6 @@ def inventory_server_prices(vendor) -> list[dict]:
     items = []
     # the same flavor/region can be listed multiple times by the flavor API
     seen_offers: set[tuple[str, str]] = set()
-    # 3AZ regions list only `.3AZ` plan codes, others only the single-AZ ones
     excluded: set[str] = set()
     vendor.progress_tracker.start_task(name="Fetching server offers", total=len(offers))
     for offer in offers:

@@ -190,6 +190,7 @@ def _get_prices() -> dict:
     return _client().get_prices()
 
 
+@cache
 def _get_pg_service_type() -> dict:
     """PostgreSQL managed database type details (GET /1.3/database/service-types/pg).
 
@@ -332,6 +333,7 @@ def _get_pg_service_type() -> dict:
     return _client().api.get_request("/database/service-types/pg")
 
 
+@cache
 def _get_database_plans() -> dict:
     """List flexible database plans (GET /1.3/database/plans).
 
@@ -1133,6 +1135,16 @@ def _match_database_server_id(
     )
 
 
+def _shape_family(shape: dict) -> str | None:
+    """Family of a flexible plan compute shape, e.g. `rdb.standard.2xCPU-4GB` -> `standard`."""
+    family = shape.get("family")
+    if family is None:
+        parts = (shape.get("compute") or "").split(".")
+        if len(parts) >= 2 and parts[0] == "rdb":
+            family = parts[1]
+    return family
+
+
 def inventory_databases(vendor):
     """List UpCloud managed PostgreSQL service plans.
 
@@ -1160,7 +1172,7 @@ def inventory_databases(vendor):
         status = Status.ACTIVE if zones else Status.INACTIVE
         for shape in service_type.get("compute_shapes", []):
             database_id = shape["compute"]
-            family_key = shape.get("family")
+            family_key = _shape_family(shape)
             family = _DATABASE_PLAN_FAMILIES.get(family_key, family_key)
             vcpus = shape.get("cpu")
             memory_gb = shape.get("memory_gb")
@@ -1177,17 +1189,9 @@ def inventory_databases(vendor):
                 max_gib = storage.get("total_cap_gib") or 0
             # Storage is billed separately (not bundled into compute).
             # https://upcloud.com/global/pricing/
-            if shape.get("dynamic_storage_supported") and max_gib > 0:
-                storage_extra_min = (
-                    round(min_base_gib * _GIB_TO_GB) if min_base_gib else 0
-                )
-                storage_extra_max = round(max_gib * _GIB_TO_GB)
-            elif min_base_gib:
-                storage_extra_min = round(min_base_gib * _GIB_TO_GB)
-                storage_extra_max = round(max_gib * _GIB_TO_GB) if max_gib else 0
-            else:
-                storage_extra_min = 0
-                storage_extra_max = 0
+            can_extend = shape.get("dynamic_storage_supported") or min_base_gib
+            storage_extra_min = round(min_base_gib * _GIB_TO_GB)
+            storage_extra_max = round(max_gib * _GIB_TO_GB) if can_extend else 0
             display_name = (
                 f"{family}: {vcpus} vCPU, {memory_gb} GiB RAM"
                 if vcpus is not None and memory_gb is not None
@@ -1385,9 +1389,7 @@ def inventory_database_prices(vendor):
             elif k.startswith(legacy_prefix):
                 database_id = k[len(legacy_prefix) :]
                 # Skip non-plan meters (storage, backups, …).
-                if database_id.startswith(
-                    ("tiered_storage", "backup_", "storage_", "compute_")
-                ):
+                if database_id.startswith(("tiered_storage", "backup_", "storage_")):
                     continue
                 per_node = False
             else:
@@ -1520,13 +1522,7 @@ def _database_storage_size_bounds(tier_id: str) -> tuple[int, int] | None:
         if service_type.get("type") not in ("pg", "postgresql"):
             continue
         for shape in service_type.get("compute_shapes", []):
-            family = shape.get("family")
-            if family is None:
-                compute = shape.get("compute") or ""
-                parts = compute.split(".")
-                if len(parts) >= 2 and parts[0] == "rdb":
-                    family = parts[1]
-            if family not in families:
+            if _shape_family(shape) not in families:
                 continue
             storage = shape.get("storage") or {}
             for option in storage.get("options") or []:
