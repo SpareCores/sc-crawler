@@ -38,6 +38,7 @@ Fix(es):
 - Keep vendor API storage when the inspector has no disk sample (e.g. GCP `z4d`).
 - `AWS`: fix parsed EBS max IOPS, throughput, and size.
 - `Azure`: take PostgreSQL Flexible Server SKUs from retail prices.
+- `Hetzner`: use `/v1/locations` instead of deprecated `/v1/datacenters`.
 
 Maintenance update:
 
