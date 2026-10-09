@@ -1,13 +1,14 @@
 import warnings
 
 import pytest
+from sqlalchemy import JSON
 
 from sc_crawler.table_bases import ServerBase, ServerDescriptionFields, StoragePriceBase
 from sc_crawler.table_fields import (
+    Accelerator,
     Category,
     Cpu,
     Disk,
-    Gpu,
     PriceTier,
     PriceUnit,
     Status,
@@ -125,7 +126,7 @@ def test_aws():
 
 
 def test_server_gpus_validator_with_dicts():
-    """Test that gpus field validator converts dicts to Gpu instances."""
+    """Test that gpus field validator converts dicts to Accelerator instances."""
     server = ServerBase(
         vendor_id="test",
         server_id="test-server",
@@ -135,10 +136,10 @@ def test_server_gpus_validator_with_dicts():
         description="A test server",
         vcpus=4,
         memory_amount=8192,
-        gpu_count=2,
+        accelerator_count=2,
         storage_size=100,
         status=Status.ACTIVE,
-        gpus=[
+        accelerators=[
             {
                 "manufacturer": "NVIDIA",
                 "model": "T4",
@@ -166,14 +167,14 @@ def test_server_gpus_validator_with_dicts():
         ],
     )
 
-    assert len(server.gpus) == 2
-    assert all(isinstance(gpu, Gpu) for gpu in server.gpus)
-    assert server.gpus[0].manufacturer == "NVIDIA"
-    assert server.gpus[0].model == "T4"
-    assert server.gpus[0].memory == 16384
-    assert server.gpus[1].manufacturer == "AMD"
-    assert server.gpus[1].model == "MI100"
-    assert server.gpus[1].memory == 32768
+    assert len(server.accelerators) == 2
+    assert all(isinstance(gpu, Accelerator) for gpu in server.accelerators)
+    assert server.accelerators[0].manufacturer == "NVIDIA"
+    assert server.accelerators[0].model == "T4"
+    assert server.accelerators[0].memory == 16384
+    assert server.accelerators[1].manufacturer == "AMD"
+    assert server.accelerators[1].model == "MI100"
+    assert server.accelerators[1].memory == 32768
 
 
 def test_server_gpus_validator_with_empty_list():
@@ -187,13 +188,13 @@ def test_server_gpus_validator_with_empty_list():
         description="A test server",
         vcpus=4,
         memory_amount=8192,
-        gpu_count=0,
+        accelerator_count=0,
         storage_size=100,
         status=Status.ACTIVE,
-        gpus=[],
+        accelerators=[],
     )
 
-    assert server.gpus == []
+    assert server.accelerators == []
 
 
 def test_server_storages_validator_with_dicts():
@@ -207,7 +208,7 @@ def test_server_storages_validator_with_dicts():
         description="A test server",
         vcpus=4,
         memory_amount=8192,
-        gpu_count=0,
+        accelerator_count=0,
         storage_size=500,
         status=Status.ACTIVE,
         storages=[
@@ -237,7 +238,7 @@ def test_server_storages_validator_with_empty_list():
         description="A test server",
         vcpus=4,
         memory_amount=8192,
-        gpu_count=0,
+        accelerator_count=0,
         storage_size=0,
         status=Status.ACTIVE,
         storages=[],
@@ -257,7 +258,7 @@ def test_server_cpus_validator_with_dicts():
         description="A test server",
         vcpus=8,
         memory_amount=16384,
-        gpu_count=0,
+        accelerator_count=0,
         storage_size=100,
         status=Status.ACTIVE,
         cpus=[
@@ -299,7 +300,7 @@ def test_server_cpus_validator_with_empty_list():
         description="A test server",
         vcpus=4,
         memory_amount=8192,
-        gpu_count=0,
+        accelerator_count=0,
         storage_size=100,
         status=Status.ACTIVE,
         cpus=[],
@@ -448,7 +449,7 @@ def test_validate_items_keeps_datetime_objects():
                 "family": "t3",
                 "vcpus": 2,
                 "cpus": [],
-                "gpus": [],
+                "accelerators": [],
                 "storages": [],
                 "cpu_flags": [],
                 "status": Status.ACTIVE,
@@ -599,7 +600,7 @@ def test_status_retired_only_allowed_on_server_and_database():
         description="A test server",
         vcpus=4,
         memory_amount=8192,
-        gpu_count=0,
+        accelerator_count=0,
         storage_size=0,
         status=Status.RETIRED,
     )
@@ -634,3 +635,11 @@ def test_status_retired_only_allowed_on_server_and_database():
             price=0.1,
             status=Status.PLANNED_FOR_RETIREMENT,
         )
+
+
+@pytest.mark.parametrize("table", tables + tables_scd, ids=lambda t: t.__tablename__)
+def test_nullable_json_columns_store_none_as_sql_null(table):
+    # JSON(none_as_null=False) would store Python None as the JSON `null` literal
+    for column in table.__table__.c:
+        if isinstance(column.type, JSON) and column.nullable:
+            assert column.type.none_as_null, column.name

@@ -1,7 +1,13 @@
 import json
 from datetime import datetime, timezone
 
-from sc_crawler.inspector import _pgbench_benchmark_scores, inspect_server_benchmarks
+import pytest
+
+from sc_crawler.inspector import (
+    _measured_at,
+    _pgbench_benchmark_scores,
+    inspect_server_benchmarks,
+)
 from sc_crawler.lookup import (
     _BENCHMARK_FAMILY_INDEPENDENT_NOTE,
     _BENCHMARK_LLM_SPEED_NOTE,
@@ -141,6 +147,10 @@ def test_pgbench_benchmark_scores_raw_single_and_peak(tmp_path, monkeypatch):
     assert [r["environment"]["latency_avg_ms"] for r in raw] == [2.1, 4.2, 8.5, 12.0]
     assert all(r["environment"]["database_engine_version"] == "16.3" for r in raw)
     assert all(r["environment"]["kernel_version"] == "6.8.0" for r in raw)
+    assert all("observed_at" not in r for r in raw)
+    assert all(
+        r["environment"]["measured_at"] == "2026-01-01T00:00:00+00:00" for r in raw
+    )
     # Prove each row got its own environment dict (no shared-aliasing).
     raw[0]["environment"]["latency_avg_ms"] = 999.0
     assert raw[1]["environment"]["latency_avg_ms"] == 4.2
@@ -317,3 +327,20 @@ def test_nvbandwidth_multi_gpu_averages_cells(tmp_path, monkeypatch):
     environment = scores["nvbandwidth:p2p:single"]["environment"]
     assert environment["gpu_count"] == 2
     assert environment["p2p_supported"] is True
+
+
+@pytest.mark.parametrize(
+    "end,expected",
+    [
+        # sc-inspector records naive timestamps in UTC
+        ("2024-07-03T14:05:37.725920", "2024-07-03T14:05:37.725920+00:00"),
+        ("2024-07-03T16:05:37+02:00", "2024-07-03T14:05:37+00:00"),
+    ],
+)
+def test_measured_at_is_utc(monkeypatch, end, expected):
+    monkeypatch.setattr(
+        "sc_crawler.inspector._server_framework_meta",
+        lambda server, framework: {"end": end},
+    )
+    server = ServerBase.model_construct(vendor_id="aws", server_id="m5.large")
+    assert _measured_at(server, "lscpu") == expected

@@ -21,6 +21,7 @@ from ..logger import logger
 from ..lookup import map_compliance_frameworks_to_vendor
 from ..sentry import sentry_capture_or_raise
 from ..table_fields import (
+    AcceleratorType,
     Allocation,
     CpuAllocation,
     CpuArchitecture,
@@ -987,16 +988,19 @@ def _standardize_server(server: dict, vendor) -> dict:
             CpuArchitecture.ARM64 if architecture == "arm64" else CpuArchitecture.X86_64
         ),
         "memory_amount": float(capability("MemoryGB")) * 1024,  # MiB
-        "gpu_count": round(gpus, 4),
-        "gpu_model": gpu_model,
-        "gpu_memory_min": (
+        "accelerator_count": round(gpus, 4),
+        "accelerator_type": AcceleratorType.GPU if gpus else None,
+        "accelerator_model": gpu_model,
+        "accelerator_memory_min": (
             0
             if not (gpus and gpu_memory)
             else int(gpu_memory * gpus)
             if gpus <= 1
             else int(gpu_memory)
         ),
-        "gpu_memory_total": int(gpu_memory * gpus) if gpus and gpu_memory else 0,
+        "accelerator_memory_total": (
+            int(gpu_memory * gpus) if gpus and gpu_memory else 0
+        ),
         "storage_size": round(sum([s.size for s in storages])),  # int GB
         "storage_type": storage_type,
         "storages": storages,

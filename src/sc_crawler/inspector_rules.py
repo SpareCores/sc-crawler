@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING, List
 
 from .table_bases import DatabaseBase
-from .table_fields import DatabaseHaLevel, DatabaseHaStrategy
+from .table_fields import AcceleratorType, DatabaseHaLevel, DatabaseHaStrategy
 
 if TYPE_CHECKING:
     from .tables import Database, Server
@@ -47,7 +47,10 @@ def block_reasons(resource: "Server | Database", tasks: str | List[str]):
                 "We experienced performance issues while running this task on this server type."
             )
         if task in ["nvidia_smi", "nvbandwidth"]:
-            if resource.gpu_count == 0:
+            if (
+                resource.accelerator_count == 0
+                or resource.accelerator_type == AcceleratorType.TPU
+            ):
                 results[task].append("No GPUs available.")
             # TODO these failed in the past, we should revisit if recent updates (e.g. newer drivers) fixed them
             if (resource.vendor_id, resource.api_reference) in [

@@ -119,23 +119,32 @@ class Cpu(Json):
     """BogoMips value."""
 
 
-class Gpu(Json):
-    """GPU accelerator details."""
+class AcceleratorType(str, Enum):
+    """Type of a hardware accelerator, e.g. GPU or TPU."""
+
+    GPU = "GPU"
+    """Graphics Processing Unit."""
+    TPU = "TPU"
+    """Tensor Processing Unit."""
+
+
+class Accelerator(Json):
+    """Hardware accelerator (e.g. GPU or TPU) details."""
 
     manufacturer: str
-    """The manufacturer/brand of the GPU accelerator, e.g. Nvidia or AMD."""
+    """The manufacturer/brand of the accelerator, e.g. Nvidia or AMD."""
     family: Optional[str] = None
-    """The model family/architecture of the GPU accelerator."""
+    """The model family/architecture of the accelerator."""
     model: Optional[str] = None
-    """The model number of the GPU accelerator."""
+    """The model number of the accelerator."""
     memory: int
-    """Memory (MiB) allocated to the GPU accelerator."""
+    """Memory (MiB) allocated to the accelerator."""
     firmware_version: Optional[str] = None
     """Firmware version."""
     bios_version: Optional[str] = None
     """Video BIOS version."""
     graphics_clock: Optional[int] = None
-    """GPU core clock speed (Mhz)."""
+    """Core clock speed (Mhz)."""
     sm_clock: Optional[int] = None
     """Streaming Multiprocessor clock speed (Mhz)."""
     mem_clock: Optional[int] = None

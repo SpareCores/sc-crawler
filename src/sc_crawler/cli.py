@@ -897,26 +897,26 @@ def pull(
                         vendor.inventory_regions()
                     if Records.zones in records:
                         vendor.inventory_zones()
+                    if Records.storages in records:
+                        vendor.inventory_storages()
                     if Records.servers in records:
                         vendor.inventory_servers()
                     if Records.server_prices in records:
                         vendor.inventory_server_prices()
                     if Records.server_prices_spot in records:
                         vendor.inventory_server_prices_spot()
-                    if Records.storages in records:
-                        vendor.inventory_storages()
                     if Records.storage_prices in records:
                         vendor.inventory_storage_prices()
                     if Records.traffic_prices in records:
                         vendor.inventory_traffic_prices()
                     if Records.ipv4_prices in records:
                         vendor.inventory_ipv4_prices()
+                    if Records.database_storages in records:
+                        vendor.inventory_database_storages()
                     if Records.databases in records:
                         vendor.inventory_databases()
                     if Records.database_prices in records:
                         vendor.inventory_database_prices()
-                    if Records.database_storages in records:
-                        vendor.inventory_database_storages()
                     if Records.database_storage_prices in records:
                         vendor.inventory_database_storage_prices()
                     # reset current step name

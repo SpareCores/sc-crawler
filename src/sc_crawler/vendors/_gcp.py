@@ -13,6 +13,7 @@ from ..inspector import _standardize_gpu_count
 from ..lookup import map_compliance_frameworks_to_vendor
 from ..sentry import sentry_capture_or_raise
 from ..table_fields import (
+    AcceleratorType,
     Allocation,
     CpuAllocation,
     CpuArchitecture,
@@ -205,7 +206,7 @@ def _server_in_zone(server: str, zone: str) -> bool:
 def _server_accelerators() -> dict:
     """Map server names to their `accelerators.guestAcceleratorType`.
 
-    Needed for the GPU SKU lookup, as `Server.gpu_model` is standardized for
+    Needed for the GPU SKU lookup, as `Server.accelerator_model` is standardized for
     cross-vendor comparison, which drops the distinction between differently
     priced GPUs, e.g. both `nvidia-tesla-a100` (A2 High) and `nvidia-a100-80gb`
     (A2 Ultra) end up as "A100"."""
@@ -540,6 +541,19 @@ _GCP_ACCELERATOR = {
     "tpu7x": ("v7x", "TPU", 192 * _MIB_PER_GIB),
 }
 
+
+def _gcp_accelerator_type(guest_accelerator_type: str) -> AcceleratorType | None:
+    """Map machineTypes.accelerators.guestAcceleratorType to AcceleratorType."""
+    info = _GCP_ACCELERATOR.get(guest_accelerator_type)
+    if info:
+        return AcceleratorType.TPU if info[1] == "TPU" else AcceleratorType.GPU
+    if guest_accelerator_type.startswith("nvidia-"):
+        return AcceleratorType.GPU
+    if guest_accelerator_type.startswith(("ct", "tpu")):
+        return AcceleratorType.TPU
+    return None
+
+
 STORAGE_DESCRIPTION_TO_FAMILY = {
     "Storage PD Capacity": "pd-standard",
     "SSD backed PD Capacity": "pd-ssd",
@@ -863,13 +877,13 @@ def _search_servers(zone_name: str) -> List[dict]:
                 "cpu_model": None,
                 "cpus": [],
                 "memory_amount": server.memory_mb,
-                "gpu_count": 0,
-                "gpu_memory_min": 0,
-                "gpu_memory_total": 0,
-                "gpu_manufacturer": None,
-                "gpu_family": None,
-                "gpu_model": None,
-                "gpus": [],
+                "accelerator_count": 0,
+                "accelerator_memory_min": 0,
+                "accelerator_memory_total": 0,
+                "accelerator_manufacturer": None,
+                "accelerator_family": None,
+                "accelerator_model": None,
+                "accelerators": [],
                 "storage_size": 0,
                 "storage_type": None,
                 "storages": [],
@@ -893,8 +907,11 @@ def _search_servers(zone_name: str) -> List[dict]:
                 description=server.description,
             )
             info = _GCP_ACCELERATOR.get(accel.guest_accelerator_type)
-            zone_servers[-1]["gpu_count"] = gpu_count
-            zone_servers[-1]["gpu_model"] = (
+            zone_servers[-1]["accelerator_count"] = gpu_count
+            zone_servers[-1]["accelerator_type"] = _gcp_accelerator_type(
+                accel.guest_accelerator_type
+            )
+            zone_servers[-1]["accelerator_model"] = (
                 info[0] if info else accel.guest_accelerator_type
             )
             if info:
@@ -928,18 +945,18 @@ def _search_servers(zone_name: str) -> List[dict]:
                     gpu_memory_total = memory * n
                 zone_servers[-1].update(
                     {
-                        "gpu_manufacturer": manufacturer,
-                        "gpu_family": family,
-                        "gpu_memory_min": gpu_memory_min,
-                        "gpu_memory_total": gpu_memory_total,
-                        "gpus": gpus,
+                        "accelerator_manufacturer": manufacturer,
+                        "accelerator_family": family,
+                        "accelerator_memory_min": gpu_memory_min,
+                        "accelerator_memory_total": gpu_memory_total,
+                        "accelerators": gpus,
                     }
                 )
             else:
                 # known accelerator type missing from the catalog: leave memory
                 # unset so inspector can still fill it later
-                zone_servers[-1]["gpu_memory_min"] = None
-                zone_servers[-1]["gpu_memory_total"] = None
+                zone_servers[-1]["accelerator_memory_min"] = None
+                zone_servers[-1]["accelerator_memory_total"] = None
         bundled = server.bundled_local_ssds
         if bundled and bundled.partition_count:
             storage_size = round(
@@ -975,8 +992,8 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
         # shapes with a GPU slice have a single machine-level SKU instead of
         # separate vCPU, memory and GPU ones
         gpu_slice = bool(
-            server.gpu_count
-            and ((server.gpu_count < 1 and family == "g4") or family == "a4")
+            server.accelerator_count
+            and ((server.accelerator_count < 1 and family == "g4") or family == "a4")
         )
 
         # TPU VMs are priced per chip. A4X, X4, and TPU v3 still have no
@@ -1004,7 +1021,7 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
         # top of the predefined vCPU and memory, and the GPUs dominate the bill:
         # <https://cloud.google.com/compute/docs/accelerator-optimized-machines>
         accelerator = None
-        if server.gpu_count and not gpu_slice and not tpu_version:
+        if server.accelerator_count and not gpu_slice and not tpu_version:
             accelerator = _server_accelerators().get(server.name)
             if accelerator not in skus["gpu"]:
                 # rather skip than publish a vCPU + memory only price for a GPU machine
@@ -1038,7 +1055,7 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
                         WARNING,
                     )
                     continue
-                price *= server.gpu_count
+                price *= server.accelerator_count
             # try the machine-level GPU slice pricing
             elif gpu_slice:
                 try:
@@ -1052,7 +1069,7 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
                         DEBUG,
                     )
                     continue
-                price *= server.gpu_count
+                price *= server.accelerator_count
             # try instance-level pricing
             elif skus["instance"][family]:
                 try:
@@ -1089,7 +1106,7 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
             else:
                 raise KeyError(f"SKU not found for {server.name}")
 
-            if server.gpu_count and not gpu_slice and not tpu_version:
+            if server.accelerator_count and not gpu_slice and not tpu_version:
                 try:
                     gpu_price, _ = skus["gpu"][accelerator][server_region][
                         allocation.value.lower()
@@ -1101,7 +1118,7 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
                         DEBUG,
                     )
                     continue
-                price += gpu_price * server.gpu_count
+                price += gpu_price * server.accelerator_count
 
             # bundled Local SSD is billed for the life of the VM
             # https://cloud.google.com/compute/docs/accelerator-optimized-machines
