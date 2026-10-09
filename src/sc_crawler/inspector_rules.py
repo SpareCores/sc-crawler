@@ -1,8 +1,7 @@
 from typing import TYPE_CHECKING, List
 
-from .table_fields import AcceleratorType
 from .table_bases import DatabaseBase
-from .table_fields import DatabaseHaLevel, DatabaseHaStrategy
+from .table_fields import AcceleratorType, DatabaseHaLevel, DatabaseHaStrategy
 
 if TYPE_CHECKING:
     from .tables import Database, Server

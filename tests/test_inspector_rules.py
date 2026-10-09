@@ -2,9 +2,13 @@ import math
 from types import SimpleNamespace
 
 from sc_crawler.inspector_rules import block_reasons
-from sc_crawler.table_fields import AcceleratorType
 from sc_crawler.table_bases import DatabaseBase
-from sc_crawler.table_fields import DatabaseHaLevel, DatabaseHaStrategy, Status
+from sc_crawler.table_fields import (
+    AcceleratorType,
+    DatabaseHaLevel,
+    DatabaseHaStrategy,
+    Status,
+)
 
 _SINGLE_NODE_BLOCK = "Database doesn't support single-node deployment."
 
