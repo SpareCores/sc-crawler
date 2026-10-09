@@ -254,7 +254,7 @@ def get_server_table(is_scd: bool) -> sa.Table:
             "cpu_l2_cache",
             sa.Integer(),
             nullable=True,
-            comment="L2 cache size (byte).",
+            comment="L2 cache size (KiB).",
         ),
         sa.Column(
             "cpu_l2_cache_total",
@@ -266,7 +266,7 @@ def get_server_table(is_scd: bool) -> sa.Table:
             "cpu_l3_cache",
             sa.Integer(),
             nullable=True,
-            comment="L3 cache size (byte).",
+            comment="L3 cache size (KiB).",
         ),
         sa.Column(
             "cpu_l3_cache_total",

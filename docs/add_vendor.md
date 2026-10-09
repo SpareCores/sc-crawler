@@ -169,6 +169,7 @@ def inventory_servers(vendor):
     #             "accelerator_count": 0,
     #             "accelerator_memory_min": None,
     #             "accelerator_memory_total": None,
+    #             "accelerator_type": None,
     #             "accelerator_manufacturer": None,
     #             "accelerator_family": None,
     #             "accelerator_model": None,
