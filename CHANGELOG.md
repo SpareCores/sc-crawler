@@ -40,6 +40,12 @@ Maintenance update:
 
 - Inventory storages before servers and database storages before databases.
 
+## v0.9.5 (October 08, 2026)
+
+New feature(s):
+
+- Add inspector task block reasons for databases.
+
 ## v0.9.4 (October 07, 2026)
 
 Fix(es):
