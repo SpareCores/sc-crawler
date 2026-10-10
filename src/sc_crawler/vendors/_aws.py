@@ -1536,7 +1536,7 @@ def inventory_servers(vendor):
     """List all available AWS instance types in all regions via `boto3` calls.
 
     Lifecycle is reconciled after spot price collection via
-    [_reconcile_server_status][sc_crawler.vendors._aws._reconcile_server_status]
+    `_reconcile_server_status`
     (offerings + spot in ACTIVE regions -> ACTIVE, else INACTIVE).
     """
     # TODO consider dropping this in favor of pricing.get_products, as
