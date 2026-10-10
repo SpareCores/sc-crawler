@@ -320,6 +320,10 @@ def convert_index(markdown: str) -> tuple[str, list[str]]:
     return f"{imports}\n{markdown}", list(casts.values())
 
 
+def docstring(obj: Object | Alias | None) -> str:
+    return obj.docstring.value.strip() if obj is not None and obj.docstring else ""
+
+
 def enum_docs(loader: GriffeLoader) -> dict:
     """Descriptions of the enums used in the tables, which the SQL can't hold.
 
@@ -348,9 +352,6 @@ def enum_docs(loader: GriffeLoader) -> dict:
                 continue
             documented = loader.modules_collection.get_member(
                 f"{enum_class.__module__}.{enum_class.__qualname__}"
-            )
-            docstring = lambda obj: (
-                obj.docstring.value.strip() if obj is not None and obj.docstring else ""
             )
             enums[enum_class.__name__] = {
                 "description": docstring(documented),
