@@ -174,7 +174,9 @@ def relative_link(from_page: str, to_page: str, anchor: str | None) -> str:
     suffix = f"#{anchor}" if anchor else ""
     if from_page == to_page:
         return suffix or "#"
-    relative = Path(to_page).relative_to(Path(from_page).parent, walk_up=True).as_posix()
+    relative = (
+        Path(to_page).relative_to(Path(from_page).parent, walk_up=True).as_posix()
+    )
     return f"./{relative}{suffix}"
 
 
@@ -182,7 +184,11 @@ class Linker:
     """Resolves object paths to links within the generated pages or to external docs."""
 
     def __init__(
-        self, loader: GriffeLoader, anchors: dict[str, tuple[str, str]], modules: set[str], inventory: dict[str, str]
+        self,
+        loader: GriffeLoader,
+        anchors: dict[str, tuple[str, str]],
+        modules: set[str],
+        inventory: dict[str, str],
     ):
         self.loader = loader
         self.anchors = anchors
@@ -224,7 +230,11 @@ class Linker:
             while "." in parent:
                 parent = parent.rsplit(".", 1)[0]
                 if parent in self.anchors:
-                    return None if self.anchors[parent][0] == page else self.link(page, parent)
+                    return (
+                        None
+                        if self.anchors[parent][0] == page
+                        else self.link(page, parent)
+                    )
             return None
         return self.inventory.get(path) or self.inventory.get(target)
 
@@ -250,7 +260,9 @@ def render_reference(markdown: str, page: str, linker: Linker) -> str:
 
     markdown = re.sub(r"\[([^\]]*)\]\(#([\w.]+)\)", link, markdown)
     # links inside <code> lost their target above: wrap the leftover text in backticks too
-    return re.sub(r"<code>(.*?)</code>", lambda match: code_links(match.group(1)), markdown)
+    return re.sub(
+        r"<code>(.*?)</code>", lambda match: code_links(match.group(1)), markdown
+    )
 
 
 def convert_autorefs(markdown: str, page: str, linker: Linker) -> str:
@@ -270,7 +282,11 @@ def convert_autorefs(markdown: str, page: str, linker: Linker) -> str:
 
 
 def front_matter(fields: dict) -> str:
-    return "---\n" + "".join(f"{key}: {json.dumps(value)}\n" for key, value in fields.items()) + "---\n\n"
+    return (
+        "---\n"
+        + "".join(f"{key}: {json.dumps(value)}\n" for key, value in fields.items())
+        + "---\n\n"
+    )
 
 
 def convert_index(markdown: str) -> tuple[str, list[str]]:
@@ -283,7 +299,12 @@ def convert_index(markdown: str) -> tuple[str, list[str]]:
     markdown = re.sub(r"<!--(.*?)-->", r"{/*\1*/}", markdown, flags=re.S)
     # asciinema: the <script> creates a player for each placeholder <div>
     script = re.search(r"<script>.*?</script>\n?", markdown, re.S)
-    casts = dict(re.findall(r"AsciinemaPlayer\.create\(\s*'([^']+)',\s*document\.getElementById\('([^']+)'\)", script.group(0)))
+    casts = dict(
+        re.findall(
+            r"AsciinemaPlayer\.create\(\s*'([^']+)',\s*document\.getElementById\('([^']+)'\)",
+            script.group(0),
+        )
+    )
     casts = {element: cast for cast, element in casts.items()}
     markdown = markdown.replace(script.group(0), "")
     # the recordings are imported as assets, AsciinemaPlayer is provided by the docs site
@@ -293,7 +314,9 @@ def convert_index(markdown: str) -> tuple[str, list[str]]:
         lambda match: f"<AsciinemaPlayer src={{{names[casts[match.group(1)]]}}} />",
         markdown,
     )
-    imports = "".join(f"import {name} from './{cast}';\n" for cast, name in names.items())
+    imports = "".join(
+        f"import {name} from './{cast}';\n" for cast, name in names.items()
+    )
     return f"{imports}\n{markdown}", list(casts.values())
 
 
@@ -311,19 +334,32 @@ def enum_docs(loader: GriffeLoader) -> dict:
     columns: dict[str, dict[str, str]] = {}
     for table in tables:
         for column in table.__table__.columns:
-            enum_class = getattr(column.type, "enum_class", None) if isinstance(column.type, SqlEnum) else None
+            enum_class = (
+                getattr(column.type, "enum_class", None)
+                if isinstance(column.type, SqlEnum)
+                else None
+            )
             if enum_class is None:
                 continue
-            columns.setdefault(table.__tablename__, {})[column.name] = enum_class.__name__
+            columns.setdefault(table.__tablename__, {})[column.name] = (
+                enum_class.__name__
+            )
             if enum_class.__name__ in enums:
                 continue
-            documented = loader.modules_collection.get_member(f"{enum_class.__module__}.{enum_class.__qualname__}")
-            docstring = lambda obj: obj.docstring.value.strip() if obj is not None and obj.docstring else ""
+            documented = loader.modules_collection.get_member(
+                f"{enum_class.__module__}.{enum_class.__qualname__}"
+            )
+            docstring = lambda obj: (
+                obj.docstring.value.strip() if obj is not None and obj.docstring else ""
+            )
             enums[enum_class.__name__] = {
                 "description": docstring(documented),
                 # the database stores the member names
                 "values": [
-                    {"name": name, "description": docstring(documented.members.get(name))}
+                    {
+                        "name": name,
+                        "description": docstring(documented.members.get(name)),
+                    }
                     for name in enum_class.__members__
                 ],
             }
@@ -349,14 +385,19 @@ def write_schema(output: Path, loader: GriffeLoader) -> None:
     from sc_crawler.tables import tables
 
     for table in tables:
-        if f"CREATE TABLE `{table.__tablename__}`" not in result.stdout and f"CREATE TABLE {table.__tablename__} " not in result.stdout:
+        if (
+            f"CREATE TABLE `{table.__tablename__}`" not in result.stdout
+            and f"CREATE TABLE {table.__tablename__} " not in result.stdout
+        ):
             problems.append(f"schema: missing CREATE TABLE for {table.__tablename__}")
     for name, enum in enums["enums"].items():
         if not enum["description"]:
             problems.append(f"schema: enum {name} has no docstring")
         for value in enum["values"]:
             if not value["description"]:
-                problems.append(f"schema: enum value {name}.{value['name']} has no docstring")
+                problems.append(
+                    f"schema: enum value {name}.{value['name']} has no docstring"
+                )
     print(f"  schema: {len(enums['enums'])} enums")
     print(f"  schema: {result.stdout.count('CREATE TABLE')} tables")
 
@@ -402,7 +443,9 @@ def main(output: Path) -> None:
         markdown = re.sub(r"^(#+) `([\w.]+)`$", shorten_headings, markdown, flags=re.M)
         pages[page] = (module, markdown)
 
-    linker = Linker(loader, anchors, {module.path for module, _ in pages.values()}, inventory)
+    linker = Linker(
+        loader, anchors, {module.path for module, _ in pages.values()}, inventory
+    )
     for page, (module, markdown) in pages.items():
         source = module.relative_package_filepath.as_posix()
         target = docs / page
@@ -413,7 +456,11 @@ def main(output: Path) -> None:
                     "sidebar_label": module.name,
                     # plain text: autorefs are kept as their text only
                     "description": (
-                        re.sub(r"\[([^\]]+)\]\[[\w.]*\]", r"\1", module.docstring.value.splitlines()[0])
+                        re.sub(
+                            r"\[([^\]]+)\]\[[\w.]*\]",
+                            r"\1",
+                            module.docstring.value.splitlines()[0],
+                        )
                         if module.docstring
                         else module.path
                     ),
@@ -424,7 +471,9 @@ def main(output: Path) -> None:
             # docstrings might use autorefs as well
             + convert_autorefs(render_reference(markdown, page, linker), page, linker)
         )
-    (docs / "reference" / "_category_.json").write_text(json.dumps({"label": "Reference", "position": 4}, indent=2))
+    (docs / "reference" / "_category_.json").write_text(
+        json.dumps({"label": "Reference", "position": 4}, indent=2)
+    )
     print(f"  {len(pages)} reference pages")
 
     # hand-written pages
@@ -445,7 +494,13 @@ def main(output: Path) -> None:
 
     add_vendor = (DOCS / "add_vendor.md").read_text()
     (docs / "add_vendor.md").write_text(
-        front_matter({"sidebar_position": 3, "custom_edit_url": f"{REPO_URL}/edit/{BRANCH}/docs/add_vendor.md", "mdx": {"format": "md"}})
+        front_matter(
+            {
+                "sidebar_position": 3,
+                "custom_edit_url": f"{REPO_URL}/edit/{BRANCH}/docs/add_vendor.md",
+                "mdx": {"format": "md"},
+            }
+        )
         + convert_autorefs(add_vendor, "add_vendor.md", linker)
     )
 
@@ -455,7 +510,12 @@ def main(output: Path) -> None:
     # named and placed like the News page of the API docs
     (docs / "news.md").write_text(
         front_matter(
-            {"title": "News", "sidebar_position": 2, "custom_edit_url": f"{REPO_URL}/edit/{BRANCH}/CHANGELOG.md", "mdx": {"format": "md"}}
+            {
+                "title": "News",
+                "sidebar_position": 2,
+                "custom_edit_url": f"{REPO_URL}/edit/{BRANCH}/CHANGELOG.md",
+                "mdx": {"format": "md"},
+            }
         )
         + convert_autorefs(changelog, "news.md", linker)
     )
@@ -473,7 +533,9 @@ def check_output(output: Path) -> None:
         problems.append(f"fewer than {MIN_REFERENCE_PAGES} reference pages")
     for file in sorted(docs.rglob("*.md*")):
         for match in LEFTOVER_SYNTAX.finditer(file.read_text()):
-            problems.append(f"{file.relative_to(docs)}: unconverted mkdocs syntax {match.group(0)!r}")
+            problems.append(
+                f"{file.relative_to(docs)}: unconverted mkdocs syntax {match.group(0)!r}"
+            )
 
 
 if __name__ == "__main__":
