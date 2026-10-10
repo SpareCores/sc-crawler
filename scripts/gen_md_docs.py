@@ -320,6 +320,21 @@ def convert_index(markdown: str) -> tuple[str, list[str]]:
     return f"{imports}\n{markdown}", list(casts.values())
 
 
+def symbol_kind(obj: Object | Alias) -> str:
+    """Short kind label of an object, as shown by mkdocstrings in headings."""
+    if isinstance(obj, Alias):
+        obj = obj.final_target
+    if obj.is_class:
+        return "class"
+    if obj.is_function:
+        if "property" in obj.labels:
+            return "prop"
+        return "meth" if obj.parent is not None and obj.parent.is_class else "func"
+    if obj.is_attribute:
+        return "attr"
+    return "mod"
+
+
 def docstring(obj: Object | Alias | None) -> str:
     return obj.docstring.value.strip() if obj is not None and obj.docstring else ""
 
@@ -438,8 +453,20 @@ def main(output: Path) -> None:
             level, path = match.group(1), match.group(2)
             # module path as page title, members relative to the module
             text = path if path == module.path else path.removeprefix(module.path + ".")
-            anchors[path] = (page, slugify(text, seen))
-            return f"{level} `{text}`"
+            anchor = slugify(text, seen)
+            anchors[path] = (page, anchor)
+            if path == module.path:
+                return f"{level} `{text}`"
+            # kind label as in mkdocs-material, with the anchor kept without it
+            kind = symbol_kind(loader.modules_collection.get_member(path))
+            # the class of members in its own element, to be hidden in the docs
+            # site's table of contents (as in mkdocs-material)
+            parent, _, name = text.rpartition(".")
+            parent = f'<span class="doc-parent">{parent}.</span>' if parent else ""
+            return (
+                f'{level} <span class="doc-symbol doc-symbol-{kind}">{kind}</span> '
+                f'<code class="doc-name">{parent}{name}</code> {{#{anchor}}}'
+            )
 
         markdown = re.sub(r"^(#+) `([\w.]+)`$", shorten_headings, markdown, flags=re.M)
         pages[page] = (module, markdown)
