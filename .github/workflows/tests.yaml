@@ -19,36 +19,17 @@ jobs:
       - name: Linters
         run: tox -e lint
 
-  # the docs of docs.sparecores.com (Crawler and Schemas sections) are generated
-  # from this repo by sc-docusaurus' deploy workflow: make sure that still works
+  # the Crawler and Schemas sections of docs.sparecores.com are generated from
+  # this repo, so let's make sure that it still works
   docs:
     runs-on: ubuntu-latest
     steps:
-      # side by side, as sc-docusaurus looks for ../sc-crawler/build/docs-md
       - uses: actions/checkout@v6.0.2
-        with:
-          path: sc-crawler
-      - uses: actions/checkout@v6.0.2
-        with:
-          repository: SpareCores/sc-docusaurus
-          path: sc-docusaurus
       - uses: actions/setup-python@v6.2.0
         with:
           python-version: 3.13
       # fails on e.g. unresolved references or undocumented enum values
       - name: Generate the docs
-        working-directory: sc-crawler
         run: |
           pip install ".[mkdocs]"
           python scripts/gen_md_docs.py
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: sc-docusaurus/package-lock.json
-      # fails on e.g. invalid MDX or broken links
-      - name: Build the docs site
-        working-directory: sc-docusaurus
-        run: |
-          npm ci
-          npm run build
