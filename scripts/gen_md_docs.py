@@ -525,6 +525,7 @@ def main(output: Path) -> None:
         front_matter(
             {
                 "sidebar_position": 3,
+                "description": "How to add support for a new cloud vendor to the Crawler.",
                 "custom_edit_url": f"{REPO_URL}/edit/{BRANCH}/docs/add_vendor.md",
                 "mdx": {"format": "md"},
             }
@@ -540,6 +541,7 @@ def main(output: Path) -> None:
         front_matter(
             {
                 "title": "News",
+                "description": "Changelog of the sc-crawler Python package.",
                 "sidebar_position": 2,
                 "custom_edit_url": f"{REPO_URL}/edit/{BRANCH}/CHANGELOG.md",
                 "mdx": {"format": "md"},
