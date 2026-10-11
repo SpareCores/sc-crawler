@@ -29,5 +29,5 @@ pip install "sparecores-crawler @ git+https://git@github.com/SpareCores/sc-crawl
 
 - [Package documentation](https://sparecores.github.io/sc-crawler/)
 - [Database schemas](https://dbdocs.io/spare-cores/sc-crawler)
-- [Latest SQLite database release](https://sc-data-public-40e9d310.s3.amazonaws.com/sc-data-all.db.bz2)
+- [Latest SQLite database release](https://cdn.sparecores.net/sc-data/latest/sc-data-all.sql.xz)
 - [sparecores.com](https://sparecores.com)

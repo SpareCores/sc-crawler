@@ -223,7 +223,7 @@ won't be downloaded multiple times.
 
 Such an up-to-date SQLite database is managed by the Spare Cores team in the
 [SC Data](https://github.com/SpareCores/sc-data) repository, or you can also
-find it at <https://sc-data-public-40e9d310.s3.amazonaws.com/sc-data-all.db.bz2>.
+find it at <https://cdn.sparecores.net/sc-data/latest/sc-data-all.sql.xz>.
 
 Example run:
 
