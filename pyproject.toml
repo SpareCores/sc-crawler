@@ -50,6 +50,8 @@ mkdocs = [
   "mkdocstrings[python]>=0.29",
   "griffe",
   "griffe-inherited-docstrings",
+  # scripts/gen_md_docs.py patches griffe2md internals, so pinned
+  "griffe2md==1.5.1",
   #  "zensical"  # TODO: switch to zensical once it fully replaces mkdocs+mkdocs-material
 ]
 testing = ["pytest", "sparecores-crawler[mkdocs]"]

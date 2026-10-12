@@ -18,3 +18,18 @@ jobs:
         run: tox
       - name: Linters
         run: tox -e lint
+
+  # the Crawler and Schemas sections of docs.sparecores.com are generated from
+  # this repo, so let's make sure that it still works
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: actions/setup-python@v6.2.0
+        with:
+          python-version: 3.13
+      # fails on e.g. unresolved references or undocumented enum values
+      - name: Generate the docs
+        run: |
+          pip install ".[mkdocs]"
+          python scripts/gen_md_docs.py
