@@ -1,3 +1,45 @@
+## v0.10.0 (October 08, 2026)
+
+‼ Breaking changes:
+
+- Rename the `gpu_*` columns of `Server` to `accelerator_*`, as they also cover
+  other accelerator types such as TPUs: `accelerator_count`,
+  `accelerator_memory_min`, `accelerator_memory_total`,
+  `accelerator_manufacturer`, `accelerator_family`, `accelerator_model`, and
+  `accelerators`. The `Gpu` JSON model is renamed to `Accelerator`.
+
+New feature(s):
+
+- Add `accelerator_type` column (`AcceleratorType` enum: `GPU` or `TPU`) to
+  `Server` for the type of the primary accelerator. `GCP` TPU machine types are
+  marked as `TPU`, all other vendors' accelerators (and the ones found by
+  `nvidia-smi`) as `GPU`.
+- Add optional `compatible_storage_ids` JSON column to `Server` and `Database`
+  listing the `storage_id`s (or `database_storage_id`s) that can be attached as
+  extra storage (not populated yet).
+- Add `environment_fields` JSON column to `Benchmark` documenting the keys
+  recorded in `BenchmarkScore.environment`, similar to `config_fields`.
+- Add optional `subcategory` column to `Benchmark` for grouping benchmarks
+  within a category, e.g. the nvbandwidth scopes or Passmark CPU / Memory tests.
+- Add optional `series` column to `Server` and `Database` for a sub-type within
+  the `family` (not populated yet).
+- Add optional `api_reference_object` JSON column to `Server` (not populated
+  yet), as already available for `Database`.
+
+Fix(es):
+
+- `BenchmarkScore.observed_at` is now the crawl timestamp (like in other
+  tables). The end of the benchmark run is recorded in `environment.measured_at`.
+- Benchmark category changes: `redis:*` moved to `Database`, and `openssl` to
+  `Cryptography`.
+- Store missing values of optional JSON columns as `NULL` instead of the JSON
+  `null` literal (existing records are kept as is).
+- Skip the `nvidia_smi` and `nvbandwidth` inspector tasks on TPU machines.
+
+Maintenance update:
+
+- Inventory storages before servers and database storages before databases.
+
 ## v0.9.5 (October 08, 2026)
 
 New feature(s):

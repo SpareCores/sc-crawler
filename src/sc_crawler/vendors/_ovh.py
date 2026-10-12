@@ -7,6 +7,7 @@ from ovh import Client
 from ..lookup import map_compliance_frameworks_to_vendor
 from ..sentry import sentry_capture_or_raise
 from ..table_fields import (
+    AcceleratorType,
     Allocation,
     CpuAllocation,
     CpuArchitecture,
@@ -1293,13 +1294,14 @@ def inventory_servers(vendor) -> list[dict]:
                 "memory_generation": None,
                 "memory_speed": None,
                 "memory_ecc": None,
-                "gpu_count": gpu_count,
-                "gpu_memory_min": gpu_memory_per_gpu,
-                "gpu_memory_total": gpu_memory_total,
-                "gpu_manufacturer": gpu_manufacturer,
-                "gpu_family": gpu_family,
-                "gpu_model": gpu_model,
-                "gpus": [],  # TODO fill this array
+                "accelerator_count": gpu_count,
+                "accelerator_memory_min": gpu_memory_per_gpu,
+                "accelerator_memory_total": gpu_memory_total,
+                "accelerator_type": AcceleratorType.GPU if gpu_count else None,
+                "accelerator_manufacturer": gpu_manufacturer,
+                "accelerator_family": gpu_family,
+                "accelerator_model": gpu_model,
+                "accelerators": [],  # TODO fill this array
                 "storage_size": storage_size,
                 "storage_type": storage_type,
                 "storages": storages,
