@@ -1286,7 +1286,7 @@ def _standardize_gpu_model(model, server=None):
         return "RTX 5880"
     if model == "RTX6000":
         return "RTX 6000"
-    if model == "RTX PRO Server 6000":
+    if model in ["RTX PRO Server 6000", "RTX PRO 6000 Blackwell Server Edition"]:
         return "RTX Pro 6000"
     if model == "T4g":
         return "T4G"
