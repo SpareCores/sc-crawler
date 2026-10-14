@@ -131,3 +131,11 @@ def test_gcp_inspector_lsblk_still_overrides_api_storage():
     assert updated["storage_type"] == StorageType.NVME_SSD
     assert len(updated["storages"]) == 1
     assert updated["storages"][0].size == partition_gb
+
+
+def test_missing_nvidia_smi_does_not_mark_server_as_gpu():
+    with ExitStack() as stack:
+        _patch_missing_inspector_lookups(stack)
+        updated = inspect_update_server_dict(_z4d_server())
+
+    assert updated.get("accelerator_type") is None

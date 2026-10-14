@@ -529,7 +529,7 @@ class Server(ServerBase, table=True):
     """Server types."""
 
     def check_inspector_task_block_reasons(self, tasks: List[str]):
-        """Check if the server should run inspector task(s) and return block reasons."""
+        """Check if the Server should run inspector task(s) and return block reasons."""
         return block_reasons(self, tasks)
 
     vendor: Vendor = Relationship(back_populates="servers")
@@ -649,6 +649,10 @@ class StoragePrice(StoragePriceBase, table=True):
 
 class Database(DatabaseBase, table=True):
     """Managed database SKUs."""
+
+    def check_inspector_task_block_reasons(self, tasks: List[str]):
+        """Check if the Database should run inspector task(s) and return block reasons."""
+        return block_reasons(self, tasks)
 
     vendor: Vendor = Relationship(back_populates="databases")
     prices: List["DatabasePrice"] = Relationship(

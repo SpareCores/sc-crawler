@@ -3,7 +3,7 @@ import json
 import xml.etree.ElementTree as xmltree
 from atexit import register
 from contextlib import suppress
-from datetime import datetime
+from datetime import UTC, datetime
 from functools import cache
 from itertools import groupby
 from operator import itemgetter
@@ -28,7 +28,7 @@ from .inspector_helpers import (
 )
 from .logger import logger
 from .table_bases import ServerBase
-from .table_fields import DdrGeneration, Disk, Parallelism, StorageType
+from .table_fields import AcceleratorType, DdrGeneration, Disk, Parallelism, StorageType
 
 if TYPE_CHECKING:
     from .tables import Database, Server
@@ -293,13 +293,20 @@ def _server_average_time_to_start(server: "Server") -> float | None:
     return round(sum(durations) / len(durations), 2) if durations else None
 
 
-def _observed_at(resource: Union["Server", "Database"], framework: str) -> dict:
+def _measured_at(resource: Union["Server", "Database"], framework: str) -> str:
+    """End timestamp of the benchmark run, as recorded in its meta.json.
+
+    sc-inspector records naive timestamps in UTC, so make that explicit.
+    """
     if isinstance(resource, ServerBase):
         ts = _server_framework_meta(resource, framework)["end"]
     else:
         ts = _database_framework_meta(resource, framework)["end"]
     assert ts is not None
-    return {"observed_at": ts}
+    if isinstance(ts, str):
+        ts = datetime.fromisoformat(ts)
+    ts = ts.replace(tzinfo=UTC) if ts.tzinfo is None else ts.astimezone(UTC)
+    return ts.isoformat()
 
 
 def _framework_version(resource: Union["Server", "Database"], framework: str) -> dict:
@@ -314,7 +321,7 @@ def _framework_version(resource: Union["Server", "Database"], framework: str) ->
     )
 
 
-def _kernel_version(resource: ["Server", "Database"], framework: str) -> dict:
+def _kernel_version(resource: Union["Server", "Database"], framework: str) -> dict:
     kernel_version = None
     if isinstance(resource, ServerBase):
         kernel_version = _server_framework_meta(resource, framework).get(
@@ -335,7 +342,7 @@ def _benchmark_metafields(
     kernel_version_fallback: str | dict | None = None,
     override_framework_version: bool = False,
     override_kernel_version: bool = False,
-    extend_environment: dict | None = None,
+    extend_environment: dict = {},
 ) -> dict:
     if benchmark_id is None:
         if framework is None:
@@ -359,17 +366,19 @@ def _benchmark_metafields(
             if isinstance(kernel_version_fallback, str)
             else {"environment": kernel_version_fallback}
         )
-    if extend_environment:
-        kernel_version.setdefault("environment", {}).update(extend_environment)
+    environment = {
+        **kernel_version.get("environment", {}),
+        "measured_at": _measured_at(resource, framework),
+        **extend_environment,
+    }
     if isinstance(resource, ServerBase):
         _resource_ids = _server_ids(resource)
     else:
         _resource_ids = _database_ids(resource)
     return {
         **_resource_ids,
-        **_observed_at(resource, framework),
         **framework_version,
-        **kernel_version,
+        "environment": environment,
         "benchmark_id": benchmark_id,
     }
 
@@ -1297,8 +1306,8 @@ def _standardize_gpu_model(model, server=None):
 
 
 def _standardize_gpu_family(server):
-    family = server.get("gpu_family")
-    model = server.get("gpu_model") or ""
+    family = server.get("accelerator_family")
+    model = server.get("accelerator_model") or ""
     if "A100" in model:
         family = "Ampere"
     if "K80" in model:
@@ -1687,14 +1696,30 @@ def inspect_update_server_dict(server: dict) -> dict:
         "memory_generation": lambda: DdrGeneration[lookups["dmidecode_memory"]["Type"]],
         # convert to Mhz
         "memory_speed": lambda: int(lookups["dmidecode_memory"]["Speed"]) / 1e6,
-        "gpus": lambda: _gpus_details(lookups["gpus"]),
-        "gpu_manufacturer": lambda: _gpu_most_common(server["gpus"], "manufacturer"),
-        "gpu_family": lambda: _gpu_most_common(server["gpus"], "family"),
-        "gpu_model": lambda: _gpu_most_common(server["gpus"], "model"),
+        "accelerators": lambda: _gpus_details(lookups["gpus"]),
+        "accelerator_manufacturer": lambda: _gpu_most_common(
+            server["accelerators"], "manufacturer"
+        ),
+        "accelerator_family": lambda: _gpu_most_common(
+            server["accelerators"], "family"
+        ),
+        "accelerator_model": lambda: _gpu_most_common(server["accelerators"], "model"),
         # skip update if there is no HW-inspected GPU info
-        "gpu_count": lambda: len(server["gpus"]) if len(server["gpus"]) else None,
-        "gpu_memory_min": lambda: min([gpu["memory"] for gpu in server["gpus"]]),
-        "gpu_memory_total": lambda: sum([gpu["memory"] for gpu in server["gpus"]]),
+        "accelerator_count": lambda: (
+            len(server["accelerators"]) if len(server["accelerators"]) else None
+        ),
+        # nvidia-smi only reports GPUs
+        "accelerator_type": lambda: (
+            AcceleratorType.GPU
+            if isinstance(lookups["gpus"], list) and lookups["gpus"]
+            else None
+        ),
+        "accelerator_memory_min": lambda: min(
+            [gpu["memory"] for gpu in server["accelerators"]]
+        ),
+        "accelerator_memory_total": lambda: sum(
+            [gpu["memory"] for gpu in server["accelerators"]]
+        ),
         # skip storage update if lshw parsing failed or API data is present
         "storage_type": lambda: (
             inspector_storage_info.storage_type if inspector_storage_info else None
@@ -1725,7 +1750,7 @@ def inspect_update_server_dict(server: dict) -> dict:
         # TODO drop once we have full lsblk coverage
         # always override GCP fields where vendor data is known to be missing
         storage_fields = ["storage_type", "storage_size", "storages"]
-        if vendor_id == "gcp" and field in ["gpu_model", *storage_fields]:
+        if vendor_id == "gcp" and field in ["accelerator_model", *storage_fields]:
             return inspector_data
         # don't trust HDD/SSD inspection data at other vendors yet
         if vendor_id != "gcp" and field in storage_fields:
@@ -1733,7 +1758,7 @@ def inspect_update_server_dict(server: dict) -> dict:
 
         # keep inspector data for detailed fields that's not available from vendor API
         if (
-            field == "gpus"
+            field == "accelerators"
             and inspector_data
             and isinstance(inspector_data, list)
             and len(inspector_data) > 0
@@ -1758,19 +1783,21 @@ def inspect_update_server_dict(server: dict) -> dict:
             _log_cannot_update_server(server_obj, k, e)
 
     # standardize GPU model / fractional count (suffixes stripped from model)
-    if server.get("gpu_model"):
-        server["gpu_count"] = _standardize_gpu_count(
-            server["gpu_model"],
-            server.get("gpu_count", 0),
-            server.get("gpu_memory_total", 0),
+    if server.get("accelerator_model"):
+        server["accelerator_count"] = _standardize_gpu_count(
+            server["accelerator_model"],
+            server.get("accelerator_count", 0),
+            server.get("accelerator_memory_total", 0),
             description=server.get("description"),
         )
-        server["gpu_model"] = _standardize_gpu_model(server["gpu_model"], server)
-        server["gpu_family"] = _standardize_gpu_family(server)
+        server["accelerator_model"] = _standardize_gpu_model(
+            server["accelerator_model"], server
+        )
+        server["accelerator_family"] = _standardize_gpu_family(server)
         if (
-            not server.get("gpu_manufacturer")
-            and server["gpu_model"] in _NVIDIA_GPU_MODELS
+            not server.get("accelerator_manufacturer")
+            and server["accelerator_model"] in _NVIDIA_GPU_MODELS
         ):
-            server["gpu_manufacturer"] = "NVIDIA"
+            server["accelerator_manufacturer"] = "NVIDIA"
 
     return server
