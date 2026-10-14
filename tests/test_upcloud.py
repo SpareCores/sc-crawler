@@ -17,6 +17,7 @@ from sc_crawler.vendors._upcloud import (
     inventory_database_storage_prices,
     inventory_database_storages,
     inventory_databases,
+    inventory_servers
 )
 
 
@@ -78,6 +79,26 @@ def test_upcloud_server_status_gpu_without_regions_is_inactive():
         )
         == Status.INACTIVE
     )
+
+
+def test_upcloud_inventory_servers_maps_plans():
+    vendor = Mock(vendor_id="upcloud")
+    server = {
+        "name": "PREMIUM-1xCPU-2GB",
+        "core_number": 1,
+        "memory_amount": 2048,
+        "storage_size": 25,
+        "storage_tier": "maxiops",
+        "public_traffic_out": 1024,
+        "current_offering": "yes",
+        "family": "premium",
+    }
+    with patch(
+        "sc_crawler.vendors._upcloud._get_server_plans",
+        return_value={"plans": {"plan": [server]}},
+    ):
+        rows = inventory_servers(vendor)
+    assert rows[0]["compatible_storage_ids"] == ["maxiops", "standard", "hdd"]
 
 
 def test_upcloud_inventory_databases_maps_pg_service_plans():
@@ -260,6 +281,7 @@ def test_upcloud_inventory_databases_maps_flexible_plans():
     assert by_id["rdb.development.1CPU-1GB"]["server_id"] == "DEV-1xCPU-1GB"
     assert by_id["rdb.development.1CPU-1GB"]["continuous_backups"] == 3
     assert by_id["rdb.development.1CPU-1GB"]["max_read_replicas"] == 0
+    assert by_id["rdb.development.1CPU-1GB"]["compatible_storage_ids"] == ["standard"]
     assert by_id["rdb.standard.2CPU-8GB"]["family"] == "Standard"
     assert (
         by_id["rdb.standard.2CPU-8GB"]["display_name"] == "Standard: 2 vCPU, 8 GiB RAM"
@@ -285,10 +307,12 @@ def test_upcloud_inventory_databases_maps_flexible_plans():
         "service_type": "pg",
         "plan_compute": "rdb.standard.2CPU-8GB",
     }
+    assert by_id["rdb.standard.2CPU-8GB"]["compatible_storage_ids"] == ["maxiops"]
     assert by_id["rdb.memory.64CPU-512GB"]["family"] == "High Memory"
     assert by_id["rdb.memory.64CPU-512GB"]["server_id"] == "HIMEM-64xCPU-512GB"
     assert by_id["rdb.memory.64CPU-512GB"]["memory_amount"] == 512 * 1024
     assert by_id["rdb.memory.64CPU-512GB"]["storage_size"] is None
+    assert by_id["rdb.memory.64CPU-512GB"]["compatible_storage_ids"] == ["maxiops"]
 
 
 def test_upcloud_inventory_databases_keeps_server_id_none_when_no_match():
