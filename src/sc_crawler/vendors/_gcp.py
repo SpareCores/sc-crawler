@@ -524,7 +524,7 @@ _GCP_ACCELERATOR = {
     "nvidia-b200": ("B200", "Blackwell", 180 * _MIB_PER_GIB),
     "nvidia-gb200": ("GB200", "Blackwell", 186 * _MIB_PER_GIB),
     "nvidia-gb300": ("GB300", "Blackwell", 279 * _MIB_PER_GIB),
-    "nvidia-rtx-pro-6000": ("RTX Pro 6000", "Ada Lovelace", 96 * _MIB_PER_GIB),
+    "nvidia-rtx-pro-6000": ("RTX Pro 6000", "Blackwell", 96 * _MIB_PER_GIB),
     # machineTypes.accelerators.guestAcceleratorType for TPU VMs.
     # Google writes "TPU7x" with no space, we store v7x to match v5e/v6e.
     # https://cloud.google.com/tpu/docs/v3

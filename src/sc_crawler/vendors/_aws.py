@@ -358,6 +358,14 @@ def _reconcile_server_status(
             if server.server_id in available_server_ids
             else Status.INACTIVE
         )
+        # servers kept ACTIVE only by spot prices are not returned by
+        # describe_instance_types, so might miss fields added since last crawled
+        if (
+            server.status == Status.ACTIVE
+            and server.accelerator_count > 0
+            and server.accelerator_type is None
+        ):
+            server.accelerator_type = AcceleratorType.GPU
 
 
 @cachier()
