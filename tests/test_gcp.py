@@ -1566,3 +1566,41 @@ def test_gcp_inventory_storage_prices_use_capacity_skus():
 )
 def test_gcp_accelerator_type(guest_accelerator_type, expected):
     assert _gcp_accelerator_type(guest_accelerator_type) == expected
+
+
+@pytest.mark.parametrize(
+    ("raw", "model", "family"),
+    [
+        ("nvidia-rtx-pro-6000", "RTX Pro 6000", "Blackwell"),
+        ("RTX PRO 6000", "RTX Pro 6000", "Blackwell"),
+        ("RTX PRO 6000 Blackwell", "RTX Pro 6000", "Blackwell"),
+        ("RTX PRO 6000 Blackwell Server Edition", "RTX Pro 6000", "Blackwell"),
+        ("RTX PRO 4500", "RTX PRO 4500", "Blackwell"),
+        ("L4", "L4", "Ada Lovelace"),
+        ("L40S", "L40S", "Ada Lovelace"),
+    ],
+)
+def test_standardize_gpu_model_and_family_rtx_pro_is_blackwell(raw, model, family):
+    assert _standardize_gpu_model(raw) == model
+    assert _standardize_gpu_family({"accelerator_model": model}) == family
+
+
+@pytest.mark.parametrize(
+    ("raw", "memory", "family"),
+    [
+        ("RTX 6000", 48 * 1024, "Ada Lovelace"),
+        ("RTX6000", 48 * 1024, "Ada Lovelace"),
+        ("RTX 6000", 24 * 1024, "Turing"),
+        ("Quadro RTX 6000", 24 * 1024, "Turing"),
+        ("RTX 6000", None, None),
+    ],
+)
+def test_standardize_gpu_family_rtx_6000_by_memory(raw, memory, family):
+    model = _standardize_gpu_model(raw)
+    assert model == "RTX 6000"
+    assert (
+        _standardize_gpu_family(
+            {"accelerator_model": model, "accelerator_memory_min": memory}
+        )
+        == family
+    )

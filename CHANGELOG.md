@@ -1,3 +1,11 @@
+## v0.10.x (DEVELOPMENT)
+
+Fix(es):
+
+- Standardize `RTX Pro 6000` naming and family (`Blackwell`), and set
+  `RTX 6000` family by memory (`Ada Lovelace` or `Turing`).
+- Set missing `accelerator_type` of spot-only `ACTIVE` `AWS` GPU servers.
+
 ## v0.10.0 (October 08, 2026)
 
 ‼ Breaking changes:
