@@ -15,7 +15,6 @@ from ..table_fields import (
     StorageType,
     TrafficDirection,
 )
-from ..utils import scmodels_to_dict
 
 # ##############################################################################
 # Cached client wrappers
@@ -180,37 +179,62 @@ def _get_server_types():
     return _client().server_types.get_all()
 
 
-def _server_cpu(server_name):
-    """Manual mapping of CPU info for server types.
+def _server_family(server):
+    """Human-friendly server family from the API `category`, e.g. Cost Optimized."""
+    if server.category:
+        return server.category.replace("_", " ").title()
+    return server.name.rstrip("0123456789").upper()
 
-    Source: <https://www.hetzner.com/cloud/>
+
+def _server_cpu(server):
+    """Manual mapping of CPU info for server types based on the API `category`.
+
+    Categories (as of 2026-10):
+
+    - `cost_optimized`: CX (x86, "Intel®/AMD") and CAX (Arm64, "Ampere®")
+    - `regular_purpose`: CPX (shared, AMD)
+    - `general_purpose`: CCX (dedicated, AMD)
+
+    Sources (manufacturer only, no CPU family/model listed):
+
+    - <https://www.hetzner.com/cloud/cost-optimized/>
+    - <https://www.hetzner.com/cloud/regular-performance/>
+    - <https://www.hetzner.com/cloud/general-purpose/>
     """
-    # not trying to rely on product line name patterns, as might change,
-    # so rather providing a full list of known entities, and fail on unknown
-    if server_name.upper() in [
-        "CX11",
-        "CX21",
-        "CX31",
-        "CX41",
-        "CX51",
-        "CX22",
-        "CX32",
-        "CX42",
-        "CX52",
-    ]:
-        return ("Intel", "Xeon Gold", None)
-    if server_name.upper() in ["CX23", "CX33", "CX43", "CX53"]:
-        # could be either Intel or AMD
+    name = server.name.upper()
+    arch = server.architecture
+    if server.category == "cost_optimized":
+        if arch == "arm":
+            return ("Ampere", "Ampere Altra", None)
+        if name in [
+            "CX11",
+            "CX21",
+            "CX31",
+            "CX41",
+            "CX51",
+            "CX22",
+            "CX32",
+            "CX42",
+            "CX52",
+        ]:
+            return ("Intel", "Xeon Gold", None)
+        # newer generations could be either Intel or AMD
         return (None, None, None)
-    if server_name.upper() in ["CPX11", "CPX21", "CPX31", "CPX41", "CPX51"]:
-        return ("AMD", "EPYC", None)
-    if server_name.upper() in ["CPX12", "CPX22", "CPX32", "CPX42", "CPX52", "CPX62"]:
+    if server.category == "regular_purpose" and arch == "x86":
+        if name in ["CPX11", "CPX21", "CPX31", "CPX41", "CPX51"]:
+            return ("AMD", "EPYC", None)
         return ("AMD", None, None)
-    if server_name.upper() in ["CAX11", "CAX21", "CAX31", "CAX41"]:
-        return ("Ampere", "Ampere Altra", None)
-    if server_name.upper() in ["CCX13", "CCX23", "CCX33", "CCX43", "CCX53", "CCX63"]:
+    if server.category == "general_purpose" and arch == "x86":
         return ("AMD", None, None)
-    raise ValueError("Unknown Hetzner Cloud server name: " + server_name)
+    raise ValueError(
+        f"Unknown Hetzner Cloud server type: {server.name} "
+        f"(category={server.category}, architecture={arch})"
+    )
+
+
+def _active_regions(vendor):
+    """Regions currently returned by the API, skipping stale ones from the DB (e.g. `sin-dc1`)."""
+    return [region for region in vendor.regions if region.status == Status.ACTIVE]
 
 
 # https://docs.hetzner.cloud/reference/cloud#tag/server-types/list_server_types
@@ -255,14 +279,13 @@ def inventory_compliance_frameworks(vendor):
 def inventory_regions(vendor):
     """List all regions via API call.
 
-    Hetzner Cloud uses integers for the location id that we convert
-    into string. Best to use the unique `name`, which can be also
-    passed instead of the `id` in most `hcloud` API endpoints via the
-    `id_or_name` method.
-
-    Not taking the Hetzner unique `name` as id, as it's not
-    stated to be unique for other resources, and uniqueness
-    for servers might also change in the future.
+    Using the unique location `name` (e.g. `fsn1`) as the region id
+    instead of the numeric location id, as the numeric ids were
+    renumbered when the datacenters endpoint got deprecated, while
+    the names are stable and are also used to reference locations in
+    the server type prices, and can be passed instead of the `id` in
+    most `hcloud` API endpoints via the `id_or_name` method.
+    The numeric location id is kept in `aliases`.
 
     All regions are powered by green energy as per
     <https://www.hetzner.com/unternehmen/umweltschutz/>.
@@ -280,11 +303,12 @@ def inventory_regions(vendor):
             items.append(
                 {
                     "vendor_id": vendor.vendor_id,
-                    "region_id": str(location.id),
+                    "region_id": location.name,
                     "name": location.name,
                     "api_reference": location.name,
                     "display_name": f"{city} ({location.country})",
-                    "aliases": [],
+                    # numeric location id, e.g. used in `server_types[].locations[].id`
+                    "aliases": [str(location.id)],
                     "country_id": location.country,
                     "state": state,
                     "city": city,
@@ -308,7 +332,7 @@ def inventory_zones(vendor):
 
     """
     items = []
-    for region in vendor.regions:
+    for region in _active_regions(vendor):
         items.append(
             {
                 "vendor_id": vendor.vendor_id,
@@ -335,10 +359,10 @@ def inventory_servers(vendor):
     now = datetime.now(UTC)
     items = []
     for server in _get_server_types():
-        # CPU info not available via the API,
-        # collected from https://www.hetzner.com/cloud/
-        cpu = _server_cpu(server.name)
         with sentry_capture_or_raise(vendor=vendor):
+            # CPU info not available via the API,
+            # collected from https://www.hetzner.com/cloud/
+            cpu = _server_cpu(server)
             items.append(
                 {
                     "vendor_id": vendor.vendor_id,
@@ -347,7 +371,7 @@ def inventory_servers(vendor):
                     "api_reference": server.name,
                     "display_name": server.name,
                     "description": server.description,
-                    "family": server.name.rstrip("0123456789"),
+                    "family": _server_family(server),
                     "vcpus": server.cores,
                     "hypervisor": "QEMU",
                     "cpu_allocation": (
@@ -398,27 +422,26 @@ def inventory_servers(vendor):
 
 
 def inventory_server_prices(vendor):
-    regions = scmodels_to_dict(vendor.regions, keys=["name", "aliases"])
+    """List server prices per location from the server types API.
+
+    `prices[].location` and `locations[].location.name` are both the
+    location name, which is also used as our Region id.
+    """
     now = datetime.now(UTC)
     items = []
     for server in _get_server_types():
-        locations_by_name = {}
-        if server.locations:
-            locations_by_name = {
-                loc.location.name: loc
-                for loc in server.locations
-                if loc.location is not None
-            }
-        for location in server.prices:
-            region_id = regions[location["location"]].region_id
-            hourly_price = float(location["price_hourly"]["net"])
+        server_locations = {
+            loc.location.name: loc for loc in server.locations or [] if loc.location
+        }
+        for price in server.prices:
+            region_id = price["location"]
+            hourly_price = float(price["price_hourly"]["net"])
             # Hetzner provides separate hourly and monthly prices,
             # so to describe the monthly cap with tiered hourly pricing,
             # we need to proxy the number of discounted hours in a month
             # (rounding to full hours is a good-enough approximation)
-            monthly_cap = int(float(location["price_monthly"]["net"]) / hourly_price)
-            loc = locations_by_name.get(location["location"])
-            status = _hcloud_location_status(loc, now)
+            monthly_cap = int(float(price["price_monthly"]["net"]) / hourly_price)
+            status = _hcloud_location_status(server_locations.get(region_id), now)
             price_status = Status.ACTIVE if status.is_orderable else Status.INACTIVE
             items.append(
                 {
@@ -480,7 +503,7 @@ def inventory_storage_prices(vendor):
     Source: <https://www.hetzner.com/cloud/block-storage/>
     """
     items = []
-    for region in vendor.regions:
+    for region in _active_regions(vendor):
         items.append(
             {
                 "vendor_id": vendor.vendor_id,
@@ -500,7 +523,7 @@ def inventory_traffic_prices(vendor):
     Source: <https://docs.hetzner.com/robot/general/traffic/>
     """
     items = []
-    for region in vendor.regions:
+    for region in _active_regions(vendor):
         items.append(
             {
                 "vendor_id": vendor.vendor_id,
@@ -532,7 +555,7 @@ def inventory_ipv4_prices(vendor):
     Source: <https://docs.hetzner.com/cloud/servers/overview#network-options>
     """
     items = []
-    for region in vendor.regions:
+    for region in _active_regions(vendor):
         items.append(
             {
                 "vendor_id": vendor.vendor_id,

@@ -1,3 +1,14 @@
+## v0.10.x (development)
+
+New feature(s):
+
+- `Hetzner`: use the server type `category` as server family.
+
+Fix(es):
+
+- `Hetzner`: use `/v1/locations` instead of deprecated `/v1/datacenters`, with
+  the location name as region id (numeric id kept in `aliases`).
+
 ## v0.10.0 (October 08, 2026)
 
 ‼ Breaking changes:
@@ -86,7 +97,6 @@ Fix(es):
 - Keep vendor API storage when the inspector has no disk sample (e.g. GCP `z4d`).
 - `AWS`: fix parsed EBS max IOPS, throughput, and size.
 - `Azure`: take PostgreSQL Flexible Server SKUs from retail prices.
-- `Hetzner`: use `/v1/locations` instead of deprecated `/v1/datacenters`.
 
 Maintenance update:
 
