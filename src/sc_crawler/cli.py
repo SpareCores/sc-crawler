@@ -225,7 +225,9 @@ def autogenerate(
     connection_string: options.connection_string = "sqlite:///sc-data-all.db",
     message: Annotated[
         str,
-        typer.Option(help="Revision message, e.g. the sparecores-crawler version number."),
+        typer.Option(
+            help="Revision message, e.g. the sparecores-crawler version number."
+        ),
     ] = "empty message",
 ):
     """
