@@ -1,5 +1,10 @@
 ## v0.10.x (DEVELOPMENT)
 
+New benchmark(s):
+
+- stress-ng stressor results (`stress_ng:<method>`) from the
+  `stressng_benchmarks` inspector task. 
+
 Fix(es):
 
 - Standardize `RTX Pro 6000` naming and family (`Blackwell`), and set

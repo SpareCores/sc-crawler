@@ -938,6 +938,39 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
     except Exception as e:
         _log_cannot_load_benchmarks(server, framework, e, True)
 
+    framework = "stressng_benchmarks"
+    try:
+        # lookup imports tables, which imports this module
+        from .lookup import stress_ng_benchmark_id
+
+        stressors = _server_framework_stdout_from_json(server, framework)["stressors"]
+        for method, by_cores in stressors.items():
+            benchmark_id = stress_ng_benchmark_id(method)
+            if benchmark_id is None:
+                continue
+            for cores, result in by_cores.items():
+                if result is None:
+                    continue
+                benchmarks.append(
+                    {
+                        **_benchmark_metafields(
+                            server,
+                            framework=framework,
+                            benchmark_id=benchmark_id,
+                        ),
+                        "config": {
+                            "cores": (
+                                Parallelism.SINGLE
+                                if int(cores) == 1
+                                else Parallelism.MULTI
+                            )
+                        },
+                        "score": float(result["bogo_ops_per_sec"]),
+                    }
+                )
+    except Exception as e:
+        _log_cannot_load_benchmarks(server, framework, e, True)
+
     # add server related pgbench benchmark scores
     benchmarks.extend(_pgbench_benchmark_scores(server))
 
