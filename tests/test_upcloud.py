@@ -181,6 +181,7 @@ def test_upcloud_inventory_databases_maps_pg_service_plans():
     assert by_id["2xCPU-4GB-50GB"]["storage_size"] == round(50 * _GIB_TO_GB)
     assert by_id["2xCPU-4GB-50GB"]["storage_extra_min"] == round(10 * _GIB_TO_GB)
     assert by_id["2xCPU-4GB-50GB"]["storage_extra_max"] == round(150 * _GIB_TO_GB)
+    assert by_id["2xCPU-4GB-50GB"]["compatible_storage_ids"] == ["standard"]
     assert by_id["2xCPU-4GB-50GB"]["connection_pool"] is True
     assert by_id["2xCPU-4GB-50GB"]["sla"] == 99.999
     assert by_id["2xCPU-4GB-50GB"]["status"] == Status.ACTIVE
@@ -357,6 +358,7 @@ def test_upcloud_inventory_databases_keeps_server_id_none_when_no_match():
     assert rows[0]["storage_extra_min"] == 0
     assert rows[0]["storage_extra_max"] == 0
     assert rows[0]["storage_extra_autosize"] is False
+    assert rows[0]["compatible_storage_ids"] == []
 
 
 def test_upcloud_inventory_database_prices_from_price_list():

@@ -1375,6 +1375,7 @@ def inventory_databases(vendor):
                 "storage_extra_min": storage_extra_min,
                 "storage_extra_max": storage_extra_max,
                 "storage_extra_autosize": False,
+                "compatible_storage_ids": ["standard"] if dynamic_storage_supported else [],
                 "ha": ha,
                 "ha_strategy": ha_strategy,
                 "max_read_replicas": max((node_count or 1) - 1, 0),
