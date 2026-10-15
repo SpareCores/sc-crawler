@@ -369,6 +369,8 @@ def inventory_servers(vendor):
                     "server_id": str(server.id),
                     "name": server.name,
                     "api_reference": server.name,
+                    # https://www.pulumi.com/registry/packages/hcloud/api-docs/server/
+                    "api_reference_object": {"server_type": server.name},
                     "display_name": server.name,
                     "description": server.description,
                     "family": _server_family(server),

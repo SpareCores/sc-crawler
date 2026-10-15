@@ -6,6 +6,7 @@ New feature(s):
 
 Fix(es):
 
+- Populate `Server.api_reference_object` for `Hetzner`
 - `Hetzner`: use `/v1/locations` instead of deprecated `/v1/datacenters`, with
   the location name as region id (numeric id kept in `aliases`).
 - Standardize `RTX Pro 6000` naming and family (`Blackwell`), and set
