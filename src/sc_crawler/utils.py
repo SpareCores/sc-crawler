@@ -49,7 +49,7 @@ class HashLevels(Enum):
 
 
 def sc_json_serializer(x):
-    """JSON serializer for SQLAlchemy engines writing SC Crawler JSON columns."""
+    """JSON serializer for SQLAlchemy engines writing Crawler JSON columns."""
     return dumps(x, default=lambda o: o.__json__(), allow_nan=False)
 
 

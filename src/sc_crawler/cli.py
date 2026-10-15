@@ -1,4 +1,4 @@
-"""The Spare Cores (SC) Crawler CLI functions.
+"""The `sc-crawler` CLI functions.
 
 Check `sc-crawler --help` for more details."""
 
@@ -225,7 +225,9 @@ def autogenerate(
     connection_string: options.connection_string = "sqlite:///sc-data-all.db",
     message: Annotated[
         str,
-        typer.Option(help="Revision message, e.g. SC Crawler version number."),
+        typer.Option(
+            help="Revision message, e.g. the sparecores-crawler version number."
+        ),
     ] = "empty message",
 ):
     """
@@ -341,7 +343,7 @@ def copy(
         ),
     ],
 ):
-    """Copy the standard SC Crawler tables of a database into a blank database."""
+    """Copy the standard Crawler tables of a database into a blank database."""
 
     source_engine = create_engine(source, pool_pre_ping=True)
     target_engine = create_sc_engine(target, pool_pre_ping=True)

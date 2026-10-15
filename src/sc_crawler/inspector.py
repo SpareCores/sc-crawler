@@ -1286,7 +1286,12 @@ def _standardize_gpu_model(model, server=None):
         return "RTX 5880"
     if model == "RTX6000":
         return "RTX 6000"
-    if model == "RTX PRO Server 6000":
+    if model in [
+        "RTX PRO 6000",
+        "RTX PRO 6000 Blackwell",
+        "RTX PRO Server 6000",
+        "RTX PRO 6000 Blackwell Server Edition",
+    ]:
         return "RTX Pro 6000"
     if model == "T4g":
         return "T4G"
@@ -1314,10 +1319,27 @@ def _standardize_gpu_family(server):
         family = "Kepler"
     if "H100" in model or "H200" in model:
         family = "Hopper"
-    if "B200" in model or "GB200" in model or "GB300" in model:
+    # RTX PRO series (6000, 5000, 4500 etc.) are Blackwell:
+    # https://www.nvidia.com/en-us/products/workstations/professional-desktop-gpus/
+    if (
+        "B200" in model
+        or "GB200" in model
+        or "GB300" in model
+        or model.upper().startswith("RTX PRO")
+    ):
         family = "Blackwell"
-    if "L4" in model or "RTX Pro 6000" in model:
+    if "L4" in model:
         family = "Ada Lovelace"
+    # non-PRO RTX 6000 is either the RTX 6000 Ada Generation (48 GB, Ada Lovelace):
+    # https://www.nvidia.com/en-us/products/workstations/rtx-6000/
+    # or the earlier Quadro RTX 6000 (24 GB, Turing):
+    # https://www.nvidia.com/en-gb/products/workstations/quadro/rtx-6000/
+    if model == "RTX 6000":
+        memory = server.get("accelerator_memory_min")
+        if memory == 48 * 1024:
+            family = "Ada Lovelace"
+        elif memory == 24 * 1024:
+            family = "Turing"
     if model in ["v3", "v5e", "v5p", "v6e", "v7x"] or model.startswith("TPU"):
         family = "TPU"
     if "V520" in model:

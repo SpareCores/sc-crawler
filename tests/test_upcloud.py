@@ -11,6 +11,7 @@ from sc_crawler.table_fields import (
 )
 from sc_crawler.utils import _GIB_TO_GB
 from sc_crawler.vendors._upcloud import (
+    _parse_gpu_model,
     _upcloud_server_status,
     inventory_database_prices,
     inventory_database_storage_prices,
@@ -556,3 +557,11 @@ def test_upcloud_inventory_database_storage_prices_from_zone_list():
     assert by_key[("fi-hel1", "standard")]["unit"] == PriceUnit.GB_MONTH
     assert round(by_key[("fi-hel1", "standard")]["price"], 4) == round(0.0055 * 730, 4)
     assert round(by_key[("fi-hel1", "maxiops")]["price"], 4) == round(0.0138 * 730, 4)
+
+
+def test_upcloud_parse_gpu_model_standardizes_rtx_pro_6000():
+    gpu = _parse_gpu_model("NVIDIA RTX PRO 6000 Blackwell Server Edition", 2)
+    assert gpu["accelerator_model"] == "RTX Pro 6000"
+    assert gpu["accelerator_manufacturer"] == "NVIDIA"
+    assert gpu["accelerator_memory_min"] == 96 * 1024
+    assert gpu["accelerator_memory_total"] == 2 * 96 * 1024

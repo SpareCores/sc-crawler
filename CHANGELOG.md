@@ -8,6 +8,9 @@ Fix(es):
 
 - `Hetzner`: use `/v1/locations` instead of deprecated `/v1/datacenters`, with
   the location name as region id (numeric id kept in `aliases`).
+- Standardize `RTX Pro 6000` naming and family (`Blackwell`), and set
+  `RTX 6000` family by memory (`Ada Lovelace` or `Turing`).
+- Set missing `accelerator_type` of spot-only `ACTIVE` `AWS` GPU servers.
 
 ## v0.10.0 (October 08, 2026)
 
