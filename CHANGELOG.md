@@ -2,7 +2,10 @@
 
 Fix(es):
 
-- Standardize `RTX Pro 6000` naming and family (`Blackwell`), and set
+- Populate `Server.api_reference_object` with Pulumi/Terraform provisioning
+  args for `AWS`, `Azure`, `GCP`, `AliCloud`, `UpCloud`, and `Vultr`
+  (`OVH` left `NULL` — `flavor_id` is region-specific).
+- Standardize `RTX PRO 6000` naming and family (`Blackwell`), and set 
   `RTX 6000` family by memory (`Ada Lovelace` or `Turing`).
 - Set missing `accelerator_type` of spot-only `ACTIVE` `AWS` GPU servers.
 

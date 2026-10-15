@@ -831,7 +831,7 @@ def test_gcp_search_servers_parses_fractional_g4_vgpu():
         row = _search_servers("us-east1-b")[0]
 
     assert row["accelerator_count"] == 0.125
-    assert row["accelerator_model"] == "RTX Pro 6000"
+    assert row["accelerator_model"] == "RTX PRO 6000"
     assert row["accelerator_memory_min"] == 12 * 1024
     assert row["accelerator_memory_total"] == 12 * 1024
     assert len(row["accelerators"]) == 1
@@ -845,7 +845,7 @@ def _g4_server(name, vcpus, memory_gib, gpu_count):
         vcpus=vcpus,
         memory_amount=memory_gib * 1024,
         accelerator_count=gpu_count,
-        accelerator_model="RTX Pro 6000",
+        accelerator_model="RTX PRO 6000",
     )
 
 
@@ -1571,11 +1571,13 @@ def test_gcp_accelerator_type(guest_accelerator_type, expected):
 @pytest.mark.parametrize(
     ("raw", "model", "family"),
     [
-        ("nvidia-rtx-pro-6000", "RTX Pro 6000", "Blackwell"),
-        ("RTX PRO 6000", "RTX Pro 6000", "Blackwell"),
-        ("RTX PRO 6000 Blackwell", "RTX Pro 6000", "Blackwell"),
-        ("RTX PRO 6000 Blackwell Server Edition", "RTX Pro 6000", "Blackwell"),
+        ("nvidia-rtx-pro-6000", "RTX PRO 6000", "Blackwell"),
+        ("RTX PRO 6000", "RTX PRO 6000", "Blackwell"),
+        ("RTX Pro 6000", "RTX PRO 6000", "Blackwell"),
+        ("RTX PRO 6000 Blackwell", "RTX PRO 6000", "Blackwell"),
+        ("RTX PRO 6000 Blackwell Server Edition", "RTX PRO 6000", "Blackwell"),
         ("RTX PRO 4500", "RTX PRO 4500", "Blackwell"),
+        ("RTX Pro 4500", "RTX PRO 4500", "Blackwell"),
         ("L4", "L4", "Ada Lovelace"),
         ("L40S", "L40S", "Ada Lovelace"),
     ],
