@@ -369,24 +369,19 @@ def source_ref() -> str:
         return BRANCH
 
 
-def source_link(obj: Object | Alias, ref: str) -> str:
-    """Link to the lines of an object on GitHub, below its heading, as
-    mkdocstrings' show_source but without the code itself."""
+def source_location(obj: Object | Alias, ref: str) -> tuple[str, str] | None:
+    """The lines of an object on GitHub, as mkdocstrings' show_source but
+    without the code itself: their URL and label, e.g. lookup.py:61–63."""
     if isinstance(obj, Alias):
         obj = obj.final_target
     if obj.lineno is None:
-        return ""
-    lines = f"L{obj.lineno}"
-    label = f"line {obj.lineno}"
+        return None
+    path = obj.relative_package_filepath.as_posix()
+    lines, label = f"L{obj.lineno}", f"{Path(path).name}:{obj.lineno}"
     if obj.endlineno and obj.endlineno != obj.lineno:
         lines += f"-L{obj.endlineno}"
-        label = f"lines {obj.lineno}–{obj.endlineno}"
-    path = obj.relative_package_filepath.as_posix()
-    url = f"{REPO_URL}/blob/{ref}/src/{path}#{lines}"
-    return (
-        f'\n\n<p class="doc-source" data-pagefind-ignore>'
-        f'<a href="{url}">Source: {Path(path).name}, {label}</a></p>'
-    )
+        label += f"–{obj.endlineno}"
+    return f"{REPO_URL}/blob/{ref}/src/{path}#{lines}", label
 
 
 def docstring(obj: Object | Alias | None) -> str:
@@ -523,10 +518,20 @@ def main(output: Path) -> None:
             # a span inside) as a code block
             parent, _, name = text.rpartition(".")
             parent = f'<code class="doc-parent">{parent}.</code>' if parent else ""
+            # the source lines on the heading line, as a Markdown link, as the
+            # docs site's table of contents keeps the HTML of headings, but
+            # only the text of links
+            source = source_location(obj, ref)
+            link = ""
+            if source:
+                url, label = source
+                link = (
+                    f' <span class="doc-source" data-pagefind-ignore>'
+                    f"[{label}]({url})</span>"
+                )
             return (
                 f'{level} <span class="doc-symbol doc-symbol-{kind}">{kind}</span> '
-                f'{parent}<code class="doc-name">{name}</code> {{#{anchor}}}'
-                + source_link(obj, ref)
+                f'{parent}<code class="doc-name">{name}</code>{link} {{#{anchor}}}'
             )
 
         markdown = re.sub(r"^(#+) `([\w.]+)`$", shorten_headings, markdown, flags=re.M)
