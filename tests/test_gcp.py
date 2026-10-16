@@ -21,6 +21,7 @@ from sc_crawler.vendors._gcp import (
     inventory_server_prices_spot,
     inventory_storage_prices,
     inventory_storages,
+    _compatible_storage_ids,
 )
 
 # us-central1 rates, rounded to the catalog's units + nanos pairs
@@ -768,6 +769,34 @@ def test_gcp_search_servers_fills_gpu_and_bundled_local_ssd_fields():
             "storage_type": StorageType.NVME_SSD,
             "size": round(4 * 3000 * 1024**3 / 1000**3),
         }
+    ]
+    assert row["compatible_storage_ids"] == [
+        "30012",
+        "30013",
+        "30014",
+        "30016",
+    ]
+    assert _compatible_storage_ids("a3-highgpu-1g") == [
+        "30002",
+        "30007",
+        "30013",
+        "30014",
+        "30016",
+        "30017",
+    ]
+    assert "30012" not in _compatible_storage_ids("a3-highgpu-2g")
+    assert "30012" in _compatible_storage_ids("a3-highgpu-4g")
+    assert _compatible_storage_ids("a3-ultragpu-8g") == [
+        "30012",
+        "30014",
+        "30016",
+        "30017",
+    ]
+    assert _compatible_storage_ids("a3-megagpu-8g") == [
+        "30002", "30007", "30013", "30014", "30016", "30017", "30012"
+    ]
+    assert _compatible_storage_ids("a3-edgegpu-8g") == [
+        "30002", "30007", "30013", "30014", "30016", "30017", "30012"
     ]
 
 

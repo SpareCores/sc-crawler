@@ -3,7 +3,7 @@
 from functools import cache
 from logging import DEBUG, WARNING
 from re import compile as recompile
-from re import sub
+from re import search, sub
 from typing import List
 
 from cachier import cachier
@@ -234,6 +234,36 @@ def _local_ssd_partition_gib(server_name: str) -> int:
     if family in ["a4x", "z3"] or (family == "c4" and server_name.endswith("-metal")):
         return 3000
     return 375
+
+
+def _compatible_storage_ids(server_name: str) -> list[str]:
+    """Return compatible storage IDs for a GCP machine type."""
+    name = server_name.lower()
+
+    if name.startswith("a3-ultragpu-"):
+        # https://docs.cloud.google.com/compute/docs/disks/hyperdisks
+        # A3 H200 supports Hyperdisk Extreme, Balanced, ML, and Balanced HA.
+        return ["30012", "30014", "30016", "30017"]
+
+    if name.startswith(("a3-highgpu-", "a3-megagpu-", "a3-edgegpu-")):
+        storage_ids = ["30002", "30007", "30013", "30014", "30016", "30017"]
+
+        # https://docs.cloud.google.com/compute/docs/disks/hyperdisks
+        # A3 H100 supports these storage types; Hyperdisk Extreme requires
+        # at least 104 vCPUs.
+        # a3-highgpu-1g and a3-highgpu-2g do not meet this requirement.
+        match = search(r"a3-(?:highgpu|megagpu|edgegpu)-(\d+)g", name)
+        if match and int(match.group(1)) >= 4:
+            storage_ids.append("30012")
+
+        return storage_ids
+
+    if name.startswith("a4x-maxgpu-") and name.endswith("-metal"):
+        # https://docs.cloud.google.com/compute/docs/disks/hyperdisks
+        # A4X Max supports Hyperdisk Extreme, Throughput, Balanced, and ML.
+        return ["30012", "30013", "30014", "30016"]
+
+    return []
 
 
 @cache
@@ -891,6 +921,7 @@ def _search_servers(zone_name: str) -> List[dict]:
                 "storage_size": 0,
                 "storage_type": None,
                 "storages": [],
+                "compatible_storage_ids": _compatible_storage_ids(server.name),
                 # TODO: have to implement manual mapping for network_speed related fields
                 "network_speed_baseline": None,
                 "network_speed_max": None,
