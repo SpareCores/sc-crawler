@@ -1,3 +1,5 @@
+"""Inventory of Google Cloud Platform via its APIs: servers, storages, traffic, IPv4 addresses and managed PostgreSQL (Cloud SQL), with their prices."""
+
 from functools import cache
 from logging import DEBUG, WARNING
 from re import compile as recompile

@@ -1,3 +1,5 @@
+"""Inventory of Amazon Web Services via `boto3`: servers, storages, traffic, IPv4 addresses and managed PostgreSQL (RDS), with their prices."""
+
 import json
 import re
 from collections import defaultdict

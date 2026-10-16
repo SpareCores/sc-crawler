@@ -1,3 +1,5 @@
+"""Inventory of OVHcloud Public Cloud via its API: servers, storages, traffic, IPv4 addresses and managed PostgreSQL, with their prices."""
+
 from functools import cache
 from os import environ, getenv
 from typing import List, Optional

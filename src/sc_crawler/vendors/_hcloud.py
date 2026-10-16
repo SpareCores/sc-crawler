@@ -1,3 +1,5 @@
+"""Inventory of Hetzner Cloud via its API and manual data entry: servers, storages, traffic and IPv4 addresses, with their prices."""
+
 import os
 from datetime import UTC, datetime
 from functools import cache

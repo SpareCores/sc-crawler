@@ -1,3 +1,5 @@
+"""Inventory of Alibaba Cloud via its APIs: servers, storages, traffic and IPv4 addresses, with their prices."""
+
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta

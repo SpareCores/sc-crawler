@@ -1,3 +1,5 @@
+"""Inventory of Microsoft Azure via its APIs: servers, storages, traffic, IPv4 addresses and managed PostgreSQL (Flexible Server), with their prices."""
+
 from collections import defaultdict
 from datetime import UTC, date, datetime
 from functools import cache

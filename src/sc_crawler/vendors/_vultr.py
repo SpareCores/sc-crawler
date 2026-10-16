@@ -1,3 +1,5 @@
+"""Inventory of Vultr via its API: servers, storages, traffic, IPv4 addresses and managed PostgreSQL, with their prices."""
+
 from os import environ
 
 from cachier import cachier
