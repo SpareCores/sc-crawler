@@ -58,16 +58,22 @@ class BenchmarkEntry(BaseModel):
 
 
 class MeasuredSource(Json):
+    """Benchmark score measured directly by the Inspector."""
+
     kind: Literal["measured"] = "measured"
 
 
 class ExtrapolatedSource(Json):
+    """Benchmark score derived from the server's own measurements of other benchmarks."""
+
     kind: Literal["extrapolated"] = "extrapolated"
     derived_from: list[str]
     note: str | None = None
 
 
 class CompoundSource(Json):
+    """Benchmark score aggregated from the scores of several component benchmarks."""
+
     kind: Literal["compound"] = "compound"
     aggregation: BenchmarkComponentAggregationMethod
     """How component benchmark scores are combined into one composite score."""

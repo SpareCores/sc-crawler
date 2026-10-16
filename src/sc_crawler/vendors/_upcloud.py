@@ -887,6 +887,11 @@ def inventory_servers(vendor):
 
 
 def inventory_server_prices(vendor):
+    """List all on-demand server prices in all zones from the UpCloud price list.
+
+    GPU plans are listed only in the zones where they are available. Servers
+    are billed hourly up to a monthly cap of 672 hours, described as tiered
+    prices."""
     items = []
     prices = _get_prices()
     for zone_prices in prices["prices"]["zone"]:
@@ -929,6 +934,9 @@ def inventory_server_prices(vendor):
 
 
 def inventory_server_prices_spot(vendor):
+    """List all spot server prices in all zones from the UpCloud price list.
+
+    GPU plans are listed only in the zones where they are available."""
     items = []
     prices = _get_prices()
     for zone_prices in prices["prices"]["zone"]:
@@ -963,6 +971,7 @@ def inventory_server_prices_spot(vendor):
 
 
 def inventory_storages(vendor):
+    """Block storage tiers collected manually."""
     items = []
     for storage in UPCLOUD_STORAGES:
         items.append(
@@ -982,6 +991,10 @@ def inventory_storages(vendor):
 
 
 def inventory_storage_prices(vendor):
+    """List block storage prices in all zones from the UpCloud price list.
+
+    UpCloud charges storage per hour, converted to monthly prices as at other
+    vendors."""
     items = []
     prices = _get_prices()
     for zone_prices in prices["prices"]["zone"]:
@@ -1002,6 +1015,9 @@ def inventory_storage_prices(vendor):
 
 
 def inventory_traffic_prices(vendor):
+    """List outbound traffic prices in all zones from the UpCloud price list.
+
+    Inbound traffic is free."""
     items = []
     prices = _get_prices()
     for zone_prices in prices["prices"]["zone"]:
@@ -1027,6 +1043,7 @@ def inventory_traffic_prices(vendor):
 
 
 def inventory_ipv4_prices(vendor):
+    """List IPv4 address prices in all zones from the UpCloud price list."""
     items = []
     prices = _get_prices()
     for zone_prices in prices["prices"]["zone"]:

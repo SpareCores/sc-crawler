@@ -447,6 +447,9 @@ def inventory_servers(vendor):
 
 
 def inventory_server_prices(vendor):
+    """List all server prices in all regions via API call.
+
+    Hetzner Cloud charges hourly up to a monthly cap, described as tiered prices."""
     regions = scmodels_to_dict(vendor.regions, keys=["name", "aliases"])
     now = datetime.now(UTC)
     items = []
@@ -493,7 +496,7 @@ def inventory_server_prices(vendor):
 
 
 def inventory_server_prices_spot(vendor):
-    """There are no spot instaces at Hetzner."""
+    """There are no spot instances at Hetzner."""
     return []
 
 
