@@ -244,14 +244,21 @@ class Linker:
 
 def code_links(html: str) -> str:
     """Turn griffe2md's <code> wrapped expressions into Markdown, keeping the links."""
-    parts = re.split(r"(\[[^\]]*\]\([^)]*\))", html)
+    parts = re.split(r"(\[[^\[\]]*\]\([^)]*\))", html)
     out = []
     for part in parts:
-        link = re.match(r"\[([^\]]*)\]\(([^)]*)\)", part)
+        link = re.match(r"\[([^\[\]]*)\]\(([^)]*)\)", part)
         if link:
             out.append(f"[`{link.group(1)}`]({link.group(2)})")
-        elif part:
-            out.append(f"`{part}`")
+            continue
+        # the separators as plain text, as Markdown drops the spaces around
+        # inline code (` | ` becomes |), and the docs site shows types
+        # without code boxes
+        for piece in re.split(r"(\s*[|,]\s*)", part):
+            if re.fullmatch(r"\s*[|,]\s*", piece):
+                out.append(piece)
+            elif piece:
+                out.append(f"`{piece}`")
     return "".join(out)
 
 
@@ -261,7 +268,9 @@ def render_reference(markdown: str, page: str, linker: Linker) -> str:
         url = linker.resolve(target, page)
         return f"[{text}]({url})" if url else text
 
-    markdown = re.sub(r"\[([^\]]*)\]\(#([\w.]+)\)", link, markdown)
+    # no brackets in the link text: the subscript bracket right before a link,
+    # e.g. in List[[str](#str)], is not part of it
+    markdown = re.sub(r"\[([^\[\]]*)\]\(#([\w.]+)\)", link, markdown)
     # links inside <code> lost their target above: wrap the leftover text in backticks too
     return re.sub(
         r"<code>(.*?)</code>", lambda match: code_links(match.group(1)), markdown
