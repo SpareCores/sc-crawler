@@ -127,17 +127,44 @@ def _get_server_framework_run_ids(server: "Server", framework: str) -> List[str]
         return []
 
 
+def _server_variant_basepath(server: "Server", variant: int | None) -> str | PathLike:
+    """Return the base path for a server's hardware variant."""
+    base = _server_path(server)
+    return base if variant is None else path.join(base, str(variant))
+
+
+def _server_variant_framework_basepath(
+    server: "Server", variant: int | None, framework: str
+) -> str | PathLike:
+    """Return the base path for a server's hardware variant and framework."""
+    return path.join(_server_variant_basepath(server, variant), framework)
+
+
+def _server_variant_framework_path(
+    server: "Server",
+    variant: int | None,
+    framework: str,
+    relpath: str | list[str] | None = None,
+) -> str | PathLike:
+    """Return the path for a server's hardware variant and framework with an optional relative path."""
+    relpath_list = [relpath] if isinstance(relpath, str) else (relpath or [])
+    return path.join(
+        _server_variant_framework_basepath(server, variant, framework), *relpath_list
+    )
+
+
 def _server_framework_path(
     server: "Server", framework: str, relpath: str | list[str] | None = None
 ) -> str | PathLike:
-    # Hardware-variant layout: external readers default to variant 0.
-    path_parts = (
-        [_server_path(server), "0", framework, *relpath]
-        if isinstance(relpath, list)
-        else [_server_path(server), "0", framework, relpath]
-    )
-    path_parts = [path_part for path_part in path_parts if path_part is not None]
-    return path.join(*path_parts)
+    """Return the path for a server's framework with an optional relative path.
+
+    Hardware-variant layout: default to variant 0 with a fallback to variantless path.
+    """
+    # TODO drop the fallback after sc-inspector-data migrated to the variant layout
+    variant_path = _server_variant_framework_path(server, 0, framework, relpath)
+    if path.exists(variant_path):
+        return variant_path
+    return _server_variant_framework_path(server, None, framework, relpath)
 
 
 def _database_framework_path(
