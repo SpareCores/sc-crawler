@@ -1,3 +1,5 @@
+"""Helpers to load the hardware discovery and benchmarking data from the sc-inspector-data repository."""
+
 import csv
 import json
 import xml.etree.ElementTree as xmltree

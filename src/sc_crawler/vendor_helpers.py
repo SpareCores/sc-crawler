@@ -1,3 +1,5 @@
+"""Helpers shared by the vendor modules of [sc_crawler.vendors][], e.g. fetching the servers of all regions in parallel."""
+
 from concurrent.futures import ThreadPoolExecutor
 from itertools import chain, repeat
 from typing import Callable, Collection, List, Literal, Mapping, Optional

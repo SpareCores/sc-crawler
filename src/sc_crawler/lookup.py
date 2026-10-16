@@ -1,3 +1,5 @@
+"""Static lookup data: countries, compliance frameworks and benchmark definitions."""
+
 from re import sub
 from typing import List
 

@@ -1,3 +1,5 @@
+"""Utility functions, e.g. for hashing, database engines, and looking up tables and rows."""
+
 from collections import defaultdict
 from enum import Enum
 from hashlib import sha1
@@ -43,6 +45,8 @@ def jsoned_hash(*args, **kwargs):
 
 
 class HashLevels(Enum):
+    """Granularity of [sc_crawler.utils.hash_database][]: one hash for the database, or one per table or row."""
+
     DATABASE = "database"
     TABLE = "table"
     ROW = "row"

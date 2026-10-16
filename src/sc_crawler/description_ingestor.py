@@ -1,3 +1,5 @@
+"""Load the LLM-generated descriptions of the servers from the sc-navigator-descriptions repository."""
+
 import json
 from atexit import register
 from functools import cache

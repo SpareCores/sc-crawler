@@ -1,3 +1,5 @@
+"""Rules for which servers and managed databases the Inspector runs its tasks on."""
+
 from typing import TYPE_CHECKING, List
 
 from .table_bases import DatabaseBase
