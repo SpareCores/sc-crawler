@@ -1274,6 +1274,11 @@ def inventory_servers(vendor) -> list[dict]:
                 "server_id": server_id,
                 "name": server_id,
                 "api_reference": server_id,
+                # Pulumi Instance requires flavor.flavor_id (region-specific UUID);
+                # cannot store one value on Server. Resolve via _get_flavors at
+                # provision time using api_reference (flavor name).
+                # https://www.pulumi.com/registry/packages/ovh/api-docs/cloudproject/instance/
+                "api_reference_object": None,
                 "display_name": name,
                 "description": description,
                 "family": family,
