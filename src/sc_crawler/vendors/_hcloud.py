@@ -237,6 +237,18 @@ def _active_regions(vendor):
     return [region for region in vendor.regions if region.status == Status.ACTIVE]
 
 
+# Former region_ids from /v1/datacenters (numeric). Location API ids were
+# renumbered, so keep only this historical mapping in aliases.
+_LEGACY_DATACENTER_REGION_IDS = {
+    "nbg1": "2",
+    "hel1": "3",
+    "fsn1": "4",
+    "ash": "5",
+    "hil": "6",
+    "sin": "7",
+}
+
+
 # https://docs.hetzner.cloud/reference/cloud#tag/server-types/list_server_types
 # https://docs.hetzner.cloud/changelog#2025-09-24-per-location-server-types
 def _hcloud_location_status(location, now: datetime) -> Status:
@@ -285,7 +297,8 @@ def inventory_regions(vendor):
     the names are stable and are also used to reference locations in
     the server type prices, and can be passed instead of the `id` in
     most `hcloud` API endpoints via the `id_or_name` method.
-    The numeric location id is kept in `aliases`.
+    Former datacenter region ids are kept in `aliases` via
+    `_LEGACY_DATACENTER_REGION_IDS` (not the current location API ids).
 
     All regions are powered by green energy as per
     <https://www.hetzner.com/unternehmen/umweltschutz/>.
@@ -300,6 +313,7 @@ def inventory_regions(vendor):
                 if len(maybe_state) == 2 and maybe_state.isalpha():
                     city = city_part
                     state = maybe_state
+            legacy_id = _LEGACY_DATACENTER_REGION_IDS.get(location.name)
             items.append(
                 {
                     "vendor_id": vendor.vendor_id,
@@ -307,8 +321,7 @@ def inventory_regions(vendor):
                     "name": location.name,
                     "api_reference": location.name,
                     "display_name": f"{city} ({location.country})",
-                    # numeric location id, e.g. used in `server_types[].locations[].id`
-                    "aliases": [str(location.id)],
+                    "aliases": [legacy_id] if legacy_id else [],
                     "country_id": location.country,
                     "state": state,
                     "city": city,
