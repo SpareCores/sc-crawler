@@ -182,9 +182,9 @@ _BENCHMARK_LLM_SPEED_NOTE = (
 
 
 def _stress_ng_benchmark(method: str, subcategory: str, description: str) -> Benchmark:
-    measurement = sub(r"\W+", "_", method)
+    benchmark_id = _STRESS_NG_IDS[method]
     return Benchmark(
-        benchmark_id="stress_ng:" + measurement,
+        benchmark_id=benchmark_id,
         name="stress-ng " + method,
         category="stress-ng",
         subcategory=subcategory,
@@ -193,27 +193,13 @@ def _stress_ng_benchmark(method: str, subcategory: str, description: str) -> Ben
             + " The score is the total bogo operations per second (in real time) based on wall clock run time."
         ),
         framework="stress_ng",
-        measurement=measurement,
+        measurement=benchmark_id.removeprefix("stress_ng:"),
         config_fields={"cores": "Single-Core or Multi-Core stress tests."},
         unit="Bogo operations per second (ops/s)",
     )
 
 
-def stress_ng_benchmark_id(method: str) -> str | None:
-    """Return the benchmark id for a warehoused stress-ng stressor."""
-    measurement = sub(r"\W+", "_", method)
-    benchmark_id = "stress_ng:" + measurement
-    if benchmark_id not in _STRESS_NG_BENCHMARK_IDS:
-        return None
-    return benchmark_id
-
-
 _STRESS_NG_METHODS: list[tuple[str, str, str]] = [
-    (
-        "cpu",
-        "CPU integer",
-        "Start N workers exercising the CPU by sequentially working through all the different CPU stress methods. Instead of exercising all the CPU stress methods, one can specify a specific CPU stress method with the --cpu-method option.",
-    ),
     (
         "branch",
         "CPU integer",
@@ -237,7 +223,7 @@ _STRESS_NG_METHODS: list[tuple[str, str, str]] = [
     (
         "hash",
         "CPU integer",
-        "Start N workers that exercise various hashing functions. Random strings from 1 to 128 bytes are hashed and the hashing rate and chi squared is calculated from the number of hashes performed over a period of time. The chi squared value is the goodnessof-fit measure, it is the actual distribution of items in hash buckets versus the expected distribution of items. Typically a chi squared value close to 1.0 indicates a good hash distribution.",
+        "Start N workers that exercise various hashing functions. Random strings from 1 to 128 bytes are hashed and the hashing rate and chi squared is calculated from the number of hashes performed over a period of time. The chi squared value is the goodness-of-fit measure, it is the actual distribution of items in hash buckets versus the expected distribution of items. Typically a chi squared value close to 1.0 indicates a good hash distribution.",
     ),
     (
         "rotate",
@@ -277,7 +263,7 @@ _STRESS_NG_METHODS: list[tuple[str, str, str]] = [
     (
         "fma",
         "CPU float/SIMD",
-        "Start N workers that exercise single and double precision floating point multiplication and add operations on arrays of 512 floating point values. More modern processors (Intel Haswell, AMD Bulldozer and Piledriver) and modern C compilers these will be performed by fused-multiply-add (fma3) opcodes. Operations used are:.",
+        "Start N workers that exercise single and double precision floating point multiplication and add operations on arrays of 512 floating point values. More modern processors (Intel Haswell, AMD Bulldozer and Piledriver) and modern C compilers these will be performed by fused-multiply-add (fma3) opcodes.",
     ),
     (
         "fp",
@@ -312,7 +298,7 @@ _STRESS_NG_METHODS: list[tuple[str, str, str]] = [
     (
         "vecfp",
         "CPU float/SIMD",
-        "Start N workers that exericise floating point (single and double precision) addition, multiplication, division and negation on vectors of 128, 64, 32, 16 and 8 floating point values. The -v option will show the approximate throughput in millions of floating pointer operations per second for each operation. For x86, the gcc/clang target clones attribute has been used to produced vector optimizations for a range of mmx, sse, avx and processor features.",
+        "Start N workers that exercise floating point (single and double precision) addition, multiplication, division and negation on vectors of 128, 64, 32, 16 and 8 floating point values. The -v option will show the approximate throughput in millions of floating pointer operations per second for each operation. For x86, the gcc/clang target clones attribute has been used to produced vector optimizations for a range of mmx, sse, avx and processor features.",
     ),
     (
         "vecshuf",
@@ -332,7 +318,7 @@ _STRESS_NG_METHODS: list[tuple[str, str, str]] = [
     (
         "mpfr",
         "CPU float/SIMD",
-        "Start N workers that exercise multi-precision floating point operations using the GNU Multi-Precision Floating Point Reliable library (mpfr). Operations computed are as follows:.",
+        "Start N workers that exercise multi-precision floating point operations using the GNU Multi-Precision Floating Point Reliable library (mpfr).",
     ),
     (
         "expmath",
@@ -397,7 +383,7 @@ _STRESS_NG_METHODS: list[tuple[str, str, str]] = [
     (
         "l1cache",
         "Memory",
-        "Start N workers that exercise the CPU level 1 cache with reads and writes. A cache aligned buffer that is twice the level 1 cache size is read and then written in level 1 cache set sized steps over each level 1 cache set. This is designed to exercise cache block evictions. The bogo-op count measures the number of million cache lines touched. Where possible, the level 1 cache geometry is determined from the kernel, however, this is not possible on some architectures or kernels, so one may need to specify these manually. One can specify 3 out of the 4 cache geometric parameters, these are as follows:.",
+        "Start N workers that exercise the CPU level 1 cache with reads and writes. A cache aligned buffer that is twice the level 1 cache size is read and then written in level 1 cache set sized steps over each level 1 cache set. This is designed to exercise cache block evictions. The bogo-op count measures the number of million cache lines touched. Where possible, the level 1 cache geometry is determined from the kernel, however, this is not possible on some architectures or kernels, so one may need to specify these manually.",
     ),
     (
         "memcpy",
@@ -482,7 +468,7 @@ _STRESS_NG_METHODS: list[tuple[str, str, str]] = [
     (
         "malloc",
         "Algorithms",
-        "Start N workers continuously calling malloc, calloc, realloc, posix_memalign, aligned_alloc, memalign and free. By default, up to 65536 allocations can be active at any point, but this can be altered with the --malloc-max option. Allocation, reallocation and freeing are chosen at random; 50% of the time memory is allocation (via one of malloc, calloc or realloc, posix_memalign, aligned_alloc, memalign) and 50% of the time allocations are free'd. Allocation sizes are also random, with the maximum allocation size controlled by the.",
+        "Start N workers continuously calling malloc, calloc, realloc, posix_memalign, aligned_alloc, memalign and free. By default, up to 65536 allocations can be active at any point, but this can be altered with the --malloc-max option. Allocation, reallocation and freeing are chosen at random; 50% of the time memory is allocation (via one of malloc, calloc or realloc, posix_memalign, aligned_alloc, memalign) and 50% of the time allocations are free'd. Allocation sizes are also random, with the maximum allocation size controlled by the --malloc-bytes option.",
     ),
     (
         "mcontend",
@@ -502,7 +488,7 @@ _STRESS_NG_METHODS: list[tuple[str, str, str]] = [
     (
         "fibsearch",
         "Algorithms",
-        "Start N workers that use a search a sorted array of 32 bit integers using a Fibonacci search. A Fibonacci seaarch is similar to a bsearch except that it uses the Fibonacci series to divide the search into unequal sized spaces. It avoids the costly division operator found in bsearches and examines closer elements on each search step so there is a slight compute and cache advantage over bsearch. By default, there are 65536 elements in the array. This is a useful method to exercise random access of memory and processor cache.",
+        "Start N workers that use a search a sorted array of 32 bit integers using a Fibonacci search. A Fibonacci search is similar to a bsearch except that it uses the Fibonacci series to divide the search into unequal sized spaces. It avoids the costly division operator found in bsearches and examines closer elements on each search step so there is a slight compute and cache advantage over bsearch. By default, there are 65536 elements in the array. This is a useful method to exercise random access of memory and processor cache.",
     ),
     (
         "context",
@@ -552,7 +538,7 @@ _STRESS_NG_METHODS: list[tuple[str, str, str]] = [
     (
         "null",
         "Hypervisor",
-        "Start N workers that exercise /dev/null with write, lseek, ioctl, fcntl, fallocate and fdatasync calls. For just /dev/null write benchmarking use the.",
+        "Start N workers that exercise /dev/null with write, lseek, ioctl, fcntl, fallocate and fdatasync calls. For just /dev/null write benchmarking use the --null-write option.",
     ),
     (
         "zero",
@@ -577,7 +563,7 @@ _STRESS_NG_METHODS: list[tuple[str, str, str]] = [
     (
         "hrtimers",
         "Hypervisor",
-        "Start N workers that exercise high resolution times at a high frequency. Each stressor starts 32 processes that run with random timer intervals of 0.499999 nanoseconds. Running this stressor with appropriate privilege will run these with the SCHED_RR policy.",
+        "Start N workers that exercise high resolution times at a high frequency. Each stressor starts 32 processes that run with random timer intervals of 0..499999 nanoseconds. Running this stressor with appropriate privilege will run these with the SCHED_RR policy.",
     ),
     (
         "clock",
@@ -627,7 +613,7 @@ _STRESS_NG_METHODS: list[tuple[str, str, str]] = [
     (
         "timermix",
         "Hypervisor",
-        "Start N workers creating timer and itimer signals at a high rate, this can create a many thousands of timer clock interrupts per second. Each signal that gets handled is counted as a bogo-operation. For timers, the following clocks types (where available) are used: CLOCK_REALTIME, CLOCK_MONOTONIC, CLOCK_PROCESS_CPUTIME_ID, CLOCK_THREAD_CPUTIME_ID, CLOCK_BOOTTIME and CLOCK_TAI. For itimers, the following interval timer types are used: ITIMER_REAL, ITIMER_VIRTUAL and ITIMER_PROF. Some systems may support none or a subset of these timer or itimer types. The freqeuency of the itimers is auto-adjusted to try and maximize the timer interrupt rate.",
+        "Start N workers creating timer and itimer signals at a high rate, this can create a many thousands of timer clock interrupts per second. Each signal that gets handled is counted as a bogo-operation. For timers, the following clocks types (where available) are used: CLOCK_REALTIME, CLOCK_MONOTONIC, CLOCK_PROCESS_CPUTIME_ID, CLOCK_THREAD_CPUTIME_ID, CLOCK_BOOTTIME and CLOCK_TAI. For itimers, the following interval timer types are used: ITIMER_REAL, ITIMER_VIRTUAL and ITIMER_PROF. Some systems may support none or a subset of these timer or itimer types. The frequency of the itimers is auto-adjusted to try and maximize the timer interrupt rate.",
     ),
     (
         "mtx",
@@ -636,9 +622,16 @@ _STRESS_NG_METHODS: list[tuple[str, str, str]] = [
     ),
 ]
 
-_STRESS_NG_BENCHMARK_IDS = {
-    "stress_ng:" + sub(r"\W+", "_", method) for method, _, _ in _STRESS_NG_METHODS
+
+_STRESS_NG_IDS = {
+    method: "stress_ng:" + sub(r"\W+", "_", method)
+    for method, _, _ in _STRESS_NG_METHODS
 }
+
+
+def stress_ng_benchmark_id(method: str) -> str | None:
+    """Return the benchmark id for a warehoused stress-ng stressor."""
+    return _STRESS_NG_IDS.get(method)
 
 
 def _geekbenchmark(name: str, description: str, note: str | None = None):

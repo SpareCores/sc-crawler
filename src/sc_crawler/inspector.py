@@ -944,30 +944,48 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
         from .lookup import stress_ng_benchmark_id
 
         stressors = _server_framework_stdout_from_json(server, framework)["stressors"]
+        benchmark_metafields = _benchmark_metafields(
+            server, framework=framework, benchmark_id=framework
+        )
         for method, by_cores in stressors.items():
-            benchmark_id = stress_ng_benchmark_id(method)
-            if benchmark_id is None:
-                continue
-            for cores, result in by_cores.items():
-                if result is None:
+            try:
+                benchmark_id = stress_ng_benchmark_id(method)
+                if benchmark_id is None:
+                    _log_cannot_load_benchmarks(
+                        server, framework, f"unknown stressor {method!r}"
+                    )
                     continue
-                benchmarks.append(
-                    {
-                        **_benchmark_metafields(
-                            server,
-                            framework=framework,
-                            benchmark_id=benchmark_id,
-                        ),
+                for cores, result in by_cores.items():
+                    if result is None:
+                        continue
+                    score = float(result["bogo_ops_per_sec"])
+                    if score <= 0:
+                        continue
+                    cores_count = int(cores)
+                    row = {
+                        **benchmark_metafields,
+                        "benchmark_id": benchmark_id,
                         "config": {
                             "cores": (
                                 Parallelism.SINGLE
-                                if int(cores) == 1
+                                if cores_count == 1
                                 else Parallelism.MULTI
                             )
                         },
-                        "score": float(result["bogo_ops_per_sec"]),
+                        "score": score,
                     }
-                )
+                    benchmarks.append(row)
+                    # 1-vCPU servers only have a "1" key, also emit MULTI so
+                    # cores=multi filters still include them
+                    if cores_count == 1 and server.vcpus == 1:
+                        benchmarks.append(
+                            {
+                                **row,
+                                "config": {"cores": Parallelism.MULTI},
+                            }
+                        )
+            except Exception as e:
+                _log_cannot_load_benchmarks(server, f"{framework}:{method}", e, True)
     except Exception as e:
         _log_cannot_load_benchmarks(server, framework, e, True)
 
