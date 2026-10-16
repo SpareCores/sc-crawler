@@ -509,12 +509,14 @@ def main(output: Path) -> None:
             obj = loader.modules_collection.get_member(path)
             kind = symbol_kind(obj)
             # the class of members in its own element, to be hidden in the docs
-            # site's table of contents (as in mkdocs-material)
+            # site's table of contents (as in mkdocs-material); a code element of
+            # its own, as Docusaurus renders code that isn't plain text (e.g. with
+            # a span inside) as a code block
             parent, _, name = text.rpartition(".")
-            parent = f'<span class="doc-parent">{parent}.</span>' if parent else ""
+            parent = f'<code class="doc-parent">{parent}.</code>' if parent else ""
             return (
                 f'{level} <span class="doc-symbol doc-symbol-{kind}">{kind}</span> '
-                f'<code class="doc-name">{parent}{name}</code> {{#{anchor}}}'
+                f'{parent}<code class="doc-name">{name}</code> {{#{anchor}}}'
                 + source_link(obj, ref)
             )
 
