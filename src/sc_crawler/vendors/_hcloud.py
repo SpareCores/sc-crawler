@@ -193,19 +193,24 @@ def _server_cpu(server):
 
     - `cost_optimized`: CX (x86, "Intel®/AMD") and CAX (Arm64, "Ampere®")
     - `regular_purpose`: CPX (shared, AMD)
-    - `general_purpose`: CCX (dedicated, AMD)
+    - `general_purpose`: CCX Gen1 (dedicated, Intel) and later CCX (dedicated, AMD)
 
     Sources (manufacturer only, no CPU family/model listed):
 
     - <https://www.hetzner.com/cloud/cost-optimized/>
     - <https://www.hetzner.com/cloud/regular-performance/>
     - <https://www.hetzner.com/cloud/general-purpose/>
+    - <https://docs.hetzner.com/cloud/servers/deprecated-plans/>
+    - <https://docs.hetzner.com/cloud/servers/faq/>
     """
     name = server.name.upper()
     arch = server.architecture
     if server.category == "cost_optimized":
         if arch == "arm":
             return ("Ampere", "Ampere Altra", None)
+        # CX can be Intel or AMD. Hetzner picks the CPU by availability
+        # (it can change on rescale); the caller cannot choose. Server
+        # variants are not implemented yet.
         if name in [
             "CX11",
             "CX21",
@@ -218,13 +223,15 @@ def _server_cpu(server):
             "CX52",
         ]:
             return ("Intel", "Xeon Gold", None)
-        # newer generations could be either Intel or AMD
         return (None, None, None)
     if server.category == "regular_purpose" and arch == "x86":
         if name in ["CPX11", "CPX21", "CPX31", "CPX41", "CPX51"]:
             return ("AMD", "EPYC", None)
         return ("AMD", None, None)
     if server.category == "general_purpose" and arch == "x86":
+        # CCX11–CCX51 are deprecated Intel dedicated plans.
+        if name in ["CCX11", "CCX21", "CCX31", "CCX41", "CCX51"]:
+            return ("Intel", None, None)
         return ("AMD", None, None)
     raise ValueError(
         f"Unknown Hetzner Cloud server type: {server.name} "
