@@ -10,6 +10,7 @@ from sc_crawler.utils import _GIB_TO_GB
 from sc_crawler.vendors._gcp import (
     STORAGE_ALLOWLIST,
     STORAGE_PERFORMANCE,
+    _compatible_storage_ids,
     _gcp_accelerator_type,
     _local_ssd_partition_gib,
     _search_servers,
@@ -21,7 +22,6 @@ from sc_crawler.vendors._gcp import (
     inventory_server_prices_spot,
     inventory_storage_prices,
     inventory_storages,
-    _compatible_storage_ids,
 )
 
 # us-central1 rates, rounded to the catalog's units + nanos pairs
