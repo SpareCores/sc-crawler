@@ -130,10 +130,11 @@ def _get_server_framework_run_ids(server: "Server", framework: str) -> List[str]
 def _server_framework_path(
     server: "Server", framework: str, relpath: str | list[str] | None = None
 ) -> str | PathLike:
+    # Hardware-variant layout: external readers default to variant 0.
     path_parts = (
-        [_server_path(server), framework, *relpath]
+        [_server_path(server), "0", framework, *relpath]
         if isinstance(relpath, list)
-        else [_server_path(server), framework, relpath]
+        else [_server_path(server), "0", framework, relpath]
     )
     path_parts = [path_part for path_part in path_parts if path_part is not None]
     return path.join(*path_parts)
