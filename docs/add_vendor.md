@@ -140,6 +140,7 @@ def inventory_servers(vendor):
     #             "server_id": ,
     #             "name": ,
     #             "api_reference": ,
+    #             "api_reference_object": None,
     #             "display_name": ,
     #             "description": None,
     #             "family": None,

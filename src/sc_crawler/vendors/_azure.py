@@ -975,6 +975,10 @@ def _standardize_server(server: dict, vendor) -> dict:
         "name": server["name"].removeprefix("Standard_"),
         "description": description,
         "api_reference": server["name"],
+        # https://www.pulumi.com/registry/packages/azure-native/api-docs/compute/virtualmachine/
+        "api_reference_object": {
+            "hardware_profile": {"vm_size": server["name"]},
+        },
         "display_name": server["name"].removeprefix("Standard_"),
         "family": family,
         "vcpus": int(capability("vCPUsAvailable")),

@@ -1533,6 +1533,8 @@ def inventory_servers(vendor):
                 "server_id": server_id,
                 "name": server_id,
                 "api_reference": server_id,
+                # https://www.pulumi.com/registry/packages/alicloud/api-docs/ecs/instance/
+                "api_reference_object": {"instance_type": server_id},
                 "display_name": server_id,
                 "description": description,
                 "family": family,

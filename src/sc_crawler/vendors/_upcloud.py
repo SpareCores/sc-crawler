@@ -558,7 +558,7 @@ _UPCLOUD_GPU_MEMORY_MIB = {
     "L40S": 48 * _MIB_PER_GIB,
     "H100": 80 * _MIB_PER_GIB,
     "B200": 192 * _MIB_PER_GIB,
-    "RTX Pro 6000": 96 * _MIB_PER_GIB,
+    "RTX PRO 6000": 96 * _MIB_PER_GIB,
 }
 
 _UPCLOUD_GPU_FAMILY = {
@@ -838,6 +838,8 @@ def inventory_servers(vendor):
                     "server_id": server["name"],
                     "name": server["name"],
                     "api_reference": server["name"],
+                    # https://www.pulumi.com/registry/packages/upcloud/api-docs/server/
+                    "api_reference_object": {"plan": server["name"]},
                     "display_name": server["name"],
                     "description": server_data["description"],
                     "family": server_data["family"],
