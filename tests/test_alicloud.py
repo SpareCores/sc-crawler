@@ -1,5 +1,6 @@
 from sc_crawler.inspector import _standardize_gpu_count
 
+
 def test_standardize_gpu_count_from_alicloud_gpuspec():
     """AliCloud encodes fractional vGPUs in GPUSpec, e.g. "NVIDIA P4*1/4"."""
     assert _standardize_gpu_count("NVIDIA P4*1/4", 1) == 0.25

@@ -17,7 +17,7 @@ from sc_crawler.vendors._upcloud import (
     inventory_database_storage_prices,
     inventory_database_storages,
     inventory_databases,
-    inventory_servers
+    inventory_servers,
 )
 
 

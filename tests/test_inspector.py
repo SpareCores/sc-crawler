@@ -39,7 +39,6 @@ def _patch_missing_inspector_lookups(stack, **overrides):
     )
 
 
-
 def test_standardize_gpu_count_from_aws_gpu_memory():
     """AWS g6f / gr6f report no GPU count, only the L4 slice memory."""
     assert _standardize_gpu_count("L4", 0, 5722) == pytest.approx(0.25)
