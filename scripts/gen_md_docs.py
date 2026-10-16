@@ -8,7 +8,9 @@ pages in docs/:
 - references to the standard library and other packages link out using their
   Sphinx inventories (objects.inv), others are rendered as plain code,
 - mkdocs-only syntax is converted (autorefs, `<details markdown="1">`, the
-  asciinema player, `!!!` labels).
+  asciinema player, `!!!` labels),
+- each object links to its lines on GitHub instead of showing its source (as
+  mkdocstrings' show_source), at the commit the docs are built from.
 
 The index page is MDX (it embeds the AsciinemaPlayer component of the docs
 site), all other pages are plain Markdown, as docstrings might include
@@ -33,6 +35,7 @@ import json
 import logging
 import re
 import shutil
+import subprocess
 import sys
 import urllib.request
 import zlib
@@ -335,6 +338,48 @@ def symbol_kind(obj: Object | Alias) -> str:
     return "mod"
 
 
+def source_ref() -> str:
+    """Git ref for the links to the source code: the commit the docs are built
+    from, so that the line numbers match, once it is on GitHub, else the branch."""
+    try:
+        head = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        subprocess.run(
+            ["git", "merge-base", "--is-ancestor", head, f"origin/{BRANCH}"],
+            cwd=ROOT,
+            capture_output=True,
+            check=True,
+        )
+        return head
+    except (OSError, subprocess.CalledProcessError):
+        return BRANCH
+
+
+def source_link(obj: Object | Alias, ref: str) -> str:
+    """Link to the lines of an object on GitHub, below its heading, as
+    mkdocstrings' show_source but without the code itself."""
+    if isinstance(obj, Alias):
+        obj = obj.final_target
+    if obj.lineno is None:
+        return ""
+    lines = f"L{obj.lineno}"
+    label = f"line {obj.lineno}"
+    if obj.endlineno and obj.endlineno != obj.lineno:
+        lines += f"-L{obj.endlineno}"
+        label = f"lines {obj.lineno}–{obj.endlineno}"
+    path = obj.relative_package_filepath.as_posix()
+    url = f"{REPO_URL}/blob/{ref}/src/{path}#{lines}"
+    return (
+        f'\n\n<p class="doc-source" data-pagefind-ignore>'
+        f'<a href="{url}">Source: {Path(path).name}, {label}</a></p>'
+    )
+
+
 def docstring(obj: Object | Alias | None) -> str:
     return obj.docstring.value.strip() if obj is not None and obj.docstring else ""
 
@@ -441,6 +486,9 @@ def main(output: Path) -> None:
     loader.resolve_aliases(external=False)
     write_schema(output / "schema", loader)
 
+    ref = source_ref()
+    print(f"  linking the source code at {ref}")
+
     # render all pages first to know which heading each object got
     pages: dict[str, tuple[Module, str]] = {}
     anchors: dict[str, tuple[str, str]] = {}
@@ -458,7 +506,8 @@ def main(output: Path) -> None:
             if path == module.path:
                 return f"{level} `{text}`"
             # kind label as in mkdocs-material, with the anchor kept without it
-            kind = symbol_kind(loader.modules_collection.get_member(path))
+            obj = loader.modules_collection.get_member(path)
+            kind = symbol_kind(obj)
             # the class of members in its own element, to be hidden in the docs
             # site's table of contents (as in mkdocs-material)
             parent, _, name = text.rpartition(".")
@@ -466,6 +515,7 @@ def main(output: Path) -> None:
             return (
                 f'{level} <span class="doc-symbol doc-symbol-{kind}">{kind}</span> '
                 f'<code class="doc-name">{parent}{name}</code> {{#{anchor}}}'
+                + source_link(obj, ref)
             )
 
         markdown = re.sub(r"^(#+) `([\w.]+)`$", shorten_headings, markdown, flags=re.M)
@@ -492,7 +542,7 @@ def main(output: Path) -> None:
                         if module.docstring
                         else module.path
                     ),
-                    "custom_edit_url": f"{REPO_URL}/blob/{BRANCH}/src/{source}",
+                    "custom_edit_url": f"{REPO_URL}/blob/{ref}/src/{source}",
                     "mdx": {"format": "md"},
                 }
             )
