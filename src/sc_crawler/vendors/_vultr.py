@@ -897,6 +897,8 @@ def inventory_servers(vendor):
             "server_id": server["id"],
             "name": server["id"],
             "api_reference": server["id"],
+            # https://www.pulumi.com/registry/packages/vultr/api-docs/instance/
+            "api_reference_object": {"plan": server["id"]},
             "display_name": server["id"],
             "description": description,
             "family": family,

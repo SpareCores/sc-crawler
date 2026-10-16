@@ -6,12 +6,14 @@ New feature(s):
 
 Fix(es):
 
-- Populate `Server.api_reference_object` for `Hetzner`
 - `Hetzner`: use `/v1/locations` instead of deprecated `/v1/datacenters`, with
   the location name as region id (former datacenter region ids kept in
   `aliases`).
 - `Hetzner`: mark deprecated CCX Gen1 plans (`CCX11`–`CCX51`) as Intel.
-- Standardize `RTX Pro 6000` naming and family (`Blackwell`), and set
+- Populate `Server.api_reference_object` with Pulumi/Terraform provisioning
+  args for `AWS`, `Azure`, `GCP`, `AliCloud`, `UpCloud`, `Vultr`, and `Hetzner`
+  (`OVH` left `NULL` — `flavor_id` is region-specific).
+- Standardize `RTX PRO 6000` naming and family (`Blackwell`), and set 
   `RTX 6000` family by memory (`Ada Lovelace` or `Turing`).
 - Set missing `accelerator_type` of spot-only `ACTIVE` `AWS` GPU servers.
 

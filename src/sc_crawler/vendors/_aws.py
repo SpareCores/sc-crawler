@@ -648,6 +648,8 @@ def _make_server_from_instance_type(instance_type, vendor) -> dict:
         "vendor_id": vendor.vendor_id,
         "name": it,
         "api_reference": it,
+        # https://www.pulumi.com/registry/packages/aws/api-docs/ec2/instance/
+        "api_reference_object": {"instance_type": it},
         "display_name": it,
         "description": _annotate_instance_type(it),
         "hypervisor": instance_type.get("Hypervisor", None),

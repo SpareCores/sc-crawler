@@ -47,6 +47,7 @@ def test_vultr_inventory_servers_status_from_locations():
         rows = inventory_servers(vendor)
     by_id = {row["server_id"]: row for row in rows}
     assert by_id["vc2-1c-1gb"]["status"] == Status.ACTIVE
+    assert by_id["vc2-1c-1gb"]["api_reference_object"] == {"plan": "vc2-1c-1gb"}
     assert by_id["vc2-1c-0.5gb-free"]["status"] == Status.INACTIVE
     assert by_id["vc2-24c-97gb"]["status"] == Status.INACTIVE
 

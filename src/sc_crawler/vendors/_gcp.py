@@ -524,7 +524,7 @@ _GCP_ACCELERATOR = {
     "nvidia-b200": ("B200", "Blackwell", 180 * _MIB_PER_GIB),
     "nvidia-gb200": ("GB200", "Blackwell", 186 * _MIB_PER_GIB),
     "nvidia-gb300": ("GB300", "Blackwell", 279 * _MIB_PER_GIB),
-    "nvidia-rtx-pro-6000": ("RTX Pro 6000", "Blackwell", 96 * _MIB_PER_GIB),
+    "nvidia-rtx-pro-6000": ("RTX PRO 6000", "Blackwell", 96 * _MIB_PER_GIB),
     # machineTypes.accelerators.guestAcceleratorType for TPU VMs.
     # Google writes "TPU7x" with no space, we store v7x to match v5e/v6e.
     # https://cloud.google.com/tpu/docs/v3
@@ -853,6 +853,8 @@ def _search_servers(zone_name: str) -> List[dict]:
                 "server_id": str(server.id),
                 "name": server.name,
                 "api_reference": server.name,
+                # https://www.pulumi.com/registry/packages/gcp/api-docs/compute/instance/
+                "api_reference_object": {"machine_type": server.name},
                 "display_name": server.name,
                 "description": server.description,
                 "family": server.name.split("-")[0],

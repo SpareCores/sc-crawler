@@ -20,6 +20,7 @@ from sc_crawler.tables import (
     Database,
     DatabasePrice,
     DatabaseStoragePrice,
+    Server,
     StoragePrice,
     Vendor,
     tables,
@@ -84,6 +85,11 @@ def test_database_columns_include_ha_strategy_after_ha():
 
 def test_database_columns_include_api_reference_object_after_api_reference():
     cols = Database.get_columns()["all"]
+    assert cols.index("api_reference_object") == cols.index("api_reference") + 1
+
+
+def test_server_columns_include_api_reference_object_after_api_reference():
+    cols = Server.get_columns()["all"]
     assert cols.index("api_reference_object") == cols.index("api_reference") + 1
 
 

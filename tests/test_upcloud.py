@@ -561,7 +561,7 @@ def test_upcloud_inventory_database_storage_prices_from_zone_list():
 
 def test_upcloud_parse_gpu_model_standardizes_rtx_pro_6000():
     gpu = _parse_gpu_model("NVIDIA RTX PRO 6000 Blackwell Server Edition", 2)
-    assert gpu["accelerator_model"] == "RTX Pro 6000"
+    assert gpu["accelerator_model"] == "RTX PRO 6000"
     assert gpu["accelerator_manufacturer"] == "NVIDIA"
     assert gpu["accelerator_memory_min"] == 96 * 1024
     assert gpu["accelerator_memory_total"] == 2 * 96 * 1024
