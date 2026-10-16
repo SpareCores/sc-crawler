@@ -1,3 +1,5 @@
+"""Inventory of Microsoft Azure via its APIs: servers, storages, traffic, IPv4 addresses and managed PostgreSQL (Flexible Server), with their prices."""
+
 from collections import defaultdict
 from datetime import UTC, date, datetime
 from functools import cache
@@ -975,6 +977,10 @@ def _standardize_server(server: dict, vendor) -> dict:
         "name": server["name"].removeprefix("Standard_"),
         "description": description,
         "api_reference": server["name"],
+        # https://www.pulumi.com/registry/packages/azure-native/api-docs/compute/virtualmachine/
+        "api_reference_object": {
+            "hardware_profile": {"vm_size": server["name"]},
+        },
         "display_name": server["name"].removeprefix("Standard_"),
         "family": family,
         "vcpus": int(capability("vCPUsAvailable")),

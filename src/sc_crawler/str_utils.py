@@ -1,3 +1,5 @@
+"""String helpers, e.g. for wrapping, pluralizing and converting to snake case."""
+
 from re import search, sub
 from typing import Union
 

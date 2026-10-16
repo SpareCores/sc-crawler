@@ -1,3 +1,5 @@
+"""Report errors to Sentry when the `SENTRY_DSN` environment variable is set."""
+
 from asyncio import CancelledError
 from contextlib import contextmanager
 from logging import ERROR

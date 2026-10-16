@@ -1,3 +1,5 @@
+"""Helpers to load the hardware discovery and benchmarking data from the sc-inspector-data repository."""
+
 import csv
 import json
 import xml.etree.ElementTree as xmltree
@@ -1261,7 +1263,7 @@ def _standardize_gpu_model(model, server=None):
     if model == "nvidia-h200-141gb":
         model = "H200"
     if model == "nvidia-rtx-pro-6000":
-        model = "RTX Pro 6000"
+        model = "RTX PRO 6000"
     if model == "nvidia-gb200":
         model = "GB200"
     if model == "nvidia-gb300":
@@ -1293,7 +1295,7 @@ def _standardize_gpu_model(model, server=None):
         "RTX PRO Server 6000",
         "RTX PRO 6000 Blackwell Server Edition",
     ]:
-        return "RTX Pro 6000"
+        return "RTX PRO 6000"
     if model == "T4g":
         return "T4G"
     # drop too specific parts
@@ -1308,6 +1310,10 @@ def _standardize_gpu_model(model, server=None):
     model = sub(r"(\*1)?/\d+$", "", model)
     # yes, sometimes it's written out that there's 1
     model = sub(r"\*1$", "", model)
+    # NVIDIA styles the brand as "RTX PRO" (all-caps PRO):
+    # https://www.nvidia.com/en-us/products/workstations/professional-desktop-gpus/
+    if model[:7].upper() == "RTX PRO":
+        model = "RTX PRO" + model[7:]
     return model
 
 
@@ -1364,7 +1370,7 @@ _NVIDIA_GPU_MODELS = {
     "P100",
     "P4",
     "K80",
-    "RTX Pro 6000",
+    "RTX PRO 6000",
 }
 
 

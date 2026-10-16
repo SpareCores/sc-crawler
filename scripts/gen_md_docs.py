@@ -8,7 +8,9 @@ pages in docs/:
 - references to the standard library and other packages link out using their
   Sphinx inventories (objects.inv), others are rendered as plain code,
 - mkdocs-only syntax is converted (autorefs, `<details markdown="1">`, the
-  asciinema player, `!!!` labels).
+  asciinema player, `!!!` labels),
+- each object links to its lines on GitHub instead of showing its source (as
+  mkdocstrings' show_source), at the commit the docs are built from.
 
 The index page is MDX (it embeds the AsciinemaPlayer component of the docs
 site), all other pages are plain Markdown, as docstrings might include
@@ -33,6 +35,7 @@ import json
 import logging
 import re
 import shutil
+import subprocess
 import sys
 import urllib.request
 import zlib
@@ -241,14 +244,21 @@ class Linker:
 
 def code_links(html: str) -> str:
     """Turn griffe2md's <code> wrapped expressions into Markdown, keeping the links."""
-    parts = re.split(r"(\[[^\]]*\]\([^)]*\))", html)
+    parts = re.split(r"(\[[^\[\]]*\]\([^)]*\))", html)
     out = []
     for part in parts:
-        link = re.match(r"\[([^\]]*)\]\(([^)]*)\)", part)
+        link = re.match(r"\[([^\[\]]*)\]\(([^)]*)\)", part)
         if link:
             out.append(f"[`{link.group(1)}`]({link.group(2)})")
-        elif part:
-            out.append(f"`{part}`")
+            continue
+        # the separators as plain text, as Markdown drops the spaces around
+        # inline code (` | ` becomes |), and the docs site shows types
+        # without code boxes
+        for piece in re.split(r"(\s*[|,]\s*)", part):
+            if re.fullmatch(r"\s*[|,]\s*", piece):
+                out.append(piece)
+            elif piece:
+                out.append(f"`{piece}`")
     return "".join(out)
 
 
@@ -258,7 +268,9 @@ def render_reference(markdown: str, page: str, linker: Linker) -> str:
         url = linker.resolve(target, page)
         return f"[{text}]({url})" if url else text
 
-    markdown = re.sub(r"\[([^\]]*)\]\(#([\w.]+)\)", link, markdown)
+    # no brackets in the link text: the subscript bracket right before a link,
+    # e.g. in List[[str](#str)], is not part of it
+    markdown = re.sub(r"\[([^\[\]]*)\]\(#([\w.]+)\)", link, markdown)
     # links inside <code> lost their target above: wrap the leftover text in backticks too
     return re.sub(
         r"<code>(.*?)</code>", lambda match: code_links(match.group(1)), markdown
@@ -333,6 +345,43 @@ def symbol_kind(obj: Object | Alias) -> str:
     if obj.is_attribute:
         return "attr"
     return "mod"
+
+
+def source_ref() -> str:
+    """Git ref for the links to the source code: the commit the docs are built
+    from, so that the line numbers match, once it is on GitHub, else the branch."""
+    try:
+        head = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        subprocess.run(
+            ["git", "merge-base", "--is-ancestor", head, f"origin/{BRANCH}"],
+            cwd=ROOT,
+            capture_output=True,
+            check=True,
+        )
+        return head
+    except (OSError, subprocess.CalledProcessError):
+        return BRANCH
+
+
+def source_location(obj: Object | Alias, ref: str) -> tuple[str, str] | None:
+    """The lines of an object on GitHub, as mkdocstrings' show_source but
+    without the code itself: their URL and label, e.g. lookup.py:61–63."""
+    if isinstance(obj, Alias):
+        obj = obj.final_target
+    if obj.lineno is None:
+        return None
+    path = obj.relative_package_filepath.as_posix()
+    lines, label = f"L{obj.lineno}", f"{Path(path).name}:{obj.lineno}"
+    if obj.endlineno and obj.endlineno != obj.lineno:
+        lines += f"-L{obj.endlineno}"
+        label += f"–{obj.endlineno}"
+    return f"{REPO_URL}/blob/{ref}/src/{path}#{lines}", label
 
 
 def docstring(obj: Object | Alias | None) -> str:
@@ -441,6 +490,9 @@ def main(output: Path) -> None:
     loader.resolve_aliases(external=False)
     write_schema(output / "schema", loader)
 
+    ref = source_ref()
+    print(f"  linking the source code at {ref}")
+
     # render all pages first to know which heading each object got
     pages: dict[str, tuple[Module, str]] = {}
     anchors: dict[str, tuple[str, str]] = {}
@@ -458,14 +510,28 @@ def main(output: Path) -> None:
             if path == module.path:
                 return f"{level} `{text}`"
             # kind label as in mkdocs-material, with the anchor kept without it
-            kind = symbol_kind(loader.modules_collection.get_member(path))
+            obj = loader.modules_collection.get_member(path)
+            kind = symbol_kind(obj)
             # the class of members in its own element, to be hidden in the docs
-            # site's table of contents (as in mkdocs-material)
+            # site's table of contents (as in mkdocs-material); a code element of
+            # its own, as Docusaurus renders code that isn't plain text (e.g. with
+            # a span inside) as a code block
             parent, _, name = text.rpartition(".")
-            parent = f'<span class="doc-parent">{parent}.</span>' if parent else ""
+            parent = f'<code class="doc-parent">{parent}.</code>' if parent else ""
+            # the source lines on the heading line, as a Markdown link, as the
+            # docs site's table of contents keeps the HTML of headings, but
+            # only the text of links
+            source = source_location(obj, ref)
+            link = ""
+            if source:
+                url, label = source
+                link = (
+                    f' <span class="doc-source" data-pagefind-ignore>'
+                    f"[{label}]({url})</span>"
+                )
             return (
                 f'{level} <span class="doc-symbol doc-symbol-{kind}">{kind}</span> '
-                f'<code class="doc-name">{parent}{name}</code> {{#{anchor}}}'
+                f'{parent}<code class="doc-name">{name}</code>{link} {{#{anchor}}}'
             )
 
         markdown = re.sub(r"^(#+) `([\w.]+)`$", shorten_headings, markdown, flags=re.M)
@@ -492,7 +558,7 @@ def main(output: Path) -> None:
                         if module.docstring
                         else module.path
                     ),
-                    "custom_edit_url": f"{REPO_URL}/blob/{BRANCH}/src/{source}",
+                    "custom_edit_url": f"{REPO_URL}/blob/{ref}/src/{source}",
                     "mdx": {"format": "md"},
                 }
             )

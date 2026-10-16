@@ -1,3 +1,5 @@
+"""Rules for which servers and managed databases the Inspector runs its tasks on."""
+
 from typing import TYPE_CHECKING, List
 
 from .table_bases import DatabaseBase
@@ -7,10 +9,35 @@ if TYPE_CHECKING:
     from .tables import Database, Server
 
 
-def block_reasons(resource: "Server | Database", tasks: str | List[str]):
+def block_reasons(
+    resource: "Server | Database", tasks: str | List[str]
+) -> dict[str, List[str]]:
     """Check in a deterministic way if the resource should run the given inspector task(s).
 
     Lists of inspector tasks defined at https://github.com/SpareCores/sc-inspector/blob/main/inspector/tasks.py
+
+    A task doesn't run on a resource for any of these reasons:
+
+    - All tasks:
+        - Cloud credits or budget exhausted: Alibaba Cloud, AWS, Azure and GCP.
+
+    - Managed databases:
+        - Databases that can't be deployed on a single node.
+
+    - Servers:
+        - `bw_mem` and `membench`: a few servers with identified performance issues while running this task.
+        - `nvidia_smi` and `nvbandwidth`: servers without GPUs, and a few AWS and GCP GPU server types that failed in the past.
+        - Not enough memory: `membench` needs 0.9 GB; `compression_text`, `ffmpeg` and `llm` 1 GB; `vllm` and `pgbench_postgres_ro_durable` 2 GB; `geekbench` 2.1 GB.
+        - `geekbench` and `passmark`: more than 32 vCPUs, as they don't scale beyond that.
+        - `storage`: no bundled storage.
+        - `stressnglongrun`: explicit allowlist for a few small AWS, GCP and Hetzner Cloud server types.
+
+    Args:
+        resource: The server or managed database.
+        tasks: Name of an inspector task, or a list of them.
+
+    Returns:
+        The reasons per task, with an empty list for a task that can run.
     """
     # default to no block reasons for each task
     if isinstance(tasks, str):
