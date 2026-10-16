@@ -50,6 +50,11 @@ def test_vultr_inventory_servers_status_from_locations():
     assert by_id["vc2-1c-1gb"]["api_reference_object"] == {"plan": "vc2-1c-1gb"}
     assert by_id["vc2-1c-0.5gb-free"]["status"] == Status.INACTIVE
     assert by_id["vc2-24c-97gb"]["status"] == Status.INACTIVE
+    expected_storage_ids = [
+        "block_storage_high_perf",
+        "block_storage_storage_opt",
+    ]
+    assert by_id["vc2-1c-1gb"]["compatible_storage_ids"] == expected_storage_ids
 
 
 def test_vultr_inventory_databases_maps_plans_and_versions():
