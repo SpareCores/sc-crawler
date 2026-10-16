@@ -35,7 +35,7 @@ def block_reasons(
         tasks: Name of an inspector task, or a list of them.
 
     Returns:
-        dict: The reasons per task, with an empty list for a task that can run.
+        The reasons per task, with an empty list for a task that can run.
     """
     # default to no block reasons for each task
     if isinstance(tasks, str):
