@@ -968,6 +968,57 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
     except Exception as e:
         _log_cannot_load_benchmarks(server, framework, e, True)
 
+    framework = "stressng_benchmarks"
+    try:
+        # lookup imports tables, which imports this module
+        from .lookup import stress_ng_benchmark_id
+
+        stressors = _server_framework_stdout_from_json(server, framework)["stressors"]
+        benchmark_metafields = _benchmark_metafields(
+            server, framework=framework, benchmark_id=framework
+        )
+        for method, by_cores in stressors.items():
+            try:
+                benchmark_id = stress_ng_benchmark_id(method)
+                if benchmark_id is None:
+                    _log_cannot_load_benchmarks(
+                        server, framework, f"unknown stressor {method!r}"
+                    )
+                    continue
+                for cores, result in by_cores.items():
+                    if result is None:
+                        continue
+                    score = float(result["bogo_ops_per_sec"])
+                    if score <= 0:
+                        continue
+                    cores_count = int(cores)
+                    row = {
+                        **benchmark_metafields,
+                        "benchmark_id": benchmark_id,
+                        "config": {
+                            "cores": (
+                                Parallelism.SINGLE
+                                if cores_count == 1
+                                else Parallelism.MULTI
+                            )
+                        },
+                        "score": score,
+                    }
+                    benchmarks.append(row)
+                    # 1-vCPU servers only have a "1" key, also emit MULTI so
+                    # cores=multi filters still include them
+                    if cores_count == 1 and server.vcpus == 1:
+                        benchmarks.append(
+                            {
+                                **row,
+                                "config": {"cores": Parallelism.MULTI},
+                            }
+                        )
+            except Exception as e:
+                _log_cannot_load_benchmarks(server, f"{framework}:{method}", e, True)
+    except Exception as e:
+        _log_cannot_load_benchmarks(server, framework, e, True)
+
     # add server related pgbench benchmark scores
     benchmarks.extend(_pgbench_benchmark_scores(server))
 

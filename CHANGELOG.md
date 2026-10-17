@@ -1,5 +1,10 @@
 ## v0.10.x (DEVELOPMENT)
 
+New benchmark(s):
+
+- stress-ng stressor results (`stress_ng:<method>`) from the
+  `stressng_benchmarks` inspector task. 
+
 Fix(es):
 
 - Populate `Server.api_reference_object` with Pulumi/Terraform provisioning
