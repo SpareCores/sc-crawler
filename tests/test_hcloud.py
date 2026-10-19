@@ -2,7 +2,11 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 from sc_crawler.table_fields import Status
-from sc_crawler.vendors._hcloud import _hcloud_location_status, _hcloud_server_status
+from sc_crawler.vendors._hcloud import (
+    _hcloud_location_status,
+    _hcloud_server_status,
+    _server_cpu,
+)
 
 _NOW = datetime(2026, 8, 17, tzinfo=UTC)
 
@@ -108,6 +112,15 @@ def test_hcloud_server_status_from_per_location_deprecation():
         )
         == Status.INACTIVE
     )
+
+
+def test_hcloud_server_cpu_marks_legacy_ccx_as_intel():
+    assert _server_cpu(
+        SimpleNamespace(name="ccx11", architecture="x86", category="general_purpose")
+    ) == ("Intel", None, None)
+    assert _server_cpu(
+        SimpleNamespace(name="ccx13", architecture="x86", category="general_purpose")
+    ) == ("AMD", None, None)
 
 
 def test_hcloud_server_status_without_locations_is_inactive():

@@ -1,5 +1,9 @@
 ## v0.10.x (DEVELOPMENT)
 
+New feature(s):
+
+- `Hetzner`: use the server type `category` as server family.
+
 New benchmark(s):
 
 - stress-ng stressor results (`stress_ng:<method>`) from the
@@ -7,8 +11,12 @@ New benchmark(s):
 
 Fix(es):
 
+- `Hetzner`: use `/v1/locations` instead of deprecated `/v1/datacenters`, with
+  the location name as region id (former datacenter region ids kept in
+  `aliases`).
+- `Hetzner`: mark deprecated CCX Gen1 plans (`CCX11`–`CCX51`) as Intel.
 - Populate `Server.api_reference_object` with Pulumi/Terraform provisioning
-  args for `AWS`, `Azure`, `GCP`, `AliCloud`, `UpCloud`, and `Vultr`
+  args for `AWS`, `Azure`, `GCP`, `AliCloud`, `UpCloud`, `Vultr`, and `Hetzner`
   (`OVH` left `NULL` — `flavor_id` is region-specific).
 - Standardize `RTX PRO 6000` naming and family (`Blackwell`), and set 
   `RTX 6000` family by memory (`Ada Lovelace` or `Turing`).
