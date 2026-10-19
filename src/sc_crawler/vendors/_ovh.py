@@ -1312,6 +1312,11 @@ def inventory_servers(vendor) -> list[dict]:
                 "storage_size": storage_size,
                 "storage_type": storage_type,
                 "storages": storages,
+                "compatible_storage_ids": [
+                    "classic",
+                    "high-speed",
+                    "high-speed-gen2",
+                ],
                 "network_speed_baseline": network_speed_gbps,
                 "network_speed_max": network_speed_max_gbps,
                 # TODO: have to implement manual mapping for network_storage_speed related fields
@@ -1768,6 +1773,7 @@ def inventory_databases(vendor):
                 # Flexible storage is increased manually; disk-full goes read-only until storage is provisioned.
                 # https://docs.ovhcloud.com/en/guides/public-cloud/databases/postgresql-capabilities/
                 "storage_extra_autosize": False,
+                "compatible_storage_ids": [f"postgresql-{plan}-additional"],
                 "ha": DatabaseHaLevel.ordered(ha),
                 "ha_strategy": DatabaseHaStrategy.ordered(ha_strategy),
                 "max_read_replicas": max_read_replicas,

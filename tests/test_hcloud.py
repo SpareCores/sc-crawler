@@ -1,11 +1,13 @@
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from sc_crawler.table_fields import Status
 from sc_crawler.vendors._hcloud import (
     _hcloud_location_status,
     _hcloud_server_status,
     _server_cpu,
+    inventory_servers,
 )
 
 _NOW = datetime(2026, 8, 17, tzinfo=UTC)
@@ -132,3 +134,30 @@ def test_hcloud_server_status_without_locations_is_inactive():
         _hcloud_server_status(SimpleNamespace(locations=[]), now=_NOW)
         == Status.INACTIVE
     )
+
+
+def test_hcloud_inventory_servers_maps_compatible_storage_ids():
+    server = SimpleNamespace(
+        id=1,
+        name="cx22",
+        description="Test server",
+        cores=2,
+        cpu_type="shared",
+        architecture="x86",
+        memory=4,
+        disk=40,
+        prices=[{"included_traffic": 1024}],
+        locations=[],
+    )
+
+    with (
+        patch("sc_crawler.vendors._hcloud._get_server_types", return_value=[server]),
+        patch(
+            "sc_crawler.vendors._hcloud._server_cpu",
+            return_value=("Intel", "Xeon", "Test"),
+        ),
+    ):
+        rows = inventory_servers(SimpleNamespace(vendor_id="hcloud"))
+
+    assert len(rows) == 1
+    assert rows[0]["compatible_storage_ids"] == ["block"]

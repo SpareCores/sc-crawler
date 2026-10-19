@@ -872,6 +872,7 @@ def inventory_servers(vendor):
                         StorageType.SSD if server["storage_tier"] else None
                     ),
                     "storages": [],
+                    "compatible_storage_ids": ["maxiops", "standard", "hdd"],
                     # TODO: have to implement manual mapping for network_speed related fields
                     "network_speed_baseline": None,
                     "network_speed_max": None,
@@ -1257,6 +1258,11 @@ def inventory_databases(vendor):
                     "wire_protocol": DatabaseWireProtocol.POSTGRESQL,
                     "engine_versions": versions,
                     "family": family,
+                    "compatible_storage_ids": {
+                        "Developer": ["standard"],
+                        "Standard": ["maxiops"],
+                        "High Memory": ["maxiops"],
+                    }.get(family, []),
                     "vcpus": vcpus,
                     "memory_amount": memory_amount,
                     "storage_size": None,
@@ -1369,6 +1375,9 @@ def inventory_databases(vendor):
                 "storage_extra_min": storage_extra_min,
                 "storage_extra_max": storage_extra_max,
                 "storage_extra_autosize": False,
+                "compatible_storage_ids": ["standard"]
+                if dynamic_storage_supported
+                else [],
                 "ha": ha,
                 "ha_strategy": ha_strategy,
                 "max_read_replicas": max((node_count or 1) - 1, 0),

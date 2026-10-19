@@ -425,6 +425,8 @@ def inventory_servers(vendor):
                     "storage_size": server.disk,
                     "storage_type": StorageType.NVME_SSD,
                     "storages": [],
+                    # https://docs.hetzner.com/cloud/volumes/overview/
+                    "compatible_storage_ids": ["block"],
                     # TODO: have to implement manual mapping for network_speed related fields
                     "network_speed_baseline": None,
                     "network_speed_max": None,
