@@ -1,5 +1,6 @@
-from sc_crawler.vendors._azure import _standardize_server
 from types import SimpleNamespace
+
+from sc_crawler.vendors._azure import _standardize_server
 
 
 def test_family_strips_trailing_xl():
