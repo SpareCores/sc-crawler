@@ -1,3 +1,5 @@
+"""Inventory of Vultr via its API: servers, storages, traffic, IPv4 addresses and managed PostgreSQL, with their prices."""
+
 from os import environ
 
 from cachier import cachier
@@ -728,6 +730,7 @@ def _get_database_available_services():
 
 
 def inventory_compliance_frameworks(vendor):
+    """Manual list of known compliance frameworks at Vultr."""
     return map_compliance_frameworks_to_vendor(
         vendor.vendor_id,
         [
@@ -961,6 +964,9 @@ def inventory_servers(vendor):
 
 
 def inventory_server_prices(vendor):
+    """List all on-demand server and bare metal prices in all regions from Vultr API.
+
+    Servers are billed hourly up to a monthly cap, described as tiered prices."""
     plans = _get_plans()
     plans_metal = _get_plans_metal()
 
@@ -1001,6 +1007,9 @@ def inventory_server_prices(vendor):
 
 
 def inventory_server_prices_spot(vendor):
+    """List all preemptible server and bare metal prices in all regions from Vultr API.
+
+    Servers are billed hourly up to a monthly cap, described as tiered prices."""
     plans = _get_plans()
     plans_metal = _get_plans_metal()
 
@@ -1045,6 +1054,7 @@ def inventory_server_prices_spot(vendor):
 
 
 def inventory_storages(vendor):
+    """Block storage types collected manually."""
     items = []
     for storage_id, spec in _BLOCK_STORAGE.items():
         items.append(
@@ -1064,6 +1074,7 @@ def inventory_storages(vendor):
 
 
 def inventory_storage_prices(vendor):
+    """Block storage prices collected manually, in the regions offering them per Vultr API."""
     items = []
     regions = _get_regions()
     for region in regions:
@@ -1267,6 +1278,9 @@ def inventory_databases(vendor):
 
 
 def inventory_database_prices(vendor):
+    """List Vultr managed PostgreSQL plan prices in all regions.
+
+    Plans with more than one node are highly available within a single zone."""
     databases = {database.database_id: database for database in vendor.databases}
     plans = _get_database_plans()
     items = []

@@ -4,6 +4,11 @@ New feature(s):
 
 - `Hetzner`: use the server type `category` as server family.
 
+New benchmark(s):
+
+- stress-ng stressor results (`stress_ng:<method>`) from the
+  `stressng_benchmarks` inspector task. 
+
 Fix(es):
 
 - `Hetzner`: use `/v1/locations` instead of deprecated `/v1/datacenters`, with

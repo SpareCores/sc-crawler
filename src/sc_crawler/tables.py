@@ -852,6 +852,7 @@ Benchmark.model_rebuild()
 
 
 def is_table(table):
+    """Checks if an object is a SQLModel table definition."""
     try:
         return table.model_config["table"] is True
     except Exception:

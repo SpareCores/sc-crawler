@@ -1,3 +1,5 @@
+"""Helpers to parse the hardware details of servers from the sc-inspector-data repository."""
+
 import re
 import xml.etree.ElementTree as xmltree
 from dataclasses import dataclass, field
@@ -23,6 +25,8 @@ LSTOPO_CACHE_TYPES = {
 
 @dataclass
 class StorageInfo:
+    """Bundled storage of a server, parsed from lsblk and lshw outputs."""
+
     storage_type: StorageType = None
     storage_size: int = 0
     storages: List[Disk] = field(default_factory=list)
@@ -33,6 +37,8 @@ class StorageInfo:
 
 @dataclass
 class CpuCacheInfo:
+    """Size and sharing of a CPU cache level, parsed from lscpu and lstopo outputs."""
+
     level: str
     total_bytes: int
     instances: int

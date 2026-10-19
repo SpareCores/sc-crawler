@@ -1,3 +1,5 @@
+"""Helpers to validate and bulk insert per-vendor records into the database."""
+
 from collections import defaultdict
 from json import dumps
 from logging import DEBUG

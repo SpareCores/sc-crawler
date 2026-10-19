@@ -1,3 +1,5 @@
+"""Inventory of Hetzner Cloud via its API and manual data entry: servers, storages, traffic and IPv4 addresses, with their prices."""
+
 import os
 from datetime import UTC, datetime
 from functools import cache
@@ -489,7 +491,7 @@ def inventory_server_prices(vendor):
 
 
 def inventory_server_prices_spot(vendor):
-    """There are no spot instaces at Hetzner."""
+    """There are no spot instances at Hetzner."""
     return []
 
 
