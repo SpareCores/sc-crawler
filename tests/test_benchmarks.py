@@ -13,10 +13,12 @@ from sc_crawler.lookup import (
     _BENCHMARK_LLM_SPEED_NOTE,
     _BENCHMARK_SINGLE_SESSION_NOTE,
     _BENCHMARK_SINGLE_THREAD_NOTE,
+    _STRESS_NG_METHODS,
     benchmarks,
+    stress_ng_benchmark_id,
 )
 from sc_crawler.table_bases import ServerBase
-from sc_crawler.table_fields import Status
+from sc_crawler.table_fields import Parallelism, Status
 
 
 def _bench(benchmark_id: str):
@@ -43,6 +45,182 @@ def test_stress_ng_and_bogomips_notes():
     assert _bench("stress_ng:best1").note == _BENCHMARK_SINGLE_THREAD_NOTE
     assert _bench("stress_ng:bestn").note is None
     assert "pseudo-benchmark" in _bench("bogomips").note
+
+
+def test_stress_ng_method_catalog():
+    assert len(_STRESS_NG_METHODS) == 84
+    assert len({method for method, _, _ in _STRESS_NG_METHODS}) == 84
+    ids = [benchmark.benchmark_id for benchmark in benchmarks]
+    assert len(ids) == len(set(ids))
+
+    memcpy = _bench("stress_ng:memcpy")
+    assert memcpy.name == "stress-ng memcpy"
+    assert memcpy.category == "stress-ng"
+    assert memcpy.subcategory == "Memory"
+    assert memcpy.framework == "stress_ng"
+    assert memcpy.unit == "Bogo operations per second (ops/s)"
+    assert memcpy.config_fields["cores"] == "Single-Core or Multi-Core stress tests."
+    assert memcpy.description.startswith(
+        "Start N workers that copies data to and from a buffer using memcpy "
+        "and then move the data in the buffer with memmove with 3 different "
+        "alignments."
+    )
+    assert "bogo operations per second" in memcpy.description
+    assert _bench("stress_ng:bitonicsort").description.startswith(
+        "Start N workers that sort 32 bit integers using bitonic sort."
+    )
+    assert _bench("stress_ng:bitonicsort").subcategory == "Algorithms"
+    assert _bench("stress_ng:matrix_3d").name == "stress-ng matrix-3d"
+    assert _bench("stress_ng:tlb_shootdown").subcategory == "Hypervisor"
+    assert stress_ng_benchmark_id("matrix-3d") == "stress_ng:matrix_3d"
+    assert stress_ng_benchmark_id("not-a-stressor") is None
+    # overlaps stress_ng:cpu_all
+    assert stress_ng_benchmark_id("cpu") is None
+    assert "Operations used are:" not in _bench("stress_ng:fma").description
+    assert "goodness-of-fit" in _bench("stress_ng:hash").description
+    assert "0..499999" in _bench("stress_ng:hrtimers").description
+    assert {subcategory for _, subcategory, _ in _STRESS_NG_METHODS} == {
+        "CPU integer",
+        "CPU float/SIMD",
+        "Cryptography",
+        "Compression",
+        "Memory",
+        "Algorithms",
+        "Hypervisor",
+    }
+
+
+def _stressng_scores(tmp_path, monkeypatch, payload):
+    stdout = tmp_path / "stdout"
+    stdout.write_text(json.dumps(payload))
+    monkeypatch.setattr(
+        "sc_crawler.inspector._server_framework_stdout_path",
+        lambda server, framework: stdout,
+    )
+    monkeypatch.setattr(
+        "sc_crawler.inspector._server_framework_meta",
+        lambda server, framework: {
+            "end": datetime(2026, 1, 1, tzinfo=timezone.utc),
+            "version": "0.18.12",
+            "kernel_version": "6.8.0",
+        },
+    )
+    server = ServerBase(
+        vendor_id="aws",
+        server_id="c8i.96xlarge",
+        name="c8i.96xlarge",
+        api_reference="c8i.96xlarge",
+        display_name="c8i.96xlarge",
+        description="test",
+        vcpus=384,
+        memory_amount=786432,
+        storage_size=0,
+        status=Status.ACTIVE,
+    )
+    by_id = {}
+    for score in inspect_server_benchmarks(server):
+        if score["benchmark_id"].startswith("stress_ng:") and score[
+            "benchmark_id"
+        ] not in {
+            "stress_ng:cpu_all",
+            "stress_ng:div16",
+            "stress_ng:best1",
+            "stress_ng:bestn",
+        }:
+            by_id.setdefault(score["benchmark_id"], []).append(score)
+    return by_id
+
+
+def test_stressng_benchmark_scores(tmp_path, monkeypatch):
+    by_id = _stressng_scores(
+        tmp_path,
+        monkeypatch,
+        {
+            "stressors": {
+                "memcpy": {
+                    "1": {"bogo_ops_per_sec": 761.69},
+                    "384": {"bogo_ops_per_sec": 148114.96},
+                },
+                "matrix-3d": {"1": {"bogo_ops_per_sec": 610.84}},
+                "ipsec-mb": {"1": None, "384": None},
+                "vm": {"1": {"bogo_ops_per_sec": 142417.37}, "384": None},
+                "cache": {
+                    "1": {"bogo_ops_per_sec": 251720.14},
+                    "384": {"bogo_ops_per_sec": 0.0},
+                },
+                "not-a-method": {"1": {"bogo_ops_per_sec": 1.0}},
+                # bad entry must not stop later stressors
+                "atomic": {"1": {"bogo_ops_per_sec": None}},
+                "branch": {"1": {"bogo_ops_per_sec": 42.0}},
+            }
+        },
+    )
+
+    assert set(by_id) == {
+        "stress_ng:branch",
+        "stress_ng:cache",
+        "stress_ng:matrix_3d",
+        "stress_ng:memcpy",
+        "stress_ng:vm",
+    }
+    memcpy = by_id["stress_ng:memcpy"]
+    assert [row["config"]["cores"] for row in memcpy] == [
+        Parallelism.SINGLE,
+        Parallelism.MULTI,
+    ]
+    assert [row["score"] for row in memcpy] == [761.69, 148114.96]
+    assert memcpy[0]["framework_version"] == "0.18.12"
+    assert memcpy[0]["environment"]["kernel_version"] == "6.8.0"
+    assert memcpy[0]["environment"]["measured_at"] == "2026-01-01T00:00:00+00:00"
+    assert by_id["stress_ng:matrix_3d"][0]["config"]["cores"] == Parallelism.SINGLE
+    assert [row["config"]["cores"] for row in by_id["stress_ng:vm"]] == [
+        Parallelism.SINGLE
+    ]
+    # zero bogo_ops_per_sec is skipped (timeout / no completed ops)
+    assert len(by_id["stress_ng:cache"]) == 1
+    assert by_id["stress_ng:cache"][0]["score"] == 251720.14
+    assert by_id["stress_ng:branch"][0]["score"] == 42.0
+
+
+def test_stressng_benchmark_scores_single_vcpu_emits_multi(tmp_path, monkeypatch):
+    stdout = tmp_path / "stdout"
+    stdout.write_text(
+        json.dumps({"stressors": {"memcpy": {"1": {"bogo_ops_per_sec": 100.0}}}})
+    )
+    monkeypatch.setattr(
+        "sc_crawler.inspector._server_framework_stdout_path",
+        lambda server, framework: stdout,
+    )
+    monkeypatch.setattr(
+        "sc_crawler.inspector._server_framework_meta",
+        lambda server, framework: {
+            "end": datetime(2026, 1, 1, tzinfo=timezone.utc),
+            "version": "0.18.12",
+            "kernel_version": "6.8.0",
+        },
+    )
+    server = ServerBase(
+        vendor_id="aws",
+        server_id="t3.micro",
+        name="t3.micro",
+        api_reference="t3.micro",
+        display_name="t3.micro",
+        description="test",
+        vcpus=1,
+        memory_amount=1024,
+        storage_size=0,
+        status=Status.ACTIVE,
+    )
+    rows = [
+        score
+        for score in inspect_server_benchmarks(server)
+        if score["benchmark_id"] == "stress_ng:memcpy"
+    ]
+    assert [row["config"]["cores"] for row in rows] == [
+        Parallelism.SINGLE,
+        Parallelism.MULTI,
+    ]
+    assert [row["score"] for row in rows] == [100.0, 100.0]
 
 
 def test_throughput_latency_notes():

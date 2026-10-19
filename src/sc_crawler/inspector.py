@@ -127,16 +127,44 @@ def _get_server_framework_run_ids(server: "Server", framework: str) -> List[str]
         return []
 
 
+def _server_variant_basepath(server: "Server", variant: int | None) -> str | PathLike:
+    """Return the base path for a server's hardware variant."""
+    base = _server_path(server)
+    return base if variant is None else path.join(base, str(variant))
+
+
+def _server_variant_framework_basepath(
+    server: "Server", variant: int | None, framework: str
+) -> str | PathLike:
+    """Return the base path for a server's hardware variant and framework."""
+    return path.join(_server_variant_basepath(server, variant), framework)
+
+
+def _server_variant_framework_path(
+    server: "Server",
+    variant: int | None,
+    framework: str,
+    relpath: str | list[str] | None = None,
+) -> str | PathLike:
+    """Return the path for a server's hardware variant and framework with an optional relative path."""
+    relpath_list = [relpath] if isinstance(relpath, str) else (relpath or [])
+    return path.join(
+        _server_variant_framework_basepath(server, variant, framework), *relpath_list
+    )
+
+
 def _server_framework_path(
     server: "Server", framework: str, relpath: str | list[str] | None = None
 ) -> str | PathLike:
-    path_parts = (
-        [_server_path(server), framework, *relpath]
-        if isinstance(relpath, list)
-        else [_server_path(server), framework, relpath]
-    )
-    path_parts = [path_part for path_part in path_parts if path_part is not None]
-    return path.join(*path_parts)
+    """Return the path for a server's framework with an optional relative path.
+
+    Hardware-variant layout: default to variant 0 with a fallback to variantless path.
+    """
+    # TODO drop the fallback after sc-inspector-data migrated to the variant layout
+    variant_path = _server_variant_framework_path(server, 0, framework, relpath)
+    if path.exists(variant_path):
+        return variant_path
+    return _server_variant_framework_path(server, None, framework, relpath)
 
 
 def _database_framework_path(
@@ -937,6 +965,57 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                     "score": min(sm["sum"] / ce["sum"], 1.0),
                 }
             )
+    except Exception as e:
+        _log_cannot_load_benchmarks(server, framework, e, True)
+
+    framework = "stressng_benchmarks"
+    try:
+        # lookup imports tables, which imports this module
+        from .lookup import stress_ng_benchmark_id
+
+        stressors = _server_framework_stdout_from_json(server, framework)["stressors"]
+        benchmark_metafields = _benchmark_metafields(
+            server, framework=framework, benchmark_id=framework
+        )
+        for method, by_cores in stressors.items():
+            try:
+                benchmark_id = stress_ng_benchmark_id(method)
+                if benchmark_id is None:
+                    _log_cannot_load_benchmarks(
+                        server, framework, f"unknown stressor {method!r}"
+                    )
+                    continue
+                for cores, result in by_cores.items():
+                    if result is None:
+                        continue
+                    score = float(result["bogo_ops_per_sec"])
+                    if score <= 0:
+                        continue
+                    cores_count = int(cores)
+                    row = {
+                        **benchmark_metafields,
+                        "benchmark_id": benchmark_id,
+                        "config": {
+                            "cores": (
+                                Parallelism.SINGLE
+                                if cores_count == 1
+                                else Parallelism.MULTI
+                            )
+                        },
+                        "score": score,
+                    }
+                    benchmarks.append(row)
+                    # 1-vCPU servers only have a "1" key, also emit MULTI so
+                    # cores=multi filters still include them
+                    if cores_count == 1 and server.vcpus == 1:
+                        benchmarks.append(
+                            {
+                                **row,
+                                "config": {"cores": Parallelism.MULTI},
+                            }
+                        )
+            except Exception as e:
+                _log_cannot_load_benchmarks(server, f"{framework}:{method}", e, True)
     except Exception as e:
         _log_cannot_load_benchmarks(server, framework, e, True)
 
