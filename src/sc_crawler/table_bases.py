@@ -242,7 +242,7 @@ class MetaColumns(ScModel):
         if not value.is_general:
             raise ValueError(
                 f"{value!r} is only valid for Server and Database. "
-                f"Use ACTIVE or INACTIVE for {cls.__name__}."
+                f"Use ACTIVE, INACTIVE or SUPERSEDED for {cls.__name__}."
             )
         return value
 

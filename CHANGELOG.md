@@ -3,6 +3,10 @@
 New feature(s):
 
 - `Hetzner`: use the server type `category` as server family.
+- New `SUPERSEDED` status for records replaced by a new record (e.g. due to
+  renaming or re-keying), which is never reset by the crawler or `sync`. The
+  former `Hetzner` datacenter region ids (`2`–`7`) and their zones and prices
+  are marked as `SUPERSEDED` via a database migration.
 
 New benchmark(s):
 
