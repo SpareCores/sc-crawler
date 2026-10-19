@@ -1,4 +1,4 @@
-## v0.10.x (development)
+## v0.10.x (DEVELOPMENT)
 
 New feature(s):
 
