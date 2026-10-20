@@ -44,6 +44,18 @@ def block_reasons(
         tasks = [tasks]
     results = {task: [] for task in tasks}
     for task in tasks:
+        # override the overrides: although no credits, we still want to run these
+        if task == "stressng_benchmarks":
+            if (resource.vendor_id, resource.api_reference) in [
+                ("aws", "c6a.large"),
+                ("aws", "c6a.2xlarge"),
+                ("aws", "c6g.xlarge"),
+                ("aws", "m7a.xlarge"),
+                ("aws", "c7a.32xlarge"),
+                ("aws", "c6i.metal"),
+            ]:
+                continue
+
         # cloud credits either exhausted, pending, or abandoned
         if resource.vendor_id in ["alicloud", "aws", "azure", "gcp"]:
             results[task].append("Cloud credit/budget exhausted.")
