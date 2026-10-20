@@ -10,7 +10,7 @@ from sc_crawler.utils import _GIB_TO_GB
 from sc_crawler.vendors._gcp import (
     STORAGE_ALLOWLIST,
     STORAGE_PERFORMANCE,
-    _compatible_storage_ids,
+    _compatible_storage_names,
     _gcp_accelerator_type,
     _local_ssd_partition_gib,
     _search_servers,
@@ -20,6 +20,7 @@ from sc_crawler.vendors._gcp import (
     _skus_dict,
     inventory_server_prices,
     inventory_server_prices_spot,
+    inventory_servers,
     inventory_storage_prices,
     inventory_storages,
 )
@@ -770,46 +771,80 @@ def test_gcp_search_servers_fills_gpu_and_bundled_local_ssd_fields():
             "size": round(4 * 3000 * 1024**3 / 1000**3),
         }
     ]
-    assert row["compatible_storage_ids"] == [
-        "30012",
-        "30013",
-        "30014",
-        "30016",
+
+
+def _srv(name, series, gpu=None):
+    return {"name": name, "series": series, "accelerator_model": gpu}
+
+
+def test_gcp_compatible_storage_names():
+    # A3 H200 has no Throughput, A3 H100 has all five
+    assert "hyperdisk-throughput" not in _compatible_storage_names(
+        _srv("a3-ultragpu-8g", "a3", "H200")
+    )
+    assert "hyperdisk-throughput" in _compatible_storage_names(
+        _srv("a3-highgpu-8g", "a3", "H100")
+    )
+    # A4X Max has Throughput, plain A4X does not
+    assert "hyperdisk-throughput" in _compatible_storage_names(
+        _srv("a4x-maxgpu-4g-metal", "a4x", "GB300")
+    )
+    assert "hyperdisk-throughput" not in _compatible_storage_names(
+        _srv("a4x-highgpu-4g", "a4x", "GB200")
+    )
+    # n1-megamem uses the M1 row: Balanced and Extreme, but no Throughput
+    names = _compatible_storage_names(_srv("n1-megamem-96", "n1"))
+    assert "hyperdisk-balanced" in names
+    assert "hyperdisk-extreme" in names
+    assert "hyperdisk-throughput" not in names
+    # C2 supports no Hyperdisk (only Persistent Disk)
+    names = _compatible_storage_names(_srv("c2-standard-8", "c2"))
+    assert not any(n.startswith("hyperdisk") for n in names)
+
+
+def test_gcp_compatible_storage_names_shared_core_n1():
+    # f1-micro and g1-small belong to the N1 series
+    for name, series in [("f1-micro", "f1"), ("g1-small", "g1")]:
+        assert _compatible_storage_names(
+            _srv(name, series)
+        ) == _compatible_storage_names(_srv("n1-standard-4", "n1"))
+
+
+def test_gcp_inventory_servers_adds_compatible_storage_ids():
+    vendor = Mock(vendor_id="gcp")
+    vendor.storages = [
+        SimpleNamespace(name="hyperdisk-balanced", storage_id="40001"),
+        SimpleNamespace(name="hyperdisk-ml", storage_id="40004"),
     ]
-    assert _compatible_storage_ids("a3-highgpu-1g") == [
-        "30002",
-        "30007",
-        "30013",
-        "30014",
-        "30016",
-        "30017",
+    server = {"name": "a2-highgpu-1g", "series": "a2", "accelerator_model": "A100"}
+    with (
+        patch("sc_crawler.vendors._gcp.parallel_fetch_servers", return_value=[server]),
+        patch(
+            "sc_crawler.vendors._gcp.preprocess_servers", side_effect=lambda s, *a: s
+        ),
+    ):
+        rows = inventory_servers(vendor)
+
+    # A2 supports only Hyperdisk ML
+    assert rows[0]["compatible_storage_ids"] == ["40004"]
+
+
+def test_gcp_compatible_storage_names_persistent_disk():
+    # C2 has no Hyperdisk at all, only Persistent Disk
+    assert _compatible_storage_names(_srv("c2-standard-8", "c2")) == [
+        "pd-standard",
+        "pd-balanced",
+        "pd-ssd",
     ]
-    assert "30012" not in _compatible_storage_ids("a3-highgpu-2g")
-    assert "30012" in _compatible_storage_ids("a3-highgpu-4g")
-    assert _compatible_storage_ids("a3-ultragpu-8g") == [
-        "30012",
-        "30014",
-        "30016",
-        "30017",
-    ]
-    assert _compatible_storage_ids("a3-megagpu-8g") == [
-        "30002",
-        "30007",
-        "30013",
-        "30014",
-        "30016",
-        "30017",
-        "30012",
-    ]
-    assert _compatible_storage_ids("a3-edgegpu-8g") == [
-        "30002",
-        "30007",
-        "30013",
-        "30014",
-        "30016",
-        "30017",
-        "30012",
-    ]
+    # A3 H100 has SSD and Balanced PD, but not Standard PD
+    names = _compatible_storage_names(_srv("a3-highgpu-8g", "a3", "H100"))
+    assert "pd-ssd" in names and "pd-balanced" in names
+    assert "pd-standard" not in names
+    # newer series have no Persistent Disk
+    assert not any(
+        n.startswith("pd-")
+        for n in _compatible_storage_names(_srv("c4-standard-8", "c4"))
+    )
 
 
 @pytest.mark.parametrize(

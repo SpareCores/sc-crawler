@@ -3,7 +3,7 @@
 from functools import cache
 from logging import DEBUG, WARNING
 from re import compile as recompile
-from re import search, sub
+from re import sub
 from typing import List
 
 from cachier import cachier
@@ -236,34 +236,235 @@ def _local_ssd_partition_gib(server_name: str) -> int:
     return 375
 
 
-def _compatible_storage_ids(server_name: str) -> list[str]:
-    """Return compatible storage IDs for a GCP machine type."""
-    name = server_name.lower()
+# Machine series that support each Hyperdisk type
+# https://docs.cloud.google.com/compute/docs/disks/hyperdisks#machine-type-support
+# Footnote 1 on the docs page: on the older series (c2d, e2, n1, n2, n2d),
+# Hyperdisk Balanced and Balanced HA are for long-term data disks only.
+# Boot disks on these series should use Persistent Disk instead.
+_STORAGE_SERIES = {
+    "hyperdisk-balanced": {
+        "a3-h100",
+        "a3-h200",
+        "a4",
+        "a4x",
+        "a4x-max",
+        "c2d",
+        "c3",
+        "c3d",
+        "c4",
+        "c4a",
+        "c4d",
+        "c4n",
+        "ct6e",
+        "e2",
+        "g4",
+        "h3",
+        "h4d",
+        "m1",
+        "m2",
+        "m3",
+        "m4",
+        "m4n",
+        "n1",
+        "n2",
+        "n2d",
+        "n4",
+        "n4a",
+        "n4d",
+        "tpu7x",
+        "x4",
+        "x5",
+        "z3",
+        "z4d",
+        "z4m",
+    },
+    "hyperdisk-balanced-high-availability": {
+        "a3-h100",
+        "a3-h200",
+        "c2d",
+        "c3",
+        "c3d",
+        "c4",
+        "c4a",
+        "c4d",
+        "c4n",
+        "e2",
+        "g4",
+        "m3",
+        "m4n",
+        "n1",
+        "n2",
+        "n2d",
+        "n4",
+        "n4a",
+        "n4d",
+        "x5",
+        "z3",
+        "z4d",
+        "z4m",
+    },
+    "hyperdisk-extreme": {
+        "a3-h100",
+        "a3-h200",
+        "a4",
+        "a4x",
+        "a4x-max",
+        "c3",
+        "c3d",
+        "c4",
+        "c4a",
+        "c4d",
+        "c4n",
+        "g4",
+        "m1",
+        "m2",
+        "m3",
+        "m4",
+        "m4n",
+        "n2",
+        "x4",
+        "x5",
+        "z3",
+        "z4d",
+        "z4m",
+    },
+    "hyperdisk-throughput": {
+        "a3-h100",
+        "a4x-max",
+        "c3",
+        "c3d",
+        "c4",
+        "c4a",
+        "c4d",
+        "c4n",
+        "g2",
+        "g4",
+        "h3",
+        "m3",
+        "m4n",
+        "n2",
+        "n2d",
+        "n4",
+        "n4a",
+        "n4d",
+        "t2d",
+        "x5",
+        "z3",
+        "z4d",
+        "z4m",
+    },
+    "hyperdisk-ml": {
+        "a2",
+        "a3-h100",
+        "a3-h200",
+        "a4",
+        "a4x",
+        "a4x-max",
+        "c3",
+        "c3d",
+        "c4",
+        "c4a",
+        "c4d",
+        "c4n",
+        "ct5l",
+        "ct5lp",
+        "ct5p",
+        "ct6e",
+        "g2",
+        "g4",
+        "m4n",
+        "n4",
+        "n4a",
+        "n4d",
+        "tpu7x",
+        "x5",
+        "z4d",
+        "z4m",
+    },
+    # Persistent Disk support per machine series
+    # https://docs.cloud.google.com/compute/docs/disks/persistent-disks
+    # (Extreme PD is left out on purpose: it is not in STORAGE_ALLOWLIST,
+    # so it is not in the storage table.)
+    "pd-standard": {
+        "a2",
+        "c2",
+        "c2d",
+        "e2",
+        "m1",
+        "m2",
+        "n1",
+        "n2",
+        "n2d",
+        "t2a",
+        "t2d",
+    },
+    "pd-balanced": {
+        "a2",
+        "a3-h100",
+        "c2",
+        "c2d",
+        "c3",
+        "c3d",
+        "ct3",
+        "ct3p",
+        "ct5l",
+        "ct5lp",
+        "ct5p",
+        "e2",
+        "g2",
+        "h3",
+        "m1",
+        "m2",
+        "m3",
+        "n1",
+        "n2",
+        "n2d",
+        "t2a",
+        "t2d",
+        "z3",
+    },
+    "pd-ssd": {
+        "a2",
+        "a3-h100",
+        "c2",
+        "c2d",
+        "c3",
+        "c3d",
+        "e2",
+        "g2",
+        "m1",
+        "m2",
+        "m3",
+        "n1",
+        "n2",
+        "n2d",
+        "t2a",
+        "t2d",
+        "z3",
+    },
+}
 
-    if name.startswith("a3-ultragpu-"):
-        # https://docs.cloud.google.com/compute/docs/disks/hyperdisks
-        # A3 H200 supports Hyperdisk Extreme, Balanced, ML, and Balanced HA.
-        return ["30012", "30014", "30016", "30017"]
 
-    if name.startswith(("a3-highgpu-", "a3-megagpu-", "a3-edgegpu-")):
-        storage_ids = ["30002", "30007", "30013", "30014", "30016", "30017"]
+def _support_key(server: dict) -> str:
+    """Map our series to the row names Google uses in the table."""
+    series = server["series"]
+    gpu = server["accelerator_model"]
+    if series == "a3":
+        return "a3-h200" if gpu == "H200" else "a3-h100"
+    if series == "a4x":
+        return "a4x-max" if gpu == "GB300" else "a4x"
+    # f1-micro and g1-small are the shared-core machine types of the N1 series
+    # https://docs.cloud.google.com/compute/docs/machine-resource#shared-core-types
+    if series in ("f1", "g1"):
+        return "n1"
+    if server["name"].startswith(("n1-megamem", "n1-ultramem")):
+        return "m1"
+    return series
 
-        # https://docs.cloud.google.com/compute/docs/disks/hyperdisks
-        # A3 H100 supports these storage types; Hyperdisk Extreme requires
-        # at least 104 vCPUs.
-        # a3-highgpu-1g and a3-highgpu-2g do not meet this requirement.
-        match = search(r"a3-(?:highgpu|megagpu|edgegpu)-(\d+)g", name)
-        if match and int(match.group(1)) >= 4:
-            storage_ids.append("30012")
 
-        return storage_ids
-
-    if name.startswith("a4x-maxgpu-") and name.endswith("-metal"):
-        # https://docs.cloud.google.com/compute/docs/disks/hyperdisks
-        # A4X Max supports Hyperdisk Extreme, Throughput, Balanced, and ML.
-        return ["30012", "30013", "30014", "30016"]
-
-    return []
+def _compatible_storage_names(server: dict) -> list[str]:
+    key = _support_key(server)
+    return [name for name, series in _STORAGE_SERIES.items() if key in series]
 
 
 @cache
@@ -890,6 +1091,7 @@ def _search_servers(zone_name: str) -> List[dict]:
                 "display_name": server.name,
                 "description": server.description,
                 "family": server.name.split("-")[0],
+                "series": server.name.split("-")[0],
                 "vcpus": server.guest_cpus,
                 "hypervisor": None,
                 "cpu_allocation": (
@@ -921,7 +1123,6 @@ def _search_servers(zone_name: str) -> List[dict]:
                 "storage_size": 0,
                 "storage_type": None,
                 "storages": [],
-                "compatible_storage_ids": _compatible_storage_ids(server.name),
                 # TODO: have to implement manual mapping for network_speed related fields
                 "network_speed_baseline": None,
                 "network_speed_max": None,
@@ -1673,6 +1874,17 @@ def inventory_servers(vendor):
     """
     servers = parallel_fetch_servers(vendor, _search_servers, "name", "zones")
     servers = preprocess_servers(servers, vendor, add_vendor_id)
+
+    # storage name -> storage ID, so no ID is ever hardcoded
+    storages = {s.name: s.storage_id for s in vendor.storages}
+    for server in servers:
+        ids = []
+        for name in _compatible_storage_names(server):
+            if name in storages:
+                ids.append(storages[name])
+            else:
+                vendor.log(f"Storage '{name}' not found for {server['name']}", WARNING)
+        server["compatible_storage_ids"] = ids
     return servers
 
 
