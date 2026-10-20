@@ -800,6 +800,7 @@ def inventory_servers(vendor):
     """
     plans = _get_plans()
     plans_metal = _get_plans_metal()
+    metal_ids = {plan["id"] for plan in plans_metal}
 
     items = []
     for server in plans + plans_metal:
@@ -941,10 +942,12 @@ def inventory_servers(vendor):
             "storage_size": storage_size,
             "storage_type": storage_type,
             "storages": [],
-            "compatible_storage_ids": [
-                "block_storage_high_perf",
-                "block_storage_storage_opt",
-            ],
+            # Block storage cannot be attached to bare metal (/v2/plans-metal) plans.
+            "compatible_storage_ids": (
+                []
+                if server["id"] in metal_ids
+                else ["block_storage_high_perf", "block_storage_storage_opt"]
+            ),
             "network_speed_baseline": None,
             # link_speed is Gbps when present ("up to" / provisioned; no documented baseline)
             # link_type (shared|dedicated) is network uplink, not mapped to a column
