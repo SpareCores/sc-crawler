@@ -812,21 +812,23 @@ def test_gcp_compatible_storage_names_shared_core_n1():
 
 def test_gcp_inventory_servers_adds_compatible_storage_ids():
     vendor = Mock(vendor_id="gcp")
-    vendor.storages = [
-        SimpleNamespace(name="hyperdisk-balanced", storage_id="40001"),
-        SimpleNamespace(name="hyperdisk-ml", storage_id="40004"),
-    ]
     server = {
         "name": "a2-highgpu-1g",
         "series": "a2",
         "accelerator_model": "A100",
         "vcpus": 12,
     }
+    storages = [
+        {"name": "hyperdisk-balanced", "storage_id": "40001"},
+        {"name": "hyperdisk-ml", "storage_id": "40004"},
+    ]
     with (
         patch("sc_crawler.vendors._gcp.parallel_fetch_servers", return_value=[server]),
         patch(
-            "sc_crawler.vendors._gcp.preprocess_servers", side_effect=lambda s, *a: s
+            "sc_crawler.vendors._gcp.preprocess_servers",
+            side_effect=lambda s, *a: s,
         ),
+        patch("sc_crawler.vendors._gcp.inventory_storages", return_value=storages),
     ):
         rows = inventory_servers(vendor)
 

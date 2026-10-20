@@ -1909,8 +1909,9 @@ def inventory_servers(vendor):
     servers = parallel_fetch_servers(vendor, _search_servers, "name", "zones")
     servers = preprocess_servers(servers, vendor, add_vendor_id)
 
-    # storage name -> storage ID, so no ID is ever hardcoded
-    storages = {s.name: s.storage_id for s in vendor.storages}
+    # storage name -> storage ID, taken from the current storage inventory
+    # (not from the database, which can be missing or stale in a servers-only pull)
+    storages = {s["name"]: s["storage_id"] for s in inventory_storages(vendor)}
     for server in servers:
         ids = []
         for name in _compatible_storage_names(server):
