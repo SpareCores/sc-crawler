@@ -773,8 +773,8 @@ def test_gcp_search_servers_fills_gpu_and_bundled_local_ssd_fields():
     ]
 
 
-def _srv(name, series, gpu=None):
-    return {"name": name, "series": series, "accelerator_model": gpu}
+def _srv(name, series, gpu=None, vcpus=8):
+    return {"name": name, "series": series, "accelerator_model": gpu, "vcpus": vcpus}
 
 
 def test_gcp_compatible_storage_names():
@@ -793,7 +793,7 @@ def test_gcp_compatible_storage_names():
         _srv("a4x-highgpu-4g", "a4x", "GB200")
     )
     # n1-megamem uses the M1 row: Balanced and Extreme, but no Throughput
-    names = _compatible_storage_names(_srv("n1-megamem-96", "n1"))
+    names = _compatible_storage_names(_srv("n1-megamem-96", "n1", vcpus=96))
     assert "hyperdisk-balanced" in names
     assert "hyperdisk-extreme" in names
     assert "hyperdisk-throughput" not in names
@@ -816,7 +816,12 @@ def test_gcp_inventory_servers_adds_compatible_storage_ids():
         SimpleNamespace(name="hyperdisk-balanced", storage_id="40001"),
         SimpleNamespace(name="hyperdisk-ml", storage_id="40004"),
     ]
-    server = {"name": "a2-highgpu-1g", "series": "a2", "accelerator_model": "A100"}
+    server = {
+        "name": "a2-highgpu-1g",
+        "series": "a2",
+        "accelerator_model": "A100",
+        "vcpus": 12,
+    }
     with (
         patch("sc_crawler.vendors._gcp.parallel_fetch_servers", return_value=[server]),
         patch(
@@ -844,6 +849,33 @@ def test_gcp_compatible_storage_names_persistent_disk():
     assert not any(
         n.startswith("pd-")
         for n in _compatible_storage_names(_srv("c4-standard-8", "c4"))
+    )
+
+
+def test_gcp_compatible_storage_names_extreme_min_vcpus():
+    # a3-highgpu-1g is too small for Extreme, a3-highgpu-8g is big enough
+    small = _compatible_storage_names(_srv("a3-highgpu-1g", "a3", "H100", vcpus=26))
+    big = _compatible_storage_names(_srv("a3-highgpu-8g", "a3", "H100", vcpus=208))
+    assert "hyperdisk-extreme" not in small
+    assert "hyperdisk-extreme" in big
+    # c3 needs 88 vCPUs
+    assert "hyperdisk-extreme" not in _compatible_storage_names(
+        _srv("c3-standard-4", "c3", vcpus=4)
+    )
+    assert "hyperdisk-extreme" in _compatible_storage_names(
+        _srv("c3-standard-176", "c3", vcpus=176)
+    )
+
+
+def test_gcp_compatible_storage_names_bare_metal_throughput():
+    # bare metal loses Throughput, except C4D
+    c3 = _compatible_storage_names(_srv("c3-standard-192-metal", "c3", vcpus=192))
+    c4d = _compatible_storage_names(_srv("c4d-standard-384-metal", "c4d", vcpus=384))
+    assert "hyperdisk-throughput" not in c3
+    assert "hyperdisk-throughput" in c4d
+    # the normal VM keeps it
+    assert "hyperdisk-throughput" in _compatible_storage_names(
+        _srv("c3-standard-8", "c3")
     )
 
 

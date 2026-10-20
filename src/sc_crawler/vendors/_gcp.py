@@ -238,9 +238,9 @@ def _local_ssd_partition_gib(server_name: str) -> int:
 
 # Machine series that support each Hyperdisk type
 # https://docs.cloud.google.com/compute/docs/disks/hyperdisks#machine-type-support
-# Footnote 1 on the docs page: on the older series (c2d, e2, n1, n2, n2d),
-# Hyperdisk Balanced and Balanced HA are for long-term data disks only.
-# Boot disks on these series should use Persistent Disk instead.
+# On c2d, e2, n1, n2 and n2d, Hyperdisk Balanced and Balanced HA need the
+# user to contact their Google account team first (not self-service).
+# https://docs.cloud.google.com/compute/docs/disks/hyperdisks#restrictions-for-machine-series-support
 _STORAGE_SERIES = {
     "hyperdisk-balanced": {
         "a3-h100",
@@ -444,6 +444,27 @@ _STORAGE_SERIES = {
     },
 }
 
+# Hyperdisk Extreme needs a minimum number of vCPUs on these series.
+# https://docs.cloud.google.com/compute/docs/disks/hyperdisks#restrictions-for-machine-series-support
+_EXTREME_MIN_VCPUS = {
+    "a3-h100": 104,
+    "a3-h200": 104,
+    "c3": 88,
+    "c3d": 60,
+    "c4": 96,
+    "g4": 96,
+    "m1": 80,
+    "c4a": 64,
+    "c4d": 64,
+    "m3": 64,
+    "m4": 64,
+    "n2": 80,
+}
+
+# Hyperdisk Throughput doesn't work on bare metal, except C4D and A4X Max.
+# https://docs.cloud.google.com/compute/docs/disks/hyperdisks#restrictions-for-machine-series-support
+_THROUGHPUT_BARE_METAL_OK = {"c4d", "a4x-max"}
+
 
 def _support_key(server: dict) -> str:
     """Map our series to the row names Google uses in the table."""
@@ -464,7 +485,20 @@ def _support_key(server: dict) -> str:
 
 def _compatible_storage_names(server: dict) -> list[str]:
     key = _support_key(server)
-    return [name for name, series in _STORAGE_SERIES.items() if key in series]
+    too_small_for_extreme = server["vcpus"] < _EXTREME_MIN_VCPUS.get(key, 0)
+    bare_metal_no_throughput = (
+        server["name"].endswith("-metal") and key not in _THROUGHPUT_BARE_METAL_OK
+    )
+    skip = set()
+    if too_small_for_extreme:
+        skip.add("hyperdisk-extreme")
+    if bare_metal_no_throughput:
+        skip.add("hyperdisk-throughput")
+    return [
+        name
+        for name, series in _STORAGE_SERIES.items()
+        if key in series and name not in skip
+    ]
 
 
 @cache
