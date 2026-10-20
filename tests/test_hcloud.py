@@ -148,6 +148,7 @@ def test_hcloud_inventory_servers_maps_compatible_storage_ids():
         disk=40,
         prices=[{"included_traffic": 1024}],
         locations=[],
+        category="Cost Optimized",
     )
 
     with (
