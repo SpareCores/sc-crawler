@@ -1,3 +1,11 @@
+## v0.10.x (DEVELOPMENT)
+
+New feature(s):
+
+- `observed_at` is the time of the last change instead of the last `pull`:
+  `pull` writes only new, changed, or newly inactive rows. `Vendor.observed_at`
+  is the time of the last successful crawl.
+
 ## v0.10.1 (October 20, 2026)
 
 New feature(s):

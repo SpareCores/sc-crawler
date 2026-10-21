@@ -38,7 +38,7 @@ from typing_extensions import Annotated
 from . import __version__
 from . import vendors as vendors_module
 from .alembic_helpers import alembic_cfg, get_revision
-from .insert import insert_items
+from .insert import insert_items, upsert_changed_items
 from .logger import ProgressPanel, ScRichHandler, VendorProgressTracker, logger
 from .lookup import benchmarks, compliance_frameworks, countries
 from .sentry import before_send, sentry_capture_or_raise
@@ -847,23 +847,30 @@ def pull(
             command.upgrade(alembic_cfg(connection, force_logging=False), "heads")
 
         with Session(engine) as session:
-            # reset status of static objects to phase out old records
-            # these records can be set INACTIVE as will be all overwritten in the next lines
-            for model in [ComplianceFramework, Country, Benchmark]:
-                session.exec(update(model).values(status=Status.INACTIVE))
             # we can only reset vendors in case of a full run
             if len(vendors) == len(supported_vendors):
-                session.exec(update(Vendor).values(status=Status.INACTIVE))
-            # add/merge static objects to database
-            for compliance_framework in compliance_frameworks.values():
-                session.merge(compliance_framework)
-            logger.info("%d Compliance Frameworks synced." % len(compliance_frameworks))
-            for country in countries.values():
-                session.merge(country)
-            logger.info("%d Countries synced." % len(countries))
-            for benchmark in benchmarks:
-                session.merge(benchmark)
-            logger.info("%d Benchmarks synced." % len(benchmarks))
+                session.exec(
+                    update(Vendor)
+                    .where(Vendor.status != Status.INACTIVE)
+                    .values(status=Status.INACTIVE)
+                )
+            # write new/changed static objects, mark the no longer listed ones inactive
+            for model, objects in [
+                (ComplianceFramework, compliance_frameworks.values()),
+                (Country, countries.values()),
+                (Benchmark, benchmarks),
+            ]:
+                # drop the import-time observed_at so that changed rows get the current time
+                items = [o.model_dump(exclude={"observed_at"}) for o in objects]
+                stats = upsert_changed_items(model, items, session=session)
+                logger.info(
+                    "%d %s(s) synced (%s)."
+                    % (
+                        len(items),
+                        model.get_table_name(),
+                        ", ".join(f"{v} {k}" for k, v in stats.items()),
+                    )
+                )
             # get data for each vendor and then add/merge to database
             # TODO each vendor should open its own session and run in parallel
             failed_vendors = []
@@ -923,6 +930,8 @@ def pull(
                         vendor.inventory_database_storage_prices()
                     # reset current step name
                     vendor.progress_tracker.update_vendor(step="✔")
+                    # vendor's observed_at is the time of the last successful crawl
+                    vendor.observed_at = datetime.now(UTC)
                     session.merge(vendor)
                     session.commit()
 

@@ -64,6 +64,26 @@ def jsonable(value):
     return value
 
 
+def _json_default(value):
+    if hasattr(value, "__json__"):
+        return value.__json__()
+    return str(value)
+
+
+def row_key(row: dict, primary_keys: List[str]) -> str:
+    """Stable string identifier of a row built from its primary key values."""
+    keys = {pk: row.get(pk) for pk in primary_keys}
+    return dumps(jsonable(keys), sort_keys=True, default=_json_default)
+
+
+def row_digest(row: dict, ignored: List[str]) -> str:
+    """Hash the content of a row dict, excluding the `ignored` columns."""
+    content = {k: v for k, v in row.items() if k not in ignored}
+    return sha1(
+        dumps(jsonable(content), sort_keys=True, default=_json_default).encode()
+    ).hexdigest()
+
+
 class ScMetaModel(SQLModel.__class__):
     """Custom class factory to auto-update table models.
 
@@ -228,14 +248,9 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
                 rowdict = dict(row)
             else:
                 rowdict = row.model_dump(warnings=False)
-            keys = {pk: rowdict.get(pk) for pk in pks}
-            keys_id = dumps(jsonable(keys), sort_keys=True)
-            for dropkey in [*ignored, *pks]:
-                rowdict.pop(dropkey, None)
-            rowhash = sha1(
-                dumps(jsonable(rowdict), sort_keys=True).encode()
-            ).hexdigest()
-            hashes[keys_id] = rowhash
+            # keep the exact PK values in the key: `sync` loads it back for row lookups
+            keys_id = dumps({pk: rowdict.get(pk) for pk in pks}, sort_keys=True)
+            hashes[keys_id] = row_digest(rowdict, [*ignored, *pks])
             if progress:
                 # updating the progress bar is expensive, so limit with manu iterations
                 if row_count > 1e3:
