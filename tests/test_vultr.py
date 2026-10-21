@@ -31,6 +31,23 @@ def _plan(plan_id, locations):
     }
 
 
+def _metal_plan(plan_id, locations):
+    return {
+        "id": plan_id,
+        "type": "SSD",
+        "cpu_count": 6,
+        "cpu_threads": 12,
+        "cpu_manufacturer": "Intel",
+        "cpu_model": "E-2286G",
+        "cpu_mhz": 4000,
+        "ram": 32768,
+        "disk": 960,
+        "disk_count": 2,
+        "bandwidth": 5120,
+        "locations": locations,
+    }
+
+
 def test_vultr_inventory_servers_status_from_locations():
     vendor = Mock(vendor_id="vultr")
     with (
@@ -42,7 +59,10 @@ def test_vultr_inventory_servers_status_from_locations():
                 _plan("vc2-24c-97gb", []),
             ],
         ),
-        patch("sc_crawler.vendors._vultr._get_plans_metal", return_value=[]),
+        patch(
+            "sc_crawler.vendors._vultr._get_plans_metal",
+            return_value=[_metal_plan("vbm-6c-32gb", ["ewr"])],
+        ),
     ):
         rows = inventory_servers(vendor)
     by_id = {row["server_id"]: row for row in rows}
@@ -55,6 +75,7 @@ def test_vultr_inventory_servers_status_from_locations():
         "block_storage_storage_opt",
     ]
     assert by_id["vc2-1c-1gb"]["compatible_storage_ids"] == expected_storage_ids
+    assert by_id["vbm-6c-32gb"]["compatible_storage_ids"] == []
 
 
 def test_vultr_inventory_databases_maps_plans_and_versions():
