@@ -1,5 +1,10 @@
 ## v0.10.x (DEVELOPMENT)
 
+New feature(s):
+
+- Record the duration (seconds) of the benchmarking framework run in
+  `BenchmarkScore.environment.duration`.
+
 Fix(es):
 
 - `AWS`: skip the new RDS `UnusedBox` products (no instance family, vCPU, or memory).
