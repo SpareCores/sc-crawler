@@ -2406,6 +2406,15 @@ def _get_rds_instance_products_by_region() -> tuple[
     }
 
 
+def _database_family(database_id: str, pricing_family: str) -> str:
+    """Family category of an RDS instance class, same as of its EC2 instance type.
+
+    Falls back to the category of the RDS pricing API for series that are not
+    EC2 instance types (e.g. db.x2g), in Title Case like the EC2 categories.
+    """
+    return _instance_family(database_id.removeprefix("db.")) or pricing_family.title()
+
+
 def inventory_databases(vendor):
     """List all available AWS RDS PostgreSQL instance types via `boto3` calls.
 
@@ -2530,7 +2539,8 @@ def inventory_databases(vendor):
                     "engine": DatabaseEngine.POSTGRESQL,
                     "wire_protocol": DatabaseWireProtocol.POSTGRESQL,
                     "engine_versions": major_versions,
-                    "family": product["instanceFamily"],
+                    "family": _database_family(database_id, product["instanceFamily"]),
+                    "series": _instance_series(database_id.removeprefix("db.")),
                     "description": description,
                     "server_id": server_id,
                     "vcpus": product["vcpu"],

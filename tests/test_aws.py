@@ -16,6 +16,7 @@ from sc_crawler.table_fields import (
 from sc_crawler.vendors._aws import (
     _active_region_ids,
     _boto_describe_db_major_engine_versions_first,
+    _database_family,
     _describe_orderable_db_instance_options_for_class_with_progress,
     _extract_rds_bundled_storage_size,
     _get_rds_instance_products_by_region,
@@ -356,6 +357,10 @@ def test_aws_inventory_databases_description_server_id_and_capabilities():
     by_id = {row["database_id"]: row for row in rows}
     assert set(by_id) == {"db.m5.large", "db.r6gd.xlarge"}
     assert by_id["db.m5.large"]["server_id"] == "m5.large"
+    assert by_id["db.m5.large"]["family"] == "General Purpose"
+    assert by_id["db.m5.large"]["series"] == "m5"
+    assert by_id["db.r6gd.xlarge"]["family"] == "Memory Optimized"
+    assert by_id["db.r6gd.xlarge"]["series"] == "r6gd"
     assert by_id["db.m5.large"]["memory_amount"] == 8 * 1024
     assert by_id["db.m5.large"]["storage_size"] is None
     assert by_id["db.m5.large"]["description"] == (
@@ -943,3 +948,18 @@ def test_aws_inventory_database_storage_prices_skip_missing_catalog():
 def test_aws_instance_series_and_family(instance_type, series, family):
     assert _instance_series(instance_type) == series
     assert _instance_family(instance_type) == family
+
+
+@pytest.mark.parametrize(
+    ("database_id", "pricing_family", "family"),
+    [
+        # same category as the EC2 instance type, even if the pricing API differs
+        ("db.m5.large", "General purpose", "General Purpose"),
+        ("db.m8gd.large", "Memory optimized", "General Purpose"),
+        ("db.t1.micro", "Micro instances", "General Purpose"),
+        # not an EC2 instance type: Title Case category of the pricing API
+        ("db.x2g.large", "Memory optimized", "Memory Optimized"),
+    ],
+)
+def test_aws_database_family(database_id, pricing_family, family):
+    assert _database_family(database_id, pricing_family) == family
