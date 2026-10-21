@@ -1,7 +1,7 @@
 import math
 from types import SimpleNamespace
 
-from sc_crawler.inspector_rules import block_reasons
+from sc_crawler.inspector_rules import block_reasons, has_related_database
 from sc_crawler.table_bases import DatabaseBase
 from sc_crawler.table_fields import (
     AcceleratorType,
@@ -243,3 +243,19 @@ def test_multiple_reasons_can_stack():
         "Insufficient memory (2.1 GB minimum).",
         "Benchmark doesn't scale beyond 32 cores.",
     ]
+
+
+def test_has_related_database():
+    vendor = SimpleNamespace(
+        databases=[
+            SimpleNamespace(server_id="Standard_D2ds_v5"),
+            SimpleNamespace(server_id=None),
+        ]
+    )
+    related = _server(vendor_id="azure", server_id="Standard_D2ds_v5", vendor=vendor)
+    unrelated = _server(vendor_id="azure", server_id="Standard_F2s_v2", vendor=vendor)
+    assert has_related_database(related)
+    assert not has_related_database(unrelated)
+    assert not has_related_database(
+        _server(server_id="cx22", vendor=SimpleNamespace(databases=[]))
+    )

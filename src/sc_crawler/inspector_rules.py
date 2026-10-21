@@ -9,6 +9,20 @@ if TYPE_CHECKING:
     from .tables import Database, Server
 
 
+def has_related_database(server: "Server") -> bool:
+    """Check if the server is the underlying server of any Database of the same Vendor.
+
+    Args:
+        server: The server to look up in the `server_id` of the Vendor's Databases.
+
+    Returns:
+        True if at least one Database of the Vendor references the server.
+    """
+    return any(
+        database.server_id == server.server_id for database in server.vendor.databases
+    )
+
+
 def block_reasons(
     resource: "Server | Database", tasks: str | List[str]
 ) -> dict[str, List[str]]:
@@ -45,7 +59,14 @@ def block_reasons(
     results = {task: [] for task in tasks}
     for task in tasks:
         # override the overrides: although no credits, we still want to run these
+        if resource.vendor_id == "azure":
+            # need full DBaaS coverage at Azure for analysis
+            if task == "pgbench_postgres_ro_durable" and has_related_database(resource):
+                continue
+            if isinstance(resource, DatabaseBase):
+                continue
         if task == "stressng_benchmarks":
+            # www blogpost citing data collected manually in 2024 that we need to repro
             if (resource.vendor_id, resource.api_reference) in [
                 ("aws", "c6a.large"),
                 ("aws", "c6a.2xlarge"),
