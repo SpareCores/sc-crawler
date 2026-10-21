@@ -1,4 +1,4 @@
-## v0.10.x (DEVELOPMENT)
+## v0.10.2 (October 22, 2026)
 
 New feature(s):
 
