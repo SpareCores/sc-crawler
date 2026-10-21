@@ -8,6 +8,56 @@ from .table_fields import AcceleratorType, DatabaseHaLevel, DatabaseHaStrategy
 if TYPE_CHECKING:
     from .tables import Database, Server
 
+# task                              n         min        mean      median         p90         p99         max
+# -----------------------------------------------------------------------------------------------------------
+# vllm                           1331    15m00.1s  1h03m03.1s  1h05m47.8s  1h30m43.3s  1h53m58.0s  2h23m06.4s
+# llm                            3532     4m35.8s    30m58.0s    33m05.8s    41m38.5s    49m55.5s  1h29m01.4s
+# pgbench_postgres_ro_durable     513    13m19.8s    24m25.6s    25m31.3s    25m50.0s    26m34.5s    27m23.9s
+# stressng_benchmarks            2176     6m59.3s    14m44.2s    14m43.4s    15m04.3s    25m03.6s  1h05m35.0s
+# geekbench                      3349        7.0s    13m50.2s     5m52.6s    10m22.3s  3h31m53.9s  6h09m37.1s
+# static_web                     3606    11m36.1s    12m04.0s    11m49.3s    12m09.3s    18m59.4s    36m39.3s
+# compression_text               3585     2m34.8s    11m28.3s    10m59.7s    18m59.6s    29m40.7s  1h47m56.5s
+# ffmpeg                          361     2m47.5s     9m16.4s     9m25.9s    12m19.1s    14m23.3s    17m16.9s
+# bw_mem                         3608       19.3s     5m45.4s     3m58.3s    13m16.6s    23m41.2s  1h31m04.2s
+# openssl                        3618     3m19.6s     4m12.3s     3m47.4s     4m13.8s    16m14.8s  1h14m23.5s
+# nvbandwidth                     170       21.5s     3m32.0s     2m22.9s     8m34.7s    18m13.3s    24m55.7s
+# membench                       2206       35.5s     3m16.4s     2m24.4s     5m49.6s    15m17.2s    36m59.4s
+# stressngfull                   3620       11.5s     3m05.0s     2m51.0s     5m40.3s     7m42.9s    49m32.4s
+# passmark                       3598     1m09.1s     3m00.0s     2m53.8s     3m13.0s     7m00.8s    32m09.4s
+# redis                          3602     1m09.1s     1m26.3s     1m17.3s     1m28.7s     3m32.2s    39m14.6s
+# lstopo                         2258        1.5s       29.8s       12.9s       23.2s    12m02.5s    28m46.4s
+# lshw                           3627        1.7s       24.7s       14.0s       25.8s     7m05.0s    28m46.2s
+# lscpu                          3628        1.5s       24.4s       13.8s       25.5s     7m04.0s    28m46.4s
+# stressng                       1606       21.0s       24.1s       23.6s       27.3s       31.8s       48.5s
+# stressngsinglecore             1607       20.4s       21.1s       20.8s       21.8s       24.6s       38.2s
+# virtualization                 3614        1.1s       19.7s       13.0s       22.6s     2m01.4s    28m46.2s
+# lsblk                          2252        0.6s       19.0s        6.3s       15.0s     8m30.9s    46m55.5s
+# dmidecode                      3577        1.0s       17.9s       10.3s       22.6s     2m20.9s    28m46.4s
+# nvidia_smi                      176        2.4s       13.5s       13.7s       20.3s       30.9s     2m13.7s
+# lsblk_discard                  2256        0.5s        4.7s        2.0s       12.7s       33.9s     4m56.0s
+# lsblk_topo                     2255        0.5s        4.7s        2.1s       12.5s       33.7s     5m12.0s
+# timing                         1699        0.0s        0.0s        0.0s        0.0s        0.0s        0.1s
+_CHEAP_TASKS = [
+    "geekbench",
+    "openssl",
+    "nvbandwidth",
+    "membench",
+    "stressngfull",
+    "passmark",
+    "redis",
+    "lstopo",
+    "lshw",
+    "lscpu",
+    "stressng",
+    "stressngsinglecore",
+    "virtualization",
+    "lsblk",
+    "dmidecode",
+    "nvidia_smi",
+    "lsblk_discard",
+    "lsblk_topo",
+]
+
 
 def has_related_database(server: "Server") -> bool:
     """Check if the server is the underlying server of any Database of the same Vendor.
@@ -61,7 +111,10 @@ def block_reasons(
         # override the overrides: although no credits, we still want to run these
         if resource.vendor_id == "azure" and resource.memory_amount < 1024**2:
             # need full DBaaS coverage at Azure for analysis (at least below 1TB RAM)
-            if task == "pgbench_postgres_ro_durable" and has_related_database(resource):
+            if task in [
+                *_CHEAP_TASKS,
+                "pgbench_postgres_ro_durable",
+            ] and has_related_database(resource):
                 continue
             if isinstance(resource, DatabaseBase):
                 continue
