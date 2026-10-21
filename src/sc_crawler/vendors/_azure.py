@@ -2212,6 +2212,13 @@ _PG_EDITION_PRODUCT_TOKENS = {
     "MemoryOptimized": ("memory optimized", "memory purpose"),
     "Burstable": ("burstable",),
 }
+# Pricing tiers of Azure Database for PostgreSQL flexible server
+# https://learn.microsoft.com/en-us/azure/postgresql/compute-storage/concepts-compute
+_PG_EDITION_FAMILY = {
+    "Burstable": "Burstable",
+    "GeneralPurpose": "General Purpose",
+    "MemoryOptimized": "Memory Optimized",
+}
 _PG_SKU_NAME_PREFIX = {
     "Burstable": "B",
     "GeneralPurpose": "GP",
@@ -2647,7 +2654,8 @@ def inventory_databases(vendor):
                 "engine": DatabaseEngine.POSTGRESQL,
                 "wire_protocol": DatabaseWireProtocol.POSTGRESQL,
                 "engine_versions": facts["engine_versions"],
-                "family": series,
+                "family": _PG_EDITION_FAMILY.get(edition_name),
+                "series": series,
                 "vcpus": vcpus,
                 "memory_amount": memory_amount,
                 "storage_size": None,
@@ -2741,7 +2749,8 @@ def inventory_database_prices(vendor):
                 price_item = _pg_lookup_retail_price(
                     vendor=vendor,
                     database_id=database.database_id,
-                    edition_name=database.family,
+                    # series of the database, e.g. Dsv3 to match the product names
+                    edition_name=_parse_database_name(database.database_id)[0],
                     prices_by_arm=prices_by_arm,
                 )
                 if price_item is None:
