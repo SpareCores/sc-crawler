@@ -13,6 +13,7 @@ from sc_crawler.vendors._gcp import (
     _compatible_storage_names,
     _gcp_accelerator_type,
     _local_ssd_partition_gib,
+    _machine_family,
     _search_servers,
     _server_accelerators,
     _server_bundled_local_ssd_gib,
@@ -1080,6 +1081,33 @@ def test_gcp_inventory_server_prices_a4_uses_spot_machine_slice_sku():
 )
 def test_gcp_server_family(server_name, expected):
     assert _server_family(server_name) == expected
+
+
+@pytest.mark.parametrize(
+    ("server_name", "expected"),
+    [
+        ("c4-standard-8", "General Purpose"),
+        ("n2-highmem-16", "General Purpose"),
+        # shared-core machine types of the N1 series
+        ("f1-micro", "General Purpose"),
+        ("g1-small", "General Purpose"),
+        ("c2-standard-4", "Compute Optimized"),
+        ("m3-ultramem-64", "Memory Optimized"),
+        # M1 machine types are named after N1
+        ("n1-megamem-96", "Memory Optimized"),
+        ("n1-ultramem-160", "Memory Optimized"),
+        ("z3-highmem-88", "Storage Optimized"),
+        ("c4n-standard-8", "Network Optimized"),
+        ("a3-highgpu-8g", "GPU Machines"),
+        ("ct6e-standard-4t", "TPU Machines"),
+        ("ct5l-hightpu-4t", "TPU Machines"),
+        ("tpu7-standard-4t", "TPU Machines"),
+        # series not (yet) classified
+        ("brand-new-standard-8", None),
+    ],
+)
+def test_gcp_machine_family(server_name, expected):
+    assert _machine_family(server_name) == expected
 
 
 @pytest.mark.parametrize(

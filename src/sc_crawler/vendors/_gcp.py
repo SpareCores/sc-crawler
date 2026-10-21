@@ -4,7 +4,7 @@ from functools import cache
 from logging import DEBUG, WARNING
 from re import compile as recompile
 from re import sub
-from typing import List
+from typing import List, Optional
 
 from cachier import cachier
 from google.auth import default
@@ -383,8 +383,11 @@ _STORAGE_SERIES = {
     },
     # Persistent Disk support per machine series
     # https://docs.cloud.google.com/compute/docs/disks/persistent-disks
+    # https://docs.cloud.google.com/compute/docs/disks/performance
     # (Extreme PD is left out on purpose: it is not in STORAGE_ALLOWLIST,
     # so it is not in the storage table.)
+    # ct5l is not documented on either page, only ct5lp (TPU v5e) is: it is
+    # assumed to support the same PD types as ct5lp.
     "pd-standard": {
         "a2",
         "c2",
@@ -1112,6 +1115,43 @@ def _skus_dict():
     return lookup
 
 
+# Machine family category of each machine series.
+# https://docs.cloud.google.com/compute/docs/machine-resource#machine_type_comparison
+_SERIES_FAMILY = {
+    "General Purpose": (
+        "c3 c3d c4 c4a c4d e2 n1 n2 n2d n4 n4a n4d t2a t2d "
+        # f1-micro and g1-small are the shared-core machine types of the N1 series
+        # https://docs.cloud.google.com/compute/docs/machine-resource#shared-core-types
+        "f1 g1"
+    ),
+    "Compute Optimized": "c2 c2d h3 h4d",
+    "Memory Optimized": "m1 m2 m3 m4 x4 x5",
+    "Storage Optimized": "z3 z4d z4m",
+    "Network Optimized": "c4n m4n",
+    # Accelerator-optimized machines are split into GPU and TPU machines
+    # https://docs.cloud.google.com/compute/docs/accelerator-optimized-machines
+    "GPU Machines": "a2 a3 a4 a4x g2 g4",
+    # https://docs.cloud.google.com/compute/docs/tpus/tpu-machines
+    "TPU Machines": "ct3 ct3p ct4p ct5l ct5lp ct5p ct6e tpu7 tpu7x",
+}
+_SERIES_TO_FAMILY = {
+    series: family
+    for family, series_list in _SERIES_FAMILY.items()
+    for series in series_list.split()
+}
+
+
+def _machine_family(server_name: str) -> Optional[str]:
+    """Look up the machine family category (e.g. General Purpose) of a machine type.
+
+    Returns None for series not listed above, so new series are not mislabeled.
+    """
+    # n1-megamem and n1-ultramem are the M1 memory-optimized machine types
+    if server_name.startswith(("n1-megamem", "n1-ultramem")):
+        return "Memory Optimized"
+    return _SERIES_TO_FAMILY.get(server_name.split("-")[0])
+
+
 def _search_servers(zone_name: str) -> List[dict]:
     zone_servers = []
     for server in _servers(zone_name):
@@ -1124,7 +1164,7 @@ def _search_servers(zone_name: str) -> List[dict]:
                 "api_reference_object": {"machine_type": server.name},
                 "display_name": server.name,
                 "description": server.description,
-                "family": server.name.split("-")[0],
+                "family": _machine_family(server.name),
                 "series": server.name.split("-")[0],
                 "vcpus": server.guest_cpus,
                 "hypervisor": None,
