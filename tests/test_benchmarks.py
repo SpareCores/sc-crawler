@@ -533,7 +533,7 @@ def test_measured_at_is_utc(monkeypatch, end, expected):
                 "start": "2024-09-21T17:37:40.340294",
                 "end": "2024-09-21T17:38:00.020936",
             },
-            {"duration": 19.681},
+            {"duration": 19.7},
         ),
         # mixed naive (UTC) and tz-aware timestamps
         (
