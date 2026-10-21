@@ -1,3 +1,5 @@
+"""Inventory of Alibaba Cloud via its APIs: servers, storages, traffic and IPv4 addresses, with their prices."""
+
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
@@ -39,6 +41,7 @@ from ..logger import logger
 from ..lookup import map_compliance_frameworks_to_vendor
 from ..sentry import sentry_capture_or_raise
 from ..table_fields import (
+    AcceleratorType,
     Allocation,
     CpuAllocation,
     CpuArchitecture,
@@ -1532,6 +1535,8 @@ def inventory_servers(vendor):
                 "server_id": server_id,
                 "name": server_id,
                 "api_reference": server_id,
+                # https://www.pulumi.com/registry/packages/alicloud/api-docs/ecs/instance/
+                "api_reference_object": {"instance_type": server_id},
                 "display_name": server_id,
                 "description": description,
                 "family": family,
@@ -1549,14 +1554,15 @@ def inventory_servers(vendor):
                 "memory_generation": None,
                 "memory_speed": None,
                 "memory_ecc": None,
-                "gpu_count": gpu_count,
-                "gpu_memory_min": gpu_memory_per_gpu,
-                "gpu_memory_total": gpu_memory_total,
+                "accelerator_count": gpu_count,
+                "accelerator_memory_min": gpu_memory_per_gpu,
+                "accelerator_memory_total": gpu_memory_total,
+                "accelerator_type": AcceleratorType.GPU if gpu_count else None,
                 # TODO fill in from GPUSpec? or just let the inspector fill it in?
-                "gpu_manufacturer": gpu_manufacturer,
-                "gpu_family": gpu_family,
-                "gpu_model": gpu_model,
-                "gpus": [],
+                "accelerator_manufacturer": gpu_manufacturer,
+                "accelerator_family": gpu_family,
+                "accelerator_model": gpu_model,
+                "accelerators": [],
                 "storage_size": storage_size,
                 "storage_type": storage_type,
                 "storages": [],

@@ -35,7 +35,7 @@ _NORMALIZATION = BenchmarkComponentNormalizationMethod.MEDIAN_RATIO
 
 
 def _round_measurement(
-    value: float | None, *, sig: int = 4, integer_at: float = 1000
+    value: float | None, *, sig: int = 2, integer_at: float = 1000
 ) -> int | float | None:
     """Round a benchmark measurement for score-breakdown storage.
 
@@ -50,7 +50,7 @@ def _round_measurement(
     return float(f"{value:.{sig}g}")
 
 
-def _round_sigfigs(value: float | None, *, sig: int) -> float | None:
+def _round_sigfigs(value: float | None, *, sig: int = 2) -> float | None:
     """Round unitless ratios to *sig* significant figures."""
     if value is None:
         return None
@@ -223,12 +223,16 @@ def _load_scores(
     return per_server, entry_medians
 
 
-def _normalise(raw: float, fleet_median: float, higher_is_better: bool) -> float | None:
+def _normalise(
+    raw: float, fleet_median: float, higher_is_better: bool, sig: int = 2
+) -> float | None:
     """Normalise *raw* to a ratio to the per-benchmark median, or None if invalid."""
     if raw <= 0 or fleet_median <= 0:
         return None
+    raw = _round_sigfigs(raw, sig=sig)
+    fleet_median = _round_sigfigs(fleet_median, sig=sig)
     ratio = raw / fleet_median if higher_is_better else fleet_median / raw
-    return ratio
+    return _round_sigfigs(ratio, sig=sig)
 
 
 def _component_note_for_invalid(raw: float | None) -> str | None:
@@ -293,7 +297,7 @@ def _compute_workload_score_rows(
                             weight_share=0.0,  # filled after total_weight known
                             raw=_round_measurement(raw),
                             reference=_round_measurement(fleet_median),
-                            normalized=_round_sigfigs(norm, sig=3),
+                            normalized=norm,
                             higher_is_better=higher,
                             note=None,
                         )
@@ -328,7 +332,7 @@ def _compute_workload_score_rows(
                             weight_share=0.0,
                             raw=_round_measurement(raw),
                             reference=_round_measurement(fleet_median),
-                            normalized=_round_sigfigs(penalty, sig=3),
+                            normalized=_round_sigfigs(penalty),
                             higher_is_better=higher,
                             note="penalized: no usable measurement",
                         )
@@ -356,18 +360,17 @@ def _compute_workload_score_rows(
             for component in breakdown_components:
                 if component.normalized is not None:
                     component.weight_share = _round_sigfigs(
-                        component.weight / total_weight, sig=3
+                        component.weight / total_weight
                     )
                     component.impact = _round_sigfigs(
                         _component_impact_pct(
                             component,
                             _AGGREGATION,
                             _NORMALIZATION,
-                        ),
-                        sig=3,
+                        )
                     )
 
-            score = _round_sigfigs(2 ** (log_weighted_sum / total_weight), sig=3)
+            score = _round_sigfigs(2 ** (log_weighted_sum / total_weight))
 
             note: str | None = None
             if missing_labels:

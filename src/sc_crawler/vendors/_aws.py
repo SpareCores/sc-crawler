@@ -1,3 +1,5 @@
+"""Inventory of Amazon Web Services via `boto3`: servers, storages, traffic, IPv4 addresses and managed PostgreSQL (RDS), with their prices."""
+
 import json
 import re
 from collections import defaultdict
@@ -18,8 +20,9 @@ from ..inspector import _standardize_gpu_count
 from ..logger import logger
 from ..lookup import map_compliance_frameworks_to_vendor
 from ..sentry import sentry_capture_or_raise
-from ..str_utils import extract_last_number
 from ..table_fields import (
+    Accelerator,
+    AcceleratorType,
     Allocation,
     CpuAllocation,
     DatabaseEngine,
@@ -29,7 +32,6 @@ from ..table_fields import (
     DatabaseStorageScope,
     DatabaseWireProtocol,
     Disk,
-    Gpu,
     PriceTier,
     PriceUnit,
     Status,
@@ -358,6 +360,14 @@ def _reconcile_server_status(
             if server.server_id in available_server_ids
             else Status.INACTIVE
         )
+        # servers kept ACTIVE only by spot prices are not returned by
+        # describe_instance_types, so might miss fields added since last crawled
+        if (
+            server.status == Status.ACTIVE
+            and server.accelerator_count > 0
+            and server.accelerator_type is None
+        ):
+            server.accelerator_type = AcceleratorType.GPU
 
 
 @cachier()
@@ -611,7 +621,7 @@ def _get_gpus_of_instance_type(instance_type):
     info = instance_type["GpuInfo"]
 
     def to_gpu(gpu):
-        return Gpu(
+        return Accelerator(
             manufacturer=gpu["Manufacturer"],
             model=gpu["Name"],
             memory=gpu["MemoryInfo"]["SizeInMiB"],
@@ -640,6 +650,8 @@ def _make_server_from_instance_type(instance_type, vendor) -> dict:
         "vendor_id": vendor.vendor_id,
         "name": it,
         "api_reference": it,
+        # https://www.pulumi.com/registry/packages/aws/api-docs/ec2/instance/
+        "api_reference_object": {"instance_type": it},
         "display_name": it,
         "description": _annotate_instance_type(it),
         "hypervisor": instance_type.get("Hypervisor", None),
@@ -651,12 +663,14 @@ def _make_server_from_instance_type(instance_type, vendor) -> dict:
         "cpu_architecture": cpu_info["SupportedArchitectures"][0],
         "cpu_manufacturer": cpu_info.get("Manufacturer", None),
         "memory_amount": instance_type["MemoryInfo"]["SizeInMiB"],
-        "gpu_count": gpu_info[0],
-        "gpu_memory_min": gpu_info[1],
-        "gpu_memory_total": gpu_info[2],
-        "gpu_manufacturer": gpu_info[3],
-        "gpu_model": gpu_info[4],
-        "gpus": _get_gpus_of_instance_type(instance_type),
+        "accelerator_count": gpu_info[0],
+        "accelerator_memory_min": gpu_info[1],
+        "accelerator_memory_total": gpu_info[2],
+        # GpuInfo lists GPUs only (no Inferentia/Trainium or FPGA accelerators)
+        "accelerator_type": AcceleratorType.GPU if gpu_info[0] else None,
+        "accelerator_manufacturer": gpu_info[3],
+        "accelerator_model": gpu_info[4],
+        "accelerators": _get_gpus_of_instance_type(instance_type),
         "storage_size": storage_info[0],
         "storage_type": storage_info[1],
         "storages": _get_storages_of_instance_type(instance_type),
@@ -1537,7 +1551,7 @@ def inventory_servers(vendor):
     """List all available AWS instance types in all regions via `boto3` calls.
 
     Lifecycle is reconciled after spot price collection via
-    [_reconcile_server_status][sc_crawler.vendors._aws._reconcile_server_status]
+    `_reconcile_server_status`
     (offerings + spot in ACTIVE regions -> ACTIVE, else INACTIVE).
     """
     # TODO consider dropping this in favor of pricing.get_products, as
@@ -1756,19 +1770,26 @@ def inventory_storages(vendor):
         attributes = product["product"]["attributes"]
         product_id = attributes["volumeApiName"]
 
-        def get_attr(key: str) -> float:
-            return extract_last_number(
-                str(
-                    attributes.get(
-                        key,
-                        storage_manual_data[product_id][key],
-                    )
-                )
-            )
+        def get_attr(key: str, multiplier: int = 1) -> Optional[int]:
+            raw = str(attributes.get(key, storage_manual_data[product_id][key]))
+            if raw == "40 - 200":
+                raw = "200"
+            elif raw == "250 - based on 1 MiB I/O size":
+                raw = "250"
+            elif raw == "500 - based on 1 MiB I/O size":
+                raw = "500"
+            elif raw == "40 - 90 MB/sec":
+                raw = str(round(90 / _MIB_TO_MB))
+            raw = raw.removesuffix(" MiB/s").removesuffix(" TiB")
+            parsed = None
+            with sentry_capture_or_raise(vendor=vendor):
+                parsed = round(int(raw) * multiplier)
+            return parsed
 
         storage_type = (
             StorageType.HDD if "HDD" in attributes["storageMedia"] else StorageType.SSD
         )
+
         storages.append(
             {
                 "storage_id": product_id,
@@ -1777,9 +1798,9 @@ def inventory_storages(vendor):
                 "description": attributes["storageMedia"],
                 "storage_type": storage_type,
                 "max_iops": get_attr("maxIopsvolume"),
-                "max_throughput": round(get_attr("maxThroughputvolume") * _MIB_TO_MB),
-                "min_size": round(get_attr("minVolumeSize") * _GIB_TO_GB),
-                "max_size": round(get_attr("maxVolumeSize") * 1024 * _GIB_TO_GB),
+                "max_throughput": get_attr("maxThroughputvolume", _MIB_TO_MB),
+                "min_size": get_attr("minVolumeSize", _GIB_TO_GB),
+                "max_size": get_attr("maxVolumeSize", 1024 * _GIB_TO_GB),
             }
         )
 

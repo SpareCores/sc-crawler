@@ -1,9 +1,11 @@
+"""Helpers to load the hardware discovery and benchmarking data from the sc-inspector-data repository."""
+
 import csv
 import json
 import xml.etree.ElementTree as xmltree
 from atexit import register
 from contextlib import suppress
-from datetime import datetime
+from datetime import UTC, datetime
 from functools import cache
 from itertools import groupby
 from operator import itemgetter
@@ -28,7 +30,7 @@ from .inspector_helpers import (
 )
 from .logger import logger
 from .table_bases import ServerBase
-from .table_fields import DdrGeneration, Disk, Parallelism, StorageType
+from .table_fields import AcceleratorType, DdrGeneration, Disk, Parallelism, StorageType
 
 if TYPE_CHECKING:
     from .tables import Database, Server
@@ -125,16 +127,44 @@ def _get_server_framework_run_ids(server: "Server", framework: str) -> List[str]
         return []
 
 
+def _server_variant_basepath(server: "Server", variant: int | None) -> str | PathLike:
+    """Return the base path for a server's hardware variant."""
+    base = _server_path(server)
+    return base if variant is None else path.join(base, str(variant))
+
+
+def _server_variant_framework_basepath(
+    server: "Server", variant: int | None, framework: str
+) -> str | PathLike:
+    """Return the base path for a server's hardware variant and framework."""
+    return path.join(_server_variant_basepath(server, variant), framework)
+
+
+def _server_variant_framework_path(
+    server: "Server",
+    variant: int | None,
+    framework: str,
+    relpath: str | list[str] | None = None,
+) -> str | PathLike:
+    """Return the path for a server's hardware variant and framework with an optional relative path."""
+    relpath_list = [relpath] if isinstance(relpath, str) else (relpath or [])
+    return path.join(
+        _server_variant_framework_basepath(server, variant, framework), *relpath_list
+    )
+
+
 def _server_framework_path(
     server: "Server", framework: str, relpath: str | list[str] | None = None
 ) -> str | PathLike:
-    path_parts = (
-        [_server_path(server), framework, *relpath]
-        if isinstance(relpath, list)
-        else [_server_path(server), framework, relpath]
-    )
-    path_parts = [path_part for path_part in path_parts if path_part is not None]
-    return path.join(*path_parts)
+    """Return the path for a server's framework with an optional relative path.
+
+    Hardware-variant layout: default to variant 0 with a fallback to variantless path.
+    """
+    # TODO drop the fallback after sc-inspector-data migrated to the variant layout
+    variant_path = _server_variant_framework_path(server, 0, framework, relpath)
+    if path.exists(variant_path):
+        return variant_path
+    return _server_variant_framework_path(server, None, framework, relpath)
 
 
 def _database_framework_path(
@@ -293,13 +323,20 @@ def _server_average_time_to_start(server: "Server") -> float | None:
     return round(sum(durations) / len(durations), 2) if durations else None
 
 
-def _observed_at(resource: Union["Server", "Database"], framework: str) -> dict:
+def _measured_at(resource: Union["Server", "Database"], framework: str) -> str:
+    """End timestamp of the benchmark run, as recorded in its meta.json.
+
+    sc-inspector records naive timestamps in UTC, so make that explicit.
+    """
     if isinstance(resource, ServerBase):
         ts = _server_framework_meta(resource, framework)["end"]
     else:
         ts = _database_framework_meta(resource, framework)["end"]
     assert ts is not None
-    return {"observed_at": ts}
+    if isinstance(ts, str):
+        ts = datetime.fromisoformat(ts)
+    ts = ts.replace(tzinfo=UTC) if ts.tzinfo is None else ts.astimezone(UTC)
+    return ts.isoformat()
 
 
 def _framework_version(resource: Union["Server", "Database"], framework: str) -> dict:
@@ -314,7 +351,7 @@ def _framework_version(resource: Union["Server", "Database"], framework: str) ->
     )
 
 
-def _kernel_version(resource: ["Server", "Database"], framework: str) -> dict:
+def _kernel_version(resource: Union["Server", "Database"], framework: str) -> dict:
     kernel_version = None
     if isinstance(resource, ServerBase):
         kernel_version = _server_framework_meta(resource, framework).get(
@@ -335,7 +372,7 @@ def _benchmark_metafields(
     kernel_version_fallback: str | dict | None = None,
     override_framework_version: bool = False,
     override_kernel_version: bool = False,
-    extend_environment: dict | None = None,
+    extend_environment: dict = {},
 ) -> dict:
     if benchmark_id is None:
         if framework is None:
@@ -359,17 +396,19 @@ def _benchmark_metafields(
             if isinstance(kernel_version_fallback, str)
             else {"environment": kernel_version_fallback}
         )
-    if extend_environment:
-        kernel_version.setdefault("environment", {}).update(extend_environment)
+    environment = {
+        **kernel_version.get("environment", {}),
+        "measured_at": _measured_at(resource, framework),
+        **extend_environment,
+    }
     if isinstance(resource, ServerBase):
         _resource_ids = _server_ids(resource)
     else:
         _resource_ids = _database_ids(resource)
     return {
         **_resource_ids,
-        **_observed_at(resource, framework),
         **framework_version,
-        **kernel_version,
+        "environment": environment,
         "benchmark_id": benchmark_id,
     }
 
@@ -828,6 +867,158 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
     except Exception as e:
         _log_cannot_load_benchmarks(server, framework, e, True)
 
+    framework = "nvbandwidth"
+    try:
+        with open(_server_framework_stdout_path(server, framework), "r") as fp:
+            data = json.load(fp)["nvbandwidth"]
+        passed = {
+            testcase["name"]: testcase
+            for testcase in data["testcases"]
+            if testcase.get("status") == "Passed"
+        }
+        gpu_count = 0
+        for testcase in passed.values():
+            matrix = testcase.get("bandwidth_matrix")
+            if matrix:
+                gpu_count = max(gpu_count, len(matrix), len(matrix[0]))
+        extend_environment = {
+            "driver_version": data["Driver Version"],
+            "cuda_runtime_version": data["CUDA Runtime Version"],
+            "nvbandwidth_version": data["version"],
+            "gpu_count": gpu_count,
+            "p2p_supported": any(
+                name.startswith("device_to_device_") for name in passed
+            ),
+        }
+        for metric, source in (
+            ("host_to_gpu", "host_to_all_memcpy_ce"),
+            ("gpu_to_host", "all_to_host_memcpy_ce"),
+        ):
+            if source not in passed:
+                continue
+            benchmarks.append(
+                {
+                    **_benchmark_metafields(
+                        server,
+                        framework=framework,
+                        benchmark_id=":".join([framework, "all", metric]),
+                        extend_environment=extend_environment,
+                    ),
+                    "score": passed[source]["sum"],
+                }
+            )
+        duplex_sources = [
+            "host_to_all_bidirectional_memcpy_ce",
+            "all_to_host_bidirectional_memcpy_ce",
+        ]
+        if all(source in passed for source in duplex_sources):
+            benchmarks.append(
+                {
+                    **_benchmark_metafields(
+                        server,
+                        framework=framework,
+                        benchmark_id=":".join([framework, "all", "duplex"]),
+                        extend_environment=extend_environment,
+                    ),
+                    "score": min(passed[source]["sum"] for source in duplex_sources),
+                }
+            )
+        for group, metric, source in (
+            ("slot", "host_to_gpu", "host_to_device_memcpy_ce"),
+            ("slot", "gpu_to_host", "device_to_host_memcpy_ce"),
+            ("slot", "latency", "host_device_latency_sm"),
+            ("p2p", "single", "device_to_device_memcpy_write_ce"),
+            ("p2p", "duplex", "device_to_device_bidirectional_memcpy_write_ce"),
+            ("p2p", "latency", "device_to_device_latency_sm"),
+            ("p2p", "gather", "all_to_one_write_ce"),
+        ):
+            testcase = passed.get(source)
+            if testcase is None:
+                continue
+            cell_count = sum(
+                cell != "N/A" for row in testcase["bandwidth_matrix"] for cell in row
+            )
+            if not cell_count:
+                continue
+            benchmarks.append(
+                {
+                    **_benchmark_metafields(
+                        server,
+                        framework=framework,
+                        benchmark_id=":".join([framework, group, metric]),
+                        extend_environment=extend_environment,
+                    ),
+                    "score": testcase["sum"] / cell_count,
+                }
+            )
+        sm = passed.get("host_to_device_memcpy_sm")
+        ce = passed.get("host_to_device_memcpy_ce")
+        if sm is not None and ce is not None and ce["sum"]:
+            benchmarks.append(
+                {
+                    **_benchmark_metafields(
+                        server,
+                        framework=framework,
+                        benchmark_id=":".join([framework, "efficiency", "sm_ce_ratio"]),
+                        extend_environment=extend_environment,
+                    ),
+                    "score": min(sm["sum"] / ce["sum"], 1.0),
+                }
+            )
+    except Exception as e:
+        _log_cannot_load_benchmarks(server, framework, e, True)
+
+    framework = "stressng_benchmarks"
+    try:
+        # lookup imports tables, which imports this module
+        from .lookup import stress_ng_benchmark_id
+
+        stressors = _server_framework_stdout_from_json(server, framework)["stressors"]
+        benchmark_metafields = _benchmark_metafields(
+            server, framework=framework, benchmark_id=framework
+        )
+        for method, by_cores in stressors.items():
+            try:
+                benchmark_id = stress_ng_benchmark_id(method)
+                if benchmark_id is None:
+                    _log_cannot_load_benchmarks(
+                        server, framework, f"unknown stressor {method!r}"
+                    )
+                    continue
+                for cores, result in by_cores.items():
+                    if result is None:
+                        continue
+                    score = float(result["bogo_ops_per_sec"])
+                    if score <= 0:
+                        continue
+                    cores_count = int(cores)
+                    row = {
+                        **benchmark_metafields,
+                        "benchmark_id": benchmark_id,
+                        "config": {
+                            "cores": (
+                                Parallelism.SINGLE
+                                if cores_count == 1
+                                else Parallelism.MULTI
+                            )
+                        },
+                        "score": score,
+                    }
+                    benchmarks.append(row)
+                    # 1-vCPU servers only have a "1" key, also emit MULTI so
+                    # cores=multi filters still include them
+                    if cores_count == 1 and server.vcpus == 1:
+                        benchmarks.append(
+                            {
+                                **row,
+                                "config": {"cores": Parallelism.MULTI},
+                            }
+                        )
+            except Exception as e:
+                _log_cannot_load_benchmarks(server, f"{framework}:{method}", e, True)
+    except Exception as e:
+        _log_cannot_load_benchmarks(server, framework, e, True)
+
     # add server related pgbench benchmark scores
     benchmarks.extend(_pgbench_benchmark_scores(server))
 
@@ -1150,7 +1341,7 @@ def _standardize_gpu_model(model, server=None):
     if model == "nvidia-h200-141gb":
         model = "H200"
     if model == "nvidia-rtx-pro-6000":
-        model = "RTX Pro 6000"
+        model = "RTX PRO 6000"
     if model == "nvidia-gb200":
         model = "GB200"
     if model == "nvidia-gb300":
@@ -1176,8 +1367,13 @@ def _standardize_gpu_model(model, server=None):
         return "RTX 5880"
     if model == "RTX6000":
         return "RTX 6000"
-    if model == "RTX PRO Server 6000":
-        return "RTX Pro 6000"
+    if model in [
+        "RTX PRO 6000",
+        "RTX PRO 6000 Blackwell",
+        "RTX PRO Server 6000",
+        "RTX PRO 6000 Blackwell Server Edition",
+    ]:
+        return "RTX PRO 6000"
     if model == "T4g":
         return "T4G"
     # drop too specific parts
@@ -1192,22 +1388,43 @@ def _standardize_gpu_model(model, server=None):
     model = sub(r"(\*1)?/\d+$", "", model)
     # yes, sometimes it's written out that there's 1
     model = sub(r"\*1$", "", model)
+    # NVIDIA styles the brand as "RTX PRO" (all-caps PRO):
+    # https://www.nvidia.com/en-us/products/workstations/professional-desktop-gpus/
+    if model[:7].upper() == "RTX PRO":
+        model = "RTX PRO" + model[7:]
     return model
 
 
 def _standardize_gpu_family(server):
-    family = server.get("gpu_family")
-    model = server.get("gpu_model") or ""
+    family = server.get("accelerator_family")
+    model = server.get("accelerator_model") or ""
     if "A100" in model:
         family = "Ampere"
     if "K80" in model:
         family = "Kepler"
     if "H100" in model or "H200" in model:
         family = "Hopper"
-    if "B200" in model or "GB200" in model or "GB300" in model:
+    # RTX PRO series (6000, 5000, 4500 etc.) are Blackwell:
+    # https://www.nvidia.com/en-us/products/workstations/professional-desktop-gpus/
+    if (
+        "B200" in model
+        or "GB200" in model
+        or "GB300" in model
+        or model.upper().startswith("RTX PRO")
+    ):
         family = "Blackwell"
-    if "L4" in model or "RTX Pro 6000" in model:
+    if "L4" in model:
         family = "Ada Lovelace"
+    # non-PRO RTX 6000 is either the RTX 6000 Ada Generation (48 GB, Ada Lovelace):
+    # https://www.nvidia.com/en-us/products/workstations/rtx-6000/
+    # or the earlier Quadro RTX 6000 (24 GB, Turing):
+    # https://www.nvidia.com/en-gb/products/workstations/quadro/rtx-6000/
+    if model == "RTX 6000":
+        memory = server.get("accelerator_memory_min")
+        if memory == 48 * 1024:
+            family = "Ada Lovelace"
+        elif memory == 24 * 1024:
+            family = "Turing"
     if model in ["v3", "v5e", "v5p", "v6e", "v7x"] or model.startswith("TPU"):
         family = "TPU"
     if "V520" in model:
@@ -1231,7 +1448,7 @@ _NVIDIA_GPU_MODELS = {
     "P100",
     "P4",
     "K80",
-    "RTX Pro 6000",
+    "RTX PRO 6000",
 }
 
 
@@ -1294,6 +1511,12 @@ def _find_storage_disks_from_lsblk(
         "upcloud": True,
         "vultr": False,
     }
+    # Performance class for virtio-scsi root disks (vendors above with False)
+    _virtio_root_storage_type = {
+        "hcloud": StorageType.NVME_SSD,
+        "ovh": StorageType.SSD,
+        "vultr": StorageType.NVME_SSD,
+    }
 
     for d in lsblk_data.get("blockdevices", []):
         subsystems = d.get("subsystems", "")
@@ -1314,7 +1537,7 @@ def _find_storage_disks_from_lsblk(
                     description=str(nvme_storage_count),
                 )
             )
-        # Hetzner/OVH virtio-scsi
+        # Local/root disk presented as virtio-scsi (Hetzner, OVH, Vultr)
         if (
             not _boot_from_attached_network_drive[server.vendor_id]
             and name == "sda"
@@ -1323,7 +1546,7 @@ def _find_storage_disks_from_lsblk(
             disks.append(
                 Disk(
                     size=size_gb,
-                    storage_type=StorageType.NETWORK,
+                    storage_type=_virtio_root_storage_type[server.vendor_id],
                 )
             )
 
@@ -1341,8 +1564,8 @@ def _find_storage_disks_from_lshw(
             if child.get("class") == "disk" and "size" in child:
                 size_gb = child.get("size", 0) // 1000**3
                 device_type = _determine_storage_type(node, child, server)
-                # GCP network disks are added manually, not bundled, so skip them
-                if server.vendor_id == "gcp" and device_type == StorageType.NETWORK:
+                # GCP Persistent Disk is added manually, not bundled
+                if device_type is None:
                     continue
                 disks.append(
                     Disk(
@@ -1359,20 +1582,20 @@ def _find_storage_disks_from_lshw(
 
 def _determine_storage_type(
     parent_node: dict, disk_node: dict, server: ServerBase
-) -> StorageType:
+) -> StorageType | None:
     """Determine disk type based on parent controller and disk properties."""
     vendor_id = server.vendor_id
     storage_product = parent_node.get("product", "").lower()
     disk_description = disk_node.get("description", "").lower()
 
     if vendor_id == "gcp" and "-pd" in storage_product:
-        return StorageType.NETWORK
+        return None
 
     if vendor_id == "aws" and "amazon elastic block store" in storage_product:
-        return StorageType.NETWORK
+        return StorageType.SSD
 
     if vendor_id == "upcloud" and "virtio block device" in storage_product:
-        return StorageType.NETWORK
+        return StorageType.SSD
 
     if "nvme" in disk_description:
         return StorageType.NVME_SSD
@@ -1580,18 +1803,40 @@ def inspect_update_server_dict(server: dict) -> dict:
         "memory_generation": lambda: DdrGeneration[lookups["dmidecode_memory"]["Type"]],
         # convert to Mhz
         "memory_speed": lambda: int(lookups["dmidecode_memory"]["Speed"]) / 1e6,
-        "gpus": lambda: _gpus_details(lookups["gpus"]),
-        "gpu_manufacturer": lambda: _gpu_most_common(server["gpus"], "manufacturer"),
-        "gpu_family": lambda: _gpu_most_common(server["gpus"], "family"),
-        "gpu_model": lambda: _gpu_most_common(server["gpus"], "model"),
+        "accelerators": lambda: _gpus_details(lookups["gpus"]),
+        "accelerator_manufacturer": lambda: _gpu_most_common(
+            server["accelerators"], "manufacturer"
+        ),
+        "accelerator_family": lambda: _gpu_most_common(
+            server["accelerators"], "family"
+        ),
+        "accelerator_model": lambda: _gpu_most_common(server["accelerators"], "model"),
         # skip update if there is no HW-inspected GPU info
-        "gpu_count": lambda: len(server["gpus"]) if len(server["gpus"]) else None,
-        "gpu_memory_min": lambda: min([gpu["memory"] for gpu in server["gpus"]]),
-        "gpu_memory_total": lambda: sum([gpu["memory"] for gpu in server["gpus"]]),
+        "accelerator_count": lambda: (
+            len(server["accelerators"]) if len(server["accelerators"]) else None
+        ),
+        # nvidia-smi only reports GPUs
+        "accelerator_type": lambda: (
+            AcceleratorType.GPU
+            if isinstance(lookups["gpus"], list) and lookups["gpus"]
+            else None
+        ),
+        "accelerator_memory_min": lambda: min(
+            [gpu["memory"] for gpu in server["accelerators"]]
+        ),
+        "accelerator_memory_total": lambda: sum(
+            [gpu["memory"] for gpu in server["accelerators"]]
+        ),
         # skip storage update if lshw parsing failed or API data is present
-        "storage_type": lambda: getattr(inspector_storage_info, "storage_type"),
-        "storage_size": lambda: getattr(inspector_storage_info, "storage_size"),
-        "storages": lambda: getattr(inspector_storage_info, "storages"),
+        "storage_type": lambda: (
+            inspector_storage_info.storage_type if inspector_storage_info else None
+        ),
+        "storage_size": lambda: (
+            inspector_storage_info.storage_size if inspector_storage_info else None
+        ),
+        "storages": lambda: (
+            inspector_storage_info.storages if inspector_storage_info else None
+        ),
         "average_time_to_start": lambda: _server_average_time_to_start(server_obj),
     }
 
@@ -1612,7 +1857,7 @@ def inspect_update_server_dict(server: dict) -> dict:
         # TODO drop once we have full lsblk coverage
         # always override GCP fields where vendor data is known to be missing
         storage_fields = ["storage_type", "storage_size", "storages"]
-        if vendor_id == "gcp" and field in ["gpu_model", *storage_fields]:
+        if vendor_id == "gcp" and field in ["accelerator_model", *storage_fields]:
             return inspector_data
         # don't trust HDD/SSD inspection data at other vendors yet
         if vendor_id != "gcp" and field in storage_fields:
@@ -1620,7 +1865,7 @@ def inspect_update_server_dict(server: dict) -> dict:
 
         # keep inspector data for detailed fields that's not available from vendor API
         if (
-            field == "gpus"
+            field == "accelerators"
             and inspector_data
             and isinstance(inspector_data, list)
             and len(inspector_data) > 0
@@ -1645,19 +1890,21 @@ def inspect_update_server_dict(server: dict) -> dict:
             _log_cannot_update_server(server_obj, k, e)
 
     # standardize GPU model / fractional count (suffixes stripped from model)
-    if server.get("gpu_model"):
-        server["gpu_count"] = _standardize_gpu_count(
-            server["gpu_model"],
-            server.get("gpu_count", 0),
-            server.get("gpu_memory_total", 0),
+    if server.get("accelerator_model"):
+        server["accelerator_count"] = _standardize_gpu_count(
+            server["accelerator_model"],
+            server.get("accelerator_count", 0),
+            server.get("accelerator_memory_total", 0),
             description=server.get("description"),
         )
-        server["gpu_model"] = _standardize_gpu_model(server["gpu_model"], server)
-        server["gpu_family"] = _standardize_gpu_family(server)
+        server["accelerator_model"] = _standardize_gpu_model(
+            server["accelerator_model"], server
+        )
+        server["accelerator_family"] = _standardize_gpu_family(server)
         if (
-            not server.get("gpu_manufacturer")
-            and server["gpu_model"] in _NVIDIA_GPU_MODELS
+            not server.get("accelerator_manufacturer")
+            and server["accelerator_model"] in _NVIDIA_GPU_MODELS
         ):
-            server["gpu_manufacturer"] = "NVIDIA"
+            server["accelerator_manufacturer"] = "NVIDIA"
 
     return server

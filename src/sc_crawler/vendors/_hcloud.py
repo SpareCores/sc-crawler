@@ -1,3 +1,5 @@
+"""Inventory of Hetzner Cloud via its API and manual data entry: servers, storages, traffic and IPv4 addresses, with their prices."""
+
 import os
 from datetime import UTC, datetime
 from functools import cache
@@ -15,7 +17,6 @@ from ..table_fields import (
     StorageType,
     TrafficDirection,
 )
-from ..utils import scmodels_to_dict
 
 # ##############################################################################
 # Cached client wrappers
@@ -38,54 +39,35 @@ def _client() -> Client:
 # Internal helpers
 
 
-def _get_datacenters():
-    """List all datacenters via API call.
+def _get_locations():
+    """List all locations via API call.
 
-    Reference: <https://docs.hetzner.cloud/reference/cloud#tag/datacenters/GET/datacenters>
+    Replaces the deprecated datacenters endpoint.
+    Reference: <https://docs.hetzner.cloud/reference/cloud#tag/locations/GET/locations>
+    Changelog: <https://docs.hetzner.cloud/changelog#2026-06-02-datacenters-deprecated>
     """
-    # example list_datacenters response:
+    # example list_locations response:
     # {
-    #     'datacenters': [
+    #     'locations': [
     #         {
-    #             'description': 'Nuremberg 1 virtual DC 3',
+    #             'id': 1,
+    #             'name': 'fsn1',
+    #             'description': 'Falkenstein DC Park 1',
+    #             'country': 'DE',
+    #             'city': 'Falkenstein',
+    #             'latitude': 50.47612,
+    #             'longitude': 12.370071,
+    #             'network_zone': 'eu-central'
+    #         },
+    #         {
     #             'id': 2,
-    #             'location': {
-    #                 'city': 'Nuremberg',
-    #                 'country': 'DE',
-    #                 'description': 'Nuremberg DC Park 1',
-    #                 'id': 2,
-    #                 'latitude': 49.452102,
-    #                 'longitude': 11.076665,
-    #                 'name': 'nbg1',
-    #                 'network_zone': 'eu-central'
-    #             },
-    #             'name': 'nbg1-dc3',
-    #             'server_types': {
-    #                 'available': [
-    #                     97,
-    #                     94,
-    #                     96,
-    #                     109,
-    #                     99,
-    #                     # ...
-    #                 ],
-    #                 'available_for_migration': [
-    #                     97,
-    #                     94,
-    #                     96,
-    #                     109,
-    #                     99,
-    #                     # ...
-    #                 ],
-    #                 'supported': [
-    #                     23,
-    #                     26,
-    #                     97,
-    #                     115,
-    #                     116,
-    #                     # ...
-    #                 ]
-    #             }
+    #             'name': 'nbg1',
+    #             'description': 'Nuremberg DC Park 1',
+    #             'country': 'DE',
+    #             'city': 'Nuremberg',
+    #             'latitude': 49.452102,
+    #             'longitude': 11.076665,
+    #             'network_zone': 'eu-central'
     #         },
     #         # ...
     #     ],
@@ -98,10 +80,9 @@ def _get_datacenters():
     #             'previous_page': None,
     #             'total_entries': 6
     #         }
-    #     },
-    #     'recommendation': 3
+    #     }
     # }
-    return _client().datacenters.get_all()
+    return _client().locations.get_all()
 
 
 def _get_server_types():
@@ -200,37 +181,81 @@ def _get_server_types():
     return _client().server_types.get_all()
 
 
-def _server_cpu(server_name):
-    """Manual mapping of CPU info for server types.
+def _server_family(server):
+    """Human-friendly server family from the API `category`, e.g. Cost Optimized."""
+    if server.category:
+        return server.category.replace("_", " ").title()
+    return server.name.rstrip("0123456789").upper()
 
-    Source: <https://www.hetzner.com/cloud/>
+
+def _server_cpu(server):
+    """Manual mapping of CPU info for server types based on the API `category`.
+
+    Categories (as of 2026-10):
+
+    - `cost_optimized`: CX (x86, "Intel®/AMD") and CAX (Arm64, "Ampere®")
+    - `regular_purpose`: CPX (shared, AMD)
+    - `general_purpose`: CCX Gen1 (dedicated, Intel) and later CCX (dedicated, AMD)
+
+    Sources (manufacturer only, no CPU family/model listed):
+
+    - <https://www.hetzner.com/cloud/cost-optimized/>
+    - <https://www.hetzner.com/cloud/regular-performance/>
+    - <https://www.hetzner.com/cloud/general-purpose/>
+    - <https://docs.hetzner.com/cloud/servers/deprecated-plans/>
+    - <https://docs.hetzner.com/cloud/servers/faq/>
     """
-    # not trying to rely on product line name patterns, as might change,
-    # so rather providing a full list of known entities, and fail on unknown
-    if server_name.upper() in [
-        "CX11",
-        "CX21",
-        "CX31",
-        "CX41",
-        "CX51",
-        "CX22",
-        "CX32",
-        "CX42",
-        "CX52",
-    ]:
-        return ("Intel", "Xeon Gold", None)
-    if server_name.upper() in ["CX23", "CX33", "CX43", "CX53"]:
-        # could be either Intel or AMD
+    name = server.name.upper()
+    arch = server.architecture
+    if server.category == "cost_optimized":
+        if arch == "arm":
+            return ("Ampere", "Ampere Altra", None)
+        # CX can be Intel or AMD. Hetzner picks the CPU by availability
+        # (it can change on rescale); the caller cannot choose. Server
+        # variants are not implemented yet.
+        if name in [
+            "CX11",
+            "CX21",
+            "CX31",
+            "CX41",
+            "CX51",
+            "CX22",
+            "CX32",
+            "CX42",
+            "CX52",
+        ]:
+            return ("Intel", "Xeon Gold", None)
         return (None, None, None)
-    if server_name.upper() in ["CPX11", "CPX21", "CPX31", "CPX41", "CPX51"]:
-        return ("AMD", "EPYC", None)
-    if server_name.upper() in ["CPX12", "CPX22", "CPX32", "CPX42", "CPX52", "CPX62"]:
+    if server.category == "regular_purpose" and arch == "x86":
+        if name in ["CPX11", "CPX21", "CPX31", "CPX41", "CPX51"]:
+            return ("AMD", "EPYC", None)
         return ("AMD", None, None)
-    if server_name.upper() in ["CAX11", "CAX21", "CAX31", "CAX41"]:
-        return ("Ampere", "Ampere Altra", None)
-    if server_name.upper() in ["CCX13", "CCX23", "CCX33", "CCX43", "CCX53", "CCX63"]:
+    if server.category == "general_purpose" and arch == "x86":
+        # CCX11–CCX51 are deprecated Intel dedicated plans.
+        if name in ["CCX11", "CCX21", "CCX31", "CCX41", "CCX51"]:
+            return ("Intel", None, None)
         return ("AMD", None, None)
-    raise ValueError("Unknown Hetzner Cloud server name: " + server_name)
+    raise ValueError(
+        f"Unknown Hetzner Cloud server type: {server.name} "
+        f"(category={server.category}, architecture={arch})"
+    )
+
+
+def _active_regions(vendor):
+    """Regions currently returned by the API, skipping stale ones from the DB (e.g. `sin-dc1`)."""
+    return [region for region in vendor.regions if region.status == Status.ACTIVE]
+
+
+# Former region_ids from /v1/datacenters (numeric). Location API ids were
+# renumbered, so keep only this historical mapping in aliases.
+_LEGACY_DATACENTER_REGION_IDS = {
+    "nbg1": "2",
+    "hel1": "3",
+    "fsn1": "4",
+    "ash": "5",
+    "hil": "6",
+    "sin": "7",
+}
 
 
 # https://docs.hetzner.cloud/reference/cloud#tag/server-types/list_server_types
@@ -275,70 +300,44 @@ def inventory_compliance_frameworks(vendor):
 def inventory_regions(vendor):
     """List all regions via API call.
 
-    Hetzner Cloud uses integers for the region (virtual datacenter) id
-    that we convert into string. Best to use the unique `name`, which
-    can be also passed instead of the `id` in most `hcloud` API
-    endpoints via the `id_or_name` method.
-
-    Not taking the Hetzner unique `name` as id, as it's not
-    stated to be unique for other resources, and uniqueness
-    for servers might also change in the future.
+    Using the unique location `name` (e.g. `fsn1`) as the region id
+    instead of the numeric location id, as the numeric ids were
+    renumbered when the datacenters endpoint got deprecated, while
+    the names are stable and are also used to reference locations in
+    the server type prices, and can be passed instead of the `id` in
+    most `hcloud` API endpoints via the `id_or_name` method.
+    Former datacenter region ids are kept in `aliases` via
+    `_LEGACY_DATACENTER_REGION_IDS` (not the current location API ids).
 
     All regions are powered by green energy as per
     <https://www.hetzner.com/unternehmen/umweltschutz/>.
-
-    Lon/lat coordinates were collected by searching for Hetzner
-    locations in the Region's city.
-
     """
-    regions = {
-        "2": {  # Nuremberg
-            "lat": 49.4498349,
-            "lon": 11.0128772,
-        },
-        "3": {  # Helsinki
-            "lat": 60.3433291,
-            "lon": 25.02683,
-        },
-        "4": {  # Falkenstein
-            "lat": 50.4793313,
-            "lon": 12.3331105,
-        },
-        "5": {  # Ashburn, VA
-            "lat": 39.0176685,
-            "lon": -77.468102,
-        },
-        "6": {  # Hillsboro, OR
-            "lat": 45.558319,
-            "lon": -122.9306602,
-        },
-        "7": {  # Singapore
-            "lat": 1.290270,
-            "lon": 103.851959,
-        },
-    }
-
     items = []
-    for region in _get_datacenters():
+    for location in _get_locations():
         with sentry_capture_or_raise(vendor=vendor):
+            city = location.city
+            state = None
+            if ", " in city:
+                city_part, maybe_state = city.rsplit(", ", 1)
+                if len(maybe_state) == 2 and maybe_state.isalpha():
+                    city = city_part
+                    state = maybe_state
+            legacy_id = _LEGACY_DATACENTER_REGION_IDS.get(location.name)
             items.append(
                 {
                     "vendor_id": vendor.vendor_id,
-                    "region_id": str(region.id),
-                    "name": region.name,
-                    "api_reference": region.name,
-                    "display_name": (
-                        region.location.city + f" ({region.location.country})"
-                    ),
-                    # TODO add region.description
-                    "aliases": [region.location.name],
-                    "country_id": region.location.country,
-                    "state": None,
-                    "city": region.location.city,
+                    "region_id": location.name,
+                    "name": location.name,
+                    "api_reference": location.name,
+                    "display_name": f"{city} ({location.country})",
+                    "aliases": [legacy_id] if legacy_id else [],
+                    "country_id": location.country,
+                    "state": state,
+                    "city": city,
                     "address_line": None,
                     "zip_code": None,
-                    "lat": regions[str(region.id)]["lat"],
-                    "lon": regions[str(region.id)]["lon"],
+                    "lat": location.latitude,
+                    "lon": location.longitude,
                     "founding_year": None,
                     "green_energy": True,
                 }
@@ -349,13 +348,13 @@ def inventory_regions(vendor):
 def inventory_zones(vendor):
     """List all regions as availability zones.
 
-    There is no concept of having multiple availability zones withing
-    a region (virtual datacenter) at Hetzner Cloud, so creating 1-1
-    dummy Zones reusing the Region id and name.
+    There is no concept of having multiple availability zones within
+    a location at Hetzner Cloud, so creating 1-1 dummy Zones reusing
+    the Region id and name.
 
     """
     items = []
-    for region in vendor.regions:
+    for region in _active_regions(vendor):
         items.append(
             {
                 "vendor_id": vendor.vendor_id,
@@ -382,19 +381,21 @@ def inventory_servers(vendor):
     now = datetime.now(UTC)
     items = []
     for server in _get_server_types():
-        # CPU info not available via the API,
-        # collected from https://www.hetzner.com/cloud/
-        cpu = _server_cpu(server.name)
         with sentry_capture_or_raise(vendor=vendor):
+            # CPU info not available via the API,
+            # collected from https://www.hetzner.com/cloud/
+            cpu = _server_cpu(server)
             items.append(
                 {
                     "vendor_id": vendor.vendor_id,
                     "server_id": str(server.id),
                     "name": server.name,
                     "api_reference": server.name,
+                    # https://www.pulumi.com/registry/packages/hcloud/api-docs/server/
+                    "api_reference_object": {"server_type": server.name},
                     "display_name": server.name,
                     "description": server.description,
-                    "family": server.name.rstrip("0123456789"),
+                    "family": _server_family(server),
                     "vcpus": server.cores,
                     "hypervisor": "QEMU",
                     "cpu_allocation": (
@@ -415,18 +416,14 @@ def inventory_servers(vendor):
                     "cpus": [],
                     "memory_amount": server.memory * 1000,
                     "memory_ecc": True,
-                    "gpu_count": 0,
-                    "gpu_memory_min": 0,
-                    "gpu_memory_total": 0,
-                    "gpu_manufacturer": None,
-                    "gpu_model": None,
-                    "gpus": [],
+                    "accelerator_count": 0,
+                    "accelerator_memory_min": 0,
+                    "accelerator_memory_total": 0,
+                    "accelerator_manufacturer": None,
+                    "accelerator_model": None,
+                    "accelerators": [],
                     "storage_size": server.disk,
-                    "storage_type": (
-                        StorageType.NVME_SSD
-                        if server.storage_type == "local"
-                        else StorageType.NETWORK
-                    ),
+                    "storage_type": StorageType.NVME_SSD,
                     "storages": [],
                     # TODO: have to implement manual mapping for network_speed related fields
                     "network_speed_baseline": None,
@@ -449,27 +446,26 @@ def inventory_servers(vendor):
 
 
 def inventory_server_prices(vendor):
-    regions = scmodels_to_dict(vendor.regions, keys=["name", "aliases"])
+    """List server prices per location from the server types API.
+
+    `prices[].location` and `locations[].location.name` are both the
+    location name, which is also used as our Region id.
+    """
     now = datetime.now(UTC)
     items = []
     for server in _get_server_types():
-        locations_by_name = {}
-        if server.locations:
-            locations_by_name = {
-                loc.location.name: loc
-                for loc in server.locations
-                if loc.location is not None
-            }
-        for location in server.prices:
-            region_id = regions[location["location"]].region_id
-            hourly_price = float(location["price_hourly"]["net"])
+        server_locations = {
+            loc.location.name: loc for loc in server.locations or [] if loc.location
+        }
+        for price in server.prices:
+            region_id = price["location"]
+            hourly_price = float(price["price_hourly"]["net"])
             # Hetzner provides separate hourly and monthly prices,
             # so to describe the monthly cap with tiered hourly pricing,
             # we need to proxy the number of discounted hours in a month
             # (rounding to full hours is a good-enough approximation)
-            monthly_cap = int(float(location["price_monthly"]["net"]) / hourly_price)
-            loc = locations_by_name.get(location["location"])
-            status = _hcloud_location_status(loc, now)
+            monthly_cap = int(float(price["price_monthly"]["net"]) / hourly_price)
+            status = _hcloud_location_status(server_locations.get(region_id), now)
             price_status = Status.ACTIVE if status.is_orderable else Status.INACTIVE
             items.append(
                 {
@@ -495,7 +491,7 @@ def inventory_server_prices(vendor):
 
 
 def inventory_server_prices_spot(vendor):
-    """There are no spot instaces at Hetzner."""
+    """There are no spot instances at Hetzner."""
     return []
 
 
@@ -507,6 +503,7 @@ def inventory_storages(vendor):
 
     - <https://www.hetzner.com/cloud/>
     - <https://docs.hetzner.cloud/#volumes-create-a-volume>
+    - <https://docs.hetzner.com/cloud/volumes/overview/>
     """
     items = [
         {
@@ -514,9 +511,9 @@ def inventory_storages(vendor):
             "vendor_id": vendor.vendor_id,
             "name": "Block storage volume",
             "description": None,
-            "storage_type": StorageType.NETWORK,
-            "max_iops": None,
-            "max_throughput": None,
+            "storage_type": StorageType.SSD,
+            "max_iops": 7500,
+            "max_throughput": 300,
             "min_size": 10,
             "max_size": 10000,
         }
@@ -530,7 +527,7 @@ def inventory_storage_prices(vendor):
     Source: <https://www.hetzner.com/cloud/block-storage/>
     """
     items = []
-    for region in vendor.regions:
+    for region in _active_regions(vendor):
         items.append(
             {
                 "vendor_id": vendor.vendor_id,
@@ -550,7 +547,7 @@ def inventory_traffic_prices(vendor):
     Source: <https://docs.hetzner.com/robot/general/traffic/>
     """
     items = []
-    for region in vendor.regions:
+    for region in _active_regions(vendor):
         items.append(
             {
                 "vendor_id": vendor.vendor_id,
@@ -582,7 +579,7 @@ def inventory_ipv4_prices(vendor):
     Source: <https://docs.hetzner.com/cloud/servers/overview#network-options>
     """
     items = []
-    for region in vendor.regions:
+    for region in _active_regions(vendor):
         items.append(
             {
                 "vendor_id": vendor.vendor_id,

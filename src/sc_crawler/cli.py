@@ -1,4 +1,4 @@
-"""The Spare Cores (SC) Crawler CLI functions.
+"""The `sc-crawler` CLI functions.
 
 Check `sc-crawler --help` for more details."""
 
@@ -225,7 +225,9 @@ def autogenerate(
     connection_string: options.connection_string = "sqlite:///sc-data-all.db",
     message: Annotated[
         str,
-        typer.Option(help="Revision message, e.g. SC Crawler version number."),
+        typer.Option(
+            help="Revision message, e.g. the sparecores-crawler version number."
+        ),
     ] = "empty message",
 ):
     """
@@ -341,7 +343,7 @@ def copy(
         ),
     ],
 ):
-    """Copy the standard SC Crawler tables of a database into a blank database."""
+    """Copy the standard Crawler tables of a database into a blank database."""
 
     source_engine = create_engine(source, pool_pre_ping=True)
     target_engine = create_sc_engine(target, pool_pre_ping=True)
@@ -897,26 +899,26 @@ def pull(
                         vendor.inventory_regions()
                     if Records.zones in records:
                         vendor.inventory_zones()
+                    if Records.storages in records:
+                        vendor.inventory_storages()
                     if Records.servers in records:
                         vendor.inventory_servers()
                     if Records.server_prices in records:
                         vendor.inventory_server_prices()
                     if Records.server_prices_spot in records:
                         vendor.inventory_server_prices_spot()
-                    if Records.storages in records:
-                        vendor.inventory_storages()
                     if Records.storage_prices in records:
                         vendor.inventory_storage_prices()
                     if Records.traffic_prices in records:
                         vendor.inventory_traffic_prices()
                     if Records.ipv4_prices in records:
                         vendor.inventory_ipv4_prices()
+                    if Records.database_storages in records:
+                        vendor.inventory_database_storages()
                     if Records.databases in records:
                         vendor.inventory_databases()
                     if Records.database_prices in records:
                         vendor.inventory_database_prices()
-                    if Records.database_storages in records:
-                        vendor.inventory_database_storages()
                     if Records.database_storage_prices in records:
                         vendor.inventory_database_storage_prices()
                     # reset current step name
