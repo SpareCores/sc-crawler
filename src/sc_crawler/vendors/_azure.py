@@ -918,6 +918,57 @@ def _parse_server_name(name):
     return (family, features, gpus, gpu_model, gpu_memory)
 
 
+# VM size family categories by the leading letters of the size names.
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/overview
+_VM_FAMILY_CATEGORIES = {
+    "General Purpose": (
+        # DS is the previous generation D family with Premium Storage support
+        # https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/previous-gen-sizes-list
+        "A B D DC DS"
+    ),
+    "Compute Optimized": "F FX",
+    "Memory Optimized": (
+        "E EC M "
+        # previous generation, listed as memory optimized
+        # https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/previous-gen-sizes-list
+        "G GS"
+    ),
+    "Storage Optimized": "L",
+    "GPU Accelerated": "NC NCC ND NG NV",
+    "FPGA Accelerated": "NP",
+    "High Performance Compute": (
+        "HB HC HX "
+        # retired in 2022, described as HPC virtual machines (H8 ... H16mr)
+        # https://learn.microsoft.com/en-us/previous-versions/azure/virtual-machines/articles/virtual-machines/h-series-retirement
+        "H"
+    ),
+}
+_VM_FAMILY_TO_CATEGORY = {
+    family: category
+    for category, families in _VM_FAMILY_CATEGORIES.items()
+    for family in families.split()
+}
+# D11-D15 and DS11-DS15 (and their v2 versions) are memory optimized sizes,
+# unlike the rest of the D family
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/memory-optimized/dv2-dsv2-series-memory
+_MEMORY_OPTIMIZED_D_SIZES = recompile(r"^DS?1[1-5](-\d+)?(_v2)?$")
+
+
+def _vm_family_category(server_name: str) -> Optional[str]:
+    """Look up the family category (e.g. General Purpose) of a VM size.
+
+    Returns None for families not listed above, so new families are not mislabeled
+    (e.g. PB6s is not documented by Microsoft).
+    """
+    size = recompile(r"^(?:Standard|Basic)_").sub("", server_name)
+    if _MEMORY_OPTIMIZED_D_SIZES.match(size):
+        return "Memory Optimized"
+    # A8-A11 were compute intensive sizes, but there is no Microsoft documentation
+    # listing them anywhere else than the A family, which is general purpose
+    letters = recompile(r"^[A-Z]+").match(size)
+    return _VM_FAMILY_TO_CATEGORY.get(letters.group(0)) if letters else None
+
+
 def _standardize_server(server: dict, vendor) -> dict:
     # example Resource Skus - List response moved to _compute_resources
     family, features, gpus, gpu_model, gpu_memory = _parse_server_name(server["name"])
@@ -982,7 +1033,8 @@ def _standardize_server(server: dict, vendor) -> dict:
             "hardware_profile": {"vm_size": server["name"]},
         },
         "display_name": server["name"].removeprefix("Standard_"),
-        "family": family,
+        "family": _vm_family_category(server["name"]),
+        "series": family.strip(),
         "vcpus": int(capability("vCPUsAvailable")),
         "hypervisor": "Microsoft Hyper-V",
         "cpu_allocation": (
