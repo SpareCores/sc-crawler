@@ -6,6 +6,10 @@ New feature(s):
   `pull` writes only new, changed, or newly inactive rows. `Vendor.observed_at`
   is the time of the last successful crawl.
 
+Fix(es):
+
+- `AWS`: skip the new RDS `UnusedBox` products (no instance family, vCPU, or memory).
+
 ## v0.10.1 (October 20, 2026)
 
 New feature(s):
