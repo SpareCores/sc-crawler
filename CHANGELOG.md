@@ -1,3 +1,10 @@
+## v0.10.x (DEVELOPMENT)
+
+New feature(s):
+
+- Record the duration (seconds) of the benchmark run in
+  `BenchmarkScore.environment.duration`.
+
 ## v0.10.1 (October 20, 2026)
 
 New feature(s):

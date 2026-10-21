@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import pytest
 
 from sc_crawler.inspector import (
+    _duration,
     _measured_at,
     _pgbench_benchmark_scores,
     inspect_server_benchmarks,
@@ -522,3 +523,30 @@ def test_measured_at_is_utc(monkeypatch, end, expected):
     )
     server = ServerBase.model_construct(vendor_id="aws", server_id="m5.large")
     assert _measured_at(server, "lscpu") == expected
+
+
+@pytest.mark.parametrize(
+    "meta,expected",
+    [
+        (
+            {
+                "start": "2024-09-21T17:37:40.340294",
+                "end": "2024-09-21T17:38:00.020936",
+            },
+            {"duration": 19.681},
+        ),
+        # mixed naive (UTC) and tz-aware timestamps
+        (
+            {"start": "2024-09-21T17:37:40", "end": "2024-09-21T19:38:00+02:00"},
+            {"duration": 20.0},
+        ),
+        ({"end": "2024-09-21T17:38:00"}, {}),
+    ],
+)
+def test_duration(monkeypatch, meta, expected):
+    monkeypatch.setattr(
+        "sc_crawler.inspector._server_framework_meta",
+        lambda server, framework: meta,
+    )
+    server = ServerBase.model_construct(vendor_id="aws", server_id="m5.large")
+    assert _duration(server, "lscpu") == expected
