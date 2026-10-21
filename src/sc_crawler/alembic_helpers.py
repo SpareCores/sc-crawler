@@ -1,3 +1,5 @@
+"""Helpers functions for the Alembic database migrations."""
+
 from os.path import dirname, join
 from typing import Optional
 

@@ -1,3 +1,7 @@
+"""Inventory of Vultr via its API: servers, storages, traffic, IPv4 addresses and managed PostgreSQL, with their prices."""
+
+from os import environ
+
 from cachier import cachier
 from requests import get
 
@@ -5,15 +9,23 @@ from ..inspector import _extract_manufacturer
 from ..lookup import map_compliance_frameworks_to_vendor
 from ..sentry import sentry_capture_or_raise
 from ..table_fields import (
+    AcceleratorType,
     Allocation,
     CpuAllocation,
     CpuArchitecture,
+    DatabaseEngine,
+    DatabaseHaLevel,
+    DatabaseHaStrategy,
+    DatabaseSecurityFeature,
+    DatabaseWireProtocol,
     PriceUnit,
     Status,
     StorageType,
     TrafficDirection,
 )
-from ..utils import _MIB_PER_GIB
+from ..utils import _HOURS_PER_MONTH, _MIB_PER_GIB
+
+_API_TIMEOUT = 30
 
 _REGION_LOCATIONS: dict[str, dict] = {
     "ams": {"lat": 52.3676, "lon": 4.9041},
@@ -125,6 +137,30 @@ _PLAN_TYPES: dict[str, str] = {
     "NVMe": "Bare Metal NVMe",
 }
 
+_DATABASE_PLAN_TYPES: dict[str, str] = {
+    # Managed DB plan type codes and node-plan tier labels come from:
+    # - GET /v2/databases/plans payload (`type`, `id`)
+    #   https://www.vultr.com/api/
+    # - Node plan naming examples (`vultr-dbaas-[tier]-...`)
+    #   https://docs.vultr.com/support/products/managed-databases/how-do-i-identify-the-node-plan-for-my-vultr-managed-database
+    # - Provisioning examples that use DB plan ids
+    #   https://docs.vultr.com/products/storage/databases/postgresql/provisioning
+    "vdb": "Cloud Compute",
+    "vc2": "Cloud Compute",
+    "cc_hp_amd": "High Performance AMD",
+    "cc_hp_intel": "High Performance Intel",
+    "occ_gp": "Optimized Cloud Compute General Purpose",
+    "occ_so": "Optimized Cloud Compute Storage Optimized",
+}
+
+_DATABASE_TIERS = frozenset({"hobbyist", "startup", "business", "premium"})
+_DATABASE_PITR_DAYS_BY_TIER: dict[str, int | None] = {
+    "hobbyist": None,
+    "startup": 2,
+    "business": 14,
+    "premium": 30,
+}
+
 _CPU_MODEL_PREFIXES: tuple[str, ...] = (
     "EPYC ",
     "Grace ",
@@ -142,7 +178,7 @@ _DISK_TYPES: dict[str, StorageType] = {
     "DEDICATEDOPTIMIZED": StorageType.NVME_SSD,
     "CLOUDGPU": StorageType.NVME_SSD,
     "DEDICATEDMETAL": StorageType.NVME_SSD,
-    "VX": StorageType.NETWORK,
+    "VX": StorageType.NVME_SSD,
     "NVMe": StorageType.NVME_SSD,
 }
 
@@ -267,11 +303,37 @@ def _storage_type_from_plan(plan: dict) -> StorageType:
     if api_storage in ["local_and_block_storage", "local_storage"]:
         return StorageType.NVME_SSD
     if api_storage == "block_storage":
-        return StorageType.NETWORK
+        return StorageType.NVME_SSD
     disk_type = plan.get("disk_type")
     if disk_type:
         return _DISK_TYPES.get(disk_type)
     return _DISK_TYPES.get(plan.get("type"))
+
+
+def _database_plan_tier(database_id: str) -> str:
+    """Return the node-plan tier token from a vultr-dbaas id, or '' if absent."""
+    parts = database_id.split("-")
+    if len(parts) <= 2:
+        return ""
+    tier = parts[2].lower()
+    return tier if tier in _DATABASE_TIERS else ""
+
+
+def _database_family_name(plan: dict) -> str:
+    """Build readable managed database family from plan id and type."""
+    tier = _database_plan_tier(plan.get("id", ""))
+    tier_label = tier.title() if tier else ""
+    plan_type = plan.get("type") or "Unknown"
+    plan_type = _DATABASE_PLAN_TYPES.get(plan_type, plan_type)
+    return f"{tier_label} {plan_type}".strip()
+
+
+def _database_pitr_days(database_id: str) -> int | None:
+    """Map Vultr PostgreSQL node-plan tier to PITR retention days."""
+    tier = _database_plan_tier(database_id)
+    if not tier:
+        return None
+    return _DATABASE_PITR_DAYS_BY_TIER.get(tier)
 
 
 def _server_description(
@@ -302,31 +364,373 @@ def _server_description(
     return f"{family} ({description_parts_str})" if family else description_parts_str
 
 
+def _database_description(
+    family: str | None,
+    vcpus: int | None,
+    memory_amount_mib: int | None,
+    storage_size: int | None,
+) -> str:
+    """Build managed database plan description in server-style format."""
+    memory_size_gb = memory_amount_mib / _MIB_PER_GIB if memory_amount_mib else None
+    description_parts = [
+        f"{vcpus} vCPUs" if vcpus else None,
+        f"{memory_size_gb} GiB RAM" if memory_size_gb else None,
+        f"{storage_size} GB SSD" if storage_size else None,
+    ]
+    description_parts_str = ", ".join(filter(None, description_parts))
+    return f"{family} ({description_parts_str})" if family else description_parts_str
+
+
 @cachier(separate_files=True)
 def _get_regions():
+    """List regions (GET /v2/regions).
+
+    Reference: <https://www.vultr.com/api/#tag/region>
+    """
+    # example GET /v2/regions response:
+    # {
+    #     'regions': [
+    #         {
+    #             'id': 'ams',
+    #             'city': 'Amsterdam',
+    #             'country': 'NL',
+    #             'continent': 'Europe',
+    #             'options': [
+    #                 'ddos_protection',
+    #                 'block_storage_storage_opt',
+    #                 'block_storage_high_perf',
+    #                 'load_balancers',
+    #                 'kubernetes',
+    #             ],
+    #             'connectivity': [
+    #                 'public_ip',
+    #                 'nat_gateway',
+    #             ],
+    #         },
+    #         # ...
+    #     ],
+    #     'meta': {
+    #         'total': 33,
+    #         'links': {
+    #             'next': '',
+    #             'prev': '',
+    #         },
+    #     },
+    # }
     response = get(
-        "https://api.vultr.com/v2/regions", params={"per_page": 500}, timeout=10
+        "https://api.vultr.com/v2/regions",
+        params={"per_page": 500},
+        timeout=_API_TIMEOUT,
     )
     return response.json()["regions"]
 
 
 @cachier(separate_files=True)
 def _get_plans():
+    """List cloud compute plans (GET /v2/plans).
+
+    Reference: <https://www.vultr.com/api/#tag/plans>
+    """
+    # example GET /v2/plans response:
+    # {
+    #     'plans': [
+    #         {
+    #             'id': 'vc2-1c-1gb',
+    #             'vcpu_count': 1,
+    #             'ram': 1024,
+    #             'disk': 25,
+    #             'disk_type': 'SSD',
+    #             'disk_count': 1,
+    #             'bandwidth': 1024,
+    #             'monthly_cost': 5,
+    #             'hourly_cost': 0.007,
+    #             'monthly_cost_preemptible': 5,
+    #             'hourly_cost_preemptible': 0.007,
+    #             'invoice_type': 'monthly',
+    #             'type': 'vc2',
+    #             'locations': [
+    #                 'ewr',
+    #                 'ord',
+    #                 'dfw',
+    #                 'sea',
+    #                 # ...
+    #             ],
+    #             'cpu_vendor': 'Intel',
+    #             'storage_type': 'local_storage',
+    #             'vcpu_type': 'thread',
+    #             'deploy_ondemand': True,
+    #             'deploy_preemptible': False,
+    #             'location_cost': {
+    #                 'sao': {
+    #                     'monthly_cost': 7.5,
+    #                     'hourly_cost': 0.01,
+    #                     'monthly_cost_preemptible': 7.5,
+    #                     'hourly_cost_preemptible': 0.01,
+    #                 },
+    #             },
+    #             'gpu_brand': 'none',
+    #         },
+    #         {
+    #             'id': 'vcg-a16-2c-16g-4vram',
+    #             'vcpu_count': 2,
+    #             'ram': 16384,
+    #             'disk': 80,
+    #             'disk_type': 'CLOUDGPU',
+    #             'disk_count': 1,
+    #             'bandwidth': 2048,
+    #             'monthly_cost': 86,
+    #             'hourly_cost': 0.118,
+    #             'monthly_cost_preemptible': 86,
+    #             'hourly_cost_preemptible': 0.118,
+    #             'invoice_type': 'hourly',
+    #             'type': 'vcg',
+    #             'locations': [
+    #                 'ewr',
+    #                 'ord',
+    #                 'fra',
+    #                 'sjc',
+    #                 # ...
+    #             ],
+    #             'cpu_vendor': 'Intel',
+    #             'storage_type': 'local_storage',
+    #             'vcpu_type': 'thread',
+    #             'deploy_ondemand': True,
+    #             'deploy_preemptible': False,
+    #             'location_cost': {},
+    #             'gpu_brand': 'NVIDIA',
+    #             'gpu_vram_gb': 4,
+    #             'gpu_type': 'NVIDIA_A16',
+    #             'gpu_count': '1/4',
+    #         },
+    #         # ...
+    #     ],
+    #     'meta': {
+    #         'total': 151,
+    #         'links': {
+    #             'next': '',
+    #             'prev': '',
+    #         },
+    #     },
+    # }
     response = get(
-        "https://api.vultr.com/v2/plans", params={"per_page": 500}, timeout=10
+        "https://api.vultr.com/v2/plans", params={"per_page": 500}, timeout=_API_TIMEOUT
     )
     return response.json()["plans"]
 
 
 @cachier(separate_files=True)
 def _get_plans_metal():
+    """List bare metal plans (GET /v2/plans-metal).
+
+    Reference: <https://www.vultr.com/api/#tag/plans>
+    """
+    # example GET /v2/plans-metal response:
+    # {
+    #     'plans_metal': [
+    #         {
+    #             'id': 'vbm-6c-32gb',
+    #             'physical_cpus': 1,
+    #             'cpu_count': 6,
+    #             'cpu_cores': 6,
+    #             'cpu_threads': 12,
+    #             'cpu_manufacturer': 'Intel',
+    #             'cpu_model': 'E-2286G',
+    #             'cpu_mhz': 4000,
+    #             'ram': 32768,
+    #             'disk': 960,
+    #             'disk_count': 2,
+    #             'bandwidth': 5120,
+    #             'monthly_cost': 185,
+    #             'hourly_cost': 0.253,
+    #             'monthly_cost_preemptible': 185,
+    #             'hourly_cost_preemptible': 0.253,
+    #             'invoice_type': 'monthly',
+    #             'type': 'SSD',
+    #             'deploy_ondemand': True,
+    #             'deploy_preemptible': False,
+    #             'locations': [
+    #                 'ewr',
+    #                 'ord',
+    #                 'dfw',
+    #                 'sea',
+    #                 # ...
+    #             ],
+    #             'gpu_brand': 'none',
+    #         },
+    #         {
+    #             'id': 'vbm-112c-2048gb-8-a100-gpu',
+    #             'physical_cpus': 2,
+    #             'cpu_count': 112,
+    #             'cpu_cores': 112,
+    #             'cpu_threads': 224,
+    #             'cpu_manufacturer': 'Intel',
+    #             'cpu_model': 'Platinum 8480+',
+    #             'cpu_mhz': 2000,
+    #             'ram': 2097152,
+    #             'disk': 960,
+    #             'disk_count': 4,
+    #             'bandwidth': 15360,
+    #             'monthly_cost': 15052.8,
+    #             'hourly_cost': 22.4,
+    #             'monthly_cost_preemptible': 12042.24,
+    #             'hourly_cost_preemptible': 11.92,
+    #             'invoice_type': 'hourly',
+    #             'type': 'NVMe',
+    #             'deploy_ondemand': False,
+    #             'deploy_preemptible': True,
+    #             'locations': [],
+    #             'gpu_brand': 'NVIDIA',
+    #             'gpu_vram_gb': 640,
+    #             'gpu_type': 'NVIDIA_A100_SXM',
+    #             'gpu_count': 8,
+    #         },
+    #         # ...
+    #     ],
+    #     'meta': {
+    #         'total': 23,
+    #         'links': {
+    #             'next': '',
+    #             'prev': '',
+    #         },
+    #     },
+    # }
     response = get(
-        "https://api.vultr.com/v2/plans-metal", params={"per_page": 500}, timeout=10
+        "https://api.vultr.com/v2/plans-metal",
+        params={"per_page": 500},
+        timeout=_API_TIMEOUT,
     )
     return response.json()["plans_metal"]
 
 
+def _vultr_auth_headers() -> dict[str, str]:
+    try:
+        api_key = environ["VULTR_API_KEY"]
+    except KeyError:
+        raise KeyError("Missing environment variable: VULTR_API_KEY") from None
+    return {"Authorization": f"Bearer {api_key}"}
+
+
+@cachier(separate_files=True)
+def _get_database_plans():
+    """List managed database plans (GET /v2/databases/plans).
+
+    Reference: <https://www.vultr.com/api/#tag/managed-databases>
+    """
+    # example GET /v2/databases/plans response:
+    # {
+    #     'plans': [
+    #         {
+    #             'id': 'vultr-dbaas-hobbyist-cc-1-25-1',
+    #             'number_of_nodes': 1,
+    #             'disk': 25,
+    #             'locations': [
+    #                 'AMS',
+    #                 'ATL',
+    #                 'BLR',
+    #                 'BOM',
+    #                 # ...
+    #             ],
+    #             'max_connections': {
+    #                 'mysql': 75,
+    #                 'pg': 22,
+    #             },
+    #             'monthly_cost': 15,
+    #             'ram': 1024,
+    #             'supported_engines': {
+    #                 'mysql': True,
+    #                 'pg': True,
+    #                 'valkey': False,
+    #                 'kafka': False,
+    #             },
+    #             'type': 'vc2',
+    #             'vcpu_count': 1,
+    #         },
+    #         {
+    #             'id': 'vultr-dbaas-business-occ-so-1-150-8',
+    #             'number_of_nodes': 2,
+    #             'disk': 150,
+    #             'locations': [
+    #                 'AMS',
+    #                 'ATL',
+    #                 'BLR',
+    #                 'BOM',
+    #                 # ...
+    #             ],
+    #             'max_connections': {
+    #                 'mysql': 800,
+    #                 'pg': 197,
+    #             },
+    #             'monthly_cost': 375,
+    #             'ram': 8192,
+    #             'supported_engines': {
+    #                 'mysql': True,
+    #                 'pg': True,
+    #                 'valkey': False,
+    #                 'kafka': False,
+    #             },
+    #             'type': 'occ_so',
+    #             'vcpu_count': 1,
+    #         },
+    #         # ...
+    #     ],
+    #     'meta': {
+    #         'total': 138,
+    #     },
+    # }
+    response = get(
+        "https://api.vultr.com/v2/databases/plans",
+        headers=_vultr_auth_headers(),
+        params={"engine": "pg", "per_page": 500},
+        timeout=_API_TIMEOUT,
+    )
+    response.raise_for_status()
+    return response.json().get("plans", [])
+
+
+@cachier(separate_files=True)
+def _get_database_available_services():
+    """List managed database engines and versions (GET /v2/databases/available-services).
+
+    Reference: <https://www.vultr.com/api/#tag/managed-databases/operation/available-services>
+    """
+    # example GET /v2/databases/available-services response:
+    # {
+    #     'available_services': {
+    #         'kafka': [
+    #             '3.8',
+    #             '3.9',
+    #             '4.0',
+    #             '4.1',
+    #         ],
+    #         'mysql': [
+    #             '8',
+    #             '8.4',
+    #         ],
+    #         'pg': [
+    #             '14',
+    #             '15',
+    #             '16',
+    #             '17',
+    #             '18',
+    #         ],
+    #         'valkey': [
+    #             '8.1',
+    #             '9.0',
+    #         ],
+    #     },
+    # }
+    response = get(
+        "https://api.vultr.com/v2/databases/available-services",
+        headers=_vultr_auth_headers(),
+        params={"per_page": 500},
+        timeout=_API_TIMEOUT,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
 def inventory_compliance_frameworks(vendor):
+    """Manual list of known compliance frameworks at Vultr."""
     return map_compliance_frameworks_to_vendor(
         vendor.vendor_id,
         [
@@ -390,7 +794,10 @@ def inventory_zones(vendor):
 
 
 def inventory_servers(vendor):
-    """List all servers from Vultr API."""
+    """List all servers from Vultr API.
+
+    Lifecycle: free plan or empty `locations` -> INACTIVE, otherwise ACTIVE.
+    """
     plans = _get_plans()
     plans_metal = _get_plans_metal()
 
@@ -493,6 +900,8 @@ def inventory_servers(vendor):
             "server_id": server["id"],
             "name": server["id"],
             "api_reference": server["id"],
+            # https://www.pulumi.com/registry/packages/vultr/api-docs/instance/
+            "api_reference_object": {"plan": server["id"]},
             "display_name": server["id"],
             "description": description,
             "family": family,
@@ -519,15 +928,16 @@ def inventory_servers(vendor):
             "memory_generation": None,
             "memory_speed": None,
             "memory_ecc": None,
-            "gpu_count": gpu_count,
-            "gpu_memory_min": gpu_memory_min,
-            "gpu_memory_total": (
+            "accelerator_count": gpu_count,
+            "accelerator_memory_min": gpu_memory_min,
+            "accelerator_type": AcceleratorType.GPU if gpu_count else None,
+            "accelerator_memory_total": (
                 int(gpu_vram_total_gb * _MIB_PER_GIB) if gpu_vram_total_gb else 0
             ),
-            "gpu_manufacturer": gpu_manufacturer,
-            "gpu_family": gpu_family,
-            "gpu_model": gpu_model,
-            "gpus": [],
+            "accelerator_manufacturer": gpu_manufacturer,
+            "accelerator_family": gpu_family,
+            "accelerator_model": gpu_model,
+            "accelerators": [],
             "storage_size": storage_size,
             "storage_type": storage_type,
             "storages": [],
@@ -544,14 +954,19 @@ def inventory_servers(vendor):
         }
 
         # exclude limited plans not generally available without scale
-        if item["server_id"] == "vc2-1c-0.5gb-free":
+        if item["server_id"] == "vc2-1c-0.5gb-free" or not server.get("locations"):
             item["status"] = Status.INACTIVE
+        else:
+            item["status"] = Status.ACTIVE
 
         items.append(item)
     return items
 
 
 def inventory_server_prices(vendor):
+    """List all on-demand server and bare metal prices in all regions from Vultr API.
+
+    Servers are billed hourly up to a monthly cap, described as tiered prices."""
     plans = _get_plans()
     plans_metal = _get_plans_metal()
 
@@ -592,6 +1007,9 @@ def inventory_server_prices(vendor):
 
 
 def inventory_server_prices_spot(vendor):
+    """List all preemptible server and bare metal prices in all regions from Vultr API.
+
+    Servers are billed hourly up to a monthly cap, described as tiered prices."""
     plans = _get_plans()
     plans_metal = _get_plans_metal()
 
@@ -636,6 +1054,7 @@ def inventory_server_prices_spot(vendor):
 
 
 def inventory_storages(vendor):
+    """Block storage types collected manually."""
     items = []
     for storage_id, spec in _BLOCK_STORAGE.items():
         items.append(
@@ -655,6 +1074,7 @@ def inventory_storages(vendor):
 
 
 def inventory_storage_prices(vendor):
+    """Block storage prices collected manually, in the regions offering them per Vultr API."""
     items = []
     regions = _get_regions()
     for region in regions:
@@ -734,20 +1154,193 @@ def inventory_ipv4_prices(vendor):
     return items
 
 
-# TODO: Implement database collectors
-
-
 def inventory_databases(vendor):
-    return []
+    """List Vultr managed PostgreSQL plans.
+
+    - Provisioning uses POST /v2/databases with `plan` and `database_engine`.
+    - Plan ids come from GET /v2/databases/plans.
+    - Vultr Managed Databases are managed clusters, not plain VM images.
+    https://docs.vultr.com/products/storage/databases/postgresql/provisioning
+    https://docs.vultr.com/products/storage/databases
+    """
+    plans = _get_database_plans()
+    services = _get_database_available_services()
+    # Source: GET /v2/databases/available-services (`available_services.pg`).
+    # https://www.vultr.com/api/
+    versions = services.get("available_services", {}).get("pg", [])
+    items = []
+    for plan in plans:
+        database_id = plan.get("id")
+        vcpus = plan.get("vcpu_count")
+        memory = plan.get("ram")
+        storage_size = plan.get("disk")
+        node_count = plan.get("number_of_nodes")
+        # Replica nodes are read-only failover replicas. We model this as
+        # readable-cluster HA when a plan includes more than one node.
+        # https://docs.vultr.com/support/products/managed-databases/what-are-replica-nodes
+        # https://docs.vultr.com/support/products/managed-databases/what-type-of-replica-nodes-are-attached-to-a-vultr-managed-database
+        # https://docs.vultr.com/support/products/managed-databases/how-does-vultr-managed-databases-handle-automated-failover-in-multi-node-clusters
+        if node_count > 1:
+            ha = [DatabaseHaLevel.SINGLE_ZONE]
+            ha_strategy = [DatabaseHaStrategy.READABLE_CLUSTER]
+        else:
+            ha = [DatabaseHaLevel.NONE]
+            ha_strategy = [DatabaseHaStrategy.NONE]
+        # Plans with zero locations are not currently orderable in any region.
+        status = Status.ACTIVE if plan.get("locations") else Status.INACTIVE
+        family = _database_family_name(plan)
+        items.append(
+            {
+                "vendor_id": vendor.vendor_id,
+                "database_id": database_id,
+                "name": database_id,
+                "display_name": plan.get("name", database_id),
+                "description": _database_description(
+                    f"Vultr PostgreSQL {family}", vcpus, memory, storage_size
+                ),
+                "api_reference": database_id,
+                # API/IaC provisioning references this plan id and engine.
+                # https://docs.vultr.com/products/storage/databases/postgresql/provisioning
+                "api_reference_object": {
+                    "plan": database_id,
+                    "database_engine": "pg",
+                },
+                # Managed Databases are provisioned as managed clusters, not as
+                # plain VM images with a stable 1:1 server SKU mapping.
+                # https://docs.vultr.com/products/storage/databases
+                "server_id": None,
+                "engine": DatabaseEngine.POSTGRESQL,
+                "wire_protocol": DatabaseWireProtocol.POSTGRESQL,
+                "engine_versions": versions,
+                "family": family,
+                "vcpus": vcpus,
+                "memory_amount": memory,
+                "storage_size": storage_size,
+                # Vultr does not expose explicit storage extra min/max/autosize - only bundled storage size is present
+                "storage_extra_min": 0,
+                "storage_extra_max": 0,
+                "storage_extra_autosize": False,
+                "ha": ha,
+                "ha_strategy": ha_strategy,
+                "max_read_replicas": max(node_count - 1, 0),
+                # PostgreSQL settings are configurable via Advanced Configuration.
+                # https://docs.vultr.com/products/storage/databases/postgresql/management/settings/configuration-options
+                "custom_config": True,
+                # Vultr supports enabling PostgreSQL extensions.
+                # https://docs.vultr.com/support/products/managed-databases/how-do-i-enable-extensions-in-a-vultr-managed-postgresql-database
+                "custom_extensions": True,
+                # Vultr documents encryption at rest for Managed Databases.
+                # https://docs.vultr.com/support/products/managed-databases/how-does-vultr-protect-my-database-data-at-rest
+                "disk_encryption": True,
+                # Vultr supports scheduling upgrade windows for managed
+                # PostgreSQL version upgrades.
+                # https://docs.vultr.com/products/storage/databases/postgresql/management/upgrade-databases
+                "auto_upgrade_versions": True,
+                # PostgreSQL plans are automatically backed up.
+                # https://docs.vultr.com/support/products/managed-databases/is-my-vultr-managed-mysql-or-postgresql-database-backed-up
+                "scheduled_backups": True,
+                # PostgreSQL FAQ documents PITR retention by node-plan tier:
+                # Premium=30 days, Business=14 days, Startup=2 days, Hobbyist=None.
+                # https://docs.vultr.com/products/managed-database/postgresql/faq
+                "continuous_backups": _database_pitr_days(database_id),
+                # Vultr Managed PostgreSQL includes PgBouncer and supports
+                # managing connection pools.
+                # https://docs.vultr.com/products/storage/databases/postgresql/management/pgbouncer
+                # https://docs.vultr.com/products/storage/databases/postgresql/management/connection/connection-pools
+                "connection_pool": True,
+                # Usage graphs and API/CLI usage endpoints cover CPU, memory,
+                # disk and network monitoring for managed databases.
+                # https://docs.vultr.com/products/storage/databases/mysql/management/monitor-databases
+                "system_monitoring": True,
+                "database_monitoring": True,
+                # Vultr exposes manual advanced-option tuning, but no documented
+                # built-in auto-tuning advisor or auto-apply feature.
+                # https://docs.vultr.com/reference/vultr-cli/database/advanced-option/update
+                # https://docs.vultr.com/products/storage/databases/postgresql/management/settings/configuration-options
+                "autotuning_advice": None,
+                "autotuning_apply": None,
+                # Managed Databases are advertised with a 99.99% SLA.
+                # https://www.vultr.com/products/managed-databases/
+                "sla": 99.99,
+                "status": status,
+                # Provisioning supports `trusted_ips` and `vpc_id`.
+                # https://docs.vultr.com/products/storage/databases/postgresql/provisioning
+                # Vultr documents TLS in transit for Managed Databases.
+                # https://docs.vultr.com/support/products/managed-databases/is-a-vultr-managed-database-secure
+                "security_features": [
+                    DatabaseSecurityFeature.IP_FILTERING,
+                    DatabaseSecurityFeature.PRIVATE_NETWORK,
+                    DatabaseSecurityFeature.ENFORCED_TLS,
+                ],
+            }
+        )
+    return items
 
 
 def inventory_database_prices(vendor):
-    return []
+    """List Vultr managed PostgreSQL plan prices in all regions.
+
+    Plans with more than one node are highly available within a single zone."""
+    databases = {database.database_id: database for database in vendor.databases}
+    plans = _get_database_plans()
+    items = []
+    for plan in plans:
+        database_id = plan.get("id")
+        if database_id not in databases:
+            continue
+        if not plan.get("locations"):
+            continue
+        node_count = plan.get("number_of_nodes")
+        if node_count > 1:
+            ha = DatabaseHaLevel.SINGLE_ZONE
+            ha_strategy = DatabaseHaStrategy.READABLE_CLUSTER
+        else:
+            ha = DatabaseHaLevel.NONE
+            ha_strategy = DatabaseHaStrategy.NONE
+        hourly_cost = plan.get("hourly_cost")
+        monthly_cost = plan.get("monthly_cost")
+        if hourly_cost is not None:
+            hourly_price = hourly_cost
+        elif monthly_cost is not None:
+            hourly_price = monthly_cost / _HOURS_PER_MONTH
+        else:
+            continue
+        price_tiered = []
+        if monthly_cost is not None and hourly_price:
+            monthly_cap = int(monthly_cost / hourly_price)
+            price_tiered = [
+                {"lower": 0, "upper": monthly_cap, "price": hourly_price},
+                {"lower": monthly_cap + 1, "upper": "Infinity", "price": 0},
+            ]
+        for location in plan.get("locations", []):
+            items.append(
+                {
+                    "vendor_id": vendor.vendor_id,
+                    "region_id": location,
+                    "database_id": database_id,
+                    "allocation": Allocation.ONDEMAND,
+                    "ha": ha,
+                    "ha_strategy": ha_strategy,
+                    "unit": PriceUnit.HOUR,
+                    "price": hourly_price,
+                    "price_upfront": 0,
+                    "price_tiered": price_tiered,
+                    "currency": plan.get("currency", "USD"),
+                }
+            )
+    return items
 
 
 def inventory_database_storages(vendor):
+    """Vultr managed PostgreSQL storage is bundled into DB plans.
+
+    Resizing storage is done by changing the database node plan; there is no
+    separate DB storage catalog product exposed by the public API.
+    https://docs.vultr.com/products/storage/databases/postgresql/management/resize-databases
+    """
     return []
 
 
 def inventory_database_storage_prices(vendor):
+    """No standalone Vultr managed DB storage price meters are exposed."""
     return []

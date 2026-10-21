@@ -2,7 +2,7 @@
 
 from enum import Enum
 from json import dumps
-from typing import Any, List, Optional
+from typing import Any, Collection, List, Optional
 
 from pydantic import BaseModel, field_serializer, field_validator
 from sqlalchemy.types import TypeDecorator
@@ -51,7 +51,34 @@ class Status(str, Enum):
     ACTIVE = "active"
     """Active and available resource."""
     INACTIVE = "inactive"
-    """Inactive resource that is not available anymore."""
+    """Unavailable. For Server/Database: temporary or unknown cause."""
+    PLANNED_FOR_RETIREMENT = "planned-for-retirement"
+    """Planned for retirement; only valid for Server and Database."""
+    RETIRED = "retired"
+    """Not orderable anymore, but prices may still exist (e.g. active multi-year contracts). Only valid for Server and Database."""
+
+    @classmethod
+    def best(cls, statuses: Collection["Status"]) -> "Status":
+        """Return the best of the given statuses: ACTIVE, PLANNED_FOR_RETIREMENT, INACTIVE, then RETIRED."""
+        for status in (
+            cls.ACTIVE,
+            cls.PLANNED_FOR_RETIREMENT,
+            cls.INACTIVE,
+            cls.RETIRED,
+        ):
+            if status in statuses:
+                return status
+        raise ValueError("statuses is empty")
+
+    @property
+    def is_orderable(self) -> bool:
+        """Whether a Server/Database with this status can still be ordered."""
+        return self in (Status.ACTIVE, Status.PLANNED_FOR_RETIREMENT)
+
+    @property
+    def is_general(self) -> bool:
+        """Whether this status is valid for non-server/database models (ACTIVE or INACTIVE only)."""
+        return self in (Status.ACTIVE, Status.INACTIVE)
 
 
 class ResourceType(str, Enum):
@@ -92,23 +119,32 @@ class Cpu(Json):
     """BogoMips value."""
 
 
-class Gpu(Json):
-    """GPU accelerator details."""
+class AcceleratorType(str, Enum):
+    """Type of a hardware accelerator, e.g. GPU or TPU."""
+
+    GPU = "GPU"
+    """Graphics Processing Unit."""
+    TPU = "TPU"
+    """Tensor Processing Unit."""
+
+
+class Accelerator(Json):
+    """Hardware accelerator (e.g. GPU or TPU) details."""
 
     manufacturer: str
-    """The manufacturer/brand of the GPU accelerator, e.g. Nvidia or AMD."""
+    """The manufacturer/brand of the accelerator, e.g. Nvidia or AMD."""
     family: Optional[str] = None
-    """The model family/architecture of the GPU accelerator."""
+    """The model family/architecture of the accelerator."""
     model: Optional[str] = None
-    """The model number of the GPU accelerator."""
+    """The model number of the accelerator."""
     memory: int
-    """Memory (MiB) allocated to the GPU accelerator."""
+    """Memory (MiB) allocated to the accelerator."""
     firmware_version: Optional[str] = None
     """Firmware version."""
     bios_version: Optional[str] = None
     """Video BIOS version."""
     graphics_clock: Optional[int] = None
-    """GPU core clock speed (Mhz)."""
+    """Core clock speed (Mhz)."""
     sm_clock: Optional[int] = None
     """Streaming Multiprocessor clock speed (Mhz)."""
     mem_clock: Optional[int] = None
@@ -126,8 +162,6 @@ class StorageType(str, Enum):
     """Solid-state drive."""
     NVME_SSD = "nvme ssd"
     """NVMe based solid-state drive."""
-    NETWORK = "network"
-    """Storage over network, e.g. using NFS."""
 
 
 class DatabaseEngine(str, Enum):
@@ -156,6 +190,20 @@ class DatabaseHaLevel(str, Enum):
     MULTI_REGION = "multi-region"
     """Multi-region high availability, meaning multiple databases in multiple regions with failover or multi-master."""
 
+    @classmethod
+    def ordered(cls, levels: Collection["DatabaseHaLevel"]) -> list["DatabaseHaLevel"]:
+        """Return supported HA levels in canonical order (most available first)."""
+        return [
+            level
+            for level in (
+                cls.MULTI_REGION,
+                cls.MULTI_ZONE,
+                cls.SINGLE_ZONE,
+                cls.NONE,
+            )
+            if level in levels
+        ]
+
 
 class DatabaseHaStrategy(str, Enum):
     """High availability replication strategy for a managed database type."""
@@ -168,6 +216,22 @@ class DatabaseHaStrategy(str, Enum):
     """Readable cluster for read scaling and failover, e.g. RDS Multi-AZ Cluster / Aurora with engine replication."""
     MULTI_MASTER = "multi-master"
     """True multi-master, e.g. CockroachDB / Spanner / DynamoDB Global Tables."""
+
+    @classmethod
+    def ordered(
+        cls, strategies: Collection["DatabaseHaStrategy"]
+    ) -> list["DatabaseHaStrategy"]:
+        """Return supported HA strategies in canonical order (most capable first)."""
+        return [
+            strategy
+            for strategy in (
+                cls.MULTI_MASTER,
+                cls.READABLE_CLUSTER,
+                cls.PASSIVE_STANDBY,
+                cls.NONE,
+            )
+            if strategy in strategies
+        ]
 
 
 class DatabaseSecurityFeature(str, Enum):

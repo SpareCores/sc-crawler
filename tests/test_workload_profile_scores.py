@@ -63,7 +63,7 @@ def test_workload(monkeypatch):
         (251435.6789, 251436),
         (957000.0, 957000),
         (0.0004, 0.0004),
-        (12.3456789, 12.35),
+        (12.3456789, 12.0),
         (None, None),
     ],
 )
@@ -72,7 +72,7 @@ def test_round_measurement(value, expected):
 
 
 def test_round_sigfigs_compound_score():
-    assert _round_sigfigs(0.206903896916275, sig=3) == 0.207
+    assert _round_sigfigs(0.206903896916275) == 0.21
 
 
 def test_normalise_higher_is_better():
@@ -265,17 +265,16 @@ def test_compute_workload_score_rows_weighted_geometric_mean(monkeypatch):
     )
 
     expected_log_avg = (0.75 * math.log2(2.0) + 0.25 * math.log2(1.0)) / 1.0
-    expected_score = _round_sigfigs(2**expected_log_avg, sig=3)
+    expected_score = _round_sigfigs(2**expected_log_avg)
     assert rows[0]["score"] == expected_score
     breakdown = rows[0]["score_breakdown"]
     assert (
-        _round_sigfigs(_reconstruct_score_from_breakdown(breakdown), sig=3)
-        == rows[0]["score"]
+        _round_sigfigs(_reconstruct_score_from_breakdown(breakdown)) == rows[0]["score"]
     )
     for component in breakdown.components:
         if component.normalized is not None and component.weight_share > 0:
             raw_impact = (component.normalized**component.weight_share - 1) * 100
-            assert component.impact == float(f"{raw_impact:.3g}")
+            assert component.impact == float(f"{raw_impact:.2g}")
         else:
             assert component.impact is None
 
@@ -324,8 +323,7 @@ def test_compute_workload_score_rows_penalize(monkeypatch):
     assert rows[0]["note"] is None
     assert rows[0]["score"] < 2.0
     assert (
-        _round_sigfigs(_reconstruct_score_from_breakdown(breakdown), sig=3)
-        == rows[0]["score"]
+        _round_sigfigs(_reconstruct_score_from_breakdown(breakdown)) == rows[0]["score"]
     )
 
 
@@ -362,8 +360,7 @@ def test_compute_workload_score_rows_lower_is_better_reconstruction(monkeypatch)
     assert component.normalized == pytest.approx(2.0)
     assert rows[0]["score"] == pytest.approx(2.0)
     assert (
-        _round_sigfigs(_reconstruct_score_from_breakdown(breakdown), sig=3)
-        == rows[0]["score"]
+        _round_sigfigs(_reconstruct_score_from_breakdown(breakdown)) == rows[0]["score"]
     )
 
 

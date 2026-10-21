@@ -1,3 +1,130 @@
+## v0.10.1 (October 20, 2026)
+
+New feature(s):
+
+- `Hetzner`: use the server type `category` as server family.
+
+New benchmark(s):
+
+- stress-ng stressor results (`stress_ng:<method>`) from the
+  `stressng_benchmarks` inspector task. 
+
+Fix(es):
+
+- `Hetzner`: use `/v1/locations` instead of deprecated `/v1/datacenters`, with
+  the location name as region id (former datacenter region ids kept in
+  `aliases`).
+- `Hetzner`: mark deprecated CCX Gen1 plans (`CCX11`–`CCX51`) as Intel.
+- Populate `Server.api_reference_object` with Pulumi/Terraform provisioning
+  args for `AWS`, `Azure`, `GCP`, `AliCloud`, `UpCloud`, `Vultr`, and `Hetzner`
+  (`OVH` left `NULL` — `flavor_id` is region-specific).
+- Standardize `RTX PRO 6000` naming and family (`Blackwell`), and set 
+  `RTX 6000` family by memory (`Ada Lovelace` or `Turing`).
+- Set missing `accelerator_type` of spot-only `ACTIVE` `AWS` GPU servers.
+
+## v0.10.0 (October 08, 2026)
+
+‼ Breaking changes:
+
+- Rename the `gpu_*` columns of `Server` to `accelerator_*`, as they also cover
+  other accelerator types such as TPUs: `accelerator_count`,
+  `accelerator_memory_min`, `accelerator_memory_total`,
+  `accelerator_manufacturer`, `accelerator_family`, `accelerator_model`, and
+  `accelerators`. The `Gpu` JSON model is renamed to `Accelerator`.
+
+New feature(s):
+
+- Add `accelerator_type` column (`AcceleratorType` enum: `GPU` or `TPU`) to
+  `Server` for the type of the primary accelerator. `GCP` TPU machine types are
+  marked as `TPU`, all other vendors' accelerators (and the ones found by
+  `nvidia-smi`) as `GPU`.
+- Add optional `compatible_storage_ids` JSON column to `Server` and `Database`
+  listing the `storage_id`s (or `database_storage_id`s) that can be attached as
+  extra storage (not populated yet).
+- Add `environment_fields` JSON column to `Benchmark` documenting the keys
+  recorded in `BenchmarkScore.environment`, similar to `config_fields`.
+- Add optional `subcategory` column to `Benchmark` for grouping benchmarks
+  within a category, e.g. the nvbandwidth scopes or Passmark CPU / Memory tests.
+- Add optional `series` column to `Server` and `Database` for a sub-type within
+  the `family` (not populated yet).
+- Add optional `api_reference_object` JSON column to `Server` (not populated
+  yet), as already available for `Database`.
+
+Fix(es):
+
+- `BenchmarkScore.observed_at` is now the crawl timestamp (like in other
+  tables). The end of the benchmark run is recorded in `environment.measured_at`.
+- Benchmark category changes: `redis:*` moved to `Database`, and `openssl` to
+  `Cryptography`.
+- Store missing values of optional JSON columns as `NULL` instead of the JSON
+  `null` literal (existing records are kept as is).
+- Skip the `nvidia_smi` and `nvbandwidth` inspector tasks on TPU machines.
+
+Maintenance update:
+
+- Inventory storages before servers and database storages before databases.
+
+## v0.9.5 (October 08, 2026)
+
+New feature(s):
+
+- Add inspector task block reasons for databases.
+
+## v0.9.4 (October 07, 2026)
+
+Fix(es):
+
+- `UpCloud`: inventory flexible `rdb.*` Developer / Standard / High Memory
+  PostgreSQL plans from `/database/plans`. Replace managed DB storage id
+  `additional-disk` with `standard` (Developer plans and legacy additional disk)
+  and `maxiops` (Standard / High Memory plans), matching block-storage storage ids.
+- `OVH`: skip server offers without a public catalog price and deduplicate
+  repeated flavor/region offers. Skip regions without instances or managed
+  databases (e.g. `RBX-ARCHIVE`), list IPv4 prices only in compute regions and
+  block storage prices only where the volume type is offered.
+
+## v0.9.3 (October 02, 2026)
+
+New benchmark(s):
+
+- nvbandwidth
+
+New feature(s):
+
+- Port inspector task ruleset from `sc-inspector`.
+
+Maintenance update:
+
+- Implement database inventories for `OVH`, `UpCloud` and `Vultr`.
+- Remove `StorageType.NETWORK`. Map former network-attached block storage to
+  media/performance classes (`HDD` / `SSD` / `NVME_SSD`) instead.
+- `GCP`: warehouse Hyperdisk types into `storage` (capacity prices) and set
+  max IOPS/throughput for Persistent Disk and Hyperdisk from docs.
+
+Fix(es):
+
+- `GCP`: fix Compute Engine prices and GPU/TPU naming against Billing Catalog SKUs.
+  On-demand and spot prices now cover `z4d`, `ct5l`, `ct5lp`, `ct5p`, `ct6e`, and `tpu7x`,
+  plus specialized Core/Ram families, GPU slice SKUs, GBy.h memory units, and bundled
+  Local SSD GiB-month rates. TPU models use `v3` / `v5e` / `v5p` / `v6e` / `v7x`.
+- Keep vendor API storage when the inspector has no disk sample (e.g. GCP `z4d`).
+- `AWS`: fix parsed EBS max IOPS, throughput, and size.
+- `Azure`: take PostgreSQL Flexible Server SKUs from retail prices.
+
+Maintenance update:
+
+- Comment example API responses next to vendor requests, and move those
+  calls into helper functions.
+- Merge benchmark unit tests into `tests/test_benchmarks.py`.
+
+## v0.9.2 (August 17, 2026)
+
+New feature(s):
+
+- Extend `Status` with `PLANNED_FOR_RETIREMENT` and `RETIRED` for Server and
+  Database (model validators reject these on other tables).
+- Map vendor inventory onto those statuses from confirmed APIs and docs.
+ 
 ## v0.9.1 (August 14, 2026)
 
 ‼ Breaking changes:

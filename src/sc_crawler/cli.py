@@ -1,11 +1,11 @@
-"""The Spare Cores (SC) Crawler CLI functions.
+"""The `sc-crawler` CLI functions.
 
 Check `sc-crawler --help` for more details."""
 
 import logging
 from contextlib import suppress
 from datetime import UTC, datetime, timedelta
-from enum import Enum
+from enum import Enum, StrEnum
 from json import dump as json_dump
 from json import loads
 from os import environ
@@ -41,7 +41,7 @@ from .alembic_helpers import alembic_cfg, get_revision
 from .insert import insert_items
 from .logger import ProgressPanel, ScRichHandler, VendorProgressTracker, logger
 from .lookup import benchmarks, compliance_frameworks, countries
-from .sentry import before_send
+from .sentry import before_send, sentry_capture_or_raise
 from .table_fields import Status
 from .tables import Benchmark, ComplianceFramework, Country, Metadata, Vendor, tables
 from .tables_scd import tables_scd
@@ -72,9 +72,8 @@ engine_to_dialect = {
 }
 Engines = Enum("ENGINES", {k: k for k in engine_to_dialect.keys()})
 
-# TODO use logging.getLevelNamesMapping() from Python 3.11
-log_levels = list(logging._nameToLevel.keys())
-LogLevels = Enum("LOGLEVELS", {k: k for k in log_levels})
+log_levels = list(logging.getLevelNamesMapping().keys())
+LogLevels = StrEnum("LOGLEVELS", {k: k for k in log_levels})
 
 supported_records = [r[10:] for r in dir(Vendor) if r.startswith("inventory_")]
 Records = Enum("RECORDS", {k: k for k in supported_records})
@@ -226,7 +225,9 @@ def autogenerate(
     connection_string: options.connection_string = "sqlite:///sc-data-all.db",
     message: Annotated[
         str,
-        typer.Option(help="Revision message, e.g. SC Crawler version number."),
+        typer.Option(
+            help="Revision message, e.g. the sparecores-crawler version number."
+        ),
     ] = "empty message",
 ):
     """
@@ -342,7 +343,7 @@ def copy(
         ),
     ],
 ):
-    """Copy the standard SC Crawler tables of a database into a blank database."""
+    """Copy the standard Crawler tables of a database into a blank database."""
 
     source_engine = create_engine(source, pool_pre_ping=True)
     target_engine = create_sc_engine(target, pool_pre_ping=True)
@@ -781,7 +782,7 @@ def pull(
     ] = [],
     log_level: Annotated[
         LogLevels, typer.Option(help="Log level threshold.")
-    ] = LogLevels.INFO.value,  # TODO drop .value after updating Enum to StrEnum in Python3.11
+    ] = LogLevels.INFO,
     cache: Annotated[
         bool,
         typer.Option(help="Enable or disable caching of all vendor API calls on disk."),
@@ -797,18 +798,17 @@ def pull(
     Vendor API calls are optionally cached as Pickle objects in `~/.cachier`.
     """
 
-    # enable caching
-    if cache:
-        set_global_params(
-            caching_enabled=True,
-            stale_after=timedelta(minutes=cache_ttl),
-        )
+    # cachier caches by default, so need to disable explicitly
+    set_global_params(
+        caching_enabled=cache,
+        stale_after=timedelta(minutes=cache_ttl),
+    )
 
     # enable logging
     channel = ScRichHandler()
     formatter = logging.Formatter("%(message)s")
     channel.setFormatter(formatter)
-    logger.setLevel(log_level.value)
+    logger.setLevel(log_level)
     logger.addHandler(channel)
 
     # filter vendors
@@ -866,48 +866,70 @@ def pull(
             logger.info("%d Benchmarks synced." % len(benchmarks))
             # get data for each vendor and then add/merge to database
             # TODO each vendor should open its own session and run in parallel
+            failed_vendors = []
             for vendor in vendors:
-                logger.info("Starting to collect data from vendor: " + vendor.vendor_id)
-                vendor = session.merge(vendor)
-                # register session to the Vendor so that dependen objects can auto-merge
-                vendor.session = session
-                # register progress bars so that helpers can update
-                vendor.progress_tracker = VendorProgressTracker(
-                    vendor=vendor, progress_panel=pbars
+
+                def on_error():
+                    session.rollback()
+                    failed_vendors.append(vendor.vendor_id)
+                    vendor.log(
+                        f"Skipping vendor {vendor.vendor_id} due to vendor API error.",
+                        logging.ERROR,
+                    )
+                    vendor.progress_tracker.update_vendor(step="✘")
+
+                with sentry_capture_or_raise(
+                    vendor=vendor,
+                    on_error=on_error,
+                ):
+                    logger.info(
+                        "Starting to collect data from vendor: " + vendor.vendor_id
+                    )
+                    vendor = session.merge(vendor)
+                    # register session to the Vendor so that dependen objects can auto-merge
+                    vendor.session = session
+                    # register progress bars so that helpers can update
+                    vendor.progress_tracker = VendorProgressTracker(
+                        vendor=vendor, progress_panel=pbars
+                    )
+                    vendor.progress_tracker.start_vendor(total=len(records))
+                    if Records.compliance_frameworks in records:
+                        vendor.inventory_compliance_frameworks()
+                    if Records.regions in records:
+                        vendor.inventory_regions()
+                    if Records.zones in records:
+                        vendor.inventory_zones()
+                    if Records.storages in records:
+                        vendor.inventory_storages()
+                    if Records.servers in records:
+                        vendor.inventory_servers()
+                    if Records.server_prices in records:
+                        vendor.inventory_server_prices()
+                    if Records.server_prices_spot in records:
+                        vendor.inventory_server_prices_spot()
+                    if Records.storage_prices in records:
+                        vendor.inventory_storage_prices()
+                    if Records.traffic_prices in records:
+                        vendor.inventory_traffic_prices()
+                    if Records.ipv4_prices in records:
+                        vendor.inventory_ipv4_prices()
+                    if Records.database_storages in records:
+                        vendor.inventory_database_storages()
+                    if Records.databases in records:
+                        vendor.inventory_databases()
+                    if Records.database_prices in records:
+                        vendor.inventory_database_prices()
+                    if Records.database_storage_prices in records:
+                        vendor.inventory_database_storage_prices()
+                    # reset current step name
+                    vendor.progress_tracker.update_vendor(step="✔")
+                    session.merge(vendor)
+                    session.commit()
+
+            if vendors and len(failed_vendors) == len(vendors):
+                raise RuntimeError(
+                    "All vendors failed due to errors: " + ", ".join(failed_vendors)
                 )
-                vendor.progress_tracker.start_vendor(total=len(records))
-                if Records.compliance_frameworks in records:
-                    vendor.inventory_compliance_frameworks()
-                if Records.regions in records:
-                    vendor.inventory_regions()
-                if Records.zones in records:
-                    vendor.inventory_zones()
-                if Records.servers in records:
-                    vendor.inventory_servers()
-                if Records.server_prices in records:
-                    vendor.inventory_server_prices()
-                if Records.server_prices_spot in records:
-                    vendor.inventory_server_prices_spot()
-                if Records.storages in records:
-                    vendor.inventory_storages()
-                if Records.storage_prices in records:
-                    vendor.inventory_storage_prices()
-                if Records.traffic_prices in records:
-                    vendor.inventory_traffic_prices()
-                if Records.ipv4_prices in records:
-                    vendor.inventory_ipv4_prices()
-                if Records.databases in records:
-                    vendor.inventory_databases()
-                if Records.database_prices in records:
-                    vendor.inventory_database_prices()
-                if Records.database_storages in records:
-                    vendor.inventory_database_storages()
-                if Records.database_storage_prices in records:
-                    vendor.inventory_database_storage_prices()
-                # reset current step name
-                vendor.progress_tracker.update_vendor(step="✔")
-                session.merge(vendor)
-                session.commit()
 
             if Records.servers in records:
                 task_id = pbars.tasks.add_task(

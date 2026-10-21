@@ -1,7 +1,8 @@
 ## Spare Cores Crawler
 
-SC Crawler is a Python package to pull and standardize data on cloud
-compute resources, with tooling to help organize and update the
+The Crawler of [Spare Cores Navigator](https://docs.sparecores.com/overview)
+is a Python package (`sparecores-crawler`) to pull and standardize data on
+cloud compute resources, with tooling to help organize and update the
 collected data into databases.
 
 ## Database schemas
@@ -161,6 +162,9 @@ You need to create a cloud project, optionally enable all regions, then create a
         "action": "publicCloudProject:apiovh:region/get"
       },
       {
+        "action": "publicCloudProject:apiovh:region/volumeType/get"
+      },
+      {
         "action": "publicCloudProject:apiovh:flavor/get"
       },
       {
@@ -219,8 +223,8 @@ environment variable to a directory for caching the inspector data, so that it
 won't be downloaded multiple times.
 
 Such an up-to-date SQLite database is managed by the Spare Cores team in the
-[SC Data](https://github.com/SpareCores/sc-data) repository, or you can also
-find it at <https://sc-data-public-40e9d310.s3.amazonaws.com/sc-data-all.db.bz2>.
+[`sc-data`](https://github.com/SpareCores/sc-data) repository, or you can also
+find it at <https://cdn.sparecores.net/sc-data/latest/sc-data-all.sql.xz>.
 
 Example run:
 
@@ -229,7 +233,7 @@ Example run:
 ### Hash data
 
 Database content can be hashed via the `sc-crawler hash` command. It will provide
-a single SHA1 hash value based on all records of all SC Crawler tables, which is
+a single SHA1 hash value based on all records of all Crawler tables, which is
 useful to track if database content has changed.
 
 ```shell
@@ -271,11 +275,11 @@ See `sc-crawler schemas create --help` for all supported database engines
 e.g. `upgrade` or `downgrade` schemas in a database (either just printing
 the related SQL commands via the `--sql` flag), printing the current version,
 setting a database version to a specific revision, or auto-generating migration
-scripts (for SC Crawler developers).
+scripts (for Crawler developers).
 
 ## ORM
 
-SC Crawler is using [SQLModel](https://sqlmodel.tiangolo.com/) /
+The Crawler uses [SQLModel](https://sqlmodel.tiangolo.com/) /
 [SQLAlchemy](https://docs.sqlalchemy.org/) as the ORM to interact with the underlying
 database, and you can also use the defined schemas and models to actually read/filter
 a previously pulled DB. Quick examples:

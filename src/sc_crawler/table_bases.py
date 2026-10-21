@@ -21,6 +21,8 @@ from sqlmodel import JSON, Field, Session, SQLModel, select
 
 from .str_utils import snake_case
 from .table_fields import (
+    Accelerator,
+    AcceleratorType,
     Allocation,
     Category,
     Cpu,
@@ -34,7 +36,6 @@ from .table_fields import (
     DatabaseWireProtocol,
     DdrGeneration,
     Disk,
-    Gpu,
     HashableDict,
     HashableJSON,
     PriceTier,
@@ -200,7 +201,7 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
         # no use of a generator as will need to serialize to JSON anyway
         hashes = {}
         for i, row in enumerate(rows):
-            # NOTE Pydantic is warning when read Gpu/Storage as dict
+            # NOTE Pydantic is warning when read Accelerator/Storage as dict
             # https://github.com/tiangolo/sqlmodel/issues/63#issuecomment-1081555082
             rowdict = row.model_dump(warnings=False)
             keys = {pk: rowdict.get(pk) for pk in pks}
@@ -234,6 +235,16 @@ class MetaColumns(ScModel):
         sa_column_kwargs={"onupdate": lambda: datetime.now(UTC)},
         description="Timestamp of the last observation.",
     )
+
+    @field_validator("status")
+    @classmethod
+    def _validate_status(cls, value: Status) -> Status:
+        if not value.is_general:
+            raise ValueError(
+                f"{value!r} is only valid for Server and Database. "
+                f"Use ACTIVE or INACTIVE for {cls.__name__}."
+            )
+        return value
 
 
 class HasComplianceFrameworkIdPK(ScModel):
@@ -313,7 +324,7 @@ class HasApiReference(ScModel):
 class HasApiReferenceObject(ScModel):
     api_reference_object: Optional[dict] = Field(
         default=None,
-        sa_type=JSON,
+        sa_type=JSON(none_as_null=True),
         description="How this resource is referenced in the vendor API calls, including the parameter name(s).",
     )
 
@@ -621,6 +632,7 @@ class StorageBase(MetaColumns, StorageFields):
 
 class ServerFields(
     HasDisplayName,
+    HasApiReferenceObject,
     HasApiReference,
     HasName,
     HasServerIdPK,
@@ -630,6 +642,11 @@ class ServerFields(
     family: Optional[str] = Field(
         default=None,
         description="Server family, e.g. General-purpose machine (GCP), or M5g (AWS).",
+    )
+    # TODO populate in the vendor modules
+    series: Optional[str] = Field(
+        default=None,
+        description="Server series within the family, e.g. b3 (OVH General Purpose).",
     )
     # inspector_status: str = Field(
     #     default=None,
@@ -745,36 +762,40 @@ class ServerFields(
         default=None,
         description="If the DDR SDRAM uses error correction code to detect and correct n-bit data corruption.",
     )
-    gpu_count: float = Field(
+    accelerator_count: float = Field(
         default=0,
-        description="Number of GPU accelerator(s).",
+        description="Number of accelerator(s), e.g. GPUs or TPUs.",
     )
-    gpu_memory_min: Optional[int] = Field(
+    accelerator_memory_min: Optional[int] = Field(
         default=None,
-        description="Memory (MiB) allocated to the lowest-end GPU accelerator.",
+        description="Memory (MiB) allocated to the lowest-end accelerator.",
     )
-    gpu_memory_total: Optional[int] = Field(
+    accelerator_memory_total: Optional[int] = Field(
         default=None,
-        description="Overall memory (MiB) allocated to all the GPU accelerator(s).",
+        description="Overall memory (MiB) allocated to all the accelerator(s).",
     )
-    gpu_manufacturer: Optional[str] = Field(
+    accelerator_type: Optional[AcceleratorType] = Field(
         default=None,
-        description="The manufacturer of the primary GPU accelerator, e.g. Nvidia or AMD.",
+        description="The type of the primary accelerator, e.g. GPU or TPU.",
     )
-    gpu_family: Optional[str] = Field(
+    accelerator_manufacturer: Optional[str] = Field(
         default=None,
-        description="The product family of the primary GPU accelerator, e.g. Turing.",
+        description="The manufacturer of the primary accelerator, e.g. Nvidia or AMD.",
     )
-    gpu_model: Optional[str] = Field(
+    accelerator_family: Optional[str] = Field(
         default=None,
-        description="The model number of the primary GPU accelerator, e.g. Tesla T4.",
+        description="The product family of the primary accelerator, e.g. Turing.",
     )
-    gpus: List[Gpu] = Field(
+    accelerator_model: Optional[str] = Field(
+        default=None,
+        description="The model number of the primary accelerator, e.g. Tesla T4.",
+    )
+    accelerators: List[Accelerator] = Field(
         default=[],
         sa_type=JSON,
         description=(
-            "JSON array of GPU accelerator details, including "
-            "the manufacturer, name, and memory (MiB) of each GPU."
+            "JSON array of accelerator details, including "
+            "the manufacturer, name, and memory (MiB) of each accelerator."
         ),
     )
     storage_size: int = Field(
@@ -783,7 +804,7 @@ class ServerFields(
     )
     storage_type: Optional[StorageType] = Field(
         default=None,
-        description="Primary disk type, e.g. HDD, SSD, NVMe SSD, or network).",
+        description="Primary disk type, e.g. HDD, SSD, or NVMe SSD.",
     )
     storages: List[Disk] = Field(
         default=[],
@@ -791,6 +812,13 @@ class ServerFields(
         description=(
             "JSON array of disks attached to the server, including "
             "the size (GB) and type of each disk."
+        ),
+    )
+    compatible_storage_ids: Optional[List[str]] = Field(
+        default=None,
+        sa_type=JSON(none_as_null=True),
+        description=(
+            "List of storage_ids that can be attached to the server as extra storage."
         ),
     )
     network_speed_baseline: Optional[float] = Field(
@@ -833,13 +861,15 @@ class ServerFields(
             return []
         return [Cpu(**item) if isinstance(item, dict) else item for item in value]
 
-    @field_validator("gpus", mode="before")
+    @field_validator("accelerators", mode="before")
     @classmethod
-    def _deserialize_gpus(cls, value):
-        """Deserialize gpus field, converting dicts to Gpu instances."""
+    def _deserialize_accelerators(cls, value):
+        """Deserialize accelerators field, converting dicts to Accelerator instances."""
         if value is None:
             return []
-        return [Gpu(**item) if isinstance(item, dict) else item for item in value]
+        return [
+            Accelerator(**item) if isinstance(item, dict) else item for item in value
+        ]
 
     @field_validator("storages", mode="before")
     @classmethod
@@ -851,7 +881,7 @@ class ServerFields(
 
     @reconstructor
     def _reconstruct_json_fields(self):
-        """Ensure cpus, gpus and storages are always a list of Cpu, Gpu and Disk instances after loading from the database."""
+        """Ensure cpus, accelerators and storages are always a list of Cpu, Accelerator and Disk instances after loading from the database."""
         if self.cpus is None:
             self.cpus = []
         else:
@@ -859,11 +889,12 @@ class ServerFields(
                 Cpu(**item) if isinstance(item, dict) else item for item in self.cpus
             ]
 
-        if self.gpus is None:
-            self.gpus = []
+        if self.accelerators is None:
+            self.accelerators = []
         else:
-            self.gpus = [
-                Gpu(**item) if isinstance(item, dict) else item for item in self.gpus
+            self.accelerators = [
+                Accelerator(**item) if isinstance(item, dict) else item
+                for item in self.accelerators
             ]
 
         if self.storages is None:
@@ -876,7 +907,10 @@ class ServerFields(
 
 
 class ServerBase(MetaColumns, ServerFields):
-    pass
+    @field_validator("status")
+    @classmethod
+    def _validate_status(cls, value: Status) -> Status:
+        return value
 
 
 class ServerPriceFields(ScModel):
@@ -915,6 +949,11 @@ class DatabaseFields(
     family: Optional[str] = Field(
         default=None,
         description="Hardware family or class classification.",
+    )
+    # TODO populate in the vendor modules
+    series: Optional[str] = Field(
+        default=None,
+        description="Hardware series within the family.",
     )
     server_id: Optional[str] = Field(
         default=None,
@@ -980,6 +1019,13 @@ class DatabaseFields(
     storage_extra_autosize: Optional[bool] = Field(
         default=None,
         description="Whether storage capacity can automatically expand as disk usage grows.",
+    )
+    compatible_storage_ids: Optional[List[str]] = Field(
+        default=None,
+        sa_type=JSON(none_as_null=True),
+        description=(
+            "List of database_storage_ids that can be attached to the database as extra storage."
+        ),
     )
     disk_encryption: Optional[bool] = Field(
         default=None,
@@ -1097,7 +1143,10 @@ class DatabaseFields(
 
 
 class DatabaseBase(MetaColumns, DatabaseFields):
-    pass
+    @field_validator("status")
+    @classmethod
+    def _validate_status(cls, value: Status) -> Status:
+        return value
 
 
 class DatabasePriceFields(ScModel):
@@ -1182,6 +1231,10 @@ _BENCHMARK_SOURCE_ADAPTER = TypeAdapter(BenchmarkSource)
 
 class BenchmarkFields(HasBenchmarkIdPK):
     category: Optional[str] = Field(description="Category of the resource.")
+    subcategory: Optional[str] = Field(
+        default=None,
+        description="Subcategory of the benchmark within its category, e.g. the scope of an nvbandwidth test.",
+    )
     source: BenchmarkSource = Field(
         default_factory=MeasuredSource,
         sa_type=JSON,
@@ -1210,6 +1263,11 @@ class BenchmarkFields(HasBenchmarkIdPK):
         default={},
         sa_type=JSON,
         description='A dictionary of descriptions on the framework-specific config options, e.g. {"bandwidth": "Memory amount to use for compression in MB."}.',
+    )
+    environment_fields: dict = Field(
+        default={},
+        sa_type=JSON,
+        description='A dictionary of descriptions on the environment details recorded with the benchmark scores, e.g. {"kernel_version": "Linux kernel version of the server."}.',
     )
     measurement: Optional[str] = Field(
         default=None,
@@ -1435,7 +1493,7 @@ class BenchmarkScoreFields(HasBenchmarkPKFK, HasVendorPKFK):
     )
     environment: Optional[dict] = Field(
         default=None,
-        sa_type=JSON,
+        sa_type=JSON(none_as_null=True),
         description=(
             "Extensible environment details "
             "(e.g. kernel_version, database_engine_version)."
@@ -1446,7 +1504,7 @@ class BenchmarkScoreFields(HasBenchmarkPKFK, HasVendorPKFK):
     )
     score_breakdown: Optional[WorkloadScoreBreakdown] = Field(
         default=None,
-        sa_type=JSON,
+        sa_type=JSON(none_as_null=True),
         description=(
             "Structured derivation of composite scores (e.g. workload profiles): "
             "per-component raw values, references, normalized values, weights, and "

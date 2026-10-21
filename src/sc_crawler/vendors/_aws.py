@@ -1,25 +1,28 @@
+"""Inventory of Amazon Web Services via `boto3`: servers, storages, traffic, IPv4 addresses and managed PostgreSQL (RDS), with their prices."""
+
 import json
 import re
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta
+from datetime import datetime
 from functools import cache
 from itertools import chain, repeat
 from logging import DEBUG, WARN
 from statistics import mode
-from typing import List, Optional, Tuple
+from typing import Collection, List, Optional, Tuple
 
 import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
-from cachier import cachier, set_global_params
+from cachier import cachier
 
 from ..inspector import _standardize_gpu_count
 from ..logger import logger
 from ..lookup import map_compliance_frameworks_to_vendor
 from ..sentry import sentry_capture_or_raise
-from ..str_utils import extract_last_number
 from ..table_fields import (
+    Accelerator,
+    AcceleratorType,
     Allocation,
     CpuAllocation,
     DatabaseEngine,
@@ -29,7 +32,6 @@ from ..table_fields import (
     DatabaseStorageScope,
     DatabaseWireProtocol,
     Disk,
-    Gpu,
     PriceTier,
     PriceUnit,
     Status,
@@ -52,9 +54,6 @@ from ..vendor_helpers import (
     preprocess_servers,
 )
 
-# disable caching by default
-set_global_params(caching_enabled=False, stale_after=timedelta(days=1))
-
 # ##############################################################################
 # Cached boto3 wrappers
 
@@ -62,6 +61,131 @@ set_global_params(caching_enabled=False, stale_after=timedelta(days=1))
 @cachier(separate_files=True)
 def _boto_describe_instance_types(region):
     ec2 = boto3.client("ec2", region_name=region)
+    # example DescribeInstanceTypes response:
+    # {
+    #     'InstanceTypes': [
+    #         {
+    #             'InstanceType': 'r8in.xlarge',
+    #             'CurrentGeneration': True,
+    #             'FreeTierEligible': False,
+    #             'SupportedUsageClasses': [
+    #                 'on-demand',
+    #                 'spot'
+    #             ],
+    #             'SupportedRootDeviceTypes': [
+    #                 'ebs'
+    #             ],
+    #             'SupportedVirtualizationTypes': [
+    #                 'hvm'
+    #             ],
+    #             'BareMetal': False,
+    #             'Hypervisor': 'nitro',
+    #             'ProcessorInfo': {
+    #                 'SupportedArchitectures': [
+    #                     'x86_64'
+    #                 ],
+    #                 'SustainedClockSpeedInGhz': 3.9,
+    #                 'Manufacturer': 'Intel'
+    #             },
+    #             'VCpuInfo': {
+    #                 'DefaultVCpus': 4,
+    #                 'DefaultCores': 2,
+    #                 'DefaultThreadsPerCore': 2,
+    #                 'ValidCores': [
+    #                     1,
+    #                     2
+    #                 ],
+    #                 'ValidThreadsPerCore': [
+    #                     1,
+    #                     2
+    #                 ]
+    #             },
+    #             'MemoryInfo': {
+    #                 'SizeInMiB': 32768
+    #             },
+    #             'InstanceStorageSupported': False,
+    #             'EbsInfo': {
+    #                 'EbsOptimizedSupport': 'default',
+    #                 'EncryptionSupport': 'supported',
+    #                 'EbsOptimizedInfo': {
+    #                     'BaselineBandwidthInMbps': 1250,
+    #                     'BaselineThroughputInMBps': 156.25,
+    #                     'BaselineIops': 6000,
+    #                     'MaximumBandwidthInMbps': 10000,
+    #                     'MaximumThroughputInMBps': 1250.0,
+    #                     'MaximumIops': 40000
+    #                 },
+    #                 'NvmeSupport': 'required',
+    #                 'MaximumEbsAttachments': 32,
+    #                 'AttachmentLimitType': 'dedicated'
+    #             },
+    #             'NetworkInfo': {
+    #                 'NetworkPerformance': 'Up to 30 Gigabit',
+    #                 'MaximumNetworkInterfaces': 4,
+    #                 'MaximumNetworkCards': 1,
+    #                 'DefaultNetworkCardIndex': 0,
+    #                 'NetworkCards': [
+    #                     {
+    #                         'NetworkCardIndex': 0,
+    #                         'NetworkPerformance': 'Up to 30 Gigabit',
+    #                         'MaximumNetworkInterfaces': 4,
+    #                         'AdditionalFlexibleNetworkInterfaces': 0,
+    #                         'BaselineBandwidthInGbps': 6.25,
+    #                         'PeakBandwidthInGbps': 30.0,
+    #                         'DefaultEnaQueueCountPerInterface': 4,
+    #                         'MaximumEnaQueueCount': 16,
+    #                         'MaximumEnaQueueCountPerInterface': 4,
+    #                         'InterfaceTypes': [
+    #                             'interface'
+    #                         ]
+    #                     }
+    #                 ],
+    #                 'Ipv4AddressesPerInterface': 30,
+    #                 'Ipv6AddressesPerInterface': 30,
+    #                 'Ipv6Supported': True,
+    #                 'EnaSupport': 'required',
+    #                 'EfaSupported': False,
+    #                 'EncryptionInTransitSupported': True,
+    #                 'EnaSrdSupported': False,
+    #                 'FlexibleEnaQueuesSupport': 'supported',
+    #                 'ConnectionTrackingConfiguration': {
+    #                     'DefaultTcpEstablishedTimeout': 350,
+    #                     'DefaultUdpTimeout': 30,
+    #                     'DefaultUdpStreamTimeout': 180
+    #                 },
+    #                 'SecondaryNetworkSupported': False,
+    #                 'Ipv4AddressesPerSecondaryInterface': 0
+    #             },
+    #             'PlacementGroupInfo': {
+    #                 'SupportedStrategies': [
+    #                     'cluster',
+    #                     'partition',
+    #                     'spread'
+    #                 ]
+    #             },
+    #             'HibernationSupported': True,
+    #             'BurstablePerformanceSupported': False,
+    #             'DedicatedHostsSupported': True,
+    #             'AutoRecoverySupported': True,
+    #             'SupportedBootModes': [
+    #                 'legacy-bios',
+    #                 'uefi'
+    #             ],
+    #             'NitroEnclavesSupport': 'supported',
+    #             'NitroTpmSupport': 'supported',
+    #             'NitroTpmInfo': {
+    #                 'SupportedVersions': [
+    #                     '2.0'
+    #                 ]
+    #             },
+    #             'PhcSupport': 'unsupported',
+    #             'RebootMigrationSupport': 'supported',
+    #             'SupportedInRegion': True
+    #         },
+    #         # ...
+    #     ],
+    #     'NextToken': 'AAIAAdQxZjPaDL1p27...'
+    # }
     pages = ec2.get_paginator("describe_instance_types")
     pages = pages.paginate().build_full_result()
     return pages["InstanceTypes"]
@@ -70,6 +194,32 @@ def _boto_describe_instance_types(region):
 @cachier()
 def _boto_describe_regions():
     ec2 = boto3.client("ec2")
+    # example DescribeRegions response:
+    # {
+    #     'Regions': [
+    #         {
+    #             'OptInStatus': 'opted-in',
+    #             'Geography': [
+    #                 {
+    #                     'Name': 'India'
+    #                 }
+    #             ],
+    #             'RegionName': 'ap-south-2',
+    #             'Endpoint': 'ec2.ap-south-2.amazonaws.com'
+    #         },
+    #         {
+    #             'OptInStatus': 'opt-in-not-required',
+    #             'Geography': [
+    #                 {
+    #                     'Name': 'India'
+    #                 }
+    #             ],
+    #             'RegionName': 'ap-south-1',
+    #             'Endpoint': 'ec2.ap-south-1.amazonaws.com'
+    #         },
+    #         # ...
+    #     ]
+    # }
     return ec2.describe_regions().get("Regions", [])
 
 
@@ -86,6 +236,34 @@ def _boto_describe_availability_zones(region):
             },
         ),
     )
+    # example DescribeAvailabilityZones response:
+    # {
+    #     'AvailabilityZones': [
+    #         {
+    #             'OptInStatus': 'opt-in-not-required',
+    #             'Messages': [],
+    #             'RegionName': 'us-east-1',
+    #             'ZoneName': 'us-east-1a',
+    #             'ZoneId': 'use1-az2',
+    #             'GroupName': 'us-east-1-zg-1',
+    #             'NetworkBorderGroup': 'us-east-1',
+    #             'ZoneType': 'availability-zone',
+    #             'GroupLongName': 'US East (N. Virginia) 1',
+    #             'Geography': [
+    #                 {
+    #                     'Name': 'United States of America'
+    #                 }
+    #             ],
+    #             'SubGeography': [
+    #                 {
+    #                     'Name': 'Virginia'
+    #                 }
+    #             ],
+    #             'State': 'available'
+    #         },
+    #         # ...
+    #     ]
+    # }
     zones = ec2.describe_availability_zones(
         Filters=[
             {"Name": "zone-type", "Values": ["availability-zone"]},
@@ -106,6 +284,23 @@ def _describe_instance_type_offerings_per_zone(region: str):
         Dict of instance types as keys and list of zone ids as values.
     """
     client = boto3.client("ec2", region_name=region)
+    # example DescribeInstanceTypeOfferings response:
+    # {
+    #     'InstanceTypeOfferings': [
+    #         {
+    #             'InstanceType': 'r8in.xlarge',
+    #             'LocationType': 'availability-zone-id',
+    #             'Location': 'use1-az5'
+    #         },
+    #         {
+    #             'InstanceType': 'r8in.xlarge',
+    #             'LocationType': 'availability-zone-id',
+    #             'Location': 'use1-az1'
+    #         },
+    #         # ...
+    #     ],
+    #     'NextToken': 'AAIAAXmR4_JkjyYlHD...'
+    # }
     paginator = client.get_paginator("describe_instance_type_offerings")
     instances = defaultdict(list)
     for page in paginator.paginate(LocationType="availability-zone-id"):
@@ -122,17 +317,88 @@ def _describe_instance_type_offerings_per_zone_with_progress(
     return zones
 
 
+def _collect_regions_servers(vendor: Vendor) -> dict[str, dict[str, list[str]]]:
+    """Map each ACTIVE region to instance types offered per zone."""
+    active_region_ids = [
+        region.api_reference
+        for region in vendor.regions
+        if region.status == Status.ACTIVE
+    ]
+    vendor.progress_tracker.start_task(
+        name="Look up supported server types in all ACTIVE regions/zones",
+        total=len(active_region_ids),
+    )
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        regions_servers = executor.map(
+            _describe_instance_type_offerings_per_zone_with_progress,
+            active_region_ids,
+            repeat(vendor),
+        )
+    regions_servers = dict(zip(active_region_ids, regions_servers))
+    vendor.progress_tracker.hide_task()
+    return regions_servers
+
+
+def _reconcile_server_status(
+    vendor: Vendor, spot_server_ids: Collection[str] = ()
+) -> None:
+    """Update server status from EC2 offerings and spot availability.
+
+    Not offered in any ACTIVE region/zone and absent from spot -> INACTIVE.
+    AWS does not confirm retirement, so never mark RETIRED here.
+    """
+    regions_servers = _collect_regions_servers(vendor)
+    offered_server_ids = {
+        server_id
+        for zone_servers in regions_servers.values()
+        for server_id in zone_servers
+    }
+    available_server_ids = offered_server_ids | set(spot_server_ids)
+    for server in vendor.servers:
+        server.status = (
+            Status.ACTIVE
+            if server.server_id in available_server_ids
+            else Status.INACTIVE
+        )
+        # servers kept ACTIVE only by spot prices are not returned by
+        # describe_instance_types, so might miss fields added since last crawled
+        if (
+            server.status == Status.ACTIVE
+            and server.accelerator_count > 0
+            and server.accelerator_type is None
+        ):
+            server.accelerator_type = AcceleratorType.GPU
+
+
 @cachier()
 def _boto_price_list(region):
     """Download published AWS price lists. Currently unused."""
     # pricing API is only available in a few regions
     client = boto3.client("pricing", region_name="us-east-1")
+    # example ListPriceLists response:
+    # {
+    #     'PriceLists': [
+    #         {
+    #             'PriceListArn': 'arn:aws:pricing:::price-list/aws/AmazonEC2/USD/20260921194712/us-east-1',
+    #             'RegionCode': 'us-east-1',
+    #             'CurrencyCode': 'USD',
+    #             'FileFormats': [
+    #                 'json',
+    #                 'csv'
+    #             ]
+    #         }
+    #     ]
+    # }
     price_lists = client.list_price_lists(
         ServiceCode="AmazonEC2",
         EffectiveDate=datetime.now(),
         CurrencyCode="USD",
         RegionCode=region,
     )
+    # example GetPriceListFileUrl response:
+    # {
+    #     'Url': 'https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/20260921194712/us-east-1/index.json'
+    # }
     price_list_url = client.get_price_list_file_url(
         PriceListArn=price_lists["PriceLists"][0]["PriceListArn"], FileFormat="json"
     )
@@ -169,6 +435,21 @@ def _boto_get_products(service_code: str, filters: dict):
 @cachier(separate_files=True)
 def _describe_spot_price_history(region):
     ec2 = boto3.client("ec2", region_name=region)
+    # example DescribeSpotPriceHistory response:
+    # {
+    #     'NextToken': 'AAHcNbVWluvVeerM53...',
+    #     'SpotPriceHistory': [
+    #         {
+    #             'AvailabilityZone': 'us-east-1b',
+    #             'AvailabilityZoneId': 'use1-az4',
+    #             'InstanceType': 'z1d.large',
+    #             'ProductDescription': 'Linux/UNIX',
+    #             'SpotPrice': '0.046700',
+    #             'Timestamp': '2026-09-23T11:00:00+00:00'
+    #         },
+    #         # ...
+    #     ]
+    # }
     pager = ec2.get_paginator("describe_spot_price_history")
     pages = pager.paginate(
         # TODO ingests win/mac and others
@@ -340,7 +621,7 @@ def _get_gpus_of_instance_type(instance_type):
     info = instance_type["GpuInfo"]
 
     def to_gpu(gpu):
-        return Gpu(
+        return Accelerator(
             manufacturer=gpu["Manufacturer"],
             model=gpu["Name"],
             memory=gpu["MemoryInfo"]["SizeInMiB"],
@@ -369,6 +650,8 @@ def _make_server_from_instance_type(instance_type, vendor) -> dict:
         "vendor_id": vendor.vendor_id,
         "name": it,
         "api_reference": it,
+        # https://www.pulumi.com/registry/packages/aws/api-docs/ec2/instance/
+        "api_reference_object": {"instance_type": it},
         "display_name": it,
         "description": _annotate_instance_type(it),
         "hypervisor": instance_type.get("Hypervisor", None),
@@ -380,12 +663,14 @@ def _make_server_from_instance_type(instance_type, vendor) -> dict:
         "cpu_architecture": cpu_info["SupportedArchitectures"][0],
         "cpu_manufacturer": cpu_info.get("Manufacturer", None),
         "memory_amount": instance_type["MemoryInfo"]["SizeInMiB"],
-        "gpu_count": gpu_info[0],
-        "gpu_memory_min": gpu_info[1],
-        "gpu_memory_total": gpu_info[2],
-        "gpu_manufacturer": gpu_info[3],
-        "gpu_model": gpu_info[4],
-        "gpus": _get_gpus_of_instance_type(instance_type),
+        "accelerator_count": gpu_info[0],
+        "accelerator_memory_min": gpu_info[1],
+        "accelerator_memory_total": gpu_info[2],
+        # GpuInfo lists GPUs only (no Inferentia/Trainium or FPGA accelerators)
+        "accelerator_type": AcceleratorType.GPU if gpu_info[0] else None,
+        "accelerator_manufacturer": gpu_info[3],
+        "accelerator_model": gpu_info[4],
+        "accelerators": _get_gpus_of_instance_type(instance_type),
         "storage_size": storage_info[0],
         "storage_type": storage_info[1],
         "storages": _get_storages_of_instance_type(instance_type),
@@ -458,6 +743,62 @@ def _search_storage(
     filters = {"volumeType": volume_type}
     if location:
         filters["location"] = location
+    # example GetProducts response:
+    # {
+    #     'FormatVersion': 'aws_v1',
+    #     'PriceList': [
+    #         {
+    #             'product': {
+    #                 'productFamily': 'Storage',
+    #                 'attributes': {
+    #                     'maxThroughputvolume': '250 MiB/s',
+    #                     'volumeType': 'General Purpose',
+    #                     'maxIopsvolume': '16000',
+    #                     'usagetype': 'EBS:VolumeUsage.gp2',
+    #                     'locationType': 'AWS Region',
+    #                     'maxVolumeSize': '16 TiB',
+    #                     'maxIopsBurstPerformance': '3000 for volumes <= 1 TiB',
+    #                     'storageMedia': 'SSD-backed',
+    #                     'regionCode': 'us-east-1',
+    #                     'servicecode': 'AmazonEC2',
+    #                     'volumeApiName': 'gp2',
+    #                     'location': 'US East (N. Virginia)',
+    #                     'servicename': 'Amazon Elastic Compute Cloud',
+    #                     'operation': ''
+    #                 },
+    #                 'sku': 'HY3BZPP2B6K8MSJF'
+    #             },
+    #             'serviceCode': 'AmazonEC2',
+    #             'terms': {
+    #                 'OnDemand': {
+    #                     'HY3BZPP2B6K8MSJF.JRTCKXETXF': {
+    #                         'priceDimensions': {
+    #                             'HY3BZPP2B6K8MSJF.JRTCKXETXF.6YS6EN2CT7': {
+    #                                 'unit': 'GB-Mo',
+    #                                 'endRange': 'Inf',
+    #                                 'description': '$0.10 per GB-month of General Purpose SSD (gp2) provisioned storage - US East (Northern Virginia)',
+    #                                 'appliesTo': [],
+    #                                 'rateCode': 'HY3BZPP2B6K8MSJF.JRTCKXETXF.6YS6EN2CT7',
+    #                                 'beginRange': '0',
+    #                                 'pricePerUnit': {
+    #                                     'USD': '0.1000000000'
+    #                                 }
+    #                             }
+    #                         },
+    #                         'sku': 'HY3BZPP2B6K8MSJF',
+    #                         'effectiveDate': '2026-09-01T00:00:00Z',
+    #                         'offerTermCode': 'JRTCKXETXF',
+    #                         'termAttributes': {}
+    #                     }
+    #                 }
+    #             },
+    #             'version': '20260921194712',
+    #             'publicationDate': '2026-09-21T19:47:12Z'
+    #         },
+    #         # ...
+    #     ],
+    #     'NextToken': 'AAMA-EFRSURBSGhoR2...'
+    # }
     volumes = _boto_get_products(
         service_code="AmazonEC2",
         filters=filters,
@@ -465,6 +806,264 @@ def _search_storage(
     if vendor:
         vendor.progress_tracker.advance_task()
     return volumes
+
+
+def _get_server_products() -> list:
+    """Fetch on-demand Linux EC2 instance prices using the `GetProducts` API."""
+
+    # example GetProducts response:
+    # {
+    #     'FormatVersion': 'aws_v1',
+    #     'PriceList': [
+    #         {
+    #             'product': {
+    #                 'productFamily': 'Compute Instance',
+    #                 'attributes': {
+    #                     'enhancedNetworkingSupported': 'Yes',
+    #                     'intelTurboAvailable': 'Yes',
+    #                     'memory': '16 GiB',
+    #                     'dedicatedEbsThroughput': 'Up to 10 Gbps',
+    #                     'vcpu': '2',
+    #                     'classicnetworkingsupport': 'false',
+    #                     'capacitystatus': 'Used',
+    #                     'locationType': 'AWS Region',
+    #                     'storage': '1 x 1250 NVMe SSD',
+    #                     'instanceFamily': 'Storage optimized',
+    #                     'operatingSystem': 'Linux',
+    #                     'intelAvx2Available': 'Yes',
+    #                     'instanceFamilyCategory': 'Storage Optimized',
+    #                     'regionCode': 'ap-south-2',
+    #                     'physicalProcessor': 'Intel Xeon Scalable (Emerald Rapids)',
+    #                     'clockSpeed': '3.2 GHz',
+    #                     'ecu': 'NA',
+    #                     'networkPerformance': 'Up to 25 Gigabit',
+    #                     'servicename': 'Amazon Elastic Compute Cloud',
+    #                     'gpuMemory': 'NA',
+    #                     'dedicatedEbsThroughputDescription': '625 Mbps',
+    #                     'vpcnetworkingsupport': 'true',
+    #                     'instanceType': 'i7ie.large',
+    #                     'tenancy': 'Shared',
+    #                     'usagetype': 'APS5-BoxUsage:i7ie.large',
+    #                     'normalizationSizeFactor': '4',
+    #                     'intelAvxAvailable': 'Yes',
+    #                     'processorFeatures': 'Intel AMX; Intel AVX; Intel AVX2; Intel AVX512; Intel Turbo',
+    #                     'servicecode': 'AmazonEC2',
+    #                     'licenseModel': 'No License required',
+    #                     'currentGeneration': 'Yes',
+    #                     'preInstalledSw': 'NA',
+    #                     'location': 'Asia Pacific (Hyderabad)',
+    #                     'processorArchitecture': '64-bit',
+    #                     'marketoption': 'OnDemand',
+    #                     'operation': 'RunInstances',
+    #                     'availabilityzone': 'NA'
+    #                 },
+    #                 'sku': '223YHU2VGH592NPJ'
+    #             },
+    #             'serviceCode': 'AmazonEC2',
+    #             'terms': {
+    #                 'OnDemand': {
+    #                     '223YHU2VGH592NPJ.JRTCKXETXF': {
+    #                         'priceDimensions': {
+    #                             '223YHU2VGH592NPJ.JRTCKXETXF.6YS6EN2CT7': {
+    #                                 'unit': 'Hrs',
+    #                                 'endRange': 'Inf',
+    #                                 'description': '$0.2956 per On Demand Linux i7ie.large Instance Hour',
+    #                                 'appliesTo': [],
+    #                                 'rateCode': '223YHU2VGH592NPJ.JRTCKXETXF.6YS6EN2CT7',
+    #                                 'beginRange': '0',
+    #                                 'pricePerUnit': {
+    #                                     'USD': '0.2956000000'
+    #                                 }
+    #                             }
+    #                         },
+    #                         'sku': '223YHU2VGH592NPJ',
+    #                         'effectiveDate': '2026-09-01T00:00:00Z',
+    #                         'offerTermCode': 'JRTCKXETXF',
+    #                         'termAttributes': {}
+    #                     }
+    #                 }
+    #             },
+    #             'version': '20260921194712',
+    #             'publicationDate': '2026-09-21T19:47:12Z'
+    #         },
+    #         # ...
+    #     ],
+    #     'NextToken': 'AAMA-EFRSURBSGhoR2...'
+    # }
+    return _boto_get_products(
+        service_code="AmazonEC2",
+        filters={
+            # TODO ingest win, mac etc others
+            "operatingSystem": "Linux",
+            "preInstalledSw": "NA",
+            "licenseModel": "No License required",
+            "locationType": "AWS Region",
+            "capacitystatus": "Used",
+            # TODO reserved pricing options - might decide not to, as not in scope?
+            "marketoption": "OnDemand",
+            # TODO dedicated options?
+            "tenancy": "Shared",
+        },
+    )
+
+
+def _get_traffic_products(direction: TrafficDirection) -> list:
+    """Fetch traffic prices using the `GetProducts` API."""
+
+    # example GetProducts response:
+    # {
+    #     'FormatVersion': 'aws_v1',
+    #     'PriceList': [
+    #         {
+    #             'product': {
+    #                 'productFamily': 'Data Transfer',
+    #                 'attributes': {
+    #                     'fromLocationType': 'AWS Local Zone',
+    #                     'toRegionCode': '',
+    #                     'servicecode': 'AWSDataTransfer',
+    #                     'usagetype': 'CHI1-DataTransfer-Out-Bytes',
+    #                     'fromRegionCode': 'us-east-1-chi-1',
+    #                     'transferType': 'AWS Outbound',
+    #                     'servicename': 'AWS Data Transfer',
+    #                     'fromLocation': 'US East (Chicago)',
+    #                     'toLocationType': 'Other',
+    #                     'toLocation': 'External',
+    #                     'operation': ''
+    #                 },
+    #                 'sku': '27T5YSJBHB3SGRQC'
+    #             },
+    #             'serviceCode': 'AWSDataTransfer',
+    #             'terms': {
+    #                 'OnDemand': {
+    #                     '27T5YSJBHB3SGRQC.JRTCKXETXF': {
+    #                         'priceDimensions': {
+    #                             '27T5YSJBHB3SGRQC.JRTCKXETXF.GPHXDESFBB': {
+    #                                 'unit': 'GB',
+    #                                 'endRange': 'Inf',
+    #                                 'description': 'USD0.05 per GB for DataTransfer-Out-Bytes in US East',
+    #                                 'appliesTo': [],
+    #                                 'rateCode': '27T5YSJBHB3SGRQC.JRTCKXETXF.GPHXDESFBB',
+    #                                 'beginRange': '153600',
+    #                                 'pricePerUnit': {
+    #                                     'USD': '0.0500000000'
+    #                                 }
+    #                             },
+    #                             '27T5YSJBHB3SGRQC.JRTCKXETXF.Q3Z75P77EN': {
+    #                                 'unit': 'GB',
+    #                                 'endRange': '10240',
+    #                                 'description': 'USD0.09 per GB for DataTransfer-Out-Bytes in US East',
+    #                                 'appliesTo': [],
+    #                                 'rateCode': '27T5YSJBHB3SGRQC.JRTCKXETXF.Q3Z75P77EN',
+    #                                 'beginRange': '0',
+    #                                 'pricePerUnit': {
+    #                                     'USD': '0.0900000000'
+    #                                 }
+    #                             },
+    #                             '27T5YSJBHB3SGRQC.JRTCKXETXF.VF6T3GAUKQ': {
+    #                                 'unit': 'GB',
+    #                                 'endRange': '51200',
+    #                                 'description': 'USD0.085 per GB for DataTransfer-Out-Bytes in US East',
+    #                                 'appliesTo': [],
+    #                                 'rateCode': '27T5YSJBHB3SGRQC.JRTCKXETXF.VF6T3GAUKQ',
+    #                                 'beginRange': '10240',
+    #                                 'pricePerUnit': {
+    #                                     'USD': '0.0850000000'
+    #                                 }
+    #                             },
+    #                             '27T5YSJBHB3SGRQC.JRTCKXETXF.N9EW5UVVPA': {
+    #                                 'unit': 'GB',
+    #                                 'endRange': '153600',
+    #                                 'description': 'USD0.07 per GB for DataTransfer-Out-Bytes in US East',
+    #                                 'appliesTo': [],
+    #                                 'rateCode': '27T5YSJBHB3SGRQC.JRTCKXETXF.N9EW5UVVPA',
+    #                                 'beginRange': '51200',
+    #                                 'pricePerUnit': {
+    #                                     'USD': '0.0700000000'
+    #                                 }
+    #                             }
+    #                         },
+    #                         'sku': '27T5YSJBHB3SGRQC',
+    #                         'effectiveDate': '2026-06-01T00:00:00Z',
+    #                         'offerTermCode': 'JRTCKXETXF',
+    #                         'termAttributes': {}
+    #                     }
+    #                 }
+    #             },
+    #             'version': '20260916132208',
+    #             'publicationDate': '2026-09-16T13:22:08Z'
+    #         },
+    #         # ...
+    #     ],
+    #     'NextToken': 'AAMA-EFRSURBSGhoR2...'
+    # }
+    return _boto_get_products(
+        service_code="AWSDataTransfer",
+        filters={
+            "transferType": "AWS " + direction.value.title(),
+        },
+    )
+
+
+def _get_ipv4_products() -> list:
+    """Fetch public IPv4 address prices using the `GetProducts` API."""
+
+    # example GetProducts response:
+    # {
+    #     'FormatVersion': 'aws_v1',
+    #     'PriceList': [
+    #         {
+    #             'product': {
+    #                 'attributes': {
+    #                     'regionCode': 'us-west-2-phx-1',
+    #                     'servicecode': 'AmazonVPC',
+    #                     'groupDescription': 'Hourly charge for In-use Public IPv4 Addresses',
+    #                     'usagetype': 'PHX1-PublicIPv4:InUseAddress',
+    #                     'locationType': 'AWS Local Zone',
+    #                     'location': 'US West (Phoenix)',
+    #                     'servicename': 'Amazon Virtual Private Cloud',
+    #                     'operation': '',
+    #                     'group': 'VPCPublicIPv4Address'
+    #                 },
+    #                 'sku': '235FTT6JZG45DEW3'
+    #             },
+    #             'serviceCode': 'AmazonVPC',
+    #             'terms': {
+    #                 'OnDemand': {
+    #                     '235FTT6JZG45DEW3.JRTCKXETXF': {
+    #                         'priceDimensions': {
+    #                             '235FTT6JZG45DEW3.JRTCKXETXF.6YS6EN2CT7': {
+    #                                 'unit': 'Hrs',
+    #                                 'endRange': 'Inf',
+    #                                 'description': '$0.005 per In-use public IPv4 address per hour',
+    #                                 'appliesTo': [],
+    #                                 'rateCode': '235FTT6JZG45DEW3.JRTCKXETXF.6YS6EN2CT7',
+    #                                 'beginRange': '0',
+    #                                 'pricePerUnit': {
+    #                                     'USD': '0.0050000000'
+    #                                 }
+    #                             }
+    #                         },
+    #                         'sku': '235FTT6JZG45DEW3',
+    #                         'effectiveDate': '2026-09-01T00:00:00Z',
+    #                         'offerTermCode': 'JRTCKXETXF',
+    #                         'termAttributes': {}
+    #                     }
+    #                 }
+    #             },
+    #             'version': '20260917190528',
+    #             'publicationDate': '2026-09-17T19:05:28Z'
+    #         },
+    #         # ...
+    #     ],
+    #     'NextToken': 'AAMA-EFRSURBSGhoR2...'
+    # }
+    return _boto_get_products(
+        service_code="AmazonVPC",
+        filters={
+            "group": "VPCPublicIPv4Address",
+            "groupDescription": "Hourly charge for In-use Public IPv4 Addresses",
+        },
+    )
 
 
 # ##############################################################################
@@ -949,7 +1548,12 @@ def inventory_zones(vendor):
 
 
 def inventory_servers(vendor):
-    """List all available AWS instance types in all regions via `boto3` calls."""
+    """List all available AWS instance types in all regions via `boto3` calls.
+
+    Lifecycle is reconciled after spot price collection via
+    `_reconcile_server_status`
+    (offerings + spot in ACTIVE regions -> ACTIVE, else INACTIVE).
+    """
     # TODO consider dropping this in favor of pricing.get_products, as
     #      it has info e.g. on instanceFamily although other fields
     #      are messier (e.g. extract memory from string)
@@ -965,43 +1569,14 @@ def inventory_server_prices(vendor):
     vendor.progress_tracker.start_task(
         name="Searching for ondemand server_price(s)", total=None
     )
-    products = _boto_get_products(
-        service_code="AmazonEC2",
-        filters={
-            # TODO ingest win, mac etc others
-            "operatingSystem": "Linux",
-            "preInstalledSw": "NA",
-            "licenseModel": "No License required",
-            "locationType": "AWS Region",
-            "capacitystatus": "Used",
-            # TODO reserved pricing options - might decide not to, as not in scope?
-            "marketoption": "OnDemand",
-            # TODO dedicated options?
-            "tenancy": "Shared",
-        },
-    )
+    products = _get_server_products()
     vendor.progress_tracker.hide_task()
 
     # lookup tables
     regions = scmodels_to_dict(vendor.regions, keys=["name", "aliases"])
     servers = scmodels_to_dict(vendor.servers, keys=["server_id"])
 
-    # check all regions for instance types per zone
-    active_region_ids = [
-        r.api_reference for r in regions.values() if r.status == Status.ACTIVE
-    ]
-    vendor.progress_tracker.start_task(
-        name="Look up supported server types in all ACTIVE regions/zones",
-        total=len(active_region_ids),
-    )
-    with ThreadPoolExecutor(max_workers=8) as executor:
-        regions_servers = executor.map(
-            _describe_instance_type_offerings_per_zone_with_progress,
-            active_region_ids,
-            repeat(vendor),
-        )
-    regions_servers = dict(zip(active_region_ids, regions_servers))
-    vendor.progress_tracker.hide_task()
+    regions_servers = _collect_regions_servers(vendor)
 
     server_prices = []
     vendor.progress_tracker.start_task(
@@ -1042,6 +1617,7 @@ def inventory_server_prices(vendor):
         finally:
             vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
+
     return server_prices
 
 
@@ -1109,6 +1685,7 @@ def inventory_server_prices_spot(vendor):
         )
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
+    _reconcile_server_status(vendor, {product["InstanceType"] for product in products})
     return server_prices
 
 
@@ -1193,19 +1770,26 @@ def inventory_storages(vendor):
         attributes = product["product"]["attributes"]
         product_id = attributes["volumeApiName"]
 
-        def get_attr(key: str) -> float:
-            return extract_last_number(
-                str(
-                    attributes.get(
-                        key,
-                        storage_manual_data[product_id][key],
-                    )
-                )
-            )
+        def get_attr(key: str, multiplier: int = 1) -> Optional[int]:
+            raw = str(attributes.get(key, storage_manual_data[product_id][key]))
+            if raw == "40 - 200":
+                raw = "200"
+            elif raw == "250 - based on 1 MiB I/O size":
+                raw = "250"
+            elif raw == "500 - based on 1 MiB I/O size":
+                raw = "500"
+            elif raw == "40 - 90 MB/sec":
+                raw = str(round(90 / _MIB_TO_MB))
+            raw = raw.removesuffix(" MiB/s").removesuffix(" TiB")
+            parsed = None
+            with sentry_capture_or_raise(vendor=vendor):
+                parsed = round(int(raw) * multiplier)
+            return parsed
 
         storage_type = (
             StorageType.HDD if "HDD" in attributes["storageMedia"] else StorageType.SSD
         )
+
         storages.append(
             {
                 "storage_id": product_id,
@@ -1214,9 +1798,9 @@ def inventory_storages(vendor):
                 "description": attributes["storageMedia"],
                 "storage_type": storage_type,
                 "max_iops": get_attr("maxIopsvolume"),
-                "max_throughput": round(get_attr("maxThroughputvolume") * _MIB_TO_MB),
-                "min_size": round(get_attr("minVolumeSize") * _GIB_TO_GB),
-                "max_size": round(get_attr("maxVolumeSize") * 1024 * _GIB_TO_GB),
+                "max_throughput": get_attr("maxThroughputvolume", _MIB_TO_MB),
+                "min_size": get_attr("minVolumeSize", _GIB_TO_GB),
+                "max_size": get_attr("maxVolumeSize", 1024 * _GIB_TO_GB),
             }
         )
 
@@ -1278,12 +1862,7 @@ def inventory_traffic_prices(vendor):
         vendor.progress_tracker.start_task(
             name=f"Searching for {direction.value} traffic_price(s)", total=None
         )
-        products = _boto_get_products(
-            service_code="AWSDataTransfer",
-            filters={
-                "transferType": "AWS " + direction.value.title(),
-            },
-        )
+        products = _get_traffic_products(direction)
         vendor.log(f"Found {len(products)} {direction.value} traffic_price(s).")
         vendor.progress_tracker.update_task(
             description=f"Syncing {direction.value} traffic_price(s)",
@@ -1316,13 +1895,7 @@ def inventory_traffic_prices(vendor):
 def inventory_ipv4_prices(vendor):
     """List IPV4 prices in all regions via `boto3` calls."""
     vendor.progress_tracker.start_task(name="Searching for ipv4_price(s)", total=None)
-    products = _boto_get_products(
-        service_code="AmazonVPC",
-        filters={
-            "group": "VPCPublicIPv4Address",
-            "groupDescription": "Hourly charge for In-use Public IPv4 Addresses",
-        },
-    )
+    products = _get_ipv4_products()
     vendor.log(f"Found {len(products)} ipv4_price(s).")
     vendor.progress_tracker.update_task(
         description="Syncing ipv4_price(s)", total=len(products)
@@ -1371,6 +1944,54 @@ def _boto_describe_orderable_db_instance_options(
             },
         ),
     )
+    # example DescribeOrderableDBInstanceOptions response:
+    # {
+    #     'OrderableDBInstanceOptions': [
+    #         {
+    #             'Engine': 'postgres',
+    #             'EngineVersion': '11.22-rds.20241121',
+    #             'DBInstanceClass': 'db.t3.micro',
+    #             'LicenseModel': 'postgresql-license',
+    #             'AvailabilityZones': [
+    #                 {
+    #                     'Name': 'us-east-1a'
+    #                 },
+    #                 {
+    #                     'Name': 'us-east-1b'
+    #                 },
+    #                 # ...
+    #             ],
+    #             'MultiAZCapable': True,
+    #             'ReadReplicaCapable': True,
+    #             'Vpc': True,
+    #             'SupportsStorageEncryption': True,
+    #             'StorageType': 'gp2',
+    #             'SupportsIops': False,
+    #             'SupportsStorageThroughput': False,
+    #             'SupportsEnhancedMonitoring': True,
+    #             'SupportsIAMDatabaseAuthentication': True,
+    #             'SupportsPerformanceInsights': True,
+    #             'MinStorageSize': 5,
+    #             'MaxStorageSize': 6144,
+    #             'AvailableProcessorFeatures': [],
+    #             'SupportsStorageAutoscaling': True,
+    #             'SupportsKerberosAuthentication': True,
+    #             'OutpostCapable': False,
+    #             'SupportedActivityStreamModes': [],
+    #             'SupportsGlobalDatabases': False,
+    #             'SupportedNetworkTypes': [
+    #                 'IPV4',
+    #                 'DUAL'
+    #             ],
+    #             'SupportsClusters': False,
+    #             'SupportsDedicatedLogVolume': False,
+    #             'SupportsAdditionalStorageVolumes': False,
+    #             'SupportsHttpEndpoint': False
+    #         },
+    #         # ...
+    #     ],
+    #     'Marker': 'ZGIudDMubWljcm8KcG9z...'
+    # }
     paginator = rds.get_paginator("describe_orderable_db_instance_options")
     options = []
     for page in paginator.paginate(
@@ -1392,6 +2013,28 @@ def _boto_describe_orderable_db_instance_options(
 @cache
 def _boto_describe_db_major_engine_versions(region: str) -> list[str]:
     rds = boto3.client("rds", region_name=region)
+    # example DescribeDBMajorEngineVersions response:
+    # {
+    #     'DBMajorEngineVersions': [
+    #         {
+    #             'Engine': 'postgres',
+    #             'MajorEngineVersion': '11',
+    #             'SupportedEngineLifecycles': [
+    #                 {
+    #                     'LifecycleSupportName': 'open-source-rds-standard-support',
+    #                     'LifecycleSupportStartDate': '2019-03-13T00:00:00+00:00',
+    #                     'LifecycleSupportEndDate': '2024-02-29T23:59:59.999000+00:00'
+    #                 },
+    #                 {
+    #                     'LifecycleSupportName': 'open-source-rds-extended-support',
+    #                     'LifecycleSupportStartDate': '2024-03-01T00:00:00+00:00',
+    #                     'LifecycleSupportEndDate': '2027-03-31T23:59:59.999000+00:00'
+    #                 }
+    #             ]
+    #         },
+    #         # ...
+    #     ]
+    # }
     paginator = rds.get_paginator("describe_db_major_engine_versions")
     versions: set[str] = set()
     for page in paginator.paginate(Engine="postgres"):
@@ -1403,6 +2046,147 @@ def _boto_describe_db_major_engine_versions(region: str) -> list[str]:
 
 
 def _boto_get_rds_products() -> list:
+    # example GetProducts response:
+    # {
+    #     'FormatVersion': 'aws_v1',
+    #     'PriceList': [
+    #         {
+    #             'product': {
+    #                 'productFamily': 'Database Instance',
+    #                 'attributes': {
+    #                     'engineCode': '14',
+    #                     'enhancedNetworkingSupported': 'Yes',
+    #                     'memory': '512 GiB',
+    #                     'vcpu': '64',
+    #                     'locationType': 'AWS Region',
+    #                     'storage': 'EBS Only',
+    #                     'instanceFamily': 'Memory optimized',
+    #                     'regionCode': 'us-west-1',
+    #                     'physicalProcessor': 'Intel Xeon Platinum 8175',
+    #                     'clockSpeed': 'Up to 3.1 GHz',
+    #                     'networkPerformance': '20 Gigabit',
+    #                     'deploymentOption': 'Multi-AZ',
+    #                     'servicename': 'Amazon Relational Database Service',
+    #                     'instanceTypeFamily': 'R5',
+    #                     'instanceType': 'db.r5.16xlarge',
+    #                     'unbundledLicensing': 'FALSE',
+    #                     'usagetype': 'USW1-Multi-AZUsage:db.r5.16xl',
+    #                     'normalizationSizeFactor': '256',
+    #                     'databaseEngine': 'PostgreSQL',
+    #                     'servicecode': 'AmazonRDS',
+    #                     'licenseModel': 'No license required',
+    #                     'currentGeneration': 'Yes',
+    #                     'location': 'US West (N. California)',
+    #                     'processorArchitecture': '64-bit',
+    #                     'operation': 'CreateDBInstance:0014'
+    #                 },
+    #                 'sku': '222M85BZEW5V3EBH'
+    #             },
+    #             'serviceCode': 'AmazonRDS',
+    #             'terms': {
+    #                 'OnDemand': {
+    #                     '222M85BZEW5V3EBH.JRTCKXETXF': {
+    #                         'priceDimensions': {
+    #                             '222M85BZEW5V3EBH.JRTCKXETXF.6YS6EN2CT7': {
+    #                                 'unit': 'Hrs',
+    #                                 'endRange': 'Inf',
+    #                                 'description': '$17.920 per RDS db.r5.16xlarge Multi-AZ instance hour (or partial hour) running PostgreSQL',
+    #                                 'appliesTo': [],
+    #                                 'rateCode': '222M85BZEW5V3EBH.JRTCKXETXF.6YS6EN2CT7',
+    #                                 'beginRange': '0',
+    #                                 'pricePerUnit': {
+    #                                     'USD': '17.9200000000'
+    #                                 }
+    #                             }
+    #                         },
+    #                         'sku': '222M85BZEW5V3EBH',
+    #                         'effectiveDate': '2026-09-01T00:00:00Z',
+    #                         'offerTermCode': 'JRTCKXETXF',
+    #                         'termAttributes': {}
+    #                     }
+    #                 },
+    #                 'Reserved': {
+    #                     '222M85BZEW5V3EBH.4NA7Y494T4': {
+    #                         'priceDimensions': {
+    #                             '222M85BZEW5V3EBH.4NA7Y494T4.6YS6EN2CT7': {
+    #                                 'unit': 'Hrs',
+    #                                 'endRange': 'Inf',
+    #                                 'description': 'PostgreSQL, db.r5.16xl reserved instance applied',
+    #                                 'appliesTo': [],
+    #                                 'rateCode': '222M85BZEW5V3EBH.4NA7Y494T4.6YS6EN2CT7',
+    #                                 'beginRange': '0',
+    #                                 'pricePerUnit': {
+    #                                     'USD': '12.0422000000'
+    #                                 }
+    #                             }
+    #                         },
+    #                         'sku': '222M85BZEW5V3EBH',
+    #                         'effectiveDate': '2026-09-22T19:32:48Z',
+    #                         'offerTermCode': '4NA7Y494T4',
+    #                         'termAttributes': {
+    #                             'LeaseContractLength': '1yr',
+    #                             'OfferingClass': 'standard',
+    #                             'PurchaseOption': 'No Upfront'
+    #                         }
+    #                     },
+    #                     # ...
+    #                 }
+    #             },
+    #             'version': '20260922193130',
+    #             'publicationDate': '2026-09-22T19:31:30Z'
+    #         },
+    #         {
+    #             'product': {
+    #                 'productFamily': 'Database Storage',
+    #                 'attributes': {
+    #                     'volumeType': 'Provisioned IOPS',
+    #                     'engineCode': '14',
+    #                     'usagetype': 'EUC2-RDS:Multi-AZCluster-PIOPS-Storage',
+    #                     'locationType': 'AWS Region',
+    #                     'maxVolumeSize': '16 TB',
+    #                     'databaseEngine': 'PostgreSQL',
+    #                     'storageMedia': 'SSD',
+    #                     'regionCode': 'eu-central-2',
+    #                     'servicecode': 'AmazonRDS',
+    #                     'deploymentOption': 'Multi-AZ (readable standbys)',
+    #                     'location': 'Europe (Zurich)',
+    #                     'servicename': 'Amazon Relational Database Service',
+    #                     'operation': 'CreateDBInstance:0014',
+    #                     'minVolumeSize': '100 GB'
+    #                 },
+    #                 'sku': '22FG6WQCUERVA5XM'
+    #             },
+    #             'serviceCode': 'AmazonRDS',
+    #             'terms': {
+    #                 'OnDemand': {
+    #                     '22FG6WQCUERVA5XM.JRTCKXETXF': {
+    #                         'priceDimensions': {
+    #                             '22FG6WQCUERVA5XM.JRTCKXETXF.6YS6EN2CT7': {
+    #                                 'unit': 'GB-Mo',
+    #                                 'endRange': 'Inf',
+    #                                 'description': '$0.4917 per GB-month of provisioned io1 storage for Multi-AZ (readable standbys) on PostgreSQL',
+    #                                 'appliesTo': [],
+    #                                 'rateCode': '22FG6WQCUERVA5XM.JRTCKXETXF.6YS6EN2CT7',
+    #                                 'beginRange': '0',
+    #                                 'pricePerUnit': {
+    #                                     'USD': '0.4917000000'
+    #                                 }
+    #                             }
+    #                         },
+    #                         'sku': '22FG6WQCUERVA5XM',
+    #                         'effectiveDate': '2026-09-01T00:00:00Z',
+    #                         'offerTermCode': 'JRTCKXETXF',
+    #                         'termAttributes': {}
+    #                     }
+    #                 }
+    #             },
+    #             'version': '20260922193130',
+    #             'publicationDate': '2026-09-22T19:31:30Z'
+    #         },
+    #         # ...
+    #     ],
+    #     'NextToken': 'AAMA-EFRSURBSGhoR2...'
+    # }
     return _boto_get_products(
         service_code="AmazonRDS",
         filters={"databaseEngine": "PostgreSQL"},
@@ -1454,8 +2238,7 @@ def _lookup_orderable_db_instance_options(
         {
             database_id
             for region_classes in prices_by_region.values()
-            for database_id, attrs in region_classes.items()
-            if attrs.get("currentGeneration") == "Yes"
+            for database_id in region_classes
         }
     )
     vendor.progress_tracker.start_task(
@@ -1566,7 +2349,11 @@ def _get_rds_instance_products_by_region() -> tuple[
 
 
 def inventory_databases(vendor):
-    """List all available AWS RDS PostgreSQL instance types via `boto3` calls."""
+    """List all available AWS RDS PostgreSQL instance types via `boto3` calls.
+
+    Lifecycle (`DescribeOrderableDBInstanceOptions`): no orderable options ->
+    RETIRED; otherwise ACTIVE.
+    """
     vendor.progress_tracker.start_task(name="Searching for database(s)", total=None)
     prices_by_region, deployment_options_by_database = (
         _get_rds_instance_products_by_region()
@@ -1590,11 +2377,10 @@ def inventory_databases(vendor):
                 continue
             seen_database_ids.add(database_id)
             db_instance_options = options_by_database.get(database_id, [])
-            status = Status.ACTIVE
-            # Pricing keeps previous-gen SKUs (currentGeneration=No) after AWS stops
-            # allowing new launches; add these classes with INACTIVE status.
             if not db_instance_options:
-                status = Status.INACTIVE
+                status = Status.RETIRED
+            else:
+                status = Status.ACTIVE
             deployment_options = deployment_options_by_database.get(
                 database_id, frozenset()
             )
@@ -1692,8 +2478,8 @@ def inventory_databases(vendor):
                     "vcpus": product["vcpu"],
                     "memory_amount": memory_amount_mib,
                     "storage_size": storage_size,
-                    "ha": ha,
-                    "ha_strategy": ha_strategy,
+                    "ha": DatabaseHaLevel.ordered(ha),
+                    "ha_strategy": DatabaseHaStrategy.ordered(ha_strategy),
                     # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Overview.RDSSecurityGroups.html
                     # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_VPC.html
                     # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_VPC.pc.html

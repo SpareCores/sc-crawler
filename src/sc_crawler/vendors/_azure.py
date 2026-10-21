@@ -1,7 +1,10 @@
+"""Inventory of Microsoft Azure via its APIs: servers, storages, traffic, IPv4 addresses and managed PostgreSQL (Flexible Server), with their prices."""
+
 from collections import defaultdict
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from functools import cache
 from os import environ
+from re import IGNORECASE
 from re import compile as recompile
 from time import sleep
 from types import SimpleNamespace
@@ -20,6 +23,7 @@ from ..logger import logger
 from ..lookup import map_compliance_frameworks_to_vendor
 from ..sentry import sentry_capture_or_raise
 from ..table_fields import (
+    AcceleratorType,
     Allocation,
     CpuAllocation,
     CpuArchitecture,
@@ -32,6 +36,7 @@ from ..table_fields import (
     Disk,
     PriceTier,
     PriceUnit,
+    Status,
     StorageType,
     TrafficDirection,
 )
@@ -82,6 +87,48 @@ def _compute_client() -> ComputeManagementClient:
 
 @cachier()
 def _regions() -> List[dict]:
+    # example Subscriptions - List Locations response:
+    # {
+    #     'value': [
+    #         {
+    #             'id': '/subscriptions/00000000-0000-0000-0000-000000000000/locations/eastus',
+    #             'name': 'eastus',
+    #             'type': 'Region',
+    #             'displayName': 'East US',
+    #             'regionalDisplayName': '(US) East US',
+    #             'metadata': {
+    #                 'regionType': 'Physical',
+    #                 'regionCategory': 'Recommended',
+    #                 'geography': 'United States',
+    #                 'geographyGroup': 'US',
+    #                 'longitude': '-79.8164',
+    #                 'latitude': '37.3719',
+    #                 'physicalLocation': 'Virginia',
+    #                 'pairedRegion': [
+    #                     {
+    #                         'name': 'westus',
+    #                         'id': '/subscriptions/00000000-0000-0000-0000-000000000000/locations/westus'
+    #                     }
+    #                 ]
+    #             },
+    #             'availabilityZoneMappings': [
+    #                 {
+    #                     'logicalZone': '1',
+    #                     'physicalZone': 'eastus-az2'
+    #                 },
+    #                 {
+    #                     'logicalZone': '2',
+    #                     'physicalZone': 'eastus-az3'
+    #                 },
+    #                 {
+    #                     'logicalZone': '3',
+    #                     'physicalZone': 'eastus-az1'
+    #                 }
+    #             ]
+    #         },
+    #         # ...
+    #     ]
+    # }
     locations = []
     for location in _subscription_client().subscriptions.list_locations(
         _subscription_id()
@@ -92,6 +139,73 @@ def _regions() -> List[dict]:
 
 @cachier()
 def _resources(namespace: str) -> List[dict]:
+    # example Providers - Get response:
+    # {
+    #     'id': '/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.Compute',
+    #     'namespace': 'Microsoft.Compute',
+    #     'authorizations': [
+    #         {
+    #             'applicationId': '45164d96-544d-4a64-a1ca-3fb4bbb6eb18',
+    #             'roleDefinitionId': '2206ff6f-2860-49b8-9b29-f54b9bc675ed'
+    #         },
+    #         # ...
+    #     ],
+    #     'resourceTypes': [
+    #         {
+    #             'resourceType': 'virtualMachines',
+    #             'locations': [
+    #                 'East US',
+    #                 'East US 2',
+    #                 'West US',
+    #                 # ...
+    #             ],
+    #             'apiVersions': [
+    #                 '2026-04-01',
+    #                 '2026-03-01',
+    #                 '2025-11-01',
+    #                 # ...
+    #             ],
+    #             'defaultApiVersion': '2023-09-01',
+    #             'apiProfiles': [
+    #                 {
+    #                     'profileVersion': '2017-03-09-profile',
+    #                     'apiVersion': '2016-03-30'
+    #                 },
+    #                 {
+    #                     'profileVersion': '2018-03-01-hybrid',
+    #                     'apiVersion': '2017-03-30'
+    #                 },
+    #                 {
+    #                     'profileVersion': '2018-06-01-profile',
+    #                     'apiVersion': '2017-12-01'
+    #                 },
+    #                 {
+    #                     'profileVersion': '2019-03-01-hybrid',
+    #                     'apiVersion': '2017-12-01'
+    #                 },
+    #                 {
+    #                     'profileVersion': '2020-09-01-hybrid',
+    #                     'apiVersion': '2020-06-01'
+    #                 }
+    #             ],
+    #             'zoneMappings': [
+    #                 {
+    #                     'location': 'Australia East',
+    #                     'zones': [
+    #                         '3',
+    #                         '1',
+    #                         '2'
+    #                     ]
+    #                 },
+    #                 # ...
+    #             ],
+    #             'capabilities': 'CrossResourceGroupResourceMove, CrossSubscriptionResourceMove, SystemAssignedResourceIdentity, SupportsTags, SupportsLocation'
+    #         },
+    #         # ...
+    #     ],
+    #     'registrationState': 'Registered',
+    #     'registrationPolicy': 'RegistrationRequired'
+    # }
     resources = []
     for resource in _resource_client().providers.get(namespace).resource_types:
         resources.append(resource.as_dict())
@@ -100,6 +214,79 @@ def _resources(namespace: str) -> List[dict]:
 
 @cachier()
 def _compute_resources() -> List[dict]:
+    # example Resource Skus - List response:
+    # {
+    #     'value': [
+    #         {
+    #             'resourceType': 'virtualMachines',
+    #             'name': 'Standard_E80is_v4',
+    #             'tier': 'Standard',
+    #             'size': 'E80is_v4',
+    #             'family': 'standardXEISv4Family',
+    #             'locations': ['WestUS3'],
+    #             'locationInfo': [
+    #                 {
+    #                     'location': 'WestUS3',
+    #                     'zones': ['3', '1', '2'],
+    #                     'zoneDetails': [
+    #                         {
+    #                             'Name': ['3', '1', '2'],
+    #                             'capabilities': [
+    #                                 {'name': 'UltraSSDAvailable', 'value': 'True'}
+    #                             ]
+    #                         }
+    #                     ]
+    #                 }
+    #             ],
+    #             'capabilities': [
+    #                 {'name': 'MaxResourceVolumeMB', 'value': '0'},
+    #                 {'name': 'OSVhdSizeMB', 'value': '1047552'},
+    #                 {'name': 'vCPUs', 'value': '80'},
+    #                 {'name': 'MemoryPreservingMaintenanceSupported', 'value': 'True'},
+    #                 {'name': 'HyperVGenerations', 'value': 'V1,V2'},
+    #                 {'name': 'MemoryGB', 'value': '504'},
+    #                 {'name': 'MaxDataDiskCount', 'value': '64'},
+    #                 {'name': 'CpuArchitectureType', 'value': 'x64'},
+    #                 {'name': 'LowPriorityCapable', 'value': 'True'},
+    #                 {'name': 'PremiumIO', 'value': 'True'},
+    #                 {'name': 'VMDeploymentTypes', 'value': 'IaaS,PaaS'},
+    #                 {'name': 'vCPUsConstraintsAllowed', 'value': '1, 2, 4, 6, 8, 10, 12, 15, 16, 18, 20, 24, 28, 30, 32, 36, 40, 44, 45, 48, 60, 64, 72, 80'},
+    #                 {'name': 'vCPUsAvailable', 'value': '80'},
+    #                 {'name': 'vCPUsPerCore', 'value': '2'},
+    #                 {'name': 'CombinedTempDiskAndCachedIOPS', 'value': '2000000'},
+    #                 {'name': 'CombinedTempDiskAndCachedReadBytesPerSecond', 'value': '4194304000'},
+    #                 {'name': 'CombinedTempDiskAndCachedWriteBytesPerSecond', 'value': '4194304000'},
+    #                 {'name': 'CachedDiskBytes', 'value': '1717986918400'},
+    #                 {'name': 'UncachedDiskIOPS', 'value': '80000'},
+    #                 {'name': 'UncachedDiskBytesPerSecond', 'value': '1500000000'},
+    #                 {'name': 'EphemeralOSDiskSupported', 'value': 'False'},
+    #                 {'name': 'EncryptionAtHostSupported', 'value': 'True'},
+    #                 {'name': 'CapacityReservationSupported', 'value': 'False'},
+    #                 {'name': 'AcceleratedNetworkingEnabled', 'value': 'True'},
+    #                 {'name': 'RdmaEnabled', 'value': 'False'},
+    #                 {'name': 'MaxNetworkInterfaces', 'value': '8'}
+    #             ],
+    #             'restrictions': [
+    #                 {
+    #                     'type': 'Location',
+    #                     'values': ['WestUS3'],
+    #                     'restrictionInfo': {'locations': ['WestUS3']},
+    #                     'reasonCode': 'NotAvailableForSubscription'
+    #                 },
+    #                 {
+    #                     'type': 'Zone',
+    #                     'values': ['WestUS3'],
+    #                     'restrictionInfo': {
+    #                         'locations': ['WestUS3'],
+    #                         'zones': ['3', '1']
+    #                     },
+    #                     'reasonCode': 'NotAvailableForSubscription'
+    #                 }
+    #             ]
+    #         },
+    #         # ...
+    #     ]
+    # }
     resources = []
     for resource in _compute_client().resource_skus.list():
         resources.append(resource.as_dict())
@@ -146,6 +333,214 @@ def _prices(url_params: Optional[str] = None) -> List[dict]:
         else:
             raise HttpResponseError(response.content)
     return data
+
+
+def _get_server_retail_prices() -> List[dict]:
+    """Fetch server prices using the Azure Retail Prices API."""
+
+    # example Azure Retail Prices response:
+    # {
+    #     'BillingCurrency': 'USD',
+    #     'CustomerEntityId': 'Default',
+    #     'CustomerEntityType': 'Retail',
+    #     'Items': [
+    #         {
+    #             'currencyCode': 'USD',
+    #             'tierMinimumUnits': 0.0,
+    #             'retailPrice': 0.547888,
+    #             'unitPrice': 0.547888,
+    #             'armRegionName': 'southindia',
+    #             'location': 'IN South',
+    #             'effectiveStartDate': '2026-09-01T00:00:00Z',
+    #             'effectiveEndDate': '2026-09-30T23:59:00Z',
+    #             'meterId': '000009d0-057f-5f2b-b7e9-9e26add324a8',
+    #             'meterName': 'D14/DS14 Spot',
+    #             'productId': 'DZH318Z0BPVW',
+    #             'skuId': 'DZH318Z0BPVW/00QZ',
+    #             'productName': 'Virtual Machines D Series Windows',
+    #             'skuName': 'D14 Spot',
+    #             'serviceName': 'Virtual Machines',
+    #             'serviceId': 'DZH313Z7MMC8',
+    #             'serviceFamily': 'Compute',
+    #             'unitOfMeasure': '1 Hour',
+    #             'type': 'Consumption',
+    #             'isPrimaryMeterRegion': True,
+    #             'armSkuName': 'Standard_D14'
+    #         },
+    #         # ...
+    #     ],
+    #     'NextPageLink': 'https://prices.azure.com:443/api/retail/prices?$filter=serviceName%20eq%20%27Virtual%20Machines%27%20and%20priceType%20eq%20%27Consumption%27&$skip=1000',
+    #     'Count': 1000
+    # }
+    return _prices(
+        "$filter=serviceName eq 'Virtual Machines' and priceType eq 'Consumption'"
+    )
+
+
+def _get_storage_retail_prices() -> List[dict]:
+    """Fetch storage prices using the Azure Retail Prices API."""
+
+    # example Azure Retail Prices response:
+    # {
+    #     'BillingCurrency': 'USD',
+    #     'CustomerEntityId': 'Default',
+    #     'CustomerEntityType': 'Retail',
+    #     'Items': [
+    #         {
+    #             'currencyCode': 'USD',
+    #             'tierMinimumUnits': 0.0,
+    #             'retailPrice': 0.0,
+    #             'unitPrice': 0.0,
+    #             'armRegionName': 'westus2',
+    #             'location': 'US West 2',
+    #             'effectiveStartDate': '2018-03-01T00:00:00Z',
+    #             'meterId': 'b377a40a-afdd-4b7c-9ec8-af53e2b0c314',
+    #             'meterName': 'Archive Data Write',
+    #             'productId': 'DZH318Z0BNZJ',
+    #             'skuId': 'DZH318Z0BNZJ/0044',
+    #             'productName': 'Blob Storage',
+    #             'skuName': 'Archive GRS',
+    #             'serviceName': 'Storage',
+    #             'serviceId': 'DZH317F1HKN0',
+    #             'serviceFamily': 'Storage',
+    #             'unitOfMeasure': '1 GB',
+    #             'type': 'Consumption',
+    #             'isPrimaryMeterRegion': False,
+    #             'armSkuName': ''
+    #         },
+    #         # ...
+    #     ],
+    #     'NextPageLink': 'https://prices.azure.com:443/api/retail/prices?$filter=serviceName%20eq%20%27Storage%27&$skip=1000',
+    #     'Count': 1000
+    # }
+    return _prices("$filter=serviceName eq 'Storage'")
+
+
+def _get_inbound_traffic_retail_prices() -> List[dict]:
+    """Fetch inbound traffic prices using the Azure Retail Prices API."""
+
+    # example Azure Retail Prices response:
+    # {
+    #     'BillingCurrency': 'USD',
+    #     'CustomerEntityId': 'Default',
+    #     'CustomerEntityType': 'Retail',
+    #     'Items': [
+    #         {
+    #             'currencyCode': 'USD',
+    #             'tierMinimumUnits': 0.0,
+    #             'retailPrice': 0.0,
+    #             'unitPrice': 0.0,
+    #             'armRegionName': 'norwaywest',
+    #             'location': 'NO West',
+    #             'effectiveStartDate': '2015-07-01T00:00:00Z',
+    #             'meterId': '32c3ebec-1646-49e3-8127-2cafbd3a04d8',
+    #             'meterName': 'Standard Data Transfer In',
+    #             'productId': 'DZH318Z0BNVX',
+    #             'skuId': 'DZH318Z0BNVX/002J',
+    #             'productName': 'Rtn Preference: MGN',
+    #             'skuName': 'Standard',
+    #             'serviceName': 'Bandwidth',
+    #             'serviceId': 'DZH318FHKQ5W',
+    #             'serviceFamily': 'Networking',
+    #             'unitOfMeasure': '1 GB',
+    #             'type': 'Consumption',
+    #             'isPrimaryMeterRegion': False,
+    #             'armSkuName': ''
+    #         },
+    #         # ...
+    #     ],
+    #     'NextPageLink': None,
+    #     'Count': 84
+    # }
+    return _prices(
+        "$filter=serviceFamily eq 'Networking' and meterName eq 'Standard Data Transfer In'"
+    )
+
+
+def _get_outbound_traffic_retail_prices() -> List[dict]:
+    """Fetch outbound traffic prices using the Azure Retail Prices API."""
+
+    # example Azure Retail Prices response:
+    # {
+    #     'BillingCurrency': 'USD',
+    #     'CustomerEntityId': 'Default',
+    #     'CustomerEntityType': 'Retail',
+    #     'Items': [
+    #         {
+    #             'currencyCode': 'USD',
+    #             'tierMinimumUnits': 0.0,
+    #             'retailPrice': 0.0,
+    #             'unitPrice': 0.0,
+    #             'armRegionName': 'switzerlandnorth',
+    #             'location': 'CH North',
+    #             'effectiveStartDate': '2022-03-01T00:00:00Z',
+    #             'meterId': '6bd64e8e-5cb9-49d3-893d-800c9b28dca3',
+    #             'meterName': 'Standard Data Transfer Out',
+    #             'productId': 'DZH318Z0C8ZQ',
+    #             'skuId': 'DZH318Z0C8ZQ/001F',
+    #             'productName': 'Bandwidth - Routing Preference: Internet',
+    #             'skuName': 'Standard',
+    #             'serviceName': 'Bandwidth',
+    #             'serviceId': 'DZH318FHKQ5W',
+    #             'serviceFamily': 'Networking',
+    #             'unitOfMeasure': '1 GB',
+    #             'type': 'Consumption',
+    #             'isPrimaryMeterRegion': False,
+    #             'armSkuName': ''
+    #         },
+    #         # ...
+    #     ],
+    #     'NextPageLink': None,
+    #     'Count': 315
+    # }
+    return _prices(
+        "$filter=serviceFamily eq 'Networking' and "
+        "meterName eq 'Standard Data Transfer Out' and "
+        "productName eq 'Bandwidth - Routing Preference: Internet'"
+    )
+
+
+def _get_ipv4_retail_prices() -> List[dict]:
+    """Fetch public IPv4 address prices using the Azure Retail Prices API."""
+
+    # example Azure Retail Prices response:
+    # {
+    #     'BillingCurrency': 'USD',
+    #     'CustomerEntityId': 'Default',
+    #     'CustomerEntityType': 'Retail',
+    #     'Items': [
+    #         {
+    #             'currencyCode': 'USD',
+    #             'tierMinimumUnits': 0.0,
+    #             'retailPrice': 0.004,
+    #             'unitPrice': 0.004,
+    #             'armRegionName': 'francecentral',
+    #             'location': 'FR Central',
+    #             'effectiveStartDate': '2014-12-01T00:00:00Z',
+    #             'meterId': 'f114cb19-ea64-40b5-bcd7-aee474b62853',
+    #             'meterName': 'Basic IPv4 Dynamic Public IP',
+    #             'productId': 'DZH318Z0BNXN',
+    #             'skuId': 'DZH318Z0BNXN/001N',
+    #             'productName': 'IP Addresses',
+    #             'skuName': 'Basic',
+    #             'serviceName': 'Virtual Network',
+    #             'serviceId': 'DZH314HC0WV9',
+    #             'serviceFamily': 'Networking',
+    #             'unitOfMeasure': '1 Hour',
+    #             'type': 'Consumption',
+    #             'isPrimaryMeterRegion': False,
+    #             'armSkuName': ''
+    #         },
+    #         # ...
+    #     ],
+    #     'NextPageLink': None,
+    #     'Count': 69
+    # }
+    return _prices(
+        "$filter=serviceFamily eq 'Networking' and "
+        "meterName eq 'Basic IPv4 Dynamic Public IP' and "
+        "type eq 'Consumption'"
+    )
 
 
 # ##############################################################################
@@ -298,6 +693,74 @@ STORAGE_PRICE_UNIT_MAPPING: dict[str, float | None] = {
     "1 GB/Hour": _HOURS_PER_MONTH,
 }
 """Storage capacity units → multiplier to convert the raw API price to $/GB/month."""
+
+# VM size series lifecycle. Previous-gen without a retirement date stays ACTIVE
+# (Dv3/Dsv3, Ev3/Esv3, Ev4/Esv4, Eav4/Easv4, Edv4/Edsv4, Preview DC).
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retired-sizes-list
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/previous-gen-sizes-list
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/av1-series-retirement
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/n-series-migration
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/ncv3-retirement
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/dcsv2-series-retirement
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/retirement/dcsv3-series-retirement
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/dcccv5-series-retirement
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/ecccv5-series-retirement
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/d-ds-dv2-dsv2-ls-series-migration-guide
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/nvv3-series-retirement
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/nvv4-retirement
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/np-series-retirement
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/hc-series-retirement
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/hbv2-series-retirement
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/msv2-mdsv2-retirement
+# Rule format: (compiled regex, retired_on date).
+# - If as_of >= retired_on -> RETIRED.
+# - Else matched -> PLANNED_FOR_RETIREMENT.
+# - No match -> ACTIVE.
+_AZURE_SKU_LIFECYCLE_RULES = (
+    (recompile(r"^A\d+$", IGNORECASE), date(2024, 8, 31)),  # noqa: E501  # Av1-series (Basic/Standard)
+    (recompile(r"^NC\d+r?$", IGNORECASE), date(2023, 8, 31)),  # NC v1-series
+    (recompile(r"^NC\d+r?s_v2$", IGNORECASE), date(2023, 8, 31)),  # NCv2-series
+    (recompile(r"^ND\d+r?s?$", IGNORECASE), date(2023, 8, 31)),  # ND v1-series
+    (recompile(r"^DC\d+s?_v2$", IGNORECASE), date(2026, 6, 30)),  # DCsv2-series
+    (recompile(r"^DC\d+d?s_v3$", IGNORECASE), date(2029, 10, 31)),  # noqa: E501  # DCsv3/DCdsv3-series
+    (recompile(r"^DC\d+a[d]?s_cc_v5$", IGNORECASE), date(2026, 9, 1)),  # noqa: E501  # DCas/DCads_cc_v5
+    (recompile(r"^EC\d+a[d]?s_cc_v5$", IGNORECASE), date(2026, 9, 1)),  # noqa: E501  # ECas/ECads_cc_v5
+    (recompile(r"^NC(?:6s|12s|24s|24rs)_v3$", IGNORECASE), date(2025, 9, 30)),  # noqa: E501  # NCv3-series
+    (recompile(r"^D\d+(-\d+)?$", IGNORECASE), date(2028, 5, 1)),  # D-series
+    (recompile(r"^DS\d+(-\d+)?$", IGNORECASE), date(2028, 5, 1)),  # Ds-series
+    (recompile(r"^D\d+(-\d+)?_v2$", IGNORECASE), date(2028, 5, 1)),  # noqa: E501  # Dv2-series (incl. memory D11-D15)
+    (recompile(r"^DS\d+(-\d+)?_v2$", IGNORECASE), date(2028, 5, 1)),  # noqa: E501  # Dsv2-series (incl. memory DS11-DS15)
+    (recompile(r"^L\d+s$", IGNORECASE), date(2028, 5, 1)),  # Ls-series
+    (recompile(r"^A\d+_v2$", IGNORECASE), date(2028, 11, 15)),  # Av2-series
+    (recompile(r"^A\d+m_v2$", IGNORECASE), date(2028, 11, 15)),  # Amv2-series
+    (recompile(r"^B\d+[a-z]*$", IGNORECASE), date(2028, 11, 15)),  # Bv1-series, not Bv2
+    (recompile(r"^F\d+$", IGNORECASE), date(2028, 11, 15)),  # F-series
+    (recompile(r"^F\d+s$", IGNORECASE), date(2028, 11, 15)),  # Fs-series
+    (recompile(r"^F\d+s_v2$", IGNORECASE), date(2028, 11, 15)),  # Fsv2-series
+    (recompile(r"^G\d+$", IGNORECASE), date(2028, 11, 15)),  # G-series
+    (recompile(r"^GS\d+(-\d+)?$", IGNORECASE), date(2028, 11, 15)),  # Gs-series
+    (recompile(r"^L\d+s_v2$", IGNORECASE), date(2028, 11, 15)),  # Lsv2-series
+    (recompile(r"^NV\d+s_v3$", IGNORECASE), date(2026, 9, 30)),  # noqa: E501  # NVv3-series (M60), not NCasT4_v3
+    (recompile(r"^NV\d+a[h]?s_v4$", IGNORECASE), date(2026, 9, 30)),  # NVv4-series
+    (recompile(r"^NP\d+s$", IGNORECASE), date(2027, 5, 31)),  # NP-series
+    (recompile(r"^HC44(-\d+)?rs$", IGNORECASE), date(2027, 5, 31)),  # HC-series
+    (recompile(r"^HB120(-\d+)?rs_v2$", IGNORECASE), date(2027, 5, 31)),  # HBv2-series
+    (recompile(r"^M192i(?:dm?|m)?s_v2$", IGNORECASE), date(2027, 3, 31)),  # noqa: E501  # Msv2/Mdsv2 isolated
+)
+
+
+def _azure_sku_lifecycle_status(sku_name: str, as_of: date | None = None) -> Status:
+    """Map an Azure VM / Flexible Server SKU name to Server/Database status."""
+    current_date = as_of or datetime.now(UTC).date()
+    size = sku_name.removeprefix("Standard_").removeprefix("Basic_")
+
+    for pattern, retired_on in _AZURE_SKU_LIFECYCLE_RULES:
+        if not pattern.fullmatch(size):
+            continue
+        if retired_on and current_date >= retired_on:
+            return Status.RETIRED
+        return Status.PLANNED_FOR_RETIREMENT
+    return Status.ACTIVE
 
 
 def _parse_server_name(name):
@@ -456,49 +919,7 @@ def _parse_server_name(name):
 
 
 def _standardize_server(server: dict, vendor) -> dict:
-    # example server dict:
-    # {
-    #     'resourceType': 'virtualMachines',
-    #     'name': 'Standard_L80as_v3',
-    #     'tier': 'Standard',
-    #     'size': 'L80as_v3',
-    #     'family': 'standardLASv3Family',
-    #     'locations': ['WestUS3'],
-    #     'locationInfo': [{'location': 'WestUS3', 'zones': ['1', '3', '2'], 'zoneDetails': [{'capabilities': [{'name': 'UltraSSDAvailable', 'value': 'True'}]}]}],
-    #     'capabilities': [
-    #         {'name': 'MaxResourceVolumeMB', 'value': '819200'},
-    #         {'name': 'OSVhdSizeMB', 'value': '1047552'},
-    #         {'name': 'vCPUs', 'value': '80'},
-    #         {'name': 'MemoryPreservingMaintenanceSupported', 'value': 'True'},
-    #         {'name': 'HyperVGenerations', 'value': 'V1,V2'},
-    #         {'name': 'SupportedEphemeralOSDiskPlacements', 'value': 'ResourceDisk'},
-    #         {'name': 'MemoryGB', 'value': '640'},
-    #         {'name': 'MaxDataDiskCount', 'value': '32'},
-    #         {'name': 'CpuArchitectureType', 'value': 'x64'},
-    #         {'name': 'LowPriorityCapable', 'value': 'True'},
-    #         {'name': 'PremiumIO', 'value': 'True'},
-    #         {'name': 'VMDeploymentTypes', 'value': 'IaaS'},
-    #         {'name': 'vCPUsAvailable', 'value': '80'},
-    #         {'name': 'vCPUsPerCore', 'value': '2'},
-    #         {'name': 'CombinedTempDiskAndCachedIOPS', 'value': '40000'},
-    #         {'name': 'CombinedTempDiskAndCachedReadBytesPerSecond', 'value': '800000000'},
-    #         {'name': 'CombinedTempDiskAndCachedWriteBytesPerSecond', 'value': '800000000'},
-    #         {'name': 'UncachedDiskIOPS', 'value': '80000'},
-    #         {'name': 'UncachedDiskBytesPerSecond', 'value': '1400000000'},
-    #         {'name': 'NvmeDiskSizeInMiB', 'value': '18310546'},
-    #         {'name': 'NvmeSizePerDiskInMiB', 'value': '1831054'},
-    #         {'name': 'EphemeralOSDiskSupported', 'value': 'True'},
-    #         {'name': 'EncryptionAtHostSupported', 'value': 'True'},
-    #         {'name': 'CapacityReservationSupported', 'value': 'False'},
-    #         {'name': 'AcceleratedNetworkingEnabled', 'value': 'True'},
-    #         {'name': 'RdmaEnabled', 'value': 'False'},
-    #         {'name': 'MaxNetworkInterfaces', 'value': '8'}
-    #     ],
-    #     'restrictions': [
-    #         {'type': 'Location', 'values': ['WestUS3'], 'restrictionInfo': {'locations': ['WestUS3']}, 'reasonCode': 'NotAvailableForSubscription'},
-    #         {'type': 'Zone', 'values': ['WestUS3'], 'restrictionInfo': {'locations': ['WestUS3'], 'zones': ['1', '2', '3']}, 'reasonCode': 'NotAvailableForSubscription'}
-    #     ]
-    # }
+    # example Resource Skus - List response moved to _compute_resources
     family, features, gpus, gpu_model, gpu_memory = _parse_server_name(server["name"])
     # override family from SKU listing
     family = recompile(r"(?i)family$").sub(
@@ -522,31 +943,44 @@ def _standardize_server(server: dict, vendor) -> dict:
     description = description + " " + capability("vCPUs") + " vCPU"
     if int(capability("vCPUs")) > 1:
         description = description + "s"
-    # no info on actual drives, but at least split for temp and NVMe disks
+    # Bundled local disks only. OS disk is a managed disk chosen at deploy time.
+    # SKUs without a temp disk report MaxResourceVolumeMB "0" (truthy string).
     storages = []
-    # temp disk, values might be off, see e.g. DC1s_v2 reporting 51200 MB and showing 50 GiB in docs
-    if capability("MaxResourceVolumeMB"):
+    temp_mb = capability("MaxResourceVolumeMB")
+    # values might be off, see e.g. DC1s_v2 reporting 51200 MB and showing 50 GiB in docs
+    if temp_mb and float(temp_mb) > 0:
         storages.append(
             Disk(
-                size=round(float(capability("MaxResourceVolumeMB")) / 1e3),
-                storage_type="ssd",
+                size=round(float(temp_mb) / 1e3),
+                storage_type=StorageType.SSD,
                 description="temp disk",
             )
         )
     # NVMe disks are explicitely reported in base 2 unit
-    if capability("NvmeDiskSizeInMiB"):
+    nvme_mib = capability("NvmeDiskSizeInMiB")
+    if nvme_mib and float(nvme_mib) > 0:
         storages.append(
             Disk(
-                size=round(float(capability("NvmeDiskSizeInMiB")) * 1024**2 / 1e9),
-                storage_type="nvme ssd",
+                size=round(float(nvme_mib) * 1024**2 / 1e9),
+                storage_type=StorageType.NVME_SSD,
             )
         )
+    if any(disk.storage_type == StorageType.NVME_SSD for disk in storages):
+        storage_type = StorageType.NVME_SSD
+    elif storages:
+        storage_type = StorageType.SSD
+    else:
+        storage_type = None
     return {
         "vendor_id": vendor.vendor_id,
         "server_id": server["name"],
         "name": server["name"].removeprefix("Standard_"),
         "description": description,
         "api_reference": server["name"],
+        # https://www.pulumi.com/registry/packages/azure-native/api-docs/compute/virtualmachine/
+        "api_reference_object": {
+            "hardware_profile": {"vm_size": server["name"]},
+        },
         "display_name": server["name"].removeprefix("Standard_"),
         "family": family,
         "vcpus": int(capability("vCPUsAvailable")),
@@ -560,17 +994,21 @@ def _standardize_server(server: dict, vendor) -> dict:
             CpuArchitecture.ARM64 if architecture == "arm64" else CpuArchitecture.X86_64
         ),
         "memory_amount": float(capability("MemoryGB")) * 1024,  # MiB
-        "gpu_count": round(gpus, 4),
-        "gpu_model": gpu_model,
-        "gpu_memory_min": (
+        "accelerator_count": round(gpus, 4),
+        "accelerator_type": AcceleratorType.GPU if gpus else None,
+        "accelerator_model": gpu_model,
+        "accelerator_memory_min": (
             0
             if not (gpus and gpu_memory)
             else int(gpu_memory * gpus)
             if gpus <= 1
             else int(gpu_memory)
         ),
-        "gpu_memory_total": int(gpu_memory * gpus) if gpus and gpu_memory else 0,
+        "accelerator_memory_total": (
+            int(gpu_memory * gpus) if gpus and gpu_memory else 0
+        ),
         "storage_size": round(sum([s.size for s in storages])),  # int GB
+        "storage_type": storage_type,
         "storages": storages,
         # TODO: have to implement manual mapping for network_speed related fields
         "network_speed_baseline": None,
@@ -580,6 +1018,7 @@ def _standardize_server(server: dict, vendor) -> dict:
         "inbound_traffic": 0,
         "outbound_traffic": 0,
         "ipv4": 0,
+        "status": _azure_sku_lifecycle_status(server["name"]),
     }
 
 
@@ -595,9 +1034,7 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
     #   - not(endswith(productName, 'CloudServices'))
     retail_prices = []
     with sentry_capture_or_raise(vendor=vendor):
-        retail_prices = _prices(
-            "$filter=serviceName eq 'Virtual Machines' and priceType eq 'Consumption'"
-        )
+        retail_prices = _get_server_retail_prices()
     vendor.progress_tracker.hide_task()
 
     if not retail_prices:
@@ -1223,7 +1660,13 @@ def inventory_zones(vendor):
 
 
 def inventory_servers(vendor):
-    """List all available instance types in all regions."""
+    """List all available instance types in all regions.
+
+    Lifecycle: `_azure_sku_lifecycle_status` checks `_AZURE_SKU_LIFECYCLE_RULES`
+    — RETIRED if the retirement date has passed, PLANNED_FOR_RETIREMENT if
+    matched but not yet retired, otherwise ACTIVE. Same function is used for
+    database SKUs.
+    """
     servers = _servers()
     for i in range(len(servers) - 1, -1, -1):
         name = servers[i].get("name")
@@ -1338,7 +1781,7 @@ def inventory_storage_prices(vendor):
     )
     retail_prices = []
     with sentry_capture_or_raise(vendor=vendor):
-        retail_prices = _prices("$filter=serviceName eq 'Storage'")
+        retail_prices = _get_storage_retail_prices()
     vendor.progress_tracker.hide_task()
 
     if not retail_prices:
@@ -1451,14 +1894,8 @@ def inventory_traffic_prices(vendor):
     inbound_prices = []
     outbound_prices = []
     with sentry_capture_or_raise(vendor=vendor):
-        inbound_prices = _prices(
-            "$filter=serviceFamily eq 'Networking' and meterName eq 'Standard Data Transfer In'"
-        )
-        outbound_prices = _prices(
-            "$filter=serviceFamily eq 'Networking' and "
-            "meterName eq 'Standard Data Transfer Out' and "
-            "productName eq 'Bandwidth - Routing Preference: Internet'"
-        )
+        inbound_prices = _get_inbound_traffic_retail_prices()
+        outbound_prices = _get_outbound_traffic_retail_prices()
     vendor.progress_tracker.hide_task()
 
     if not inbound_prices and not outbound_prices:
@@ -1500,11 +1937,7 @@ def inventory_ipv4_prices(vendor):
     )
     prices = []
     with sentry_capture_or_raise(vendor=vendor):
-        prices = _prices(
-            "$filter=serviceFamily eq 'Networking' and "
-            "meterName eq 'Basic IPv4 Dynamic Public IP' and "
-            "type eq 'Consumption'"
-        )
+        prices = _get_ipv4_retail_prices()
     vendor.progress_tracker.hide_task()
 
     if not prices:
@@ -1561,6 +1994,90 @@ def _pg_database_regions(vendor):
 
 @cachier(separate_files=True)
 def _pg_capabilities_by_location(location: str) -> list[dict]:
+    # example Capabilities - List By Location response:
+    # {
+    #     'value': [
+    #         {
+    #             'name': 'FlexibleServerCapabilities',
+    #             'supportedServerEditions': [
+    #                 {
+    #                     'supportedServerSkus': [
+    #                         {
+    #                             'supportedFeatures': [],
+    #                             'name': 'Standard_B1ms',
+    #                             'vCores': 1,
+    #                             'supportedIops': 640,
+    #                             'supportedMemoryPerVcoreMb': 2048,
+    #                             'supportedZones': ['1', '2', '3'],
+    #                             'supportedHaMode': ['SameZone', 'ZoneRedundant']
+    #                         },
+    #                         # ...
+    #                     ],
+    #                     'name': 'Burstable',
+    #                     'defaultSkuName': 'Standard_B2s',
+    #                     'supportedStorageEditions': [
+    #                         {
+    #                             'name': 'ManagedDisk',
+    #                             'defaultStorageSizeMb': 32768,
+    #                             'supportedStorageMb': [
+    #                                 {
+    #                                     'supportedIops': 120,
+    #                                     'storageSizeMb': 32768,
+    #                                     'defaultIopsTier': 'P4',
+    #                                     'supportedIopsTiers': [
+    #                                         {'name': 'P4', 'iops': 120},
+    #                                         {'name': 'P6', 'iops': 240},
+    #                                         # ...
+    #                                     ]
+    #                                 },
+    #                                 # ...
+    #                             ]
+    #                         },
+    #                         # ...
+    #                     ]
+    #                 },
+    #                 # ...
+    #             ],
+    #             'supportedServerVersions': [
+    #                 {
+    #                     'supportedFeatures': [],
+    #                     'name': '11',
+    #                     'supportedVersionsToUpgrade': [
+    #                         '12',
+    #                         '13',
+    #                         '14',
+    #                         '15',
+    #                         '16',
+    #                         '17',
+    #                         '18'
+    #                     ]
+    #                 },
+    #                 # ...
+    #             ],
+    #             'supportedFastProvisioningEditions': [],
+    #             'supportedFeatures': [
+    #                 {'name': 'FastProvisioning', 'status': 'Disabled'},
+    #                 {'name': 'ZoneRedundantHa', 'status': 'Enabled'},
+    #                 {'name': 'GeoBackup', 'status': 'Enabled'},
+    #                 {'name': 'ZoneRedundantHaAndGeoBackup', 'status': 'Enabled'},
+    #                 {'name': 'StorageAutoGrowth', 'status': 'Enabled'},
+    #                 {'name': 'OnlineResize', 'status': 'Enabled'},
+    #                 {'name': 'OfferRestricted', 'status': 'Disabled'},
+    #                 {'name': 'IndexTuning', 'status': 'Enabled'},
+    #                 {'name': 'Clusters', 'status': 'Enabled'},
+    #                 {'name': 'AdaptiveAutoVacuumAutoApply', 'status': 'Enabled'},
+    #                 {'name': 'ConfigTuning', 'status': 'Disabled'}
+    #             ],
+    #             'fastProvisioningSupported': 'Disabled',
+    #             'geoBackupSupported': 'Enabled',
+    #             'zoneRedundantHaSupported': 'Enabled',
+    #             'zoneRedundantHaAndGeoBackupSupported': 'Enabled',
+    #             'storageAutoGrowthSupported': 'Enabled',
+    #             'onlineResizeSupported': 'Enabled',
+    #             'indexTuningSupported': 'Enabled'
+    #         }
+    #     ]
+    # }
     capabilities = []
     for capability in _postgresql_client().capabilities_by_location.list(
         location_name=location
@@ -1583,6 +2100,39 @@ def _pg_capabilities(location: str) -> list[SimpleNamespace]:
 
 
 def _pg_retail_prices(location: str) -> list[dict]:
+    # example Azure Retail Prices response:
+    # {
+    #     'BillingCurrency': 'USD',
+    #     'CustomerEntityId': 'Default',
+    #     'CustomerEntityType': 'Retail',
+    #     'Items': [
+    #         {
+    #             'currencyCode': 'USD',
+    #             'tierMinimumUnits': 0.0,
+    #             'retailPrice': 0.09,
+    #             'unitPrice': 0.09,
+    #             'armRegionName': 'eastus',
+    #             'location': 'US East',
+    #             'effectiveStartDate': '2026-08-01T00:00:00Z',
+    #             'meterId': '0011f5c1-c6ee-50c2-9990-2d73251cf1c2',
+    #             'meterName': 'Ultra Disk IOPS Provisioned IOPS',
+    #             'productId': 'DZH318Z0DCRX',
+    #             'skuId': 'DZH318Z0DCRX/00R2',
+    #             'productName': 'Azure Database for PostgreSQL Flex Server Storage',
+    #             'skuName': 'Ultra Disk IOPS',
+    #             'serviceName': 'Azure Database for PostgreSQL',
+    #             'serviceId': 'DZH3199QPQTD',
+    #             'serviceFamily': 'Databases',
+    #             'unitOfMeasure': '1/Month',
+    #             'type': 'Consumption',
+    #             'isPrimaryMeterRegion': True,
+    #             'armSkuName': 'Ultra Disk IOPS'
+    #         },
+    #         # ...
+    #     ],
+    #     'NextPageLink': None,
+    #     'Count': 140
+    # }
     return _prices(
         "$filter=serviceName eq 'Azure Database for PostgreSQL' "
         f"and armRegionName eq '{location}' "
@@ -1590,8 +2140,21 @@ def _pg_retail_prices(location: str) -> list[dict]:
     )
 
 
-_PG_SKU_RE = recompile(r"(?i)Standard_(DC|EC|[DE]|B)(\d+)([a-z]*)_v(\d+)")
+# Size-variant letters are not part of the retail series name (i isolated, m/l/t memory shape).
+_PG_SERIES_SKIP_FEATURES = frozenset("imlt")
+_PG_DATABASE_NAME_RE = recompile(
+    r"(?i)^(?:Standard_|Basic_)?"
+    r"(?P<family>DC|EC|[A-Z])"
+    r"(?P<vcpus>\d+)"
+    r"(?:-\d+)?"
+    r"(?P<features>[a-z]*)"
+    r"(?:_v(?P<version>\d*))?$"
+)
 _PG_FLAT_COMPUTE_SKUS = frozenset({"B1MS", "B2S"})
+_PG_PRODUCT_SERIES_RE = recompile(
+    r"(?i)(?:Confidential Compute|General Purpose|Memory Optimized|Memory Purpose|Burstable)\s+"
+    r"(?P<series>[A-Za-z0-9]+)\s+Series"
+)
 _PG_EDITION_PRODUCT_TOKENS = {
     "GeneralPurpose": ("general purpose",),
     "MemoryOptimized": ("memory optimized", "memory purpose"),
@@ -1602,13 +2165,19 @@ _PG_SKU_NAME_PREFIX = {
     "GeneralPurpose": "GP",
     "MemoryOptimized": "MO",
 }
-_PG_FLEX_STORAGE_PRODUCT = "Az DB for PostgreSQL Flexible Server Storage"
-_PG_FLEX_BACKUP_PRODUCT = "Azure Database for PostgreSQL Flexible Server Backup Storage"
 _PG_STORAGE_RETAIL_TO_ID = {
     "storage data stored": "ManagedDisk",
     "premium ssd v2 storage data stored": "ManagedDiskV2",
     "ultra disk storage data stored": "UltraDisk",
+    "backup storage lrs data stored": "BackupStorageLRS",
 }
+_PG_STORAGE_RETAIL_PRODUCTS = frozenset(
+    {
+        "azure database for postgresql flex server storage",
+        "az db for postgresql flexible server storage",
+        "azure database for postgresql flexible server backup storage",
+    }
+)
 _PG_STORAGE_DESCRIPTIONS = {
     "ManagedDisk": "Premium SSD managed disk",
     "ManagedDiskV2": "Premium SSD v2 managed disk",
@@ -1644,8 +2213,31 @@ _PG_ARM_SERIES_RE = recompile(
 )
 
 
+def _parse_database_name(name: str) -> tuple[str, str, int, str | None]:
+    """Parse a Flexible Server SKU into (series, family, vcpus, version).
+
+    Series matches Retail product names: ``Standard_D16ds_v6`` → ``Ddsv6``,
+    ``Standard_B1ms`` → ``Bs``, ``Standard_E192ids_v6`` → ``Edsv6``.
+    https://learn.microsoft.com/en-us/azure/virtual-machines/vm-naming-conventions
+    """
+    match = _PG_DATABASE_NAME_RE.match(name)
+    if match is None:
+        raise ValueError(f"Database name '{name}' does not match the expected format.")
+    family = match.group("family").upper()
+    features = (match.group("features") or "").lower()
+    series_features = "".join(
+        char for char in features if char not in _PG_SERIES_SKIP_FEATURES
+    )
+    version = match.group("version")
+    series = f"{family}{series_features}"
+    if version:
+        series = f"{series}v{version}"
+    return series, family, int(match.group("vcpus")), version
+
+
 def _pg_lookup_retail_price(
     *,
+    vendor,
     database_id: str,
     edition_name: str | None,
     prices_by_arm: dict[str, list[dict]],
@@ -1659,11 +2251,15 @@ def _pg_lookup_retail_price(
     if alias.upper() in prices_by_arm:
         return prices_by_arm[alias.upper()][0]
 
-    match = _PG_SKU_RE.match(database_id)
-    if match is None:
+    parsed = None
+    with sentry_capture_or_raise(vendor=vendor):
+        parsed = _parse_database_name(database_id)
+    if parsed is None:
         return None
-    family, cores, suffix, version = match.groups()
-    target_series = f"{family.lower()}{suffix.lower()}v{version}"
+    series, family, cores, version = parsed
+    if not version:
+        return None
+    target_series = series.lower()
     edition_tokens = _PG_EDITION_PRODUCT_TOKENS.get(
         edition_name or "",
         ((edition_name or "").replace("_", " ").lower(),),
@@ -1689,7 +2285,8 @@ def _pg_lookup_retail_price(
         if series_match is None:
             continue
         arm_series = series_match.group(1).replace("_", "").lower()
-        if target_series not in arm_series and arm_series not in target_series:
+        # Exact match only: substring would let dsv6 match ddsv6 / dasv6.
+        if arm_series != target_series:
             continue
         if not edition_matches(rows[0].get("productName") or ""):
             continue
@@ -1697,6 +2294,21 @@ def _pg_lookup_retail_price(
             if candidate.get("skuName") in ("1 vCore", "vCore"):
                 return candidate
         return rows[0]
+
+    # No full-instance SKU. Some series (e.g. DCadsv6) only publish a "1 vCore" meter.
+    series_re = recompile(rf"(?i)(?<![a-z0-9]){target_series}(?![a-z0-9])")
+    for rows in prices_by_arm.values():
+        for item in rows:
+            if item.get("meterName") != "1 vCore":
+                continue
+            product = item.get("productName") or ""
+            if series_re.search(product) is None:
+                continue
+            if edition_name in _PG_EDITION_PRODUCT_TOKENS and not edition_matches(
+                product
+            ):
+                continue
+            return item
 
     return None
 
@@ -1709,18 +2321,27 @@ def _pg_hourly_compute_price(
     sku_name = item.get("skuName") or ""
     arm = item.get("armSkuName") or ""
 
-    if meter.upper() in _PG_FLAT_COMPUTE_SKUS or arm.upper() in _PG_FLAT_COMPUTE_SKUS:
+    # Standard_B12ms meterName is "B12ms vCore", but retailPrice is already the
+    # full instance hour. A sized arm `_Compute_16_vCore` is also the full hour.
+    # `_Series_Compute_1_vCore` is still a per-vCore rate.
+    if (
+        arm.startswith("Standard_")
+        or arm.upper() in _PG_FLAT_COMPUTE_SKUS
+        or meter.upper() in _PG_FLAT_COMPUTE_SKUS
+    ):
         return price
-    if meter.endswith(" vCore") and meter != "vCore":
+    sized_arm = recompile(r"_Compute_(\d+)_vCore$").search(arm)
+    if sized_arm and sized_arm.group(1) != "1":
+        return price
+    if recompile(r"^\d+ vCore$").fullmatch(sku_name) and sku_name != "1 vCore":
+        return price
+    if (
+        meter == "1 vCore"
+        or meter == "vCore"
+        or sku_name in ("1 vCore", "vCore")
+        or "Series_Compute" in arm
+    ):
         return price * (vcpus or 1)
-    if arm.startswith("Standard_") and meter == "vCore" and " vCore" in sku_name:
-        return price
-    if recompile(r"_Compute_\d+_vCore$").search(arm):
-        return price
-    if "Series_Compute" in arm:
-        return price * (vcpus or 1)
-    if meter == "vCore" and " vCore" in sku_name:
-        return price
     if database_id and database_id in (arm, database_id.removeprefix("Standard_")):
         return price
     return price
@@ -1737,8 +2358,32 @@ def _pg_engine_versions(capability) -> list[str]:
 
 
 def inventory_databases(vendor):
-    """List all available Azure Database for PostgreSQL Flexible Server types in all regions."""
-    merged: dict[str, dict] = {}
+    """List Azure Database for PostgreSQL Flexible Server types in all regions.
+
+    Retail compute meters decide which instances exist. Capabilities is
+    quota-filtered, so a size can be missing there. When ``database_id`` is
+    present, capabilities supplies vCPUs, memory, HA, engine versions,
+    storage bounds, and autotuning. Otherwise those come from another SKU of
+    the same edition, and vCPUs/memory come from the matching VM.
+    A per-vCore series meter has no size list; matching VM SKUs name the sizes.
+    """
+    # database_id -> fields that actually come from capabilities.
+    caps_by_id: dict[str, dict] = {}
+    edition_caps: dict[str, dict] = {}
+    retail_concrete: dict[str, str] = {}
+    retail_series: dict[str, str] = {}
+    servers_by_id = {}
+    servers_by_series: dict[str, list] = defaultdict(list)
+    for server in vendor.servers:
+        name = server.api_reference
+        if not name or "-" in name:
+            continue
+        servers_by_id[name] = server
+        match = _PG_DATABASE_NAME_RE.match(name)
+        # i/m/l/t are stripped from the retail series name, so those VM shapes are not this series.
+        if match and not _PG_SERIES_SKIP_FEATURES & set(match["features"].lower()):
+            servers_by_series[_parse_database_name(name)[0]].append(server)
+
     regions = _pg_database_regions(vendor)
     vendor.progress_tracker.start_task(
         name="Scanning region(s) for database(s)", total=len(regions)
@@ -1747,303 +2392,345 @@ def inventory_databases(vendor):
         location = region.api_reference
         with sentry_capture_or_raise(vendor=vendor):
             for capability in _pg_capabilities(location):
-                engine_versions = _pg_engine_versions(capability)
-                storage_extra_autosize = None
-                storage_auto_growth = getattr(
-                    capability, "storage_auto_growth_supported", None
-                )
-                if storage_auto_growth == "Enabled":
-                    storage_extra_autosize = True
-                elif storage_auto_growth == "Disabled":
-                    storage_extra_autosize = False
-                # IndexTuning → advice; AdaptiveAutoVacuumAutoApply → apply (vacuum GUCs).
-                # https://learn.microsoft.com/en-us/azure/postgresql/monitor/concepts-autonomous-tuning
-                # https://learn.microsoft.com/en-us/azure/postgresql/monitor/concepts-adaptive-autovacuum
-                autotuning_advice = False
-                autotuning_apply = False
-                for feature in getattr(capability, "supported_features", None) or []:
-                    feature_name = getattr(feature, "name", None)
-                    enabled = getattr(feature, "status", None) == "Enabled"
-                    if (
-                        feature_name == "StorageAutoGrowth"
-                        and storage_extra_autosize is None
-                    ):
-                        storage_extra_autosize = enabled
-                    elif feature_name == "IndexTuning":
-                        autotuning_advice = enabled
-                    elif feature_name == "AdaptiveAutoVacuumAutoApply":
-                        autotuning_apply = enabled
-                    # Maybe this the indicator for Writes tuning, but it's not documented.
+                features = {
+                    getattr(feature, "name", None): getattr(feature, "status", None)
+                    == "Enabled"
+                    for feature in getattr(capability, "supported_features", None) or []
+                }
+                shared = {
+                    "engine_versions": _pg_engine_versions(capability),
+                    "storage_extra_autosize": {"Enabled": True, "Disabled": False}.get(
+                        getattr(capability, "storage_auto_growth_supported", None),
+                        features.get("StorageAutoGrowth"),
+                    ),
+                    # IndexTuning → advice; AdaptiveAutoVacuumAutoApply → apply (vacuum GUCs).
+                    # ConfigTuning may be Writes tuning, but it's not documented.
+                    # https://learn.microsoft.com/en-us/azure/postgresql/monitor/concepts-autonomous-tuning
+                    # https://learn.microsoft.com/en-us/azure/postgresql/monitor/concepts-adaptive-autovacuum
                     # https://learn.microsoft.com/en-us/azure/postgresql/monitor/concepts-intelligent-tuning
-                    # elif feature_name == "ConfigTuning":
-                    #     autotuning_apply = enabled
+                    "autotuning_advice": features.get("IndexTuning", False),
+                    "autotuning_apply": features.get(
+                        "AdaptiveAutoVacuumAutoApply", False
+                    ),
+                }
                 for edition in (
                     getattr(capability, "supported_server_editions", None) or []
                 ):
-                    sizes_gb = []
-                    for storage_edition in (
-                        getattr(edition, "supported_storage_editions", None) or []
-                    ):
+                    # Azure storage_size_mb values are MiB.
+                    # Premium SSD v2 is General Purpose and Memory Optimized only, Burstable is capped by Premium SSD (~32 TiB).
+                    # https://learn.microsoft.com/en-us/azure/postgresql/compute-storage/concepts-storage-premium-ssd-v2
+                    sizes_gb = [
+                        round(int(size_mb) / 1024 * _GIB_TO_GB)
+                        for storage_edition in (
+                            getattr(edition, "supported_storage_editions", None) or []
+                        )
+                        if getattr(storage_edition, "reason", None)
+                        != _PG_UNSUPPORTED_STORAGE_REASON
+                        and not (
+                            edition.name == "Burstable"
+                            and storage_edition.name == "ManagedDiskV2"
+                        )
                         for storage_mb in (
                             getattr(storage_edition, "supported_storage_mb", None) or []
-                        ):
-                            size_mb = getattr(storage_mb, "storage_size_mb", None)
-                            max_mb = getattr(
-                                storage_mb, "maximum_storage_size_mb", None
-                            )
-                            # Azure storage_size_mb values are MiB
-                            if size_mb is not None:
-                                sizes_gb.append(round(int(size_mb) / 1024 * _GIB_TO_GB))
-                            if max_mb is not None:
-                                sizes_gb.append(round(int(max_mb) / 1024 * _GIB_TO_GB))
-                    storage_extra_min = min(sizes_gb) if sizes_gb else None
-                    storage_extra_max = max(sizes_gb) if sizes_gb else None
+                        )
+                        for size_mb in (
+                            getattr(storage_mb, "storage_size_mb", None),
+                            getattr(storage_mb, "maximum_storage_size_mb", None),
+                        )
+                        if size_mb is not None
+                    ]
+                    shared["storage_extra_min"] = min(sizes_gb, default=None)
+                    shared["storage_extra_max"] = max(sizes_gb, default=None)
                     for sku in getattr(edition, "supported_server_skus", None) or []:
-                        database_id = sku.name
-                        server_id = next(
-                            (
-                                server.server_id
-                                for server in vendor.servers
-                                if server.api_reference == database_id
-                            ),
-                            None,
-                        )
-                        vcpus = int(sku.v_cores) if sku.v_cores else None
-                        memory_amount = (
-                            int(sku.supported_memory_per_vcore_mb * sku.v_cores)
-                            if sku.v_cores and sku.supported_memory_per_vcore_mb
-                            else None
-                        )
-                        spec_parts = []
-                        if vcpus is not None:
-                            spec_parts.append(
-                                f"{vcpus} vCPU{'s' if vcpus != 1 else ''}"
-                            )
-                        if memory_amount is not None:
-                            spec_parts.append(f"{memory_amount // 1024} GB RAM")
-                        description = f"PostgreSQL {edition.name}"
-                        if spec_parts:
-                            description = f"{description} ({', '.join(spec_parts)})"
                         # https://learn.microsoft.com/en-us/azure/postgresql/high-availability/concepts-high-availability
-                        # Flexible Server HA is same-region only (zone-redundant or zonal sync standby) and optional.
-                        # Burstable does not support HA (API may still list modes - prefer docs).
-                        # Cross-region geo read replicas are DR / read scale, not HA - see max_read_replicas.
+                        # Burstable does not support HA (the API may still list modes).
                         ha_modes = {
-                            (mode.value if hasattr(mode, "value") else str(mode))
-                            for mode in (getattr(sku, "supported_ha_mode", None) or [])
+                            getattr(mode, "value", str(mode))
+                            for mode in getattr(sku, "supported_ha_mode", None) or []
                         }
-                        ha: list[DatabaseHaLevel] = []
-                        ha_strategy: list[DatabaseHaStrategy] = []
+                        ha = [DatabaseHaLevel.NONE]
                         if edition.name != "Burstable":
                             if "ZoneRedundant" in ha_modes:
                                 ha.append(DatabaseHaLevel.MULTI_ZONE)
                             if "SameZone" in ha_modes:
                                 ha.append(DatabaseHaLevel.SINGLE_ZONE)
-                            if ha:
-                                ha_strategy.append(DatabaseHaStrategy.PASSIVE_STANDBY)
-                        # Non-HA deployment is always available
-                        ha.append(DatabaseHaLevel.NONE)
-                        ha_strategy.append(DatabaseHaStrategy.NONE)
-                        if earlier_ha := merged.get(database_id, {}).get("ha", []):
-                            if DatabaseHaLevel.MULTI_ZONE in earlier_ha:
-                                ha = earlier_ha
-                        # https://learn.microsoft.com/en-us/azure/reliability/reliability-database-postgresql
-                        # Zone-redundant HA 99.99%; zonal HA 99.95%; no HA 99.9%.
-                        if DatabaseHaLevel.MULTI_ZONE in ha:
-                            sla = 99.99
-                        elif DatabaseHaLevel.SINGLE_ZONE in ha:
-                            sla = 99.95
+                        ha_strategy = [DatabaseHaStrategy.NONE]
+                        if len(ha) > 1:
+                            ha_strategy.append(DatabaseHaStrategy.PASSIVE_STANDBY)
+                        previous = caps_by_id.get(sku.name)
+                        if previous and DatabaseHaLevel.MULTI_ZONE in previous["ha"]:
+                            ha = previous["ha"]
                         else:
-                            sla = 99.9
-                        merged[database_id] = {
-                            "vendor_id": vendor.vendor_id,
-                            "database_id": database_id,
-                            "name": database_id.removeprefix("Standard_"),
-                            "api_reference": database_id,
-                            # https://www.pulumi.com/registry/packages/azure/api-docs/postgresql/flexibleserver/
-                            # Pulumi sku_name is tier+name (e.g. B_Standard_B1ms, GP_Standard_D2s_v3).
-                            "api_reference_object": {
-                                "sku_name": (
-                                    f"{_PG_SKU_NAME_PREFIX[edition.name]}_{database_id}"
-                                    if edition.name in _PG_SKU_NAME_PREFIX
-                                    else database_id
-                                )
-                            },
-                            "display_name": database_id.removeprefix("Standard_"),
-                            "description": description,
-                            "server_id": server_id,
-                            "engine": DatabaseEngine.POSTGRESQL,
-                            "wire_protocol": DatabaseWireProtocol.POSTGRESQL,
-                            "engine_versions": engine_versions,
-                            "family": edition.name,
-                            "vcpus": vcpus,
-                            "memory_amount": memory_amount,
-                            "storage_size": None,
-                            "storage_extra_autosize": storage_extra_autosize,
-                            # https://learn.microsoft.com/en-us/azure/postgresql/backup-restore/concepts-backup-restore
-                            # Automated backups are always enabled for Flexible Server.
-                            "scheduled_backups": True,
-                            "autotuning_advice": autotuning_advice,
-                            "autotuning_apply": autotuning_apply,
-                            # https://learn.microsoft.com/en-us/azure/postgresql/security/security-overview#data-protection
-                            "disk_encryption": True,
-                            # https://learn.microsoft.com/en-us/azure/postgresql/configure-maintain/concepts-major-version-upgrade
-                            # Minor releases are applied automatically during maintenance.
-                            "auto_upgrade_versions": True,
-                            # https://learn.microsoft.com/en-us/azure/postgresql/parameters/concepts-parameters
-                            "custom_config": True,
-                            # https://learn.microsoft.com/en-us/azure/postgresql/extensions/concepts-extensions-considerations
-                            "custom_extensions": True,
-                            "storage_extra_min": storage_extra_min,
-                            "storage_extra_max": storage_extra_max,
-                            "ha": ha,
-                            "ha_strategy": ha_strategy,
-                            # https://learn.microsoft.com/en-us/azure/postgresql/network/concepts-networking-public
-                            # https://learn.microsoft.com/en-us/azure/postgresql/network/concepts-networking-private
-                            # https://learn.microsoft.com/en-us/azure/postgresql/network/concepts-networking-private-link
-                            # https://learn.microsoft.com/en-us/azure/postgresql/flexible-server/how-to-configure-sign-in-azure-ad-authentication
-                            # https://learn.microsoft.com/en-us/azure/postgresql/flexible-server/how-to-connect-tls-ssl
-                            # https://learn.microsoft.com/en-us/azure/postgresql/flexible-server/concepts-data-encryption
-                            # https://learn.microsoft.com/en-us/azure/postgresql/flexible-server/concepts-audit
-                            # Firewall rules, VNet injection, Private Link, Entra ID auth,
-                            # require_secure_transport, Key Vault CMK, pgaudit. Server certs only.
-                            "security_features": [
-                                DatabaseSecurityFeature.IP_FILTERING,
-                                DatabaseSecurityFeature.PRIVATE_NETWORK,
-                                DatabaseSecurityFeature.NETWORK_PEERING,
-                                DatabaseSecurityFeature.IDENTITY_BASED_AUTH,
-                                DatabaseSecurityFeature.ENFORCED_TLS,
-                                DatabaseSecurityFeature.CUSTOMER_MANAGED_KEYS,
-                                DatabaseSecurityFeature.AUDIT_LOGGING,
-                            ],
-                            # https://learn.microsoft.com/en-us/azure/postgresql/read-replica/concepts-read-replicas
-                            # Up to 5 replicas per primary; Burstable tier is not supported.
-                            "max_read_replicas": (
-                                0 if edition.name == "Burstable" else 5
+                            ha = DatabaseHaLevel.ordered(ha)
+                        facts = {
+                            **shared,
+                            "edition": edition.name,
+                            "vcpus": int(sku.v_cores) if sku.v_cores else None,
+                            "memory_amount": (
+                                int(sku.supported_memory_per_vcore_mb * sku.v_cores)
+                                if sku.v_cores and sku.supported_memory_per_vcore_mb
+                                else None
                             ),
-                            # https://learn.microsoft.com/en-us/azure/postgresql/connectivity/concepts-pgbouncer
-                            # Built-in PgBouncer connection pooling.
-                            "connection_pool": True,
-                            # https://learn.microsoft.com/en-us/azure/postgresql/monitor/concepts-monitoring
-                            # Host-level metrics via Azure Monitor.
-                            "system_monitoring": True,
-                            # https://learn.microsoft.com/en-us/azure/postgresql/monitor/concepts-query-performance-insight
-                            # Query Performance Insight / Query Store for query-level analysis.
-                            "database_monitoring": True,
-                            # https://learn.microsoft.com/en-us/azure/postgresql/backup-restore/concepts-backup-restore
-                            # Product max PITR retention (days); default 7, up to 35; not in capabilities API.
-                            "continuous_backups": 35,
-                            "sla": sla,
+                            "ha": ha,
+                            "ha_strategy": DatabaseHaStrategy.ordered(ha_strategy),
+                            # https://learn.microsoft.com/en-us/azure/reliability/reliability-database-postgresql
+                            "sla": (
+                                99.99
+                                if DatabaseHaLevel.MULTI_ZONE in ha
+                                else 99.95
+                                if DatabaseHaLevel.SINGLE_ZONE in ha
+                                else 99.9
+                            ),
                         }
+                        caps_by_id[sku.name] = facts
+                        edition_caps[edition.name] = facts
+        with sentry_capture_or_raise(vendor=vendor):
+            for item in _pg_retail_prices(location):
+                product = item.get("productName", "")
+                product_l = product.lower()
+                if (
+                    "compute" not in product_l
+                    or "cosmos" in product_l
+                    or "single server" in product_l
+                    or not (
+                        "flexible server" in product_l or "flex server" in product_l
+                    )
+                ):
+                    continue
+                arm = item.get("armSkuName", "")
+                series_match = _PG_PRODUCT_SERIES_RE.search(product)
+                series_name = series_match["series"] if series_match else ""
+                edition_name = next(
+                    (
+                        edition
+                        for edition, tokens in _PG_EDITION_PRODUCT_TOKENS.items()
+                        if any(token in product_l for token in tokens)
+                    ),
+                    "MemoryOptimized"
+                    if series_name.startswith(("E", "M"))
+                    else "GeneralPurpose",
+                )
+                if arm.startswith("Standard_") or arm.upper() in _PG_FLAT_COMPUTE_SKUS:
+                    match = _PG_DATABASE_NAME_RE.match(arm)
+                    if match is None:
+                        continue
+                    database_id = (
+                        f"Standard_{match['family'].upper()}"
+                        f"{match['vcpus']}{match['features'].lower()}"
+                    )
+                    if match["version"]:
+                        database_id += f"_v{match['version']}"
+                    retail_concrete.setdefault(database_id, edition_name)
+                elif series_name:
+                    retail_series.setdefault(series_name, edition_name)
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
-    return list(merged.values())
+
+    # Capabilities SKUs, plus retail SKUs quota hid. Series meters name no size,
+    # so the VM catalog fills those database_ids.
+    wanted = {
+        database_id: facts["edition"] for database_id, facts in caps_by_id.items()
+    }
+    for database_id, edition_name in retail_concrete.items():
+        wanted.setdefault(database_id, edition_name)
+    present_series = {_parse_database_name(database_id)[0] for database_id in wanted}
+    for series_name, edition_name in retail_series.items():
+        if series_name not in present_series:
+            for server in servers_by_series.get(series_name, []):
+                wanted.setdefault(server.api_reference, edition_name)
+
+    rows = []
+    for database_id, edition_name in wanted.items():
+        own = caps_by_id.get(database_id)
+        facts = (
+            own
+            or edition_caps.get(edition_name)
+            or next(iter(edition_caps.values()), None)
+        )
+        if facts is None:
+            continue
+        server = servers_by_id.get(database_id)
+        series, _family, vcpus, _version = _parse_database_name(database_id)
+        ha, ha_strategy, sla = facts["ha"], facts["ha_strategy"], facts["sla"]
+        if own:
+            edition_name = own["edition"]
+            vcpus, memory_amount = own["vcpus"], own["memory_amount"]
+        else:
+            if server and server.vcpus:
+                vcpus = server.vcpus
+            memory_amount = (
+                int(server.memory_amount) if server and server.memory_amount else None
+            )
+            if edition_name == "Burstable" and edition_name not in edition_caps:
+                ha, ha_strategy, sla = (
+                    [DatabaseHaLevel.NONE],
+                    [DatabaseHaStrategy.NONE],
+                    99.9,
+                )
+        spec_parts = []
+        if vcpus is not None:
+            spec_parts.append(f"{vcpus} vCPU{'s' if vcpus != 1 else ''}")
+        if memory_amount is not None:
+            spec_parts.append(f"{memory_amount // 1024} GB RAM")
+        description = f"PostgreSQL {edition_name}"
+        if spec_parts:
+            description += f" ({', '.join(spec_parts)})"
+        name = database_id.removeprefix("Standard_")
+        sku_prefix = _PG_SKU_NAME_PREFIX.get(edition_name)
+        rows.append(
+            {
+                "vendor_id": vendor.vendor_id,
+                "database_id": database_id,
+                "name": name,
+                "api_reference": database_id,
+                # https://www.pulumi.com/registry/packages/azure/api-docs/postgresql/flexibleserver/
+                "api_reference_object": {
+                    "sku_name": (
+                        f"{sku_prefix}_{database_id}" if sku_prefix else database_id
+                    )
+                },
+                "display_name": name,
+                "description": description,
+                "server_id": server.server_id if server else None,
+                "engine": DatabaseEngine.POSTGRESQL,
+                "wire_protocol": DatabaseWireProtocol.POSTGRESQL,
+                "engine_versions": facts["engine_versions"],
+                "family": series,
+                "vcpus": vcpus,
+                "memory_amount": memory_amount,
+                "storage_size": None,
+                "storage_extra_autosize": facts["storage_extra_autosize"],
+                # https://learn.microsoft.com/en-us/azure/postgresql/backup-restore/concepts-backup-restore
+                "scheduled_backups": True,
+                "autotuning_advice": facts["autotuning_advice"],
+                "autotuning_apply": facts["autotuning_apply"],
+                # https://learn.microsoft.com/en-us/azure/postgresql/security/security-overview#data-protection
+                "disk_encryption": True,
+                # https://learn.microsoft.com/en-us/azure/postgresql/configure-maintain/concepts-major-version-upgrade
+                "auto_upgrade_versions": True,
+                # https://learn.microsoft.com/en-us/azure/postgresql/parameters/concepts-parameters
+                "custom_config": True,
+                # https://learn.microsoft.com/en-us/azure/postgresql/extensions/concepts-extensions-considerations
+                "custom_extensions": True,
+                "storage_extra_min": facts["storage_extra_min"],
+                "storage_extra_max": facts["storage_extra_max"],
+                "ha": ha,
+                "ha_strategy": ha_strategy,
+                # https://learn.microsoft.com/en-us/azure/postgresql/network/concepts-networking-public
+                # https://learn.microsoft.com/en-us/azure/postgresql/network/concepts-networking-private
+                # https://learn.microsoft.com/en-us/azure/postgresql/network/concepts-networking-private-link
+                # https://learn.microsoft.com/en-us/azure/postgresql/flexible-server/how-to-configure-sign-in-azure-ad-authentication
+                # https://learn.microsoft.com/en-us/azure/postgresql/flexible-server/how-to-connect-tls-ssl
+                # https://learn.microsoft.com/en-us/azure/postgresql/flexible-server/concepts-data-encryption
+                # https://learn.microsoft.com/en-us/azure/postgresql/flexible-server/concepts-audit
+                "security_features": [
+                    DatabaseSecurityFeature.IP_FILTERING,
+                    DatabaseSecurityFeature.PRIVATE_NETWORK,
+                    DatabaseSecurityFeature.NETWORK_PEERING,
+                    DatabaseSecurityFeature.IDENTITY_BASED_AUTH,
+                    DatabaseSecurityFeature.ENFORCED_TLS,
+                    DatabaseSecurityFeature.CUSTOMER_MANAGED_KEYS,
+                    DatabaseSecurityFeature.AUDIT_LOGGING,
+                ],
+                # https://learn.microsoft.com/en-us/azure/postgresql/read-replica/concepts-read-replicas
+                "max_read_replicas": 0 if edition_name == "Burstable" else 5,
+                # https://learn.microsoft.com/en-us/azure/postgresql/connectivity/concepts-pgbouncer
+                "connection_pool": True,
+                # https://learn.microsoft.com/en-us/azure/postgresql/monitor/concepts-monitoring
+                "system_monitoring": True,
+                # https://learn.microsoft.com/en-us/azure/postgresql/monitor/concepts-query-performance-insight
+                "database_monitoring": True,
+                "continuous_backups": 35,
+                "sla": sla,
+                "status": _azure_sku_lifecycle_status(database_id),
+            }
+        )
+    return rows
 
 
 def inventory_database_prices(vendor):
-    """List all known Azure Database for PostgreSQL Flexible Server on-demand prices in all regions using the Azure Retail Pricing API.
+    """List Azure Database for PostgreSQL Flexible Server on-demand prices from the Retail Pricing API.
+
+    SKU catalog comes from ``vendor.databases`` (built by ``inventory_databases`` /
+    capabilities). Per-region capabilities are not used for pricing: emit a row
+    whenever Retail has a meter for a known instance in that region.
+
+    OfferRestricted=Enabled means this subscription cannot list or provision
+    Flexible Server SKUs there (empty supported_server_editions), so capabilities
+    give no confirmed region availability. Retail list prices may still exist;
+    we keep those rows.
+    https://learn.microsoft.com/en-us/azure/postgresql/troubleshoot/how-to-resolve-capacity-errors
+    https://learn.microsoft.com/en-us/rest/api/postgresql/capabilities-by-location/list
 
     More information: <https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices>.
     """
     items = []
-    seen: set[tuple[str, str, DatabaseHaLevel, DatabaseHaStrategy]] = set()
+    seen = set()
     regions = _pg_database_regions(vendor)
     vendor.progress_tracker.start_task(
         name="Scanning region(s) for database_price(s)", total=len(regions)
     )
     for region in regions:
-        location = region.api_reference
         with sentry_capture_or_raise(vendor=vendor):
-            prices_by_arm: dict[str, list[dict]] = {}
-            for item in _pg_retail_prices(location):
-                product = (item.get("productName") or "").lower()
-                arm = item.get("armSkuName") or ""
-                meter = item.get("meterName") or ""
-                if not (
-                    "compute" in product
+            prices_by_arm: dict[str, list[dict]] = defaultdict(list)
+            for item in _pg_retail_prices(region.api_reference):
+                arm = item.get("armSkuName", "")
+                if arm and (
+                    "compute" in item.get("productName", "").lower()
                     or arm.startswith("Standard_")
                     or arm.upper() in _PG_FLAT_COMPUTE_SKUS
-                    or meter.upper() in _PG_FLAT_COMPUTE_SKUS
+                    or item.get("meterName", "").upper() in _PG_FLAT_COMPUTE_SKUS
                 ):
-                    continue
-                if arm:
-                    prices_by_arm.setdefault(arm, []).append(item)
+                    prices_by_arm[arm].append(item)
 
-            for capability in _pg_capabilities(location):
-                for edition in (
-                    getattr(capability, "supported_server_editions", None) or []
-                ):
-                    edition_name = edition.name
-                    for sku in getattr(edition, "supported_server_skus", None) or []:
-                        database_id = sku.name
-                        if not database_id:
-                            continue
-                        price_item = _pg_lookup_retail_price(
-                            database_id=database_id,
-                            edition_name=edition_name,
-                            prices_by_arm=prices_by_arm,
-                        )
-                        if price_item is None:
-                            continue
-                        vcpus = int(sku.v_cores) if sku.v_cores else None
-                        base_price = _pg_hourly_compute_price(
-                            price_item, vcpus, database_id=database_id
-                        )
-                        currency = price_item.get("currencyCode", "USD")
-                        # https://azure.microsoft.com/pricing/details/postgresql/flexible-server/
-                        # HA bills primary + standby at the same rate (exactly 2x); SameZone
-                        # and ZoneRedundant cost the same. No separate retail HA meters.
-                        ha_modes = {
-                            (mode.value if hasattr(mode, "value") else str(mode))
-                            for mode in (getattr(sku, "supported_ha_mode", None) or [])
+            for database in vendor.databases:
+                if not database.status.is_orderable:
+                    continue
+                price_item = _pg_lookup_retail_price(
+                    vendor=vendor,
+                    database_id=database.database_id,
+                    edition_name=database.family,
+                    prices_by_arm=prices_by_arm,
+                )
+                if price_item is None:
+                    continue
+                base_price = _pg_hourly_compute_price(
+                    price_item, database.vcpus, database_id=database.database_id
+                )
+                # https://azure.microsoft.com/pricing/details/postgresql/flexible-server/
+                # HA bills primary + standby at the same rate (exactly 2x); SameZone
+                # and ZoneRedundant cost the same. No separate retail HA meters.
+                ha_levels = {DatabaseHaLevel(level) for level in database.ha or []}
+                price_rows = [
+                    (DatabaseHaLevel.NONE, DatabaseHaStrategy.NONE, base_price)
+                ] + [
+                    (level, DatabaseHaStrategy.PASSIVE_STANDBY, base_price * 2)
+                    for level in (
+                        DatabaseHaLevel.MULTI_ZONE,
+                        DatabaseHaLevel.SINGLE_ZONE,
+                    )
+                    if level in ha_levels
+                ]
+                for ha, ha_strategy, price in price_rows:
+                    key = (region.region_id, database.database_id, ha, ha_strategy)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    items.append(
+                        {
+                            "vendor_id": vendor.vendor_id,
+                            "region_id": region.region_id,
+                            "database_id": database.database_id,
+                            "allocation": Allocation.ONDEMAND,
+                            "ha": ha,
+                            "ha_strategy": ha_strategy,
+                            "unit": PriceUnit.HOUR,
+                            "price": price,
+                            "price_upfront": 0,
+                            "price_tiered": [],
+                            "currency": price_item.get("currencyCode", "USD"),
                         }
-                        price_rows: list[
-                            tuple[DatabaseHaLevel, DatabaseHaStrategy, float]
-                        ] = [
-                            (DatabaseHaLevel.NONE, DatabaseHaStrategy.NONE, base_price)
-                        ]
-                        if edition_name != "Burstable":
-                            if "ZoneRedundant" in ha_modes:
-                                price_rows.append(
-                                    (
-                                        DatabaseHaLevel.MULTI_ZONE,
-                                        DatabaseHaStrategy.PASSIVE_STANDBY,
-                                        base_price * 2,
-                                    )
-                                )
-                            if "SameZone" in ha_modes:
-                                price_rows.append(
-                                    (
-                                        DatabaseHaLevel.SINGLE_ZONE,
-                                        DatabaseHaStrategy.PASSIVE_STANDBY,
-                                        base_price * 2,
-                                    )
-                                )
-                        for ha, ha_strategy, price in price_rows:
-                            key = (
-                                region.region_id,
-                                database_id,
-                                ha,
-                                ha_strategy,
-                            )
-                            if key in seen:
-                                continue
-                            seen.add(key)
-                            items.append(
-                                {
-                                    "vendor_id": vendor.vendor_id,
-                                    "region_id": region.region_id,
-                                    "database_id": database_id,
-                                    "allocation": Allocation.ONDEMAND,
-                                    "ha": ha,
-                                    "ha_strategy": ha_strategy,
-                                    "unit": PriceUnit.HOUR,
-                                    "price": price,
-                                    "price_upfront": 0,
-                                    "price_tiered": [],
-                                    "currency": currency,
-                                }
-                            )
+                    )
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
     return items
@@ -2220,17 +2907,13 @@ def inventory_database_storage_prices(vendor):
         with sentry_capture_or_raise(vendor=vendor):
             supported_storage_ids = _pg_supported_storage_ids(location)
             for item in _pg_retail_prices(location):
-                product = item.get("productName") or ""
+                product = (item.get("productName") or "").lower()
                 meter = (item.get("meterName") or "").lower()
-                if product == _PG_FLEX_STORAGE_PRODUCT:
-                    storage_id = _PG_STORAGE_RETAIL_TO_ID.get(meter)
-                elif (
-                    product == _PG_FLEX_BACKUP_PRODUCT
-                    and meter == "backup storage lrs data stored"
-                ):
-                    storage_id = _PG_BACKUP_STORAGE_ID
-                else:
-                    storage_id = None
+                storage_id = (
+                    _PG_STORAGE_RETAIL_TO_ID.get(meter)
+                    if product in _PG_STORAGE_RETAIL_PRODUCTS
+                    else None
+                )
                 if not storage_id:
                     continue
                 if (

@@ -1,3 +1,5 @@
+"""Logging and progress bar helpers."""
+
 from __future__ import annotations
 
 import logging
@@ -90,6 +92,8 @@ class ScRichHandler(RichHandler):
 
 
 class ProgressPanel:
+    """Progress bars of the vendors and their inventory steps, with the metadata of the run."""
+
     vendors: Progress = Progress(
         TimeElapsedColumn(),
         TextColumn("{task.description}"),
@@ -114,7 +118,7 @@ class ProgressPanel:
             Group(
                 Panel(
                     self.metadata,
-                    title="SC Crawler v" + version("sparecores-crawler"),
+                    title="Spare Cores Crawler v" + version("sparecores-crawler"),
                     title_align="left",
                 ),
                 Panel(

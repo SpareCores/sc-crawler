@@ -20,6 +20,7 @@ from .inspector import (
     inspect_update_server_dict,
     inspector_data_path,
 )
+from .inspector_rules import block_reasons
 from .logger import VendorProgressTracker, VoidProgressTracker, log_start_end, logger
 from .table_bases import (
     BenchmarkBase,
@@ -329,7 +330,7 @@ class Vendor(VendorBase, table=True):
             BenchmarkScore.vendor_id == self.vendor_id,
             BenchmarkScore.resource_type == ResourceType.SERVER,
         )
-        insert_items(BenchmarkScore, benchmarks, self)
+        insert_items(BenchmarkScore, benchmarks, self, prefix="server")
         self.progress_tracker.start_task(
             name="Downloading sc-navigator-descriptions", total=None
         )
@@ -421,7 +422,7 @@ class Vendor(VendorBase, table=True):
             BenchmarkScore.vendor_id == self.vendor_id,
             BenchmarkScore.resource_type == ResourceType.DATABASE,
         )
-        insert_items(BenchmarkScore, benchmarks, self)
+        insert_items(BenchmarkScore, benchmarks, self, prefix="database")
 
     @log_start_end
     def inventory_database_prices(self):
@@ -526,6 +527,10 @@ class Storage(StorageBase, table=True):
 
 class Server(ServerBase, table=True):
     """Server types."""
+
+    def check_inspector_task_block_reasons(self, tasks: List[str]):
+        """Check if the Server should run inspector task(s) and return block reasons."""
+        return block_reasons(self, tasks)
 
     vendor: Vendor = Relationship(back_populates="servers")
     prices: List["ServerPrice"] = Relationship(
@@ -644,6 +649,10 @@ class StoragePrice(StoragePriceBase, table=True):
 
 class Database(DatabaseBase, table=True):
     """Managed database SKUs."""
+
+    def check_inspector_task_block_reasons(self, tasks: List[str]):
+        """Check if the Database should run inspector task(s) and return block reasons."""
+        return block_reasons(self, tasks)
 
     vendor: Vendor = Relationship(back_populates="databases")
     prices: List["DatabasePrice"] = Relationship(
@@ -843,6 +852,7 @@ Benchmark.model_rebuild()
 
 
 def is_table(table):
+    """Checks if an object is a SQLModel table definition."""
     try:
         return table.model_config["table"] is True
     except Exception:
