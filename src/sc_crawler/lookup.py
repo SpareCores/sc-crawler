@@ -1404,7 +1404,7 @@ benchmarks.extend(
 _ENVIRONMENT_FIELDS = {
     "kernel_version": "Linux kernel version of the server running the benchmark (not recorded for managed databases).",
     "measured_at": "Timestamp (UTC) of finishing the benchmark run.",
-    "duration": "Duration (seconds) of the benchmark run.",
+    "duration": "Duration (seconds) of the benchmarking framework run that produced this score, shared by all benchmarks and configs of that run.",
 }
 _FRAMEWORK_ENVIRONMENT_FIELDS = {
     "nvbandwidth": {

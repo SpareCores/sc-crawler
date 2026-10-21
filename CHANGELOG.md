@@ -2,7 +2,7 @@
 
 New feature(s):
 
-- Record the duration (seconds) of the benchmark run in
+- Record the duration (seconds) of the benchmarking framework run in
   `BenchmarkScore.environment.duration`.
 
 Fix(es):

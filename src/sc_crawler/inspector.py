@@ -350,7 +350,7 @@ def _measured_at(resource: Union["Server", "Database"], framework: str) -> str:
 
 
 def _duration(resource: Union["Server", "Database"], framework: str) -> dict:
-    """Duration of the benchmark run (seconds), as recorded in its meta.json."""
+    """Duration of the benchmarking framework run (seconds), as recorded in its meta.json."""
     meta = _framework_meta(resource, framework)
     start = _meta_timestamp(meta, "start")
     end = _meta_timestamp(meta, "end")
