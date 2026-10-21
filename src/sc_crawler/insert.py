@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, List, Optional
 
 from pydantic import BaseModel
 from rich.progress import Progress
-from sqlalchemy import select
+from sqlalchemy import ColumnElement, select
 from sqlalchemy.dialects.postgresql import insert as insert_postgresql
 from sqlalchemy.dialects.sqlite import insert as insert_sqlite
 from sqlmodel import Session, SQLModel
@@ -254,7 +254,7 @@ def insert_items(
 def upsert_changed_items(
     model: SQLModel,
     items: List[dict],
-    *filters,
+    *filters: ColumnElement[bool],
     vendor: Optional["Vendor"] = None,
     session: Optional[Session] = None,
     progress: Optional[Progress] = None,
