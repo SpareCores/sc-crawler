@@ -2,8 +2,7 @@
 
 Fix(es):
 
-- `AWS`: skip the new RDS `UnusedBox` products (no instance family, vCPU, or
-  memory) that broke the database inventory.
+- `AWS`: skip the new RDS `UnusedBox` products (no instance family, vCPU, or memory).
 
 ## v0.10.1 (October 20, 2026)
 
