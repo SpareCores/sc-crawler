@@ -356,7 +356,7 @@ def _duration(resource: Union["Server", "Database"], framework: str) -> dict:
     end = _meta_timestamp(meta, "end")
     if start is None or end is None:
         return {}
-    return {"duration": round((end - start).total_seconds(), 3)}
+    return {"duration": round((end - start).total_seconds())}
 
 
 def _framework_version(resource: Union["Server", "Database"], framework: str) -> dict:
