@@ -59,8 +59,8 @@ def block_reasons(
     results = {task: [] for task in tasks}
     for task in tasks:
         # override the overrides: although no credits, we still want to run these
-        if resource.vendor_id == "azure":
-            # need full DBaaS coverage at Azure for analysis
+        if resource.vendor_id == "azure" and resource.memory_amount < 1024**2:
+            # need full DBaaS coverage at Azure for analysis (at least below 1TB RAM)
             if task == "pgbench_postgres_ro_durable" and has_related_database(resource):
                 continue
             if isinstance(resource, DatabaseBase):
