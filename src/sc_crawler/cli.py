@@ -52,7 +52,6 @@ from .utils import (
     hash_database,
     table_name_to_model,
 )
-from .vendor_helpers import deactivate_removed_vendors
 from .workload_profile_scores import recompute_workload_profiles
 
 supported_vendors = [
@@ -925,11 +924,6 @@ def pull(
                     # reset current step name
                     vendor.progress_tracker.update_vendor(step="✔")
                     session.commit()
-
-            deactivate_removed_vendors(
-                session, [v.vendor_id for v in supported_vendors]
-            )
-            session.commit()
 
             if vendors and len(failed_vendors) == len(vendors):
                 raise RuntimeError(
