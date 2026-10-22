@@ -925,6 +925,8 @@ def _standardize_server(server: dict, vendor) -> dict:
     family = recompile(r"(?i)family$").sub(
         "", recompile(r"(?i)^standard").sub("", server["family"])
     )
+    # Azure appends the accelerator type (e.g. XL) after the version for some series
+    family = recompile(r"(?<=v\d)XL$").sub("", family)
 
     def capability(name: str, default=None) -> str:
         try:
