@@ -13,7 +13,7 @@ from pydantic import (
     model_validator,
 )
 from rich.progress import Progress
-from sqlalchemy import and_, case
+from sqlalchemy import and_, case, func
 from sqlalchemy.ext.hybrid import Comparator, hybrid_property
 from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import declared_attr, reconstructor
@@ -47,6 +47,41 @@ from .table_fields import (
     WorkloadScoreBreakdown,
 )
 from .workload_profiles import BenchmarkSource, MeasuredSource
+
+
+def jsonable(value):
+    """Make values stable for JSON hashing.
+
+    SQLite returns 0.0 for float columns; model defaults and JSON primary keys
+    often keep 0 or 1.0. Those compare equal in Python, but json.dumps does not.
+    """
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, dict):
+        return {k: jsonable(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [jsonable(v) for v in value]
+    return value
+
+
+def _json_default(value):
+    if hasattr(value, "__json__"):
+        return value.__json__()
+    return str(value)
+
+
+def row_key(row: dict, primary_keys: List[str]) -> str:
+    """Stable string identifier of a row built from its primary key values."""
+    keys = {pk: row.get(pk) for pk in primary_keys}
+    return dumps(jsonable(keys), sort_keys=True, default=_json_default)
+
+
+def row_digest(row: dict, ignored: List[str]) -> str:
+    """Hash the content of a row dict, excluding the `ignored` columns."""
+    content = {k: v for k, v in row.items() if k not in ignored}
+    return sha1(
+        dumps(jsonable(content), sort_keys=True, default=_json_default).encode()
+    ).hexdigest()
 
 
 class ScMetaModel(SQLModel.__class__):
@@ -179,6 +214,7 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
         session: Session,
         ignored: List[str] = ["observed_at"],
         progress: Optional[Progress] = None,
+        rows: Optional[List[dict]] = None,
     ) -> dict:
         """Hash the content of the rows.
 
@@ -186,30 +222,35 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
             session: Database connection to use for object lookups.
             ignored: List of column names to exclude from hashing.
             progress: Optional progress bar to track the status of the hashing.
+            rows: Optional row dicts to hash instead of reading the table.
 
         Returns:
             Dictionary of the row hashes keyed by the JSON dump of primary keys.
         """
         pks = sorted(cls.get_columns()["primary_keys"])
-        rows = session.exec(statement=select(cls))
-        row_count = session.query(cls).count()
+        if rows is None:
+            rows = session.exec(statement=select(cls))
+            row_count = session.exec(select(func.count()).select_from(cls)).one()
+        else:
+            row_count = len(rows)
         if progress:
             table_task_id = progress.add_task(
                 cls.get_table_name(),
                 total=row_count,
             )
+
         # no use of a generator as will need to serialize to JSON anyway
         hashes = {}
         for i, row in enumerate(rows):
             # NOTE Pydantic is warning when read Accelerator/Storage as dict
             # https://github.com/tiangolo/sqlmodel/issues/63#issuecomment-1081555082
-            rowdict = row.model_dump(warnings=False)
-            keys = {pk: rowdict.get(pk) for pk in pks}
-            keys_id = dumps(keys, sort_keys=True)
-            for dropkey in [*ignored, *pks]:
-                rowdict.pop(dropkey, None)
-            rowhash = sha1(dumps(rowdict, sort_keys=True).encode()).hexdigest()
-            hashes[keys_id] = rowhash
+            if isinstance(row, dict):
+                rowdict = dict(row)
+            else:
+                rowdict = row.model_dump(warnings=False)
+            # keep the exact PK values in the key: `sync` loads it back for row lookups
+            keys_id = dumps({pk: rowdict.get(pk) for pk in pks}, sort_keys=True)
+            hashes[keys_id] = row_digest(rowdict, [*ignored, *pks])
             if progress:
                 # updating the progress bar is expensive, so limit with manu iterations
                 if row_count > 1e3:

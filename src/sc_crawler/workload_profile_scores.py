@@ -11,10 +11,9 @@ from math import log2
 from statistics import median
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import update
 from sqlmodel import Session, select
 
-from .insert import insert_items
+from .insert import upsert_changed_items
 from .table_fields import (
     BenchmarkComponentAggregationMethod,
     BenchmarkComponentMissingPolicy,
@@ -404,10 +403,10 @@ def _compute_workload_score_rows(
 def recompute_workload_profiles(session: Session) -> int:
     """Recompute workload-profile scores for all servers and persist them.
 
-    Marks all existing workload-profile BenchmarkScore rows inactive, then
-    loads all active raw benchmark scores from the database (excluding
+    Loads all active raw benchmark scores from the database (excluding
     workload-profile rows to avoid circularity), computes composite scores vs
-    per-benchmark medians across all vendors, and inserts fresh rows.
+    per-benchmark medians across all vendors, then writes the new/changed rows
+    and marks the no longer computed workload-profile rows inactive.
 
     Args:
         session: Active SQLModel session connected to the crawler database.
@@ -434,10 +433,10 @@ def recompute_workload_profiles(session: Session) -> int:
     if not profile_rows:
         return 0
 
-    session.exec(
-        update(BenchmarkScore)
-        .where(BenchmarkScore.benchmark_id.like("workload_profile:%"))
-        .values(status=Status.INACTIVE)
+    upsert_changed_items(
+        BenchmarkScore,
+        profile_rows,
+        BenchmarkScore.benchmark_id.like("workload_profile:%"),
+        session=session,
     )
-    insert_items(BenchmarkScore, profile_rows, session=session)
     return len(profile_rows)

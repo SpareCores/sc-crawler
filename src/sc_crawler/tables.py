@@ -13,7 +13,7 @@ from .description_ingestor import (
     descriptions_data_path,
     ingest_server_description,
 )
-from .insert import insert_items
+from .insert import upsert_changed_items
 from .inspector import (
     inspect_database_benchmarks,
     inspect_server_benchmarks,
@@ -235,7 +235,9 @@ class Vendor(VendorBase, table=True):
             >>> aws.set_table_rows_inactive(ServerPrice, ServerPrice.price < 10)  # doctest: +SKIP
         """
         if self.session:
-            query = update(model).where(model.vendor_id == self.vendor_id)
+            query = update(model).where(
+                model.vendor_id == self.vendor_id, model.status != Status.INACTIVE
+            )
             for arg in args:
                 query = query.where(arg)
             self.session.exec(query.values(status=Status.INACTIVE))
@@ -251,17 +253,29 @@ class Vendor(VendorBase, table=True):
             >>> aws.set_table_rows_active(ServerPrice, ServerPrice.price < 10)  # doctest: +SKIP
         """
         if self.session:
-            query = update(model).where(model.vendor_id == self.vendor_id)
+            query = update(model).where(
+                model.vendor_id == self.vendor_id, model.status != Status.ACTIVE
+            )
             for arg in args:
                 query = query.where(arg)
             self.session.exec(query.values(status=Status.ACTIVE))
 
+    def _upsert(self, table: ScModel, items: List[dict], *filters, prefix: str = ""):
+        """Write new/changed items and deactivate this vendor's missing rows in the `filters` scope."""
+        upsert_changed_items(
+            table,
+            items,
+            table.vendor_id == self.vendor_id,
+            *filters,
+            vendor=self,
+            prefix=prefix,
+        )
+
     def _inventory(self, table: ScModel, inventory: Callable):
-        """Mark all rows in a table inactive, then insert new/updated items."""
+        """Write new/changed items, then mark the vendor's missing rows inactive."""
         new_records = inventory(self)
         if new_records:
-            self.set_table_rows_inactive(table)
-            insert_items(table, new_records, self)
+            self._upsert(table, new_records)
 
     def _inventory_price_rounding(
         self,
@@ -270,20 +284,19 @@ class Vendor(VendorBase, table=True):
         *filters,
         prefix: str = "",
     ):
-        """Mark rows in a table inactive, then insert new/updated items with 4-digit price rounding.
+        """Write new/changed items with 4-digit price rounding, then mark missing rows inactive.
 
         Args:
             table: The SQLModel table class to update.
             inventory: Callable that returns list of items to insert.
-            *filters: Optional filter expressions to apply when marking rows inactive.
+            *filters: Optional filter expressions limiting the rows replaced by the items.
             prefix: Optional prefix for progress tracking.
         """
         new_records = inventory(self)
         if new_records:
-            self.set_table_rows_inactive(table, *filters)
             for item in new_records:
                 item["price"] = round(float(item["price"]), 4)
-            insert_items(table, new_records, self, prefix=prefix)
+            self._upsert(table, new_records, *filters, prefix=prefix)
 
     @log_start_end
     def inventory_compliance_frameworks(self):
@@ -305,7 +318,6 @@ class Vendor(VendorBase, table=True):
     @log_start_end
     def inventory_servers(self):
         """Get the vendor's all server types."""
-        self.set_table_rows_inactive(Server)
         servers = self._get_methods().inventory_servers(self)
         # show progress bar while downloading
         self.progress_tracker.start_task(
@@ -316,7 +328,7 @@ class Vendor(VendorBase, table=True):
         # actual HW inspection
         for server in servers:
             server = inspect_update_server_dict(server)
-        insert_items(Server, servers, self)
+        self._upsert(Server, servers)
         benchmarks = []
         self.progress_tracker.start_task(
             name="Searching for server benchmark(s)", total=len(self.servers)
@@ -325,12 +337,14 @@ class Vendor(VendorBase, table=True):
             benchmarks += inspect_server_benchmarks(server)
             self.progress_tracker.advance_task()
         self.progress_tracker.hide_task()
-        self.set_table_rows_inactive(
+        self._upsert(
             BenchmarkScore,
-            BenchmarkScore.vendor_id == self.vendor_id,
+            benchmarks,
             BenchmarkScore.resource_type == ResourceType.SERVER,
+            # managed by recompute_workload_profiles after all vendors are crawled
+            BenchmarkScore.benchmark_id.not_like("workload_profile:%"),
+            prefix="server",
         )
-        insert_items(BenchmarkScore, benchmarks, self, prefix="server")
         self.progress_tracker.start_task(
             name="Downloading sc-navigator-descriptions", total=None
         )
@@ -346,10 +360,7 @@ class Vendor(VendorBase, table=True):
                 descriptions.append(description)
             self.progress_tracker.advance_task()
         self.progress_tracker.hide_task()
-        self.set_table_rows_inactive(
-            ServerDescription, ServerDescription.vendor_id == self.vendor_id
-        )
-        insert_items(ServerDescription, descriptions, self)
+        self._upsert(ServerDescription, descriptions)
 
     @log_start_end
     def inventory_server_prices(self):
@@ -400,7 +411,6 @@ class Vendor(VendorBase, table=True):
     @log_start_end
     def inventory_databases(self):
         """Get the vendor's all managed database types."""
-        self.set_table_rows_inactive(Database)
         databases = self._get_methods().inventory_databases(self)
         # show progress bar while downloading
         self.progress_tracker.start_task(
@@ -408,7 +418,7 @@ class Vendor(VendorBase, table=True):
         )
         inspector_data_path()
         self.progress_tracker.hide_task()
-        insert_items(Database, databases, self)
+        self._upsert(Database, databases)
         benchmarks = []
         self.progress_tracker.start_task(
             name="Searching for database benchmark(s)", total=len(self.databases)
@@ -417,12 +427,12 @@ class Vendor(VendorBase, table=True):
             benchmarks += inspect_database_benchmarks(database)
             self.progress_tracker.advance_task()
         self.progress_tracker.hide_task()
-        self.set_table_rows_inactive(
+        self._upsert(
             BenchmarkScore,
-            BenchmarkScore.vendor_id == self.vendor_id,
+            benchmarks,
             BenchmarkScore.resource_type == ResourceType.DATABASE,
+            prefix="database",
         )
-        insert_items(BenchmarkScore, benchmarks, self, prefix="database")
 
     @log_start_end
     def inventory_database_prices(self):
