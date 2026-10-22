@@ -1235,6 +1235,22 @@ def inventory_databases(vendor):
                 if name in _DATABASE_BACKUP_RETENTION_DAYS
             ]
             continuous_backups = min(backup_days) if backup_days else None
+            # Persist flexible-plan create args (incl. discontinuous storage
+            # bands) in api_reference_object so consumers can snap
+            # plan_storage_gib without re-calling GET /database/plans.
+            # https://developers.upcloud.com/1.3/16-managed-database/
+            plan_backups = list(shape.get("backups") or [])
+            plan_storage = {
+                "step_gib": int(storage.get("step_gib") or 10),
+                "options": [
+                    {
+                        "base_gib": int(option["base_gib"]),
+                        "max_gib": int(option["max_gib"]),
+                    }
+                    for option in options
+                    if "base_gib" in option and "max_gib" in option
+                ],
+            }
             items.append(
                 {
                     "vendor_id": vendor.vendor_id,
@@ -1249,6 +1265,9 @@ def inventory_databases(vendor):
                     "api_reference_object": {
                         "service_type": "pg",
                         "plan_compute": database_id,
+                        "plan_node_counts": list(node_counts),
+                        "plan_backups": plan_backups,
+                        "plan_storage": plan_storage,
                     },
                     "server_id": _match_database_server_id(
                         server_ids, vcpus, memory_gb, family_key

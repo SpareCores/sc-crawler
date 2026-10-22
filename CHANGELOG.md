@@ -1,4 +1,13 @@
-## v0.10.x (DEVELOPMENT)
+## v0.10.2 (October 22, 2026)
+
+New feature(s):
+
+- Record the duration (seconds) of the benchmarking framework run in
+  `BenchmarkScore.environment.duration`.
+- `UpCloud`: store flexible DBaaS plan create args on
+  `Database.api_reference_object` (`plan_node_counts`, `plan_backups`,
+  `plan_storage.step_gib` / `options` bands from `GET /1.3/database/plans`)
+  so consumers can snap `plan_storage_gib` without a schema change.
 
 New feature(s):
 

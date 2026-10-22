@@ -323,20 +323,40 @@ def _server_average_time_to_start(server: "Server") -> float | None:
     return round(sum(durations) / len(durations), 2) if durations else None
 
 
-def _measured_at(resource: Union["Server", "Database"], framework: str) -> str:
-    """End timestamp of the benchmark run, as recorded in its meta.json.
+def _framework_meta(resource: Union["Server", "Database"], framework: str) -> dict:
+    if isinstance(resource, ServerBase):
+        return _server_framework_meta(resource, framework)
+    return _database_framework_meta(resource, framework)
+
+
+def _meta_timestamp(meta: dict, key: str) -> datetime | None:
+    """Parse a timestamp from meta.json.
 
     sc-inspector records naive timestamps in UTC, so make that explicit.
     """
-    if isinstance(resource, ServerBase):
-        ts = _server_framework_meta(resource, framework)["end"]
-    else:
-        ts = _database_framework_meta(resource, framework)["end"]
-    assert ts is not None
+    ts = meta.get(key)
+    if ts is None:
+        return None
     if isinstance(ts, str):
         ts = datetime.fromisoformat(ts)
-    ts = ts.replace(tzinfo=UTC) if ts.tzinfo is None else ts.astimezone(UTC)
+    return ts.replace(tzinfo=UTC) if ts.tzinfo is None else ts.astimezone(UTC)
+
+
+def _measured_at(resource: Union["Server", "Database"], framework: str) -> str:
+    """End timestamp of the benchmark run, as recorded in its meta.json."""
+    ts = _meta_timestamp(_framework_meta(resource, framework), "end")
+    assert ts is not None
     return ts.isoformat()
+
+
+def _duration(resource: Union["Server", "Database"], framework: str) -> dict:
+    """Duration of the benchmarking framework run (seconds), as recorded in its meta.json."""
+    meta = _framework_meta(resource, framework)
+    start = _meta_timestamp(meta, "start")
+    end = _meta_timestamp(meta, "end")
+    if start is None or end is None:
+        return {}
+    return {"duration": round((end - start).total_seconds(), 1)}
 
 
 def _framework_version(resource: Union["Server", "Database"], framework: str) -> dict:
@@ -399,6 +419,7 @@ def _benchmark_metafields(
     environment = {
         **kernel_version.get("environment", {}),
         "measured_at": _measured_at(resource, framework),
+        **_duration(resource, framework),
         **extend_environment,
     }
     if isinstance(resource, ServerBase):
