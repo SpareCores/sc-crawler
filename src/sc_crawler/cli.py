@@ -32,13 +32,13 @@ from rich.text import Text
 from sqlalchemy import Engine, create_mock_engine, inspect, text
 from sqlalchemy.engine.reflection import Inspector
 from sqlalchemy.sql import quoted_name
-from sqlmodel import Session, create_engine, select, update
+from sqlmodel import Session, create_engine, select
 from typing_extensions import Annotated
 
 from . import __version__
 from . import vendors as vendors_module
 from .alembic_helpers import alembic_cfg, get_revision
-from .insert import insert_items, upsert_changed_items
+from .insert import insert_items, merge_changed_item, upsert_changed_items
 from .logger import ProgressPanel, ScRichHandler, VendorProgressTracker, logger
 from .lookup import benchmarks, compliance_frameworks, countries
 from .sentry import before_send, sentry_capture_or_raise
@@ -52,6 +52,7 @@ from .utils import (
     hash_database,
     table_name_to_model,
 )
+from .vendor_helpers import deactivate_removed_vendors
 from .workload_profile_scores import recompute_workload_profiles
 
 supported_vendors = [
@@ -847,13 +848,6 @@ def pull(
             command.upgrade(alembic_cfg(connection, force_logging=False), "heads")
 
         with Session(engine) as session:
-            # we can only reset vendors in case of a full run
-            if len(vendors) == len(supported_vendors):
-                session.exec(
-                    update(Vendor)
-                    .where(Vendor.status != Status.INACTIVE)
-                    .values(status=Status.INACTIVE)
-                )
             # write new/changed static objects, mark the no longer listed ones inactive
             for model, objects in [
                 (ComplianceFramework, compliance_frameworks.values()),
@@ -892,7 +886,7 @@ def pull(
                     logger.info(
                         "Starting to collect data from vendor: " + vendor.vendor_id
                     )
-                    vendor = session.merge(vendor)
+                    vendor = merge_changed_item(session, vendor)
                     # register session to the Vendor so that dependen objects can auto-merge
                     vendor.session = session
                     # register progress bars so that helpers can update
@@ -930,10 +924,12 @@ def pull(
                         vendor.inventory_database_storage_prices()
                     # reset current step name
                     vendor.progress_tracker.update_vendor(step="✔")
-                    # vendor's observed_at is the time of the last successful crawl
-                    vendor.observed_at = datetime.now(UTC)
-                    session.merge(vendor)
                     session.commit()
+
+            deactivate_removed_vendors(
+                session, [v.vendor_id for v in supported_vendors]
+            )
+            session.commit()
 
             if vendors and len(failed_vendors) == len(vendors):
                 raise RuntimeError(

@@ -4,6 +4,8 @@ from concurrent.futures import ThreadPoolExecutor
 from itertools import chain, repeat
 from typing import Callable, Collection, List, Literal, Mapping, Optional
 
+from sqlmodel import Session, update
+
 from .table_fields import Status
 from .tables import Region, Vendor
 
@@ -136,4 +138,22 @@ def get_region_by_id(region_id: str, vendor: Vendor) -> Optional[Region]:
             if (region_id in [region.api_reference, *region.aliases])
         ),
         None,
+    )
+
+
+def deactivate_removed_vendors(session: Session, vendor_ids: Collection[str]) -> None:
+    """Set the vendors no longer defined in the crawler INACTIVE (with a fresh `observed_at`).
+
+    Vendors that are still defined stay untouched, even if their crawl failed,
+    and already inactive vendors keep their `observed_at`.
+
+    Args:
+        session: Database connection to use.
+        vendor_ids: IDs of the vendors defined in the crawler.
+    """
+    session.exec(
+        update(Vendor)
+        .where(Vendor.status != Status.INACTIVE)
+        .where(Vendor.vendor_id.not_in(vendor_ids))
+        .values(status=Status.INACTIVE)
     )

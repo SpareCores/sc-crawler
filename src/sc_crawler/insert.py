@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, List, Optional
 
 from pydantic import BaseModel
 from rich.progress import Progress
-from sqlalchemy import ColumnElement, select
+from sqlalchemy import ColumnElement, inspect, select
 from sqlalchemy.dialects.postgresql import insert as insert_postgresql
 from sqlalchemy.dialects.sqlite import insert as insert_sqlite
 from sqlmodel import Session, SQLModel
@@ -249,6 +249,44 @@ def insert_items(
     items = validate_items(model, items, vendor, prefix)
     items = _dedupe_items(items, primary_keys, vendor, model_name, prefix)
     _write_items(model, items, vendor, session, progress, prefix)
+
+
+def merge_changed_item(session: Session, item: SQLModel) -> SQLModel:
+    """Merge an object (and its cascaded related rows) into the session, updating `observed_at` only on changed rows.
+
+    Objects built in code (e.g. a [Vendor][sc_crawler.tables.Vendor] with its
+    [Country][sc_crawler.tables.Country]) carry the `observed_at` of their creation,
+    which `session.merge` would copy to the stored rows. So after the merge,
+    rows where only `observed_at` differs get back their stored value (no
+    `UPDATE` is emitted), while new rows and rows with any other changed
+    column get the current time.
+
+    Args:
+        session: Database connection to merge into.
+        item: An SQLModel table object.
+
+    Returns:
+        The persistent object attached to the session.
+    """
+    item = session.merge(item)
+    now = datetime.now(UTC)
+    for obj in session.new:
+        if hasattr(obj, "observed_at"):
+            obj.observed_at = now
+    for obj in session.dirty:
+        state = inspect(obj)
+        if "observed_at" not in state.mapper.column_attrs:
+            continue
+        changed = {
+            attr.key
+            for attr in state.mapper.column_attrs
+            if state.attrs[attr.key].history.has_changes()
+        }
+        if changed - {"observed_at"}:
+            obj.observed_at = now
+        elif changed:
+            obj.observed_at = state.attrs.observed_at.history.deleted[0]
+    return item
 
 
 def upsert_changed_items(

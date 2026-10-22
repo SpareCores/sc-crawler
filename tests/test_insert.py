@@ -9,6 +9,7 @@ from sc_crawler.insert import (
     _dedupe_items,
     _primary_key_tuple,
     insert_items,
+    merge_changed_item,
     upsert_changed_items,
 )
 from sc_crawler.table_bases import (
@@ -28,7 +29,7 @@ from sc_crawler.table_fields import (
     ResourceType,
     Status,
 )
-from sc_crawler.tables import BenchmarkScore, Country
+from sc_crawler.tables import BenchmarkScore, Country, Vendor
 from sc_crawler.utils import create_sc_engine, get_row_by_pk
 
 
@@ -314,3 +315,72 @@ def test_insert_items_overwrites_without_comparing(tmp_path):
         insert_items(Country, [dict(US)], session=session)
         session.commit()
         assert _rows(session, Country)['{"country_id": "US"}'].observed_at != first
+
+
+def test_merge_changed_item_updates_observed_at_only_on_change(tmp_path):
+    from sqlalchemy import event
+
+    from sc_crawler.cli import supported_vendors
+
+    engine = _country_db(tmp_path)
+    vendor = next(v for v in supported_vendors if v.vendor_id == "aws")
+    with Session(engine) as session:
+        merge_changed_item(session, vendor.model_copy())
+        session.commit()
+        first = session.get(Vendor, "aws").observed_at
+
+    statements = []
+    event.listen(engine, "before_cursor_execute", lambda *a: statements.append(a[2]))
+    with Session(engine) as session:
+        merge_changed_item(session, vendor.model_copy())
+        session.commit()
+        assert session.get(Vendor, "aws").observed_at == first
+    assert not [s for s in statements if s.lstrip().upper().startswith("UPDATE")]
+
+    with Session(engine) as session:
+        merge_changed_item(session, vendor.model_copy(update={"name": "Renamed"}))
+        session.commit()
+        row = session.get(Vendor, "aws")
+        assert row.name == "Renamed"
+        assert row.observed_at != first
+
+
+def test_deactivate_removed_vendors(tmp_path):
+    from sc_crawler.cli import supported_vendors
+    from sc_crawler.vendor_helpers import deactivate_removed_vendors
+
+    engine = _country_db(tmp_path)
+    vendor = next(v for v in supported_vendors if v.vendor_id == "aws")
+    with Session(engine) as session:
+        merge_changed_item(session, vendor.model_copy())
+        upsert_changed_items(
+            Vendor,
+            [
+                {
+                    **vendor.model_dump(exclude={"observed_at"}),
+                    "vendor_id": "removed-vendor",
+                    "country_id": "US",
+                }
+            ],
+            Vendor.vendor_id == "removed-vendor",
+            session=session,
+        )
+        session.commit()
+        kept = session.get(Vendor, "aws").observed_at
+        removed = session.get(Vendor, "removed-vendor").observed_at
+
+        deactivate_removed_vendors(session, [v.vendor_id for v in supported_vendors])
+        session.commit()
+        session.expire_all()
+        assert session.get(Vendor, "aws").status == Status.ACTIVE
+        assert session.get(Vendor, "aws").observed_at == kept
+        gone = session.get(Vendor, "removed-vendor")
+        assert gone.status == Status.INACTIVE
+        assert gone.observed_at != removed
+        inactive_since = gone.observed_at
+
+        # already inactive rows are not touched again
+        deactivate_removed_vendors(session, [v.vendor_id for v in supported_vendors])
+        session.commit()
+        session.expire_all()
+        assert session.get(Vendor, "removed-vendor").observed_at == inactive_since
