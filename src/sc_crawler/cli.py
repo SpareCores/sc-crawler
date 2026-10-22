@@ -529,9 +529,9 @@ def sync(
                 model = table_name_to_model(table_name)
                 for key, _ in items.items():
                     if key not in source_hash[table_name]:
-                        # check if the row was already set to INACTIVE
+                        # check if the row was already set to INACTIVE or SUPERSEDED
                         obj = get_row_by_pk(session, model, loads(key)).model_dump()
-                        if obj["status"] != Status.INACTIVE:
+                        if obj["status"] not in (Status.INACTIVE, Status.SUPERSEDED):
                             obj["status"] = Status.INACTIVE
                             obj["observed_at"] = datetime.now(UTC)
                             actions["deleted"][table_name].append(obj)

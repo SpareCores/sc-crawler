@@ -1,5 +1,9 @@
+from sqlmodel import Session, SQLModel, create_engine, select
+
 from sc_crawler.table_fields import DatabaseHaLevel, DatabaseHaStrategy, Status
+from sc_crawler.tables import Country, Region
 from sc_crawler.vendor_helpers import server_status_from_availability_categories
+from sc_crawler.vendors import vendors
 
 _ALICLOUD_CATEGORY_TO_SERVER_STATUS = {
     "WithStock": Status.ACTIVE,
@@ -17,6 +21,7 @@ def test_status_best_picks_lifecycle_order():
     )
     assert Status.best({Status.RETIRED, Status.INACTIVE}) == Status.INACTIVE
     assert Status.best({Status.RETIRED}) == Status.RETIRED
+    assert Status.best({Status.SUPERSEDED, Status.RETIRED}) == Status.RETIRED
 
 
 def test_status_is_orderable():
@@ -24,6 +29,38 @@ def test_status_is_orderable():
     assert Status.PLANNED_FOR_RETIREMENT.is_orderable
     assert not Status.INACTIVE.is_orderable
     assert not Status.RETIRED.is_orderable
+    assert not Status.SUPERSEDED.is_orderable
+
+
+def test_status_superseded_is_general():
+    assert Status.SUPERSEDED.is_general
+    assert not Status.RETIRED.is_general
+
+
+def test_set_table_rows_inactive_keeps_superseded():
+    engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add(Country(country_id="DE", continent="Europe"))
+        vendor = session.merge(vendors.hcloud.model_copy())
+        for region_id, status in [("2", Status.SUPERSEDED), ("nbg1", Status.ACTIVE)]:
+            session.add(
+                Region(
+                    vendor_id="hcloud",
+                    region_id=region_id,
+                    name=region_id,
+                    api_reference=region_id,
+                    display_name=region_id,
+                    country_id="DE",
+                    green_energy=True,
+                    status=status,
+                )
+            )
+        session.commit()
+        vendor.session = session
+        vendor.set_table_rows_inactive(Region)
+        statuses = dict(session.exec(select(Region.region_id, Region.status)).all())
+    assert statuses == {"2": Status.SUPERSEDED, "nbg1": Status.INACTIVE}
 
 
 def test_alicloud_stock_categories_match_status_orderability():
