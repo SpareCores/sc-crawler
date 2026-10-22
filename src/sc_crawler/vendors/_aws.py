@@ -2245,10 +2245,18 @@ def _boto_get_rds_products() -> list:
     #     ],
     #     'NextToken': 'AAMA-EFRSURBSGhoR2...'
     # }
-    return _boto_get_products(
+    products = _boto_get_products(
         service_code="AmazonRDS",
         filters={"databaseEngine": "PostgreSQL"},
     )
+    # UnusedBox meters (e.g. usagetype "SAE1-UnusedBox:db.r8g.4xl") are tagged
+    # Single-AZ, but have no instanceFamily/vcpu/memory, and duplicate the
+    # InstanceUsage on-demand prices
+    return [
+        product
+        for product in products
+        if "UnusedBox" not in product["product"]["attributes"].get("usagetype", "")
+    ]
 
 
 def _active_region_ids(vendor: Vendor, only_priority: bool = False) -> list[str]:
