@@ -284,11 +284,34 @@ def test_upcloud_inventory_databases_maps_flexible_plans():
     assert by_id["rdb.standard.2CPU-8GB"]["api_reference_object"] == {
         "service_type": "pg",
         "plan_compute": "rdb.standard.2CPU-8GB",
+        "plan_node_counts": [1, 2, 3],
+        "plan_backups": ["regular", "extended"],
+        "plan_storage": {
+            "step_gib": 10,
+            "options": [
+                {"base_gib": 80, "max_gib": 320},
+                {"base_gib": 160, "max_gib": 640},
+            ],
+        },
+    }
+    assert by_id["rdb.development.1CPU-1GB"]["api_reference_object"] == {
+        "service_type": "pg",
+        "plan_compute": "rdb.development.1CPU-1GB",
+        "plan_node_counts": [1],
+        "plan_backups": ["mini"],
+        "plan_storage": {
+            "step_gib": 10,
+            "options": [{"base_gib": 10, "max_gib": 40}],
+        },
     }
     assert by_id["rdb.memory.64CPU-512GB"]["family"] == "High Memory"
     assert by_id["rdb.memory.64CPU-512GB"]["server_id"] == "HIMEM-64xCPU-512GB"
     assert by_id["rdb.memory.64CPU-512GB"]["memory_amount"] == 512 * 1024
     assert by_id["rdb.memory.64CPU-512GB"]["storage_size"] is None
+    assert by_id["rdb.memory.64CPU-512GB"]["api_reference_object"]["plan_storage"] == {
+        "step_gib": 10,
+        "options": [{"base_gib": 1000, "max_gib": 4000}],
+    }
 
 
 def test_upcloud_inventory_databases_keeps_server_id_none_when_no_match():
