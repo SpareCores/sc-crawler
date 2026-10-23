@@ -12,6 +12,7 @@ from google.cloud import billing_v1, compute_v1
 from googleapiclient.discovery import build
 
 from ..inspector import _standardize_gpu_count
+from ..logger import logger
 from ..lookup import map_compliance_frameworks_to_vendor
 from ..sentry import sentry_capture_or_raise
 from ..table_fields import (
@@ -1141,6 +1142,12 @@ _SERIES_TO_FAMILY = {
 }
 
 
+@cache
+def _warn_unknown_family(kind: str, name: str) -> None:
+    """Warn about a name missing from a family mapping, once per name and run."""
+    logger.warning(f"Unknown GCP {kind} family of {name}, leaving family empty.")
+
+
 def _machine_family(server_name: str) -> Optional[str]:
     """Look up the machine family category (e.g. General Purpose) of a machine type.
 
@@ -1149,7 +1156,11 @@ def _machine_family(server_name: str) -> Optional[str]:
     # n1-megamem and n1-ultramem are the M1 memory-optimized machine types
     if server_name.startswith(("n1-megamem", "n1-ultramem")):
         return "Memory Optimized"
-    return _SERIES_TO_FAMILY.get(server_name.split("-")[0])
+    series = server_name.split("-")[0]
+    family = _SERIES_TO_FAMILY.get(series)
+    if family is None:
+        _warn_unknown_family("server", series)
+    return family
 
 
 def _search_servers(zone_name: str) -> List[dict]:
@@ -2406,6 +2417,37 @@ _PG_TIER_FAMILY_LABELS = {
 }
 
 
+# Family category and machine series of the Cloud SQL tiers by the tier name without
+# the db- prefix and the size, e.g. n1-standard for db-n1-standard-4.
+# Series and shared core: https://docs.cloud.google.com/sql/docs/postgres/machine-series-overview
+# General purpose family of N1, N2, C4 and C4A:
+# https://docs.cloud.google.com/compute/docs/machine-resource
+_PG_TIER_FAMILY_SERIES = {
+    "f1-micro": ("General Purpose", "Shared Core"),
+    "g1-small": ("General Purpose", "Shared Core"),
+    # legacy plans, not listed in the Cloud SQL for PostgreSQL docs
+    "n1-standard": ("General Purpose", "N1"),
+    "n1-highmem": ("General Purpose", "N1"),
+    "perf-optimized-N": ("General Purpose", "N2"),
+    "perf-optimized-C4": ("General Purpose", "C4"),
+    "c4a-highmem": ("General Purpose", "C4A"),
+    # the series is only documented for SQL Server, with the same machine types:
+    # https://docs.cloud.google.com/sql/docs/sqlserver/machine-series-overview
+    "memory-optimized-N": ("Memory Optimized", "Memory-optimized-N2"),
+}
+
+
+def _pg_tier_family_series(family_slug: str) -> tuple[Optional[str], Optional[str]]:
+    """Look up the family category and series of a Cloud SQL tier family.
+
+    Returns None for tiers not listed above, so new tiers are not mislabeled.
+    """
+    if family_slug not in _PG_TIER_FAMILY_SERIES:
+        _warn_unknown_family("Cloud SQL tier", family_slug)
+        return None, None
+    return _PG_TIER_FAMILY_SERIES[family_slug]
+
+
 def _pg_sku_family(tier_name: str) -> str:
     """Billing-index family for a SQL Admin tier, keys match `_pg_compute_sku_class`."""
     if tier_name in _PG_SHARED_TIERS:
@@ -2555,6 +2597,7 @@ def inventory_databases(vendor):
                 else f"{memory_gib:g} GB RAM"
             )
             spec_parts.append(gib_label)
+        tier_family, tier_series = _pg_tier_family_series(family_slug)
         family_label = _PG_TIER_FAMILY_LABELS.get(
             family_slug, family_slug.replace("-", " ").title()
         )
@@ -2635,7 +2678,8 @@ def inventory_databases(vendor):
                 "engine": DatabaseEngine.POSTGRESQL,
                 "wire_protocol": DatabaseWireProtocol.POSTGRESQL,
                 "engine_versions": engine_versions,
-                "family": family_slug,
+                "family": tier_family,
+                "series": tier_series,
                 "vcpus": cpu_count,
                 "memory_amount": memory_amount,
                 "storage_size": None,
