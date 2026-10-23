@@ -17,6 +17,9 @@ from sc_crawler.table_fields import (
 )
 from sc_crawler.utils import _GIB_TO_GB
 from sc_crawler.vendors._gcp import (
+    _PG_STORAGE_SPECS,
+    _PG_TIER_FAMILY_SERIES,
+    _PG_TIER_STORAGE_IDS,
     _SERIES_TO_FAMILY,
     _STORAGE_SERIES,
     STORAGE_ALLOWLIST,
@@ -29,6 +32,7 @@ from sc_crawler.vendors._gcp import (
     _pg_compute_sku_class,
     _pg_storage_id,
     _pg_tier_family_series,
+    _pg_tier_storage_ids,
     _search_servers,
     _server_accelerators,
     _server_bundled_local_ssd_gib,
@@ -37,6 +41,7 @@ from sc_crawler.vendors._gcp import (
     _support_key,
     _warn_unknown_family,
     _warn_unknown_storage_series,
+    _warn_unknown_tier_storage,
     inventory_database_prices,
     inventory_databases,
     inventory_server_prices,
@@ -1818,6 +1823,40 @@ def test_gcp_pg_tier_family_series(family_slug, family, series):
     assert _pg_tier_family_series(family_slug) == (family, series)
 
 
+@pytest.mark.parametrize(
+    "family_slug,storage_ids",
+    [
+        ("f1-micro", ["cloudsql-ssd-standard", "cloudsql-hdd"]),
+        ("n1-highmem", ["cloudsql-ssd-standard", "cloudsql-hdd"]),
+        ("perf-optimized-N", ["cloudsql-ssd"]),
+        ("memory-optimized-N", ["cloudsql-ssd"]),
+        ("perf-optimized-C4", ["cloudsql-hyperdisk"]),
+        ("c4a-highmem", ["cloudsql-hyperdisk"]),
+    ],
+)
+def test_gcp_pg_tier_storage_ids(family_slug, storage_ids):
+    assert _pg_tier_storage_ids(family_slug) == storage_ids
+
+
+def test_gcp_pg_tier_storage_table_is_consistent():
+    # every storage id exists in the storage specs
+    for ids in _PG_TIER_STORAGE_IDS.values():
+        assert set(ids) <= set(_PG_STORAGE_SPECS)
+    # every tier with a family/series also has storage
+    assert set(_PG_TIER_FAMILY_SERIES) <= set(_PG_TIER_STORAGE_IDS)
+
+
+def test_gcp_unknown_tier_storage_is_empty_and_warned_once():
+    _warn_unknown_tier_storage.cache_clear()
+    with patch("sc_crawler.vendors._gcp.logger") as logger:
+        assert _pg_tier_storage_ids("brand-new-tier") == []
+        assert _pg_tier_storage_ids("brand-new-tier") == []
+        assert _pg_tier_storage_ids("c4a-highmem")
+    warnings = [call.args[0] for call in logger.warning.call_args_list]
+    assert len(warnings) == 1
+    assert "brand-new-tier" in warnings[0]
+
+
 def test_gcp_unknown_family_is_empty_and_warned_once():
     _warn_unknown_family.cache_clear()
     with patch("sc_crawler.vendors._gcp.logger") as logger:
@@ -1914,6 +1953,11 @@ def test_gcp_inventory_databases_inherits_gce_machine_type_status():
     assert by_id["db-n1-standard-4"]["series"] == "N1"
     assert by_id["db-perf-optimized-N-4"]["family"] == "General Purpose"
     assert by_id["db-perf-optimized-N-4"]["series"] == "N2"
+    assert by_id["db-n1-standard-4"]["compatible_storage_ids"] == [
+        "cloudsql-ssd-standard",
+        "cloudsql-hdd",
+    ]
+    assert by_id["db-perf-optimized-N-4"]["compatible_storage_ids"] == ["cloudsql-ssd"]
 
 
 def test_gcp_inventory_databases_ha_uses_own_price_family_only():

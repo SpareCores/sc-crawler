@@ -2457,6 +2457,47 @@ _PG_TIER_FAMILY_SERIES = {
 _PG_TIER_MACHINE_SERIES_RE = recompile(r"^([a-z]\d+[a-z]?)-")
 
 
+# Storage types a Cloud SQL tier can use, by the same tier name as above. The machine
+# series decides the storage type, it is not a free choice.
+# https://docs.cloud.google.com/sql/docs/postgres/machine-series-overview
+# https://docs.cloud.google.com/sql/docs/postgres/instance-settings
+_PG_TIER_STORAGE_IDS = {
+    # Enterprise shared and dedicated core machines: SSD or HDD
+    "f1-micro": ["cloudsql-ssd-standard", "cloudsql-hdd"],
+    "g1-small": ["cloudsql-ssd-standard", "cloudsql-hdd"],
+    # legacy Enterprise plans, not in the docs: assumed to be like the dedicated core
+    "n1-standard": ["cloudsql-ssd-standard", "cloudsql-hdd"],
+    "n1-highmem": ["cloudsql-ssd-standard", "cloudsql-hdd"],
+    # Enterprise Plus: N2 has SSD only
+    "perf-optimized-N": ["cloudsql-ssd"],
+    # not in the PostgreSQL docs: assumed to be like the N2 based perf-optimized-N
+    "memory-optimized-N": ["cloudsql-ssd"],
+    # Enterprise Plus: C4 and C4A have Hyperdisk Balanced only
+    "perf-optimized-C4": ["cloudsql-hyperdisk"],
+    "c4a-highmem": ["cloudsql-hyperdisk"],
+}
+
+
+@cache
+def _warn_unknown_tier_storage(family_slug: str) -> None:
+    """Warn about a tier missing from `_PG_TIER_STORAGE_IDS`, once per tier and run."""
+    logger.warning(
+        f"Unknown Cloud SQL tier family of {family_slug} in the storage table, "
+        "leaving compatible storage empty."
+    )
+
+
+def _pg_tier_storage_ids(family_slug: str) -> list[str]:
+    """Look up the compatible storage ids of a Cloud SQL tier family.
+
+    Returns an empty list for tiers not listed above, so new tiers are not guessed.
+    """
+    if family_slug not in _PG_TIER_STORAGE_IDS:
+        _warn_unknown_tier_storage(family_slug)
+        return []
+    return list(_PG_TIER_STORAGE_IDS[family_slug])
+
+
 def _pg_tier_family_series(family_slug: str) -> tuple[Optional[str], Optional[str]]:
     """Look up the family category and series of a Cloud SQL tier family.
 
@@ -2705,6 +2746,7 @@ def inventory_databases(vendor):
                 "engine_versions": engine_versions,
                 "family": tier_family,
                 "series": tier_series,
+                "compatible_storage_ids": _pg_tier_storage_ids(family_slug),
                 "vcpus": cpu_count,
                 "memory_amount": memory_amount,
                 "storage_size": None,
