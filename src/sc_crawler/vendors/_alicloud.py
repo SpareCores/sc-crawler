@@ -973,6 +973,28 @@ def _get_instance_types() -> list[dict]:
     return instance_types
 
 
+@cache
+def _warn_unknown_category(instance_type_id: str) -> None:
+    """Warn about an instance type without category, once per type and run."""
+    logger.warning(
+        f"Missing Alibaba Cloud InstanceCategory of {instance_type_id}, "
+        "leaving family empty."
+    )
+
+
+def _instance_category(instance_type: dict) -> Optional[str]:
+    """Family of an instance type: the `InstanceCategory` as returned by the API.
+
+    E.g. General-purpose, Memory-optimized, Compute-optimized with GPU. Documented at
+    <https://www.alibabacloud.com/help/en/ecs/developer-reference/api-ecs-2014-05-26-describeinstancetypes>.
+    Returns None if missing, so no family is guessed.
+    """
+    if category := instance_type.get("InstanceCategory"):
+        return category
+    _warn_unknown_category(instance_type.get("InstanceTypeId"))
+    return None
+
+
 def _determine_cpu_allocation_type(instance_type: dict) -> CpuAllocation:
     """Determine the CPU allocation type based on the instance type properties.
 
@@ -1448,7 +1470,9 @@ def inventory_servers(vendor):
         return network_fields
 
     for instance_type in instance_types:
-        family = instance_type.get("InstanceTypeFamily")
+        # e.g. ecs.g7, the instance family called series in our schema
+        series = instance_type.get("InstanceTypeFamily")
+        family = _instance_category(instance_type)
         vcpus = instance_type.get("CpuCoreCount")
         cpu_model = instance_type.get("PhysicalProcessorModel")
         memory_size_mb = int((instance_type.get("MemorySize") * 1024))
@@ -1509,7 +1533,7 @@ def inventory_servers(vendor):
                 else None
             ),
         ]
-        description = f"{family} family ({', '.join(filter(None, description_parts))})"
+        description = f"{series} family ({', '.join(filter(None, description_parts))})"
         server_id = instance_type.get("InstanceTypeId")
         status_categories = {
             category
@@ -1540,6 +1564,7 @@ def inventory_servers(vendor):
                 "display_name": server_id,
                 "description": description,
                 "family": family,
+                "series": series,
                 "vcpus": vcpus,
                 "hypervisor": "KVM",
                 "cpu_allocation": _determine_cpu_allocation_type(instance_type),
