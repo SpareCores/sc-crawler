@@ -470,6 +470,11 @@ _EXTREME_MIN_VCPUS = {
 _THROUGHPUT_BARE_METAL_OK = {"c4d", "a4x-max"}
 
 
+def _is_n1_memory_optimized(server_name: str) -> bool:
+    """n1-megamem and n1-ultramem are the M1 memory-optimized machine types."""
+    return server_name.startswith(("n1-megamem", "n1-ultramem"))
+
+
 def _support_key(server: dict) -> str:
     """Map our series to the row names Google uses in the table."""
     series = server["series"]
@@ -482,7 +487,7 @@ def _support_key(server: dict) -> str:
     # https://docs.cloud.google.com/compute/docs/machine-resource#shared-core-types
     if series in ("f1", "g1"):
         return "n1"
-    if server["name"].startswith(("n1-megamem", "n1-ultramem")):
+    if _is_n1_memory_optimized(server["name"]):
         return "m1"
     return series
 
@@ -1153,8 +1158,7 @@ def _machine_family(server_name: str) -> Optional[str]:
 
     Returns None for series not listed above, so new series are not mislabeled.
     """
-    # n1-megamem and n1-ultramem are the M1 memory-optimized machine types
-    if server_name.startswith(("n1-megamem", "n1-ultramem")):
+    if _is_n1_memory_optimized(server_name):
         return "Memory Optimized"
     series = server_name.split("-")[0]
     family = _SERIES_TO_FAMILY.get(series)
@@ -2417,35 +2421,42 @@ _PG_TIER_FAMILY_LABELS = {
 }
 
 
-# Family category and machine series of the Cloud SQL tiers by the tier name without
-# the db- prefix and the size, e.g. n1-standard for db-n1-standard-4.
+# Family category and machine series of the Cloud SQL tiers that are not named after
+# a Compute Engine machine series, by the tier name without the db- prefix and the
+# size, e.g. perf-optimized-N for db-perf-optimized-N-8.
 # Series and shared core: https://docs.cloud.google.com/sql/docs/postgres/machine-series-overview
-# General purpose family of N1, N2, C4 and C4A:
+# General purpose family of N2 and C4:
 # https://docs.cloud.google.com/compute/docs/machine-resource
 _PG_TIER_FAMILY_SERIES = {
     "f1-micro": ("General Purpose", "Shared Core"),
     "g1-small": ("General Purpose", "Shared Core"),
-    # legacy plans, not listed in the Cloud SQL for PostgreSQL docs
-    "n1-standard": ("General Purpose", "N1"),
-    "n1-highmem": ("General Purpose", "N1"),
     "perf-optimized-N": ("General Purpose", "N2"),
     "perf-optimized-C4": ("General Purpose", "C4"),
-    "c4a-highmem": ("General Purpose", "C4A"),
     # the series is only documented for SQL Server, with the same machine types:
     # https://docs.cloud.google.com/sql/docs/sqlserver/machine-series-overview
     "memory-optimized-N": ("Memory Optimized", "Memory-optimized-N2"),
 }
+# Tiers named after the Compute Engine machine series, e.g. n1-standard for
+# db-n1-standard-4 or c4a-highmem for db-c4a-highmem-4: the series is the first part
+# of the name, the family category comes from the Compute Engine series table.
+# (n1-* are legacy plans, not listed in the Cloud SQL for PostgreSQL docs)
+_PG_TIER_MACHINE_SERIES_RE = recompile(r"^([a-z]\d+[a-z]?)-")
 
 
 def _pg_tier_family_series(family_slug: str) -> tuple[Optional[str], Optional[str]]:
     """Look up the family category and series of a Cloud SQL tier family.
 
-    Returns None for tiers not listed above, so new tiers are not mislabeled.
+    Returns None for tiers not named after a known machine series, so new tiers are
+    not mislabeled.
     """
-    if family_slug not in _PG_TIER_FAMILY_SERIES:
+    if family_slug in _PG_TIER_FAMILY_SERIES:
+        return _PG_TIER_FAMILY_SERIES[family_slug]
+    match = _PG_TIER_MACHINE_SERIES_RE.match(family_slug)
+    family = _SERIES_TO_FAMILY.get(match.group(1)) if match else None
+    if family is None:
         _warn_unknown_family("Cloud SQL tier", family_slug)
         return None, None
-    return _PG_TIER_FAMILY_SERIES[family_slug]
+    return family, match.group(1).upper()
 
 
 def _pg_sku_family(tier_name: str) -> str:
