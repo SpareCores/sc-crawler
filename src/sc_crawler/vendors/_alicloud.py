@@ -819,6 +819,94 @@ def _get_zones(client: EcsClient, region_id: str) -> list[dict]:
     return response.body.to_map()["Zones"]["Zone"]
 
 
+# Disk categories of the DescribeZones response mapped to our storage ids (see
+# inventory_storages). The API only knows cloud_essd, not its performance levels
+# (PL0-PL3): all four are assumed to be available. Neither the ESSD page nor the
+# instance family overview restricts a PL by instance family: they only say that
+# the instance type can cap the performance (e.g. PL1-PL3 cannot reach their peak on
+# the economy e and the burstable t5/t6 families). Other categories (e.g.
+# ephemeral_ssd, the local disk) are not block storage options in our schema.
+# Per the overview, sn2ne supports only standard SSD and ultra disk (no ESSD), so a
+# live run should show no cloud_essd ids for it.
+# https://www.alibabacloud.com/help/en/ecs/user-guide/essds
+# https://www.alibabacloud.com/help/en/ecs/user-guide/overview-of-instance-families
+# https://www.alibabacloud.com/help/en/ecs/developer-reference/api-ecs-2014-05-26-describezones
+_DISK_CATEGORY_TO_STORAGE_IDS = {
+    "cloud_essd": [
+        "cloud_essd-pl0",
+        "cloud_essd-pl1",
+        "cloud_essd-pl2",
+        "cloud_essd-pl3",
+    ],
+    "cloud_ssd": ["cloud_ssd"],
+    "cloud_efficiency": ["cloud_efficiency"],
+    "cloud": ["cloud"],
+}
+
+
+def _parse_instance_type_disk_categories(zones: list[dict]) -> dict[str, list[str]]:
+    """Map instance types to their data disk categories from DescribeZones zones.
+
+    Each `AvailableResources.ResourcesInfo` item lists the instance types and the
+    data disk categories that can be used together in that zone.
+    """
+    categories: dict[str, set[str]] = defaultdict(set)
+    for zone in zones:
+        for info in zone.get("AvailableResources", {}).get("ResourcesInfo", []):
+            disks = info.get("DataDiskCategories", {}).get(
+                "supportedDataDiskCategory", []
+            )
+            types = info.get("InstanceTypes", {}).get("supportedInstanceType", [])
+            for instance_type in types:
+                categories[instance_type].update(disks)
+    return {k: sorted(v) for k, v in categories.items()}
+
+
+def _get_instance_type_disk_categories(vendor: Vendor) -> dict[str, list[str]]:
+    """Fetch the data disk categories of each instance type across all regions.
+
+    Uses the `DescribeZones` API endpoint, one call per region, and returns the union
+    of the categories seen in any zone.
+
+    NOTE: written from the documented response shape and tested on mocked data only,
+    not yet verified against the live API. Check the output of a real run.
+    """
+    ecs_clients: dict[str, EcsClient] = _ecs_clients(vendor)
+
+    @cachier(hash_func=jsoned_hash, separate_files=True)
+    def fetch_region_disk_categories(region_id: str) -> dict[str, list[str]]:
+        try:
+            zones = _get_zones(ecs_clients[region_id], region_id)
+            return _parse_instance_type_disk_categories(zones)
+        except Exception as e:
+            logger.error(f"Failed to get disk categories for region {region_id}: {e}")
+            return {}
+
+    vendor.progress_tracker.start_task(
+        name="Fetching server disk categories", total=len(vendor.regions)
+    )
+    merged: dict[str, set[str]] = defaultdict(set)
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        for region_categories in executor.map(
+            fetch_region_disk_categories, [r.region_id for r in vendor.regions]
+        ):
+            for instance_type, categories in region_categories.items():
+                merged[instance_type].update(categories)
+            vendor.progress_tracker.advance_task()
+    vendor.progress_tracker.hide_task()
+    return {k: sorted(v) for k, v in merged.items()}
+
+
+def _compatible_storage_ids(disk_categories: list[str]) -> list[str]:
+    """Map the data disk categories of an instance type to our storage ids."""
+    return [
+        storage_id
+        for category, storage_ids in _DISK_CATEGORY_TO_STORAGE_IDS.items()
+        if category in disk_categories
+        for storage_id in storage_ids
+    ]
+
+
 def _get_instance_types() -> list[dict]:
     """Fetch instance types using the `DescribeInstanceTypes` API endpoint."""
 
@@ -1407,6 +1495,8 @@ def inventory_servers(vendor):
     region_availability_info: dict[str, list[dict]] = _get_region_availability_info(
         vendor
     )
+    disk_categories = _get_instance_type_disk_categories(vendor)
+    no_storage_ids: list[str] = []
 
     CPU_ARCH_MAP = {"X86": CpuArchitecture.X86_64, "ARM": CpuArchitecture.ARM64}
     STORAGE_CATEGORY_MAP = {
@@ -1533,8 +1623,13 @@ def inventory_servers(vendor):
                 else None
             ),
         ]
-        description = f"{series} family ({', '.join(filter(None, description_parts))})"
         server_id = instance_type.get("InstanceTypeId")
+        compatible_storage_ids = _compatible_storage_ids(
+            disk_categories.get(server_id, [])
+        )
+        if not compatible_storage_ids:
+            no_storage_ids.append(server_id)
+        description = f"{series} family ({', '.join(filter(None, description_parts))})"
         status_categories = {
             category
             for region_id, zones in region_availability_info.items()
@@ -1591,6 +1686,7 @@ def inventory_servers(vendor):
                 "storage_size": storage_size,
                 "storage_type": storage_type,
                 "storages": [],
+                "compatible_storage_ids": compatible_storage_ids,
                 # TODO: have to implement manual mapping here too, no detailed
                 # network info available for every instance type in API response
                 **_parse_network_fields(instance_type),
@@ -1601,6 +1697,12 @@ def inventory_servers(vendor):
             }
         )
 
+    if no_storage_ids:
+        vendor.log(
+            f"No known block storage for {len(no_storage_ids)} instance types "
+            f"(e.g. {', '.join(no_storage_ids[:5])}), leaving compatible storage empty.",
+            level=WARN,
+        )
     return items
 
 
