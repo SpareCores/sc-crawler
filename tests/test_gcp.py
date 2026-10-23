@@ -17,6 +17,8 @@ from sc_crawler.table_fields import (
 )
 from sc_crawler.utils import _GIB_TO_GB
 from sc_crawler.vendors._gcp import (
+    _SERIES_TO_FAMILY,
+    _STORAGE_SERIES,
     STORAGE_ALLOWLIST,
     STORAGE_PERFORMANCE,
     _compatible_storage_names,
@@ -32,7 +34,9 @@ from sc_crawler.vendors._gcp import (
     _server_bundled_local_ssd_gib,
     _server_family,
     _skus_dict,
+    _support_key,
     _warn_unknown_family,
+    _warn_unknown_storage_series,
     inventory_database_prices,
     inventory_databases,
     inventory_server_prices,
@@ -825,6 +829,41 @@ def test_gcp_compatible_storage_names_shared_core_n1():
         assert _compatible_storage_names(
             _srv(name, series)
         ) == _compatible_storage_names(_srv("n1-standard-4", "n1"))
+
+
+def test_gcp_compatible_storage_names_undocumented_tpu_copy_siblings():
+    # no doc lists tpu7 and ct4p disks: they follow tpu7x and ct5lp
+    for name, series, sibling in [
+        ("tpu7-standard-4t", "tpu7", ("tpu7x-standard-4t", "tpu7x")),
+        ("ct4p-hightpu-4t", "ct4p", ("ct5lp-hightpu-4t", "ct5lp")),
+    ]:
+        names = _compatible_storage_names(_srv(name, series))
+        assert names
+        assert names == _compatible_storage_names(_srv(*sibling))
+
+
+def test_gcp_unknown_storage_series_is_empty_and_warned_once():
+    _warn_unknown_storage_series.cache_clear()
+    with patch("sc_crawler.vendors._gcp.logger") as logger:
+        assert _compatible_storage_names(_srv("brandnew-standard-4", "brandnew")) == []
+        assert _compatible_storage_names(_srv("brandnew-standard-8", "brandnew")) == []
+        assert _compatible_storage_names(_srv("c4-standard-8", "c4"))
+    warnings = [call.args[0] for call in logger.warning.call_args_list]
+    assert len(warnings) == 1
+    assert "series brandnew" in warnings[0]
+
+
+def test_gcp_every_family_series_has_storage_support():
+    # catches a series added to the family table but forgotten in the storage tables
+    supported = set().union(*_STORAGE_SERIES.values())
+    missing = [
+        series
+        for series in _SERIES_TO_FAMILY
+        if _support_key(_srv(f"{series}-x", series)) not in supported
+        # A3 and A4X are split by GPU model in the storage tables
+        and series not in ("a3", "a4x")
+    ]
+    assert missing == []
 
 
 def test_gcp_inventory_servers_adds_compatible_storage_ids():

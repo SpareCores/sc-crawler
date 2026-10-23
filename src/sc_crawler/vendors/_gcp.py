@@ -489,11 +489,25 @@ def _support_key(server: dict) -> str:
         return "n1"
     if _is_n1_memory_optimized(server["name"]):
         return "m1"
-    return series
+    # tpu7 and ct4p come from the Compute Engine API, but no doc lists their disks:
+    # assume the same support as their documented siblings (like ct5l below)
+    # https://docs.cloud.google.com/compute/docs/tpus/tpu-machines
+    return {"tpu7": "tpu7x", "ct4p": "ct5lp"}.get(series, series)
+
+
+@cache
+def _warn_unknown_storage_series(series: str) -> None:
+    """Warn about a series missing from `_STORAGE_SERIES`, once per series and run."""
+    logger.warning(
+        f"Unknown GCP series {series} in the storage support tables, "
+        "leaving compatible storage empty."
+    )
 
 
 def _compatible_storage_names(server: dict) -> list[str]:
     key = _support_key(server)
+    if not any(key in series for series in _STORAGE_SERIES.values()):
+        _warn_unknown_storage_series(key)
     too_small_for_extreme = server["vcpus"] < _EXTREME_MIN_VCPUS.get(key, 0)
     bare_metal_no_throughput = (
         server["name"].endswith("-metal") and key not in _THROUGHPUT_BARE_METAL_OK
