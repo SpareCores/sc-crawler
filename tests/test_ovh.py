@@ -34,6 +34,7 @@ from sc_crawler.vendors._ovh import (
     inventory_databases,
     inventory_regions,
     inventory_server_prices,
+    inventory_servers,
     inventory_storage_prices,
 )
 
@@ -449,6 +450,50 @@ def _extend_ovh_get(mock_client, *, availability, capabilities, catalog_addons):
     mock_client.get.side_effect = fake_get
 
 
+def _server_inventory_plan(server_id, *, brick_subtype=None):
+    return {
+        "product": "publiccloud-instance",
+        "planCode": f"{server_id}.hour.consumption",
+        "invoiceName": server_id,
+        "blobs": {
+            "commercial": {
+                "name": server_id,
+                "brickSubtype": brick_subtype,
+            },
+            "technical": {
+                "os": {"family": "linux"},
+                "cpu": {"cores": 2, "frequency": 2500},
+                "memory": {"size": 8},
+            },
+            "tags": ["active"],
+        },
+    }
+
+
+def test_ovh_inventory_servers_maps_plans(mock_ovh_client):
+    plans = [
+        _server_inventory_plan("b3-8"),
+        _server_inventory_plan("d2-8", brick_subtype="discovery"),
+    ]
+
+    _extend_ovh_get(
+        mock_ovh_client,
+        availability=[],
+        capabilities={},
+        catalog_addons=plans,
+    )
+
+    rows = inventory_servers(_ovh_vendor())
+    by_id = {row["server_id"]: row for row in rows}
+
+    assert set(by_id) == {"b3-8", "d2-8"}
+
+    expected_storage_ids = ["classic", "high-speed", "high-speed-gen2"]
+
+    assert by_id["b3-8"]["compatible_storage_ids"] == expected_storage_ids
+    assert by_id["d2-8"]["compatible_storage_ids"] == expected_storage_ids
+
+
 def test_inventory_databases_collapses_versions_and_maps_fields(mock_ovh_client):
     availability = [
         _pg_offer(version="16", region="GRA"),
@@ -495,6 +540,8 @@ def test_inventory_databases_collapses_versions_and_maps_fields(mock_ovh_client)
     }
 
     production = by_id["postgresql-production-b3-8"]
+    essential = by_id["postgresql-essential-b3-8"]
+    discovery = by_id["postgresql-discovery-b3-8"]
     assert production["engine"] == DatabaseEngine.POSTGRESQL
     assert production["wire_protocol"] == DatabaseWireProtocol.POSTGRESQL
     assert production["engine_versions"] == ["16", "17"]
@@ -507,6 +554,9 @@ def test_inventory_databases_collapses_versions_and_maps_fields(mock_ovh_client)
     assert production["storage_extra_min"] == 0
     assert production["storage_extra_max"] == 320
     assert production["storage_extra_autosize"] is False
+    assert production["compatible_storage_ids"] == ["postgresql-production-additional"]
+    assert essential["compatible_storage_ids"] == ["postgresql-essential-additional"]
+    assert discovery["compatible_storage_ids"] == ["postgresql-discovery-additional"]
     assert production["server_id"] == "b3-8"
     assert production["api_reference"] == "postgresql-production-b3-8"
     assert production["api_reference_object"] == {
