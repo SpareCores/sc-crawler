@@ -913,6 +913,10 @@ def inventory_servers(vendor):
                         StorageType.SSD if server["storage_tier"] else None
                     ),
                     "storages": [],
+                    # extra storage devices can use any of the three Block Storage
+                    # tiers (hdd is the API name of the Archive tier)
+                    # https://upcloud.com/docs/products/cloud-servers/storage/
+                    # https://upcloud.com/docs/products/block-storage/tiers/
                     "compatible_storage_ids": ["maxiops", "standard", "hdd"],
                     # TODO: have to implement manual mapping for network_speed related fields
                     "network_speed_baseline": None,
