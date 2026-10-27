@@ -826,8 +826,8 @@ def _get_zones(client: EcsClient, region_id: str) -> list[dict]:
 # the instance type can cap the performance (e.g. PL1-PL3 cannot reach their peak on
 # the economy e and the burstable t5/t6 families). Other categories (e.g.
 # ephemeral_ssd, the local disk) are not block storage options in our schema.
-# Per the overview, sn2ne supports only standard SSD and ultra disk (no ESSD), so a
-# live run should show no cloud_essd ids for it.
+# The overview says sn2ne supports only standard SSD and ultra disk (no ESSD), but
+# the API returned cloud_essd for it in a live run (2026-10-27): not resolved.
 # https://www.alibabacloud.com/help/en/ecs/user-guide/essds
 # https://www.alibabacloud.com/help/en/ecs/user-guide/overview-of-instance-families
 # https://www.alibabacloud.com/help/en/ecs/developer-reference/api-ecs-2014-05-26-describezones
@@ -868,8 +868,10 @@ def _get_instance_type_disk_categories(vendor: Vendor) -> dict[str, list[str]]:
     Uses the `DescribeZones` API endpoint, one call per region, and returns the union
     of the categories seen in any zone.
 
-    NOTE: written from the documented response shape and tested on mocked data only,
-    not yet verified against the live API. Check the output of a real run.
+    NOTE: checked against the live API on 2026-10-27: the response shape matches and
+    98% of the ACTIVE servers got storage ids (the rest are old generations and the
+    hpc8ae/hpc8i types). Whether the categories are accurate per instance type, and
+    not only per zone, is not confirmed.
     """
     ecs_clients: dict[str, EcsClient] = _ecs_clients(vendor)
 
