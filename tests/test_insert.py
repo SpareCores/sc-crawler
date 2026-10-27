@@ -290,6 +290,36 @@ def test_upsert_changed_items_ignores_json_key_order_and_whole_floats(tmp_path):
         assert stats == {"new": 0, "changed": 0, "unchanged": 1, "deactivated": 0}
 
 
+def test_upsert_changed_items_updates_row_with_whole_float_in_json_pk(tmp_path):
+    # {"size": 1} and {"size": 1.0} are the same row, but the database tells the
+    # JSON texts apart, so a change must update the stored row, not insert a duplicate
+    engine = _country_db(tmp_path)
+    score = {
+        "vendor_id": "aws",
+        "server_id": "a1.2xlarge",
+        "benchmark_id": "bw_mem",
+        "status": Status.ACTIVE,
+    }
+    with Session(engine) as session:
+        upsert_changed_items(
+            BenchmarkScore,
+            [{**score, "config": {"size": 1.0}, "score": 1}],
+            session=session,
+        )
+        session.commit()
+        stats = upsert_changed_items(
+            BenchmarkScore,
+            [{**score, "config": {"size": 1}, "score": 2}],
+            session=session,
+        )
+        session.commit()
+        assert stats == {"new": 0, "changed": 1, "unchanged": 0, "deactivated": 0}
+        rows = list(_rows(session, BenchmarkScore).values())
+        assert [(r.config, r.score, r.status) for r in rows] == [
+            ({"size": 1.0}, 2.0, Status.ACTIVE)
+        ]
+
+
 def test_upsert_changed_items_keeps_provided_observed_at(tmp_path):
     engine = _country_db(tmp_path)
     provided = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)

@@ -71,7 +71,12 @@ def _json_default(value):
 
 
 def row_key(row: dict, primary_keys: List[str]) -> str:
-    """Stable string identifier of a row built from its primary key values."""
+    """Stable string identifier of a row built from its primary key values.
+
+    Values are normalized by [jsonable][sc_crawler.table_bases.jsonable], so
+    e.g. JSON primary keys `{"size": 1}` and `{"size": 1.0}` identify the same
+    row. The database tells those apart, so writes must reuse the stored values.
+    """
     keys = {pk: row.get(pk) for pk in primary_keys}
     return dumps(jsonable(keys), sort_keys=True, default=_json_default)
 

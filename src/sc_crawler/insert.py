@@ -348,20 +348,27 @@ def upsert_changed_items(
         row = dict(row)
         key = row_key(row, primary_keys)
         if key in incoming:
-            existing[key] = row_digest(row, ignored)
+            # keep the stored PK values: the database tells e.g. JSON {"size": 1}
+            # and {"size": 1.0} apart, while the key treats them as the same row
+            existing[key] = (
+                row_digest(row, ignored),
+                {pk: row[pk] for pk in primary_keys},
+            )
         elif row["status"] != Status.INACTIVE:
             deactivated.append({**row, "status": Status.INACTIVE, "observed_at": now})
 
     stats = {"new": 0, "changed": 0, "unchanged": 0, "deactivated": len(deactivated)}
     changed = []
     for key, item in incoming.items():
-        digest = existing.get(key)
-        if digest is None:
+        if key not in existing:
             stats["new"] += 1
             changed.append(item)
-        elif digest != row_digest(item, ignored):
+            continue
+        digest, stored_pks = existing[key]
+        if digest != row_digest(item, ignored):
             stats["changed"] += 1
-            changed.append(item)
+            # write under the stored PK so the upsert updates that row
+            changed.append({**item, **stored_pks})
         else:
             stats["unchanged"] += 1
 
