@@ -8,6 +8,7 @@ from cachier import cachier
 from upcloud_api import CloudManager
 
 from ..inspector import _standardize_gpu_family, _standardize_gpu_model
+from ..logger import logger
 from ..lookup import map_compliance_frameworks_to_vendor
 from ..sentry import sentry_capture_or_raise
 from ..table_fields import (
@@ -506,10 +507,58 @@ UPCLOUD_STORAGES = [
 # Internal helpers
 
 
-def _parse_server_name(name):
-    """Extract server family and description from the server id."""
+# words of the API family kept in upper case instead of title case, e.g. gpu -> GPU
+_FAMILY_ACRONYMS = {"gpu"}
+
+
+@cache
+def _warn_unknown_family(name: str) -> None:
+    """Warn about a plan without family, once per plan and run."""
+    logger.warning(f"Missing UpCloud plan family of {name}, leaving family empty.")
+
+
+@cache
+def _warn_unknown_database_family(family_key) -> None:
+    """Warn about a plan family missing from the mapping, once per family and run."""
+    logger.warning(
+        f"Unknown UpCloud database family {family_key}, leaving family empty."
+    )
+
+
+def _server_family(server: dict):
+    """Family of a plan from the `family` field of the plans API.
+
+    E.g. cloud_native -> Cloud Native, general_purpose -> General Purpose. The field
+    is not in the API docs, the values were checked against a live response
+    (2026-10-27): starter, developer, premium, cloud_native, general_purpose, gpu.
+    Returns None if missing, so no family is guessed.
+    https://developers.upcloud.com/1.3/7-plans/
+    """
+    if family := server.get("family"):
+        words = family.split("_")
+        return " ".join(
+            w.upper() if w in _FAMILY_ACRONYMS else w.title() for w in words
+        )
+    _warn_unknown_family(server["name"])
+    return None
+
+
+def _server_series(server_data: dict, gpu_count):
+    """Series of a plan: the GPU model of GPU plans, otherwise None.
+
+    UpCloud has no hardware line or generation inside a plan type, so no series is
+    made up for the other plans.
+    """
+    return server_data.get("gpu_model") if gpu_count else None
+
+
+def _parse_server_name(name, family=None):
+    """Extract the plan specs and description from the server id.
+
+    The family in the description is the one of the plans API, see `_server_family`.
+    """
     name_pattern = recompile(
-        r"^(?:(?P<family>[A-Z]+)-)?"
+        r"^(?:(?P<prefix>[A-Z]+)-)?"
         r"(?:(?P<spot>SPOT)-)?"
         r"(?P<vcpus>[0-9]+)xCPU-"
         r"(?P<memory>[0-9]+)GB"
@@ -520,21 +569,11 @@ def _parse_server_name(name):
     if not name_match:
         raise ValueError(f"Server name '{name}' does not match the expected format.")
     data = name_match.groupdict()
-    family_mapping = {
-        None: "General Purpose",
-        "DEV": "Developer",
-        "HICPU": "High CPU",
-        "HIMEM": "High Memory",
-        "GPU": "GPU",
-        "STARTER": "Starter",
-        "CLOUDNATIVE": "Cloud Native",
-        "PREMIUM": "Premium",
-    }
-    data["family"] = family_mapping.get(data["family"], data["family"])
     description_parts = [f"{data['vcpus']} vCPUs", f"{data['memory']} GiB RAM"]
     if data.get("gpu_count") and data.get("gpu_model"):
         description_parts.append(f"{data['gpu_count']}x {data['gpu_model']}")
-    data["description"] = f"{data['family']} ({', '.join(description_parts)})"
+    specs = ", ".join(description_parts)
+    data["description"] = f"{family} ({specs})" if family else specs
     return data
 
 
@@ -829,7 +868,8 @@ def inventory_servers(vendor):
     items = []
     for server in servers:
         with sentry_capture_or_raise(vendor=vendor):
-            server_data = _parse_server_name(server["name"])
+            family = _server_family(server)
+            server_data = _parse_server_name(server["name"], family)
             if server_data.get("spot"):
                 continue
             gpu_count = server.get("gpu_amount", 0)
@@ -844,7 +884,8 @@ def inventory_servers(vendor):
                     "api_reference_object": {"plan": server["name"]},
                     "display_name": server["name"],
                     "description": server_data["description"],
-                    "family": server_data["family"],
+                    "family": family,
+                    "series": _server_series(server_data, gpu_count),
                     "vcpus": server["core_number"],
                     # https://upcloud.com/docs/products/cloud-servers/features/cloud-server-system/#virtualisation
                     "hypervisor": "KVM",
@@ -880,7 +921,10 @@ def inventory_servers(vendor):
                     "network_storage_speed_max": None,
                     "inbound_traffic": 0,
                     "outbound_traffic": server["public_traffic_out"],
-                    "ipv4": 0 if server_data["family"] == "CLOUDNATIVE" else 1,
+                    # Cloud Native plans unbundle storage and IPv4 addresses, the
+                    # public IPv4 is billed separately; the other plans include one
+                    # https://upcloud.com/docs/guides/cloud-server-plans/
+                    "ipv4": 0 if server.get("family") == "cloud_native" else 1,
                     "status": _upcloud_server_status(vendor, server),
                 }
             )
@@ -1198,7 +1242,11 @@ def inventory_databases(vendor):
         for shape in service_type.get("compute_shapes", []):
             database_id = shape["compute"]
             family_key = _shape_family(shape)
-            family = _DATABASE_PLAN_FAMILIES.get(family_key, family_key)
+            family = _DATABASE_PLAN_FAMILIES.get(family_key)
+            if family is None:
+                _warn_unknown_database_family(family_key)
+            # text only, the family stays empty for an unknown family
+            family_label = family or family_key
             vcpus = shape.get("cpu")
             memory_gb = shape.get("memory_gb")
             memory_amount = memory_gb * _MIB_PER_GIB if memory_gb is not None else None
@@ -1218,7 +1266,7 @@ def inventory_databases(vendor):
             storage_extra_min = round(min_base_gib * _GIB_TO_GB)
             storage_extra_max = round(max_gib * _GIB_TO_GB) if can_extend else 0
             display_name = (
-                f"{family}: {vcpus} vCPU, {memory_gb} GiB RAM"
+                f"{family_label}: {vcpus} vCPU, {memory_gb} GiB RAM"
                 if vcpus is not None and memory_gb is not None
                 else database_id
             )
@@ -1227,7 +1275,7 @@ def inventory_databases(vendor):
                 f"{memory_gb} GiB RAM" if memory_gb else None,
             ]
             description = (
-                f"UpCloud PostgreSQL {family} "
+                f"UpCloud PostgreSQL {family_label} "
                 f"({', '.join(filter(None, description_parts))})"
             )
             backup_days = [
