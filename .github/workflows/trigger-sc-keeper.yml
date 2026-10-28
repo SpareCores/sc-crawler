@@ -1,0 +1,40 @@
+# Rebuild the Navigator API (sc-keeper) whenever inspector rules change,
+# so the deployed API picks up the updated rule definitions. sc-keeper uses the
+# rules from the main branch only if the crawler version on main is released to
+# PyPI (see docker/overlay_inspector_rules.py in sc-keeper).
+# Called from tests.yaml after the tests (including the compatibility of the
+# rules with the PyPI release) passed on the main branch.
+name: Trigger API rebuild
+
+on:
+  workflow_call:
+
+jobs:
+  dispatch:
+    name: Dispatch API rebuild workflow
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Check if the inspector rules changed in a released version
+        id: check
+        run: |
+          if git diff --quiet ${{ github.event.before }} ${{ github.sha }} -- src/sc_crawler/inspector_rules.py; then
+            echo "No changes in the inspector rules"
+            exit 0
+          fi
+          VERSION=$(sed -nE 's/^__version__ = "(.+)"/\1/p' src/sc_crawler/__init__.py)
+          if ! curl -sfo /dev/null "https://pypi.org/pypi/sparecores-crawler/$VERSION/json"; then
+            echo "::notice::sparecores-crawler $VERSION is not on PyPI, so sc-keeper won't use these rules"
+            exit 0
+          fi
+          echo "trigger=true" >> "$GITHUB_OUTPUT"
+      - name: Trigger SpareCores/sc-keeper docker.yaml
+        if: steps.check.outputs.trigger == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.SC_KEEPER_DISPATCH_TOKEN }}
+        run: >
+          gh workflow run docker.yaml
+          --repo SpareCores/sc-keeper
+          --ref main

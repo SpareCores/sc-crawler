@@ -33,3 +33,37 @@ jobs:
         run: |
           pip install ".[mkdocs]"
           python scripts/gen_md_docs.py
+
+  # sc-keeper uses the inspector rules from the main branch on top of the PyPI
+  # release with the same version (see docker/overlay_inspector_rules.py in
+  # sc-keeper), so let's make sure that they are compatible
+  inspector-rules-on-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: actions/setup-python@v6.2.0
+        with:
+          python-version: 3.13
+      - name: Install the PyPI release of the current version
+        id: install
+        run: |
+          pip install pytest
+          VERSION=$(sed -nE 's/^__version__ = "(.+)"/\1/p' src/sc_crawler/__init__.py)
+          if pip install "sparecores-crawler==$VERSION"; then
+            echo "released=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::sparecores-crawler $VERSION is not on PyPI, so sc-keeper won't use these rules"
+          fi
+      - name: Test the inspector rules on top of the PyPI release
+        if: steps.install.outputs.released == 'true'
+        run: |
+          cp src/sc_crawler/inspector_rules.py "$(python -c 'import sc_crawler, os; print(os.path.dirname(sc_crawler.__file__))')/"
+          # run from the tests folder to import the installed package, not ./src
+          cd tests && python -m pytest test_inspector_rules.py
+
+  # rebuild the Navigator API (sc-keeper) to pick up the updated inspector rules
+  trigger-sc-keeper:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [build, inspector-rules-on-release]
+    uses: ./.github/workflows/trigger-sc-keeper.yml
+    secrets: inherit
