@@ -40,7 +40,6 @@ if TYPE_CHECKING:
 _CHEAP_TASKS = [
     "geekbench",
     "openssl",
-    "nvbandwidth",
     "membench",
     "stressngfull",
     "passmark",
@@ -53,9 +52,12 @@ _CHEAP_TASKS = [
     "virtualization",
     "lsblk",
     "dmidecode",
-    "nvidia_smi",
     "lsblk_discard",
     "lsblk_topo",
+]
+_CHEAP_GPU_TASKS = [
+    "nvidia_smi",
+    "nvbandwidth",
 ]
 
 
@@ -71,6 +73,13 @@ def has_related_database(server: "Server") -> bool:
     return any(
         database.server_id == server.server_id for database in server.vendor.databases
     )
+
+
+def list_cheap_tasks(resource: "Server | Database") -> List[str]:
+    """List the cheap tasks for the given resource."""
+    if isinstance(resource, DatabaseBase):
+        return []
+    return _CHEAP_TASKS + (_CHEAP_GPU_TASKS if resource.accelerator_count > 0 else [])
 
 
 def block_reasons(
@@ -107,16 +116,14 @@ def block_reasons(
     if isinstance(tasks, str):
         tasks = [tasks]
     results = {task: [] for task in tasks}
+    cheap_tasks = list_cheap_tasks(resource)
     for task in tasks:
         # override the overrides: although no credits, we still want to run these
         if resource.vendor_id == "azure" and resource.memory_amount < 1024**2:
             # need full DBaaS coverage at Azure for analysis (at least below 1TB RAM)
-            if task in [
-                *_CHEAP_TASKS,
-                "pgbench_postgres_ro_durable",
-            ] and has_related_database(resource):
-                continue
             if isinstance(resource, DatabaseBase):
+                continue
+            if task in cheap_tasks and has_related_database(resource):
                 continue
         if task == "stressng_benchmarks":
             # www blogpost citing data collected manually in 2024 that we need to repro
@@ -132,7 +139,7 @@ def block_reasons(
         # we need lstopo for KCD Budapest 2026 talk
         if (resource.vendor_id, resource.api_reference) in [
             ("aws", "m8azn.metal-12xl")
-        ] and task in _CHEAP_TASKS:
+        ] and task in cheap_tasks:
             continue
 
         # cloud credits either exhausted, pending, or abandoned
