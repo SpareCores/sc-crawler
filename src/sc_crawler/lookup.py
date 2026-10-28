@@ -1420,7 +1420,7 @@ _ENVIRONMENT_FIELDS = {
 _FRAMEWORK_ENVIRONMENT_FIELDS = {
     "nvbandwidth": {
         "driver_version": "NVIDIA driver version.",
-        "cuda_runtime_version": "CUDA version as reported by nvbandwidth under the 'CUDA Runtime Version' key, which is actually the driver API version (cuDriverGetVersion), not the CUDA runtime of the image.",
+        "cuda_version": "Highest CUDA version supported by the CUDA driver library nvbandwidth ran with, as major*1000 + minor*10 (e.g. 12060 = 12.6).",
         "nvbandwidth_version": "Version of the nvbandwidth tool.",
         "gpu_count": "Number of GPUs seen by nvbandwidth.",
         "p2p_supported": "Whether peer-to-peer (device-to-device) GPU transfers were supported.",

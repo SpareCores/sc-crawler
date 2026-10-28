@@ -905,7 +905,7 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                 gpu_count = max(gpu_count, len(matrix[0]))
         extend_environment = {
             "driver_version": data["Driver Version"],
-            "cuda_runtime_version": data["CUDA Runtime Version"],
+            "cuda_version": data["CUDA Runtime Version"],
             "nvbandwidth_version": data["version"],
             "gpu_count": gpu_count,
             "p2p_supported": any(

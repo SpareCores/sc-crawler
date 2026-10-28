@@ -462,7 +462,7 @@ def test_nvbandwidth_single_gpu_skips_waived_p2p(tmp_path, monkeypatch):
     assert "nvbandwidth:p2p:single" not in scores
     environment = scores["nvbandwidth:all:host_to_gpu"]["environment"]
     assert environment["driver_version"] == "535.183.01"
-    assert environment["cuda_runtime_version"] == 12060
+    assert environment["cuda_version"] == 12060
     assert environment["nvbandwidth_version"] == "v0.5"
     assert environment["gpu_count"] == 1
     assert environment["p2p_supported"] is False
@@ -543,6 +543,8 @@ def test_nvbandwidth_v08_local_copy_and_stacked_bidirectional(tmp_path, monkeypa
     environment = scores["nvbandwidth:slot:local_copy"]["environment"]
     assert environment["gpu_count"] == 2
     assert environment["nvbandwidth_version"] == "v0.8"
+    assert environment["cuda_version"] == 13020
+    assert "cuda_runtime_version" not in environment
     assert environment["p2p_supported"] is True
 
 

@@ -8,6 +8,8 @@ Fix(es):
 
 - `nvbandwidth`: fix `p2p:duplex` score and `gpu_count` for v0.8 stacked
   bidirectional matrices.
+- `nvbandwidth`: rename environment field `cuda_runtime_version` to
+  `cuda_version`.
 
 ## v0.10.2 (October 22, 2026)
 
