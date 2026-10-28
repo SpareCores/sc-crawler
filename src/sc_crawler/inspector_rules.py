@@ -40,6 +40,7 @@ if TYPE_CHECKING:
 _CHEAP_TASKS = [
     "geekbench",
     "openssl",
+    "nvbandwidth",
     "membench",
     "stressngfull",
     "passmark",
@@ -52,12 +53,9 @@ _CHEAP_TASKS = [
     "virtualization",
     "lsblk",
     "dmidecode",
+    "nvidia_smi",
     "lsblk_discard",
     "lsblk_topo",
-]
-_CHEAP_GPU_TASKS = [
-    "nvidia_smi",
-    "nvbandwidth",
 ]
 
 
@@ -75,11 +73,42 @@ def has_related_database(server: "Server") -> bool:
     )
 
 
-def list_cheap_tasks(resource: "Server | Database") -> List[str]:
-    """List the cheap tasks for the given resource."""
-    if isinstance(resource, DatabaseBase):
-        return []
-    return _CHEAP_TASKS + (_CHEAP_GPU_TASKS if resource.accelerator_count > 0 else [])
+def is_credit_exempt(resource: "Server | Database", task: str) -> bool:
+    """Check if the task should run on the resource despite exhausted cloud credits.
+
+    Args:
+        resource: The server or managed database.
+        task: Name of an inspector task.
+
+    Returns:
+        True if the cloud credit block reason doesn't apply.
+    """
+    if resource.vendor_id == "azure" and resource.memory_amount < 1024**2:
+        # need full DBaaS coverage at Azure for analysis (at least below 1TB RAM)
+        if isinstance(resource, DatabaseBase):
+            return True
+        if task in [
+            *_CHEAP_TASKS,
+            "pgbench_postgres_ro_durable",
+        ] and has_related_database(resource):
+            return True
+    if task == "stressng_benchmarks":
+        # www blogpost citing data collected manually in 2024 that we need to repro
+        if (resource.vendor_id, resource.api_reference) in [
+            ("aws", "c6a.large"),
+            ("aws", "c6a.2xlarge"),
+            ("aws", "c6g.xlarge"),
+            ("aws", "m7a.xlarge"),
+            ("aws", "c7a.32xlarge"),
+            ("aws", "c6i.metal"),
+        ]:
+            return True
+    # we need lstopo for KCD Budapest 2026 talk
+    if (resource.vendor_id, resource.api_reference) in [
+        ("aws", "m8azn.metal-12xl")
+    ] and task in _CHEAP_TASKS:
+        return True
+    return False
 
 
 def block_reasons(
@@ -92,7 +121,9 @@ def block_reasons(
     A task doesn't run on a resource for any of these reasons:
 
     - All tasks:
-        - Cloud credits or budget exhausted: Alibaba Cloud, AWS, Azure and GCP.
+        - Cloud credits or budget exhausted: Alibaba Cloud, AWS, Azure and GCP,
+          except for a few explicitly exempted resources and tasks (see
+          `is_credit_exempt`).
 
     - Managed databases:
         - Databases that can't be deployed on a single node.
@@ -116,34 +147,14 @@ def block_reasons(
     if isinstance(tasks, str):
         tasks = [tasks]
     results = {task: [] for task in tasks}
-    cheap_tasks = list_cheap_tasks(resource)
     for task in tasks:
-        # override the overrides: although no credits, we still want to run these
-        if resource.vendor_id == "azure" and resource.memory_amount < 1024**2:
-            # need full DBaaS coverage at Azure for analysis (at least below 1TB RAM)
-            if isinstance(resource, DatabaseBase):
-                continue
-            if task in cheap_tasks and has_related_database(resource):
-                continue
-        if task == "stressng_benchmarks":
-            # www blogpost citing data collected manually in 2024 that we need to repro
-            if (resource.vendor_id, resource.api_reference) in [
-                ("aws", "c6a.large"),
-                ("aws", "c6a.2xlarge"),
-                ("aws", "c6g.xlarge"),
-                ("aws", "m7a.xlarge"),
-                ("aws", "c7a.32xlarge"),
-                ("aws", "c6i.metal"),
-            ]:
-                continue
-        # we need lstopo for KCD Budapest 2026 talk
-        if (resource.vendor_id, resource.api_reference) in [
-            ("aws", "m8azn.metal-12xl")
-        ] and task in cheap_tasks:
-            continue
-
         # cloud credits either exhausted, pending, or abandoned
-        if resource.vendor_id in ["alicloud", "aws", "azure", "gcp"]:
+        if resource.vendor_id in [
+            "alicloud",
+            "aws",
+            "azure",
+            "gcp",
+        ] and not is_credit_exempt(resource, task):
             results[task].append("Cloud credit/budget exhausted.")
 
         # databases checks: deny if 1-node layout is not supported
