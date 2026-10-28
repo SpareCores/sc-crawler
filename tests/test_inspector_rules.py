@@ -1,7 +1,11 @@
 import math
 from types import SimpleNamespace
 
-from sc_crawler.inspector_rules import block_reasons, has_related_database
+from sc_crawler.inspector_rules import (
+    block_reasons,
+    has_related_database,
+    is_credit_exempt,
+)
 from sc_crawler.table_bases import DatabaseBase
 from sc_crawler.table_fields import (
     AcceleratorType,
@@ -259,3 +263,92 @@ def test_has_related_database():
     assert not has_related_database(
         _server(server_id="cx22", vendor=SimpleNamespace(databases=[]))
     )
+
+
+def _azure_server_with_database(**overrides):
+    """Azure server stub that is the underlying server of a managed database."""
+    vendor = SimpleNamespace(databases=[SimpleNamespace(server_id="Standard_D2ds_v5")])
+    return _server(
+        vendor_id="azure",
+        server_id="Standard_D2ds_v5",
+        api_reference="Standard_D2ds_v5",
+        vendor=vendor,
+        **overrides,
+    )
+
+
+def test_azure_server_with_database_is_credit_exempt():
+    server = _azure_server_with_database()
+    reasons = block_reasons(
+        server, ["pgbench_postgres_ro_durable", "membench", "nvidia_smi", "llm"]
+    )
+    assert reasons["pgbench_postgres_ro_durable"] == []
+    assert reasons["membench"] == []
+    assert reasons["nvidia_smi"] == []
+    # not a cheap task
+    assert reasons["llm"] == ["Cloud credit/budget exhausted."]
+
+
+def test_azure_server_without_database_is_not_credit_exempt():
+    server = _server(
+        vendor_id="azure",
+        server_id="Standard_F2s_v2",
+        vendor=SimpleNamespace(databases=[]),
+    )
+    assert not is_credit_exempt(server, "membench")
+    assert block_reasons(server, "membench")["membench"] == [
+        "Cloud credit/budget exhausted."
+    ]
+
+
+def test_azure_server_over_1tb_is_not_credit_exempt():
+    server = _azure_server_with_database(memory_amount=1024**2)
+    assert not is_credit_exempt(server, "membench")
+
+
+def test_credit_exemption_keeps_other_block_reasons():
+    server = _azure_server_with_database(
+        accelerator_count=0, memory_amount=512, vcpus=64
+    )
+    reasons = block_reasons(server, ["nvidia_smi", "nvbandwidth", "geekbench"])
+    assert reasons["nvidia_smi"] == ["No GPUs available."]
+    assert reasons["nvbandwidth"] == ["No GPUs available."]
+    assert reasons["geekbench"] == [
+        "Insufficient memory (2.1 GB minimum).",
+        "Benchmark doesn't scale beyond 32 cores.",
+    ]
+    tpu = _azure_server_with_database(
+        accelerator_count=4, accelerator_type=AcceleratorType.TPU
+    )
+    assert block_reasons(tpu, "nvidia_smi")["nvidia_smi"] == ["No GPUs available."]
+
+
+def test_azure_database_is_credit_exempt():
+    database = _database(vendor_id="azure", memory_amount=4 * 1024)
+    assert block_reasons(database, "membench")["membench"] == []
+    multi_node = _database(
+        vendor_id="azure", memory_amount=4 * 1024, ha=[DatabaseHaLevel.MULTI_ZONE]
+    )
+    assert block_reasons(multi_node, "membench")["membench"] == [_SINGLE_NODE_BLOCK]
+
+
+def test_stressng_benchmarks_credit_exempt_skus():
+    exempt = _server(vendor_id="aws", api_reference="c6a.large")
+    assert block_reasons(exempt, "stressng_benchmarks")["stressng_benchmarks"] == []
+    assert block_reasons(exempt, "membench")["membench"] == [
+        "Cloud credit/budget exhausted."
+    ]
+    other = _server(vendor_id="aws", api_reference="c6a.xlarge")
+    assert block_reasons(other, "stressng_benchmarks")["stressng_benchmarks"] == [
+        "Cloud credit/budget exhausted."
+    ]
+
+
+def test_m8azn_cheap_tasks_credit_exempt_without_gpus():
+    server = _server(
+        vendor_id="aws", api_reference="m8azn.metal-12xl", accelerator_count=0
+    )
+    reasons = block_reasons(server, ["lstopo", "nvidia_smi", "llm"])
+    assert reasons["lstopo"] == []
+    assert reasons["nvidia_smi"] == ["No GPUs available."]
+    assert reasons["llm"] == ["Cloud credit/budget exhausted."]
