@@ -1,6 +1,6 @@
 # Rebuild the Navigator API (sc-keeper) whenever inspector rules change,
 # so the deployed API picks up the updated rule definitions. sc-keeper uses the
-# rules from the main branch only if the crawler version on main is released to
+# rules from the tested commit only if its crawler version is released to
 # PyPI (see docker/overlay_inspector_rules.py in sc-keeper).
 # Called from tests.yaml after the tests (including the compatibility of the
 # rules with the PyPI release) passed on the main branch.
@@ -38,3 +38,4 @@ jobs:
           gh workflow run docker.yaml
           --repo SpareCores/sc-keeper
           --ref main
+          -f crawler_ref=${{ github.sha }}

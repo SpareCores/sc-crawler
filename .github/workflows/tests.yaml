@@ -44,19 +44,20 @@ jobs:
       - uses: actions/setup-python@v6.2.0
         with:
           python-version: 3.13
-      - name: Install the PyPI release of the current version
-        id: install
+      - name: Check if the current version is released on PyPI
+        id: pypi
         run: |
-          pip install pytest
           VERSION=$(sed -nE 's/^__version__ = "(.+)"/\1/p' src/sc_crawler/__init__.py)
-          if pip install "sparecores-crawler==$VERSION"; then
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if curl -sfo /dev/null "https://pypi.org/pypi/sparecores-crawler/$VERSION/json"; then
             echo "released=true" >> "$GITHUB_OUTPUT"
           else
             echo "::notice::sparecores-crawler $VERSION is not on PyPI, so sc-keeper won't use these rules"
           fi
       - name: Test the inspector rules on top of the PyPI release
-        if: steps.install.outputs.released == 'true'
+        if: steps.pypi.outputs.released == 'true'
         run: |
+          pip install pytest "sparecores-crawler==${{ steps.pypi.outputs.version }}"
           cp src/sc_crawler/inspector_rules.py "$(python -c 'import sc_crawler, os; print(os.path.dirname(sc_crawler.__file__))')/"
           # run from the tests folder to import the installed package, not ./src
           cd tests && python -m pytest test_inspector_rules.py
