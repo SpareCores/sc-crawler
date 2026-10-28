@@ -15,6 +15,7 @@ from sc_crawler.table_fields import (
     DatabaseWireProtocol,
     PriceUnit,
     Status,
+    StorageType,
 )
 from sc_crawler.vendors._ovh import (
     _client,
@@ -32,8 +33,10 @@ from sc_crawler.vendors._ovh import (
     inventory_database_storage_prices,
     inventory_database_storages,
     inventory_databases,
+    inventory_ipv4_prices,
     inventory_regions,
     inventory_server_prices,
+    inventory_servers,
     inventory_storage_prices,
 )
 
@@ -764,10 +767,11 @@ def _server_addon(plan_code: str, price_microcents: int):
     }
 
 
-def _flavor_offer(region: str, plan_code: str):
+def _flavor_offer(region: str, plan_code: str, *, name=None, disk: int = 50):
     return {
-        "name": plan_code.split(".")[0],
+        "name": name or plan_code.split(".")[0],
         "region": region,
+        "disk": disk,
         "osType": "linux",
         "planCodes": {"hourly": plan_code},
     }
@@ -878,3 +882,160 @@ def test_inventory_storage_prices_skip_unavailable_storages(mock_ovh_client):
         ("EU-WEST-PAR", "high-speed-gen2"),
         ("AP-SOUTH-MUM", "classic"),
     }
+
+
+def _fake_flavors_and_catalog(mock_client, *, flavors, catalog_addons):
+    original = mock_client.get.side_effect
+
+    def fake_get(path, *args, **kwargs):
+        if path == "/cloud/project/test-project/flavor":
+            return flavors
+        if path == "/order/catalog/public/cloud":
+            return {"locale": {"currencyCode": "EUR"}, "addons": catalog_addons}
+        return original(path, *args, **kwargs)
+
+    mock_client.get.side_effect = fake_get
+
+
+@pytest.mark.parametrize(
+    "local_storage_microcents, local_storage_gb_hour",
+    [
+        # catalog still lists the addon for free
+        (0, 0),
+        (20_000, 0.0002),
+    ],
+)
+def test_inventory_server_prices_add_gen3_local_storage(
+    mock_ovh_client, local_storage_microcents, local_storage_gb_hour
+):
+    _fake_flavors_and_catalog(
+        mock_ovh_client,
+        flavors=[
+            _flavor_offer("GRA", "b3-16.consumption", disk=100),
+            _flavor_offer("GRA", "b3-16.consumption", name="b3-16-flex", disk=50),
+            _flavor_offer("GRA", "b2-7.consumption", disk=50),
+        ],
+        catalog_addons=[
+            _server_addon("b3-16.consumption", 10_230_000),
+            _server_addon("b2-7.consumption", 7_090_000),
+            _catalog_addon(
+                "instance.local-storage-gen3-gb.hour.consumption",
+                local_storage_microcents,
+            ),
+        ],
+    )
+    prices = {
+        row["server_id"]: row["price"] for row in inventory_server_prices(_ovh_vendor())
+    }
+    assert prices["b3-16"] == pytest.approx(0.1023 + 100 * local_storage_gb_hour)
+    assert prices["b3-16-flex"] == pytest.approx(0.1023 + 50 * local_storage_gb_hour)
+    # local storage is still included for older generations
+    assert prices["b2-7"] == pytest.approx(0.0709)
+
+
+def test_inventory_server_prices_map_flex_flavors(mock_ovh_client):
+    _fake_flavors_and_catalog(
+        mock_ovh_client,
+        flavors=[
+            _flavor_offer("GRA", "b3-8.consumption", disk=50),
+            # same disk as the classic flavor -> duplicate of b3-8
+            _flavor_offer("GRA", "b3-8.consumption", name="b3-8-flex", disk=50),
+            _flavor_offer("GRA", "b3-16.consumption", disk=100),
+            _flavor_offer("GRA", "b3-16.consumption", name="b3-16-flex", disk=50),
+            _flavor_offer(
+                "EU-WEST-PAR",
+                "b3-16.consumption.3AZ",
+                name="b3-16-flex",
+                disk=50,
+            ),
+        ],
+        catalog_addons=[
+            _server_addon("b3-8.consumption", 5_120_000),
+            _server_addon("b3-16.consumption", 10_230_000),
+            _server_addon("b3-16.consumption.3AZ", 12_000_000),
+        ],
+    )
+    prices = inventory_server_prices(_ovh_vendor())
+    assert sorted({(r["region_id"], r["server_id"]) for r in prices}) == [
+        ("EU-WEST-PAR", "b3-16-flex"),
+        ("GRA", "b3-16"),
+        ("GRA", "b3-16-flex"),
+        ("GRA", "b3-8"),
+    ]
+    assert len(prices) == 6
+    assert all(
+        r["price"] == pytest.approx(0.12)
+        for r in prices
+        if r["region_id"] == "EU-WEST-PAR"
+    )
+
+
+def test_inventory_ipv4_prices_hourly(mock_ovh_client):
+    vendor = _ovh_vendor(
+        regions=[
+            _region(
+                "EU-WEST-PAR",
+                zones=["eu-west-par-a", "eu-west-par-b", "eu-west-par-c"],
+            ),
+            _region("AP-SOUTH-MUM", zones=["ap-south-mum-a"]),
+        ]
+    )
+    prices = inventory_ipv4_prices(vendor)
+    assert {row["region_id"] for row in prices} == {"EU-WEST-PAR", "AP-SOUTH-MUM"}
+    assert all(row["unit"] == PriceUnit.HOUR for row in prices)
+    assert all(row["price"] == pytest.approx(0.0027) for row in prices)
+
+
+def _instance_addon(server_id: str, disk: dict):
+    return {
+        **_server_addon(f"{server_id}.consumption", 1_000_000),
+        "product": "publiccloud-instance",
+        "blobs": {
+            "commercial": {"name": server_id},
+            "technical": {
+                "os": {"family": "linux"},
+                "cpu": {"cores": 4},
+                "memory": {"size": 16},
+                "storage": {"disks": [disk]},
+            },
+            "tags": ["active"],
+        },
+    }
+
+
+def test_inventory_servers_gen3_ipv4_and_flex_variants(mock_ovh_client):
+    _fake_flavors_and_catalog(
+        mock_ovh_client,
+        flavors=[
+            _flavor_offer("GRA", "b3-8.consumption", disk=50),
+            _flavor_offer("GRA", "b3-8.consumption", name="b3-8-flex", disk=50),
+            _flavor_offer("GRA", "b3-16.consumption", disk=100),
+            _flavor_offer("GRA", "b3-16.consumption", name="b3-16-flex", disk=50),
+            _flavor_offer("GRA", "b2-15.consumption", disk=100),
+            _flavor_offer("GRA", "b2-15.consumption", name="b2-15-flex", disk=50),
+        ],
+        catalog_addons=[
+            _instance_addon("b3-8", {"capacity": 50, "technology": "NVMe"}),
+            _instance_addon("b3-16", {"capacity": 100, "technology": "NVMe"}),
+            _instance_addon("b2-15", {"capacity": 100, "technology": "SSD"}),
+        ],
+    )
+    servers = {s["server_id"]: s for s in inventory_servers(_ovh_vendor())}
+    # b3-8-flex has the same disk as b3-8, so it's skipped
+    assert set(servers) == {"b3-8", "b3-16", "b3-16-flex", "b2-15", "b2-15-flex"}
+
+    assert servers["b3-8"]["ipv4"] == 0
+    assert servers["b3-16-flex"]["ipv4"] == 0
+    assert servers["b2-15"]["ipv4"] == 1
+    assert servers["b2-15-flex"]["ipv4"] == 1
+
+    flex = servers["b3-16-flex"]
+    assert flex["api_reference"] == "b3-16-flex"
+    assert flex["display_name"] == "b3-16-flex"
+    assert flex["storage_size"] == 50
+    assert [(d.size, d.storage_type) for d in flex["storages"]] == [
+        (50, StorageType.NVME_SSD)
+    ]
+    assert flex["description"] == "General Purpose (4 vCPUs, 16 GiB RAM, 50 GB NVMe)"
+    assert servers["b3-16"]["storage_size"] == 100
+    assert servers["b2-15-flex"]["storages"][0].storage_type == StorageType.SSD

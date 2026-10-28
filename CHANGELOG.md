@@ -1,3 +1,13 @@
+## v0.10.x (DEVELOPMENT)
+
+New feature(s):
+
+- `OVH`: list flex flavors as separate servers.
+
+Fix(es):
+
+- `OVH`: October 2026 pricing update (separately billed Gen3 IPv4 and local storage).
+
 ## v0.10.2 (October 22, 2026)
 
 New feature(s):
