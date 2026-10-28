@@ -1,3 +1,14 @@
+## v0.10.x (DEVELOPMENT)
+
+New benchmark(s):
+
+- `nvbandwidth:slot:local_copy`: per-GPU VRAM copy bandwidth (nvbandwidth v0.8+).
+
+Fix(es):
+
+- `nvbandwidth`: fix `p2p:duplex` score and `gpu_count` for v0.8 stacked
+  bidirectional matrices.
+
 ## v0.10.2 (October 22, 2026)
 
 New feature(s):

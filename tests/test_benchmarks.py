@@ -508,6 +508,44 @@ def test_nvbandwidth_multi_gpu_averages_cells(tmp_path, monkeypatch):
     assert environment["p2p_supported"] is True
 
 
+def test_nvbandwidth_v08_local_copy_and_stacked_bidirectional(tmp_path, monkeypatch):
+    scores = _nvbandwidth_scores(
+        tmp_path,
+        monkeypatch,
+        _nvbandwidth_payload(
+            [
+                _nvbandwidth_testcase(
+                    "device_local_copy",
+                    matrix=[["728.348", "728.912"]],
+                    total=1457.26,
+                ),
+                # v0.8: both directions and their Total stacked, `sum` is the Total
+                _nvbandwidth_testcase(
+                    "device_to_device_bidirectional_memcpy_write_ce",
+                    matrix=[
+                        ["N/A", "52.6138"],
+                        ["52.5645", "N/A"],
+                        ["N/A", "52.5642"],
+                        ["52.6112", "N/A"],
+                        ["N/A", "105.178"],
+                        ["105.176", "N/A"],
+                    ],
+                    total=210.354,
+                ),
+            ],
+            driver="595.45.04",
+            cuda=13020,
+            version="v0.8",
+        ),
+    )
+    assert scores["nvbandwidth:slot:local_copy"]["score"] == 1457.26 / 2
+    assert scores["nvbandwidth:p2p:duplex"]["score"] == 210.354 / 2 / 2
+    environment = scores["nvbandwidth:slot:local_copy"]["environment"]
+    assert environment["gpu_count"] == 2
+    assert environment["nvbandwidth_version"] == "v0.8"
+    assert environment["p2p_supported"] is True
+
+
 @pytest.mark.parametrize(
     "end,expected",
     [

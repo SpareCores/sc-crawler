@@ -901,7 +901,8 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
         for testcase in passed.values():
             matrix = testcase.get("bandwidth_matrix")
             if matrix:
-                gpu_count = max(gpu_count, len(matrix), len(matrix[0]))
+                # columns are GPUs in all testcases (rows can be stacked blocks)
+                gpu_count = max(gpu_count, len(matrix[0]))
         extend_environment = {
             "driver_version": data["Driver Version"],
             "cuda_runtime_version": data["CUDA Runtime Version"],
@@ -947,6 +948,7 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
         for group, metric, source in (
             ("slot", "host_to_gpu", "host_to_device_memcpy_ce"),
             ("slot", "gpu_to_host", "device_to_host_memcpy_ce"),
+            ("slot", "local_copy", "device_local_copy"),
             ("slot", "latency", "host_device_latency_sm"),
             ("p2p", "single", "device_to_device_memcpy_write_ce"),
             ("p2p", "duplex", "device_to_device_bidirectional_memcpy_write_ce"),
@@ -956,9 +958,14 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
             testcase = passed.get(source)
             if testcase is None:
                 continue
-            cell_count = sum(
-                cell != "N/A" for row in testcase["bandwidth_matrix"] for cell in row
-            )
+            matrix = testcase["bandwidth_matrix"]
+            directions = 1
+            if len(matrix) > len(matrix[0]):
+                # v0.8 bidirectional tests stack the two directional blocks and
+                # their Total, with `sum` covering only the Total block
+                matrix = matrix[-len(matrix[0]) :]
+                directions = 2
+            cell_count = sum(cell != "N/A" for row in matrix for cell in row)
             if not cell_count:
                 continue
             benchmarks.append(
@@ -969,7 +976,7 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                         benchmark_id=":".join([framework, group, metric]),
                         extend_environment=extend_environment,
                     ),
-                    "score": testcase["sum"] / cell_count,
+                    "score": testcase["sum"] / cell_count / directions,
                 }
             )
         sm = passed.get("host_to_device_memcpy_sm")
