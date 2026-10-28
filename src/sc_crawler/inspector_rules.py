@@ -129,6 +129,11 @@ def block_reasons(
                 ("aws", "c6i.metal"),
             ]:
                 continue
+        # we need lstopo for KCD Budapest 2026 talk
+        if (resource.vendor_id, resource.api_reference) in [
+            ("aws", "m8azn.metal-12xl")
+        ] and task in _CHEAP_TASKS:
+            continue
 
         # cloud credits either exhausted, pending, or abandoned
         if resource.vendor_id in ["alicloud", "aws", "azure", "gcp"]:
