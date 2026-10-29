@@ -1,3 +1,10 @@
+## v0.10.x (DEVELOPMENT)
+
+Fix(es):
+
+- `AWS`: mark `t1` and `*-flex` (e.g. `r8i-flex`) instance types as burstable
+  instead of dedicated CPU allocation.
+
 ## v0.10.2 (October 22, 2026)
 
 New feature(s):
