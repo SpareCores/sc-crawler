@@ -2151,9 +2151,11 @@ _PG_DATABASE_NAME_RE = recompile(
     r"(?:_v(?P<version>\d*))?$"
 )
 _PG_FLAT_COMPUTE_SKUS = frozenset({"B1MS", "B2S"})
+# Edition and vendor tokens are optional: e.g. "Flexible Server Mdsv2 Series Compute"
+# and "General Purpose AMD Dadsv5 Series Compute".
 _PG_PRODUCT_SERIES_RE = recompile(
-    r"(?i)(?:Confidential Compute|General Purpose|Memory Optimized|Memory Purpose|Burstable)\s+"
-    r"(?P<series>[A-Za-z0-9]+)\s+Series"
+    r"(?i)(?:(?:Confidential Compute|General Purpose|Memory Optimized|Memory Purpose|Burstable)\s+)?"
+    r"(?:AMD\s+)?(?P<series>[A-Za-z0-9]+)\s+Series"
 )
 _PG_EDITION_PRODUCT_TOKENS = {
     "GeneralPurpose": ("general purpose",),
@@ -2242,6 +2244,23 @@ def _pg_lookup_retail_price(
     edition_name: str | None,
     prices_by_arm: dict[str, list[dict]],
 ) -> dict | None:
+    parsed = None
+    with sentry_capture_or_raise(vendor=vendor):
+        parsed = _parse_database_name(database_id)
+
+    # The public pricing page bills vCore series as the "1 vCore" meter x vCores.
+    # Sized Standard_* meters are sometimes stale (e.g. australiacentral 96 vCore
+    # kept 2023 prices, ~2x) or copy-pasted from another size (D8ds_v5 == D16ds_v5
+    # in westcentralus), and the "vCore" series meter can lag behind as well.
+    if parsed is not None and parsed[3]:
+        series_re = recompile(rf"(?i)(?<![a-z0-9]){parsed[0]} Series Compute")
+        for rows in prices_by_arm.values():
+            for item in rows:
+                if item.get("skuName") == "1 vCore" and series_re.search(
+                    item.get("productName") or ""
+                ):
+                    return item
+
     if database_id in prices_by_arm:
         return prices_by_arm[database_id][0]
 
@@ -2251,9 +2270,6 @@ def _pg_lookup_retail_price(
     if alias.upper() in prices_by_arm:
         return prices_by_arm[alias.upper()][0]
 
-    parsed = None
-    with sentry_capture_or_raise(vendor=vendor):
-        parsed = _parse_database_name(database_id)
     if parsed is None:
         return None
     series, family, cores, version = parsed

@@ -1,3 +1,11 @@
+## v0.10.x (DEVELOPMENT)
+
+Fix(es):
+
+- `Azure`: price PostgreSQL compute from the `1 vCore` meter (as the pricing
+  page does), as some sized meters are stale.
+- `Azure`: label `Mdsv2` PostgreSQL SKUs as `MemoryOptimized`.
+
 ## v0.10.2 (October 22, 2026)
 
 New feature(s):
