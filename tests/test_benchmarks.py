@@ -519,7 +519,7 @@ def test_nvbandwidth_v08_local_copy_and_stacked_bidirectional(tmp_path, monkeypa
                     matrix=[["728.348", "728.912"]],
                     total=1457.26,
                 ),
-                # v0.8: both directions and their Total stacked, `sum` is the Total
+                # v0.6+: both directions and their Total stacked, `sum` is the Total
                 _nvbandwidth_testcase(
                     "device_to_device_bidirectional_memcpy_write_ce",
                     matrix=[
@@ -546,6 +546,38 @@ def test_nvbandwidth_v08_local_copy_and_stacked_bidirectional(tmp_path, monkeypa
     assert environment["cuda_version"] == 13020
     assert "cuda_runtime_version" not in environment
     assert environment["p2p_supported"] is True
+
+
+def test_nvbandwidth_skips_unknown_stacked_layout(tmp_path, monkeypatch):
+    scores = _nvbandwidth_scores(
+        tmp_path,
+        monkeypatch,
+        _nvbandwidth_payload(
+            [
+                _nvbandwidth_testcase(
+                    "device_to_device_bidirectional_memcpy_write_ce",
+                    matrix=[["N/A", "50.0"], ["50.0", "N/A"]] * 2,
+                    total=100.0,
+                ),
+            ],
+            version="v0.8",
+        ),
+    )
+    assert "nvbandwidth:p2p:duplex" not in scores
+
+
+def test_nvbandwidth_skips_aborted_run(tmp_path, monkeypatch):
+    payload = _nvbandwidth_payload(
+        [
+            _nvbandwidth_testcase(
+                "host_to_device_memcpy_ce", matrix=[["50.0"]], total=50.0
+            ),
+            _nvbandwidth_testcase("device_to_device_memcpy_read_ce", status="Running"),
+        ],
+        version="v0.8",
+    )
+    payload["nvbandwidth"]["error"] = "ASSERT in expression h_errorFlag == 0"
+    assert _nvbandwidth_scores(tmp_path, monkeypatch, payload) == {}
 
 
 @pytest.mark.parametrize(

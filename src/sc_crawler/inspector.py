@@ -892,6 +892,10 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
     try:
         with open(_server_framework_stdout_path(server, framework), "r") as fp:
             data = json.load(fp)["nvbandwidth"]
+        # aborted runs (e.g. failed pattern check) still list the testcases
+        # passed before the error, but the whole run is untrustworthy
+        if data.get("error"):
+            raise ValueError(f"nvbandwidth run aborted: {data['error']}")
         passed = {
             testcase["name"]: testcase
             for testcase in data["testcases"]
@@ -960,11 +964,18 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                 continue
             matrix = testcase["bandwidth_matrix"]
             directions = 1
-            if len(matrix) > len(matrix[0]):
-                # v0.8 bidirectional tests stack the two directional blocks and
+            if len(matrix) == 3 * len(matrix[0]):
+                # v0.6+ bidirectional tests stack the two directional blocks and
                 # their Total, with `sum` covering only the Total block
                 matrix = matrix[-len(matrix[0]) :]
                 directions = 2
+            elif len(matrix) > len(matrix[0]):
+                _log_cannot_load_benchmarks(
+                    server,
+                    ":".join([framework, group, metric]),
+                    f"unexpected {len(matrix)}x{len(matrix[0])} matrix",
+                )
+                continue
             cell_count = sum(cell != "N/A" for row in matrix for cell in row)
             if not cell_count:
                 continue

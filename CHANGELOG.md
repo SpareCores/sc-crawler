@@ -2,12 +2,13 @@
 
 New benchmark(s):
 
-- `nvbandwidth:slot:local_copy`: per-GPU VRAM copy bandwidth (nvbandwidth v0.8+).
+- `nvbandwidth:slot:local_copy`: per-GPU VRAM copy bandwidth (nvbandwidth v0.7+).
 
 Fix(es):
 
-- `nvbandwidth`: fix `p2p:duplex` score and `gpu_count` for v0.8 stacked
+- `nvbandwidth`: fix `p2p:duplex` score and `gpu_count` for v0.6+ stacked
   bidirectional matrices.
+- `nvbandwidth`: skip aborted runs (with `error` in the output).
 - `nvbandwidth`: rename environment field `cuda_runtime_version` to
   `cuda_version`.
 

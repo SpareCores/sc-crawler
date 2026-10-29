@@ -1266,7 +1266,7 @@ benchmarks: List[Benchmark] = [
         framework="nvbandwidth",
         measurement="gpu_bandwidth",
         unit="GB/s",
-        note="A copy both reads and writes every byte, so the scores are about 40-45% of the memory bandwidth listed on GPU datasheets (e.g. ~1,490 vs 3,350 GB/s on H100 SXM), and should not be compared to those figures directly. Only recorded with nvbandwidth v0.8 and later.",
+        note="A copy both reads and writes every byte, so the scores are roughly 35-45% of the memory bandwidth listed on GPU datasheets (e.g. ~1,490 vs 3,350 GB/s on H100 SXM), and should not be compared to those figures directly. Time-sliced virtual GPU profiles (e.g. T4-4Q) can report proportionally lower values than the full GPU. Only recorded with nvbandwidth v0.7 and later.",
     ),
     Benchmark(
         benchmark_id="nvbandwidth:slot:latency",
