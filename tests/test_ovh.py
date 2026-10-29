@@ -807,9 +807,13 @@ def test_inventory_server_prices_skip_duplicates_and_unknown_plans(mock_ovh_clie
 
     assert set(by_region) == {"GRA", "EU-WEST-PAR"}
     assert [r["zone_id"] for r in by_region["GRA"]] == ["gra-a"]
-    assert by_region["GRA"][0]["price"] == pytest.approx(0.1)
+    # 50 GB Gen3 local storage at the announced price
+    assert by_region["GRA"][0]["price"] == pytest.approx(0.1 + 50 * 0.0001458)
     assert len(by_region["EU-WEST-PAR"]) == 3
-    assert all(r["price"] == pytest.approx(0.12) for r in by_region["EU-WEST-PAR"])
+    assert all(
+        r["price"] == pytest.approx(0.12 + 50 * 0.0001458)
+        for r in by_region["EU-WEST-PAR"]
+    )
 
 
 def test_get_regions_skips_regions_without_compute_or_databases(mock_ovh_client):
@@ -900,8 +904,8 @@ def _fake_flavors_and_catalog(mock_client, *, flavors, catalog_addons):
 @pytest.mark.parametrize(
     "local_storage_microcents, local_storage_gb_hour",
     [
-        # catalog still lists the addon for free
-        (0, 0),
+        # catalog still lists the addon for free -> announced price
+        (0, 0.0001458),
         (20_000, 0.0002),
     ],
 )
@@ -964,7 +968,7 @@ def test_inventory_server_prices_map_flex_flavors(mock_ovh_client):
     ]
     assert len(prices) == 6
     assert all(
-        r["price"] == pytest.approx(0.12)
+        r["price"] == pytest.approx(0.12 + 50 * 0.0001458)
         for r in prices
         if r["region_id"] == "EU-WEST-PAR"
     )

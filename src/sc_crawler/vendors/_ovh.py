@@ -689,11 +689,13 @@ def _get_database_capabilities(project_id: Optional[str] = None) -> dict:
 # Since 2026-10-01, the local storage and public IPv4 of Gen3 (B3, C3, R3)
 # instances are billed separately from the (unchanged) hourly instance price:
 # https://blog.ovhcloud.com/en/posts/public-cloud-pricing-update-october-2026/
-# The local storage price is taken from the public catalog (still listed at 0
-# as of 2026-10-27), while the IPv4 price is from the announcement, as the
-# catalog lists the "publiccloud-publicip-ip" product as "included".
+# The local storage price is taken from the public catalog, falling back to the
+# announced price while it's still listed at 0 (as of 2026-10-29), and the IPv4
+# price is from the announcement, as the catalog lists the
+# "publiccloud-publicip-ip" product as "included".
 _GEN3_FAMILIES = ("b3", "c3", "r3")
 _GEN3_LOCAL_STORAGE_PLAN = "instance.local-storage-gen3-gb.hour.consumption"
+_GEN3_LOCAL_STORAGE_GB_HOUR_PRICE = 0.0001458
 _IPV4_HOUR_PRICE = 0.0027
 
 
@@ -1416,7 +1418,10 @@ def inventory_server_prices(vendor) -> list[dict]:
     # list all addon prices and convert to a lookup dict
     catalog = _get_catalog()
     addons = {addon["planCode"]: addon for addon in catalog["addons"]}
-    local_storage_gb_price = _get_catalog_hourly_price(_GEN3_LOCAL_STORAGE_PLAN)
+    local_storage_gb_price = (
+        _get_catalog_hourly_price(_GEN3_LOCAL_STORAGE_PLAN)
+        or _GEN3_LOCAL_STORAGE_GB_HOUR_PRICE
+    )
     flex_flavors = _get_flex_flavors()
     # list all server <> region offers with a link to the price list
     offers = _get_flavors()
