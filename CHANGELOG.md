@@ -5,6 +5,8 @@ Fix(es):
 - `Azure`: price PostgreSQL compute from the `1 vCore` meter (as the pricing
   page does), as some sized meters are stale.
 - `Azure`: label `Mdsv2` PostgreSQL SKUs as `MemoryOptimized`.
+- `AWS`: mark `t1` and `*-flex` (e.g. `r8i-flex`) instance types as burstable
+  instead of dedicated CPU allocation.
 
 ## v0.10.2 (October 22, 2026)
 
