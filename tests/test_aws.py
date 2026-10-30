@@ -119,10 +119,33 @@ def _aws_vendor(*, regions=None, servers=None, databases=None, database_storages
     return vendor
 
 
+# instance categories as returned by the Pricing API (sample of the real mapping)
+_API_CATEGORIES = {
+    "m5": "General Purpose",
+    "m8gd": "General Purpose",
+    "t1": "General Purpose",
+    "t4g": "General Purpose",
+    "c7i-flex": "Compute Optimized",
+    "r8g": "Memory Optimized",
+    "u-12tb1": "Memory Optimized",
+    "i4i": "Storage Optimized",
+    "p5": "Accelerated Computing",
+    "p6-b200": "Accelerated Computing",
+    "trn2": "Accelerated Computing",
+    "f1": "Accelerated Computing",
+    "g3s": "Accelerated Computing",
+    "p2": "Accelerated Computing",
+    "hpc7a": "High-Performance Computing",
+}
+
+
 @pytest.fixture(autouse=True)
 def _no_pricing_api_categories():
-    """Keep the tests offline: no instance categories from the Pricing API."""
-    with patch("sc_crawler.vendors._aws._server_series_categories", return_value={}):
+    """Keep the tests offline: instance categories from a fake Pricing API."""
+    with patch(
+        "sc_crawler.vendors._aws._server_series_categories",
+        return_value=_API_CATEGORIES,
+    ):
         yield
 
 
@@ -938,7 +961,10 @@ def test_aws_inventory_database_storage_prices_skip_missing_catalog():
     [
         ("m5.large", "m5", "General Purpose"),
         ("t4g.micro", "t4g", "General Purpose"),
+        # not in the Pricing API, categories from the docs dict
         ("mac2-m1ultra.metal", "mac2-m1ultra", "General Purpose"),
+        ("trn2u.48xlarge", "trn2u", "Accelerated Computing"),
+        ("u7inh-32tb.480xlarge", "u7inh-32tb", "Memory Optimized"),
         ("c7i-flex.large", "c7i-flex", "Compute Optimized"),
         ("r8g.xlarge", "r8g", "Memory Optimized"),
         ("u-12tb1.112xlarge", "u-12tb1", "Memory Optimized"),
@@ -947,7 +973,7 @@ def test_aws_inventory_database_storage_prices_skip_missing_catalog():
         ("p6-b200.48xlarge", "p6-b200", "Accelerated Computing"),
         ("trn2.48xlarge", "trn2", "Accelerated Computing"),
         ("hpc7a.96xlarge", "hpc7a", "High-Performance Computing"),
-        # retired types missing from the docs, assumed accelerated computing
+        # retired types, still listed by the Pricing API
         ("f1.2xlarge", "f1", "Accelerated Computing"),
         ("g3s.xlarge", "g3s", "Accelerated Computing"),
         ("p2.xlarge", "p2", "Accelerated Computing"),

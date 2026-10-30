@@ -633,44 +633,20 @@ def _get_gpus_of_instance_type(instance_type):
     return [to_gpu(gpu) for gpu in gpus]
 
 
-# Instance family categories of the instance type series, with all current and
-# previous generation series listed on the docs page. Only the fallback of the
-# `instanceFamilyCategory` of the Pricing API (see `_server_series_categories`), for the
-# series not listed there, e.g. the Mac instances:
+# Instance family categories of the instance type series that are not listed by the
+# `instanceFamilyCategory` of the Pricing API (see `_server_series_categories`), which
+# is the main source. As of 2026-10-30 these are the series missing from the Linux,
+# shared tenancy, on-demand EC2 products (25,326 products in all regions): the Mac
+# instances, which only run on Dedicated Hosts, and a few UltraServer / high memory
+# types. Categories as on the docs page:
 # https://docs.aws.amazon.com/ec2/latest/instancetypes/instance-types.html
 _SERIES_FAMILY = {
     "General Purpose": (
-        "a1 m1 m2 m3 m4 m5 m5a m5ad m5d m5dn m5n m5zn m6a m6g m6gd m6i m6id "
-        "m6idn m6in m7a m7g m7gd m7i m7i-flex m8a m8azn m8g m8gb m8gd m8gn m8i "
-        "m8i-flex m8ib m8id m8idb m8idn m8in m8ine m9g m9gd mac-m3ultra mac-m4 "
-        "mac-m4max mac-m4pro mac1 mac2 mac2-m1ultra mac2-m2 mac2-m2pro t1 t2 t3 "
-        "t3a t4g t8i"
+        "mac-m3ultra mac-m4 mac-m4max mac-m4pro mac1 mac2 mac2-m1ultra mac2-m2 "
+        "mac2-m2pro"
     ),
-    "Compute Optimized": (
-        "c1 c3 c4 c5 c5a c5ad c5d c5n c6a c6g c6gd c6gn c6i c6id c6in c7a c7g "
-        "c7gd c7gn c7i c7i-flex c8a c8g c8gb c8gd c8gn c8i c8i-flex c8ib c8id "
-        "c8in c8ine c9g c9gd"
-    ),
-    "Memory Optimized": (
-        "r3 r4 r5 r5a r5ad r5b r5d r5dn r5n r6a r6g r6gd r6i r6id r6idn r6in "
-        "r7a r7g r7gd r7i r7iz r8a r8g r8gb r8gd r8gn r8i r8i-flex r8ib r8id "
-        "r8idb r8idn r8in r9g r9gd u-12tb1 u-18tb1 u-24tb1 u-3tb1 u-6tb1 u-9tb1 "
-        "u7i-12tb u7i-6tb u7i-8tb u7in-16tb u7in-24tb u7in-32tb u7inh-32tb x1 "
-        "x1e x2gd x2idn x2iedn x2iezn x8aedz x8g x8i z1d"
-    ),
-    "Storage Optimized": (
-        "d2 d3 d3en h1 i2 i3 i3en i4g i4i i7i i7ie i8g i8ge im4gn is4gen"
-    ),
-    "Accelerated Computing": (
-        "dl1 dl2q f2 g3 g4ad g4dn g5 g5g g6 g6e g6f g7 g7e gr6 gr6f inf1 inf2 "
-        "p3 p3dn p4d p4de p5 p5e p5en p6-b200 p6-b300 p6e-gb200 trn1 trn1n trn2 "
-        "trn2u vt1 "
-        # not listed on the docs page (retired FPGA / GPU instance types still
-        # returned by the API), assumed to be accelerated computing like their
-        # successors (f2 / g3 / p3)
-        "f1 g3s p2"
-    ),
-    "High-Performance Computing": ("hpc6a hpc6id hpc7a hpc7g hpc8a"),
+    "Memory Optimized": "u7inh-32tb",
+    "Accelerated Computing": "p6e-gb200 trn2u",
 }
 _SERIES_TO_FAMILY = {
     series: family
