@@ -1,11 +1,16 @@
 ## v0.10.x (DEVELOPMENT)
 
+New feature(s):
+
+- `OVH`: list flex flavors as separate servers.
+
 New benchmark(s):
 
 - `nvbandwidth:slot:local_copy`: per-GPU VRAM copy bandwidth (nvbandwidth v0.7+).
 
 Fix(es):
 
+- `OVH`: October 2026 pricing update (separately billed Gen3 IPv4 and local storage).
 - `Azure`: price PostgreSQL compute from the `1 vCore` meter (as the pricing
   page does), as some sized meters are stale.
 - `Azure`: label `Mdsv2` PostgreSQL SKUs as `MemoryOptimized`.

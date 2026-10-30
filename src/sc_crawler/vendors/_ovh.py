@@ -686,6 +686,54 @@ def _get_database_capabilities(project_id: Optional[str] = None) -> dict:
     return _client().get(f"/cloud/project/{project_id}/database/capabilities")
 
 
+# Since 2026-10-01, the local storage and public IPv4 of Gen3 (B3, C3, R3)
+# instances are billed separately from the (unchanged) hourly instance price:
+# https://blog.ovhcloud.com/en/posts/public-cloud-pricing-update-october-2026/
+# The local storage price is taken from the public catalog, falling back to the
+# announced price while it's still listed at 0 (as of 2026-10-29), and the IPv4
+# price is from the announcement, as the catalog lists the
+# "publiccloud-publicip-ip" product as "included".
+_GEN3_FAMILIES = ("b3", "c3", "r3")
+_GEN3_LOCAL_STORAGE_PLAN = "instance.local-storage-gen3-gb.hour.consumption"
+_GEN3_LOCAL_STORAGE_GB_HOUR_PRICE = 0.0001458
+_IPV4_HOUR_PRICE = 0.0027
+
+
+def _is_gen3(server_id: str) -> bool:
+    """Check if an instance type is Gen3 with separately billed storage and IPv4."""
+    return server_id.split("-")[0] in _GEN3_FAMILIES
+
+
+def _get_flex_flavors() -> dict[str, int]:
+    """Map flex flavor names to their local disk size (GB).
+
+    Flex flavors come with a fixed 50 GB local disk (so they can be resized to
+    smaller flavors as well) and share the hourly plan code with the related
+    classic flavor, thus they are only listed in the flavor API. Flex flavors
+    with the same disk size as the classic flavor are skipped as duplicates.
+    """
+    flavors = [f for f in _get_flavors() if f["osType"] == "linux"]
+    classic_disks = {
+        f["name"]: f["disk"] for f in flavors if not f["name"].endswith("-flex")
+    }
+    return {
+        f["name"]: f["disk"]
+        for f in flavors
+        if f["name"].endswith("-flex")
+        and f["disk"] != classic_disks.get(f["name"].removesuffix("-flex"))
+    }
+
+
+def _get_catalog_hourly_price(plan_code: str) -> float:
+    """Hourly price of a catalog addon, or 0 if missing."""
+    addon = next(
+        (a for a in _get_catalog()["addons"] if a["planCode"] == plan_code), None
+    )
+    if not addon or not addon.get("pricings"):
+        return 0
+    return addon["pricings"][0]["price"] / _MICROCENTS_PER_CURRENCY_UNIT
+
+
 def _get_server_family(instance_type_name: str) -> str | None:
     """Map OVHcloud instance type name to server family.
 
@@ -1155,8 +1203,12 @@ def inventory_servers(vendor) -> list[dict]:
 
     Lifecycle (catalog plan `blobs.tags`): `active` tag -> ACTIVE, otherwise
     INACTIVE. The `legacy` tag is not treated as retirement.
+
+    Flex flavors are listed as separate servers with their own local disk
+    size, except when it matches the classic flavor (see `_get_flex_flavors`).
     """
     items = []
+    flex_flavors = _get_flex_flavors()
 
     server_plans = [
         s
@@ -1241,94 +1293,110 @@ def inventory_servers(vendor) -> list[dict]:
                 )
             )
         storage_type = storages[0].storage_type if storages else None
-        storage_size = sum(disk.size for disk in storages)
-        nvme_size = sum(
-            disk.size for disk in storages if disk.storage_type == StorageType.NVME_SSD
-        )
-        ssd_size = sum(
-            disk.size for disk in storages if disk.storage_type == StorageType.SSD
-        )
 
-        description_parts = [
-            f"{vcpus} vCPUs",
-            f"{memory_size_gb} GiB RAM",
-            f"{nvme_size} GB NVMe" if nvme_size else None,
-            f"{ssd_size} GB SSD" if ssd_size else None,
-            (
-                f"{gpu_count}x{gpu_model} {int(gpu_memory_per_gpu / _MIB_PER_GIB)} GiB VRAM"
-                if gpu_count and gpu_model
-                else None
-            ),
-        ]
-        description_parts_str = ", ".join(filter(None, description_parts))
-        description = (
-            f"{family} ({description_parts_str})" if family else description_parts_str
-        )
+        def describe(storages: List[Disk]) -> str:
+            nvme_size = sum(
+                d.size for d in storages if d.storage_type == StorageType.NVME_SSD
+            )
+            ssd_size = sum(
+                d.size for d in storages if d.storage_type == StorageType.SSD
+            )
+            parts = [
+                f"{vcpus} vCPUs",
+                f"{memory_size_gb} GiB RAM",
+                f"{nvme_size} GB NVMe" if nvme_size else None,
+                f"{ssd_size} GB SSD" if ssd_size else None,
+                (
+                    f"{gpu_count}x{gpu_model} {int(gpu_memory_per_gpu / _MIB_PER_GIB)} GiB VRAM"
+                    if gpu_count and gpu_model
+                    else None
+                ),
+            ]
+            parts_str = ", ".join(filter(None, parts))
+            return f"{family} ({parts_str})" if family else parts_str
 
         network_speed = technical.get("bandwidth", {}).get("level", None)
         network_speed_gbps = network_speed / 1000 if network_speed else None
         network_speed_max = technical.get("vrack", {}).get("level", None)
         network_speed_max_gbps = network_speed_max / 1000 if network_speed_max else None
 
-        items.append(
-            {
-                "vendor_id": vendor.vendor_id,
-                "server_id": server_id,
-                "name": server_id,
-                "api_reference": server_id,
-                # Pulumi Instance requires flavor.flavor_id (region-specific UUID);
-                # cannot store one value on Server. Resolve via _get_flavors at
-                # provision time using api_reference (flavor name).
-                # https://www.pulumi.com/registry/packages/ovh/api-docs/cloudproject/instance/
-                "api_reference_object": None,
-                "display_name": name,
-                "description": description,
-                "family": family,
-                "vcpus": vcpus,
-                # as per OVH FAQ: https://www.ovhcloud.com/en/public-cloud/virtual-instances/
-                # alsoverified from lscpu on B3-8 instance (2025-11-17)
-                "hypervisor": "KVM",
-                "cpu_allocation": cpu_allocation,
-                "cpu_cores": None,
-                "cpu_speed": technical.get("cpu", {}).get("frequency"),
-                "cpu_architecture": CpuArchitecture.X86_64,  # All OVHcloud instances use x86_64
-                "cpu_manufacturer": None,
-                "cpu_family": None,
-                "cpu_model": None,
-                "cpu_flags": [],
-                "cpus": [],
-                "memory_amount": memory_size,
-                "memory_generation": None,
-                "memory_speed": None,
-                "memory_ecc": None,
-                "accelerator_count": gpu_count,
-                "accelerator_memory_min": gpu_memory_per_gpu,
-                "accelerator_memory_total": gpu_memory_total,
-                "accelerator_type": AcceleratorType.GPU if gpu_count else None,
-                "accelerator_manufacturer": gpu_manufacturer,
-                "accelerator_family": gpu_family,
-                "accelerator_model": gpu_model,
-                "accelerators": [],  # TODO fill this array
-                "storage_size": storage_size,
-                "storage_type": storage_type,
-                "storages": storages,
-                "network_speed_baseline": network_speed_gbps,
-                "network_speed_max": network_speed_max_gbps,
-                # TODO: have to implement manual mapping for network_storage_speed related fields
-                "network_storage_speed_baseline": None,
-                "network_storage_speed_max": None,
-                # no bundled free traffic as all traffic is unmetered
-                # https://www.ovhcloud.com/en-ie/public-cloud/prices/
-                "inbound_traffic": 0,
-                "outbound_traffic": 0,
-                "ipv4": 1,  # each instance gets one IPv4
-                "status": (
-                    Status.ACTIVE
-                    if "active" in (blobs.get("tags") or [])
-                    else Status.INACTIVE
-                ),
-            }
-        )
+        item = {
+            "vendor_id": vendor.vendor_id,
+            "server_id": server_id,
+            "name": server_id,
+            "api_reference": server_id,
+            # Pulumi Instance requires flavor.flavor_id (region-specific UUID);
+            # cannot store one value on Server. Resolve via _get_flavors at
+            # provision time using api_reference (flavor name).
+            # https://www.pulumi.com/registry/packages/ovh/api-docs/cloudproject/instance/
+            "api_reference_object": None,
+            "display_name": name,
+            "description": describe(storages),
+            "family": family,
+            "vcpus": vcpus,
+            # as per OVH FAQ: https://www.ovhcloud.com/en/public-cloud/virtual-instances/
+            # alsoverified from lscpu on B3-8 instance (2025-11-17)
+            "hypervisor": "KVM",
+            "cpu_allocation": cpu_allocation,
+            "cpu_cores": None,
+            "cpu_speed": technical.get("cpu", {}).get("frequency"),
+            "cpu_architecture": CpuArchitecture.X86_64,  # All OVHcloud instances use x86_64
+            "cpu_manufacturer": None,
+            "cpu_family": None,
+            "cpu_model": None,
+            "cpu_flags": [],
+            "cpus": [],
+            "memory_amount": memory_size,
+            "memory_generation": None,
+            "memory_speed": None,
+            "memory_ecc": None,
+            "accelerator_count": gpu_count,
+            "accelerator_memory_min": gpu_memory_per_gpu,
+            "accelerator_memory_total": gpu_memory_total,
+            "accelerator_type": AcceleratorType.GPU if gpu_count else None,
+            "accelerator_manufacturer": gpu_manufacturer,
+            "accelerator_family": gpu_family,
+            "accelerator_model": gpu_model,
+            "accelerators": [],  # TODO fill this array
+            "storage_size": sum(disk.size for disk in storages),
+            "storage_type": storage_type,
+            "storages": storages,
+            "network_speed_baseline": network_speed_gbps,
+            "network_speed_max": network_speed_max_gbps,
+            # TODO: have to implement manual mapping for network_storage_speed related fields
+            "network_storage_speed_baseline": None,
+            "network_storage_speed_max": None,
+            # no bundled free traffic as all traffic is unmetered
+            # https://www.ovhcloud.com/en-ie/public-cloud/prices/
+            "inbound_traffic": 0,
+            "outbound_traffic": 0,
+            # each instance gets one IPv4, billed separately for Gen3
+            "ipv4": 0 if _is_gen3(server_id) else 1,
+            "status": (
+                Status.ACTIVE
+                if "active" in (blobs.get("tags") or [])
+                else Status.INACTIVE
+            ),
+        }
+        items.append(item)
+
+        flex_id = f"{server_id}-flex"
+        if flex_id in flex_flavors and storage_type:
+            flex_storages = [
+                Disk(size=flex_flavors[flex_id], storage_type=storage_type)
+            ]
+            items.append(
+                {
+                    **item,
+                    "server_id": flex_id,
+                    "name": flex_id,
+                    "api_reference": flex_id,
+                    "display_name": f"{name}-flex",
+                    "description": describe(flex_storages),
+                    "storage_size": flex_flavors[flex_id],
+                    "storages": flex_storages,
+                }
+            )
 
     return items
 
@@ -1339,11 +1407,27 @@ def inventory_server_prices(vendor) -> list[dict]:
     Region availability information is fetched from the
     `/cloud/project/{serviceName}/flavor` API endpoint, then the related prices
     are fetched from the `/order/catalog/public/cloud` API endpoint.
+
+    Flex flavors share the hourly plan code with the related classic flavor,
+    so these are mapped to their own server id via the flavor name.
+
+    The mandatory local storage of Gen3 instances is billed separately, so its
+    price (for the flavor's disk size) is added to the instance price.
     """
     regions = scmodels_to_dict(vendor.regions, keys=["api_reference"])
     # list all addon prices and convert to a lookup dict
     catalog = _get_catalog()
     addons = {addon["planCode"]: addon for addon in catalog["addons"]}
+    local_storage_gb_price = _get_catalog_hourly_price(_GEN3_LOCAL_STORAGE_PLAN)
+    if not local_storage_gb_price:
+        # the announced fallback price is in EUR
+        if catalog["locale"]["currencyCode"] != "EUR":
+            raise ValueError(
+                "No Gen3 local storage price in the catalog and no fallback "
+                f"for {catalog['locale']['currencyCode']}"
+            )
+        local_storage_gb_price = _GEN3_LOCAL_STORAGE_GB_HOUR_PRICE
+    flex_flavors = _get_flex_flavors()
     # list all server <> region offers with a link to the price list
     offers = _get_flavors()
     offers = [o for o in offers if o["osType"] == "linux"]
@@ -1374,10 +1458,16 @@ def inventory_server_prices(vendor) -> list[dict]:
                 excluded.add(msg)
                 vendor.log(msg)
             continue
-        if (offer["region"], plan_code) in seen_offers:
+        # flex flavors with the same disk as the classic flavor are duplicates
+        server_id = (
+            offer["name"] if offer["name"] in flex_flavors else addon["invoiceName"]
+        )
+        if (offer["region"], server_id) in seen_offers:
             continue
-        seen_offers.add((offer["region"], plan_code))
+        seen_offers.add((offer["region"], server_id))
         price = addon["pricings"][0]["price"] / _MICROCENTS_PER_CURRENCY_UNIT
+        if _is_gen3(server_id):
+            price += offer["disk"] * local_storage_gb_price
         # TODO check if server id is known for this vendor?
         for zone in region.zones:
             if zone.status != Status.ACTIVE:
@@ -1387,7 +1477,7 @@ def inventory_server_prices(vendor) -> list[dict]:
                     "vendor_id": vendor.vendor_id,
                     "region_id": region.region_id,
                     "zone_id": zone.zone_id,
-                    "server_id": addon["invoiceName"],
+                    "server_id": server_id,
                     "operating_system": addon["blobs"]["technical"]["os"]["family"],
                     "allocation": Allocation.ONDEMAND,
                     # we already filtered for hourly plan
@@ -1562,15 +1652,15 @@ def inventory_traffic_prices(vendor) -> list[dict]:
 def inventory_ipv4_prices(vendor) -> list[dict]:
     """OVHcloud Public Cloud IPv4 pricing.
 
-    Note that the API catalog endpoint states the "publiccloud-publicip-ip"
-    product to be free on the single-AZ and 3AZ regions, but it's listed at 1.5
-    EUR/month in the control panel for any additional public IPv4 address, so we
-    use that value for now.
+    Since 2026-10-01, public IPv4 addresses of Gen3 instances are billed
+    separately at €0.0027/hour as per the announcement. Note that the API
+    catalog endpoint still states the "publiccloud-publicip-ip" product to be
+    included on the single-AZ and 3AZ regions (as of 2026-10-27).
 
     Data sources:
 
+    - <https://blog.ovhcloud.com/en/posts/public-cloud-pricing-update-october-2026/>
     - <https://www.ovhcloud.com/en/public-cloud/prices>
-    - OVH Control Manager
     """
     items = []
     for region in vendor.regions:
@@ -1581,9 +1671,9 @@ def inventory_ipv4_prices(vendor) -> list[dict]:
             {
                 "vendor_id": vendor.vendor_id,
                 "region_id": region.region_id,
-                "price": 1.5,
+                "price": _IPV4_HOUR_PRICE,
                 "currency": "EUR",
-                "unit": PriceUnit.MONTH,
+                "unit": PriceUnit.HOUR,
             }
         )
     return items
