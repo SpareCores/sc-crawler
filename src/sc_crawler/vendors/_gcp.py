@@ -4,7 +4,7 @@ from functools import cache
 from logging import DEBUG, WARNING
 from re import compile as recompile
 from re import sub
-from typing import List
+from typing import List, Optional
 
 from cachier import cachier
 from google.auth import default
@@ -12,6 +12,7 @@ from google.cloud import billing_v1, compute_v1
 from googleapiclient.discovery import build
 
 from ..inspector import _standardize_gpu_count
+from ..logger import logger
 from ..lookup import map_compliance_frameworks_to_vendor
 from ..sentry import sentry_capture_or_raise
 from ..table_fields import (
@@ -234,6 +235,293 @@ def _local_ssd_partition_gib(server_name: str) -> int:
     if family in ["a4x", "z3"] or (family == "c4" and server_name.endswith("-metal")):
         return 3000
     return 375
+
+
+# Machine series that support each Hyperdisk type
+# https://docs.cloud.google.com/compute/docs/disks/hyperdisks#machine-type-support
+# On c2d, e2, n1, n2 and n2d, Hyperdisk Balanced and Balanced HA need the
+# user to contact their Google account team first (not self-service).
+# https://docs.cloud.google.com/compute/docs/disks/hyperdisks#restrictions-for-machine-series-support
+_STORAGE_SERIES = {
+    "hyperdisk-balanced": {
+        "a3-h100",
+        "a3-h200",
+        "a4",
+        "a4x",
+        "a4x-max",
+        "c2d",
+        "c3",
+        "c3d",
+        "c4",
+        "c4a",
+        "c4d",
+        "c4n",
+        "ct6e",
+        "e2",
+        "g4",
+        "h3",
+        "h4d",
+        "m1",
+        "m2",
+        "m3",
+        "m4",
+        "m4n",
+        "n1",
+        "n2",
+        "n2d",
+        "n4",
+        "n4a",
+        "n4d",
+        "tpu7x",
+        "x4",
+        "x5",
+        "z3",
+        "z4d",
+        "z4m",
+    },
+    "hyperdisk-balanced-high-availability": {
+        "a3-h100",
+        "a3-h200",
+        "c2d",
+        "c3",
+        "c3d",
+        "c4",
+        "c4a",
+        "c4d",
+        "c4n",
+        "e2",
+        "g4",
+        "m3",
+        "m4n",
+        "n1",
+        "n2",
+        "n2d",
+        "n4",
+        "n4a",
+        "n4d",
+        "x5",
+        "z3",
+        "z4d",
+        "z4m",
+    },
+    "hyperdisk-extreme": {
+        "a3-h100",
+        "a3-h200",
+        "a4",
+        "a4x",
+        "a4x-max",
+        "c3",
+        "c3d",
+        "c4",
+        "c4a",
+        "c4d",
+        "c4n",
+        "g4",
+        "m1",
+        "m2",
+        "m3",
+        "m4",
+        "m4n",
+        "n2",
+        "x4",
+        "x5",
+        "z3",
+        "z4d",
+        "z4m",
+    },
+    "hyperdisk-throughput": {
+        "a3-h100",
+        "a4x-max",
+        "c3",
+        "c3d",
+        "c4",
+        "c4a",
+        "c4d",
+        "c4n",
+        "g2",
+        "g4",
+        "h3",
+        "m3",
+        "m4n",
+        "n2",
+        "n2d",
+        "n4",
+        "n4a",
+        "n4d",
+        "t2d",
+        "x5",
+        "z3",
+        "z4d",
+        "z4m",
+    },
+    "hyperdisk-ml": {
+        "a2",
+        "a3-h100",
+        "a3-h200",
+        "a4",
+        "a4x",
+        "a4x-max",
+        "c3",
+        "c3d",
+        "c4",
+        "c4a",
+        "c4d",
+        "c4n",
+        "ct5l",
+        "ct5lp",
+        "ct5p",
+        "ct6e",
+        "g2",
+        "g4",
+        "m4n",
+        "n4",
+        "n4a",
+        "n4d",
+        "tpu7x",
+        "x5",
+        "z4d",
+        "z4m",
+    },
+    # Persistent Disk support per machine series
+    # https://docs.cloud.google.com/compute/docs/disks/persistent-disks
+    # https://docs.cloud.google.com/compute/docs/disks/performance
+    # (Extreme PD is left out on purpose: it is not in STORAGE_ALLOWLIST,
+    # so it is not in the storage table.)
+    # ct5l is not documented on either page, only ct5lp (TPU v5e) is: it is
+    # assumed to support the same PD types as ct5lp.
+    "pd-standard": {
+        "a2",
+        "c2",
+        "c2d",
+        "e2",
+        "m1",
+        "m2",
+        "n1",
+        "n2",
+        "n2d",
+        "t2a",
+        "t2d",
+    },
+    "pd-balanced": {
+        "a2",
+        "a3-h100",
+        "c2",
+        "c2d",
+        "c3",
+        "c3d",
+        "ct3",
+        "ct3p",
+        "ct5l",
+        "ct5lp",
+        "ct5p",
+        "e2",
+        "g2",
+        "h3",
+        "m1",
+        "m2",
+        "m3",
+        "n1",
+        "n2",
+        "n2d",
+        "t2a",
+        "t2d",
+        "z3",
+    },
+    "pd-ssd": {
+        "a2",
+        "a3-h100",
+        "c2",
+        "c2d",
+        "c3",
+        "c3d",
+        "e2",
+        "g2",
+        "m1",
+        "m2",
+        "m3",
+        "n1",
+        "n2",
+        "n2d",
+        "t2a",
+        "t2d",
+        "z3",
+    },
+}
+
+# Hyperdisk Extreme needs a minimum number of vCPUs on these series.
+# https://docs.cloud.google.com/compute/docs/disks/hyperdisks#restrictions-for-machine-series-support
+_EXTREME_MIN_VCPUS = {
+    "a3-h100": 104,
+    "a3-h200": 104,
+    "c3": 88,
+    "c3d": 60,
+    "c4": 96,
+    "g4": 96,
+    "m1": 80,
+    "c4a": 64,
+    "c4d": 64,
+    "m3": 64,
+    "m4": 64,
+    "n2": 80,
+}
+
+# Hyperdisk Throughput doesn't work on bare metal, except C4D and A4X Max.
+# https://docs.cloud.google.com/compute/docs/disks/hyperdisks#restrictions-for-machine-series-support
+_THROUGHPUT_BARE_METAL_OK = {"c4d", "a4x-max"}
+
+
+def _is_n1_memory_optimized(server_name: str) -> bool:
+    """n1-megamem and n1-ultramem are the M1 memory-optimized machine types."""
+    return server_name.startswith(("n1-megamem", "n1-ultramem"))
+
+
+def _support_key(server: dict) -> str:
+    """Map our series to the row names Google uses in the table."""
+    series = server["series"]
+    gpu = server["accelerator_model"]
+    if series == "a3":
+        return "a3-h200" if gpu == "H200" else "a3-h100"
+    if series == "a4x":
+        return "a4x-max" if gpu == "GB300" else "a4x"
+    # f1-micro and g1-small are the shared-core machine types of the N1 series
+    # https://docs.cloud.google.com/compute/docs/machine-resource#shared-core-types
+    if series in ("f1", "g1"):
+        return "n1"
+    if _is_n1_memory_optimized(server["name"]):
+        return "m1"
+    # tpu7 and ct4p come from the Compute Engine API, but no doc lists their disks:
+    # assume the same support as their documented siblings (like ct5l below)
+    # https://docs.cloud.google.com/compute/docs/tpus/tpu-machines
+    return {"tpu7": "tpu7x", "ct4p": "ct5lp"}.get(series, series)
+
+
+@cache
+def _warn_unknown_storage_series(series: str) -> None:
+    """Warn about a series missing from `_STORAGE_SERIES`, once per series and run."""
+    logger.warning(
+        f"Unknown GCP series {series} in the storage support tables, "
+        "leaving compatible storage empty."
+    )
+
+
+def _compatible_storage_names(server: dict) -> list[str]:
+    key = _support_key(server)
+    if not any(key in series for series in _STORAGE_SERIES.values()):
+        _warn_unknown_storage_series(key)
+    too_small_for_extreme = server["vcpus"] < _EXTREME_MIN_VCPUS.get(key, 0)
+    bare_metal_no_throughput = (
+        server["name"].endswith("-metal") and key not in _THROUGHPUT_BARE_METAL_OK
+    )
+    skip = set()
+    if too_small_for_extreme:
+        skip.add("hyperdisk-extreme")
+    if bare_metal_no_throughput:
+        skip.add("hyperdisk-throughput")
+    return [
+        name
+        for name, series in _STORAGE_SERIES.items()
+        if key in series and name not in skip
+    ]
 
 
 @cache
@@ -847,6 +1135,52 @@ def _skus_dict():
     return lookup
 
 
+# Machine family category of each machine series.
+# https://docs.cloud.google.com/compute/docs/machine-resource#machine_type_comparison
+_SERIES_FAMILY = {
+    "General Purpose": (
+        "c3 c3d c4 c4a c4d e2 n1 n2 n2d n4 n4a n4d t2a t2d "
+        # f1-micro and g1-small are the shared-core machine types of the N1 series
+        # https://docs.cloud.google.com/compute/docs/machine-resource#shared-core-types
+        "f1 g1"
+    ),
+    "Compute Optimized": "c2 c2d h3 h4d",
+    "Memory Optimized": "m1 m2 m3 m4 x4 x5",
+    "Storage Optimized": "z3 z4d z4m",
+    "Network Optimized": "c4n m4n",
+    # Accelerator-optimized machines are split into GPU and TPU machines
+    # https://docs.cloud.google.com/compute/docs/accelerator-optimized-machines
+    "GPU Machines": "a2 a3 a4 a4x g2 g4",
+    # https://docs.cloud.google.com/compute/docs/tpus/tpu-machines
+    "TPU Machines": "ct3 ct3p ct4p ct5l ct5lp ct5p ct6e tpu7 tpu7x",
+}
+_SERIES_TO_FAMILY = {
+    series: family
+    for family, series_list in _SERIES_FAMILY.items()
+    for series in series_list.split()
+}
+
+
+@cache
+def _warn_unknown_family(kind: str, name: str) -> None:
+    """Warn about a name missing from a family mapping, once per name and run."""
+    logger.warning(f"Unknown GCP {kind} family of {name}, leaving family empty.")
+
+
+def _machine_family(server_name: str) -> Optional[str]:
+    """Look up the machine family category (e.g. General Purpose) of a machine type.
+
+    Returns None for series not listed above, so new series are not mislabeled.
+    """
+    if _is_n1_memory_optimized(server_name):
+        return "Memory Optimized"
+    series = server_name.split("-")[0]
+    family = _SERIES_TO_FAMILY.get(series)
+    if family is None:
+        _warn_unknown_family("server", series)
+    return family
+
+
 def _search_servers(zone_name: str) -> List[dict]:
     zone_servers = []
     for server in _servers(zone_name):
@@ -859,7 +1193,8 @@ def _search_servers(zone_name: str) -> List[dict]:
                 "api_reference_object": {"machine_type": server.name},
                 "display_name": server.name,
                 "description": server.description,
-                "family": server.name.split("-")[0],
+                "family": _machine_family(server.name),
+                "series": server.name.split("-")[0],
                 "vcpus": server.guest_cpus,
                 "hypervisor": None,
                 "cpu_allocation": (
@@ -1642,6 +1977,18 @@ def inventory_servers(vendor):
     """
     servers = parallel_fetch_servers(vendor, _search_servers, "name", "zones")
     servers = preprocess_servers(servers, vendor, add_vendor_id)
+
+    # storage name -> storage ID, taken from the current storage inventory
+    # (not from the database, which can be missing or stale in a servers-only pull)
+    storages = {s["name"]: s["storage_id"] for s in inventory_storages(vendor)}
+    for server in servers:
+        ids = []
+        for name in _compatible_storage_names(server):
+            if name in storages:
+                ids.append(storages[name])
+            else:
+                vendor.log(f"Storage '{name}' not found for {server['name']}", WARNING)
+        server["compatible_storage_ids"] = ids
     return servers
 
 
@@ -2088,6 +2435,85 @@ _PG_TIER_FAMILY_LABELS = {
 }
 
 
+# Family category and machine series of the Cloud SQL tiers that are not named after
+# a Compute Engine machine series, by the tier name without the db- prefix and the
+# size, e.g. perf-optimized-N for db-perf-optimized-N-8.
+# Series and shared core: https://docs.cloud.google.com/sql/docs/postgres/machine-series-overview
+# General purpose family of N2 and C4:
+# https://docs.cloud.google.com/compute/docs/machine-resource
+_PG_TIER_FAMILY_SERIES = {
+    "f1-micro": ("General Purpose", "Shared Core"),
+    "g1-small": ("General Purpose", "Shared Core"),
+    "perf-optimized-N": ("General Purpose", "N2"),
+    "perf-optimized-C4": ("General Purpose", "C4"),
+    # the series is only documented for SQL Server, with the same machine types:
+    # https://docs.cloud.google.com/sql/docs/sqlserver/machine-series-overview
+    "memory-optimized-N": ("Memory Optimized", "Memory-optimized-N2"),
+}
+# Tiers named after the Compute Engine machine series, e.g. n1-standard for
+# db-n1-standard-4 or c4a-highmem for db-c4a-highmem-4: the series is the first part
+# of the name, the family category comes from the Compute Engine series table.
+# (n1-* are legacy plans, not listed in the Cloud SQL for PostgreSQL docs)
+_PG_TIER_MACHINE_SERIES_RE = recompile(r"^([a-z]\d+[a-z]?)-")
+
+
+# Storage types a Cloud SQL tier can use, by the same tier name as above. The machine
+# series decides the storage type, it is not a free choice.
+# https://docs.cloud.google.com/sql/docs/postgres/machine-series-overview
+# https://docs.cloud.google.com/sql/docs/postgres/instance-settings
+_PG_TIER_STORAGE_IDS = {
+    # Enterprise shared and dedicated core machines: SSD or HDD
+    "f1-micro": ["cloudsql-ssd-standard", "cloudsql-hdd"],
+    "g1-small": ["cloudsql-ssd-standard", "cloudsql-hdd"],
+    # legacy Enterprise plans, not in the docs: assumed to be like the dedicated core
+    "n1-standard": ["cloudsql-ssd-standard", "cloudsql-hdd"],
+    "n1-highmem": ["cloudsql-ssd-standard", "cloudsql-hdd"],
+    # Enterprise Plus: N2 has SSD only
+    "perf-optimized-N": ["cloudsql-ssd"],
+    # not in the PostgreSQL docs: assumed to be like the N2 based perf-optimized-N
+    "memory-optimized-N": ["cloudsql-ssd"],
+    # Enterprise Plus: C4 and C4A have Hyperdisk Balanced only
+    "perf-optimized-C4": ["cloudsql-hyperdisk"],
+    "c4a-highmem": ["cloudsql-hyperdisk"],
+}
+
+
+@cache
+def _warn_unknown_tier_storage(family_slug: str) -> None:
+    """Warn about a tier missing from `_PG_TIER_STORAGE_IDS`, once per tier and run."""
+    logger.warning(
+        f"Unknown Cloud SQL tier family of {family_slug} in the storage table, "
+        "leaving compatible storage empty."
+    )
+
+
+def _pg_tier_storage_ids(family_slug: str) -> list[str]:
+    """Look up the compatible storage ids of a Cloud SQL tier family.
+
+    Returns an empty list for tiers not listed above, so new tiers are not guessed.
+    """
+    if family_slug not in _PG_TIER_STORAGE_IDS:
+        _warn_unknown_tier_storage(family_slug)
+        return []
+    return list(_PG_TIER_STORAGE_IDS[family_slug])
+
+
+def _pg_tier_family_series(family_slug: str) -> tuple[Optional[str], Optional[str]]:
+    """Look up the family category and series of a Cloud SQL tier family.
+
+    Returns None for tiers not named after a known machine series, so new tiers are
+    not mislabeled.
+    """
+    if family_slug in _PG_TIER_FAMILY_SERIES:
+        return _PG_TIER_FAMILY_SERIES[family_slug]
+    match = _PG_TIER_MACHINE_SERIES_RE.match(family_slug)
+    family = _SERIES_TO_FAMILY.get(match.group(1)) if match else None
+    if family is None:
+        _warn_unknown_family("Cloud SQL tier", family_slug)
+        return None, None
+    return family, match.group(1).upper()
+
+
 def _pg_sku_family(tier_name: str) -> str:
     """Billing-index family for a SQL Admin tier, keys match `_pg_compute_sku_class`."""
     if tier_name in _PG_SHARED_TIERS:
@@ -2237,6 +2663,7 @@ def inventory_databases(vendor):
                 else f"{memory_gib:g} GB RAM"
             )
             spec_parts.append(gib_label)
+        tier_family, tier_series = _pg_tier_family_series(family_slug)
         family_label = _PG_TIER_FAMILY_LABELS.get(
             family_slug, family_slug.replace("-", " ").title()
         )
@@ -2317,7 +2744,9 @@ def inventory_databases(vendor):
                 "engine": DatabaseEngine.POSTGRESQL,
                 "wire_protocol": DatabaseWireProtocol.POSTGRESQL,
                 "engine_versions": engine_versions,
-                "family": family_slug,
+                "family": tier_family,
+                "series": tier_series,
+                "compatible_storage_ids": _pg_tier_storage_ids(family_slug),
                 "vcpus": cpu_count,
                 "memory_amount": memory_amount,
                 "storage_size": None,

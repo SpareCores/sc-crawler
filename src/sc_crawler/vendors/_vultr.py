@@ -1,11 +1,13 @@
 """Inventory of Vultr via its API: servers, storages, traffic, IPv4 addresses and managed PostgreSQL, with their prices."""
 
+from functools import cache
 from os import environ
 
 from cachier import cachier
 from requests import get
 
 from ..inspector import _extract_manufacturer
+from ..logger import logger
 from ..lookup import map_compliance_frameworks_to_vendor
 from ..sentry import sentry_capture_or_raise
 from ..table_fields import (
@@ -135,6 +137,18 @@ _PLAN_TYPES: dict[str, str] = {
     "vdc": "Dedicated Cloud",
     "SSD": "Bare Metal SSD",
     "NVMe": "Bare Metal NVMe",
+}
+
+# Series of the managed database plan types: the server plan line they run on, e.g.
+# cc_hp_amd (High Performance AMD) is vhp-amd and occ_gp (Optimized Cloud Compute
+# General Purpose) is voc-g.
+_DATABASE_PLAN_SERIES: dict[str, str] = {
+    "vdb": "vc2",
+    "vc2": "vc2",
+    "cc_hp_amd": "vhp-amd",
+    "cc_hp_intel": "vhp-intel",
+    "occ_gp": "voc-g",
+    "occ_so": "voc-s",
 }
 
 _DATABASE_PLAN_TYPES: dict[str, str] = {
@@ -310,6 +324,53 @@ def _storage_type_from_plan(plan: dict) -> StorageType:
     return _DISK_TYPES.get(plan.get("type"))
 
 
+@cache
+def _warn_unknown(field: str, name: str) -> None:
+    """Warn about a plan without known family or series, once per name and run."""
+    logger.warning(f"Unknown Vultr plan {field} of {name}, leaving {field} empty.")
+
+
+def _server_family(server: dict) -> str | None:
+    """Family of a plan from its type, e.g. vc2 -> Cloud Compute.
+
+    The plans API has no category field, only the type. Returns None for unknown types,
+    so no family is guessed.
+    """
+    family = _PLAN_TYPES.get(server["type"])
+    if family is None:
+        _warn_unknown("family", server["type"])
+    return family
+
+
+def _server_series(server: dict) -> str | None:
+    """Series of a plan from its id: the hardware line of the plan type.
+
+    E.g. vc2-1c-1gb -> vc2, vhp-2c-4gb-amd -> vhp-amd, voc-g-2c-8gb-50s-amd -> voc-g,
+    vx1-m-2c-16g -> vx1-m. GPU plans get the GPU token (vcg-l40s-16c-... -> l40s,
+    vbm-48c-1024gb-4-a100-gpu -> a100). Bare metal plans without GPU have no series.
+    """
+    plan_id = server["id"]
+    plan_type = server["type"]
+    parts = plan_id.split("-")
+    series = None
+    if plan_type in ("vc2", "vhf"):
+        series = parts[0]
+    elif plan_type == "vhp" and parts[-1] in ("amd", "intel"):
+        series = f"vhp-{parts[-1]}"
+    elif plan_type in ("voc", "vx1") and len(parts) > 1:
+        series = f"{parts[0]}-{parts[1]}"
+    elif plan_type in ("vcg", "vdm") and len(parts) > 1:
+        series = parts[1]
+    elif plan_type in ("SSD", "NVMe"):
+        # only the bare metal GPU plans have a GPU token, e.g. ...-8-h100-gpu
+        if plan_id.endswith("-gpu") and len(parts) > 2:
+            series = parts[-2]
+        return series
+    if series is None:
+        _warn_unknown("series", plan_id)
+    return series
+
+
 def _database_plan_tier(database_id: str) -> str:
     """Return the node-plan tier token from a vultr-dbaas id, or '' if absent."""
     parts = database_id.split("-")
@@ -326,6 +387,27 @@ def _database_family_name(plan: dict) -> str:
     plan_type = plan.get("type") or "Unknown"
     plan_type = _DATABASE_PLAN_TYPES.get(plan_type, plan_type)
     return f"{tier_label} {plan_type}".strip()
+
+
+def _database_family(plan: dict) -> str | None:
+    """Family of a database plan: the service tier, e.g. Business or Startup.
+
+    The hardware is in the series. Returns None if the plan id has no known tier.
+    """
+    tier = _database_plan_tier(plan.get("id", ""))
+    if not tier:
+        _warn_unknown("family", plan.get("id", ""))
+        return None
+    return tier.title()
+
+
+def _database_series(plan: dict) -> str | None:
+    """Series of a database plan: the hardware line of its plan type, e.g. vhp-amd."""
+    plan_type = plan.get("type")
+    series = _DATABASE_PLAN_SERIES.get(plan_type)
+    if series is None:
+        _warn_unknown("series", plan.get("id", ""))
+    return series
 
 
 def _database_pitr_days(database_id: str) -> int | None:
@@ -800,6 +882,7 @@ def inventory_servers(vendor):
     """
     plans = _get_plans()
     plans_metal = _get_plans_metal()
+    metal_ids = {plan["id"] for plan in plans_metal}
 
     items = []
     for server in plans + plans_metal:
@@ -882,7 +965,7 @@ def inventory_servers(vendor):
         storage_size_per_disk = server.get("disk")
         storage_type = _storage_type_from_plan(server)
         storage_size = storage_size_per_disk * server.get("disk_count", 1)
-        family = _PLAN_TYPES.get(server["type"])
+        family = _server_family(server)
 
         description = _server_description(
             family,
@@ -905,6 +988,7 @@ def inventory_servers(vendor):
             "display_name": server["id"],
             "description": description,
             "family": family,
+            "series": _server_series(server),
             "vcpus": vcpus,
             "hypervisor": None,
             "cpu_allocation": cpu_allocation,
@@ -941,6 +1025,12 @@ def inventory_servers(vendor):
             "storage_size": storage_size,
             "storage_type": storage_type,
             "storages": [],
+            # Block storage cannot be attached to bare metal (/v2/plans-metal) plans.
+            "compatible_storage_ids": (
+                []
+                if server["id"] in metal_ids
+                else ["block_storage_high_perf", "block_storage_storage_opt"]
+            ),
             "network_speed_baseline": None,
             # link_speed is Gbps when present ("up to" / provisioned; no documented baseline)
             # link_type (shared|dedicated) is network uplink, not mapped to a column
@@ -1188,7 +1278,8 @@ def inventory_databases(vendor):
             ha_strategy = [DatabaseHaStrategy.NONE]
         # Plans with zero locations are not currently orderable in any region.
         status = Status.ACTIVE if plan.get("locations") else Status.INACTIVE
-        family = _database_family_name(plan)
+        # tier + hardware text for the description, the family has only the tier
+        family_label = _database_family_name(plan)
         items.append(
             {
                 "vendor_id": vendor.vendor_id,
@@ -1196,7 +1287,7 @@ def inventory_databases(vendor):
                 "name": database_id,
                 "display_name": plan.get("name", database_id),
                 "description": _database_description(
-                    f"Vultr PostgreSQL {family}", vcpus, memory, storage_size
+                    f"Vultr PostgreSQL {family_label}", vcpus, memory, storage_size
                 ),
                 "api_reference": database_id,
                 # API/IaC provisioning references this plan id and engine.
@@ -1212,7 +1303,8 @@ def inventory_databases(vendor):
                 "engine": DatabaseEngine.POSTGRESQL,
                 "wire_protocol": DatabaseWireProtocol.POSTGRESQL,
                 "engine_versions": versions,
-                "family": family,
+                "family": _database_family(plan),
+                "series": _database_series(plan),
                 "vcpus": vcpus,
                 "memory_amount": memory,
                 "storage_size": storage_size,
