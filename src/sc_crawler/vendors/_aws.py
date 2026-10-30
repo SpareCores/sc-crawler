@@ -634,7 +634,9 @@ def _get_gpus_of_instance_type(instance_type):
 
 
 # Instance family categories of the instance type series, with all current and
-# previous generation series listed on the docs page:
+# previous generation series listed on the docs page. Only the fallback of the
+# `instanceFamilyCategory` of the Pricing API (see `_server_series_categories`), for the
+# series not listed there, e.g. the Mac instances:
 # https://docs.aws.amazon.com/ec2/latest/instancetypes/instance-types.html
 _SERIES_FAMILY = {
     "General Purpose": (
@@ -682,12 +684,55 @@ def _instance_series(instance_type: str) -> str:
     return instance_type.split(".")[0]
 
 
+@cache
+def _server_series_categories() -> dict:
+    """Category of the EC2 instance type series from the Pricing API.
+
+    Maps the series (e.g. m5n) to the `instanceFamilyCategory` attribute of the
+    products, e.g. General Purpose, Memory Optimized or Accelerated Computing. Not
+    listed there are e.g. the Mac instances, see `_SERIES_FAMILY` for the fallback.
+    Falls back to an empty mapping if the Pricing API is not available.
+    """
+    try:
+        products = _get_server_products()
+    except Exception as e:
+        logger.warning(
+            "Failed to fetch the instance categories from the Pricing API, "
+            f"using the docs based categories only: {e}"
+        )
+        return {}
+    categories = {}
+    for product in products:
+        attributes = product["product"]["attributes"]
+        instance_type = attributes.get("instanceType")
+        category = attributes.get("instanceFamilyCategory")
+        if instance_type and category:
+            categories.setdefault(_instance_series(instance_type), category)
+    return categories
+
+
+def _series_family(series: str) -> Optional[str]:
+    """Category of an instance type series: Pricing API first, then the docs dict."""
+    return _server_series_categories().get(series) or _SERIES_TO_FAMILY.get(series)
+
+
+@cache
+def _warn_unknown_family(series: str) -> None:
+    """Warn about a series without category, once per series and run."""
+    logger.warning(f"Unknown AWS instance family of {series}, leaving family empty.")
+
+
 def _instance_family(instance_type: str) -> Optional[str]:
     """Look up the family category (e.g. General Purpose) of an instance type.
 
-    Returns None for series not listed above, so new series are not mislabeled.
+    Returns None for series not listed by the Pricing API nor above, so new series
+    are not mislabeled.
     """
-    return _SERIES_TO_FAMILY.get(_instance_series(instance_type))
+    series = _instance_series(instance_type)
+    family = _series_family(series)
+    if family is None:
+        _warn_unknown_family(series)
+    return family
 
 
 def _make_server_from_instance_type(instance_type, vendor) -> dict:
@@ -875,8 +920,12 @@ def _search_storage(
     return volumes
 
 
+@cache
 def _get_server_products() -> list:
-    """Fetch on-demand Linux EC2 instance prices using the `GetProducts` API."""
+    """Fetch on-demand Linux EC2 instance prices using the `GetProducts` API.
+
+    Cached in memory, as the list is large and used by multiple inventory functions.
+    """
 
     # example GetProducts response:
     # {
@@ -1624,6 +1673,10 @@ def inventory_servers(vendor):
     # TODO consider dropping this in favor of pricing.get_products, as
     #      it has info e.g. on instanceFamily although other fields
     #      are messier (e.g. extract memory from string)
+    # load the instance categories once, before processing the instance types
+    vendor.progress_tracker.start_task(name="Fetching instance categories", total=None)
+    _server_series_categories()
+    vendor.progress_tracker.hide_task()
     servers = parallel_fetch_servers(
         vendor, _boto_describe_instance_types, "InstanceType", "regions"
     )
@@ -2426,10 +2479,13 @@ def _get_rds_instance_products_by_region() -> tuple[
 def _database_family(database_id: str, pricing_family: str) -> str:
     """Family category of an RDS instance class, same as of its EC2 instance type.
 
-    Falls back to the category of the RDS pricing API for series that are not
-    EC2 instance types (e.g. db.x2g), in Title Case like the EC2 categories.
+    The RDS pricing products have no `instanceFamilyCategory` (only `instanceFamily`),
+    so the category of the EC2 series is used. Falls back to the category of the RDS
+    pricing API for series that are not EC2 instance types (e.g. db.x2g), in Title
+    Case like the EC2 categories.
     """
-    return _instance_family(database_id.removeprefix("db.")) or pricing_family.title()
+    series = _instance_series(database_id.removeprefix("db."))
+    return _series_family(series) or pricing_family.title()
 
 
 def inventory_databases(vendor):

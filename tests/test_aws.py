@@ -20,9 +20,12 @@ from sc_crawler.vendors._aws import (
     _describe_orderable_db_instance_options_for_class_with_progress,
     _extract_rds_bundled_storage_size,
     _get_rds_instance_products_by_region,
+    _get_server_products,
     _get_storage_bounds_from_orderable_options,
     _instance_family,
     _instance_series,
+    _server_series_categories,
+    _warn_unknown_family,
 )
 from sc_crawler.vendors._aws import (
     _reconcile_server_status as aws_reconcile_server_status,
@@ -114,6 +117,13 @@ def _aws_vendor(*, regions=None, servers=None, databases=None, database_storages
         start_task=Mock(), advance_task=Mock(), hide_task=Mock()
     )
     return vendor
+
+
+@pytest.fixture(autouse=True)
+def _no_pricing_api_categories():
+    """Keep the tests offline: no instance categories from the Pricing API."""
+    with patch("sc_crawler.vendors._aws._server_series_categories", return_value={}):
+        yield
 
 
 def test_aws_extract_rds_storage_size():
@@ -963,3 +973,92 @@ def test_aws_instance_series_and_family(instance_type, series, family):
 )
 def test_aws_database_family(database_id, pricing_family, family):
     assert _database_family(database_id, pricing_family) == family
+
+
+def _product(instance_type, category=None):
+    attributes = {"instanceType": instance_type}
+    if category:
+        attributes["instanceFamilyCategory"] = category
+    return {"product": {"attributes": attributes}}
+
+
+def test_aws_server_series_categories_from_pricing_products():
+    _server_series_categories.cache_clear()
+    products = [
+        _product("m5n.large", "General Purpose"),
+        _product("m5n.xlarge", "General Purpose"),
+        _product("i7ie.large", "Storage Optimized"),
+        _product("p6-b200.48xlarge", "Accelerated Computing"),
+        # no category: ignored
+        _product("nocategory.large"),
+        # no instance type, e.g. other products
+        {"product": {"attributes": {"instanceFamilyCategory": "General Purpose"}}},
+    ]
+    with patch("sc_crawler.vendors._aws._get_server_products", return_value=products):
+        categories = _server_series_categories()
+    _server_series_categories.cache_clear()
+    assert categories == {
+        "m5n": "General Purpose",
+        "i7ie": "Storage Optimized",
+        "p6-b200": "Accelerated Computing",
+    }
+
+
+def test_aws_pricing_api_category_wins_and_docs_dict_is_the_fallback():
+    categories = {"m5": "Compute Optimized", "newgen1": "Memory Optimized"}
+    with patch(
+        "sc_crawler.vendors._aws._server_series_categories", return_value=categories
+    ):
+        # the Pricing API wins over the docs dict
+        assert _instance_family("m5.large") == "Compute Optimized"
+        # a series missing from the docs dict gets its category from the API
+        assert _instance_family("newgen1.large") == "Memory Optimized"
+        # a series missing from the API falls back to the docs dict, e.g. Mac
+        assert _instance_family("mac2-m2.metal") == "General Purpose"
+        # RDS uses the category of the EC2 series
+        assert _database_family("db.newgen1.large", "General purpose") == (
+            "Memory Optimized"
+        )
+
+
+def test_aws_pricing_api_failure_falls_back_to_the_docs_dict():
+    _server_series_categories.cache_clear()
+    with (
+        patch(
+            "sc_crawler.vendors._aws._get_server_products",
+            side_effect=RuntimeError("no access"),
+        ),
+        patch("sc_crawler.vendors._aws.logger") as logger,
+    ):
+        assert _server_series_categories() == {}
+    _server_series_categories.cache_clear()
+    warnings = [call.args[0] for call in logger.warning.call_args_list]
+    assert len(warnings) == 1
+    assert "no access" in warnings[0]
+
+
+def test_aws_unknown_family_is_empty_and_warned_once():
+    _warn_unknown_family.cache_clear()
+    with patch("sc_crawler.vendors._aws.logger") as logger:
+        assert _instance_family("brandnew1.large") is None
+        assert _instance_family("brandnew1.xlarge") is None
+        # known series do not warn
+        assert _instance_family("m5.large") == "General Purpose"
+        # the RDS fallback to the pricing family does not warn
+        assert _database_family("db.brandnew1.large", "Memory optimized") == (
+            "Memory Optimized"
+        )
+    warnings = [call.args[0] for call in logger.warning.call_args_list]
+    assert len(warnings) == 1
+    assert "brandnew1" in warnings[0]
+
+
+def test_aws_server_products_are_cached_in_memory():
+    _get_server_products.cache_clear()
+    with patch(
+        "sc_crawler.vendors._aws._boto_get_products", return_value=[]
+    ) as get_products:
+        _get_server_products()
+        _get_server_products()
+    _get_server_products.cache_clear()
+    get_products.assert_called_once()
