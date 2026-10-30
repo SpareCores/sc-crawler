@@ -16,6 +16,8 @@ from sc_crawler.table_fields import (
 from sc_crawler.vendors._aws import (
     _active_region_ids,
     _boto_describe_db_major_engine_versions_first,
+    _compatible_storage_ids,
+    _database_compatible_storage_ids,
     _database_family,
     _describe_orderable_db_instance_options_for_class_with_progress,
     _extract_rds_bundled_storage_size,
@@ -343,6 +345,7 @@ def test_aws_inventory_databases_description_server_id_and_capabilities():
     options_by_database = {
         "db.m5.large": [
             {
+                "StorageType": "gp3",
                 "MultiAZCapable": True,
                 "SupportsStorageAutoscaling": True,
                 "MinStorageSize": 20,
@@ -392,6 +395,8 @@ def test_aws_inventory_databases_description_server_id_and_capabilities():
     assert by_id["db.m5.large"]["server_id"] == "m5.large"
     assert by_id["db.m5.large"]["family"] == "General Purpose"
     assert by_id["db.m5.large"]["series"] == "m5"
+    assert by_id["db.m5.large"]["compatible_storage_ids"] == ["gp3"]
+    assert by_id["db.r6gd.xlarge"]["compatible_storage_ids"] == []
     assert by_id["db.r6gd.xlarge"]["family"] == "Memory Optimized"
     assert by_id["db.r6gd.xlarge"]["series"] == "r6gd"
     assert by_id["db.m5.large"]["memory_amount"] == 8 * 1024
@@ -1088,3 +1093,31 @@ def test_aws_server_products_are_cached_in_memory():
         _get_server_products()
     _get_server_products.cache_clear()
     get_products.assert_called_once()
+
+
+def test_aws_compatible_storage_ids_are_all_ebs_types_if_ebs_can_be_attached():
+    all_ids = ["standard", "gp2", "gp3", "st1", "sc1", "io1", "io2"]
+    # an old Xen and a Nitro instance type, both can attach EBS volumes
+    for ebs_info in (
+        {"EbsOptimizedSupport": "unsupported", "MaximumEbsAttachments": 3},
+        {"EbsOptimizedSupport": "default", "MaximumEbsAttachments": 27},
+    ):
+        assert _compatible_storage_ids({"EbsInfo": ebs_info}) == all_ids
+    # no EBS volume can be attached
+    assert _compatible_storage_ids({"EbsInfo": {"MaximumEbsAttachments": 0}}) == []
+    assert _compatible_storage_ids({}) == []
+
+
+def test_aws_database_compatible_storage_ids_from_orderable_options():
+    options = [
+        {"StorageType": "io2"},
+        {"StorageType": "gp3"},
+        {"StorageType": "gp2"},
+        {"StorageType": "gp3"},
+        # not a known database storage: ignored
+        {"StorageType": "aurora"},
+        {},
+    ]
+    # in the order of the database storage mapping, without duplicates
+    assert _database_compatible_storage_ids(options) == ["gp2", "gp3", "io2"]
+    assert _database_compatible_storage_ids([]) == []

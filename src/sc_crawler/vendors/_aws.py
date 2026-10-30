@@ -711,6 +711,23 @@ def _instance_family(instance_type: str) -> Optional[str]:
     return family
 
 
+def _compatible_storage_ids(instance_type) -> list[str]:
+    """EBS volume types that can be attached to an instance type.
+
+    All of them, if the instance type can attach EBS volumes (`MaximumEbsAttachments`
+    of the API): no volume type is limited to specific instance types. io1 is available
+    for all instance types, io2 can be attached to all of them (Nitro based ones support
+    up to 256,000 IOPS, others up to 64,000), and st1/sc1 only cannot be boot volumes.
+    https://docs.aws.amazon.com/ebs/latest/userguide/ebs-volume-types.html
+    https://docs.aws.amazon.com/ebs/latest/userguide/provisioned-iops.html
+    https://docs.aws.amazon.com/ebs/latest/userguide/hdd-vols.html
+    """
+    ebs_info = instance_type.get("EbsInfo") or {}
+    if ebs_info.get("MaximumEbsAttachments", 0) > 0:
+        return list(storage_manual_data)
+    return []
+
+
 def _make_server_from_instance_type(instance_type, vendor) -> dict:
     """Create a SQLModel Server-compatible dict from AWS raw API response."""
     it = instance_type["InstanceType"]
@@ -744,6 +761,7 @@ def _make_server_from_instance_type(instance_type, vendor) -> dict:
         "hypervisor": instance_type.get("Hypervisor", None),
         "family": _instance_family(it),
         "series": series,
+        "compatible_storage_ids": _compatible_storage_ids(instance_type),
         "vcpus": vcpu_info["DefaultVCpus"],
         "cpu_allocation": allocation,
         "cpu_cores": vcpu_info["DefaultCores"],
@@ -2452,6 +2470,21 @@ def _get_rds_instance_products_by_region() -> tuple[
     }
 
 
+def _database_compatible_storage_ids(options: list) -> list[str]:
+    """Storage types of an RDS instance class from its orderable options.
+
+    The `StorageType` of `DescribeOrderableDBInstanceOptions` is the id of the database
+    storage (gp2, gp3, io1, io2). Storage types not in the mapping are ignored.
+    https://docs.aws.amazon.com/AmazonRDS/latest/APIReference/API_OrderableDBInstanceOption.html
+    """
+    storage_types = {(option.get("StorageType") or "").lower() for option in options}
+    return [
+        storage_id
+        for storage_id in _DATABASE_STORAGE_MAPPING
+        if storage_id in storage_types
+    ]
+
+
 def _database_family(database_id: str, pricing_family: str) -> str:
     """Family category of an RDS instance class, same as of its EC2 instance type.
 
@@ -2590,6 +2623,9 @@ def inventory_databases(vendor):
                     "engine_versions": major_versions,
                     "family": _database_family(database_id, product["instanceFamily"]),
                     "series": _instance_series(database_id.removeprefix("db.")),
+                    "compatible_storage_ids": _database_compatible_storage_ids(
+                        db_instance_options
+                    ),
                     "description": description,
                     "server_id": server_id,
                     "vcpus": product["vcpu"],
