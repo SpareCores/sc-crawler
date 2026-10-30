@@ -1128,6 +1128,15 @@ def inventory_regions(vendor):
 
     Coordinates were provided by the Microsoft API, which doesn't seem
     to be very reliable.
+
+    Some regions are restricted to specific customer scenarios, such as
+    disaster recovery within a geography (e.g. `australiacentral2`,
+    `brazilsoutheast`, `germanynorth`, `norwaywest`, `southafricawest`,
+    `uaecentral`, `swedensouth`), see
+    <https://learn.microsoft.com/en-us/azure/reliability/regions-list>.
+    These are listed if visible to the subscription, but services and SKUs
+    are usually not available there without a region access request:
+    <https://learn.microsoft.com/en-us/troubleshoot/azure/general/region-access-request-process>.
     """
 
     manual_datas = {
@@ -1577,10 +1586,6 @@ def inventory_regions(vendor):
             # not production region?
             # https://github.com/Azure/azure-dev/issues/2165#issuecomment-1542948509
             if region["name"] == "brazilus":
-                continue
-            # exclude for now as this new region is popping up and being removed
-            # from their API response randomly, so messing with git history
-            if region["name"] == "newzealandnorth":
                 continue
             manual_data = manual_datas.get(region["name"])
             if not manual_data:

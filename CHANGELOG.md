@@ -9,6 +9,7 @@ Fix(es):
 - `Azure`: price PostgreSQL compute from the `1 vCore` meter (as the pricing
   page does), as some sized meters are stale.
 - `Azure`: label `Mdsv2` PostgreSQL SKUs as `MemoryOptimized`.
+- `Azure`: re-enable the `newzealandnorth` region.
 - `nvbandwidth`: fix `p2p:duplex` score and `gpu_count` for v0.6+ stacked
   bidirectional matrices.
 - `nvbandwidth`: skip aborted runs (with `error` in the output).
