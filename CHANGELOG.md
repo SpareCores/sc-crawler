@@ -29,6 +29,11 @@ New feature(s):
   `plan_storage.step_gib` / `options` bands from `GET /1.3/database/plans`)
   so consumers can snap `plan_storage_gib` without a schema change.
 
+New feature(s):
+
+- `observed_at` is the time of the last change instead of the last `pull`:
+  `pull` writes only new, changed, or newly inactive rows.
+
 Fix(es):
 
 - `AWS`: skip the new RDS `UnusedBox` products (no instance family, vCPU, or memory).
