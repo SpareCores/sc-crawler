@@ -2570,7 +2570,8 @@ def inventory_databases(vendor):
         ha, ha_strategy, sla = facts["ha"], facts["ha_strategy"], facts["sla"]
         if own:
             edition_name = own["edition"]
-            vcpus, memory_amount = own["vcpus"], own["memory_amount"]
+            vcpus = own["vcpus"] or vcpus
+            memory_amount = own["memory_amount"]
         else:
             if server and server.vcpus:
                 vcpus = server.vcpus
