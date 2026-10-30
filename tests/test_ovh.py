@@ -26,6 +26,7 @@ from sc_crawler.vendors._ovh import (
     _get_region,
     _get_regions,
     _get_server_family,
+    _get_server_series,
     _get_volume_types,
     inventory_compliance_frameworks,
     inventory_database_prices,
@@ -113,48 +114,62 @@ def test_mock_ovh_client():
 
 
 class TestGetServerFamily:
-    """Tests for _get_server_family function."""
+    """Tests for _get_server_family function (values from the public OVH catalog)."""
 
-    def test_general_purpose_family(self):
-        """Test General Purpose server family detection."""
-        assert _get_server_family("b2-7") == "General Purpose"
-        assert _get_server_family("b3-128") == "General Purpose"
+    @pytest.mark.parametrize(
+        "brick,subtype,family",
+        [
+            ("guaranteed-resources", "general-purpose", "General Purpose"),
+            ("guaranteed-resources", "cpu", "Compute Optimized"),
+            ("guaranteed-resources", "ram", "Memory Optimized"),
+            ("guaranteed-resources", "iops", "Storage Optimized"),
+            ("guaranteed-resources", "discovery", "Discovery"),
+            ("guaranteed-resources", "metal", "Metal"),
+            # GPU flavors have no subtype
+            ("gpu", None, "Cloud GPU"),
+        ],
+    )
+    def test_family_from_brick(self, brick, subtype, family):
+        commercial = {"brick": brick, "brickSubtype": subtype}
+        assert _get_server_family(commercial) == family
 
-    def test_compute_optimized_family(self):
-        """Test Compute Optimized server family detection."""
-        assert _get_server_family("c2-30") == "Compute Optimized"
-        assert _get_server_family("c3-64") == "Compute Optimized"
+    def test_legacy_and_unknown_family_is_none(self):
+        """Legacy flavors have no commercial data, unknown subtypes are not guessed."""
+        assert _get_server_family({}) is None
+        assert (
+            _get_server_family(
+                {"brick": "guaranteed-resources", "brickSubtype": "brand-new"}
+            )
+            is None
+        )
 
-    def test_memory_optimized_family(self):
-        """Test Memory Optimized server family detection."""
-        assert _get_server_family("r2-120") == "Memory Optimized"
-        assert _get_server_family("r3-256") == "Memory Optimized"
 
-    def test_discovery_family(self):
-        """Test Discovery server family detection."""
-        assert _get_server_family("d2-8") == "Discovery"
+class TestGetServerSeries:
+    """Tests for _get_server_series function."""
 
-    def test_storage_optimized_family(self):
-        """Test Storage Optimized server family detection."""
-        assert _get_server_family("i1-90") == "Storage Optimized"
-
-    def test_metal_family(self):
-        """Test Metal server family detection."""
-        assert _get_server_family("bm-s1") == "Metal"
-        assert _get_server_family("bm-m1") == "Metal"
-
-    def test_gpu_family(self):
-        """Test GPU server family detection."""
-        assert _get_server_family("t1-45") == "Cloud GPU"
-        assert _get_server_family("t2-90") == "Cloud GPU"
-        assert _get_server_family("a10-180") == "Cloud GPU"
-        assert _get_server_family("h100-760") == "Cloud GPU"
-        assert _get_server_family("l4-90") == "Cloud GPU"
-        assert _get_server_family("rtx5000-28") == "Cloud GPU"
-
-    def test_unknown_family(self):
-        """Test unknown server family returns None."""
-        assert _get_server_family("unknown-type") is None
+    @pytest.mark.parametrize(
+        "server_id,series",
+        [
+            ("b3-16", "b3"),
+            ("c3-64", "c3"),
+            ("r2-120", "r2"),
+            ("d2-8", "d2"),
+            ("i1-90", "i1"),
+            ("bm-s1", "bm"),
+            ("l40s-90", "l40s"),
+            ("h200-1920", "h200"),
+            ("rtx5000-28", "rtx5000"),
+            # legacy flavors
+            ("eg-7", "eg"),
+            ("sp-30", "sp"),
+            ("vps-ssd-1", "vps"),
+            # flavors of the same prefix are kept in one series
+            ("t1-45", "t1"),
+            ("t1-le-45", "t1"),
+        ],
+    )
+    def test_series_is_flavor_prefix(self, server_id, series):
+        assert _get_server_series(server_id) == series
 
 
 class TestGetGpuInfo:
@@ -450,7 +465,7 @@ def _extend_ovh_get(mock_client, *, availability, capabilities, catalog_addons):
     mock_client.get.side_effect = fake_get
 
 
-def _server_inventory_plan(server_id, *, brick_subtype=None):
+def _server_inventory_plan(server_id, *, brick_subtype=None, brick=None):
     return {
         "product": "publiccloud-instance",
         "planCode": f"{server_id}.hour.consumption",
@@ -458,6 +473,7 @@ def _server_inventory_plan(server_id, *, brick_subtype=None):
         "blobs": {
             "commercial": {
                 "name": server_id,
+                "brick": brick,
                 "brickSubtype": brick_subtype,
             },
             "technical": {
@@ -492,6 +508,67 @@ def test_ovh_inventory_servers_maps_plans(mock_ovh_client):
 
     assert by_id["b3-8"]["compatible_storage_ids"] == expected_storage_ids
     assert by_id["d2-8"]["compatible_storage_ids"] == expected_storage_ids
+
+
+def test_ovh_inventory_servers_metal_has_no_compatible_storage(mock_ovh_client):
+    plans = [
+        _server_inventory_plan(
+            "bm-s1", brick="guaranteed-resources", brick_subtype="metal"
+        ),
+        _server_inventory_plan(
+            "c3-16", brick="guaranteed-resources", brick_subtype="cpu"
+        ),
+    ]
+    _extend_ovh_get(
+        mock_ovh_client,
+        availability=[],
+        capabilities={},
+        catalog_addons=plans,
+    )
+
+    rows = inventory_servers(_ovh_vendor())
+    by_id = {row["server_id"]: row for row in rows}
+
+    # Block Storage is not available for Metal instances
+    assert by_id["bm-s1"]["compatible_storage_ids"] == []
+    assert by_id["c3-16"]["compatible_storage_ids"] == [
+        "classic",
+        "high-speed",
+        "high-speed-gen2",
+    ]
+
+
+def test_ovh_inventory_servers_sets_family_and_series(mock_ovh_client):
+    plans = [
+        _server_inventory_plan(
+            "b3-8", brick="guaranteed-resources", brick_subtype="general-purpose"
+        ),
+        _server_inventory_plan("h200-1920", brick="gpu"),
+        # legacy flavor without category in the catalog
+        _server_inventory_plan("eg-7"),
+    ]
+    _extend_ovh_get(
+        mock_ovh_client,
+        availability=[],
+        capabilities={},
+        catalog_addons=plans,
+    )
+
+    with patch("sc_crawler.vendors._ovh.logger") as logger:
+        rows = inventory_servers(_ovh_vendor())
+    by_id = {row["server_id"]: row for row in rows}
+
+    assert by_id["b3-8"]["family"] == "General Purpose"
+    assert by_id["b3-8"]["series"] == "b3"
+    assert by_id["h200-1920"]["family"] == "Cloud GPU"
+    assert by_id["h200-1920"]["series"] == "h200"
+    assert by_id["eg-7"]["family"] is None
+    assert by_id["eg-7"]["series"] == "eg"
+    # one summary warning for the flavors without category
+    warnings = [call.args[0] for call in logger.warning.call_args_list]
+    assert len(warnings) == 1
+    assert "1 servers" in warnings[0]
+    assert "eg-7" in warnings[0]
 
 
 def test_inventory_databases_collapses_versions_and_maps_fields(mock_ovh_client):
@@ -546,6 +623,8 @@ def test_inventory_databases_collapses_versions_and_maps_fields(mock_ovh_client)
     assert production["wire_protocol"] == DatabaseWireProtocol.POSTGRESQL
     assert production["engine_versions"] == ["16", "17"]
     assert production["family"] == "Production"
+    # series is the flavor prefix, the family stays the service plan
+    assert production["series"] == "b3"
     assert production["name"] == "postgresql-production-b3-8"
     assert production["database_id"] == "postgresql-production-b3-8"
     assert production["vcpus"] == 2
@@ -593,6 +672,44 @@ def test_inventory_databases_collapses_versions_and_maps_fields(mock_ovh_client)
 
     retired = by_id["postgresql-business-b3-8"]
     assert retired["status"] == Status.RETIRED
+
+
+def test_inventory_databases_series_of_dbaas_only_flavor(mock_ovh_client):
+    capabilities = _pg_capabilities()
+    capabilities["flavors"].append(
+        {
+            "name": "db1-4",
+            "core": 2,
+            "memory": 4,
+            "storage": 80,
+            "generation": "gen3",
+            "specifications": {
+                "core": 2,
+                "memory": {"unit": "GB", "value": 4},
+                "storage": {"unit": "GB", "value": 80},
+            },
+        }
+    )
+    availability = [
+        _pg_offer(
+            plan="essential",
+            flavor="db1-4",
+            min_nodes=1,
+            max_nodes=1,
+            retention_days=2,
+        )
+    ]
+    _extend_ovh_get(
+        mock_ovh_client,
+        availability=availability,
+        capabilities=capabilities,
+        catalog_addons=[],
+    )
+    rows = inventory_databases(_ovh_vendor())
+    assert len(rows) == 1
+    # the family stays the service plan, the series is the db1 flavor prefix
+    assert rows[0]["family"] == "Essential"
+    assert rows[0]["series"] == "db1"
 
 
 def test_inventory_databases_uses_availability_storage_not_flavor_nvme(mock_ovh_client):

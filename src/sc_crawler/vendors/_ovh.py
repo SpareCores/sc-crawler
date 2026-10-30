@@ -6,6 +6,7 @@ from typing import List, Optional
 
 from ovh import Client
 
+from ..logger import logger
 from ..lookup import map_compliance_frameworks_to_vendor
 from ..sentry import sentry_capture_or_raise
 from ..table_fields import (
@@ -686,50 +687,36 @@ def _get_database_capabilities(project_id: Optional[str] = None) -> dict:
     return _client().get(f"/cloud/project/{project_id}/database/capabilities")
 
 
-def _get_server_family(instance_type_name: str) -> str | None:
-    """Map OVHcloud instance type name to server family.
+# Server family by the `brickSubtype` of the catalog `blobs.commercial`, with the
+# wording of the ranges on the pricing page. GPU flavors have the `gpu` brick and no
+# subtype. Legacy flavors have no `commercial` data at all, so they have no family.
+# https://www.ovhcloud.com/en/public-cloud/prices/
+_BRICK_SUBTYPE_FAMILY = {
+    "general-purpose": "General Purpose",
+    "cpu": "Compute Optimized",
+    "ram": "Memory Optimized",
+    "iops": "Storage Optimized",
+    "discovery": "Discovery",
+    "metal": "Metal",
+}
 
-    Server families are displayed on the pricing page:
-    https://www.ovhcloud.com/en/public-cloud/prices/ (retrieved 2025-11-19)
 
-    Returns:
-        str: Server family name (e.g., "General Purpose", "Compute Optimized")
+def _get_server_family(commercial: dict) -> str | None:
+    """Map the catalog `commercial` data of a flavor to the server family.
+
+    Returns None for flavors without a known category, so no family is guessed.
     """
-    name_lower = instance_type_name.lower()
-
-    # Extract prefix (e.g., 'b2-7' -> 'b2', 't1-45' -> 't1')
-    prefix = name_lower.split("-")[0]
-
-    # GPU instances
-    if prefix in ["t1", "t2", "a10", "a100", "l4", "l40s", "h100", "rtx5000"]:
+    if commercial.get("brick") == "gpu":
         return "Cloud GPU"
+    return _BRICK_SUBTYPE_FAMILY.get(commercial.get("brickSubtype"))
 
-    # Metal instances
-    if prefix == "bm":
-        return "Metal"
 
-    # General Purpose: b2, b3 families
-    if prefix in ["b2", "b3"]:
-        return "General Purpose"
+def _get_server_series(server_id: str) -> str | None:
+    """Server series from the flavor name prefix, e.g. b3 for b3-16, l40s for l40s-90.
 
-    # Compute Optimized: c2, c3 families
-    if prefix in ["c2", "c3"]:
-        return "Compute Optimized"
-
-    # Memory Optimized: r2, r3 families
-    if prefix in ["r2", "r3"]:
-        return "Memory Optimized"
-
-    # Discovery: d2 family
-    if prefix == "d2":
-        return "Discovery"
-
-    # Storage Optimized: i1 family
-    if prefix == "i1":
-        return "Storage Optimized"
-
-    # Default fallback
-    return None
+    Flavors of the same prefix are kept together, e.g. t1-le-45 is in the t1 series.
+    """
+    return server_id.lower().split("-")[0] or None
 
 
 def _get_gpu_info(
@@ -1176,6 +1163,7 @@ def inventory_servers(vendor) -> list[dict]:
     for server_plan in server_plans:
         servers[server_plan["invoiceName"]] = server_plan
 
+    no_family: list[str] = []
     for server_id, server in servers.items():
         blobs = server.get("blobs", {})
         if not blobs:
@@ -1184,7 +1172,9 @@ def inventory_servers(vendor) -> list[dict]:
         commercial = blobs.get("commercial", {})
         technical = blobs.get("technical", {})
         name = commercial.get("name", server_id)
-        family = _get_server_family(server_id)
+        family = _get_server_family(commercial)
+        if family is None:
+            no_family.append(server_id)
 
         # all resources are dedicated expect for the Discovery series
         vcpus = technical.get("cpu", {}).get("cores", 0)
@@ -1284,6 +1274,7 @@ def inventory_servers(vendor) -> list[dict]:
                 "display_name": name,
                 "description": description,
                 "family": family,
+                "series": _get_server_series(server_id),
                 "vcpus": vcpus,
                 # as per OVH FAQ: https://www.ovhcloud.com/en/public-cloud/virtual-instances/
                 # alsoverified from lscpu on B3-8 instance (2025-11-17)
@@ -1312,11 +1303,17 @@ def inventory_servers(vendor) -> list[dict]:
                 "storage_size": storage_size,
                 "storage_type": storage_type,
                 "storages": storages,
-                "compatible_storage_ids": [
-                    "classic",
-                    "high-speed",
-                    "high-speed-gen2",
-                ],
+                # Block Storage volumes are currently not available for Metal instances
+                # https://docs.ovhcloud.com/en/guides/public-cloud/compute/create-and-configure-an-additional-disk-on-an-instance
+                "compatible_storage_ids": (
+                    []
+                    if commercial.get("brickSubtype") == "metal"
+                    else [
+                        "classic",
+                        "high-speed",
+                        "high-speed-gen2",
+                    ]
+                ),
                 "network_speed_baseline": network_speed_gbps,
                 "network_speed_max": network_speed_max_gbps,
                 # TODO: have to implement manual mapping for network_storage_speed related fields
@@ -1335,6 +1332,11 @@ def inventory_servers(vendor) -> list[dict]:
             }
         )
 
+    if no_family:
+        logger.warning(
+            f"No known category in the OVHcloud catalog for {len(no_family)} servers "
+            f"(e.g. {', '.join(no_family[:5])}), leaving family empty."
+        )
     return items
 
 
@@ -1769,6 +1771,8 @@ def inventory_databases(vendor):
                 "engine_versions": sorted(engine_versions),
                 # Service plan tier (Essential, Production, Advanced, ...).
                 "family": plan_label,
+                # hardware of the plan: b3 (General Purpose) or db1 (DBaaS only flavor)
+                "series": _get_server_series(flavor_name),
                 "vcpus": vcpus,
                 "memory_amount": memory * _MIB_PER_GIB if memory is not None else None,
                 "storage_size": storage_size,
