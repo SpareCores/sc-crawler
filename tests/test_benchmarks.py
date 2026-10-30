@@ -462,7 +462,7 @@ def test_nvbandwidth_single_gpu_skips_waived_p2p(tmp_path, monkeypatch):
     assert "nvbandwidth:p2p:single" not in scores
     environment = scores["nvbandwidth:all:host_to_gpu"]["environment"]
     assert environment["driver_version"] == "535.183.01"
-    assert environment["cuda_runtime_version"] == 12060
+    assert environment["cuda_version"] == 12060
     assert environment["nvbandwidth_version"] == "v0.5"
     assert environment["gpu_count"] == 1
     assert environment["p2p_supported"] is False
@@ -506,6 +506,78 @@ def test_nvbandwidth_multi_gpu_averages_cells(tmp_path, monkeypatch):
     environment = scores["nvbandwidth:p2p:single"]["environment"]
     assert environment["gpu_count"] == 2
     assert environment["p2p_supported"] is True
+
+
+def test_nvbandwidth_v08_local_copy_and_stacked_bidirectional(tmp_path, monkeypatch):
+    scores = _nvbandwidth_scores(
+        tmp_path,
+        monkeypatch,
+        _nvbandwidth_payload(
+            [
+                _nvbandwidth_testcase(
+                    "device_local_copy",
+                    matrix=[["728.348", "728.912"]],
+                    total=1457.26,
+                ),
+                # v0.6+: both directions and their Total stacked, `sum` is the Total
+                _nvbandwidth_testcase(
+                    "device_to_device_bidirectional_memcpy_write_ce",
+                    matrix=[
+                        ["N/A", "52.6138"],
+                        ["52.5645", "N/A"],
+                        ["N/A", "52.5642"],
+                        ["52.6112", "N/A"],
+                        ["N/A", "105.178"],
+                        ["105.176", "N/A"],
+                    ],
+                    total=210.354,
+                ),
+            ],
+            driver="595.45.04",
+            cuda=13020,
+            version="v0.8",
+        ),
+    )
+    assert scores["nvbandwidth:slot:local_copy"]["score"] == 1457.26 / 2
+    assert scores["nvbandwidth:p2p:duplex"]["score"] == 210.354 / 2 / 2
+    environment = scores["nvbandwidth:slot:local_copy"]["environment"]
+    assert environment["gpu_count"] == 2
+    assert environment["nvbandwidth_version"] == "v0.8"
+    assert environment["cuda_version"] == 13020
+    assert "cuda_runtime_version" not in environment
+    assert environment["p2p_supported"] is True
+
+
+def test_nvbandwidth_skips_unknown_stacked_layout(tmp_path, monkeypatch):
+    scores = _nvbandwidth_scores(
+        tmp_path,
+        monkeypatch,
+        _nvbandwidth_payload(
+            [
+                _nvbandwidth_testcase(
+                    "device_to_device_bidirectional_memcpy_write_ce",
+                    matrix=[["N/A", "50.0"], ["50.0", "N/A"]] * 2,
+                    total=100.0,
+                ),
+            ],
+            version="v0.8",
+        ),
+    )
+    assert "nvbandwidth:p2p:duplex" not in scores
+
+
+def test_nvbandwidth_skips_aborted_run(tmp_path, monkeypatch):
+    payload = _nvbandwidth_payload(
+        [
+            _nvbandwidth_testcase(
+                "host_to_device_memcpy_ce", matrix=[["50.0"]], total=50.0
+            ),
+            _nvbandwidth_testcase("device_to_device_memcpy_read_ce", status="Running"),
+        ],
+        version="v0.8",
+    )
+    payload["nvbandwidth"]["error"] = "ASSERT in expression h_errorFlag == 0"
+    assert _nvbandwidth_scores(tmp_path, monkeypatch, payload) == {}
 
 
 @pytest.mark.parametrize(
