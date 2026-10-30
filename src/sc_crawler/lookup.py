@@ -1258,6 +1258,17 @@ benchmarks: List[Benchmark] = [
         unit="GB/s",
     ),
     Benchmark(
+        benchmark_id="nvbandwidth:slot:local_copy",
+        name="Per-GPU device memory copy bandwidth (nvbandwidth)",
+        category="GPU bandwidth",
+        subcategory="Single GPU slot",
+        description="Average on-GPU memory copy bandwidth (GB/s) per single GPU (device-to-device copy within the same GPU's memory) utilizing CE (Copy Engine).",
+        framework="nvbandwidth",
+        measurement="gpu_bandwidth",
+        unit="GB/s",
+        note="A copy both reads and writes every byte, so the scores are roughly 35-45% of the memory bandwidth listed on GPU datasheets (e.g. ~1,490 vs 3,350 GB/s on H100 SXM), and should not be compared to those figures directly. Time-sliced virtual GPU profiles (e.g. T4-4Q) can report proportionally lower values than the full GPU. Only recorded with nvbandwidth v0.7 and later.",
+    ),
+    Benchmark(
         benchmark_id="nvbandwidth:slot:latency",
         name="Per-GPU host-device latency (nvbandwidth)",
         category="GPU latency",
@@ -1283,7 +1294,7 @@ benchmarks: List[Benchmark] = [
         name="GPU-to-GPU P2P duplex bandwidth (nvbandwidth)",
         category="GPU bandwidth",
         subcategory="Peer-to-peer",
-        description="Full-duplex NVLink/P2P lane speed (GB/s) during simultaneous dual-GPU transfers utilizing CE (Copy Engine).",
+        description="Per-direction NVLink/P2P lane speed (GB/s) during simultaneous transfers in both directions between two GPUs utilizing CE (Copy Engine).",
         framework="nvbandwidth",
         measurement="gpu_bandwidth",
         unit="GB/s",
@@ -1409,7 +1420,7 @@ _ENVIRONMENT_FIELDS = {
 _FRAMEWORK_ENVIRONMENT_FIELDS = {
     "nvbandwidth": {
         "driver_version": "NVIDIA driver version.",
-        "cuda_runtime_version": "CUDA runtime version.",
+        "cuda_version": "Highest CUDA version supported by the CUDA driver library nvbandwidth ran with, as major*1000 + minor*10 (e.g. 12060 = 12.6).",
         "nvbandwidth_version": "Version of the nvbandwidth tool.",
         "gpu_count": "Number of GPUs seen by nvbandwidth.",
         "p2p_supported": "Whether peer-to-peer (device-to-device) GPU transfers were supported.",

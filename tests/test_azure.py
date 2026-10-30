@@ -11,6 +11,7 @@ from sc_crawler.table_fields import (
     Status,
 )
 from sc_crawler.vendors._azure import (
+    _PG_PRODUCT_SERIES_RE,
     _azure_sku_lifecycle_status,
     _parse_database_name,
     _pg_database_regions,
@@ -1076,7 +1077,8 @@ def test_pg_lookup_retail_price_falls_back_to_one_vcore():
     )
     assert item is dsv6_per_vcore
 
-    # A full-instance meter wins over the per-vCore fallback.
+    # The "1 vCore" meter wins over a sized meter, matching the public pricing page;
+    # sized meters can be stale or copy-pasted (westcentralus D8ds_v5 == D16ds_v5).
     full_sku = {
         "armSkuName": "Standard_D16ds_v5",
         "productName": (
@@ -1085,7 +1087,7 @@ def test_pg_lookup_retail_price_falls_back_to_one_vcore():
         ),
         "meterName": "vCore",
         "skuName": "16 vCore",
-        "retailPrice": 1.424,
+        "retailPrice": 2.8,
     }
     ddsv5_per_vcore = {
         "armSkuName": "1 vCore",
@@ -1106,7 +1108,26 @@ def test_pg_lookup_retail_price_falls_back_to_one_vcore():
             "1 vCore": [ddsv5_per_vcore],
         },
     )
-    assert item is full_sku
+    assert item is ddsv5_per_vcore
+    assert _pg_hourly_compute_price(item, 16, database_id="Standard_D16ds_v5") == 1.424
+
+
+@pytest.mark.parametrize(
+    "product,series",
+    [
+        ("Azure Database for PostgreSQL Flexible Server Mdsv2 Series Compute", "Mdsv2"),
+        (
+            "Azure Database for PostgreSQL Flexible Server General Purpose AMD Dadsv5 Series Compute",
+            "Dadsv5",
+        ),
+        (
+            "Azure Database for PostgreSQL Flexible Server Memory Optimized Edsv5 Series Compute",
+            "Edsv5",
+        ),
+    ],
+)
+def test_pg_product_series_re(product, series):
+    assert _PG_PRODUCT_SERIES_RE.search(product)["series"] == series
 
 
 def test_pg_hourly_compute_price_burstable_meter_is_full_instance():

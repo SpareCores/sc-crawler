@@ -1180,6 +1180,15 @@ def inventory_regions(vendor):
 
     Coordinates were provided by the Microsoft API, which doesn't seem
     to be very reliable.
+
+    Some regions are restricted to specific customer scenarios, such as
+    disaster recovery within a geography (e.g. `australiacentral2`,
+    `brazilsoutheast`, `germanynorth`, `norwaywest`, `southafricawest`,
+    `uaecentral`, `swedensouth`), see
+    <https://learn.microsoft.com/en-us/azure/reliability/regions-list>.
+    These are listed if visible to the subscription, but services and SKUs
+    are usually not available there without a region access request:
+    <https://learn.microsoft.com/en-us/troubleshoot/azure/general/region-access-request-process>.
     """
 
     manual_datas = {
@@ -1629,10 +1638,6 @@ def inventory_regions(vendor):
             # not production region?
             # https://github.com/Azure/azure-dev/issues/2165#issuecomment-1542948509
             if region["name"] == "brazilus":
-                continue
-            # exclude for now as this new region is popping up and being removed
-            # from their API response randomly, so messing with git history
-            if region["name"] == "newzealandnorth":
                 continue
             manual_data = manual_datas.get(region["name"])
             if not manual_data:
@@ -2203,9 +2208,11 @@ _PG_DATABASE_NAME_RE = recompile(
     r"(?:_v(?P<version>\d*))?$"
 )
 _PG_FLAT_COMPUTE_SKUS = frozenset({"B1MS", "B2S"})
+# Edition and vendor tokens are optional: e.g. "Flexible Server Mdsv2 Series Compute"
+# and "General Purpose AMD Dadsv5 Series Compute".
 _PG_PRODUCT_SERIES_RE = recompile(
-    r"(?i)(?:Confidential Compute|General Purpose|Memory Optimized|Memory Purpose|Burstable)\s+"
-    r"(?P<series>[A-Za-z0-9]+)\s+Series"
+    r"(?i)(?:(?:Confidential Compute|General Purpose|Memory Optimized|Memory Purpose|Burstable)\s+)?"
+    r"(?:AMD\s+)?(?P<series>[A-Za-z0-9]+)\s+Series"
 )
 _PG_EDITION_PRODUCT_TOKENS = {
     "GeneralPurpose": ("general purpose",),
@@ -2301,6 +2308,23 @@ def _pg_lookup_retail_price(
     edition_name: str | None,
     prices_by_arm: dict[str, list[dict]],
 ) -> dict | None:
+    parsed = None
+    with sentry_capture_or_raise(vendor=vendor):
+        parsed = _parse_database_name(database_id)
+
+    # The public pricing page bills vCore series as the "1 vCore" meter x vCores.
+    # Sized Standard_* meters are sometimes stale (e.g. australiacentral 96 vCore
+    # kept 2023 prices, ~2x) or copy-pasted from another size (D8ds_v5 == D16ds_v5
+    # in westcentralus), and the "vCore" series meter can lag behind as well.
+    if parsed is not None and parsed[3]:
+        series_re = recompile(rf"(?i)(?<![a-z0-9]){parsed[0]} Series Compute")
+        for rows in prices_by_arm.values():
+            for item in rows:
+                if item.get("skuName") == "1 vCore" and series_re.search(
+                    item.get("productName") or ""
+                ):
+                    return item
+
     if database_id in prices_by_arm:
         return prices_by_arm[database_id][0]
 
@@ -2310,9 +2334,6 @@ def _pg_lookup_retail_price(
     if alias.upper() in prices_by_arm:
         return prices_by_arm[alias.upper()][0]
 
-    parsed = None
-    with sentry_capture_or_raise(vendor=vendor):
-        parsed = _parse_database_name(database_id)
     if parsed is None:
         return None
     series, family, cores, version = parsed
@@ -2613,7 +2634,8 @@ def inventory_databases(vendor):
         ha, ha_strategy, sla = facts["ha"], facts["ha_strategy"], facts["sla"]
         if own:
             edition_name = own["edition"]
-            vcpus, memory_amount = own["vcpus"], own["memory_amount"]
+            vcpus = own["vcpus"] or vcpus
+            memory_amount = own["memory_amount"]
         else:
             if server and server.vcpus:
                 vcpus = server.vcpus

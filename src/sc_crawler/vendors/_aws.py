@@ -693,8 +693,17 @@ def _instance_family(instance_type: str) -> Optional[str]:
 def _make_server_from_instance_type(instance_type, vendor) -> dict:
     """Create a SQLModel Server-compatible dict from AWS raw API response."""
     it = instance_type["InstanceType"]
+    series = _instance_series(it)
     allocation = CpuAllocation.DEDICATED
-    if instance_type.get("BurstablePerformanceSupported", False):
+    # BurstablePerformanceSupported is False for t1 (still uses CPU credits) and
+    # flex instances (baseline with scaling up to full CPU 95% of the time):
+    # https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/burstable-performance-instances-standard-mode-concepts.html
+    # https://aws.amazon.com/ec2/instance-types/r8i/
+    if (
+        instance_type.get("BurstablePerformanceSupported", False)
+        or series == "t1"
+        or series.endswith("-flex")
+    ):
         allocation = CpuAllocation.BURSTABLE
     vcpu_info = instance_type["VCpuInfo"]
     cpu_info = instance_type["ProcessorInfo"]
@@ -713,7 +722,7 @@ def _make_server_from_instance_type(instance_type, vendor) -> dict:
         "description": _annotate_instance_type(it),
         "hypervisor": instance_type.get("Hypervisor", None),
         "family": _instance_family(it),
-        "series": _instance_series(it),
+        "series": series,
         "vcpus": vcpu_info["DefaultVCpus"],
         "cpu_allocation": allocation,
         "cpu_cores": vcpu_info["DefaultCores"],
