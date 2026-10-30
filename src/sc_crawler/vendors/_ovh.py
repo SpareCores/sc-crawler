@@ -1418,10 +1418,15 @@ def inventory_server_prices(vendor) -> list[dict]:
     # list all addon prices and convert to a lookup dict
     catalog = _get_catalog()
     addons = {addon["planCode"]: addon for addon in catalog["addons"]}
-    local_storage_gb_price = (
-        _get_catalog_hourly_price(_GEN3_LOCAL_STORAGE_PLAN)
-        or _GEN3_LOCAL_STORAGE_GB_HOUR_PRICE
-    )
+    local_storage_gb_price = _get_catalog_hourly_price(_GEN3_LOCAL_STORAGE_PLAN)
+    if not local_storage_gb_price:
+        # the announced fallback price is in EUR
+        if catalog["locale"]["currencyCode"] != "EUR":
+            raise ValueError(
+                "No Gen3 local storage price in the catalog and no fallback "
+                f"for {catalog['locale']['currencyCode']}"
+            )
+        local_storage_gb_price = _GEN3_LOCAL_STORAGE_GB_HOUR_PRICE
     flex_flavors = _get_flex_flavors()
     # list all server <> region offers with a link to the price list
     offers = _get_flavors()

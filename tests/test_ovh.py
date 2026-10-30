@@ -937,6 +937,31 @@ def test_inventory_server_prices_add_gen3_local_storage(
     assert prices["b2-7"] == pytest.approx(0.0709)
 
 
+def test_inventory_server_prices_reject_non_eur_local_storage_fallback(
+    mock_ovh_client,
+):
+    original = mock_ovh_client.get.side_effect
+
+    def fake_get(path, *args, **kwargs):
+        if path == "/cloud/project/test-project/flavor":
+            return [_flavor_offer("GRA", "b3-8.consumption")]
+        if path == "/order/catalog/public/cloud":
+            return {
+                "locale": {"currencyCode": "GBP"},
+                "addons": [
+                    _server_addon("b3-8.consumption", 5_120_000),
+                    _catalog_addon(
+                        "instance.local-storage-gen3-gb.hour.consumption", 0
+                    ),
+                ],
+            }
+        return original(path, *args, **kwargs)
+
+    mock_ovh_client.get.side_effect = fake_get
+    with pytest.raises(ValueError, match="GBP"):
+        inventory_server_prices(_ovh_vendor())
+
+
 def test_inventory_server_prices_map_flex_flavors(mock_ovh_client):
     _fake_flavors_and_catalog(
         mock_ovh_client,
