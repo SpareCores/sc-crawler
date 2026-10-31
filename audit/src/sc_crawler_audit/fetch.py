@@ -57,6 +57,7 @@ class FetchResult:
     no_tables: bool = False
     error: Optional[str] = None
     cached: bool = False
+    manual: bool = False
 
 
 def html_to_markdown(html: str | bytes) -> str:
@@ -116,6 +117,9 @@ def fetch_page(
     slug = page_slug(page.id)
     meta_path = target / f"{slug}.meta.json"
     if not dry_run and _is_fresh(meta_path, ttl):
+        return FetchResult(**{**json.loads(meta_path.read_text()), "cached": True})
+    # keep pages saved manually from a browser (see `import_page`)
+    if meta_path.exists() and json.loads(meta_path.read_text()).get("manual"):
         return FetchResult(**{**json.loads(meta_path.read_text()), "cached": True})
 
     now = datetime.now(UTC).isoformat()
@@ -241,3 +245,46 @@ def fetch_vendor(
                     seen.add(url)
                     queue.append(child_page(page, url))
     return results
+
+
+def import_page(
+    vendor_id: str, page: SourcePage, source: Path, out_dir: Path
+) -> FetchResult:
+    """Store a page saved manually from a browser as if it was fetched.
+
+    For official pages that block automated clients: a person opens the page in
+    a browser, saves it (HTML), and imports it here. Marked as `manual` in the
+    metadata, with the file's modification time as the capture time.
+    """
+    source = Path(source)
+    content = source.read_bytes()
+    captured = datetime.fromtimestamp(source.stat().st_mtime, UTC).isoformat()
+    markdown = html_to_markdown(content)
+    table_rows = count_table_rows(markdown)
+    result = FetchResult(
+        vendor=vendor_id,
+        page_id=page.id,
+        url=page.url,
+        final_url=page.url,
+        status=200,
+        content_type="text/html",
+        sha256=hashlib.sha256(content).hexdigest(),
+        fetched_at=captured,
+        raw_bytes=len(content),
+        markdown_chars=len(markdown),
+        table_rows=table_rows,
+        js_suspect=len(markdown) < 1500,
+        no_tables=bool(set(page.kinds) & TABULAR_KINDS) and table_rows < 3,
+        manual=True,
+    )
+    target = pages_dir(out_dir, vendor_id)
+    target.mkdir(parents=True, exist_ok=True)
+    slug = page_slug(page.id)
+    (target / f"{slug}.html").write_bytes(content)
+    header = (
+        f"<!-- source: {page.url} | manually saved: {captured} | "
+        f"sha256: {result.sha256} -->\n\n"
+    )
+    (target / f"{slug}.md").write_text(header + markdown)
+    (target / f"{slug}.meta.json").write_text(json.dumps(asdict(result), indent=2))
+    return result

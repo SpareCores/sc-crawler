@@ -359,3 +359,31 @@ def verify_archive_cmd(
     if problems:
         raise typer.Exit(code=1)
     console.print(f"{path}: all checksums match.")
+
+
+@app.command("import-page")
+def import_page_cmd(
+    vendor: Annotated[str, typer.Argument(help="Vendor id, e.g. vultr.")],
+    page: Annotated[str, typer.Argument(help="Page id from sources.yaml.")],
+    file: Annotated[Path, typer.Argument(help="HTML file saved from a browser.")],
+    out: options.out = default_out,
+    sources: options.sources = None,
+):
+    """Import a page saved manually from a browser (for pages blocking automated clients)."""
+    from .fetch import import_page
+
+    vendor_sources = load_sources(sources).vendors[vendor]
+    matches = [p for p in vendor_sources.pages if p.id == page]
+    if not matches:
+        console.print(f"[red]No page {page!r} for {vendor} in sources.yaml[/red]")
+        raise typer.Exit(code=1)
+    result = import_page(vendor, matches[0], file, out)
+    console.print(
+        f"{vendor}/{page}: imported {result.raw_bytes // 1024} KiB, "
+        f"{result.markdown_chars} Markdown chars, {result.table_rows} table rows"
+        + (
+            " [yellow](little content: save the fully loaded page)[/yellow]"
+            if result.js_suspect or result.no_tables
+            else ""
+        )
+    )

@@ -38,7 +38,9 @@ sc-audit pending --out $OUT --json [--vendor X ...]  # pages left for you
 Check the `fetch` summary table: report pages with HTTP errors or flagged as
 likely JS-rendered to the user. Some vendors (UpCloud, Vultr marketing pages)
 block automated clients: **do not try to work around bot protection** (no
-spoofed user agents, no headless browsers). Ask the user how to proceed instead.
+spoofed user agents, no headless browsers). Instead, ask the user to open the
+page in a browser, save it once fully loaded ("Save page as", HTML), and import it
+with `sc-audit import-page <vendor> <page id> <file> --out $OUT`.
 
 ## 2. Extract (subagents)
 

@@ -559,8 +559,11 @@ vendors:
     pages:
       - id: pricing
         url: "https://www.vultr.com/pricing/"
-        kinds: [server_specs, server_prices, gpu, db_prices]
+        kinds: [server_specs, server_prices, gpu, db_specs, db_prices]
         currency: USD
+        notes: >-
+          Blocks automated clients: save it from a browser (incl. the #postgresql
+          section) and import it with `sc-audit import-page vultr pricing FILE`.
       - id: bare-metal
         url: "https://www.vultr.com/products/bare-metal/"
         kinds: [server_specs, server_prices]

@@ -560,3 +560,29 @@ def test_db_not_at_vendor_only_counts_complete_pages(tmp_path):
     vendor = VendorSources(allowed_domains=["docs.aws.amazon.com"], pages=pages)
     findings, _ = compare_vendor("aws", vendor, ours, tmp_path)
     assert [(f.type, f.our_id) for f in findings] == [("NOT_AT_VENDOR", "db.m8i.large")]
+
+
+def test_import_page(tmp_path):
+    import json
+
+    from sc_crawler_audit.fetch import import_page
+
+    saved = tmp_path / "saved.html"
+    saved.write_text(
+        "<html><body><main><table><tr><th>Plan</th><th>Price</th></tr>"
+        + "".join(f"<tr><td>p{i}</td><td>${i}</td></tr>" for i in range(5))
+        + "</table>"
+        + "<p>text</p>" * 200
+        + "</main></body></html>"
+    )
+    page = SourcePage(
+        id="pricing", url="https://www.vultr.com/pricing/", kinds=["db_prices"]
+    )
+    result = import_page("vultr", page, saved, tmp_path)
+    assert result.manual and not result.no_tables
+    md = (tmp_path / "pages" / "vultr" / "pricing.md").read_text()
+    assert md.startswith(
+        "<!-- source: https://www.vultr.com/pricing/ | manually saved:"
+    )
+    meta = json.loads((tmp_path / "pages" / "vultr" / "pricing.meta.json").read_text())
+    assert meta["manual"] is True and meta["status"] == 200

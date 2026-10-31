@@ -63,6 +63,7 @@ All `sc-audit` commands take `--out` (default `audit-out/<today>`), `--vendor`/`
 | command | what it does |
 |---|---|
 | `sc-audit fetch [--page REGEX] [--cache-ttl H] [--dry-run]` | download pages and discovered child pages; prints HTTP errors, "JS-rendered?" (tiny Markdown) and "no tables" flags |
+| `sc-audit import-page VENDOR PAGE FILE` | import a page saved from a browser, for official pages that block automated clients (kept by later `fetch` runs, marked `manual` in its metadata) |
 | `sc-audit parse` | run deterministic parsers on fetched feeds |
 | `sc-audit pending [--json]` | pages fetched but not yet extracted, with paths for the subagents |
 | `sc-audit schema` | JSON schema of extraction files |
@@ -219,6 +220,8 @@ entries:
 - **Official sources only, honest client.** The user agent identifies as `sc-crawler-audit`.
   Pages that block automated clients (UpCloud and Vultr marketing pages at the time of writing)
   are reported as errors; **no bot-protection workarounds** (spoofed user agents, headless browsers).
+  Instead, a person can open such a page in a browser, save it once it fully loaded ("Save page
+  as", HTML), and import it with `sc-audit import-page`.
 - **Independence.** JSON feeds behind vendor pricing pages (AWS `b0.p.awsstatic.com`, the Alibaba
   price list) are official and *not* what our ingest reads, so they are independent checks. Sources
   our ingest uses (e.g. `prices.azure.com`, vendor APIs) are kept out, or marked `independent: false`.
