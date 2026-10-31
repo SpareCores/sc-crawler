@@ -58,6 +58,31 @@ _CHEAP_TASKS = [
     "lsblk_topo",
 ]
 
+_AZURE_UNSUPPORTED_DATABASE_FAMILIES = [
+    # Azure PostgreSQL flexible server supports confidential computing only on the
+    # Dcadsv5 and Ecadsv5 series, see
+    # https://learn.microsoft.com/en-us/azure/postgresql/security/security-confidential-computing
+    # These other confidential families are listed by our ingest (billing meters),
+    # but are not actually offered by the vendor (found by the vendor audit, see audit/triage.yaml).
+    "DCasv5",
+    "ECasv5",
+    "DCadsv6",
+    "ECadsv6",
+    "DCesv6",
+    "ECesv6",
+    # Not listed among the compute sizes of Azure PostgreSQL flexible server, see
+    # https://learn.microsoft.com/en-us/azure/postgresql/compute-storage/concepts-compute
+    # e.g. for v6, only the series with local disk (Ddsv6, Dadsv6, Edsv6, Eadsv6) are
+    # supported. Likely listed by our ingest from billing meters as well, but not yet
+    # verified in the Azure portal (found by the vendor audit, see audit/triage.yaml).
+    "Dsv6",
+    "Dasv6",
+    "Esv6",
+    "Easv6",
+    "Ebdsv5",
+    "Mdsv2",
+]
+
 
 def has_related_database(server: "Server") -> bool:
     """Check if the server is the underlying server of any Database of the same Vendor.
@@ -127,6 +152,7 @@ def block_reasons(
 
     - Managed databases:
         - Databases that can't be deployed on a single node.
+        - Azure PostgreSQL SKUs that are not confirmed to be offered by the vendor.
 
     - Servers:
         - `bw_mem` and `membench`: a few servers with identified performance issues while running this task.
@@ -164,6 +190,11 @@ def block_reasons(
                 or DatabaseHaStrategy.NONE not in resource.ha_strategy
             ):
                 results[task].append("Database doesn't support single-node deployment.")
+            if (
+                resource.vendor_id == "azure"
+                and resource.family in _AZURE_UNSUPPORTED_DATABASE_FAMILIES
+            ):
+                results[task].append("Database SKU not offered by the vendor.")
             # all the below rules apply to servers
             continue
 
