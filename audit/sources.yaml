@@ -82,8 +82,15 @@ vendors:
       - id: rds-instance-classes
         url: "https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.DBInstanceClass.Summary.html"
         kinds: [db_specs]
+        notes: Hardware specs of the DB instance classes of all engines (not PostgreSQL specific).
+      - id: rds-engine-support
+        url: "https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.DBInstanceClass.Support.html"
+        kinds: [db_specs]
         covers: "^db\\."
         complete: true
+        notes: >-
+          Supported DB engines per instance class. Extract only the classes supported
+          for PostgreSQL (one db_specs row per class, sku only).
       - id: rds-limits
         url: "https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/CHAP_Limits.html"
         kinds: [db_features]
@@ -208,6 +215,9 @@ vendors:
       - id: sql-machine-series
         url: "https://cloud.google.com/sql/docs/postgres/machine-series-overview"
         kinds: [db_specs]
+        covers: "^db-"
+        complete: true
+        notes: Machine series and predefined tiers per Cloud SQL edition.
       - id: sql-editions
         url: "https://docs.cloud.google.com/sql/docs/postgres/editions-intro"
         kinds: [db_specs, db_features]
@@ -477,7 +487,10 @@ vendors:
         covers: ".*"
         complete: true
         currency: EUR
-        notes: Prices must be taken without VAT; also lists managed database plans.
+        price_region: GRA
+        notes: >-
+          Prices must be taken without VAT; also lists managed database plans.
+          Prices are the same in all OVHcloud regions.
       - id: gpu
         url: "https://www.ovhcloud.com/en-ie/public-cloud/gpu/"
         kinds: [server_specs, gpu]
@@ -533,6 +546,8 @@ vendors:
       - id: postgresql-configurations
         url: "https://upcloud.com/docs/products/managed-postgresql/configurations/"
         kinds: [db_specs, db_features]
+        covers: ".*"
+        complete: true
       - id: data-centres
         url: "https://upcloud.com/data-centres"
         kinds: [regions]

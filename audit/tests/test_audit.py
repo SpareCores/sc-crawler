@@ -499,3 +499,64 @@ def test_db_series_row_covers_family(tmp_path):
     assert [(f.type, f.our_id) for f in findings] == [
         ("NOT_AT_VENDOR", "Standard_DC2as_v5")
     ]
+
+
+def test_db_not_at_vendor_only_counts_complete_pages(tmp_path):
+    ours = Ours(
+        vendor="aws",
+        servers=[],
+        server_prices=[],
+        databases=[
+            {
+                "database_id": sku,
+                "name": sku,
+                "api_reference": sku,
+                "display_name": sku,
+                "family": None,
+                "series": None,
+                "server_id": None,
+                "status": "ACTIVE",
+                "vcpus": 2,
+                "memory_amount": 8192,
+                "storage_size": None,
+                "storage_extra_max": None,
+                "engine_versions": [],
+                "ha": [],
+                "ha_strategy": [],
+                "max_read_replicas": 15,
+                "continuous_backups": 35,
+                "scheduled_backups": 1,
+                "sla": 99.95,
+            }  # fmt: skip
+            for sku in ["db.m6i.large", "db.m8i.large"]
+        ],
+        database_prices=[],
+        regions=[],
+        zones=[],
+    )
+    pages = [
+        # all engines: lists both classes, but is not authoritative for PostgreSQL
+        SourcePage(id="classes", url="https://docs.aws.amazon.com/a", kinds=["db_specs"]),
+        # PostgreSQL support: complete, lists only one of them
+        SourcePage(
+            id="support", url="https://docs.aws.amazon.com/b", kinds=["db_specs"],
+            covers="^db\\.", complete=True,
+        ),
+    ]  # fmt: skip
+    target = extracted_dir(tmp_path, "aws")
+    target.mkdir(parents=True)
+    for page_id, skus in [
+        ("classes", ["db.m6i.large", "db.m8i.large"]),
+        ("support", ["db.m6i.large"]),
+    ]:
+        extraction = Extraction(
+            vendor="aws",
+            page_id=page_id,
+            extracted_at=datetime.now(UTC),
+            extracted_by="test",
+            db_specs=[{"sku": s, "evidence_quote": s} for s in skus],
+        )
+        (target / f"{page_id}.json").write_text(extraction.model_dump_json())
+    vendor = VendorSources(allowed_domains=["docs.aws.amazon.com"], pages=pages)
+    findings, _ = compare_vendor("aws", vendor, ours, tmp_path)
+    assert [(f.type, f.our_id) for f in findings] == [("NOT_AT_VENDOR", "db.m8i.large")]

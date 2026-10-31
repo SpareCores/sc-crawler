@@ -125,6 +125,9 @@ class Comparer:
         self.seen_servers: set = set()
         self.seen_prices: set = set()
         self.seen_databases: set = set()
+        # databases listed on pages marked complete: for databases, only these
+        # count, as e.g. AWS lists instance classes of all engines elsewhere
+        self.seen_databases_complete: set = set()
         self.seen_regions: set = set()
         # pages agreeing with our value per (our id, field), to spot source conflicts
         self.agreements: Dict[tuple, set] = defaultdict(set)
@@ -176,7 +179,7 @@ class Comparer:
 
     def region_of(self, region: Optional[str], page: SourcePage) -> Optional[str]:
         """Our active region id for a region named on a vendor page."""
-        region_id = self.ours.find_region(region or page.region)
+        region_id = self.ours.find_region(region or page.region or page.price_region)
         if region_id and region_id not in self.active_regions:
             self.stats["skipped_inactive_region"] += 1
             return None
@@ -614,6 +617,8 @@ class Comparer:
 
     def mark_database_seen(self, page: SourcePage, *database_ids: str):
         self.seen_databases.update(database_ids)
+        if page.complete:
+            self.seen_databases_complete.update(database_ids)
 
     def check_db_status(self, page: SourcePage, db: dict, **common):
         """A database SKU listed on a complete page should be active in our data.
@@ -695,6 +700,7 @@ class Comparer:
             self.stats["db_prices_unmatched_sku"] += 1
             return
         db = dbs[0]
+        self.mark_database_seen(page, db["database_id"])
         theirs = self.to_hourly(price.price, price.unit)
         candidates = [
             p
@@ -881,10 +887,14 @@ class Comparer:
 
         db_pages = [
             p for p, e in pages
-            if p.complete and PageKind.DB_SPECS in p.kinds and e.db_specs
+            if p.complete and set(p.kinds) & {PageKind.DB_SPECS, PageKind.DB_PRICES}
+            and (e.db_specs or e.db_prices)
         ]  # fmt: skip
         for db in self.ours.databases:
-            if db["status"] != "ACTIVE" or db["database_id"] in self.seen_databases:
+            if (
+                db["status"] != "ACTIVE"
+                or db["database_id"] in self.seen_databases_complete
+            ):
                 continue
             for page in db_pages:
                 if self.covered(page.covers, db["database_id"], db["name"]):

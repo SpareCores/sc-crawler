@@ -73,6 +73,13 @@ class SourcePage(BaseModel):
         default=None, description="Default region for prices shown on the page."
     )
     currency: Optional[str] = None
+    price_region: Optional[str] = Field(
+        default=None,
+        description=(
+            "Region to assume for prices without one, when the vendor's prices are "
+            "the same in all regions. Unlike `region`, it doesn't change `complete`."
+        ),
+    )
     independent: bool = Field(
         default=True,
         description="False if our ingest reads the very same source.",

@@ -12,6 +12,8 @@ from typing import Dict, Iterable, List, Optional
 SKU_PREFIXES = {
     "azure": ["standard"],
     "alicloud": ["ecs"],
+    # our ids are synthesized as postgresql-<plan>-<flavor>
+    "ovh": ["postgresql"],
 }
 
 

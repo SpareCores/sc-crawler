@@ -115,6 +115,7 @@ Per page:
 | `covers` | regex on our SKU ids/names the page is responsible for |
 | `complete` | the page lists **all** SKUs matching `covers`; drives `NOT_AT_VENDOR`. With `region` set, this applies to the prices in that region; otherwise to specs |
 | `region`, `currency` | defaults for prices shown without them |
+| `price_region` | region to assume for prices without one when the vendor's prices are the same everywhere (e.g. OVHcloud); unlike `region`, it doesn't change what `complete` means |
 | `independent` | `false` if our ingest reads the very same source |
 | `spec_authority` | `false` for secondary spec sources (e.g. pricing feeds); their spec mismatches need confirmation by an authoritative page |
 | `prices_include_ipv4` | listed prices include a public IPv4 (our IPv4 price is added before comparing) |
@@ -157,7 +158,7 @@ in our data are skipped.
 | `SOURCE_CONFLICT` | a spec mismatch where another authoritative official page agrees with our value (e.g. pricing feed vs docs) |
 | `VALUE_MISSING_IN_DB` | the vendor states a value we don't have (info) |
 | `MISSING_IN_DB` | the vendor lists a SKU we don't have |
-| `NOT_AT_VENDOR` | an active SKU, price (per region) or region of ours that is absent from pages marked `complete`; possibly made up or retired. Constrained vCPU variants of listed sizes (Azure `E16-4ads_v5`) and previous-generation types on price pages are excluded |
+| `NOT_AT_VENDOR` | an active SKU, price (per region) or region of ours that is absent from pages marked `complete`; possibly made up or retired. Constrained vCPU variants of listed sizes (Azure `E16-4ads_v5`) and previous-generation types on price pages are excluded. For databases, only pages marked `complete` count as evidence (e.g. AWS documents instance classes of all engines on one page, and PostgreSQL support on another); a series row with a range (Azure "Dcadsv5", 2-96 vCores) covers all our sizes of that family, and a price row on a complete page counts as a listing |
 | `STATUS_MISMATCH` | e.g. active in our data but retiring/retired at the vendor; retired expects `RETIRED`, retiring expects `PLANNED_FOR_RETIREMENT` or `RETIRED`. A retired series is mapped to our servers of that family |
 | `PRICE_MISMATCH` | outside `--price-tolerance` (default 1%; 25% for spot); monthly prices compared via our monthly cap or `hours_per_month` |
 | `PRICE_MISSING_IN_DB` | the vendor prices a SKU in a region where we have no price |
@@ -245,6 +246,20 @@ entries:
 - **OVHcloud**: database prices are per cluster (per-node price × nodes); `-eph` flavors are
   excluded by our ingest by design.
 - **UpCloud, Vultr**: marketing/pricing pages block automated clients; only docs are covered.
+  UpCloud database plans are checked against the docs (all plans listed), but not their prices.
+  Vultr database plans have no usable source at all: the pricing pages block us, the docs have no
+  plan list, and the plans API requires an API key.
+
+## Managed database coverage
+
+| vendor | SKUs listed (complete source) | prices | features |
+|---|---|---|---|
+| AWS | engine support page (PostgreSQL column) | pricing page feed | limits, backups, SLA, versions docs |
+| Azure | PostgreSQL compute page + confidential computing page | not checked (JS-only pricing page) | HA, replicas, backups, versions docs |
+| GCP | machine series docs (current tiers only) | per-vCPU/GiB rates by edition/series | SLA, quotas, PITR, versions docs |
+| OVHcloud | prices page | prices page (same in all regions) | capabilities docs |
+| UpCloud | configurations docs | not checked (pricing page blocked) | backups, HA docs |
+| Vultr | none | none | FAQ docs only |
 
 ## Extending
 

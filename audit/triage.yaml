@@ -95,6 +95,22 @@ entries:
     evidence: audit-runs/2026-10-31.tar.xz
     date: 2026-10-31
   - vendor: aws
+    type: MISSING_IN_DB
+    page: "^rds-instance-classes$"
+    verdict: expected
+    note: "The hardware specs page covers the DB instance classes of all engines; classes not supported for PostgreSQL (e.g. db.m8i, db.z1d, Oracle-only tpc classes) are not in our data by design. PostgreSQL support is checked against rds-engine-support."
+    by: claude (triage, managed database coverage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: aws
+    type: NOT_AT_VENDOR
+    match: "db\\.r6idn\\.large"
+    verdict: to_verify
+    note: "The engine support docs list db.r6idn from xlarge only, but the RDS PostgreSQL pricing feed has db.r6idn.large prices in 5 regions (us-east-1, us-east-2, us-west-2, eu-west-1, ap-northeast-1): likely a docs omission."
+    by: claude (triage, managed database coverage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: aws
     type: STATUS_MISMATCH
     match: "(f1|g3s?|p2|p3)\\..*"
     verdict: to_verify
@@ -204,6 +220,15 @@ entries:
     evidence: audit-runs/2026-10-31.tar.xz
     date: 2026-10-31
 
+  - vendor: gcp
+    type: NOT_AT_VENDOR
+    match: "db-(n1-(standard|highmem)|memory-optimized-N)-\\d+"
+    verdict: to_verify
+    note: "Legacy Cloud SQL tiers not mentioned by the current machine series docs (Enterprise: shared-core, general purpose, N4; Enterprise Plus: N2, C4A, C4). May still be creatable via the API: verify, or mark as deprecated."
+    by: claude (triage, managed database coverage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+
   # ---------------------------------------------------------------- alicloud
   - vendor: alicloud
     match: "ecs\\.g7nex\\.large"
@@ -263,6 +288,14 @@ entries:
     date: 2026-10-31
 
   # ---------------------------------------------------------------- ovh
+  - vendor: ovh
+    type: PRICE_MISMATCH
+    match: "postgresql-discovery-b3-4"
+    verdict: to_verify
+    note: "Our price is 21% higher than the prices page (EUR 0.1034 vs 0.0855/h); all other PostgreSQL plans match."
+    by: claude (triage, managed database coverage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
   - vendor: ovh
     type: FEATURE_MISMATCH
     verdict: to_verify
