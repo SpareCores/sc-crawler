@@ -452,3 +452,50 @@ def test_archive_roundtrip(tmp_path):
         names = tar.getnames()
     assert "2026-01-01/manifest.json" in names
     assert "2026-01-01/config/sources.yaml" in names
+
+
+def test_db_series_row_covers_family(tmp_path):
+    def db(database_id, family):
+        return {
+            "database_id": database_id, "name": database_id, "api_reference": database_id,
+            "display_name": database_id, "family": family, "series": None,
+            "server_id": None, "status": "ACTIVE", "vcpus": 2, "memory_amount": 8192,
+            "storage_size": None, "storage_extra_max": None, "engine_versions": [],
+            "ha": [], "ha_strategy": [], "max_read_replicas": 5,
+            "continuous_backups": 35, "scheduled_backups": 1, "sla": 99.99,
+        }  # fmt: skip
+
+    ours = Ours(
+        vendor="azure",
+        servers=[],
+        server_prices=[],
+        databases=[
+            db("Standard_DC2ads_v5", "DCadsv5"),
+            db("Standard_DC2as_v5", "DCasv5"),
+        ],
+        database_prices=[],
+        regions=[],
+        zones=[],
+    )
+    page = SourcePage(
+        id="confidential",
+        url="https://learn.microsoft.com/x",
+        kinds=["db_specs"],
+        covers="^Standard_(DC|EC)",
+        complete=True,
+    )
+    vendor = VendorSources(allowed_domains=["learn.microsoft.com"], pages=[page])
+    extraction = Extraction(
+        vendor="azure",
+        page_id="confidential",
+        extracted_at=datetime.now(UTC),
+        extracted_by="test",
+        db_specs=[{"sku": "Dcadsv5", "evidence_quote": "| **Dcadsv5** | 2-96 |"}],
+    )
+    target = extracted_dir(tmp_path, "azure")
+    target.mkdir(parents=True)
+    (target / "confidential.json").write_text(extraction.model_dump_json())
+    findings, _ = compare_vendor("azure", vendor, ours, tmp_path)
+    assert [(f.type, f.our_id) for f in findings] == [
+        ("NOT_AT_VENDOR", "Standard_DC2as_v5")
+    ]

@@ -366,6 +366,67 @@ entries:
     date: 2026-10-31
   - vendor: azure
     type: NOT_AT_VENDOR
+    match: "Standard_[DE]C\\d+(as_v5|ads_v6|es_v6)"
+    verdict: confirmed
+    note: "PostgreSQL flexible server supports confidential computing only on Dcadsv5 and Ecadsv5 (security-confidential-computing page); our DCasv5/ECasv5/DCadsv6/ECadsv6/DCesv6/ECesv6 database SKUs (50) seem to be built from billing meters and VM sizes. The page also limits confidential computing to UAE North and West Europe, but we price DCadsv5/ECadsv5 in chilecentral and northeurope too (not checked automatically)."
+    by: claude (triage, user report on Standard_DC8as_v5)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: azure
+    type: NOT_AT_VENDOR
+    page: "^postgresql-compute$"
+    match: "Standard_(D16ads_v5|E16ads_v5|E32ads_v5|E64ads_v5)"
+    verdict: false_positive
+    note: "Typos on the PostgreSQL compute page (e.g. 'D16ds_v5 / D16ds_v5', 'E32ds_v5 / D32ads_v5') hide these sizes."
+    by: claude (triage, managed database coverage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: azure
+    type: NOT_AT_VENDOR
+    page: "^postgresql-compute$"
+    match: "Standard_E192ids_v6"
+    verdict: false_positive
+    note: "Listed as 'E192ds_v6' (192 vCores, 1832 GiB) on the PostgreSQL compute page; the VM size is Standard_E192ids_v6."
+    by: claude (triage, managed database coverage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: azure
+    type: MISSING_IN_DB
+    page: "^postgresql-compute$"
+    match: "Standard_E192ds_v6"
+    verdict: false_positive
+    note: "The PostgreSQL compute page names Standard_E192ids_v6 (which we have) as 'E192ds_v6'."
+    by: claude (triage, managed database coverage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: azure
+    type: MISSING_IN_DB
+    page: "^postgresql-compute$"
+    match: "Standard_E64ads_v4"
+    verdict: false_positive
+    note: "Page typo: the row 'E64ds_v5 / E64ads_v4' refers to E64ads_v5 (the page lists no Eadsv4 series)."
+    by: claude (triage, managed database coverage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: azure
+    type: STATUS_MISMATCH
+    page: "^postgresql-compute$"
+    match: "Standard_B\\d+m?s"
+    verdict: to_verify
+    note: "Burstable B-series is a supported PostgreSQL tier without retirement notice on the compute page, but PLANNED_FOR_RETIREMENT in our data (likely inherited from the retiring B-series VMs)."
+    by: claude (triage, managed database coverage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: azure
+    type: NOT_AT_VENDOR
+    page: "^postgresql-compute$"
+    verdict: to_verify
+    note: "Database SKU not on the PostgreSQL compute page: v6 sizes without local disk (Dsv6/Dasv6/Esv6/Easv6; the docs list only Ddsv6/Dadsv6/Edsv6/Eadsv6), Ebdsv5 and M-series v2. Likely built from billing meters like the unsupported confidential SKUs; pricing page is JS-only, so verify in the portal."
+    by: claude (triage, managed database coverage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: azure
+    type: NOT_AT_VENDOR
     verdict: to_verify
     note: "ACTIVE sizes on no docs page (NVv2, PB6s, NC*ads_A10_v4, ND96is_MI300X_v5, M416s_9/10/12, isolated sizes): retired or non-public sizes still in the Resource SKUs API?"
     by: claude (first-pass triage)

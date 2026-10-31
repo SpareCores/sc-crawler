@@ -354,6 +354,15 @@ vendors:
       - id: postgresql-compute
         url: "https://learn.microsoft.com/en-us/azure/postgresql/flexible-server/concepts-compute"
         kinds: [db_specs]
+        covers: "^Standard_"
+        complete: true
+        notes: Compute sizes of PostgreSQL flexible server (confidential SKUs are on a separate page).
+      - id: postgresql-confidential-computing
+        url: "https://learn.microsoft.com/en-us/azure/postgresql/security/security-confidential-computing"
+        kinds: [db_specs]
+        covers: "^Standard_(DC|EC)"
+        complete: true
+        notes: Confidential computing SKUs supported by PostgreSQL flexible server.
       - id: postgresql-pricing
         url: "https://azure.microsoft.com/en-us/pricing/details/postgresql/flexible-server/"
         kinds: [db_prices, component_rates]

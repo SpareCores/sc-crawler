@@ -612,10 +612,39 @@ class Comparer:
     # ##########################################################################
     # databases
 
+    def mark_database_seen(self, page: SourcePage, *database_ids: str):
+        self.seen_databases.update(database_ids)
+
+    def check_db_status(self, page: SourcePage, db: dict, **common):
+        """A database SKU listed on a complete page should be active in our data.
+
+        Unlike VM size pages, which often stay up after retirement, the database
+        size lists of the vendors only show what can be created.
+        """
+        if page.complete and db["status"] != "ACTIVE":
+            self.add(
+                page, "STATUS_MISMATCH", "medium", "database", field="status",
+                ours=db["status"], theirs="listed", **common,
+            )  # fmt: skip
+
     def compare_db_spec(self, page: SourcePage, spec):
         self.stats["db_specs"] += 1
         dbs = self.ours.find_databases(spec.sku)
         if not dbs:
+            # a whole series (e.g. Azure "Dcadsv5" with a vCore range) covers
+            # all our sizes of that family, without comparing specs
+            family = [
+                db for db in self.ours.databases if norm(db["family"]) == norm(spec.sku)
+            ]
+            if family:
+                self.mark_database_seen(page, *(db["database_id"] for db in family))
+                for db in family:
+                    self.check_db_status(
+                        page, db, sku=spec.sku, our_id=db["database_id"],
+                        quote=spec.evidence_quote,
+                    )  # fmt: skip
+                self.stats["db_series_rows"] += 1
+                return
             self.add(
                 page, "MISSING_IN_DB", "medium", "database", sku=spec.sku,
                 theirs={k: v for k, v in spec.model_dump().items()
@@ -625,8 +654,9 @@ class Comparer:
             )  # fmt: skip
             return
         db = dbs[0]
-        self.seen_databases.add(db["database_id"])
+        self.mark_database_seen(page, db["database_id"])
         common = dict(sku=spec.sku, our_id=db["database_id"], quote=spec.evidence_quote)
+        self.check_db_status(page, db, **common)
         pairs = [
             ("vcpus", db["vcpus"], spec.vcpus, "high", 0.0),
             (
