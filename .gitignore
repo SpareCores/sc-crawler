@@ -48,3 +48,6 @@ site/
 
 # MacOS
 .DS_Store
+# vendor audit runs (sc-crawler audit)
+audit-out/
+!.claude/settings.json
