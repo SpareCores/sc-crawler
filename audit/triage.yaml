@@ -1,0 +1,475 @@
+# Persistent verdicts on `sc-audit` findings, applied on every `compare` run.
+#
+# Each entry matches findings by the given criteria (all must match; first
+# matching entry wins, so put specific entries before general ones):
+#   vendor (required), type, field, region,
+#   match: regex (full match) on our id or the vendor SKU,
+#   page: regex on the page id,
+#   ours / theirs: pin values as shown in the report; the entry stops
+#     applying when either value changes (so the finding comes back).
+#
+# verdict:
+#   confirmed       real problem in our data (add `issue` when filed)
+#   false_positive  the finding is wrong (extraction error, naming, units)
+#   expected        known, accepted difference (by design, modelling choice)
+#   to_verify       needs a check against the vendor API/console
+# false_positive and expected are left out of report.md (kept in findings.csv).
+#
+# Entries matching no finding anymore are listed as stale in report.md.
+
+entries:
+
+  # ---------------------------------------------------------------- hcloud
+  - vendor: hcloud
+    type: SPEC_MISMATCH
+    field: memory_gib
+    verdict: confirmed
+    note: "_hcloud.py:417 multiplies the API's GB value by 1000 instead of 1024 (all SKUs -2.34%)."
+    by: claude (first-pass triage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: hcloud
+    type: STATUS_MISMATCH
+    theirs: retired
+    verdict: confirmed
+    note: "Deprecated plans stay INACTIVE: pull sets all rows INACTIVE first (cli.py:854), nothing moves them to RETIRED. Likely affects all vendors."
+    by: claude (first-pass triage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: hcloud
+    type: STATUS_MISMATCH
+    theirs: listed
+    verdict: to_verify
+    note: "Listed with prices on the static pages, but INACTIVE without prices for us; _hcloud_server_status returns INACTIVE for types without locations (sold out at crawl time?)."
+    by: claude (first-pass triage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: hcloud
+    type: PRICE_MISSING_IN_DB
+    verdict: to_verify
+    note: "Page shows the 'from' price for the cheapest locations; we lack prices there. Check per-location availability at crawl time."
+    by: claude (first-pass triage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+
+  # ---------------------------------------------------------------- aws
+  - vendor: aws
+    type: SOURCE_CONFLICT
+    verdict: expected
+    note: "Docs pages agree with our value; the pricing page data feed is outdated (e.g. i3.metal, c5.9xlarge)."
+    by: claude (first-pass triage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: aws
+    type: SPEC_MISMATCH
+    field: network_gbps
+    page: "^instancetypes-|^ec2-ondemand"
+    verdict: confirmed
+    note: "_aws.py:655 uses only NetworkCards[0] for baseline/peak bandwidth; multi-card types are stored at 1/2 or 1/4 (e.g. c8gb.48xlarge 200 vs 400 Gbps)."
+    by: claude (first-pass triage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: aws
+    type: SPEC_MISMATCH
+    field: storage_type
+    page: "^instancetypes-pg$"
+    verdict: confirmed
+    note: "Previous generation c3/i2/m3/r3 have (SATA) SSD instance store, we store NVMe SSD (storage type heuristic in _aws.py)."
+    by: claude (first-pass triage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: aws
+    type: SPEC_MISMATCH
+    match: "(inf|trn|vt|f2|dl2q)\\d*n?\\..*"
+    verdict: to_verify
+    note: "Non-GPU accelerators (Inferentia, Trainium, FPGA, Qualcomm AI100) are not stored as accelerators for AWS, unlike Alibaba NPUs or GCP TPUs. Decide if intended."
+    by: claude (first-pass triage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: aws
+    type: SPEC_MISMATCH
+    field: cpu_model
+    verdict: to_verify
+    note: "Docs list one CPU per family; our value comes from hardware inspection (e.g. 8259CL vs Xeon Platinum 8175)."
+    by: claude (first-pass triage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: aws
+    type: MISSING_IN_DB
+    page: "^rds-instance-classes$"
+    verdict: expected
+    note: "The hardware specs page covers the DB instance classes of all engines; classes not supported for PostgreSQL (e.g. db.m8i, db.z1d, Oracle-only tpc classes) are not in our data by design. PostgreSQL support is checked against rds-engine-support."
+    by: claude (triage, managed database coverage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: aws
+    type: NOT_AT_VENDOR
+    match: "db\\.r6idn\\.large"
+    verdict: to_verify
+    note: "The engine support docs list db.r6idn from xlarge only, but the RDS PostgreSQL pricing feed has db.r6idn.large prices in 5 regions (us-east-1, us-east-2, us-west-2, eu-west-1, ap-northeast-1): likely a docs omission."
+    by: claude (triage, managed database coverage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: aws
+    type: STATUS_MISMATCH
+    match: "(f1|g3s?|p2|p3)\\..*"
+    verdict: to_verify
+    note: "Documented and priced in us-east-1 by AWS, INACTIVE without prices for us."
+    by: claude (first-pass triage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: aws
+    type: PRICE_MISSING_IN_DB
+    match: "(g4ad\\..*|dl1\\.24xlarge|i3\\.metal)"
+    verdict: to_verify
+    note: "Pricing feed has on-demand Linux prices in us-east-1/eu-central-1; we only have other regions."
+    by: claude (first-pass triage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: aws
+    type: MISSING_IN_DB
+    match: "u-\\d+tb1\\.metal"
+    verdict: expected
+    note: "End of sale per the docs."
+    by: claude (first-pass triage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: aws
+    type: MISSING_IN_DB
+    match: "(p6e-gb200\\.36xlarge|u7inh-32tb\\.480xlarge)"
+    verdict: to_verify
+    note: "Listed in the docs; possibly UltraServer or capacity-block only."
+    by: claude (first-pass triage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+
+  # ---------------------------------------------------------------- gcp
+  - vendor: gcp
+    type: PRICE_MISMATCH
+    match: "e2-(micro|small|medium)"
+    verdict: confirmed
+    note: "Shared-core price ignores the fractional vCPU share: e2-micro $0.0465 = 2 full vCPUs + 1 GiB vs $0.008376 on the pricing page."
+    by: claude (first-pass triage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: gcp
+    type: PRICE_MISMATCH
+    match: "z4m-.*"
+    verdict: confirmed
+    note: "Our price is ~1/3 of the pricing page; a component (likely the bundled Titanium SSD) is missing."
+    by: claude (first-pass triage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: gcp
+    type: SPEC_MISMATCH
+    field: memory_gib
+    match: "db-f1-micro"
+    ours: "0.599609375"
+    verdict: false_positive
+    note: "Docs say 0.614 GB, which is 0.6 GiB."
+    by: claude (first-pass triage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: gcp
+    type: SPEC_MISMATCH
+    field: gpu_model
+    match: "tpu7x-.*"
+    verdict: false_positive
+    note: "Naming only (v7x vs TPU7x)."
+    by: claude (first-pass triage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: gcp
+    type: SPEC_MISMATCH
+    field: storage_gb
+    verdict: to_verify
+    note: "Local SSD sizes 2-4% low vs the docs' GiB values (e.g. a3-highgpu-8g 6167 vs 6000 GiB = 6442 GB): hardcoded partition sizes in _gcp.py?"
+    by: claude (first-pass triage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: gcp
+    type: MISSING_IN_DB
+    match: "db-custom-.*"
+    verdict: expected
+    note: "Custom Cloud SQL tiers are skipped by our ingest by design."
+    by: claude (first-pass triage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: gcp
+    type: MISSING_IN_DB
+    match: "m4n?-hypermem-.*"
+    verdict: to_verify
+    note: "Documented machine types we don't have."
+    by: claude (first-pass triage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: gcp
+    type: PRICE_MISSING_IN_DB
+    match: "c2-standard-.*"
+    verdict: to_verify
+    note: "Priced in us-central1 by Google, no price for us."
+    by: claude (first-pass triage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: gcp
+    type: NOT_AT_VENDOR
+    match: "(x4-megamem-\\d+-metal|a3-\\w+-8g-nolssd)"
+    verdict: to_verify
+    note: "Not in the docs tables, which may not list every variant."
+    by: claude (first-pass triage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+
+  - vendor: gcp
+    type: NOT_AT_VENDOR
+    match: "db-(n1-(standard|highmem)|memory-optimized-N)-\\d+"
+    verdict: to_verify
+    note: "Legacy Cloud SQL tiers not mentioned by the current machine series docs (Enterprise: shared-core, general purpose, N4; Enterprise Plus: N2, C4A, C4). May still be creatable via the API: verify, or mark as deprecated."
+    by: claude (triage, managed database coverage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+
+  # ---------------------------------------------------------------- alicloud
+  - vendor: alicloud
+    match: "ecs\\.g7nex\\.large"
+    verdict: confirmed
+    note: "Specs and price of another size: docs say 2 vCPU / 8 GiB, price list $0.1012; we have 4 / 16 / $0.2317."
+    by: claude (first-pass triage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: alicloud
+    type: SPEC_MISMATCH
+    field: gpu_memory_total_gib
+    match: "ecs\\.gn7s-.*"
+    verdict: confirmed
+    note: "GPU memory 0 vs 24 GB per GPU in the docs (per-GPU vs total branch in _alicloud.py)."
+    by: claude (first-pass triage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: alicloud
+    type: NOT_AT_VENDOR
+    verdict: to_verify
+    note: "Mostly old families (n1/n2/e3/s2/s3/c1/c2/m1/sn1/sn2/d1/i1) missing from the current docs: phased out but ACTIVE for us? Some new families (g8ise, c9h, gn8ia) are also missing from the docs page."
+    by: claude (first-pass triage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: alicloud
+    type: STATUS_MISMATCH
+    verdict: to_verify
+    note: "Documented, but INACTIVE for us (status from per-region DescribeAvailableResource)."
+    by: claude (first-pass triage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+
+  # ---------------------------------------------------------------- upcloud
+  - vendor: upcloud
+    type: SPEC_MISMATCH
+    field: storage_gb
+    verdict: confirmed
+    note: "DB storage = plan GB / nodes x 1.0737 (e.g. 2x16xCPU-64GB-1000GB: 537 vs 1000): divided per node and converted GiB->GB on a GB value."
+    by: claude (first-pass triage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: upcloud
+    type: FEATURE_MISMATCH
+    field: storage_extra_max_gb
+    verdict: false_positive
+    note: "Extraction put the per-node total storage maximum into storage_extra_max_gb."
+    by: claude (first-pass triage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: upcloud
+    type: FEATURE_MISMATCH
+    field: continuous_backups_days
+    verdict: to_verify
+    note: "We store 3/15 days, docs say retention up to 31 days."
+    by: claude (first-pass triage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+
+  # ---------------------------------------------------------------- ovh
+  - vendor: ovh
+    type: PRICE_MISMATCH
+    match: "postgresql-discovery-b3-4"
+    verdict: to_verify
+    note: "Our price is 21% higher than the prices page (EUR 0.1034 vs 0.0855/h); all other PostgreSQL plans match."
+    by: claude (triage, managed database coverage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: ovh
+    type: FEATURE_MISMATCH
+    verdict: to_verify
+    note: "PostgreSQL 14 still listed for us (docs: 15-18); SLA one level higher than the docs."
+    by: claude (first-pass triage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: ovh
+    type: SPEC_MISMATCH
+    field: storage_gb
+    match: "(h100|h200|i1|t1|t2)-.*"
+    verdict: false_positive
+    note: "Extraction summed passthrough NVMe disks with the system disk."
+    by: claude (first-pass triage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: ovh
+    type: SPEC_MISMATCH
+    field: storage_gb
+    match: "bm-.*"
+    verdict: to_verify
+    note: "960 vs 1920 GB: one vs two disks?"
+    by: claude (first-pass triage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: ovh
+    type: NOT_AT_VENDOR
+    field: null
+    page: "^regions$"
+    verdict: false_positive
+    note: "The regions page uses city/site names that don't map to our region codes."
+    by: claude (first-pass triage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: ovh
+    type: MISSING_IN_DB
+    match: ".*-eph"
+    verdict: expected
+    note: "Ephemeral flavors are excluded by our ingest by design."
+    by: claude (first-pass triage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: ovh
+    type: STATUS_MISMATCH
+    verdict: to_verify
+    note: "Listed on the prices page, INACTIVE for us."
+    by: claude (first-pass triage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+
+  # ---------------------------------------------------------------- azure
+  - vendor: azure
+    type: SPEC_MISMATCH
+    field: memory_gib
+    match: "Standard_D(64|96)l(d)?s_v7"
+    verdict: false_positive
+    note: "Docs values (126 / 384 GiB) contradict the 2 GiB/vCPU low-memory series."
+    by: claude (first-pass triage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: azure
+    type: SPEC_MISMATCH
+    field: memory_gib
+    verdict: to_verify
+    note: "Resource SKUs API vs docs disagree (e.g. HB120rs_v3 456 vs 448, ND96amsr_A100_v4 1800 vs 1900)."
+    by: claude (first-pass triage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: azure
+    type: SPEC_MISMATCH
+    field: storage_gb
+    verdict: confirmed
+    note: "Temp disk ~4.6% low on most sizes: the API's MaxResourceVolumeMB is MiB, stored as MB/1000. Sizes with other ratios (extra NVMe disks) need a separate look."
+    by: claude (first-pass triage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: azure
+    type: SPEC_MISMATCH
+    field: gpu_count
+    match: "Standard_(NCC40ads_H100_v5|ND128isr_(NDR_)?GB[23]00_v6)"
+    verdict: confirmed
+    note: "GPU count from name heuristics (_azure.py:766-920): NCC40ads_H100_v5 0 vs 1, GB200/GB300 1 vs 4."
+    by: claude (first-pass triage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: azure
+    type: SPEC_MISMATCH
+    field: gpu_count
+    verdict: to_verify
+    note: "Fractional/partial GPU counts vs our heuristics (e.g. NC RTX PRO 6000, NV6)."
+    by: claude (first-pass triage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: azure
+    type: STATUS_MISMATCH
+    ours: ACTIVE
+    verdict: to_verify
+    note: "Docs announce retirement (e.g. Dv3/Dsv3 'End of Life'); should be PLANNED_FOR_RETIREMENT."
+    by: claude (first-pass triage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: azure
+    type: NOT_AT_VENDOR
+    match: "Standard_[DE]C\\d+(as_v5|ads_v6|es_v6)"
+    verdict: confirmed
+    note: "PostgreSQL flexible server supports confidential computing only on Dcadsv5 and Ecadsv5 (security-confidential-computing page); our DCasv5/ECasv5/DCadsv6/ECadsv6/DCesv6/ECesv6 database SKUs (50) seem to be built from billing meters and VM sizes. The page also limits confidential computing to UAE North and West Europe, but we price DCadsv5/ECadsv5 in chilecentral and northeurope too (not checked automatically)."
+    by: claude (triage, user report on Standard_DC8as_v5)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: azure
+    type: NOT_AT_VENDOR
+    page: "^postgresql-compute$"
+    match: "Standard_(D16ads_v5|E16ads_v5|E32ads_v5|E64ads_v5)"
+    verdict: false_positive
+    note: "Typos on the PostgreSQL compute page (e.g. 'D16ds_v5 / D16ds_v5', 'E32ds_v5 / D32ads_v5') hide these sizes."
+    by: claude (triage, managed database coverage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: azure
+    type: NOT_AT_VENDOR
+    page: "^postgresql-compute$"
+    match: "Standard_E192ids_v6"
+    verdict: false_positive
+    note: "Listed as 'E192ds_v6' (192 vCores, 1832 GiB) on the PostgreSQL compute page; the VM size is Standard_E192ids_v6."
+    by: claude (triage, managed database coverage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: azure
+    type: MISSING_IN_DB
+    page: "^postgresql-compute$"
+    match: "Standard_E192ds_v6"
+    verdict: false_positive
+    note: "The PostgreSQL compute page names Standard_E192ids_v6 (which we have) as 'E192ds_v6'."
+    by: claude (triage, managed database coverage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: azure
+    type: MISSING_IN_DB
+    page: "^postgresql-compute$"
+    match: "Standard_E64ads_v4"
+    verdict: false_positive
+    note: "Page typo: the row 'E64ds_v5 / E64ads_v4' refers to E64ads_v5 (the page lists no Eadsv4 series)."
+    by: claude (triage, managed database coverage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: azure
+    type: STATUS_MISMATCH
+    page: "^postgresql-compute$"
+    match: "Standard_B\\d+m?s"
+    verdict: to_verify
+    note: "Burstable B-series is a supported PostgreSQL tier without retirement notice on the compute page, but PLANNED_FOR_RETIREMENT in our data (likely inherited from the retiring B-series VMs)."
+    by: claude (triage, managed database coverage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: azure
+    type: NOT_AT_VENDOR
+    page: "^postgresql-compute$"
+    verdict: to_verify
+    note: "Database SKU not on the PostgreSQL compute page: v6 sizes without local disk (Dsv6/Dasv6/Esv6/Easv6; the docs list only Ddsv6/Dadsv6/Edsv6/Eadsv6), Ebdsv5 and M-series v2. Likely built from billing meters like the unsupported confidential SKUs; pricing page is JS-only, so verify in the portal."
+    by: claude (triage, managed database coverage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: azure
+    type: NOT_AT_VENDOR
+    verdict: to_verify
+    note: "ACTIVE sizes on no docs page (NVv2, PB6s, NC*ads_A10_v4, ND96is_MI300X_v5, M416s_9/10/12, isolated sizes): retired or non-public sizes still in the Resource SKUs API?"
+    by: claude (first-pass triage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: azure
+    type: FEATURE_MISMATCH
+    field: sla
+    verdict: expected
+    note: "Single SLA value per SKU (best case, 99.99 with zone-redundant HA) vs per-HA-mode SLAs in the docs."
+    by: claude (first-pass triage)
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31

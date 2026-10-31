@@ -1,0 +1,609 @@
+# Official vendor pages used by `sc-audit` to cross-check our data.
+#
+# Only first-party vendor domains are allowed (see `allowed_domains`).
+#
+# Page fields:
+# - kinds: what the page is authoritative for (server_specs, server_prices,
+#   component_rates, gpu, db_specs, db_prices, db_features, regions, lifecycle).
+# - covers: regex on our SKU ids/names that the page is authoritative for.
+# - complete: the page lists all SKUs matching `covers`. For pages with a
+#   `region`, this applies to the prices in that region; otherwise to specs.
+#   Our active records missing from all complete pages are reported as
+#   possibly not existing at the vendor.
+# - independent: false if our ingest reads the very same source.
+# - parser: deterministic parser for machine-readable sources (no LLM needed).
+# - follow: also fetch linked child pages matching a regex.
+
+vendors:
+  aws:
+    allowed_domains: [aws.amazon.com, docs.aws.amazon.com, b0.p.awsstatic.com, website.spot.ec2.aws.a2z.com]
+    reference_regions: [us-east-1, eu-central-1]
+    pages:
+      - id: ec2-ondemand-use1
+        url: "https://b0.p.awsstatic.com/pricing/2.0/meteredUnitMaps/ec2/USD/current/ec2-ondemand-without-sec-sel/US%20East%20(N.%20Virginia)/Linux/index.json"
+        kinds: [server_specs, server_prices]
+        region: us-east-1
+        complete: true
+        spec_authority: false
+        parser: aws_ec2_ondemand
+        notes: Data feed of aws.amazon.com/ec2/pricing/on-demand/ (Linux, shared tenancy).
+      - id: ec2-ondemand-euc1
+        url: "https://b0.p.awsstatic.com/pricing/2.0/meteredUnitMaps/ec2/USD/current/ec2-ondemand-without-sec-sel/EU%20(Frankfurt)/Linux/index.json"
+        kinds: [server_specs, server_prices]
+        region: eu-central-1
+        complete: true
+        spec_authority: false
+        parser: aws_ec2_ondemand
+      - id: ec2-spot
+        url: "https://website.spot.ec2.aws.a2z.com/spot.json"
+        kinds: [server_prices]
+        parser: aws_ec2_spot
+        notes: Data feed of aws.amazon.com/ec2/spot/pricing/; spot prices change frequently.
+      - id: rds-postgresql-ondemand
+        url: "https://b0.p.awsstatic.com/pricing/2.0/meteredUnitMaps/rds/USD/current/rds-postgresql-ondemand.json"
+        kinds: [db_specs, db_prices]
+        spec_authority: false
+        parser: aws_rds_postgresql
+        notes: Data feed of aws.amazon.com/rds/postgresql/pricing/.
+      - id: instancetypes-gp
+        url: "https://docs.aws.amazon.com/ec2/latest/instancetypes/gp.html"
+        kinds: [server_specs]
+        covers: "^(m\\d|t\\d|mac|a1)"
+        complete: true
+      - id: instancetypes-co
+        url: "https://docs.aws.amazon.com/ec2/latest/instancetypes/co.html"
+        kinds: [server_specs]
+        covers: "^c\\d"
+        complete: true
+      - id: instancetypes-mo
+        url: "https://docs.aws.amazon.com/ec2/latest/instancetypes/mo.html"
+        kinds: [server_specs]
+        covers: "^(r\\d|x\\d|u-|u\\d|z1d)"
+        complete: true
+      - id: instancetypes-so
+        url: "https://docs.aws.amazon.com/ec2/latest/instancetypes/so.html"
+        kinds: [server_specs]
+        covers: "^(i\\d|d\\d|h1|im4|is4)"
+        complete: true
+      - id: instancetypes-ac
+        url: "https://docs.aws.amazon.com/ec2/latest/instancetypes/ac.html"
+        kinds: [server_specs, gpu]
+        covers: "^(p\\d|g\\d|f\\d|inf\\d|trn\\d|dl\\d|vt\\d)"
+        complete: true
+      - id: instancetypes-hpc
+        url: "https://docs.aws.amazon.com/ec2/latest/instancetypes/hpc.html"
+        kinds: [server_specs]
+        covers: "^hpc"
+        complete: true
+      - id: instancetypes-pg
+        url: "https://docs.aws.amazon.com/ec2/latest/instancetypes/pg.html"
+        kinds: [server_specs, lifecycle]
+        notes: Previous generation instance types.
+      - id: rds-instance-classes
+        url: "https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.DBInstanceClass.Summary.html"
+        kinds: [db_specs]
+        notes: Hardware specs of the DB instance classes of all engines (not PostgreSQL specific).
+      - id: rds-engine-support
+        url: "https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.DBInstanceClass.Support.html"
+        kinds: [db_specs]
+        covers: "^db\\."
+        complete: true
+        notes: >-
+          Supported DB engines per instance class. Extract only the classes supported
+          for PostgreSQL (one db_specs row per class, sku only).
+      - id: rds-limits
+        url: "https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/CHAP_Limits.html"
+        kinds: [db_features]
+      - id: rds-backup-retention
+        url: "https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_WorkingWithAutomatedBackups.BackupRetention.html"
+        kinds: [db_features]
+      - id: rds-multi-az
+        url: "https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.MultiAZSingleStandby.html"
+        kinds: [db_features]
+      - id: rds-multi-az-cluster
+        url: "https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/multi-az-db-clusters-concepts.html"
+        kinds: [db_features]
+      - id: rds-sla
+        url: "https://aws.amazon.com/rds/sla/"
+        kinds: [db_features]
+      - id: rds-postgresql-versions
+        url: "https://docs.aws.amazon.com/AmazonRDS/latest/PostgreSQLReleaseNotes/postgresql-release-calendar.html"
+        kinds: [db_features]
+      - id: instance-types-g6
+        url: "https://aws.amazon.com/ec2/instance-types/g6/"
+        kinds: [server_specs, gpu]
+        notes: "Cited in _aws.py for GPU details."
+      - id: instance-types-r8i
+        url: "https://aws.amazon.com/ec2/instance-types/r8i/"
+        kinds: [server_specs]
+      - id: rds-read-replicas
+        url: "https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_PostgreSQL.Replication.ReadReplicas.Configuration.html"
+        kinds: [db_features]
+      - id: rds-automated-backups
+        url: "https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_WorkingWithAutomatedBackups.html"
+        kinds: [db_features]
+      - id: regions
+        url: "https://docs.aws.amazon.com/global-infrastructure/latest/regions/aws-regions.html"
+        kinds: [regions]
+        complete: true
+
+  gcp:
+    allowed_domains: [cloud.google.com, docs.cloud.google.com]
+    reference_regions: [us-central1, europe-west1]
+    pages:
+      - id: general-purpose-machines
+        url: "https://cloud.google.com/compute/docs/general-purpose-machines"
+        kinds: [server_specs]
+        covers: "^(c3|c3d|c4|c4a|c4d|e2|n1|n2|n2d|n4|n4a|n4d|t2a|t2d|f1|g1)-"
+        complete: true
+      - id: compute-optimized-machines
+        url: "https://cloud.google.com/compute/docs/compute-optimized-machines"
+        kinds: [server_specs]
+        covers: "^(c2|c2d|h3|h4d)-"
+        complete: true
+      - id: memory-optimized-machines
+        url: "https://cloud.google.com/compute/docs/memory-optimized-machines"
+        kinds: [server_specs]
+        covers: "^(m1|m2|m3|m4|x4)-"
+        complete: true
+      - id: storage-optimized-machines
+        url: "https://cloud.google.com/compute/docs/storage-optimized-machines"
+        kinds: [server_specs]
+        covers: "^z3-"
+        complete: true
+      - id: accelerator-optimized-machines
+        url: "https://cloud.google.com/compute/docs/accelerator-optimized-machines"
+        kinds: [server_specs, gpu]
+        covers: "^(a2|a3|a4|a4x|g2|g4)-"
+        complete: true
+      - id: gpus
+        url: "https://cloud.google.com/compute/docs/gpus"
+        kinds: [gpu]
+      - id: local-ssd
+        url: "https://cloud.google.com/compute/docs/disks/local-ssd"
+        kinds: [server_specs]
+        notes: Local SSD partition sizes per machine type (hardcoded in our ingest).
+      - id: tpu-machines
+        url: "https://cloud.google.com/compute/docs/tpus/tpu-machines"
+        kinds: [server_specs]
+      - id: cpu-platforms
+        url: "https://cloud.google.com/compute/docs/cpu-platforms"
+        kinds: [server_specs]
+        notes: CPU models per machine series.
+      - id: pricing-overview
+        url: "https://cloud.google.com/products/compute/pricing"
+        kinds: [component_rates, server_prices]
+        region: us-central1
+        notes: Shared-core machines and GPU attachment pricing.
+      - id: all-pricing
+        url: "https://cloud.google.com/compute/all-pricing"
+        kinds: [component_rates, server_prices]
+        region: us-central1
+      - id: pricing-general-purpose
+        url: "https://cloud.google.com/products/compute/pricing/general-purpose"
+        kinds: [component_rates, server_prices]
+        region: us-central1
+      - id: pricing-compute-optimized
+        url: "https://cloud.google.com/products/compute/pricing/compute-optimized"
+        kinds: [component_rates, server_prices]
+        region: us-central1
+      - id: pricing-memory-optimized
+        url: "https://cloud.google.com/products/compute/pricing/memory-optimized"
+        kinds: [component_rates, server_prices]
+        region: us-central1
+      - id: pricing-storage-optimized
+        url: "https://cloud.google.com/products/compute/pricing/storage-optimized"
+        kinds: [component_rates, server_prices]
+        region: us-central1
+      - id: pricing-accelerator-optimized
+        url: "https://cloud.google.com/products/compute/pricing/accelerator-optimized"
+        kinds: [component_rates, server_prices]
+        region: us-central1
+      - id: pricing-network-optimized
+        url: "https://cloud.google.com/products/compute/pricing/network-optimized"
+        kinds: [component_rates, server_prices]
+        region: us-central1
+      - id: spot-pricing
+        url: "https://cloud.google.com/spot-vms/pricing"
+        kinds: [component_rates, server_prices]
+        region: us-central1
+      - id: disks-image-pricing
+        url: "https://cloud.google.com/compute/disks-image-pricing"
+        kinds: [component_rates]
+        region: us-central1
+        notes: Local SSD per GiB-month rates.
+      - id: sql-machine-series
+        url: "https://cloud.google.com/sql/docs/postgres/machine-series-overview"
+        kinds: [db_specs]
+        covers: "^db-"
+        complete: true
+        notes: Machine series and predefined tiers per Cloud SQL edition.
+      - id: sql-editions
+        url: "https://docs.cloud.google.com/sql/docs/postgres/editions-intro"
+        kinds: [db_specs, db_features]
+      - id: sql-pricing
+        url: "https://cloud.google.com/sql/pricing"
+        kinds: [component_rates, db_prices]
+        region: us-central1
+      - id: sql-sla
+        url: "https://cloud.google.com/sql/sla"
+        kinds: [db_features]
+      - id: sql-quotas
+        url: "https://cloud.google.com/sql/docs/quotas"
+        kinds: [db_features]
+      - id: sql-pitr
+        url: "https://cloud.google.com/sql/docs/postgres/backup-recovery/configure-pitr"
+        kinds: [db_features]
+      - id: sql-versions
+        url: "https://cloud.google.com/sql/docs/db-versions"
+        kinds: [db_features]
+      - id: tpu-v3
+        url: "https://cloud.google.com/tpu/docs/v3"
+        kinds: [server_specs]
+      - id: tpu-v5e
+        url: "https://cloud.google.com/tpu/docs/v5e"
+        kinds: [server_specs]
+      - id: tpu-v5p
+        url: "https://cloud.google.com/tpu/docs/v5p"
+        kinds: [server_specs]
+      - id: tpu-v6e
+        url: "https://cloud.google.com/tpu/docs/v6e"
+        kinds: [server_specs]
+      - id: tpu-tpu7x
+        url: "https://cloud.google.com/tpu/docs/tpu7x"
+        kinds: [server_specs]
+      - id: tpu-pricing
+        url: "https://cloud.google.com/tpu/pricing"
+        kinds: [server_prices]
+        region: us-central1
+      - id: sku-group-g4
+        url: "https://cloud.google.com/skus/sku-groups/g4-on-demand-vms"
+        kinds: [component_rates]
+        notes: "Billing SKUs used for G4 prices."
+      - id: sql-high-availability
+        url: "https://cloud.google.com/sql/docs/postgres/high-availability"
+        kinds: [db_features]
+      - id: sql-replication
+        url: "https://cloud.google.com/sql/docs/postgres/replication"
+        kinds: [db_features]
+      - id: sql-backups
+        url: "https://cloud.google.com/sql/docs/postgres/backup-recovery/backups"
+        kinds: [db_features]
+      - id: sql-instance-settings
+        url: "https://cloud.google.com/sql/docs/postgres/instance-settings"
+        kinds: [db_specs, db_features]
+      - id: sql-storage-options
+        url: "https://cloud.google.com/sql/docs/postgres/storage-options-overview"
+        kinds: [db_features]
+      - id: regions-zones
+        url: "https://cloud.google.com/compute/docs/regions-zones"
+        kinds: [regions]
+        complete: true
+
+  azure:
+    allowed_domains: [learn.microsoft.com, azure.microsoft.com, microsoft.com]
+    reference_regions: [eastus, westeurope]
+    pages:
+      - id: sizes
+        url: "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/overview"
+        kinds: [server_specs]
+        covers: "^Standard_"
+        complete: true
+        notes: Lists the series; per-series spec tables are on the followed child pages.
+        follow:
+          pattern: "learn\\.microsoft\\.com/en-us/azure/virtual-machines/sizes/(general-purpose|compute-optimized|memory-optimized|storage-optimized|gpu-accelerated|fpga-accelerated|high-performance-compute)/[a-z0-9-]+-(series|family)$"
+          kinds: [server_specs, gpu]
+          recursive: true
+      - id: sizes-toc
+        url: "https://learn.microsoft.com/en-us/azure/virtual-machines/toc.json"
+        kinds: [index]
+        notes: >-
+          Docs navigation; lists all per-series pages, many of which (e.g. the
+          "d" variants like Ddsv6) are not linked from the overview pages.
+        follow:
+          pattern: "learn\\.microsoft\\.com/en-us/azure/virtual-machines/sizes/(general-purpose|compute-optimized|memory-optimized|storage-optimized|gpu-accelerated|fpga-accelerated|high-performance-compute)/[a-z0-9-]+-series$"
+          kinds: [server_specs, gpu]
+      - id: previous-gen-sizes
+        url: "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/previous-gen-sizes-list"
+        kinds: [lifecycle]
+      - id: retired-sizes
+        url: "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retired-sizes-list"
+        kinds: [lifecycle]
+      - id: retirement-av1-series-retirement
+        url: "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/av1-series-retirement"
+        kinds: [lifecycle]
+      - id: retirement-n-series-migration
+        url: "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/n-series-migration"
+        kinds: [lifecycle]
+      - id: retirement-ncv3-retirement
+        url: "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/ncv3-retirement"
+        kinds: [lifecycle]
+      - id: retirement-dcsv2-series-retirement
+        url: "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/dcsv2-series-retirement"
+        kinds: [lifecycle]
+      - id: retirement-dcccv5-series-retirement
+        url: "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/dcccv5-series-retirement"
+        kinds: [lifecycle]
+      - id: retirement-ecccv5-series-retirement
+        url: "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/ecccv5-series-retirement"
+        kinds: [lifecycle]
+      - id: retirement-d-ds-dv2-dsv2-ls-series-migration-guide
+        url: "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/d-ds-dv2-dsv2-ls-series-migration-guide"
+        kinds: [lifecycle]
+      - id: retirement-nvv3-series-retirement
+        url: "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/nvv3-series-retirement"
+        kinds: [lifecycle]
+      - id: retirement-nvv4-retirement
+        url: "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/nvv4-retirement"
+        kinds: [lifecycle]
+      - id: retirement-np-series-retirement
+        url: "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/np-series-retirement"
+        kinds: [lifecycle]
+      - id: retirement-hc-series-retirement
+        url: "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/hc-series-retirement"
+        kinds: [lifecycle]
+      - id: retirement-hbv2-series-retirement
+        url: "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/hbv2-series-retirement"
+        kinds: [lifecycle]
+      - id: retirement-msv2-mdsv2-retirement
+        url: "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/msv2-mdsv2-retirement"
+        kinds: [lifecycle]
+      - id: retirement-dcsv3-series-retirement
+        url: "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/retirement/dcsv3-series-retirement"
+        kinds: [lifecycle]
+      - id: gpu-ngadsv620-accelerators
+        url: "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/ngadsv620-series?tabs=sizeaccelerators"
+        kinds: [server_specs, gpu]
+      - id: gpu-nvadsv710-v5-accelerators
+        url: "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nvadsv710-v5-series?tabs=sizeaccelerators"
+        kinds: [server_specs, gpu]
+      - id: vm-pricing-linux
+        url: "https://azure.microsoft.com/en-us/pricing/details/virtual-machines/linux/"
+        kinds: [server_prices]
+        region: eastus
+      - id: postgresql-compute
+        url: "https://learn.microsoft.com/en-us/azure/postgresql/flexible-server/concepts-compute"
+        kinds: [db_specs]
+        covers: "^Standard_"
+        complete: true
+        notes: Compute sizes of PostgreSQL flexible server (confidential SKUs are on a separate page).
+      - id: postgresql-confidential-computing
+        url: "https://learn.microsoft.com/en-us/azure/postgresql/security/security-confidential-computing"
+        kinds: [db_specs]
+        covers: "^Standard_(DC|EC)"
+        complete: true
+        notes: Confidential computing SKUs supported by PostgreSQL flexible server.
+      - id: postgresql-pricing
+        url: "https://azure.microsoft.com/en-us/pricing/details/postgresql/flexible-server/"
+        kinds: [db_prices, component_rates]
+        region: eastus
+      - id: postgresql-ha
+        url: "https://learn.microsoft.com/en-us/azure/postgresql/high-availability/concepts-high-availability"
+        kinds: [db_features]
+      - id: postgresql-read-replicas
+        url: "https://learn.microsoft.com/en-us/azure/postgresql/read-replica/concepts-read-replicas"
+        kinds: [db_features]
+      - id: postgresql-backup
+        url: "https://learn.microsoft.com/en-us/azure/postgresql/backup-restore/concepts-backup-restore"
+        kinds: [db_features]
+      - id: postgresql-reliability
+        url: "https://learn.microsoft.com/en-us/azure/reliability/reliability-database-postgresql"
+        kinds: [db_features]
+      - id: postgresql-versions
+        url: "https://learn.microsoft.com/en-us/azure/postgresql/configure-maintain/concepts-supported-versions"
+        kinds: [db_features]
+      - id: regions
+        url: "https://learn.microsoft.com/en-us/azure/reliability/regions-list"
+        kinds: [regions]
+        complete: true
+
+  alicloud:
+    allowed_domains: [alibabacloud.com, g.alicdn.com]
+    reference_regions: [us-east-1, eu-central-1]
+    pages:
+      - id: ecs-instance-price
+        url: "https://g.alicdn.com/aliyun/ecs-price-info-intl/2.0.400/price/download/instancePrice.json"
+        kinds: [server_prices]
+        parser: alicloud_instance_price
+        implies_availability: false
+        notes: Data feed of alibabacloud.com/product/ecs-pricing-list; latest version resolved at fetch time.
+      - id: instance-families
+        url: "https://www.alibabacloud.com/help/en/ecs/user-guide/overview-of-instance-families"
+        kinds: [server_specs]
+        covers: "^ecs\\."
+        complete: true
+      - id: gpu-instance-families
+        url: "https://www.alibabacloud.com/help/en/ecs/user-guide/gpu-accelerated-compute-optimized-and-vgpu-accelerated-instance-families-1"
+        kinds: [server_specs, gpu]
+      - id: ebm-instance-families
+        url: "https://www.alibabacloud.com/help/en/ecs/user-guide/elastic-bare-metal-server-overview"
+        kinds: [server_specs]
+      - id: regions
+        url: "https://www.alibabacloud.com/help/en/ecs/user-guide/regions-and-zones"
+        kinds: [regions]
+        complete: true
+
+  hcloud:
+    allowed_domains: [hetzner.com]
+    reference_regions: [fsn1]
+    monthly_price_is_cap: true
+    pages:
+      - id: cloud
+        url: "https://www.hetzner.com/cloud/"
+        kinds: [server_specs, server_prices]
+        currency: EUR
+        notes: Prices must be taken without VAT.
+      - id: cost-optimized
+        url: "https://www.hetzner.com/cloud/cost-optimized/"
+        kinds: [server_specs, server_prices]
+        covers: "^(cx|cax)\\d"
+        complete: true
+        currency: EUR
+        prices_include_ipv4: true
+        notes: >-
+          Prices include a primary IPv4 and are shown for the cheapest locations;
+          "currently unavailable" is a static placeholder, not the availability.
+      - id: regular-performance
+        url: "https://www.hetzner.com/cloud/regular-performance/"
+        kinds: [server_specs, server_prices]
+        covers: "^cpx\\d"
+        complete: true
+        currency: EUR
+        prices_include_ipv4: true
+        notes: >-
+          Prices include a primary IPv4 and are shown for the cheapest locations;
+          "currently unavailable" is a static placeholder, not the availability.
+      - id: general-purpose
+        url: "https://www.hetzner.com/cloud/general-purpose/"
+        kinds: [server_specs, server_prices]
+        covers: "^ccx\\d"
+        complete: true
+        currency: EUR
+        prices_include_ipv4: true
+        notes: >-
+          Prices include a primary IPv4 and are shown for the cheapest locations;
+          "currently unavailable" is a static placeholder, not the availability.
+      - id: servers-overview
+        url: "https://docs.hetzner.com/cloud/servers/overview/"
+        kinds: [server_specs]
+      - id: deprecated-plans
+        url: "https://docs.hetzner.com/cloud/servers/deprecated-plans/"
+        kinds: [lifecycle]
+      - id: servers-faq
+        url: "https://docs.hetzner.com/cloud/servers/faq/"
+        kinds: [server_specs]
+      - id: locations
+        url: "https://docs.hetzner.com/cloud/general/locations/"
+        kinds: [regions]
+        complete: true
+
+  ovh:
+    allowed_domains: [ovhcloud.com]
+    reference_regions: [GRA]
+    pages:
+      - id: prices
+        url: "https://www.ovhcloud.com/en-ie/public-cloud/prices/"
+        kinds: [server_specs, server_prices, gpu, db_prices]
+        covers: ".*"
+        complete: true
+        currency: EUR
+        price_region: GRA
+        notes: >-
+          Prices must be taken without VAT; also lists managed database plans.
+          Prices are the same in all OVHcloud regions.
+      - id: gpu
+        url: "https://www.ovhcloud.com/en-ie/public-cloud/gpu/"
+        kinds: [server_specs, gpu]
+      - id: virtual-instances
+        url: "https://www.ovhcloud.com/en-ie/public-cloud/virtual-instances/"
+        kinds: [server_specs]
+      - id: postgresql
+        url: "https://www.ovhcloud.com/en-ie/public-cloud/postgresql/"
+        kinds: [db_specs, db_prices, db_features]
+        currency: EUR
+      - id: db-capabilities
+        url: "https://docs.ovhcloud.com/en/guides/public-cloud/databases/capabilities"
+        kinds: [db_features]
+      - id: db-postgresql-capabilities
+        url: "https://docs.ovhcloud.com/en/guides/public-cloud/databases/postgresql-capabilities"
+        kinds: [db_specs, db_features]
+      - id: db-postgresql-ha
+        url: "https://docs.ovhcloud.com/en/guides/public-cloud/databases/postgresql-concept-high-availability"
+        kinds: [db_features]
+      - id: db-pricing
+        url: "https://docs.ovhcloud.com/en/guides/public-cloud/databases/pricing"
+        kinds: [db_prices, db_features]
+      - id: regions
+        url: "https://www.ovhcloud.com/en-ie/public-cloud/regions-availability/"
+        kinds: [regions]
+        complete: true
+
+  upcloud:
+    allowed_domains: [upcloud.com]
+    reference_regions: [de-fra1]
+    hours_per_month: 672
+    pages:
+      - id: pricing
+        url: "https://upcloud.com/global/pricing/"
+        kinds: [server_specs, server_prices, gpu, db_specs, db_prices]
+        covers: ".*"
+        complete: true
+        region: de-fra1
+        currency: EUR
+      - id: managed-postgresql
+        url: "https://upcloud.com/global/postgresql-managed-databases/"
+        kinds: [db_specs, db_prices, db_features]
+        currency: EUR
+      - id: postgresql-ha
+        url: "https://upcloud.com/docs/products/managed-postgresql/high-availability/"
+        kinds: [db_features]
+      - id: postgresql-backups
+        url: "https://upcloud.com/docs/products/managed-postgresql/backups/"
+        kinds: [db_features]
+      - id: postgresql-docs
+        url: "https://upcloud.com/docs/products/managed-postgresql/"
+        kinds: [db_specs, db_features]
+      - id: postgresql-configurations
+        url: "https://upcloud.com/docs/products/managed-postgresql/configurations/"
+        kinds: [db_specs, db_features]
+        covers: ".*"
+        complete: true
+      - id: data-centres
+        url: "https://upcloud.com/data-centres"
+        kinds: [regions]
+        complete: true
+
+  vultr:
+    allowed_domains: [vultr.com]
+    reference_regions: [ewr]
+    pages:
+      - id: pricing
+        url: "https://www.vultr.com/pricing/"
+        kinds: [server_specs, server_prices, gpu, db_specs, db_prices]
+        currency: USD
+        notes: >-
+          Blocks automated clients: save it from a browser (incl. the #postgresql
+          section) and import it with `sc-audit import-page vultr pricing FILE`.
+      - id: bare-metal
+        url: "https://www.vultr.com/products/bare-metal/"
+        kinds: [server_specs, server_prices]
+        currency: USD
+      - id: cloud-gpu
+        url: "https://www.vultr.com/products/cloud-gpu/"
+        kinds: [server_specs, gpu, server_prices]
+        currency: USD
+      - id: managed-databases
+        url: "https://www.vultr.com/products/managed-databases/"
+        kinds: [db_specs, db_prices, db_features]
+        currency: USD
+      - id: vx1
+        url: "https://docs.vultr.com/vultr-vx1-cloud-compute"
+        kinds: [server_specs]
+      - id: db-replicas
+        url: "https://docs.vultr.com/support/products/managed-databases/what-are-replica-nodes"
+        kinds: [db_features]
+      - id: db-backups
+        url: "https://docs.vultr.com/support/products/managed-databases/is-my-vultr-managed-mysql-or-postgresql-database-backed-up"
+        kinds: [db_features]
+      - id: cloud-compute-docs
+        url: "https://docs.vultr.com/products/compute/instances/cloud-compute"
+        kinds: [server_specs]
+      - id: db-postgresql-faq
+        url: "https://docs.vultr.com/products/managed-database/postgresql/faq"
+        kinds: [db_features]
+      - id: db-postgresql-provisioning
+        url: "https://docs.vultr.com/products/storage/databases/postgresql/provisioning"
+        kinds: [db_specs, db_features]
+      - id: db-node-plan
+        url: "https://docs.vultr.com/support/products/managed-databases/how-do-i-identify-the-node-plan-for-my-vultr-managed-database"
+        kinds: [db_specs]
+      - id: db-replica-types
+        url: "https://docs.vultr.com/support/products/managed-databases/what-type-of-replica-nodes-are-attached-to-a-vultr-managed-database"
+        kinds: [db_features]
+      - id: db-failover
+        url: "https://docs.vultr.com/support/products/managed-databases/how-does-vultr-managed-databases-handle-automated-failover-in-multi-node-clusters"
+        kinds: [db_features]
+      - id: locations
+        url: "https://www.vultr.com/features/datacenter-locations/"
+        kinds: [regions]
+        complete: true
