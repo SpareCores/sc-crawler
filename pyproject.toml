@@ -86,6 +86,10 @@ include-package-data = true  # see MANIFEST.in
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.pytest.ini_options]
+# the vendor audit in audit/ is a separate (unpublished) project with its own tests
+norecursedirs = ["*.egg", ".*", "_darcs", "build", "CVS", "dist", "node_modules", "venv", "{arch}", "audit", "audit-out"]
+
 [tool.ruff]
 # Exclude a variety of commonly ignored directories.
 exclude = [
