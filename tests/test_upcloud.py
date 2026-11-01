@@ -12,11 +12,15 @@ from sc_crawler.table_fields import (
 from sc_crawler.utils import _GIB_TO_GB
 from sc_crawler.vendors._upcloud import (
     _parse_gpu_model,
+    _server_family,
     _upcloud_server_status,
+    _warn_unknown_database_family,
+    _warn_unknown_family,
     inventory_database_prices,
     inventory_database_storage_prices,
     inventory_database_storages,
     inventory_databases,
+    inventory_servers,
 )
 
 
@@ -78,6 +82,26 @@ def test_upcloud_server_status_gpu_without_regions_is_inactive():
         )
         == Status.INACTIVE
     )
+
+
+def test_upcloud_inventory_servers_maps_plans():
+    vendor = Mock(vendor_id="upcloud")
+    server = {
+        "name": "PREMIUM-1xCPU-2GB",
+        "core_number": 1,
+        "memory_amount": 2048,
+        "storage_size": 25,
+        "storage_tier": "maxiops",
+        "public_traffic_out": 1024,
+        "current_offering": "yes",
+        "family": "premium",
+    }
+    with patch(
+        "sc_crawler.vendors._upcloud._get_server_plans",
+        return_value={"plans": {"plan": [server]}},
+    ):
+        rows = inventory_servers(vendor)
+    assert rows[0]["compatible_storage_ids"] == ["maxiops", "standard", "hdd"]
 
 
 def test_upcloud_inventory_databases_maps_pg_service_plans():
@@ -160,6 +184,7 @@ def test_upcloud_inventory_databases_maps_pg_service_plans():
     assert by_id["2xCPU-4GB-50GB"]["storage_size"] == round(50 * _GIB_TO_GB)
     assert by_id["2xCPU-4GB-50GB"]["storage_extra_min"] == round(10 * _GIB_TO_GB)
     assert by_id["2xCPU-4GB-50GB"]["storage_extra_max"] == round(150 * _GIB_TO_GB)
+    assert by_id["2xCPU-4GB-50GB"]["compatible_storage_ids"] == ["standard"]
     assert by_id["2xCPU-4GB-50GB"]["connection_pool"] is True
     assert by_id["2xCPU-4GB-50GB"]["sla"] == 99.999
     assert by_id["2xCPU-4GB-50GB"]["status"] == Status.ACTIVE
@@ -260,6 +285,7 @@ def test_upcloud_inventory_databases_maps_flexible_plans():
     assert by_id["rdb.development.1CPU-1GB"]["server_id"] == "DEV-1xCPU-1GB"
     assert by_id["rdb.development.1CPU-1GB"]["continuous_backups"] == 3
     assert by_id["rdb.development.1CPU-1GB"]["max_read_replicas"] == 0
+    assert by_id["rdb.development.1CPU-1GB"]["compatible_storage_ids"] == ["standard"]
     assert by_id["rdb.standard.2CPU-8GB"]["family"] == "Standard"
     assert (
         by_id["rdb.standard.2CPU-8GB"]["display_name"] == "Standard: 2 vCPU, 8 GiB RAM"
@@ -304,10 +330,12 @@ def test_upcloud_inventory_databases_maps_flexible_plans():
             "options": [{"base_gib": 10, "max_gib": 40}],
         },
     }
+    assert by_id["rdb.standard.2CPU-8GB"]["compatible_storage_ids"] == ["maxiops"]
     assert by_id["rdb.memory.64CPU-512GB"]["family"] == "High Memory"
     assert by_id["rdb.memory.64CPU-512GB"]["server_id"] == "HIMEM-64xCPU-512GB"
     assert by_id["rdb.memory.64CPU-512GB"]["memory_amount"] == 512 * 1024
     assert by_id["rdb.memory.64CPU-512GB"]["storage_size"] is None
+    assert by_id["rdb.memory.64CPU-512GB"]["compatible_storage_ids"] == ["maxiops"]
     assert by_id["rdb.memory.64CPU-512GB"]["api_reference_object"]["plan_storage"] == {
         "step_gib": 10,
         "options": [{"base_gib": 1000, "max_gib": 4000}],
@@ -356,6 +384,7 @@ def test_upcloud_inventory_databases_keeps_server_id_none_when_no_match():
     assert rows[0]["storage_extra_min"] == 0
     assert rows[0]["storage_extra_max"] == 0
     assert rows[0]["storage_extra_autosize"] is False
+    assert rows[0]["compatible_storage_ids"] == []
 
 
 def test_upcloud_inventory_database_prices_from_price_list():
@@ -588,3 +617,131 @@ def test_upcloud_parse_gpu_model_standardizes_rtx_pro_6000():
     assert gpu["accelerator_manufacturer"] == "NVIDIA"
     assert gpu["accelerator_memory_min"] == 96 * 1024
     assert gpu["accelerator_memory_total"] == 2 * 96 * 1024
+
+
+def _plan(name, family, **extra):
+    return {
+        "name": name,
+        "core_number": 2,
+        "memory_amount": 4096,
+        "storage_size": 25,
+        "storage_tier": "maxiops",
+        "public_traffic_out": 1024,
+        "current_offering": "yes",
+        "family": family,
+        **extra,
+    }
+
+
+def test_upcloud_server_family_from_api_family():
+    # values from a live GET /1.3/plan response
+    for api_family, family in [
+        ("starter", "Starter"),
+        ("developer", "Developer"),
+        ("premium", "Premium"),
+        ("cloud_native", "Cloud Native"),
+        ("general_purpose", "General Purpose"),
+        ("gpu", "GPU"),
+    ]:
+        assert _server_family({"name": "x", "family": api_family}) == family
+
+
+def test_upcloud_missing_family_is_empty_and_warned_once():
+    _warn_unknown_family.cache_clear()
+    with patch("sc_crawler.vendors._upcloud.logger") as logger:
+        assert _server_family({"name": "NEW-1xCPU-1GB"}) is None
+        assert _server_family({"name": "NEW-1xCPU-1GB", "family": ""}) is None
+        assert _server_family({"name": "PREMIUM-1xCPU-1GB", "family": "premium"})
+    warnings = [call.args[0] for call in logger.warning.call_args_list]
+    assert len(warnings) == 1
+    assert "NEW-1xCPU-1GB" in warnings[0]
+
+
+def test_upcloud_inventory_servers_sets_family_and_series():
+    plans = [
+        _plan("STARTER-1xCPU-4GB", "starter"),
+        # the API puts the HIMEM/HICPU plans into general_purpose
+        _plan("HIMEM-2xCPU-8GB", "general_purpose"),
+        _plan("CLOUDNATIVE-2xCPU-8GB", "cloud_native"),
+        _plan(
+            "GPU-8xCPU-64GB-1xL40S",
+            "gpu",
+            gpu_amount=1,
+            gpu_model="NVIDIA L40S",
+        ),
+    ]
+    with (
+        patch(
+            "sc_crawler.vendors._upcloud._get_server_plans",
+            return_value={"plans": {"plan": plans}},
+        ),
+        patch(
+            "sc_crawler.vendors._upcloud._upcloud_server_status",
+            return_value=Status.ACTIVE,
+        ),
+    ):
+        rows = inventory_servers(Mock(vendor_id="upcloud"))
+    by_id = {row["server_id"]: row for row in rows}
+    assert by_id["STARTER-1xCPU-4GB"]["family"] == "Starter"
+    assert by_id["HIMEM-2xCPU-8GB"]["family"] == "General Purpose"
+    assert by_id["CLOUDNATIVE-2xCPU-8GB"]["family"] == "Cloud Native"
+    assert by_id["GPU-8xCPU-64GB-1xL40S"]["family"] == "GPU"
+    # series is only set for GPU plans, as the GPU model
+    assert by_id["GPU-8xCPU-64GB-1xL40S"]["series"] == "L40S"
+    for name in ["STARTER-1xCPU-4GB", "HIMEM-2xCPU-8GB", "CLOUDNATIVE-2xCPU-8GB"]:
+        assert by_id[name]["series"] is None
+
+    # Cloud Native plans do not include a public IPv4 address, the others do
+    assert by_id["CLOUDNATIVE-2xCPU-8GB"]["ipv4"] == 0
+    for name in ["STARTER-1xCPU-4GB", "HIMEM-2xCPU-8GB", "GPU-8xCPU-64GB-1xL40S"]:
+        assert by_id[name]["ipv4"] == 1
+    # the description uses the API family, not the plan name prefix
+    assert (
+        by_id["HIMEM-2xCPU-8GB"]["description"]
+        == "General Purpose (2 vCPUs, 8 GiB RAM)"
+    )
+    assert by_id["GPU-8xCPU-64GB-1xL40S"]["description"] == (
+        "GPU (8 vCPUs, 64 GiB RAM, 1x L40S)"
+    )
+
+
+def test_upcloud_inventory_databases_unknown_flexible_family_is_empty_and_warned():
+    _warn_unknown_database_family.cache_clear()
+    vendor = Mock(vendor_id="upcloud")
+    vendor.servers = []
+    shape = {
+        "compute": "rdb.future.2CPU-8GB",
+        "family": "future",
+        "cpu": 2,
+        "memory_gb": 8,
+        "dynamic_storage_supported": True,
+        "node_counts": [1],
+        "backups": ["regular"],
+        "storage": {"step_gib": 10, "options": [{"base_gib": 80, "max_gib": 320}]},
+    }
+    with (
+        patch(
+            "sc_crawler.vendors._upcloud._get_pg_service_type",
+            return_value={"properties": {"version": {"enum": ["17"]}}, "zones": []},
+        ),
+        patch(
+            "sc_crawler.vendors._upcloud._get_database_plans",
+            return_value={
+                "service_types": [
+                    {"type": "pg", "zones": ["fi-hel1"], "compute_shapes": [shape]}
+                ]
+            },
+        ),
+        patch("sc_crawler.vendors._upcloud.logger") as logger,
+    ):
+        rows = inventory_databases(vendor)
+    row = next(r for r in rows if r["database_id"] == "rdb.future.2CPU-8GB")
+    assert row["family"] is None
+    # UpCloud has no series, the column stays at its empty default
+    assert row.get("series") is None
+    assert row["compatible_storage_ids"] == []
+    # the text still tells the plan family
+    assert "future" in row["description"]
+    warnings = [call.args[0] for call in logger.warning.call_args_list]
+    assert len(warnings) == 1
+    assert "database family future" in warnings[0]
