@@ -25,14 +25,14 @@ entries:
     field: memory_gib
     verdict: false_positive
     note: "_hcloud.py:417 multiplies the API's GB value by 1000 instead of 1024 (all SKUs -2.34%). Not a bug: Hetzner's \"GB\" is 1000 MiB, dmidecode in sc-inspector-data shows 4000 MB on cx22/cx23/cpx22/cax11 and 16 GB + 7616 MB = 24000 MiB on cpx52, so memory * 1000 (MiB) is right."
-    by: claude (first-pass triage)
+    by: bridgend84
     evidence: audit-runs/2026-10-31.tar.xz
     date: 2026-11-02
   - vendor: hcloud
     type: PRICE_MISSING_IN_DB
     verdict: expected
     note: "Page shows the 'from' price for the cheapest locations; we lack prices there. Check per-location availability at crawl time. Verified against the API on 2026-11-02: our prices exist but are INACTIVE where the type is sold out (available false, e.g. cx23-53, cax*) or retired (cpx11-51 in EU/sin, unavailable_after 2025-12-31); the audit only exports ACTIVE prices."
-    by: claude (first-pass triage)
+    by: bridgend84
     evidence: audit-runs/2026-10-31.tar.xz
     date: 2026-11-02
 
@@ -41,7 +41,7 @@ entries:
     type: SOURCE_CONFLICT
     verdict: expected
     note: "Docs pages agree with our value; the pricing page data feed is outdated (e.g. i3.metal, c5.9xlarge)."
-    by: claude (first-pass triage)
+    by: bridgend84
     evidence: audit-runs/2026-10-31.tar.xz
     date: 2026-10-31
   - vendor: aws
@@ -49,7 +49,7 @@ entries:
     match: "(inf|trn|vt|f2|dl2q)\\d*n?\\..*"
     verdict: confirmed
     note: "Non-GPU accelerators (Inferentia, Trainium, FPGA, Qualcomm AI100) are not stored as accelerators for AWS, unlike Alibaba NPUs or GCP TPUs. Decide if intended. Intended to be stored (DEV-1015): the API has NeuronInfo, InferenceAcceleratorInfo, FpgaInfo and MediaAcceleratorInfo, but AcceleratorType has GPU and TPU only. Details in the TODO in _aws._make_server_from_instance_type."
-    by: claude (first-pass triage)
+    by: bridgend84
     evidence: audit-runs/2026-10-31.tar.xz
     date: 2026-11-02
   - vendor: aws
@@ -57,7 +57,7 @@ entries:
     field: cpu_model
     verdict: expected
     note: "Docs list one CPU per family; our value comes from hardware inspection (e.g. 8259CL vs Xeon Platinum 8175). Inspected CPUs differ per size within a family (e.g. m5/r5: 8175M and 8259CL, c5: 8124M, 8223CL and 8275CL)."
-    by: claude (first-pass triage)
+    by: bridgend84
     evidence: audit-runs/2026-10-31.tar.xz
     date: 2026-11-02
   - vendor: aws
@@ -65,7 +65,7 @@ entries:
     page: "^rds-instance-classes$"
     verdict: expected
     note: "The hardware specs page covers the DB instance classes of all engines; classes not supported for PostgreSQL (e.g. db.m8i, db.z1d, Oracle-only tpc classes) are not in our data by design. PostgreSQL support is checked against rds-engine-support."
-    by: claude (triage, managed database coverage)
+    by: bridgend84
     evidence: audit-runs/2026-10-31.tar.xz
     date: 2026-10-31
   - vendor: aws
@@ -73,7 +73,7 @@ entries:
     match: "db\\.r6idn\\.large"
     verdict: false_positive
     note: "The engine support docs list db.r6idn from xlarge only, but the RDS PostgreSQL pricing feed has db.r6idn.large prices in 5 regions (us-east-1, us-east-2, us-west-2, eu-west-1, ap-northeast-1): likely a docs omission. Confirmed docs omission: describe-orderable-db-instance-options lists db.r6idn.large for postgres in us-east-1 and eu-west-1 (2026-11-02)."
-    by: claude (triage, managed database coverage)
+    by: bridgend84
     evidence: audit-runs/2026-10-31.tar.xz
     date: 2026-11-02
   - vendor: aws
@@ -81,7 +81,7 @@ entries:
     match: "(f1|g3s?|p2|p3)\\..*"
     verdict: expected
     note: "Documented and priced in us-east-1 by AWS, INACTIVE without prices for us. 2026-11-02: our account cannot describe or order them (not in describe-instance-types/offerings), no spot history and no Reserved terms in the price list (closed to new commitments?). Closed to new accounts vs retired is undecided. Fixed: not offered, no spot price in 7 days and no Reserved terms -> RETIRED (_aws._reconcile_server_status), with INACTIVE price list prices."
-    by: claude (first-pass triage)
+    by: bridgend84
     evidence: audit-runs/2026-10-31.tar.xz
     date: 2026-11-02
   - vendor: aws
@@ -89,7 +89,7 @@ entries:
     match: "(g4ad\\..*|dl1\\.24xlarge|i3\\.metal)"
     verdict: expected
     note: "Pricing feed has on-demand Linux prices in us-east-1/eu-central-1; we only have other regions. 2026-11-02: not offered to our account there (i3.metal only in us-west-2, g4ad/dl1 nowhere) and prices are written only for offered zones. g4ad and i3.metal have no Reserved terms, dl1 has; g4ad is ACTIVE only by spot history last updated 2026-10-02. Fixed: prices of types not offered to us are stored as INACTIVE in all zones of the region; g4ad becomes RETIRED (spot older than 7 days, no Reserved terms), dl1 stays INACTIVE. The audit only exports ACTIVE prices, so these findings remain."
-    by: claude (first-pass triage)
+    by: bridgend84
     evidence: audit-runs/2026-10-31.tar.xz
     date: 2026-11-02
   - vendor: aws
@@ -97,7 +97,7 @@ entries:
     match: "u-\\d+tb1\\.metal"
     verdict: expected
     note: "End of sale per the docs."
-    by: claude (first-pass triage)
+    by: bridgend84
     evidence: audit-runs/2026-10-31.tar.xz
     date: 2026-10-31
   - vendor: aws
@@ -105,7 +105,7 @@ entries:
     match: "(p6e-gb200\\.36xlarge|u7inh-32tb\\.480xlarge)"
     verdict: expected
     note: "Listed in the docs; possibly UltraServer or capacity-block only. 2026-11-02: not in describe-instance-types of our regions; p6e-gb200 is priced only as Capacity Block (RunInstances:CB) in the Dallas Local Zone, u7inh-32tb is not in the price list at all."
-    by: claude (first-pass triage)
+    by: bridgend84
     evidence: audit-runs/2026-10-31.tar.xz
     date: 2026-11-02
 
