@@ -104,6 +104,32 @@ def test_database_vendor_and_single_node_reasons_stack():
     ]
 
 
+def test_database_blocked_for_unsupported_azure_confidential_skus():
+    for family in [
+        # confidential computing
+        *["DCasv5", "ECasv5", "DCadsv6", "ECadsv6", "DCesv6", "ECesv6"],
+        # not listed among the supported compute sizes
+        *["Dsv6", "Dasv6", "Esv6", "Easv6", "Ebdsv5", "Mdsv2"],
+    ]:
+        database = _database(vendor_id="azure", family=family, memory_amount=8 * 1024)
+        assert block_reasons(database, "membench")["membench"] == [
+            "Database SKU not offered by the vendor."
+        ]
+    # supported families (the isolated E192ids_v6 is listed as "E192ds_v6" in the docs)
+    database = _database(
+        vendor_id="azure",
+        family="Edsv6",
+        api_reference="Standard_E192ids_v6",
+        memory_amount=8 * 1024,
+    )
+    assert block_reasons(database, "membench") == {"membench": []}
+    # supported confidential families and other vendors are not affected
+    for family in ["DCadsv5", "ECadsv5"]:
+        database = _database(vendor_id="azure", family=family, memory_amount=8 * 1024)
+        assert block_reasons(database, "membench") == {"membench": []}
+    assert block_reasons(_database(family="DCasv5"), "membench") == {"membench": []}
+
+
 def test_database_skips_server_only_rules():
     # Would fail mem/storage/GPU server rules if those ran; Database continues early
     database = _database(memory_amount=1, storage_size=0, vcpus=64)
