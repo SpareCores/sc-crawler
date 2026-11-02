@@ -15,6 +15,7 @@ from sc_crawler.vendors._azure import (
     _azure_sku_lifecycle_status,
     _parse_database_name,
     _pg_database_regions,
+    _pg_edition_family,
     _pg_engine_versions,
     _pg_hourly_compute_price,
     _pg_lookup_retail_price,
@@ -1396,3 +1397,18 @@ def test_azure_storages_use_the_derived_disk_sizes():
     # min and max of the tiers (P1 = 4 GiB ... P10 = 128 GiB), in GB
     assert items[0]["min_size"] == round(4 * 1024**3 / 1000**3)
     assert items[0]["max_size"] == round(128 * 1024**3 / 1000**3)
+
+
+@pytest.mark.parametrize(
+    "edition,family",
+    [
+        # edition names of the PostgreSQL flexible server capabilities API
+        ("Burstable", "Burstable"),
+        ("GeneralPurpose", "General Purpose"),
+        ("MemoryOptimized", "Memory Optimized"),
+        (None, None),
+        ("", None),
+    ],
+)
+def test_azure_pg_edition_family_from_the_api_edition_name(edition, family):
+    assert _pg_edition_family(edition) == family

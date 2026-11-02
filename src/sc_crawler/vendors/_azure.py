@@ -2166,13 +2166,21 @@ _PG_EDITION_PRODUCT_TOKENS = {
     "MemoryOptimized": ("memory optimized", "memory purpose"),
     "Burstable": ("burstable",),
 }
-# Pricing tiers of Azure Database for PostgreSQL flexible server
-# https://learn.microsoft.com/en-us/azure/postgresql/compute-storage/concepts-compute
-_PG_EDITION_FAMILY = {
-    "Burstable": "Burstable",
-    "GeneralPurpose": "General Purpose",
-    "MemoryOptimized": "Memory Optimized",
-}
+
+
+def _pg_edition_family(edition_name: str | None) -> str | None:
+    """Family of a PostgreSQL flexible server edition: the words of its API name.
+
+    The capabilities API names the pricing tiers in CamelCase, e.g. Burstable,
+    GeneralPurpose or MemoryOptimized, which are the pricing tiers of Azure Database
+    for PostgreSQL flexible server:
+    https://learn.microsoft.com/en-us/azure/postgresql/compute-storage/concepts-compute
+    """
+    if not edition_name:
+        return None
+    return recompile(r"(?<=[a-z])(?=[A-Z])").sub(" ", edition_name)
+
+
 _PG_SKU_NAME_PREFIX = {
     "Burstable": "B",
     "GeneralPurpose": "GP",
@@ -2623,7 +2631,7 @@ def inventory_databases(vendor):
                 "engine": DatabaseEngine.POSTGRESQL,
                 "wire_protocol": DatabaseWireProtocol.POSTGRESQL,
                 "engine_versions": facts["engine_versions"],
-                "family": _PG_EDITION_FAMILY.get(edition_name),
+                "family": _pg_edition_family(edition_name),
                 "series": series,
                 "vcpus": vcpus,
                 "memory_amount": memory_amount,
