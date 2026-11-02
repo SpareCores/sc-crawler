@@ -164,35 +164,19 @@ entries:
 
   # ---------------------------------------------------------------- alicloud
   - vendor: alicloud
-    match: "ecs\\.g7nex\\.large"
-    verdict: confirmed
-    note: "Specs and price of another size: docs say 2 vCPU / 8 GiB, price list $0.1012; we have 4 / 16 / $0.2317."
-    by: claude (first-pass triage)
-    evidence: audit-runs/2026-10-31.tar.xz
-    date: 2026-10-31
-  - vendor: alicloud
-    type: SPEC_MISMATCH
-    field: gpu_memory_total_gib
-    match: "ecs\\.gn7s-.*"
-    verdict: confirmed
-    note: "GPU memory 0 vs 24 GB per GPU in the docs (per-GPU vs total branch in _alicloud.py)."
-    by: claude (first-pass triage)
-    evidence: audit-runs/2026-10-31.tar.xz
-    date: 2026-10-31
-  - vendor: alicloud
     type: NOT_AT_VENDOR
-    verdict: to_verify
-    note: "Mostly old families (n1/n2/e3/s2/s3/c1/c2/m1/sn1/sn2/d1/i1) missing from the current docs: phased out but ACTIVE for us? Some new families (g8ise, c9h, gn8ia) are also missing from the docs page."
-    by: claude (first-pass triage)
+    verdict: expected
+    note: "Mostly old families (n1/n2/e3/s2/s3/c1/c2/m1/sn1/sn2/d1/i1) missing from the current docs: phased out but ACTIVE for us? Some new families (g8ise, c9h, gn8ia) are also missing from the docs page. Still orderable via the API (2026-11-02): DescribeAvailableResource has WithStock for c1/c2/s2/s3/m1 in ap-southeast-5, i1 in cn-hongkong, d1 in cn-beijing/chengdu/hangzhou, n1/n2/e3/sn1/sn2 in several regions; the retired-instance-types page lists them as retired on the China website only. g8ise/c9h/gn8ia are newer than the docs page."
+    by: bridgend84
     evidence: audit-runs/2026-10-31.tar.xz
-    date: 2026-10-31
+    date: 2026-11-02
   - vendor: alicloud
     type: STATUS_MISMATCH
-    verdict: to_verify
-    note: "Documented, but INACTIVE for us (status from per-region DescribeAvailableResource)."
-    by: claude (first-pass triage)
+    verdict: expected
+    note: "Documented, but INACTIVE for us (status from per-region DescribeAvailableResource). 2026-11-02: of the publicly priced but INACTIVE types, most are WithoutStock in every zone (fixed: _ALICLOUD_STATUS_CATEGORY_TO_SERVER_LIFECYCLE keeps them ACTIVE, per-zone prices stay INACTIVE); the rest are not returned by DescribeAvailableResource for our account at all and stay INACTIVE."
+    by: bridgend84
     evidence: audit-runs/2026-10-31.tar.xz
-    date: 2026-10-31
+    date: 2026-11-02
 
   # ---------------------------------------------------------------- upcloud
   - vendor: upcloud

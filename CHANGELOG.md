@@ -40,6 +40,14 @@ Fix(es):
   to price `c2-standard` in all regions again.
 - `GCP`: skip the boot Persistent Disk by its model name instead of position in
   the inspected local NVMe disks (e.g. `a3-highgpu-8g`, `c4-*-lssd`).
+- `AliCloud`: use the GPU memory of other instance types with the same GPU when
+  `GPUMemorySize` is missing (e.g. 24 GiB for the A30 of `ecs.gn7s`), and
+  leave it unknown instead of 0 otherwise.
+- `AliCloud`: show the GPU memory in GiB instead of MiB in server descriptions.
+- `AliCloud`: keep out of stock (`WithoutStock`) instance types `ACTIVE`, only
+  their per-zone prices are `INACTIVE`.
+- Keep unknown `accelerator_memory_total` unknown instead of 0 when the
+  inspector has no GPU data (e.g. GCP `tpu7-standard-*`, UpCloud B300 plans).
 
 ## v0.10.2 (October 22, 2026)
 

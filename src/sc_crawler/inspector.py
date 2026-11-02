@@ -1870,8 +1870,11 @@ def inspect_update_server_dict(server: dict) -> dict:
         "accelerator_memory_min": lambda: min(
             [gpu["memory"] for gpu in server["accelerators"]]
         ),
-        "accelerator_memory_total": lambda: sum(
-            [gpu["memory"] for gpu in server["accelerators"]]
+        # skip update (keep unknown vendor data) if there is no HW-inspected GPU info
+        "accelerator_memory_total": lambda: (
+            sum([gpu["memory"] for gpu in server["accelerators"]])
+            if server["accelerators"]
+            else None
         ),
         # skip storage update if lshw parsing failed or API data is present
         "storage_type": lambda: (
