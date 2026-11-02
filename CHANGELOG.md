@@ -31,6 +31,15 @@ Fix(es):
 - `AWS`: mark instance types not offered (and without spot prices in the past 7
   days) as `RETIRED` if they have no Reserved terms in the price list (e.g.
   `f1`, `g3`, `p2`, `p3`), and keep their on-demand prices as `INACTIVE`.
+- `GCP`: price E2 shared-core machines (`e2-micro`, `e2-small`, `e2-medium`)
+  for their billed fractional vCPU (0.25, 0.5, 1) instead of 2 vCPUs.
+- `GCP`: use the 14,000 GiB Titanium SSD disks of `z4m` (and 7,000 GiB of
+  `z4d-highmem-384-standardlssd-metal`) for storage size and the bundled Local
+  SSD price, instead of 375 GiB.
+- `GCP`: parse the renamed C2 SKUs ("Compute optimized Core running in ...")
+  to price `c2-standard` in all regions again.
+- `GCP`: skip the boot Persistent Disk by its model name instead of position in
+  the inspected local NVMe disks (e.g. `a3-highgpu-8g`, `c4-*-lssd`).
 
 ## v0.10.2 (October 22, 2026)
 

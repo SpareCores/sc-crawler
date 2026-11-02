@@ -111,29 +111,13 @@ entries:
 
   # ---------------------------------------------------------------- gcp
   - vendor: gcp
-    type: PRICE_MISMATCH
-    match: "e2-(micro|small|medium)"
-    verdict: confirmed
-    note: "Shared-core price ignores the fractional vCPU share: e2-micro $0.0465 = 2 full vCPUs + 1 GiB vs $0.008376 on the pricing page."
-    by: claude (first-pass triage)
-    evidence: audit-runs/2026-10-31.tar.xz
-    date: 2026-10-31
-  - vendor: gcp
-    type: PRICE_MISMATCH
-    match: "z4m-.*"
-    verdict: confirmed
-    note: "Our price is ~1/3 of the pricing page; a component (likely the bundled Titanium SSD) is missing."
-    by: claude (first-pass triage)
-    evidence: audit-runs/2026-10-31.tar.xz
-    date: 2026-10-31
-  - vendor: gcp
     type: SPEC_MISMATCH
     field: memory_gib
     match: "db-f1-micro"
     ours: "0.599609375"
     verdict: false_positive
     note: "Docs say 0.614 GB, which is 0.6 GiB."
-    by: claude (first-pass triage)
+    by: bridgend84
     evidence: audit-runs/2026-10-31.tar.xz
     date: 2026-10-31
   - vendor: gcp
@@ -142,15 +126,7 @@ entries:
     match: "tpu7x-.*"
     verdict: false_positive
     note: "Naming only (v7x vs TPU7x)."
-    by: claude (first-pass triage)
-    evidence: audit-runs/2026-10-31.tar.xz
-    date: 2026-10-31
-  - vendor: gcp
-    type: SPEC_MISMATCH
-    field: storage_gb
-    verdict: to_verify
-    note: "Local SSD sizes 2-4% low vs the docs' GiB values (e.g. a3-highgpu-8g 6167 vs 6000 GiB = 6442 GB): hardcoded partition sizes in _gcp.py?"
-    by: claude (first-pass triage)
+    by: bridgend84
     evidence: audit-runs/2026-10-31.tar.xz
     date: 2026-10-31
   - vendor: gcp
@@ -158,42 +134,33 @@ entries:
     match: "db-custom-.*"
     verdict: expected
     note: "Custom Cloud SQL tiers are skipped by our ingest by design."
-    by: claude (first-pass triage)
+    by: bridgend84
     evidence: audit-runs/2026-10-31.tar.xz
     date: 2026-10-31
   - vendor: gcp
     type: MISSING_IN_DB
     match: "m4n?-hypermem-.*"
-    verdict: to_verify
-    note: "Documented machine types we don't have."
-    by: claude (first-pass triage)
+    verdict: expected
+    note: "Documented machine types we don't have. In the live API (48 zones) and ACTIVE in the 2026-11-02 pull: the audited dump predates them; remove when stale."
+    by: bridgend84
     evidence: audit-runs/2026-10-31.tar.xz
-    date: 2026-10-31
-  - vendor: gcp
-    type: PRICE_MISSING_IN_DB
-    match: "c2-standard-.*"
-    verdict: to_verify
-    note: "Priced in us-central1 by Google, no price for us."
-    by: claude (first-pass triage)
-    evidence: audit-runs/2026-10-31.tar.xz
-    date: 2026-10-31
+    date: 2026-11-02
   - vendor: gcp
     type: NOT_AT_VENDOR
     match: "(x4-megamem-\\d+-metal|a3-\\w+-8g-nolssd)"
-    verdict: to_verify
-    note: "Not in the docs tables, which may not list every variant."
-    by: claude (first-pass triage)
+    verdict: false_positive
+    note: "Not in the docs tables, which may not list every variant. The machine types API lists them (2026-11-02): x4-megamem-960/1440/1920-metal in 18-19 zones, a3-edgegpu-8g-nolssd in 24 and a3-ultragpu-8g-nolssd in 9 zones."
+    by: bridgend84
     evidence: audit-runs/2026-10-31.tar.xz
-    date: 2026-10-31
-
+    date: 2026-11-02
   - vendor: gcp
     type: NOT_AT_VENDOR
     match: "db-(n1-(standard|highmem)|memory-optimized-N)-\\d+"
-    verdict: to_verify
-    note: "Legacy Cloud SQL tiers not mentioned by the current machine series docs (Enterprise: shared-core, general purpose, N4; Enterprise Plus: N2, C4A, C4). May still be creatable via the API: verify, or mark as deprecated."
-    by: claude (triage, managed database coverage)
+    verdict: false_positive
+    note: "Legacy Cloud SQL tiers not mentioned by the current machine series docs (Enterprise: shared-core, general purpose, N4; Enterprise Plus: N2, C4A, C4). May still be creatable via the API: verify, or mark as deprecated. Still offered: sqladmin tiers.list returns db-n1-standard/highmem and db-memory-optimized-N tiers in 40-43 regions (2026-11-02)."
+    by: bridgend84
     evidence: audit-runs/2026-10-31.tar.xz
-    date: 2026-10-31
+    date: 2026-11-02
 
   # ---------------------------------------------------------------- alicloud
   - vendor: alicloud

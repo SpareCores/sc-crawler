@@ -133,6 +133,24 @@ def test_gcp_inspector_lsblk_still_overrides_api_storage():
     assert updated["storages"][0].size == partition_gb
 
 
+def test_gcp_inspector_lsblk_skips_boot_persistent_disk_by_model():
+    # the boot Persistent Disk is not always nvme0, e.g. on a3-highgpu-8g
+    partition_gb = (375 * 1024**3) // 1000**3
+    lsblk = {
+        "blockdevices": [
+            {"name": "nvme0n1", "size": 375 * 1024**3, "model": "nvme_card8"},
+            {"name": "nvme1n1", "size": 128 * 1024**3, "model": "nvme_card-pd"},
+            {"name": "nvme2n1", "size": 375 * 1024**3, "model": "nvme_card0"},
+        ]
+    }
+    with ExitStack() as stack:
+        _patch_missing_inspector_lookups(stack, _server_lsblk=lsblk)
+        updated = inspect_update_server_dict(_z4d_server())
+
+    assert updated["storage_size"] == 2 * partition_gb
+    assert [disk.size for disk in updated["storages"]] == [partition_gb] * 2
+
+
 def test_missing_nvidia_smi_does_not_mark_server_as_gpu():
     with ExitStack() as stack:
         _patch_missing_inspector_lookups(stack)
