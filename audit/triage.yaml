@@ -23,34 +23,34 @@ entries:
   - vendor: hcloud
     type: SPEC_MISMATCH
     field: memory_gib
-    verdict: confirmed
-    note: "_hcloud.py:417 multiplies the API's GB value by 1000 instead of 1024 (all SKUs -2.34%)."
-    by: claude (first-pass triage)
-    evidence: audit-runs/2026-10-31.tar.xz
-    date: 2026-10-31
+    verdict: false_positive
+    note: "Hetzner's \"GB\" is 1000 MiB: dmidecode in sc-inspector-data shows 4000 MB on cx22/cx23/cpx22/cax11, 16 GB + 7616 MB = 24000 MiB on cpx52, so memory * 1000 (MiB) is right."
+    by: claude
+    evidence: sc-inspector-data/data/hcloud/*/0/dmidecode/stdout
+    date: 2026-11-02
   - vendor: hcloud
     type: STATUS_MISMATCH
     theirs: retired
     verdict: confirmed
-    note: "Deprecated plans stay INACTIVE: pull sets all rows INACTIVE first (cli.py:854), nothing moves them to RETIRED. Likely affects all vendors."
-    by: claude (first-pass triage)
+    note: "Types removed from the API stayed INACTIVE (Vendor.inventory_servers resets all rows to INACTIVE first). Fixed: _hcloud._retired_servers marks known types missing from the API RETIRED (cx11-51, cx22-52); remove this entry when stale."
+    by: claude
     evidence: audit-runs/2026-10-31.tar.xz
-    date: 2026-10-31
+    date: 2026-11-02
   - vendor: hcloud
     type: STATUS_MISMATCH
     theirs: listed
-    verdict: to_verify
-    note: "Listed with prices on the static pages, but INACTIVE without prices for us; _hcloud_server_status returns INACTIVE for types without locations (sold out at crawl time?)."
-    by: claude (first-pass triage)
+    verdict: confirmed
+    note: "Sold out types (API locations[].available false everywhere, e.g. cx23-53; availability flaps within hours) were INACTIVE. Fixed: _hcloud_server_status counts sold out locations as ACTIVE; remove this entry when stale."
+    by: claude
     evidence: audit-runs/2026-10-31.tar.xz
-    date: 2026-10-31
+    date: 2026-11-02
   - vendor: hcloud
     type: PRICE_MISSING_IN_DB
-    verdict: to_verify
-    note: "Page shows the 'from' price for the cheapest locations; we lack prices there. Check per-location availability at crawl time."
-    by: claude (first-pass triage)
+    verdict: expected
+    note: "Our prices exist but are INACTIVE where the type is sold out (available false, e.g. cx23-53, cax*) or retired (cpx11-51 in EU/sin, unavailable_after 2025-12-31); the audit only exports ACTIVE prices. Verified against the API on 2026-11-02."
+    by: claude
     evidence: audit-runs/2026-10-31.tar.xz
-    date: 2026-10-31
+    date: 2026-11-02
 
   # ---------------------------------------------------------------- aws
   - vendor: aws

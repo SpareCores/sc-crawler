@@ -17,6 +17,10 @@ Fix(es):
   `cuda_version`.
 - `AWS`: mark `t1` and `*-flex` (e.g. `r8i-flex`) instance types as burstable
   instead of dedicated CPU allocation.
+- `Hetzner`: keep sold out server types (e.g. `cx23`–`cx53`) `ACTIVE`, only
+  their per-location prices are `INACTIVE`.
+- `Hetzner`: mark server types removed from the API (e.g. `cx11`–`cx52`) as
+  `RETIRED` instead of `INACTIVE`.
 
 ## v0.10.2 (October 22, 2026)
 
