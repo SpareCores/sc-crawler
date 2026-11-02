@@ -1015,6 +1015,73 @@ def test_azure_inventory_databases_adds_quota_hidden_retail_skus():
     assert e104["api_reference_object"] == {"sku_name": "MO_Standard_E104ids_v5"}
 
 
+def test_azure_inventory_databases_skips_confidential_series_vm_sizes():
+    """DCasv5 / DCesv6 / ECasv5 series meters must not invent VM-only sizes."""
+    vendor = Mock(vendor_id="azure")
+    vendor.regions = [Mock(region_id="westeurope", api_reference="westeurope")]
+    vendor.servers = [
+        SimpleNamespace(
+            api_reference=name, server_id=name, vcpus=8, memory_amount=32768
+        )
+        for name in (
+            "Standard_DC8as_v5",
+            "Standard_DC8ads_v5",
+            "Standard_DC8es_v6",
+            "Standard_EC8as_v5",
+        )
+    ]
+    vendor.progress_tracker = Mock(
+        start_task=Mock(), advance_task=Mock(), hide_task=Mock()
+    )
+    capability = SimpleNamespace(
+        supported_server_versions=[SimpleNamespace(name="16", status="Available")],
+        storage_auto_growth_supported="Enabled",
+        supported_features=[],
+        supported_server_editions=[
+            SimpleNamespace(
+                name="GeneralPurpose",
+                supported_storage_editions=[],
+                supported_server_skus=[
+                    SimpleNamespace(
+                        name="Standard_DC8ads_v5",
+                        v_cores=8,
+                        supported_memory_per_vcore_mb=4096,
+                        supported_ha_mode=[],
+                    )
+                ],
+            )
+        ],
+    )
+    retail = [
+        {
+            "armSkuName": (
+                "Azure_Database_for_PostgreSQL_Flexible_Server_"
+                f"Confidential_Compute_{series}_Series_Compute_1_vCore"
+            ),
+            "productName": (
+                "Azure Database for PostgreSQL Flexible Server "
+                f"Confidential Compute {series} Series Compute"
+            ),
+            "meterName": "1 vCore",
+            "skuName": "1 vCore",
+        }
+        for series in ("DCasv5", "DCesv6", "ECasv5")
+    ]
+    with (
+        patch(
+            "sc_crawler.vendors._azure._pg_database_regions",
+            return_value=vendor.regions,
+        ),
+        patch(
+            "sc_crawler.vendors._azure._pg_capabilities",
+            return_value=[capability],
+        ),
+        patch("sc_crawler.vendors._azure._pg_retail_prices", return_value=retail),
+    ):
+        rows = azure_databases(vendor)
+    assert {row["database_id"] for row in rows} == {"Standard_DC8ads_v5"}
+
+
 def test_azure_burstable_storage_extra_max_excludes_premium_ssd_v2():
     from sc_crawler.utils import _GIB_TO_GB
 

@@ -2156,6 +2156,9 @@ _PG_DATABASE_NAME_RE = recompile(
     r"(?:_v(?P<version>\d*))?$"
 )
 _PG_FLAT_COMPUTE_SKUS = frozenset({"B1MS", "B2S"})
+# Confidential series meters (e.g. DCasv5) match VM sizes Flexible Server never
+# offers (DC8as_v5); only the ads sizes from capabilities are deployable.
+_PG_CONFIDENTIAL_FAMILIES = ("DC", "EC")
 # Edition and vendor tokens are optional: e.g. "Flexible Server Mdsv2 Series Compute"
 # and "General Purpose AMD Dadsv5 Series Compute".
 _PG_PRODUCT_SERIES_RE = recompile(
@@ -2386,7 +2389,8 @@ def inventory_databases(vendor):
     present, capabilities supplies vCPUs, memory, HA, engine versions,
     storage bounds, and autotuning. Otherwise those come from another SKU of
     the same edition, and vCPUs/memory come from the matching VM.
-    A per-vCore series meter has no size list; matching VM SKUs name the sizes.
+    A per-vCore series meter has no size list; matching VM SKUs name the sizes,
+    except for confidential (DC/EC) series, whose VM sizes are not deployable.
     """
     # database_id -> fields that actually come from capabilities.
     caps_by_id: dict[str, dict] = {}
@@ -2548,7 +2552,7 @@ def inventory_databases(vendor):
     vendor.progress_tracker.hide_task()
 
     # Capabilities SKUs, plus retail SKUs quota hid. Series meters name no size,
-    # so the VM catalog fills those database_ids.
+    # so the VM catalog fills those database_ids (not for confidential series).
     wanted = {
         database_id: facts["edition"] for database_id, facts in caps_by_id.items()
     }
@@ -2556,7 +2560,9 @@ def inventory_databases(vendor):
         wanted.setdefault(database_id, edition_name)
     present_series = {_parse_database_name(database_id)[0] for database_id in wanted}
     for series_name, edition_name in retail_series.items():
-        if series_name not in present_series:
+        if series_name not in present_series and not series_name.upper().startswith(
+            _PG_CONFIDENTIAL_FAMILIES
+        ):
             for server in servers_by_series.get(series_name, []):
                 wanted.setdefault(server.api_reference, edition_name)
 
