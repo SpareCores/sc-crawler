@@ -19,7 +19,10 @@ from sc_crawler.vendors._azure import (
     _pg_hourly_compute_price,
     _pg_lookup_retail_price,
     _standardize_server,
+    _storage_meter_mapping,
     _vm_family_category,
+    inventory_storage_prices,
+    inventory_storages,
 )
 from sc_crawler.vendors._azure import (
     inventory_database_prices as azure_database_prices,
@@ -1288,3 +1291,108 @@ def test_pg_engine_versions_from_capability():
         ]
     )
     assert _pg_engine_versions(capability) == ["15", "16"]
+
+
+def _disk(name, size, tier, **capabilities):
+    return {
+        "resourceType": "disks",
+        "name": name,
+        "size": size,
+        "tier": tier,
+        "capabilities": [{"name": k, "value": v} for k, v in capabilities.items()],
+    }
+
+
+_DISK_RESOURCES = [
+    _disk("Premium_LRS", "P10", "Premium", MaxSizeGiB="128", MaxIOps="500"),
+    _disk("Premium_LRS", "P1", "Premium", MaxSizeGiB="4", MaxIOps="120"),
+    _disk("Premium_ZRS", "P10", "Premium", MaxSizeGiB="128"),
+    _disk("StandardSSD_LRS", "E10", "Standard", MaxSizeGiB="128"),
+    _disk("Standard_LRS", "S4", "Standard", MaxSizeGiB="32"),
+    # provisioned capacity disks have no size tiers
+    _disk("PremiumV2_LRS", "P", "Premium", MaxSizeGiB="65536"),
+    _disk("UltraSSD_LRS", "U", "Ultra", MaxSizeGiB="65536"),
+    # a tier without size is ignored, and other resource types too
+    _disk("Premium_LRS", "P99", "Premium"),
+    {"resourceType": "virtualMachines", "name": "Standard_D2s_v5", "size": "D2s_v5"},
+]
+
+
+def test_azure_storage_meter_mapping_is_derived_from_the_disk_skus():
+    _storage_meter_mapping.cache_clear()
+    with patch(
+        "sc_crawler.vendors._azure._compute_resources", return_value=_DISK_RESOURCES
+    ):
+        mapping = _storage_meter_mapping()
+    _storage_meter_mapping.cache_clear()
+    assert mapping == {
+        "P10 LRS Disk": ("Premium_LRS", 128),
+        "P1 LRS Disk": ("Premium_LRS", 4),
+        "P10 ZRS Disk": ("Premium_ZRS", 128),
+        "E10 LRS Disk": ("StandardSSD_LRS", 128),
+        "S4 LRS Disk": ("Standard_LRS", 32),
+        "Premium LRS Provisioned Capacity": ("PremiumV2_LRS", 1),
+        "Ultra LRS Provisioned Capacity": ("UltraSSD_LRS", 1),
+    }
+
+
+def test_azure_storage_prices_use_the_derived_meter_mapping():
+    _storage_meter_mapping.cache_clear()
+    vendor = Mock(vendor_id="azure")
+    vendor.regions = [Mock(region_id="westeurope")]
+    vendor.storages = [Mock(storage_id="Premium_LRS"), Mock(storage_id="UltraSSD_LRS")]
+    retail = [
+        {
+            "meterName": "P10 LRS Disk",
+            "armRegionName": "westeurope",
+            "unitOfMeasure": "1/Month",
+            "retailPrice": 19.7,
+            "currencyCode": "USD",
+        },
+        {
+            "meterName": "Ultra LRS Provisioned Capacity",
+            "armRegionName": "westeurope",
+            "unitOfMeasure": "1 GiB/Hour",
+            "retailPrice": 0.000164,
+            "currencyCode": "USD",
+        },
+        # not a disk meter: ignored
+        {
+            "meterName": "P10 LRS Disk Mount",
+            "armRegionName": "westeurope",
+            "unitOfMeasure": "1/Month",
+            "retailPrice": 1,
+            "currencyCode": "USD",
+        },
+    ]
+    with (
+        patch(
+            "sc_crawler.vendors._azure._compute_resources",
+            return_value=_DISK_RESOURCES,
+        ),
+        patch(
+            "sc_crawler.vendors._azure._get_storage_retail_prices", return_value=retail
+        ),
+    ):
+        items = inventory_storage_prices(vendor)
+    _storage_meter_mapping.cache_clear()
+    assert {item["storage_id"] for item in items} == {"Premium_LRS", "UltraSSD_LRS"}
+    premium = next(item for item in items if item["storage_id"] == "Premium_LRS")
+    # 19.7 USD for a 128 GiB disk, per GB and month
+    assert premium["price"] == round(19.7 / 128 / (1024**3 / 1000**3), 4)
+
+
+def test_azure_storages_use_the_derived_disk_sizes():
+    _storage_meter_mapping.cache_clear()
+    caps = {"MinSizeGiB": "0", "MaxIOps": "500", "MaxBandwidthMBps": "100"}
+    resources = [
+        _disk("Premium_LRS", "P10", "Premium", MaxSizeGiB="128", **caps),
+        _disk("Premium_LRS", "P1", "Premium", MaxSizeGiB="4", **caps),
+    ]
+    with patch("sc_crawler.vendors._azure._compute_resources", return_value=resources):
+        items = inventory_storages(Mock(vendor_id="azure"))
+    _storage_meter_mapping.cache_clear()
+    assert len(items) == 1
+    # min and max of the tiers (P1 = 4 GiB ... P10 = 128 GiB), in GB
+    assert items[0]["min_size"] == round(4 * 1024**3 / 1000**3)
+    assert items[0]["max_size"] == round(128 * 1024**3 / 1000**3)

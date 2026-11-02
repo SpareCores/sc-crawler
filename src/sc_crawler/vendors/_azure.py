@@ -580,113 +580,24 @@ ARCHITECTURE_MAPPING = {
     "Arm64": CpuArchitecture.ARM64,
 }
 
-STORAGE_METER_MAPPING = {
-    # Premium SSD (P-series) — unit: 1/Month, price per whole disk
-    "P1 LRS Disk": ("Premium_LRS", 4),
-    "P2 LRS Disk": ("Premium_LRS", 8),
-    "P3 LRS Disk": ("Premium_LRS", 16),
-    "P4 LRS Disk": ("Premium_LRS", 32),
-    "P6 LRS Disk": ("Premium_LRS", 64),
-    "P10 LRS Disk": ("Premium_LRS", 128),
-    "P15 LRS Disk": ("Premium_LRS", 256),
-    "P20 LRS Disk": ("Premium_LRS", 512),
-    "P30 LRS Disk": ("Premium_LRS", 1024),
-    "P40 LRS Disk": ("Premium_LRS", 2048),
-    "P50 LRS Disk": ("Premium_LRS", 4096),
-    "P60 LRS Disk": ("Premium_LRS", 8192),
-    "P70 LRS Disk": ("Premium_LRS", 16384),
-    "P80 LRS Disk": ("Premium_LRS", 32767),
-    # Premium SSD ZRS (P-series) — unit: 1/Month, price per whole disk
-    "P1 ZRS Disk": ("Premium_ZRS", 4),
-    "P2 ZRS Disk": ("Premium_ZRS", 8),
-    "P3 ZRS Disk": ("Premium_ZRS", 16),
-    "P4 ZRS Disk": ("Premium_ZRS", 32),
-    "P6 ZRS Disk": ("Premium_ZRS", 64),
-    "P10 ZRS Disk": ("Premium_ZRS", 128),
-    "P15 ZRS Disk": ("Premium_ZRS", 256),
-    "P20 ZRS Disk": ("Premium_ZRS", 512),
-    "P30 ZRS Disk": ("Premium_ZRS", 1024),
-    "P40 ZRS Disk": ("Premium_ZRS", 2048),
-    "P50 ZRS Disk": ("Premium_ZRS", 4096),
-    "P60 ZRS Disk": ("Premium_ZRS", 8192),
-    "P70 ZRS Disk": ("Premium_ZRS", 16384),
-    "P80 ZRS Disk": ("Premium_ZRS", 32767),
-    # Standard SSD (E-series) LRS — unit: 1/Month, price per whole disk
-    "E1 LRS Disk": ("StandardSSD_LRS", 4),
-    "E2 LRS Disk": ("StandardSSD_LRS", 8),
-    "E3 LRS Disk": ("StandardSSD_LRS", 16),
-    "E4 LRS Disk": ("StandardSSD_LRS", 32),
-    "E6 LRS Disk": ("StandardSSD_LRS", 64),
-    "E10 LRS Disk": ("StandardSSD_LRS", 128),
-    "E15 LRS Disk": ("StandardSSD_LRS", 256),
-    "E20 LRS Disk": ("StandardSSD_LRS", 512),
-    "E30 LRS Disk": ("StandardSSD_LRS", 1024),
-    "E40 LRS Disk": ("StandardSSD_LRS", 2048),
-    "E50 LRS Disk": ("StandardSSD_LRS", 4096),
-    "E60 LRS Disk": ("StandardSSD_LRS", 8192),
-    "E70 LRS Disk": ("StandardSSD_LRS", 16384),
-    "E80 LRS Disk": ("StandardSSD_LRS", 32767),
-    # Standard SSD ZRS (E-series) — unit: 1/Month, price per whole disk
-    "E1 ZRS Disk": ("StandardSSD_ZRS", 4),
-    "E2 ZRS Disk": ("StandardSSD_ZRS", 8),
-    "E3 ZRS Disk": ("StandardSSD_ZRS", 16),
-    "E4 ZRS Disk": ("StandardSSD_ZRS", 32),
-    "E6 ZRS Disk": ("StandardSSD_ZRS", 64),
-    "E10 ZRS Disk": ("StandardSSD_ZRS", 128),
-    "E15 ZRS Disk": ("StandardSSD_ZRS", 256),
-    "E20 ZRS Disk": ("StandardSSD_ZRS", 512),
-    "E30 ZRS Disk": ("StandardSSD_ZRS", 1024),
-    "E40 ZRS Disk": ("StandardSSD_ZRS", 2048),
-    "E50 ZRS Disk": ("StandardSSD_ZRS", 4096),
-    "E60 ZRS Disk": ("StandardSSD_ZRS", 8192),
-    "E70 ZRS Disk": ("StandardSSD_ZRS", 16384),
-    "E80 ZRS Disk": ("StandardSSD_ZRS", 32767),
-    # Standard HDD (S-series) LRS — unit: 1/Month, price per whole disk
-    # (Standard HDD ZRS is not offered as per-disk pricing)
-    "S4 LRS Disk": ("Standard_LRS", 32),
-    "S6 LRS Disk": ("Standard_LRS", 64),
-    "S10 LRS Disk": ("Standard_LRS", 128),
-    "S15 LRS Disk": ("Standard_LRS", 256),
-    "S20 LRS Disk": ("Standard_LRS", 512),
-    "S30 LRS Disk": ("Standard_LRS", 1024),
-    "S40 LRS Disk": ("Standard_LRS", 2048),
-    "S50 LRS Disk": ("Standard_LRS", 4096),
-    "S60 LRS Disk": ("Standard_LRS", 8192),
-    "S70 LRS Disk": ("Standard_LRS", 16384),
-    "S80 LRS Disk": ("Standard_LRS", 32767),
-    # Ultra SSD LRS — unit: 1 GiB/Hour, price per GiB per hour (disk size divisor = 1)
-    "Ultra LRS Provisioned Capacity": ("UltraSSD_LRS", 1),
-    # Premium SSD v2 LRS — unit: 1 GiB/Hour, price per GiB per hour (disk size divisor = 1)
-    "Premium LRS Provisioned Capacity": ("PremiumV2_LRS", 1),
-}
-"""Map Storage price meter names to the storage type ID and the disk size in GiB.
-
-Disk sizes sourced from the Azure Managed Disks pricing page:
-<https://azure.microsoft.com/en-us/pricing/details/managed-disks/>
-
-Meter names sourced from the Azure Retail Prices API:
-<https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices>
-
-The disk size (second tuple element) is used to convert per-disk (``1/Month``) prices
-to $/GiB/month by dividing the retail price by this value.  For provisioned-capacity
-meters (``1 GiB/Hour``) the divisor is 1 because the price is already expressed per GiB.
-
-The following meter categories are intentionally **not** included:
-
-- ``* Disk Mount`` — the extra monthly fee charged per VM when a disk is attached to
-  more than one VM simultaneously (Azure Shared Disks feature).  This is an access/
-  attach charge, not a storage-capacity charge.
-- ``Confidential Compute Encryption * Provisioned Capacity`` — surcharge for
-  customer-managed key (CMK) encryption on confidential VMs.
-- ``LRS/ZRS Burst Enablement`` — monthly fee to permanently enable burst IOPS on
-  Premium SSD disks.
-- ``* Disk - Free`` / ``SAP Special *`` — zero-price promotional entries.
-- ``Instant Access Snapshots`` — snapshot restore-access fee.
-- Standard HDD ZRS is not offered as per-disk pricing (only as per-GiB/month).
-"""
+# The managed disk price meters (e.g. "P10 LRS Disk") with the disk SKU and the disk
+# size in GiB are derived from the disk resource SKUs, see `_storage_meter_mapping`.
+#
+# The following meter categories are intentionally **not** mapped:
+#
+# - ``* Disk Mount`` — the extra monthly fee charged per VM when a disk is attached to
+#   more than one VM simultaneously (Azure Shared Disks feature).  This is an access/
+#   attach charge, not a storage-capacity charge.
+# - ``Confidential Compute Encryption * Provisioned Capacity`` — surcharge for
+#   customer-managed key (CMK) encryption on confidential VMs.
+# - ``LRS/ZRS Burst Enablement`` — monthly fee to permanently enable burst IOPS on
+#   Premium SSD disks.
+# - ``* Disk - Free`` / ``SAP Special *`` — zero-price promotional entries.
+# - ``Instant Access Snapshots`` — snapshot restore-access fee.
+# - Standard HDD ZRS is not offered as per-disk pricing (only as per-GiB/month).
 
 STORAGE_PRICE_UNIT_MAPPING: dict[str, float | None] = {
-    "1/Month": None,  # per whole disk — handled separately via STORAGE_METER_MAPPING
+    "1/Month": None,  # per whole disk — handled separately via _storage_meter_mapping
     "1 GiB/Month": 1 / _GIB_TO_GB,
     "1 GB/Month": 1.0,
     "1 GiB/Hour": _HOURS_PER_MONTH / _GIB_TO_GB,
@@ -1764,6 +1675,41 @@ def inventory_server_prices_spot(vendor):
     return _inventory_server_prices(vendor, Allocation.SPOT)
 
 
+@cache
+def _storage_meter_mapping() -> dict[str, tuple[str, int]]:
+    """Map the managed disk price meter names to the disk SKU and the disk size in GiB.
+
+    Derived from the disk resource SKUs of the Compute API, no hardcoded table:
+
+    - Disks with size tiers (Premium SSD, Standard SSD, Standard HDD) are priced per
+      whole disk: the meter is the tier (`size`, e.g. P10) with the redundancy, e.g.
+      "P10 LRS Disk", and the disk size is the `MaxSizeGiB` of the tier.
+    - Disks without size tiers (Premium SSD v2, Ultra) are priced per provisioned GiB,
+      e.g. "Ultra LRS Provisioned Capacity", so the size to divide with is 1.
+
+    Disk sizes: <https://azure.microsoft.com/en-us/pricing/details/managed-disks/>
+    Meter names: <https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices>
+    """
+    mapping = {}
+    for resource in _compute_resources():
+        if resource["resourceType"] != "disks":
+            continue
+        sku = resource["name"]
+        size = resource.get("size") or ""
+        # redundancy: LRS or ZRS, e.g. Premium_LRS
+        redundancy = sku.rpartition("_")[2]
+        capabilities = {
+            c["name"]: c["value"] for c in resource.get("capabilities") or []
+        }
+        if recompile(r"[A-Z]\d+").fullmatch(size):
+            max_size = capabilities.get("MaxSizeGiB")
+            if max_size:
+                mapping[f"{size} {redundancy} Disk"] = (sku, int(max_size))
+        else:
+            mapping[f"{resource['tier']} {redundancy} Provisioned Capacity"] = (sku, 1)
+    return mapping
+
+
 def inventory_storages(vendor):
     """List all storage options via the Compute resource manager client.
 
@@ -1800,7 +1746,7 @@ def inventory_storages(vendor):
         description = f"{disk['tier']} tier {storage_type.name} ({redundancy_type})"
         storage_sizes = [
             storage[1]
-            for storage in STORAGE_METER_MAPPING.values()
+            for storage in _storage_meter_mapping().values()
             if storage[0] == disk["name"]
         ]
         min_size = (
@@ -1846,10 +1792,11 @@ def inventory_storage_prices(vendor):
 
     regions = scmodels_to_dict(vendor.regions, keys=["region_id"])
     storages = scmodels_to_dict(vendor.storages, keys=["storage_id"])
+    storage_meters = _storage_meter_mapping()
 
     prices = defaultdict(list)
     for p in retail_prices:
-        mapping = STORAGE_METER_MAPPING.get(p["meterName"])
+        mapping = storage_meters.get(p["meterName"])
         if not (
             mapping
             and mapping[0] in storages.keys()
