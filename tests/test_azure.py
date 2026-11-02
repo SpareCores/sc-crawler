@@ -22,6 +22,7 @@ from sc_crawler.vendors._azure import (
     _standardize_server,
     _storage_meter_mapping,
     _vm_family_category,
+    _vm_retirement_dates,
     inventory_storage_prices,
     inventory_storages,
 )
@@ -34,6 +35,13 @@ from sc_crawler.vendors._azure import (
 from sc_crawler.vendors._azure import (
     inventory_databases as azure_databases,
 )
+
+
+@pytest.fixture(autouse=True)
+def _no_api_retirement_dates():
+    """Keep the tests offline: no retirement dates from the Compute API."""
+    with patch("sc_crawler.vendors._azure._vm_retirement_dates", return_value={}):
+        yield
 
 
 @pytest.mark.parametrize(
@@ -1412,3 +1420,56 @@ def test_azure_storages_use_the_derived_disk_sizes():
 )
 def test_azure_pg_edition_family_from_the_api_edition_name(edition, family):
     assert _pg_edition_family(edition) == family
+
+
+def _vm(name, **capabilities):
+    return {
+        "resourceType": "virtualMachines",
+        "name": name,
+        "capabilities": [{"name": k, "value": v} for k, v in capabilities.items()],
+    }
+
+
+def test_azure_vm_retirement_dates_from_the_compute_resources():
+    resources = [
+        _vm("Standard_A2m_v2", RetirementDateUtc="11/15/2028"),
+        # placeholder for no retirement date
+        _vm("Standard_D2s_v5", RetirementDateUtc="01/01/9999"),
+        _vm("Standard_D4s_v5", vCPUs="4"),
+        _vm("Standard_Bad", RetirementDateUtc="soon"),
+        {
+            "resourceType": "disks",
+            "name": "Premium_LRS",
+            "capabilities": [{"name": "RetirementDateUtc", "value": "01/01/2027"}],
+        },
+    ]
+    # the imported function is the real one, only the module attribute is patched
+    _vm_retirement_dates.cache_clear()
+    with patch("sc_crawler.vendors._azure._compute_resources", return_value=resources):
+        dates = _vm_retirement_dates()
+    _vm_retirement_dates.cache_clear()
+    assert dates == {"Standard_A2m_v2": date(2028, 11, 15)}
+
+
+def test_azure_sku_lifecycle_status_prefers_the_api_retirement_date():
+    dates = {"Standard_GS5": date(2028, 5, 1)}
+    with patch("sc_crawler.vendors._azure._vm_retirement_dates", return_value=dates):
+        # before the API date: planned, on or after it: retired. The rules of the docs
+        # would say 2028-11-15 for the G-series.
+        assert (
+            _azure_sku_lifecycle_status("Standard_GS5", as_of=date(2028, 4, 30))
+            == Status.PLANNED_FOR_RETIREMENT
+        )
+        assert (
+            _azure_sku_lifecycle_status("Standard_GS5", as_of=date(2028, 6, 1))
+            == Status.RETIRED
+        )
+        # a size without API date falls back to the rules
+        assert (
+            _azure_sku_lifecycle_status("Standard_D2", as_of=date(2028, 4, 30))
+            == Status.PLANNED_FOR_RETIREMENT
+        )
+        assert (
+            _azure_sku_lifecycle_status("Standard_D2s_v5", as_of=date(2030, 1, 1))
+            == Status.ACTIVE
+        )

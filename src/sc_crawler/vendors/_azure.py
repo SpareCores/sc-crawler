@@ -623,6 +623,8 @@ STORAGE_PRICE_UNIT_MAPPING: dict[str, float | None] = {
 # https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/hc-series-retirement
 # https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/hbv2-series-retirement
 # https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/msv2-mdsv2-retirement
+# Fallback of the retirement dates of the API (`_vm_retirement_dates`), for the sizes
+# without date there.
 # Rule format: (compiled regex, retired_on date).
 # - If as_of >= retired_on -> RETIRED.
 # - Else matched -> PLANNED_FOR_RETIREMENT.
@@ -660,11 +662,45 @@ _AZURE_SKU_LIFECYCLE_RULES = (
 )
 
 
-def _azure_sku_lifecycle_status(sku_name: str, as_of: date | None = None) -> Status:
-    """Map an Azure VM / Flexible Server SKU name to Server/Database status."""
-    current_date = as_of or datetime.now(UTC).date()
-    size = sku_name.removeprefix("Standard_").removeprefix("Basic_")
+@cache
+def _vm_retirement_dates() -> dict[str, date]:
+    """Retirement date of the VM sizes from the Compute resource SKUs.
 
+    Read from the `RetirementDateUtc` capability (`MM/DD/YYYY`). The `9999-01-01`
+    placeholder, meaning no retirement date, is skipped, as are the sizes without date.
+    """
+    dates = {}
+    for resource in _compute_resources():
+        if resource["resourceType"] != "virtualMachines":
+            continue
+        for capability in resource.get("capabilities") or []:
+            if capability["name"] != "RetirementDateUtc":
+                continue
+            try:
+                retired_on = datetime.strptime(capability["value"], "%m/%d/%Y").date()
+            except (TypeError, ValueError):
+                break
+            if retired_on.year < 9999:
+                dates[resource["name"]] = retired_on
+            break
+    return dates
+
+
+def _azure_sku_lifecycle_status(sku_name: str, as_of: date | None = None) -> Status:
+    """Map an Azure VM / Flexible Server SKU name to Server/Database status.
+
+    The retirement date of the API (see `_vm_retirement_dates`) is used if there is one,
+    the `_AZURE_SKU_LIFECYCLE_RULES` of the docs are the fallback for the other sizes.
+    """
+    current_date = as_of or datetime.now(UTC).date()
+
+    api_retired_on = _vm_retirement_dates().get(sku_name)
+    if api_retired_on:
+        if current_date >= api_retired_on:
+            return Status.RETIRED
+        return Status.PLANNED_FOR_RETIREMENT
+
+    size = sku_name.removeprefix("Standard_").removeprefix("Basic_")
     for pattern, retired_on in _AZURE_SKU_LIFECYCLE_RULES:
         if not pattern.fullmatch(size):
             continue
