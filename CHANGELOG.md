@@ -1,4 +1,4 @@
-## v0.10.x (DEVELOPMENT)
+## v0.10.3 (November 04, 2026)
 
 New benchmark(s):
 
@@ -21,6 +21,16 @@ Fix(es):
   their per-location prices are `INACTIVE`.
 - `Hetzner`: mark server types removed from the API (e.g. `cx11`–`cx52`) as
   `RETIRED` instead of `INACTIVE`.
+- `AWS`: use the instance-level network bandwidth for instance types with
+  multiple network cards instead of the first card only (e.g. `p5.48xlarge`
+  3200 instead of 100 Gbps). `Server.network_speed_baseline` and
+  `network_speed_max` are documented as aggregated over all network cards
+  (column comments updated by a migration).
+- `AWS`: store the SATA SSD instance store of e.g. `c3`, `i2`, `m3`, `r3`, `x1`
+  and `x1e` as `SSD` instead of `NVMe SSD`.
+- `AWS`: mark instance types not offered (and without spot prices in the past 7
+  days) as `RETIRED` if they have no Reserved terms in the price list (e.g.
+  `f1`, `g3`, `p2`, `p3`), and keep their on-demand prices as `INACTIVE`.
 
 ## v0.10.2 (October 22, 2026)
 

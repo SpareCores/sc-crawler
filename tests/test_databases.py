@@ -2666,10 +2666,15 @@ def test_aws_inventory_server_prices_deactivates_unoffered_instance_types():
         status=Status.ACTIVE,
     )
     region.name = "US East (N. Virginia)"
+    region.zones = [
+        Mock(zone_id="use1-az1", status=Status.ACTIVE),
+        Mock(zone_id="use1-az2", status=Status.INACTIVE),
+    ]
     m5 = _aws_server_mock("m5.large", Status.ACTIVE)
     t1 = _aws_server_mock("t1.micro", Status.ACTIVE)
+    m4 = _aws_server_mock("m4.large", Status.ACTIVE)
     mac = _aws_server_mock("mac1.metal", Status.ACTIVE)
-    vendor = _aws_vendor(regions=[region], servers=[m5, t1, mac])
+    vendor = _aws_vendor(regions=[region], servers=[m5, t1, m4, mac])
     products = [
         {
             "product": {
@@ -2689,6 +2694,15 @@ def test_aws_inventory_server_prices_deactivates_unoffered_instance_types():
             },
             "terms": _aws_ondemand_terms("0.02"),
         },
+        {
+            "product": {
+                "attributes": {
+                    "location": "US East (N. Virginia)",
+                    "instanceType": "m4.large",
+                }
+            },
+            "terms": {**_aws_ondemand_terms("0.1"), "Reserved": {"x": {}}},
+        },
     ]
     with (
         patch(
@@ -2705,12 +2719,17 @@ def test_aws_inventory_server_prices_deactivates_unoffered_instance_types():
     ):
         prices = aws_server_prices(vendor)
         aws_reconcile_server_status(vendor)
-    assert {(p["server_id"], p["zone_id"]) for p in prices} == {
-        ("m5.large", "use1-az1")
+    # not offered prices are kept as INACTIVE in the ACTIVE zones of the region
+    assert {(p["server_id"], p["zone_id"], p["status"]) for p in prices} == {
+        ("m5.large", "use1-az1", Status.ACTIVE),
+        ("t1.micro", "use1-az1", Status.INACTIVE),
+        ("m4.large", "use1-az1", Status.INACTIVE),
     }
     assert m5.status == Status.ACTIVE
-    # still priced, but not offered in any zone
-    assert t1.status == Status.INACTIVE
+    # still priced, but not offered in any zone and no Reserved terms
+    assert t1.status == Status.RETIRED
+    # still priced with Reserved terms, but not offered in any zone
+    assert m4.status == Status.INACTIVE
     # offered, even without a Linux on-demand SKU
     assert mac.status == Status.ACTIVE
 
@@ -2734,9 +2753,12 @@ def test_aws_reconcile_server_status_keeps_spot_only_instance_types_active():
     region.name = "US East (N. Virginia)"
     spot_only = _aws_server_mock("p4d.24xlarge", Status.INACTIVE)
     vendor = _aws_vendor(regions=[region], servers=[spot_only])
-    with patch(
-        "sc_crawler.vendors._aws._describe_instance_type_offerings_per_zone_with_progress",
-        return_value={},
+    with (
+        patch("sc_crawler.vendors._aws._boto_get_products", return_value=[]),
+        patch(
+            "sc_crawler.vendors._aws._describe_instance_type_offerings_per_zone_with_progress",
+            return_value={},
+        ),
     ):
         aws_reconcile_server_status(vendor, spot_server_ids={"p4d.24xlarge"})
     assert spot_only.status == Status.ACTIVE
@@ -2755,9 +2777,12 @@ def test_aws_reconcile_server_status_sets_missing_accelerator_type_of_active_ser
     gpu_inactive = _aws_server_mock("p3.2xlarge", Status.ACTIVE, 1)
     no_gpu = _aws_server_mock("m5.large", Status.INACTIVE)
     vendor = _aws_vendor(regions=[region], servers=[gpu_active, gpu_inactive, no_gpu])
-    with patch(
-        "sc_crawler.vendors._aws._describe_instance_type_offerings_per_zone_with_progress",
-        return_value={"m5.large": ["use1-az1"]},
+    with (
+        patch("sc_crawler.vendors._aws._boto_get_products", return_value=[]),
+        patch(
+            "sc_crawler.vendors._aws._describe_instance_type_offerings_per_zone_with_progress",
+            return_value={"m5.large": ["use1-az1"]},
+        ),
     ):
         aws_reconcile_server_status(vendor, spot_server_ids={"g4ad.xlarge"})
     assert gpu_active.status == Status.ACTIVE
