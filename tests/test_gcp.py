@@ -1957,6 +1957,12 @@ def test_gcp_inventory_databases_inherits_gce_machine_type_status():
                         "RAM": "17179869184",
                         "region": ["us-central1"],
                     },
+                    # tier family missing from the storage table
+                    {
+                        "tier": "db-brand-new-tier-4",
+                        "RAM": "17179869184",
+                        "region": ["us-central1"],
+                    },
                 ],
                 "engine_versions": ["16"],
                 "custom_config": True,
@@ -1982,6 +1988,8 @@ def test_gcp_inventory_databases_inherits_gce_machine_type_status():
         "cloudsql-hdd",
     ]
     assert by_id["db-perf-optimized-N-4"]["compatible_storage_ids"] == ["cloudsql-ssd"]
+    # unknown tier: storage unknown (None), not "no storage"
+    assert by_id["db-brand-new-tier-4"]["compatible_storage_ids"] is None
 
 
 def test_gcp_inventory_databases_ha_uses_own_price_family_only():

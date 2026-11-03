@@ -343,6 +343,13 @@ def test_aws_inventory_databases_description_server_id_and_capabilities():
                 "memory": "32 GiB",
                 "storage": "1 x 118 NVMe SSD",
             },
+            # no orderable options: retired, storage unknown
+            "db.t1.micro": {
+                "instanceFamily": "General purpose",
+                "vcpu": "1",
+                "memory": "1 GiB",
+                "storage": "EBS Only",
+            },
         }
     }
     options_by_database = {
@@ -371,6 +378,7 @@ def test_aws_inventory_databases_description_server_id_and_capabilities():
                 "ReadReplicaCapable": False,
             },
         ],
+        "db.t1.micro": [],
     }
     with (
         patch(
@@ -380,6 +388,7 @@ def test_aws_inventory_databases_description_server_id_and_capabilities():
                 {
                     "db.m5.large": frozenset({"Single-AZ", "Multi-AZ"}),
                     "db.r6gd.xlarge": frozenset({"Single-AZ"}),
+                    "db.t1.micro": frozenset({"Single-AZ"}),
                 },
             ),
         ),
@@ -394,12 +403,16 @@ def test_aws_inventory_databases_description_server_id_and_capabilities():
     ):
         rows = aws_databases(vendor)
     by_id = {row["database_id"]: row for row in rows}
-    assert set(by_id) == {"db.m5.large", "db.r6gd.xlarge"}
+    assert set(by_id) == {"db.m5.large", "db.r6gd.xlarge", "db.t1.micro"}
     assert by_id["db.m5.large"]["server_id"] == "m5.large"
     assert by_id["db.m5.large"]["family"] == "General Purpose"
     assert by_id["db.m5.large"]["series"] == "m5"
     assert by_id["db.m5.large"]["compatible_storage_ids"] == ["gp3"]
+    # options without a StorageType: no recognized storage
     assert by_id["db.r6gd.xlarge"]["compatible_storage_ids"] == []
+    # no orderable options at all: unknown
+    assert by_id["db.t1.micro"]["status"] == Status.RETIRED
+    assert by_id["db.t1.micro"]["compatible_storage_ids"] is None
     assert by_id["db.r6gd.xlarge"]["family"] == "Memory Optimized"
     assert by_id["db.r6gd.xlarge"]["series"] == "r6gd"
     assert by_id["db.m5.large"]["memory_amount"] == 8 * 1024

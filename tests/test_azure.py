@@ -574,6 +574,10 @@ def test_azure_inventory_databases_adds_quota_hidden_retail_skus():
     assert e104["memory_amount"] == 917504
     assert e104["engine_versions"] == ["16"]
     assert e104["api_reference_object"] == {"sku_name": "MO_Standard_E104ids_v5"}
+    # the MemoryOptimized edition is retail only, the capabilities do not list it:
+    # storage unknown (None), unlike the listed edition without storage editions ([])
+    assert e104["compatible_storage_ids"] is None
+    assert d2["compatible_storage_ids"] == []
 
 
 def test_azure_burstable_storage_extra_max_excludes_premium_ssd_v2():
