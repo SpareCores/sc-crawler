@@ -13,6 +13,8 @@ from sc_crawler.table_fields import (
 from sc_crawler.vendors._azure import (
     _PG_PRODUCT_SERIES_RE,
     _azure_sku_lifecycle_status,
+    _compatible_storage_ids,
+    _disk_sku_names,
     _parse_database_name,
     _pg_database_regions,
     _pg_edition_family,
@@ -21,8 +23,10 @@ from sc_crawler.vendors._azure import (
     _pg_lookup_retail_price,
     _standardize_server,
     _storage_meter_mapping,
+    _ultra_disk_vm_sizes,
     _vm_family_category,
     _vm_retirement_dates,
+    _warn_unknown_disk,
     inventory_storage_prices,
     inventory_storages,
 )
@@ -41,6 +45,22 @@ from sc_crawler.vendors._azure import (
 def _no_api_retirement_dates():
     """Keep the tests offline: no retirement dates from the Compute API."""
     with patch("sc_crawler.vendors._azure._vm_retirement_dates", return_value={}):
+        yield
+
+
+@pytest.fixture(autouse=True)
+def _no_compute_api_disks():
+    """Keep the tests offline: fixed disk types and no Ultra capable sizes."""
+    with (
+        patch(
+            "sc_crawler.vendors._azure._disk_sku_names",
+            return_value=["Premium_LRS", "Standard_LRS", "UltraSSD_LRS"],
+        ),
+        patch(
+            "sc_crawler.vendors._azure._ultra_disk_vm_sizes",
+            return_value=frozenset(),
+        ),
+    ):
         yield
 
 
@@ -655,6 +675,12 @@ def test_azure_burstable_storage_extra_max_excludes_premium_ssd_v2():
     by_id = {row["database_id"]: row for row in rows}
     assert by_id["Standard_B2s"]["storage_extra_max"] == round(32_767 * _GIB_TO_GB)
     assert by_id["Standard_D2s_v3"]["storage_extra_max"] == round(65_536 * _GIB_TO_GB)
+    # Premium SSD v2 is not for Burstable, even if the API lists it
+    assert by_id["Standard_B2s"]["compatible_storage_ids"] == ["ManagedDisk"]
+    assert by_id["Standard_D2s_v3"]["compatible_storage_ids"] == [
+        "ManagedDisk",
+        "ManagedDiskV2",
+    ]
 
 
 def test_azure_inventory_database_prices_emit_ha_rows():
@@ -1473,3 +1499,164 @@ def test_azure_sku_lifecycle_status_prefers_the_api_retirement_date():
             _azure_sku_lifecycle_status("Standard_D2s_v5", as_of=date(2030, 1, 1))
             == Status.ACTIVE
         )
+
+
+def test_azure_database_compatible_storage_ids_are_the_union_over_the_regions():
+    vendor = Mock(vendor_id="azure")
+    vendor.regions = [
+        Mock(region_id="westeurope", api_reference="westeurope"),
+        Mock(region_id="centralus", api_reference="centralus"),
+    ]
+    vendor.servers = []
+    vendor.progress_tracker = Mock(
+        start_task=Mock(), advance_task=Mock(), hide_task=Mock()
+    )
+    unsupported = "Specified Storage Edition not supported in this region."
+
+    def _storage(name, reason=None):
+        return SimpleNamespace(name=name, reason=reason, supported_storage_mb=[])
+
+    def _capability(storages):
+        return SimpleNamespace(
+            supported_server_versions=[SimpleNamespace(name="16", status="Available")],
+            storage_auto_growth_supported=None,
+            supported_features=[],
+            supported_server_editions=[
+                SimpleNamespace(
+                    name="GeneralPurpose",
+                    supported_storage_editions=storages,
+                    supported_server_skus=[
+                        SimpleNamespace(
+                            name="Standard_D2s_v3",
+                            v_cores=2,
+                            supported_memory_per_vcore_mb=4096,
+                            supported_ha_mode=[],
+                        )
+                    ],
+                )
+            ],
+        )
+
+    capabilities = {
+        # Premium SSD v2 and Ultra are not supported in one region each
+        "westeurope": _capability(
+            [
+                _storage("ManagedDisk"),
+                _storage("ManagedDiskV2", unsupported),
+                _storage("UltraDisk"),
+            ]
+        ),
+        "centralus": _capability(
+            [
+                _storage("ManagedDisk"),
+                _storage("ManagedDiskV2"),
+                _storage("UltraDisk", unsupported),
+            ]
+        ),
+    }
+    with (
+        patch(
+            "sc_crawler.vendors._azure._pg_database_regions",
+            return_value=vendor.regions,
+        ),
+        patch(
+            "sc_crawler.vendors._azure._pg_capabilities",
+            side_effect=lambda location: [capabilities[location]],
+        ),
+        patch("sc_crawler.vendors._azure._pg_retail_prices", return_value=[]),
+    ):
+        rows = azure_databases(vendor)
+    # a type available in at least one region counts, whatever the last region says
+    assert rows[0]["compatible_storage_ids"] == [
+        "ManagedDisk",
+        "ManagedDiskV2",
+        "UltraDisk",
+    ]
+
+
+def _vm_size(name, premium_io, ultra_top=None, ultra_zone=False):
+    capabilities = [{"name": "PremiumIO", "value": premium_io}]
+    if ultra_top is not None:
+        capabilities.append({"name": "UltraSSDAvailable", "value": ultra_top})
+    zone_capabilities = (
+        [{"name": "UltraSSDAvailable", "value": "True"}] if ultra_zone else []
+    )
+    return {
+        "resourceType": "virtualMachines",
+        "name": name,
+        "capabilities": capabilities,
+        "locationInfo": [{"zoneDetails": [{"capabilities": zone_capabilities}]}],
+    }
+
+
+def test_azure_disk_names_and_ultra_vm_sizes_from_the_compute_resources():
+    resources = [
+        {"resourceType": "disks", "name": "Premium_LRS"},
+        {"resourceType": "disks", "name": "Standard_LRS"},
+        {"resourceType": "disks", "name": "Premium_LRS"},
+        # Ultra on the size, in a zone of another region, or nowhere
+        _vm_size("Standard_D2s_v5", "True", ultra_top="True"),
+        _vm_size("Standard_E2s_v5", "True", ultra_top="False", ultra_zone=True),
+        _vm_size("Standard_E2s_v5", "True", ultra_top="False"),
+        _vm_size("Standard_B2s", "True", ultra_top="False"),
+    ]
+    _disk_sku_names.cache_clear()
+    _ultra_disk_vm_sizes.cache_clear()
+    with patch("sc_crawler.vendors._azure._compute_resources", return_value=resources):
+        assert _disk_sku_names() == ["Premium_LRS", "Standard_LRS"]
+        assert _ultra_disk_vm_sizes() == {"Standard_D2s_v5", "Standard_E2s_v5"}
+    _disk_sku_names.cache_clear()
+    _ultra_disk_vm_sizes.cache_clear()
+
+
+def test_azure_compatible_storage_ids_by_vm_size_capabilities():
+    all_disks = [
+        "PremiumV2_LRS",
+        "Premium_LRS",
+        "Premium_ZRS",
+        "StandardSSD_LRS",
+        "StandardSSD_ZRS",
+        "Standard_LRS",
+        "UltraSSD_LRS",
+    ]
+    with (
+        patch("sc_crawler.vendors._azure._disk_sku_names", return_value=all_disks),
+        patch(
+            "sc_crawler.vendors._azure._ultra_disk_vm_sizes",
+            return_value=frozenset({"Standard_D2s_v5", "Standard_D2_v5"}),
+        ),
+    ):
+        # premium storage capable and Ultra capable: every disk type
+        assert _compatible_storage_ids(_vm_size("Standard_D2s_v5", "True")) == all_disks
+        # premium storage capable, not Ultra: no Ultra disk
+        assert _compatible_storage_ids(_vm_size("Standard_E2s_v5", "True")) == [
+            d for d in all_disks if d != "UltraSSD_LRS"
+        ]
+        # no premium storage: only Standard and Premium SSD v2 (no size restriction in
+        # the docs), and no Ultra even if the API says so
+        assert _compatible_storage_ids(_vm_size("Standard_D2_v5", "False")) == [
+            "PremiumV2_LRS",
+            "StandardSSD_LRS",
+            "StandardSSD_ZRS",
+            "Standard_LRS",
+        ]
+
+
+def test_azure_unknown_disk_type_is_not_added_and_warned_once():
+    _warn_unknown_disk.cache_clear()
+    with (
+        patch(
+            "sc_crawler.vendors._azure._disk_sku_names",
+            return_value=["Standard_LRS", "FutureDisk_LRS"],
+        ),
+        patch("sc_crawler.vendors._azure.logger") as logger,
+    ):
+        assert _compatible_storage_ids(_vm_size("Standard_D2s_v5", "True")) == [
+            "Standard_LRS"
+        ]
+        assert _compatible_storage_ids(_vm_size("Standard_D4s_v5", "True")) == [
+            "Standard_LRS"
+        ]
+    warnings = [call.args[0] for call in logger.warning.call_args_list]
+    assert len(warnings) == 1
+    assert "FutureDisk_LRS" in warnings[0]

@@ -916,6 +916,90 @@ def _vm_family_category(server_name: str) -> Optional[str]:
     return _VM_FAMILY_TO_CATEGORY.get(letters.group(0)) if letters else None
 
 
+# Requirement of a VM size for each managed disk type. Standard HDD, Standard SSD and
+# Premium SSD v2 have no VM size restriction in the docs (the NVMe FAQ lists them all as
+# usable with NVMe sizes), Premium SSD needs a premium storage capable size
+# (`PremiumIO`), Ultra Disk needs a size with `UltraSSDAvailable` in a region or zone.
+# https://learn.microsoft.com/en-us/azure/virtual-machines/disks-types
+# https://learn.microsoft.com/en-us/azure/virtual-machines/disks-enable-ultra-ssd
+# https://learn.microsoft.com/en-us/azure/virtual-machines/disks-deploy-premium-v2
+# https://learn.microsoft.com/en-us/azure/virtual-machines/enable-nvme-remote-faqs
+_DISK_VM_REQUIREMENTS = {
+    "Standard_LRS": None,
+    "StandardSSD_LRS": None,
+    "StandardSSD_ZRS": None,
+    "PremiumV2_LRS": None,
+    "Premium_LRS": "premium",
+    "Premium_ZRS": "premium",
+    # Ultra Disk is available on the premium storage capable sizes
+    "UltraSSD_LRS": "ultra",
+}
+
+
+@cache
+def _disk_sku_names() -> list[str]:
+    """Names of the managed disk types, from the disk resource SKUs."""
+    return sorted(
+        {r["name"] for r in _compute_resources() if r["resourceType"] == "disks"}
+    )
+
+
+@cache
+def _ultra_disk_vm_sizes() -> frozenset[str]:
+    """VM sizes that support Ultra disks in at least one region or zone.
+
+    Read from the `UltraSSDAvailable` capability of the resource SKUs, set on the size or
+    on its zones, over all regions.
+    """
+
+    def available(capabilities) -> bool:
+        return any(
+            c["name"] == "UltraSSDAvailable" and c["value"] == "True"
+            for c in capabilities or []
+        )
+
+    sizes = set()
+    for resource in _compute_resources():
+        if resource["resourceType"] != "virtualMachines":
+            continue
+        if available(resource.get("capabilities")) or any(
+            available(zone.get("capabilities"))
+            for location in resource.get("locationInfo") or []
+            for zone in location.get("zoneDetails") or []
+        ):
+            sizes.add(resource["name"])
+    return frozenset(sizes)
+
+
+@cache
+def _warn_unknown_disk(disk: str) -> None:
+    """Warn about a disk type without known VM requirement, once per disk and run."""
+    logger.warning(f"Unknown Azure disk type {disk}, not added to compatible storages.")
+
+
+def _compatible_storage_ids(server: dict) -> list[str]:
+    """Managed disk types that can be attached to a VM size, see `_DISK_VM_REQUIREMENTS`.
+
+    Premium SSD needs the `PremiumIO` capability, Ultra Disk also needs
+    `UltraSSDAvailable` in any region or zone (the sizes listed as Ultra compatible are
+    premium storage capable, but the API also has `UltraSSDAvailable` for a few sizes
+    without `PremiumIO`).
+    """
+    premium = any(
+        c["name"] == "PremiumIO" and c["value"] == "True"
+        for c in server.get("capabilities") or []
+    )
+    ultra = premium and server["name"] in _ultra_disk_vm_sizes()
+    allowed = {None: True, "premium": premium, "ultra": ultra}
+    storage_ids = []
+    for disk in _disk_sku_names():
+        if disk not in _DISK_VM_REQUIREMENTS:
+            _warn_unknown_disk(disk)
+        elif allowed[_DISK_VM_REQUIREMENTS[disk]]:
+            storage_ids.append(disk)
+    return storage_ids
+
+
 def _standardize_server(server: dict, vendor) -> dict:
     # example Resource Skus - List response moved to _compute_resources
     family, features, gpus, gpu_model, gpu_memory = _parse_server_name(server["name"])
@@ -1009,6 +1093,7 @@ def _standardize_server(server: dict, vendor) -> dict:
         "storage_size": round(sum([s.size for s in storages])),  # int GB
         "storage_type": storage_type,
         "storages": storages,
+        "compatible_storage_ids": _compatible_storage_ids(server),
         # TODO: have to implement manual mapping for network_speed related fields
         "network_speed_baseline": None,
         "network_speed_max": None,
@@ -2264,6 +2349,25 @@ def _pg_supported_storage_ids(location: str) -> frozenset[str]:
     return frozenset(ids)
 
 
+def _pg_edition_storage_ids(edition) -> set[str]:
+    """Data storage types of a flexible server edition in one location.
+
+    Storage editions marked as not supported in the location are skipped. Premium SSD v2
+    is for the General Purpose and Memory Optimized editions only, although the API
+    lists it for Burstable as well:
+    https://learn.microsoft.com/en-us/azure/postgresql/compute-storage/concepts-storage-premium-ssd-v2
+    """
+    storage_ids = set()
+    for storage_edition in getattr(edition, "supported_storage_editions", None) or []:
+        if getattr(storage_edition, "reason", None) == _PG_UNSUPPORTED_STORAGE_REASON:
+            continue
+        if edition.name == "Burstable" and storage_edition.name == "ManagedDiskV2":
+            continue
+        if storage_edition.name:
+            storage_ids.add(storage_edition.name)
+    return storage_ids
+
+
 _PG_ARM_SERIES_RE = recompile(
     r"(?:General_Purpose|Memory_Optimized|Memory_Purpose|Confidential_Compute)_"
     r"([A-Za-z0-9]+?)(?:_Series_Compute|Series_Compute)"
@@ -2441,6 +2545,8 @@ def inventory_databases(vendor):
     # database_id -> fields that actually come from capabilities.
     caps_by_id: dict[str, dict] = {}
     edition_caps: dict[str, dict] = {}
+    # edition -> storage types available in any of the regions
+    storage_ids_by_edition: dict[str, set[str]] = defaultdict(set)
     retail_concrete: dict[str, str] = {}
     retail_series: dict[str, str] = {}
     servers_by_id = {}
@@ -2510,6 +2616,9 @@ def inventory_databases(vendor):
                         )
                         if size_mb is not None
                     ]
+                    storage_ids_by_edition[edition.name] |= _pg_edition_storage_ids(
+                        edition
+                    )
                     shared["storage_extra_min"] = min(sizes_gb, default=None)
                     shared["storage_extra_max"] = max(sizes_gb, default=None)
                     for sku in getattr(edition, "supported_server_skus", None) or []:
@@ -2669,6 +2778,9 @@ def inventory_databases(vendor):
                 "engine_versions": facts["engine_versions"],
                 "family": _pg_edition_family(edition_name),
                 "series": series,
+                "compatible_storage_ids": sorted(
+                    storage_ids_by_edition.get(edition_name, ())
+                ),
                 "vcpus": vcpus,
                 "memory_amount": memory_amount,
                 "storage_size": None,
