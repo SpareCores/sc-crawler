@@ -48,6 +48,11 @@ Fix(es):
   their per-zone prices are `INACTIVE`.
 - Keep unknown `accelerator_memory_total` unknown instead of 0 when the
   inspector has no GPU data (e.g. GCP `tpu7-standard-*`, UpCloud B300 plans).
+- `UpCloud`: store the storage of multi-node legacy managed database plans per
+  node instead of divided by the node count (e.g. `2x16xCPU-64GB-1000GB`: 1074
+  instead of 537 GB).
+- `UpCloud`: use the longest available backup tier (e.g. 31 days with the
+  extended tier) as `continuous_backups` of flexible managed database plans.
 
 ## v0.10.2 (October 22, 2026)
 

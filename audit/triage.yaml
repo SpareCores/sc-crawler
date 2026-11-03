@@ -180,29 +180,13 @@ entries:
 
   # ---------------------------------------------------------------- upcloud
   - vendor: upcloud
-    type: SPEC_MISMATCH
-    field: storage_gb
-    verdict: confirmed
-    note: "DB storage = plan GB / nodes x 1.0737 (e.g. 2x16xCPU-64GB-1000GB: 537 vs 1000): divided per node and converted GiB->GB on a GB value."
-    by: claude (first-pass triage)
-    evidence: audit-runs/2026-10-31.tar.xz
-    date: 2026-10-31
-  - vendor: upcloud
     type: FEATURE_MISMATCH
     field: storage_extra_max_gb
     verdict: false_positive
-    note: "Extraction put the per-node total storage maximum into storage_extra_max_gb."
-    by: claude (first-pass triage)
+    note: "Extraction put the per-node total storage maximum into storage_extra_max_gb. Since 2026-11-02 ours is per node too (storage_cap_size - storage_size, not divided by the node count)."
+    by: bridgend84
     evidence: audit-runs/2026-10-31.tar.xz
-    date: 2026-10-31
-  - vendor: upcloud
-    type: FEATURE_MISMATCH
-    field: continuous_backups_days
-    verdict: to_verify
-    note: "We store 3/15 days, docs say retention up to 31 days."
-    by: claude (first-pass triage)
-    evidence: audit-runs/2026-10-31.tar.xz
-    date: 2026-10-31
+    date: 2026-11-02
 
   # ---------------------------------------------------------------- ovh
   - vendor: ovh

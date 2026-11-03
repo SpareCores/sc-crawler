@@ -1234,7 +1234,8 @@ def inventory_databases(vendor):
                 for name in shape.get("backups") or []
                 if name in _DATABASE_BACKUP_RETENTION_DAYS
             ]
-            continuous_backups = min(backup_days) if backup_days else None
+            # maximum retention, incl. the extended tier at extra cost
+            continuous_backups = max(backup_days) if backup_days else None
             # Persist flexible-plan create args (incl. discontinuous storage
             # bands) in api_reference_object so consumers can snap
             # plan_storage_gib without re-calling GET /database/plans.
@@ -1300,7 +1301,8 @@ def inventory_databases(vendor):
         memory_amount = plan.get("memory_amount")
         components = plan.get("components", {})
         storage_component = components.get("storage", {})
-        # UI/plan names say GB, but API values are GiB
+        # UI/plan names say GB, but API values are GiB, and apply to each node
+        # (e.g. included_gib is 100 for all 1x/2x/3x-...-100GB plans)
         # https://upcloud.com/docs/products/managed-postgresql/configurations/
         nodes = node_count or 1
         included_gib = storage_component.get("included_gib")
@@ -1309,12 +1311,12 @@ def inventory_databases(vendor):
             if included_gib is not None
             else plan["storage_size"] // _MIB_PER_GIB
         )
-        storage_size_gb = round((bundled_gib // nodes) * _GIB_TO_GB)
+        storage_size_gb = round(bundled_gib * _GIB_TO_GB)
         storage_step_gb = round(
             (plan["storage_step_size"] // _MIB_PER_GIB) * _GIB_TO_GB
         )
         storage_extra_max_gb = round(
-            ((plan["storage_cap_size"] - plan["storage_size"]) // _MIB_PER_GIB // nodes)
+            ((plan["storage_cap_size"] - plan["storage_size"]) // _MIB_PER_GIB)
             * _GIB_TO_GB
         )
         dynamic_storage_supported = storage_component.get("dynamic_storage_supported")

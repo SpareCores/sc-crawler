@@ -165,9 +165,9 @@ def test_upcloud_inventory_databases_maps_pg_service_plans():
     assert by_id["2xCPU-4GB-50GB"]["status"] == Status.ACTIVE
     assert by_id["4xCPU-16GB-200GB-ha"]["family"] == "Legacy"
     assert by_id["4xCPU-16GB-200GB-ha"]["server_id"] == "4xCPU-16GB"
-    # Cluster 200 GiB / 2 nodes = 100 GiB per node → decimal GB.
-    assert by_id["4xCPU-16GB-200GB-ha"]["storage_size"] == round(100 * _GIB_TO_GB)
-    assert by_id["4xCPU-16GB-200GB-ha"]["storage_extra_max"] == round(300 * _GIB_TO_GB)
+    # 200 GiB on each node → decimal GB.
+    assert by_id["4xCPU-16GB-200GB-ha"]["storage_size"] == round(200 * _GIB_TO_GB)
+    assert by_id["4xCPU-16GB-200GB-ha"]["storage_extra_max"] == round(600 * _GIB_TO_GB)
     assert by_id["4xCPU-16GB-200GB-ha"]["ha"] == [DatabaseHaLevel.SINGLE_ZONE]
     assert by_id["4xCPU-16GB-200GB-ha"]["ha_strategy"] == [
         DatabaseHaStrategy.READABLE_CLUSTER
@@ -279,7 +279,8 @@ def test_upcloud_inventory_databases_maps_flexible_plans():
     assert by_id["rdb.standard.2CPU-8GB"]["storage_extra_max"] == round(
         640 * _GIB_TO_GB
     )
-    assert by_id["rdb.standard.2CPU-8GB"]["continuous_backups"] == 15
+    # extended tier
+    assert by_id["rdb.standard.2CPU-8GB"]["continuous_backups"] == 31
     assert by_id["rdb.standard.2CPU-8GB"]["max_read_replicas"] == 2
     assert by_id["rdb.standard.2CPU-8GB"]["api_reference_object"] == {
         "service_type": "pg",
