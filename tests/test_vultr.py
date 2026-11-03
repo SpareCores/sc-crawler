@@ -127,6 +127,8 @@ def test_vultr_inventory_databases_maps_plans_and_versions():
     assert by_id["vultr-dbaas-business-cc-2-80-4"]["family"] == "Business"
     # the series is the hardware, the description keeps the tier and hardware text
     assert by_id["vultr-dbaas-business-cc-2-80-4"]["series"] == "vc2"
+    # storage is bundled in the plan: nothing to attach, which is not the same as unknown
+    assert by_id["vultr-dbaas-business-cc-2-80-4"]["compatible_storage_ids"] == []
     assert (
         "Business Cloud Compute"
         in by_id["vultr-dbaas-business-cc-2-80-4"]["description"]

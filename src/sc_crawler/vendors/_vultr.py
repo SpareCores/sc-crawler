@@ -1308,6 +1308,10 @@ def inventory_databases(vendor):
                 "vcpus": vcpus,
                 "memory_amount": memory,
                 "storage_size": storage_size,
+                # Storage is bundled in the plan and only changes with the plan, so no
+                # separate storage can be attached.
+                # https://docs.vultr.com/products/storage/databases/postgresql/management/resize-databases
+                "compatible_storage_ids": [],
                 # Vultr does not expose explicit storage extra min/max/autosize - only bundled storage size is present
                 "storage_extra_min": 0,
                 "storage_extra_max": 0,
