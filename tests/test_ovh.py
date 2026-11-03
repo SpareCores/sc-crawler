@@ -34,6 +34,7 @@ from sc_crawler.vendors._ovh import (
     inventory_databases,
     inventory_regions,
     inventory_server_prices,
+    inventory_servers,
     inventory_storage_prices,
 )
 
@@ -764,12 +765,13 @@ def _server_addon(plan_code: str, price_microcents: int):
     }
 
 
-def _flavor_offer(region: str, plan_code: str):
+def _flavor_offer(region: str, plan_code: str, available: bool = True):
     return {
         "name": plan_code.split(".")[0],
         "region": region,
         "osType": "linux",
         "planCodes": {"hourly": plan_code},
+        "available": available,
     }
 
 
@@ -806,6 +808,107 @@ def test_inventory_server_prices_skip_duplicates_and_unknown_plans(mock_ovh_clie
     assert by_region["GRA"][0]["price"] == pytest.approx(0.1)
     assert len(by_region["EU-WEST-PAR"]) == 3
     assert all(r["price"] == pytest.approx(0.12) for r in by_region["EU-WEST-PAR"])
+
+
+def _patch_servers_api(mock_client, *, flavors, catalog_addons):
+    original = mock_client.get.side_effect
+
+    def fake_get(path, *args, **kwargs):
+        if path == "/cloud/project/test-project/flavor":
+            return flavors
+        if path == "/order/catalog/public/cloud":
+            return {"locale": {"currencyCode": "EUR"}, "addons": catalog_addons}
+        return original(path, *args, **kwargs)
+
+    mock_client.get.side_effect = fake_get
+
+
+def test_inventory_server_prices_inactive_where_flavor_is_unavailable(
+    mock_ovh_client,
+):
+    _patch_servers_api(
+        mock_ovh_client,
+        flavors=[
+            _flavor_offer("GRA", "t1-45.consumption", available=False),
+            # duplicated listing, available
+            _flavor_offer("GRA", "t1-45.consumption"),
+            _flavor_offer("EU-WEST-PAR", "t1-45.consumption", available=False),
+        ],
+        catalog_addons=[_server_addon("t1-45.consumption", 70_000_000)],
+    )
+    prices = inventory_server_prices(_ovh_vendor())
+    assert {(row["region_id"], row["status"]) for row in prices} == {
+        ("GRA", Status.ACTIVE),
+        ("EU-WEST-PAR", Status.INACTIVE),
+    }
+
+
+def _instance_plan(plan_code: str, *, tags, disks):
+    return {
+        **_server_addon(plan_code, 10_000_000),
+        "product": "publiccloud-instance",
+        "blobs": {
+            "tags": tags,
+            "commercial": {"name": plan_code.split(".")[0]},
+            "technical": {
+                "os": {"family": "linux"},
+                "cpu": {"cores": 4},
+                "memory": {"size": 16},
+                "storage": {"disks": disks},
+            },
+        },
+    }
+
+
+def test_inventory_servers_status_and_disk_count(mock_ovh_client):
+    _patch_servers_api(
+        mock_ovh_client,
+        flavors=[_flavor_offer("GRA", "t1-45.consumption")],
+        catalog_addons=[
+            # untagged, but available in the project
+            _instance_plan(
+                "t1-45.consumption",
+                tags=[],
+                disks=[
+                    {"capacity": 50, "technology": "NVMe"},
+                    {"capacity": 2000, "number": 2, "technology": "NVMe Passthrough"},
+                ],
+            ),
+            _instance_plan(
+                "bm-s1.consumption",
+                tags=["active"],
+                disks=[{"capacity": 960, "number": 2, "interface": "NVMe"}],
+            ),
+            _instance_plan(
+                "sp-30.consumption",
+                tags=["legacy"],
+                disks=[{"capacity": 200, "technology": "SSD"}],
+            ),
+        ],
+    )
+    servers = {row["server_id"]: row for row in inventory_servers(_ovh_vendor())}
+    assert {k: v["status"] for k, v in servers.items()} == {
+        "t1-45": Status.ACTIVE,
+        "bm-s1": Status.ACTIVE,
+        "sp-30": Status.INACTIVE,
+    }
+    assert servers["t1-45"]["storage_size"] == 50 + 2 * 2000
+    assert servers["bm-s1"]["storage_size"] == 2 * 960
+    assert len(servers["bm-s1"]["storages"]) == 2
+
+
+def test_inventory_databases_skip_end_of_sale_versions(mock_ovh_client):
+    _extend_ovh_get(
+        mock_ovh_client,
+        availability=[
+            _pg_offer(version="14", status="END_OF_SALE"),
+            _pg_offer(version="15"),
+        ],
+        capabilities=_pg_capabilities(),
+        catalog_addons=[],
+    )
+    rows = inventory_databases(_ovh_vendor())
+    assert rows[0]["engine_versions"] == ["15"]
 
 
 def test_get_regions_skips_regions_without_compute_or_databases(mock_ovh_client):

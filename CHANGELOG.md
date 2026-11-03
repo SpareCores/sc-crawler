@@ -53,6 +53,13 @@ Fix(es):
   instead of 537 GB).
 - `UpCloud`: use the longest available backup tier (e.g. 31 days with the
   extended tier) as `continuous_backups` of flexible managed database plans.
+- `OVHcloud`: count all disks of a flavor (e.g. `bm-s1`: 2x 960 GB, `h100-1520`:
+  4x 3840 GB passthrough NVMe besides the system disk).
+- `OVHcloud`: mark flavors available in the project as `ACTIVE` even without
+  the `active` catalog tag (e.g. `t1`, `t2`), and server prices `INACTIVE` in
+  regions where the flavor is not available.
+- `OVHcloud`: list only managed database engine versions still on sale (e.g.
+  no PostgreSQL 14 after its end of sale).
 
 ## v0.10.2 (October 22, 2026)
 

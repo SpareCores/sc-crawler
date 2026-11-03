@@ -192,43 +192,25 @@ entries:
   - vendor: ovh
     type: PRICE_MISMATCH
     match: "postgresql-discovery-b3-4"
-    verdict: to_verify
-    note: "Our price is 21% higher than the prices page (EUR 0.1034 vs 0.0855/h); all other PostgreSQL plans match."
-    by: claude (triage, managed database coverage)
+    verdict: expected
+    note: "Our price is 21% higher than the prices page (EUR 0.1034 vs 0.0855/h); all other PostgreSQL plans match. Ours follows the order catalog (2026-11-02): databases.postgresql-discovery-b3-4.hour.consumption is 0.10338 EUR/h (GRA and other 1-AZ regions), 0.10948 in 3-AZ and 0.085539 in APAC regions; the prices page shows the APAC rate for b3-4 only (b3-8 agrees at 0.1962)."
+    by: bridgend84
     evidence: audit-runs/2026-10-31.tar.xz
-    date: 2026-10-31
+    date: 2026-11-02
   - vendor: ovh
     type: FEATURE_MISMATCH
-    verdict: to_verify
-    note: "PostgreSQL 14 still listed for us (docs: 15-18); SLA one level higher than the docs."
-    by: claude (first-pass triage)
-    evidence: audit-runs/2026-10-31.tar.xz
-    date: 2026-10-31
-  - vendor: ovh
-    type: SPEC_MISMATCH
-    field: storage_gb
-    match: "(h100|h200|i1|t1|t2)-.*"
     verdict: false_positive
-    note: "Extraction summed passthrough NVMe disks with the system disk."
-    by: claude (first-pass triage)
+    note: "PostgreSQL 14 still listed for us (docs: 15-18); SLA one level higher than the docs. PostgreSQL 14 is END_OF_SALE in the availability API (end of sale 2026-05-12) and is no longer listed since 2026-11-02 (fixed). SLA matches the product page (Production 99.95%, Advanced 99.99%: the 3-AZ level; 1-AZ regions have 99.9%/99.95%)."
+    by: bridgend84
     evidence: audit-runs/2026-10-31.tar.xz
-    date: 2026-10-31
-  - vendor: ovh
-    type: SPEC_MISMATCH
-    field: storage_gb
-    match: "bm-.*"
-    verdict: to_verify
-    note: "960 vs 1920 GB: one vs two disks?"
-    by: claude (first-pass triage)
-    evidence: audit-runs/2026-10-31.tar.xz
-    date: 2026-10-31
+    date: 2026-11-02
   - vendor: ovh
     type: NOT_AT_VENDOR
     field: null
     page: "^regions$"
     verdict: false_positive
     note: "The regions page uses city/site names that don't map to our region codes."
-    by: claude (first-pass triage)
+    by: bridgend84
     evidence: audit-runs/2026-10-31.tar.xz
     date: 2026-10-31
   - vendor: ovh
@@ -236,14 +218,7 @@ entries:
     match: ".*-eph"
     verdict: expected
     note: "Ephemeral flavors are excluded by our ingest by design."
-    by: claude (first-pass triage)
-    evidence: audit-runs/2026-10-31.tar.xz
-    date: 2026-10-31
-  - vendor: ovh
-    type: STATUS_MISMATCH
-    verdict: to_verify
-    note: "Listed on the prices page, INACTIVE for us."
-    by: claude (first-pass triage)
+    by: bridgend84
     evidence: audit-runs/2026-10-31.tar.xz
     date: 2026-10-31
 
