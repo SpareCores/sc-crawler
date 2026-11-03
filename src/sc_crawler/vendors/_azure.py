@@ -2104,6 +2104,22 @@ def _pg_capabilities(location: str) -> list[SimpleNamespace]:
     return [as_namespace(item) for item in _pg_capabilities_by_location(location)]
 
 
+def _pg_check_capabilities_parsed(vendor, capabilities_seen: int, parsed: int, what):
+    """Fail loudly when capabilities were returned but nothing could be parsed.
+
+    Some regions legitimately list no editions (e.g. OfferRestricted), but all
+    regions doing so means the response shape changed (e.g. the 3.0.0 SDK
+    switched `as_dict()` keys from snake_case to camelCase), which would
+    otherwise silently sync 0 rows.
+    """
+    if capabilities_seen and not parsed:
+        with sentry_capture_or_raise(vendor=vendor):
+            raise ValueError(
+                f"Got {capabilities_seen} PostgreSQL capabilities record(s), "
+                f"but parsed no {what} from them. Did the API/SDK response format change?"
+            )
+
+
 def _pg_retail_prices(location: str) -> list[dict]:
     # example Azure Retail Prices response:
     # {
@@ -2405,6 +2421,7 @@ def inventory_databases(vendor):
         if match and not _PG_SERIES_SKIP_FEATURES & set(match["features"].lower()):
             servers_by_series[_parse_database_name(name)[0]].append(server)
 
+    capabilities_seen = 0
     regions = _pg_database_regions(vendor)
     vendor.progress_tracker.start_task(
         name="Scanning region(s) for database(s)", total=len(regions)
@@ -2413,6 +2430,7 @@ def inventory_databases(vendor):
         location = region.api_reference
         with sentry_capture_or_raise(vendor=vendor):
             for capability in _pg_capabilities(location):
+                capabilities_seen += 1
                 features = {
                     getattr(feature, "name", None): getattr(feature, "status", None)
                     == "Enabled"
@@ -2546,6 +2564,9 @@ def inventory_databases(vendor):
                     retail_series.setdefault(series_name, edition_name)
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
+    _pg_check_capabilities_parsed(
+        vendor, capabilities_seen, len(edition_caps), "server editions"
+    )
 
     # Capabilities SKUs, plus retail SKUs quota hid. Series meters name no size,
     # so the VM catalog fills those database_ids.
@@ -2761,6 +2782,7 @@ def inventory_database_prices(vendor):
 def inventory_database_storages(vendor):
     """List all Azure Database for PostgreSQL Flexible Server storage options via the capabilities API."""
     storages: dict[str, dict] = {}
+    capabilities_seen = 0
     regions = _pg_database_regions(vendor)
     vendor.progress_tracker.start_task(
         name="Scanning region(s) for database_storage(s)", total=len(regions)
@@ -2769,6 +2791,7 @@ def inventory_database_storages(vendor):
         location = region.api_reference
         with sentry_capture_or_raise(vendor=vendor):
             for capability in _pg_capabilities(location):
+                capabilities_seen += 1
                 for edition in (
                     getattr(capability, "supportedServerEditions", None) or []
                 ):
@@ -2866,6 +2889,9 @@ def inventory_database_storages(vendor):
                                 )
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
+    _pg_check_capabilities_parsed(
+        vendor, capabilities_seen, len(storages), "storage editions"
+    )
 
     items = []
     for storage_id, bounds in sorted(storages.items()):

@@ -769,6 +769,42 @@ def test_azure_inventory_databases_autotuning_from_supported_features():
     assert rows[0]["autotuning_apply"] is False
 
 
+def test_azure_inventory_databases_fails_loudly_on_unparsable_capabilities():
+    """Old snake_case keys (SDK < 3 `as_dict()`) must not silently sync 0 rows."""
+    vendor = Mock(vendor_id="azure")
+    vendor.regions = [Mock(region_id="centralus", api_reference="centralus")]
+    vendor.servers = []
+    vendor.progress_tracker = Mock(
+        start_task=Mock(), advance_task=Mock(), hide_task=Mock()
+    )
+    capability = SimpleNamespace(
+        supported_server_editions=[
+            SimpleNamespace(
+                name="GeneralPurpose",
+                supported_storage_editions=[],
+                supported_server_skus=[
+                    SimpleNamespace(name="Standard_D2s_v3", v_cores=2)
+                ],
+            )
+        ],
+    )
+    with (
+        patch.dict("os.environ", {}, clear=False) as env,
+        patch(
+            "sc_crawler.vendors._azure._pg_database_regions",
+            return_value=vendor.regions,
+        ),
+        patch(
+            "sc_crawler.vendors._azure._pg_capabilities",
+            return_value=[capability],
+        ),
+        patch("sc_crawler.vendors._azure._pg_retail_prices", return_value=[]),
+    ):
+        env.pop("SENTRY_DSN", None)
+        with pytest.raises(ValueError, match="parsed no server editions"):
+            azure_databases(vendor)
+
+
 def test_azure_inventory_databases_ha_from_supported_ha_mode():
     vendor = Mock(vendor_id="azure")
     vendor.regions = [Mock(region_id="centralus", api_reference="centralus")]
