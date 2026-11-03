@@ -1632,10 +1632,9 @@ def test_azure_compatible_storage_ids_by_vm_size_capabilities():
         assert _compatible_storage_ids(_vm_size("Standard_E2s_v5", "True")) == [
             d for d in all_disks if d != "UltraSSD_LRS"
         ]
-        # no premium storage: only Standard and Premium SSD v2 (no size restriction in
-        # the docs), and no Ultra even if the API says so
+        # no premium storage: only Standard disks (no Premium SSD, Premium SSD v2 or
+        # Ultra, even if the API says so)
         assert _compatible_storage_ids(_vm_size("Standard_D2_v5", "False")) == [
-            "PremiumV2_LRS",
             "StandardSSD_LRS",
             "StandardSSD_ZRS",
             "Standard_LRS",

@@ -916,10 +916,11 @@ def _vm_family_category(server_name: str) -> Optional[str]:
     return _VM_FAMILY_TO_CATEGORY.get(letters.group(0)) if letters else None
 
 
-# Requirement of a VM size for each managed disk type. Standard HDD, Standard SSD and
-# Premium SSD v2 have no VM size restriction in the docs (the NVMe FAQ lists them all as
-# usable with NVMe sizes), Premium SSD needs a premium storage capable size
-# (`PremiumIO`), Ultra Disk needs a size with `UltraSSDAvailable` in a region or zone.
+# Requirement of a VM size for each managed disk type. Standard HDD and Standard SSD
+# have no VM size restriction in the docs (the NVMe FAQ lists them as usable with NVMe
+# sizes). Premium SSD and Premium SSD v2 need a premium storage capable size
+# (`PremiumIO`): the deploy guide attaches Premium SSD v2 to a VM size "that supports
+# Premium Storage". Ultra Disk needs a size with `UltraSSDAvailable` in a region or zone.
 # https://learn.microsoft.com/en-us/azure/virtual-machines/disks-types
 # https://learn.microsoft.com/en-us/azure/virtual-machines/disks-enable-ultra-ssd
 # https://learn.microsoft.com/en-us/azure/virtual-machines/disks-deploy-premium-v2
@@ -928,7 +929,7 @@ _DISK_VM_REQUIREMENTS = {
     "Standard_LRS": None,
     "StandardSSD_LRS": None,
     "StandardSSD_ZRS": None,
-    "PremiumV2_LRS": None,
+    "PremiumV2_LRS": "premium",
     "Premium_LRS": "premium",
     "Premium_ZRS": "premium",
     # Ultra Disk is available on the premium storage capable sizes
