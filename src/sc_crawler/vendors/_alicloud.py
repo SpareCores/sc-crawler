@@ -1626,10 +1626,11 @@ def inventory_servers(vendor):
             ),
         ]
         server_id = instance_type.get("InstanceTypeId")
-        compatible_storage_ids = _compatible_storage_ids(
-            disk_categories.get(server_id, [])
-        )
-        if not compatible_storage_ids:
+        # no entry in DescribeZones: unknown (None), not "no compatible storage" ([])
+        if server_id in disk_categories:
+            compatible_storage_ids = _compatible_storage_ids(disk_categories[server_id])
+        else:
+            compatible_storage_ids = None
             no_storage_ids.append(server_id)
         description = f"{series} family ({', '.join(filter(None, description_parts))})"
         status_categories = {
@@ -1702,7 +1703,7 @@ def inventory_servers(vendor):
     if no_storage_ids:
         vendor.log(
             f"No known block storage for {len(no_storage_ids)} instance types "
-            f"(e.g. {', '.join(no_storage_ids[:5])}), leaving compatible storage empty.",
+            f"(e.g. {', '.join(no_storage_ids[:5])}), leaving compatible storage unknown.",
             level=WARN,
         )
     return items

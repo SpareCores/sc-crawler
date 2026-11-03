@@ -387,6 +387,43 @@ def test_upcloud_inventory_databases_keeps_server_id_none_when_no_match():
     assert rows[0]["compatible_storage_ids"] == []
 
 
+def test_upcloud_inventory_databases_legacy_storage_support_missing_is_unknown():
+    vendor = Mock(vendor_id="upcloud")
+    vendor.servers = []
+    payload = {
+        "properties": {"version": {"enum": ["16"]}},
+        "service_plans": [
+            {
+                "plan": "2xCPU-4GB-50GB",
+                "core_number": 2,
+                "memory_amount": 4096,
+                "storage_size": 51200,
+                "storage_step_size": 10240,
+                "storage_cap_size": 204800,
+                "node_count": 1,
+                # no dynamic_storage_supported reported
+                "components": {
+                    "compute": {"name": "2CPU-4GB", "cpu": 2, "memory_gb": 4},
+                    "storage": {"included_gib": 50},
+                },
+                "zones": {"zone": [{"name": "fi-hel1"}]},
+            }
+        ],
+    }
+    with (
+        patch(
+            "sc_crawler.vendors._upcloud._get_pg_service_type",
+            return_value=payload,
+        ),
+        patch(
+            "sc_crawler.vendors._upcloud._get_database_plans",
+            return_value={"service_types": []},
+        ),
+    ):
+        rows = inventory_databases(vendor)
+    assert rows[0]["compatible_storage_ids"] is None
+
+
 def test_upcloud_inventory_database_prices_from_price_list():
     vendor = Mock(vendor_id="upcloud")
     vendor.databases = [
@@ -705,7 +742,7 @@ def test_upcloud_inventory_servers_sets_family_and_series():
     )
 
 
-def test_upcloud_inventory_databases_unknown_flexible_family_is_empty_and_warned():
+def test_upcloud_inventory_databases_unknown_flexible_family_is_unknown_and_warned():
     _warn_unknown_database_family.cache_clear()
     vendor = Mock(vendor_id="upcloud")
     vendor.servers = []
@@ -739,7 +776,7 @@ def test_upcloud_inventory_databases_unknown_flexible_family_is_empty_and_warned
     assert row["family"] is None
     # UpCloud has no series, the column stays at its empty default
     assert row.get("series") is None
-    assert row["compatible_storage_ids"] == []
+    assert row["compatible_storage_ids"] is None
     # the text still tells the plan family
     assert "future" in row["description"]
     warnings = [call.args[0] for call in logger.warning.call_args_list]

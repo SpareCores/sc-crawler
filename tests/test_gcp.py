@@ -847,11 +847,15 @@ def test_gcp_compatible_storage_names_undocumented_tpu_copy_siblings():
         assert names == _compatible_storage_names(_srv(*sibling))
 
 
-def test_gcp_unknown_storage_series_is_empty_and_warned_once():
+def test_gcp_unknown_storage_series_is_unknown_and_warned_once():
     _warn_unknown_storage_series.cache_clear()
     with patch("sc_crawler.vendors._gcp.logger") as logger:
-        assert _compatible_storage_names(_srv("brandnew-standard-4", "brandnew")) == []
-        assert _compatible_storage_names(_srv("brandnew-standard-8", "brandnew")) == []
+        assert (
+            _compatible_storage_names(_srv("brandnew-standard-4", "brandnew")) is None
+        )
+        assert (
+            _compatible_storage_names(_srv("brandnew-standard-8", "brandnew")) is None
+        )
         assert _compatible_storage_names(_srv("c4-standard-8", "c4"))
     warnings = [call.args[0] for call in logger.warning.call_args_list]
     assert len(warnings) == 1
@@ -895,6 +899,26 @@ def test_gcp_inventory_servers_adds_compatible_storage_ids():
 
     # A2 supports only Hyperdisk ML
     assert rows[0]["compatible_storage_ids"] == ["40004"]
+
+
+def test_gcp_inventory_servers_keeps_unknown_series_storage_unknown():
+    vendor = Mock(vendor_id="gcp")
+    server = {
+        "name": "brandnew-standard-4",
+        "series": "brandnew",
+        "accelerator_model": None,
+        "vcpus": 4,
+    }
+    with (
+        patch("sc_crawler.vendors._gcp.parallel_fetch_servers", return_value=[server]),
+        patch(
+            "sc_crawler.vendors._gcp.preprocess_servers",
+            side_effect=lambda s, *a: s,
+        ),
+        patch("sc_crawler.vendors._gcp.inventory_storages", return_value=[]),
+    ):
+        rows = inventory_servers(vendor)
+    assert rows[0]["compatible_storage_ids"] is None
 
 
 def test_gcp_compatible_storage_names_persistent_disk():
@@ -1846,11 +1870,11 @@ def test_gcp_pg_tier_storage_table_is_consistent():
     assert set(_PG_TIER_FAMILY_SERIES) <= set(_PG_TIER_STORAGE_IDS)
 
 
-def test_gcp_unknown_tier_storage_is_empty_and_warned_once():
+def test_gcp_unknown_tier_storage_is_unknown_and_warned_once():
     _warn_unknown_tier_storage.cache_clear()
     with patch("sc_crawler.vendors._gcp.logger") as logger:
-        assert _pg_tier_storage_ids("brand-new-tier") == []
-        assert _pg_tier_storage_ids("brand-new-tier") == []
+        assert _pg_tier_storage_ids("brand-new-tier") is None
+        assert _pg_tier_storage_ids("brand-new-tier") is None
         assert _pg_tier_storage_ids("c4a-highmem")
     warnings = [call.args[0] for call in logger.warning.call_args_list]
     assert len(warnings) == 1

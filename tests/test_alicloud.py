@@ -85,8 +85,8 @@ def test_alicloud_inventory_servers_sets_family_and_series():
         "cloud_essd-pl3",
         "cloud_ssd",
     ]
-    # no disk data for this instance type: empty and one summary warning
-    assert by_id["ecs.gn5-c4g1.xlarge"]["compatible_storage_ids"] == []
+    # no disk data for this instance type: unknown (None) and one summary warning
+    assert by_id["ecs.gn5-c4g1.xlarge"]["compatible_storage_ids"] is None
     vendor.log.assert_called_once()
     assert "1 instance types" in vendor.log.call_args.args[0]
     assert by_id["ecs.g7.large"]["family"] == "General-purpose"

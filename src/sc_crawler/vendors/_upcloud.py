@@ -1329,11 +1329,12 @@ def inventory_databases(vendor):
                     "wire_protocol": DatabaseWireProtocol.POSTGRESQL,
                     "engine_versions": versions,
                     "family": family,
+                    # unknown (None) for a family missing from the mapping
                     "compatible_storage_ids": {
                         "Developer": ["standard"],
                         "Standard": ["maxiops"],
                         "High Memory": ["maxiops"],
-                    }.get(family, []),
+                    }.get(family),
                     "vcpus": vcpus,
                     "memory_amount": memory_amount,
                     "storage_size": None,
@@ -1446,9 +1447,14 @@ def inventory_databases(vendor):
                 "storage_extra_min": storage_extra_min,
                 "storage_extra_max": storage_extra_max,
                 "storage_extra_autosize": False,
-                "compatible_storage_ids": ["standard"]
-                if dynamic_storage_supported
-                else [],
+                # unknown (None) if the plan does not report dynamic storage support
+                "compatible_storage_ids": (
+                    None
+                    if dynamic_storage_supported is None
+                    else ["standard"]
+                    if dynamic_storage_supported
+                    else []
+                ),
                 "ha": ha,
                 "ha_strategy": ha_strategy,
                 "max_read_replicas": max((node_count or 1) - 1, 0),

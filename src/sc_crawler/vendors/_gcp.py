@@ -500,14 +500,16 @@ def _warn_unknown_storage_series(series: str) -> None:
     """Warn about a series missing from `_STORAGE_SERIES`, once per series and run."""
     logger.warning(
         f"Unknown GCP series {series} in the storage support tables, "
-        "leaving compatible storage empty."
+        "leaving compatible storage unknown."
     )
 
 
-def _compatible_storage_names(server: dict) -> list[str]:
+def _compatible_storage_names(server: dict) -> Optional[list[str]]:
+    """Storage names usable with a server, None for a series missing from the tables."""
     key = _support_key(server)
     if not any(key in series for series in _STORAGE_SERIES.values()):
         _warn_unknown_storage_series(key)
+        return None
     too_small_for_extreme = server["vcpus"] < _EXTREME_MIN_VCPUS.get(key, 0)
     bare_metal_no_throughput = (
         server["name"].endswith("-metal") and key not in _THROUGHPUT_BARE_METAL_OK
@@ -1982,8 +1984,13 @@ def inventory_servers(vendor):
     # (not from the database, which can be missing or stale in a servers-only pull)
     storages = {s["name"]: s["storage_id"] for s in inventory_storages(vendor)}
     for server in servers:
+        names = _compatible_storage_names(server)
+        if names is None:
+            # series missing from the support tables: unknown, not "no storage"
+            server["compatible_storage_ids"] = None
+            continue
         ids = []
-        for name in _compatible_storage_names(server):
+        for name in names:
             if name in storages:
                 ids.append(storages[name])
             else:
@@ -2483,18 +2490,18 @@ def _warn_unknown_tier_storage(family_slug: str) -> None:
     """Warn about a tier missing from `_PG_TIER_STORAGE_IDS`, once per tier and run."""
     logger.warning(
         f"Unknown Cloud SQL tier family of {family_slug} in the storage table, "
-        "leaving compatible storage empty."
+        "leaving compatible storage unknown."
     )
 
 
-def _pg_tier_storage_ids(family_slug: str) -> list[str]:
+def _pg_tier_storage_ids(family_slug: str) -> Optional[list[str]]:
     """Look up the compatible storage ids of a Cloud SQL tier family.
 
-    Returns an empty list for tiers not listed above, so new tiers are not guessed.
+    Returns None for tiers not listed above, so new tiers are not guessed.
     """
     if family_slug not in _PG_TIER_STORAGE_IDS:
         _warn_unknown_tier_storage(family_slug)
-        return []
+        return None
     return list(_PG_TIER_STORAGE_IDS[family_slug])
 
 

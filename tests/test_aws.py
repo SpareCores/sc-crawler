@@ -144,11 +144,14 @@ _API_CATEGORIES = {
 @pytest.fixture(autouse=True)
 def _no_pricing_api_categories():
     """Keep the tests offline: instance categories from a fake Pricing API."""
+    # the cached Pricing API products must not leak between tests
+    _get_server_products.cache_clear()
     with patch(
         "sc_crawler.vendors._aws._server_series_categories",
         return_value=_API_CATEGORIES,
     ):
         yield
+    _get_server_products.cache_clear()
 
 
 def test_aws_extract_rds_storage_size():
@@ -1105,7 +1108,9 @@ def test_aws_compatible_storage_ids_are_all_ebs_types_if_ebs_can_be_attached():
         assert _compatible_storage_ids({"EbsInfo": ebs_info}) == all_ids
     # no EBS volume can be attached
     assert _compatible_storage_ids({"EbsInfo": {"MaximumEbsAttachments": 0}}) == []
-    assert _compatible_storage_ids({}) == []
+    # not reported: unknown
+    assert _compatible_storage_ids({}) is None
+    assert _compatible_storage_ids({"EbsInfo": {}}) is None
 
 
 def test_aws_database_compatible_storage_ids_from_orderable_options():
@@ -1120,4 +1125,6 @@ def test_aws_database_compatible_storage_ids_from_orderable_options():
     ]
     # in the order of the database storage mapping, without duplicates
     assert _database_compatible_storage_ids(options) == ["gp2", "gp3", "io2"]
-    assert _database_compatible_storage_ids([]) == []
+    # options without a known storage type: none, no options at all: unknown
+    assert _database_compatible_storage_ids([{"StorageType": "aurora"}]) == []
+    assert _database_compatible_storage_ids([]) is None

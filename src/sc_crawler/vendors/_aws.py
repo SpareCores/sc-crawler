@@ -711,7 +711,7 @@ def _instance_family(instance_type: str) -> Optional[str]:
     return family
 
 
-def _compatible_storage_ids(instance_type) -> list[str]:
+def _compatible_storage_ids(instance_type) -> Optional[list[str]]:
     """EBS volume types that can be attached to an instance type.
 
     All of them, if the instance type can attach EBS volumes (`MaximumEbsAttachments`
@@ -722,8 +722,11 @@ def _compatible_storage_ids(instance_type) -> list[str]:
     https://docs.aws.amazon.com/ebs/latest/userguide/provisioned-iops.html
     https://docs.aws.amazon.com/ebs/latest/userguide/hdd-vols.html
     """
-    ebs_info = instance_type.get("EbsInfo") or {}
-    if ebs_info.get("MaximumEbsAttachments", 0) > 0:
+    attachments = (instance_type.get("EbsInfo") or {}).get("MaximumEbsAttachments")
+    if attachments is None:
+        # not reported by the API: unknown, not "no EBS volume can be attached"
+        return None
+    if attachments > 0:
         return list(storage_manual_data)
     return []
 
@@ -2470,13 +2473,16 @@ def _get_rds_instance_products_by_region() -> tuple[
     }
 
 
-def _database_compatible_storage_ids(options: list) -> list[str]:
+def _database_compatible_storage_ids(options: list) -> Optional[list[str]]:
     """Storage types of an RDS instance class from its orderable options.
 
     The `StorageType` of `DescribeOrderableDBInstanceOptions` is the id of the database
     storage (gp2, gp3, io1, io2). Storage types not in the mapping are ignored.
     https://docs.aws.amazon.com/AmazonRDS/latest/APIReference/API_OrderableDBInstanceOption.html
     """
+    if not options:
+        # no orderable options: unknown, not "no storage"
+        return None
     storage_types = {(option.get("StorageType") or "").lower() for option in options}
     return [
         storage_id

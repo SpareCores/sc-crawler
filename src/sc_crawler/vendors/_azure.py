@@ -2349,23 +2349,32 @@ def _pg_supported_storage_ids(location: str) -> frozenset[str]:
     return frozenset(ids)
 
 
-def _pg_edition_storage_ids(edition) -> set[str]:
-    """Data storage types of a flexible server edition in one location.
+def _pg_supported_storage_editions(edition) -> list:
+    """Storage editions of a flexible server edition that can be used in one location.
 
     Storage editions marked as not supported in the location are skipped. Premium SSD v2
     is for the General Purpose and Memory Optimized editions only, although the API
     lists it for Burstable as well:
     https://learn.microsoft.com/en-us/azure/postgresql/compute-storage/concepts-storage-premium-ssd-v2
     """
-    storage_ids = set()
-    for storage_edition in getattr(edition, "supported_storage_editions", None) or []:
-        if getattr(storage_edition, "reason", None) == _PG_UNSUPPORTED_STORAGE_REASON:
-            continue
-        if edition.name == "Burstable" and storage_edition.name == "ManagedDiskV2":
-            continue
-        if storage_edition.name:
-            storage_ids.add(storage_edition.name)
-    return storage_ids
+    return [
+        storage_edition
+        for storage_edition in getattr(edition, "supported_storage_editions", None)
+        or []
+        if getattr(storage_edition, "reason", None) != _PG_UNSUPPORTED_STORAGE_REASON
+        and not (
+            edition.name == "Burstable" and storage_edition.name == "ManagedDiskV2"
+        )
+    ]
+
+
+def _pg_edition_storage_ids(edition) -> set[str]:
+    """Data storage types of a flexible server edition in one location."""
+    return {
+        storage_edition.name
+        for storage_edition in _pg_supported_storage_editions(edition)
+        if storage_edition.name
+    }
 
 
 _PG_ARM_SERIES_RE = recompile(
@@ -2598,15 +2607,7 @@ def inventory_databases(vendor):
                     # https://learn.microsoft.com/en-us/azure/postgresql/compute-storage/concepts-storage-premium-ssd-v2
                     sizes_gb = [
                         round(int(size_mb) / 1024 * _GIB_TO_GB)
-                        for storage_edition in (
-                            getattr(edition, "supported_storage_editions", None) or []
-                        )
-                        if getattr(storage_edition, "reason", None)
-                        != _PG_UNSUPPORTED_STORAGE_REASON
-                        and not (
-                            edition.name == "Burstable"
-                            and storage_edition.name == "ManagedDiskV2"
-                        )
+                        for storage_edition in _pg_supported_storage_editions(edition)
                         for storage_mb in (
                             getattr(storage_edition, "supported_storage_mb", None) or []
                         )
@@ -2778,8 +2779,11 @@ def inventory_databases(vendor):
                 "engine_versions": facts["engine_versions"],
                 "family": _pg_edition_family(edition_name),
                 "series": series,
-                "compatible_storage_ids": sorted(
-                    storage_ids_by_edition.get(edition_name, ())
+                # unknown (None) for an edition the capabilities API did not list
+                "compatible_storage_ids": (
+                    sorted(storage_ids_by_edition[edition_name])
+                    if edition_name in storage_ids_by_edition
+                    else None
                 ),
                 "vcpus": vcpus,
                 "memory_amount": memory_amount,
