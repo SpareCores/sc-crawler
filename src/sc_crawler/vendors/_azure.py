@@ -2199,9 +2199,9 @@ _PG_UNSUPPORTED_STORAGE_REASON = (
 def _pg_supported_storage_ids(location: str) -> frozenset[str]:
     ids: set[str] = set()
     for capability in _pg_capabilities(location):
-        for edition in getattr(capability, "supported_server_editions", None) or []:
+        for edition in getattr(capability, "supportedServerEditions", None) or []:
             for storage_edition in (
-                getattr(edition, "supported_storage_editions", None) or []
+                getattr(edition, "supportedStorageEditions", None) or []
             ):
                 if (
                     getattr(storage_edition, "reason", None)
@@ -2370,7 +2370,7 @@ def _pg_hourly_compute_price(
 
 def _pg_engine_versions(capability) -> list[str]:
     versions = []
-    for version in getattr(capability, "supported_server_versions", None) or []:
+    for version in getattr(capability, "supportedServerVersions", None) or []:
         name = version.name
         if not name or getattr(version, "status", None) == "Disabled":
             continue
@@ -2416,12 +2416,12 @@ def inventory_databases(vendor):
                 features = {
                     getattr(feature, "name", None): getattr(feature, "status", None)
                     == "Enabled"
-                    for feature in getattr(capability, "supported_features", None) or []
+                    for feature in getattr(capability, "supportedFeatures", None) or []
                 }
                 shared = {
                     "engine_versions": _pg_engine_versions(capability),
                     "storage_extra_autosize": {"Enabled": True, "Disabled": False}.get(
-                        getattr(capability, "storage_auto_growth_supported", None),
+                        getattr(capability, "storageAutoGrowthSupported", None),
                         features.get("StorageAutoGrowth"),
                     ),
                     # IndexTuning → advice; AdaptiveAutoVacuumAutoApply → apply (vacuum GUCs).
@@ -2435,15 +2435,15 @@ def inventory_databases(vendor):
                     ),
                 }
                 for edition in (
-                    getattr(capability, "supported_server_editions", None) or []
+                    getattr(capability, "supportedServerEditions", None) or []
                 ):
-                    # Azure storage_size_mb values are MiB.
+                    # Azure storageSizeMb values are MiB.
                     # Premium SSD v2 is General Purpose and Memory Optimized only, Burstable is capped by Premium SSD (~32 TiB).
                     # https://learn.microsoft.com/en-us/azure/postgresql/compute-storage/concepts-storage-premium-ssd-v2
                     sizes_gb = [
                         round(int(size_mb) / 1024 * _GIB_TO_GB)
                         for storage_edition in (
-                            getattr(edition, "supported_storage_editions", None) or []
+                            getattr(edition, "supportedStorageEditions", None) or []
                         )
                         if getattr(storage_edition, "reason", None)
                         != _PG_UNSUPPORTED_STORAGE_REASON
@@ -2452,22 +2452,22 @@ def inventory_databases(vendor):
                             and storage_edition.name == "ManagedDiskV2"
                         )
                         for storage_mb in (
-                            getattr(storage_edition, "supported_storage_mb", None) or []
+                            getattr(storage_edition, "supportedStorageMb", None) or []
                         )
                         for size_mb in (
-                            getattr(storage_mb, "storage_size_mb", None),
-                            getattr(storage_mb, "maximum_storage_size_mb", None),
+                            getattr(storage_mb, "storageSizeMb", None),
+                            getattr(storage_mb, "maximumStorageSizeMb", None),
                         )
                         if size_mb is not None
                     ]
                     shared["storage_extra_min"] = min(sizes_gb, default=None)
                     shared["storage_extra_max"] = max(sizes_gb, default=None)
-                    for sku in getattr(edition, "supported_server_skus", None) or []:
+                    for sku in getattr(edition, "supportedServerSkus", None) or []:
                         # https://learn.microsoft.com/en-us/azure/postgresql/high-availability/concepts-high-availability
                         # Burstable does not support HA (the API may still list modes).
                         ha_modes = {
                             getattr(mode, "value", str(mode))
-                            for mode in getattr(sku, "supported_ha_mode", None) or []
+                            for mode in getattr(sku, "supportedHaMode", None) or []
                         }
                         ha = [DatabaseHaLevel.NONE]
                         if edition.name != "Burstable":
@@ -2486,10 +2486,10 @@ def inventory_databases(vendor):
                         facts = {
                             **shared,
                             "edition": edition.name,
-                            "vcpus": int(sku.v_cores) if sku.v_cores else None,
+                            "vcpus": int(sku.vCores) if sku.vCores else None,
                             "memory_amount": (
-                                int(sku.supported_memory_per_vcore_mb * sku.v_cores)
-                                if sku.v_cores and sku.supported_memory_per_vcore_mb
+                                int(sku.supportedMemoryPerVcoreMb * sku.vCores)
+                                if sku.vCores and sku.supportedMemoryPerVcoreMb
                                 else None
                             ),
                             "ha": ha,
@@ -2678,7 +2678,7 @@ def inventory_database_prices(vendor):
     whenever Retail has a meter for a known instance in that region.
 
     OfferRestricted=Enabled means this subscription cannot list or provision
-    Flexible Server SKUs there (empty supported_server_editions), so capabilities
+    Flexible Server SKUs there (empty supportedServerEditions), so capabilities
     give no confirmed region availability. Retail list prices may still exist;
     we keep those rows.
     https://learn.microsoft.com/en-us/azure/postgresql/troubleshoot/how-to-resolve-capacity-errors
@@ -2770,10 +2770,10 @@ def inventory_database_storages(vendor):
         with sentry_capture_or_raise(vendor=vendor):
             for capability in _pg_capabilities(location):
                 for edition in (
-                    getattr(capability, "supported_server_editions", None) or []
+                    getattr(capability, "supportedServerEditions", None) or []
                 ):
                     for storage_edition in (
-                        getattr(edition, "supported_storage_editions", None) or []
+                        getattr(edition, "supportedStorageEditions", None) or []
                     ):
                         if (
                             getattr(storage_edition, "reason", None)
@@ -2788,35 +2788,35 @@ def inventory_database_storages(vendor):
                         max_iops_values: list[int] = []
                         max_throughput = None
                         default_mb = getattr(
-                            storage_edition, "default_storage_size_mb", None
+                            storage_edition, "defaultStorageSizeMb", None
                         )
                         if default_mb is not None:
                             sizes_mb.append(int(default_mb))
-                        for storage_mb in storage_edition.supported_storage_mb or []:
-                            size = getattr(storage_mb, "storage_size_mb", None)
+                        for storage_mb in storage_edition.supportedStorageMb or []:
+                            size = getattr(storage_mb, "storageSizeMb", None)
                             if size is not None:
                                 sizes_mb.append(int(size))
                             maximum_size = getattr(
-                                storage_mb, "maximum_storage_size_mb", None
+                                storage_mb, "maximumStorageSizeMb", None
                             )
                             if maximum_size is not None:
                                 sizes_mb.append(int(maximum_size))
-                            iops = getattr(storage_mb, "supported_iops", None)
+                            iops = getattr(storage_mb, "supportedIops", None)
                             if iops is not None:
                                 max_iops_values.append(int(iops))
                             maximum_iops = getattr(
-                                storage_mb, "supported_maximum_iops", None
+                                storage_mb, "supportedMaximumIops", None
                             )
                             if maximum_iops is not None:
                                 max_iops_values.append(int(maximum_iops))
                             for tier in (
-                                getattr(storage_mb, "supported_iops_tiers", None) or []
+                                getattr(storage_mb, "supportedIopsTiers", None) or []
                             ):
                                 tier_iops = getattr(tier, "iops", None)
                                 if tier_iops is not None:
                                     max_iops_values.append(int(tier_iops))
                             throughput = getattr(
-                                storage_mb, "supported_maximum_throughput", None
+                                storage_mb, "supportedMaximumThroughput", None
                             )
                             if throughput is not None:
                                 max_throughput = max(
@@ -2824,7 +2824,7 @@ def inventory_database_storages(vendor):
                                 )
 
                         bounds = {
-                            # Azure storage_size_mb values are MiB
+                            # Azure storageSizeMb values are MiB
                             "min_size": (
                                 round(min(sizes_mb) / 1024 * _GIB_TO_GB)
                                 if sizes_mb
