@@ -125,7 +125,14 @@ class AcceleratorType(str, Enum):
     GPU = "GPU"
     """Graphics Processing Unit."""
     TPU = "TPU"
-    """Tensor Processing Unit."""
+    """Tensor Processing Unit (Google only)."""
+    NPU = "NPU"
+    """Neural Processing Unit: AI chip other than a (Google) TPU, e.g. AWS
+    Inferentia and Trainium, Habana Gaudi or Qualcomm AI100."""
+    FPGA = "FPGA"
+    """Field-Programmable Gate Array, e.g. Xilinx Virtex UltraScale+."""
+    VPU = "VPU"
+    """Video Processing Unit: video transcoding card, e.g. Xilinx U30."""
 
 
 class Accelerator(Json):

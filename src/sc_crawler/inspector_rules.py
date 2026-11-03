@@ -214,9 +214,11 @@ def block_reasons(
                 "We experienced performance issues while running this task on this server type."
             )
         if task in ["nvidia_smi", "nvbandwidth"]:
-            if (
-                resource.accelerator_count == 0
-                or resource.accelerator_type == AcceleratorType.TPU
+            if resource.accelerator_count == 0 or resource.accelerator_type in (
+                AcceleratorType.TPU,
+                AcceleratorType.NPU,
+                AcceleratorType.FPGA,
+                AcceleratorType.VPU,
             ):
                 results[task].append("No GPUs available.")
             # TODO these failed in the past, we should revisit if recent updates (e.g. newer drivers) fixed them

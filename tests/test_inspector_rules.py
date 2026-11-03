@@ -1,6 +1,8 @@
 import math
 from types import SimpleNamespace
 
+import pytest
+
 from sc_crawler.inspector_rules import (
     block_reasons,
     has_related_database,
@@ -159,8 +161,17 @@ def test_nvidia_tasks_blocked_without_gpus():
     assert reasons["membench"] == []
 
 
-def test_nvidia_tasks_blocked_for_tpus():
-    server = _server(accelerator_count=4, accelerator_type=AcceleratorType.TPU)
+@pytest.mark.parametrize(
+    "accelerator_type",
+    [
+        AcceleratorType.TPU,
+        AcceleratorType.NPU,
+        AcceleratorType.FPGA,
+        AcceleratorType.VPU,
+    ],
+)
+def test_nvidia_tasks_blocked_for_non_gpu_accelerators(accelerator_type):
+    server = _server(accelerator_count=4, accelerator_type=accelerator_type)
     reasons = block_reasons(server, ["nvidia_smi", "nvbandwidth"])
     assert reasons["nvidia_smi"] == ["No GPUs available."]
     assert reasons["nvbandwidth"] == ["No GPUs available."]
