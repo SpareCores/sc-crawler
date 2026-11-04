@@ -12,6 +12,9 @@ Fix(es):
 - `Azure`: keep ConfidentialVM Flexible Server SKUs only from ACC regions
   (West Europe / UAE North), drop billing-only Retail series not in
   capabilities (e.g. `Mdsv2`).
+- Inspector rules: drop the Azure PostgreSQL family blocklist
+  (`_AZURE_UNSUPPORTED_DATABASE_FAMILIES`), as those SKUs are no longer
+  inventoried.
 - `Azure`: price PostgreSQL compute from the `1 vCore` meter (as the pricing
   page does), as some sized meters are stale.
 - `Azure`: label `Mdsv2` PostgreSQL SKUs as `MemoryOptimized`.
