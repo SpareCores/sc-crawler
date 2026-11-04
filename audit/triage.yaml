@@ -108,6 +108,68 @@ entries:
     by: bridgend84
     evidence: audit-runs/2026-10-31.tar.xz
     date: 2026-11-02
+  - vendor: aws
+    type: SPEC_MISMATCH
+    field: memory_gib
+    match: "db\\.m8g\\.(12|16|24)xlarge"
+    verdict: confirmed
+    note: "RDS docs and our EC2 m8g servers say 192/256/384 GiB; ours (256/384/512) come from the RDS Price List 'memory' attribute, which is wrong for these classes (the pricing page feed has the same values). _aws.inventory_databases reads product['memory']; the linked EC2 server's memory would be right."
+    by: claude (cursor)
+    evidence: audit-runs/2026-11-04.tar.xz
+    date: 2026-11-04
+  - vendor: aws
+    type: SPEC_MISMATCH
+    field: storage_gb
+    page: "^rds-instance-classes$"
+    verdict: to_verify
+    note: "Ours = docs x 1.074 for all classes with instance storage. The RDS docs label the column GiB, _extract_rds_bundled_storage_size converts it to GB, but the EC2 docs give the same disks in GB (e.g. r6gd.large '1 x 118 GB') and our EC2 server stores 118 while db.r6gd.large stores 127. Check the real disk size, then align servers and databases."
+    by: claude (cursor)
+    evidence: audit-runs/2026-11-04.tar.xz
+    date: 2026-11-04
+  - vendor: aws
+    type: SPEC_MISMATCH
+    field: network_gbps
+    match: "i8ge\\.(48xlarge|metal-48xl)"
+    verdict: to_verify
+    note: "Docs network table says 180 Gigabit; ours (300) is from describe-instance-types."
+    by: claude (cursor)
+    evidence: audit-runs/2026-11-04.tar.xz
+    date: 2026-11-04
+  - vendor: aws
+    type: SPEC_MISMATCH
+    field: network_gbps
+    page: "^ec2-ondemand-.*"
+    verdict: expected
+    note: "Pricing page feed has outdated network specs (r4/i3/h1.8xlarge 10 vs 12 Gbps); the docs pages are authoritative."
+    by: claude (cursor)
+    evidence: audit-runs/2026-11-04.tar.xz
+    date: 2026-11-04
+  - vendor: aws
+    type: VALUE_MISSING_IN_DB
+    field: gpu_memory_total_gib
+    match: "(inf|trn|vt|f2|dl2q)\\d*n?\\..*"
+    verdict: confirmed
+    note: "Accelerator memory of non-GPU accelerators (Inferentia, Trainium, FPGA, media accelerators); same cause as the accelerator count entry above (DEV-1015)."
+    by: claude (cursor)
+    evidence: audit-runs/2026-11-04.tar.xz
+    date: 2026-11-04
+  - vendor: aws
+    type: NOT_AT_VENDOR
+    field: ondemand price
+    match: "d2\\..*"
+    verdict: expected
+    note: "The pricing page feed has no d2 rows (it leaves out previous-generation types); the Price List API, which our ingest reads, prices them."
+    by: claude (cursor)
+    evidence: audit-runs/2026-11-04.tar.xz
+    date: 2026-11-04
+  - vendor: aws
+    type: FEATURE_MISMATCH
+    field: sla
+    verdict: expected
+    note: "Single SLA value per SKU (best case, 99.95 with Multi-AZ) vs per-deployment SLAs in the docs (Single-AZ 99.5)."
+    by: claude (cursor)
+    evidence: audit-runs/2026-11-04.tar.xz
+    date: 2026-11-04
 
   # ---------------------------------------------------------------- gcp
   - vendor: gcp
@@ -155,6 +217,72 @@ entries:
     date: 2026-11-02
   - vendor: gcp
     type: NOT_AT_VENDOR
+    match: "db-perf-optimized-C4D-\\d+"
+    verdict: to_verify
+    note: "New Cloud SQL C4D tiers (not in the 2026-11-04 prod DB); the machine series docs list N2, C4A and C4 only for Enterprise Plus. Check sqladmin tiers.list."
+    by: claude (cursor)
+    evidence: audit-runs/2026-11-04.tar.xz
+    date: 2026-11-04
+  - vendor: gcp
+    type: MISSING_IN_DB
+    match: "v3-\\d+"
+    page: "^tpu-v3$"
+    verdict: expected
+    note: "TPU v3 slice names; we store TPU VM machine types (ct3-hightpu-4t, ct3p-hightpu-4t)."
+    by: claude (cursor)
+    evidence: audit-runs/2026-11-04.tar.xz
+    date: 2026-11-04
+  - vendor: gcp
+    type: MISSING_IN_DB
+    match: "z3-highmem-88-standard"
+    verdict: false_positive
+    note: "Typo in the Local SSD docs table; the other tables and the pricing page say z3-highmem-88-standardlssd."
+    by: claude (cursor)
+    evidence: audit-runs/2026-11-04.tar.xz
+    date: 2026-11-04
+  - vendor: gcp
+    type: MISSING_IN_DB
+    match: "nvidia-tesla-v100"
+    page: "^gpus$"
+    verdict: to_verify
+    note: "N1 attachable V100 (1/2/4/8 GPUs) is not in our data, unlike the other attachable types on the page (P4, T4)."
+    by: claude (cursor)
+    evidence: audit-runs/2026-11-04.tar.xz
+    date: 2026-11-04
+  - vendor: gcp
+    type: PRICE_MISSING_IN_DB
+    match: "(c4d-highcpu-384-metal|z4d-highmem-384-standardlssd-metal)"
+    verdict: to_verify
+    note: "Priced in us-central1 on the pricing pages. Ours: z4d-highmem-384-standardlssd-metal is ACTIVE without any price; c4d-highcpu-384-metal has prices in other regions only (not offered in us-central1 zones, or a missing billing SKU?)."
+    by: claude (cursor)
+    evidence: audit-runs/2026-11-04.tar.xz
+    date: 2026-11-04
+  - vendor: gcp
+    type: SPEC_MISMATCH
+    field: storage_gb
+    verdict: false_positive
+    note: "Unit only: the docs give Local SSD in GiB (375 GiB disks) and the extraction keeps them as displayed, while we store GB (~7.4% higher)."
+    by: claude (cursor)
+    evidence: audit-runs/2026-11-04.tar.xz
+    date: 2026-11-04
+  - vendor: gcp
+    type: FEATURE_MISMATCH
+    field: storage_extra_max_gb
+    verdict: expected
+    note: "We store the limits in GB, reading the docs' 64 TB and 3054 GB as binary units (64 TiB = 70368 GB, 3054 GiB = 3279 GB)."
+    by: claude (cursor)
+    evidence: audit-runs/2026-11-04.tar.xz
+    date: 2026-11-04
+  - vendor: gcp
+    type: FEATURE_MISMATCH
+    field: max_read_replicas
+    verdict: to_verify
+    note: "Ours are 0 for the shared-core tiers (db-f1-micro, db-g1-small; _PG_SHARED_TIERS in _gcp.py); the replication docs state up to 10 replicas without a shared-core exception."
+    by: claude (cursor)
+    evidence: audit-runs/2026-11-04.tar.xz
+    date: 2026-11-04
+  - vendor: gcp
+    type: NOT_AT_VENDOR
     match: "db-(n1-(standard|highmem)|memory-optimized-N)-\\d+"
     verdict: false_positive
     note: "Legacy Cloud SQL tiers not mentioned by the current machine series docs (Enterprise: shared-core, general purpose, N4; Enterprise Plus: N2, C4A, C4). May still be creatable via the API: verify, or mark as deprecated. Still offered: sqladmin tiers.list returns db-n1-standard/highmem and db-memory-optimized-N tiers in 40-43 regions (2026-11-02)."
@@ -170,6 +298,48 @@ entries:
     by: bridgend84
     evidence: audit-runs/2026-10-31.tar.xz
     date: 2026-11-02
+  - vendor: alicloud
+    match: "ecs\\.g7nex\\.large"
+    verdict: false_positive
+    note: "SKU matching paired the page's g7nex.large with our g7ne.xlarge (same name without separators) although we have g7nex.large; the matcher should prefer the exact name."
+    by: claude (cursor)
+    evidence: audit-runs/2026-11-04.tar.xz
+    date: 2026-11-04
+  - vendor: alicloud
+    type: SPEC_MISMATCH
+    field: gpu_model
+    match: "ecs\\.gn9gc.*"
+    verdict: false_positive
+    note: "The docs name only the architecture (NVIDIA Blackwell); we store it as the GPU family and leave the model empty (_alicloud.py GPUSpec mapping)."
+    by: claude (cursor)
+    evidence: audit-runs/2026-11-04.tar.xz
+    date: 2026-11-04
+  - vendor: alicloud
+    type: SPEC_MISMATCH
+    field: storage_gb
+    match: "ecs\\.i4p\\..*"
+    verdict: false_positive
+    note: "Extraction read the 'Persistent memory (GiB)' column as local storage."
+    by: claude (cursor)
+    evidence: audit-runs/2026-11-04.tar.xz
+    date: 2026-11-04
+  - vendor: alicloud
+    type: SPEC_MISMATCH
+    field: storage_gb
+    match: "ecs\\.hpc6id\\..*"
+    verdict: to_verify
+    note: "Docs list 2 x 3840 GB local disks; ours is 0 (INACTIVE type)."
+    by: claude (cursor)
+    evidence: audit-runs/2026-11-04.tar.xz
+    date: 2026-11-04
+  - vendor: alicloud
+    type: MISSING_IN_DB
+    match: "ecs\\.(ebmre6-6t\\.52xlarge|gn6e-c12g1\\.6xlarge|re4e\\.40xlarge|re6\\.32xlarge)"
+    verdict: to_verify
+    note: "Documented but neither in our data nor in our local DescribeInstanceTypes dump (2026-05): retired or restricted sizes?"
+    by: claude (cursor)
+    evidence: audit-runs/2026-11-04.tar.xz
+    date: 2026-11-04
   - vendor: alicloud
     type: STATUS_MISMATCH
     verdict: expected
@@ -187,6 +357,23 @@ entries:
     by: bridgend84
     evidence: audit-runs/2026-10-31.tar.xz
     date: 2026-11-02
+  - vendor: upcloud
+    type: FEATURE_MISMATCH
+    field: continuous_backups_days
+    verdict: expected
+    note: "The 3 and 15 day values are legacy bundled plans, which the backups page says keep 3, 15 or 31 days depending on the plan; flexible plans have 31 (Extended tier)."
+    by: claude (cursor)
+    evidence: audit-runs/2026-11-04.tar.xz
+    date: 2026-11-04
+  - vendor: upcloud
+    type: SPEC_MISMATCH
+    field: storage_gb
+    page: "^postgresql-configurations$"
+    verdict: false_positive
+    note: "Per-node storage was fixed in fcfb725 (prod had e.g. 537 for 2x16xCPU-64GB-1000GB, fresh has 1074). Remaining ~7.4% is the intentional GiB→GB conversion (API values are GiB, plan names/docs say GB)."
+    by: claude (cursor)
+    evidence: audit-runs/2026-11-04.tar.xz
+    date: 2026-11-04
 
   # ---------------------------------------------------------------- ovh
   - vendor: ovh
@@ -197,6 +384,16 @@ entries:
     by: bridgend84
     evidence: audit-runs/2026-10-31.tar.xz
     date: 2026-11-02
+  - vendor: ovh
+    type: PRICE_MISSING_IN_DB
+    field: ondemand price
+    region: GRA
+    page: "^prices$"
+    verdict: false_positive
+    note: "sources.yaml sets price_region: GRA for the prices page, but GRA only has database prices for us; instance prices are in GRA7/GRA9/GRA11 (same values in all regions)."
+    by: claude (cursor)
+    evidence: audit-runs/2026-11-04.tar.xz
+    date: 2026-11-04
   - vendor: ovh
     type: FEATURE_MISMATCH
     verdict: false_positive
@@ -291,3 +488,123 @@ entries:
     by: bridgend84
     evidence: audit-runs/2026-10-31.tar.xz
     date: 2026-10-31
+  - vendor: azure
+    type: SPEC_MISMATCH
+    field: gpu_memory_total_gib
+    verdict: confirmed
+    note: "Ours are 6.9% below the docs for all GPU sizes: _azure._gpu_spec converts the docs' GPU memory (e.g. H100 80 GB) with convert_gb_to_mib as decimal GB (76293 MiB), while AWS stores the same H100 as 81920 MiB. GPU memory 'GB' is GiB; use memory * 1024."
+    by: claude (cursor)
+    evidence: audit-runs/2026-11-04.tar.xz
+    date: 2026-11-04
+  - vendor: azure
+    type: SPEC_MISMATCH
+    field: gpu_model
+    match: "Standard_ND128isr(_NDR)?_GB[23]00_v6"
+    verdict: false_positive
+    note: "Naming only: the docs give the architecture (Blackwell / Blackwell Ultra), we store GB200 / GB300."
+    by: claude (cursor)
+    evidence: audit-runs/2026-11-04.tar.xz
+    date: 2026-11-04
+  - vendor: azure
+    type: SPEC_MISMATCH
+    field: cpu_model
+    ours: "6973P-C"
+    verdict: false_positive
+    note: "Same CPU (Xeon 6 6973P-C, written 6973PC on some pages); the model number comparison trips on the 'Xeon 6' generation prefix or the missing hyphen."
+    by: claude (cursor)
+    evidence: audit-runs/2026-11-04.tar.xz
+    date: 2026-11-04
+  - vendor: azure
+    type: SPEC_MISMATCH
+    field: cpu_manufacturer
+    match: "Standard_M16lds_v4"
+    verdict: false_positive
+    note: "Spec matching paired the Preview size M16lds_v4 (not in our data) with Standard_E32-16as_v4 (16 vCPUs, 256 GiB)."
+    by: claude (cursor)
+    evidence: audit-runs/2026-11-04.tar.xz
+    date: 2026-11-04
+  - vendor: azure
+    type: SOURCE_CONFLICT
+    field: memory_gib
+    match: "(Standard_)?E96ads_v6"
+    page: "^postgresql-compute$"
+    verdict: false_positive
+    note: "The PostgreSQL compute page says 672 GiB; the VM size docs and the Resource SKUs API say 768 GiB."
+    by: claude (cursor)
+    evidence: audit-runs/2026-11-04.tar.xz
+    date: 2026-11-04
+  - vendor: azure
+    type: MISSING_IN_DB
+    match: "Standard_(E\\d+i?bds_v6|M\\d+(bds|bs|lds|ls)(_\\d+)?_v4)"
+    verdict: expected
+    note: "Preview series (Ebdsv6, Mbsv4, Mbdsv4, Msv4, Mdsv4 per the page titles), not in the Resource SKUs API for our subscription."
+    by: claude (cursor)
+    evidence: audit-runs/2026-11-04.tar.xz
+    date: 2026-11-04
+  - vendor: azure
+    type: MISSING_IN_DB
+    match: "Standard_(M(896|1792)ixds_\\d+_v3|ND128isrG5_GB300_v6|NV28adms_V710_v5)"
+    verdict: to_verify
+    note: "Documented but not in our data. NV28adms_V710_v5 was in our Resource SKUs dump of 2026-04 (1 location); check whether these are restricted for our subscription."
+    by: claude (cursor)
+    evidence: audit-runs/2026-11-04.tar.xz
+    date: 2026-11-04
+  - vendor: azure
+    type: STATUS_MISMATCH
+    page: "^sizes-toc/(dcadsccv5|dcasccv5|ecasccv5-ecadsccv5|av2|fsv2|lsv2)-series$"
+    verdict: expected
+    note: "Size pages don't state the lifecycle; the retirement pages agree with ours (DC/EC*_cc_v5 retired on 2026-09-01; Av2, Fsv2, Lsv2 retirement announced for 2028-11-15 on retired-sizes)."
+    by: claude (cursor)
+    evidence: audit-runs/2026-11-04.tar.xz
+    date: 2026-11-04
+  - vendor: azure
+    type: SPEC_MISMATCH
+    field: storage_gb
+    page: "^sizes-toc/eav4-series$"
+    verdict: false_positive
+    note: "The Eav4 temp disk column repeats the memory size (E16a_v4: 128); ours (400 GiB) is from the Resource SKUs API."
+    by: claude (cursor)
+    evidence: audit-runs/2026-11-04.tar.xz
+    date: 2026-11-04
+  - vendor: azure
+    type: SPEC_MISMATCH
+    field: storage_gb
+    match: "Standard_(HB.*|ND96.*|NG\\d+.*|L96aos_v5)"
+    verdict: false_positive
+    note: "Extraction took the temp disk only (or the per-disk size times the disk count for L96aos_v5, contradicting the page's 720 GB per vCPU); ours sum the temp disk and the NVMe disks."
+    by: claude (cursor)
+    evidence: audit-runs/2026-11-04.tar.xz
+    date: 2026-11-04
+  - vendor: azure
+    type: SPEC_MISMATCH
+    field: storage_gb
+    match: "Standard_(E64as_v4|EC96ads_v6|NCC40ads_H100_v5|NV\\d+s_v3|ND128isr(_NDR)?_GB[23]00_v6)"
+    verdict: expected
+    note: "Same class as the memory_gib entry: Resource SKUs API vs docs disagree on temp disk (e.g. E64as_v4 1024 vs 864 GiB, EC96ads_v6 3600 vs 2400 GiB, NV12s_v3 320 vs 736 GiB). We store the API value."
+    by: claude (cursor)
+    evidence: audit-runs/2026-11-04.tar.xz
+    date: 2026-11-04
+  - vendor: azure
+    type: SPEC_MISMATCH
+    field: storage_gb
+    verdict: false_positive
+    note: "Unit only: the docs give temp disks in GiB and the extraction keeps them as displayed, while we store GB (MiB API values converted since c5cd123), so ours are ~7.4% higher."
+    by: claude (cursor)
+    evidence: audit-runs/2026-11-04.tar.xz
+    date: 2026-11-04
+  - vendor: azure
+    type: MISSING_IN_DB
+    page: "^regions$"
+    verdict: to_verify
+    note: "New regions on the docs page (Southeast Asia 3 / southeastasia3, Taiwan North / taiwannorth) not in our data: probably not enabled for our subscription."
+    by: claude (cursor)
+    evidence: audit-runs/2026-11-04.tar.xz
+    date: 2026-11-04
+  - vendor: azure
+    type: VALUE_MISSING_IN_DB
+    field: network_gbps
+    verdict: expected
+    note: "We don't store Azure network bandwidth (not in the Resource SKUs API)."
+    by: claude (cursor)
+    evidence: audit-runs/2026-11-04.tar.xz
+    date: 2026-11-04
