@@ -18,6 +18,7 @@ def _device(name, manufacturer, count, memory):
     "instance_type,expected",
     [
         ({}, (0, 0, 0, None, None, None)),
+        ({"FpgaInfo": {"TotalFpgaMemoryInMiB": 0}}, (0, 0, 0, None, None, None)),
         (
             {
                 "GpuInfo": {

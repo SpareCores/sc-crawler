@@ -636,10 +636,10 @@ def _accelerators_of_instance_type(instance_type):
                 "Manufacturer": device.get("Manufacturer", "AWS"),
                 "Memory": device["MemoryInfo"]["SizeInMiB"],
             }
-            for device in info[devices_key]
+            for device in info.get(devices_key) or []
         ]
         # Habana Gaudi (dl1) is listed among the GPUs
-        if "Gaudi" in devices[0]["Name"]:
+        if devices and "Gaudi" in devices[0]["Name"]:
             acc_type = AcceleratorType.NPU
         return acc_type, devices, info[total_key]
     return None, [], 0
