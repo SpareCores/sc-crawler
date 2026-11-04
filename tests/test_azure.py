@@ -270,23 +270,23 @@ def test_azure_inventory_databases_autotuning_from_supported_features():
     def _sku(name, v_cores=2):
         return SimpleNamespace(
             name=name,
-            v_cores=v_cores,
-            supported_memory_per_vcore_mb=4096,
-            supported_ha_mode=[],
+            vCores=v_cores,
+            supportedMemoryPerVcoreMb=4096,
+            supportedHaMode=[],
         )
 
     capability = SimpleNamespace(
-        supported_server_versions=[SimpleNamespace(name="16", status="Available")],
-        storage_auto_growth_supported=None,
-        supported_features=[
+        supportedServerVersions=[SimpleNamespace(name="16", status="Available")],
+        storageAutoGrowthSupported=None,
+        supportedFeatures=[
             SimpleNamespace(name="IndexTuning", status="Enabled"),
             SimpleNamespace(name="AdaptiveAutoVacuumAutoApply", status="Enabled"),
         ],
-        supported_server_editions=[
+        supportedServerEditions=[
             SimpleNamespace(
                 name="GeneralPurpose",
-                supported_storage_editions=[],
-                supported_server_skus=[_sku("Standard_D2s_v3")],
+                supportedStorageEditions=[],
+                supportedServerSkus=[_sku("Standard_D2s_v3")],
             )
         ],
     )
@@ -305,7 +305,7 @@ def test_azure_inventory_databases_autotuning_from_supported_features():
     assert rows[0]["autotuning_advice"] is True
     assert rows[0]["autotuning_apply"] is True
 
-    capability.supported_features = [
+    capability.supportedFeatures = [
         SimpleNamespace(name="IndexTuning", status="Enabled"),
         SimpleNamespace(name="AdaptiveAutoVacuumAutoApply", status="Disabled"),
     ]
@@ -325,6 +325,42 @@ def test_azure_inventory_databases_autotuning_from_supported_features():
     assert rows[0]["autotuning_apply"] is False
 
 
+def test_azure_inventory_databases_fails_loudly_on_unparsable_capabilities():
+    """Old snake_case keys (SDK < 3 `as_dict()`) must not silently sync 0 rows."""
+    vendor = Mock(vendor_id="azure")
+    vendor.regions = [Mock(region_id="centralus", api_reference="centralus")]
+    vendor.servers = []
+    vendor.progress_tracker = Mock(
+        start_task=Mock(), advance_task=Mock(), hide_task=Mock()
+    )
+    capability = SimpleNamespace(
+        supported_server_editions=[
+            SimpleNamespace(
+                name="GeneralPurpose",
+                supported_storage_editions=[],
+                supported_server_skus=[
+                    SimpleNamespace(name="Standard_D2s_v3", v_cores=2)
+                ],
+            )
+        ],
+    )
+    with (
+        patch.dict("os.environ", {}, clear=False) as env,
+        patch(
+            "sc_crawler.vendors._azure._pg_database_regions",
+            return_value=vendor.regions,
+        ),
+        patch(
+            "sc_crawler.vendors._azure._pg_capabilities",
+            return_value=[capability],
+        ),
+        patch("sc_crawler.vendors._azure._pg_retail_prices", return_value=[]),
+    ):
+        env.pop("SENTRY_DSN", None)
+        with pytest.raises(ValueError, match="parsed no server editions"):
+            azure_databases(vendor)
+
+
 def test_azure_inventory_databases_ha_from_supported_ha_mode():
     vendor = Mock(vendor_id="azure")
     vendor.regions = [Mock(region_id="centralus", api_reference="centralus")]
@@ -333,51 +369,51 @@ def test_azure_inventory_databases_ha_from_supported_ha_mode():
         start_task=Mock(), advance_task=Mock(), hide_task=Mock()
     )
     capability = SimpleNamespace(
-        supported_server_versions=[
+        supportedServerVersions=[
             SimpleNamespace(name="16", status="Available"),
         ],
-        storage_auto_growth_supported="Enabled",
-        supported_features=[],
-        supported_server_editions=[
+        storageAutoGrowthSupported="Enabled",
+        supportedFeatures=[],
+        supportedServerEditions=[
             SimpleNamespace(
                 name="Burstable",
-                supported_storage_editions=[],
-                supported_server_skus=[
+                supportedStorageEditions=[],
+                supportedServerSkus=[
                     SimpleNamespace(
                         name="Standard_B1ms",
-                        v_cores=1,
-                        supported_memory_per_vcore_mb=2048,
-                        supported_ha_mode=["SameZone", "ZoneRedundant"],
+                        vCores=1,
+                        supportedMemoryPerVcoreMb=2048,
+                        supportedHaMode=["SameZone", "ZoneRedundant"],
                     )
                 ],
             ),
             SimpleNamespace(
                 name="GeneralPurpose",
-                supported_storage_editions=[],
-                supported_server_skus=[
+                supportedStorageEditions=[],
+                supportedServerSkus=[
                     SimpleNamespace(
                         name="Standard_D2s_v3",
-                        v_cores=2,
-                        supported_memory_per_vcore_mb=4096,
-                        supported_ha_mode=["SameZone", "ZoneRedundant"],
+                        vCores=2,
+                        supportedMemoryPerVcoreMb=4096,
+                        supportedHaMode=["SameZone", "ZoneRedundant"],
                     ),
                     SimpleNamespace(
                         name="Standard_D4s_v3",
-                        v_cores=4,
-                        supported_memory_per_vcore_mb=4096,
-                        supported_ha_mode=["SameZone"],
+                        vCores=4,
+                        supportedMemoryPerVcoreMb=4096,
+                        supportedHaMode=["SameZone"],
                     ),
                 ],
             ),
             SimpleNamespace(
                 name="MemoryOptimized",
-                supported_storage_editions=[],
-                supported_server_skus=[
+                supportedStorageEditions=[],
+                supportedServerSkus=[
                     SimpleNamespace(
                         name="Standard_E2s_v3",
-                        v_cores=2,
-                        supported_memory_per_vcore_mb=8192,
-                        supported_ha_mode=["ZoneRedundant"],
+                        vCores=2,
+                        supportedMemoryPerVcoreMb=8192,
+                        supportedHaMode=["ZoneRedundant"],
                     )
                 ],
             ),
@@ -486,21 +522,21 @@ def test_azure_inventory_databases_adds_quota_hidden_retail_skus():
         start_task=Mock(), advance_task=Mock(), hide_task=Mock()
     )
     capability = SimpleNamespace(
-        supported_server_versions=[SimpleNamespace(name="16", status="Available")],
-        storage_auto_growth_supported="Enabled",
-        supported_features=[
+        supportedServerVersions=[SimpleNamespace(name="16", status="Available")],
+        storageAutoGrowthSupported="Enabled",
+        supportedFeatures=[
             SimpleNamespace(name="IndexTuning", status="Enabled"),
         ],
-        supported_server_editions=[
+        supportedServerEditions=[
             SimpleNamespace(
                 name="GeneralPurpose",
-                supported_storage_editions=[],
-                supported_server_skus=[
+                supportedStorageEditions=[],
+                supportedServerSkus=[
                     SimpleNamespace(
                         name="Standard_D2s_v3",
-                        v_cores=2,
-                        supported_memory_per_vcore_mb=4096,
-                        supported_ha_mode=["SameZone", "ZoneRedundant"],
+                        vCores=2,
+                        supportedMemoryPerVcoreMb=4096,
+                        supportedHaMode=["SameZone", "ZoneRedundant"],
                     )
                 ],
             )
@@ -592,73 +628,73 @@ def test_azure_burstable_storage_extra_max_excludes_premium_ssd_v2():
     premium_ssd_max_mib = 32_767 * 1024
     premium_ssd_v2_max_mib = 65_536 * 1024
     capability = SimpleNamespace(
-        supported_server_versions=[SimpleNamespace(name="16", status="Available")],
-        storage_auto_growth_supported="Enabled",
-        supported_features=[],
-        supported_server_editions=[
+        supportedServerVersions=[SimpleNamespace(name="16", status="Available")],
+        storageAutoGrowthSupported="Enabled",
+        supportedFeatures=[],
+        supportedServerEditions=[
             SimpleNamespace(
                 name="Burstable",
-                supported_storage_editions=[
+                supportedStorageEditions=[
                     SimpleNamespace(
                         name="ManagedDisk",
                         reason=None,
-                        supported_storage_mb=[
+                        supportedStorageMb=[
                             SimpleNamespace(
-                                storage_size_mb=32 * 1024,
-                                maximum_storage_size_mb=premium_ssd_max_mib,
+                                storageSizeMb=32 * 1024,
+                                maximumStorageSizeMb=premium_ssd_max_mib,
                             )
                         ],
                     ),
                     SimpleNamespace(
                         name="ManagedDiskV2",
                         reason=None,
-                        supported_storage_mb=[
+                        supportedStorageMb=[
                             SimpleNamespace(
-                                storage_size_mb=32 * 1024,
-                                maximum_storage_size_mb=premium_ssd_v2_max_mib,
+                                storageSizeMb=32 * 1024,
+                                maximumStorageSizeMb=premium_ssd_v2_max_mib,
                             )
                         ],
                     ),
                 ],
-                supported_server_skus=[
+                supportedServerSkus=[
                     SimpleNamespace(
                         name="Standard_B2s",
-                        v_cores=2,
-                        supported_memory_per_vcore_mb=2048,
-                        supported_ha_mode=[],
+                        vCores=2,
+                        supportedMemoryPerVcoreMb=2048,
+                        supportedHaMode=[],
                     )
                 ],
             ),
             SimpleNamespace(
                 name="GeneralPurpose",
-                supported_storage_editions=[
+                supportedStorageEditions=[
                     SimpleNamespace(
                         name="ManagedDisk",
                         reason=None,
-                        supported_storage_mb=[
+                        supportedStorageMb=[
                             SimpleNamespace(
-                                storage_size_mb=32 * 1024,
-                                maximum_storage_size_mb=premium_ssd_max_mib,
+                                storageSizeMb=32 * 1024,
+                                maximumStorageSizeMb=premium_ssd_max_mib,
                             )
                         ],
                     ),
                     SimpleNamespace(
                         name="ManagedDiskV2",
                         reason=None,
-                        supported_storage_mb=[
+                        supportedStorageMb=[
                             SimpleNamespace(
-                                storage_size_mb=32 * 1024,
-                                maximum_storage_size_mb=premium_ssd_v2_max_mib,
+                                storageSizeMb=32 * 1024,
+                                maximumStorageSizeMb=premium_ssd_v2_max_mib,
                             )
                         ],
                     ),
                 ],
-                supported_server_skus=[
+                supportedServerSkus=[
                     SimpleNamespace(
                         name="Standard_D2s_v3",
-                        v_cores=2,
-                        supported_memory_per_vcore_mb=4096,
-                        supported_ha_mode=["SameZone"],
+                        vCores=2,
+                        supportedMemoryPerVcoreMb=4096,
+                        supportedHaMode=["SameZone"],
                     )
                 ],
             ),
@@ -1263,9 +1299,9 @@ def test_pg_storage_prices_skip_unsupported_retail_meters():
         "currencyCode": "USD",
     }
     capability = SimpleNamespace(
-        supported_server_editions=[
+        supportedServerEditions=[
             SimpleNamespace(
-                supported_storage_editions=[
+                supportedStorageEditions=[
                     SimpleNamespace(
                         name="ManagedDisk",
                         reason=None,
@@ -1322,7 +1358,7 @@ def test_parse_database_name_series():
 
 def test_pg_engine_versions_from_capability():
     capability = SimpleNamespace(
-        supported_server_versions=[
+        supportedServerVersions=[
             SimpleNamespace(name="15", status="Available"),
             SimpleNamespace(name="16", status="Available"),
             SimpleNamespace(name="14", status="Disabled"),
@@ -1518,23 +1554,23 @@ def test_azure_database_compatible_storage_ids_are_the_union_over_the_regions():
     unsupported = "Specified Storage Edition not supported in this region."
 
     def _storage(name, reason=None):
-        return SimpleNamespace(name=name, reason=reason, supported_storage_mb=[])
+        return SimpleNamespace(name=name, reason=reason, supportedStorageMb=[])
 
     def _capability(storages):
         return SimpleNamespace(
-            supported_server_versions=[SimpleNamespace(name="16", status="Available")],
-            storage_auto_growth_supported=None,
-            supported_features=[],
-            supported_server_editions=[
+            supportedServerVersions=[SimpleNamespace(name="16", status="Available")],
+            storageAutoGrowthSupported=None,
+            supportedFeatures=[],
+            supportedServerEditions=[
                 SimpleNamespace(
                     name="GeneralPurpose",
-                    supported_storage_editions=storages,
-                    supported_server_skus=[
+                    supportedStorageEditions=storages,
+                    supportedServerSkus=[
                         SimpleNamespace(
                             name="Standard_D2s_v3",
-                            v_cores=2,
-                            supported_memory_per_vcore_mb=4096,
-                            supported_ha_mode=[],
+                            vCores=2,
+                            supportedMemoryPerVcoreMb=4096,
+                            supportedHaMode=[],
                         )
                     ],
                 )
