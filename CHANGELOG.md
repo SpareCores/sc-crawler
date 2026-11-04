@@ -10,6 +10,11 @@ Fix(es):
   when Retail only has a per-vCore series meter (phantoms such as `DCasv5` /
   `Dsv6`). Existence comes from capabilities and concrete `Standard_*` retail
   meters only; series meters remain for pricing.
+- `Azure`: keep ConfidentialVM Flexible Server SKUs only when capabilities
+  list them in ACC regions (West Europe / UAE North), so Korea Central
+  `DCadsv6` / `ECadsv6` (same profile, no disabled status) are not inventoried.
+- `Azure`: allow Retail `Standard_*` database sizes only for series already
+  present in capabilities (drops billing-only families such as `Mdsv2`).
 - `Azure`: price PostgreSQL compute from the `1 vCore` meter (as the pricing
   page does), as some sized meters are stale.
 - `Azure`: label `Mdsv2` PostgreSQL SKUs as `MemoryOptimized`.

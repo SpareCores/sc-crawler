@@ -963,7 +963,20 @@ def test_azure_inventory_databases_adds_quota_hidden_concrete_retail_skus():
                         supportedHaMode=["SameZone", "ZoneRedundant"],
                     )
                 ],
-            )
+            ),
+            # Same series as the quota-hidden Retail size; Retail must not invent new series.
+            SimpleNamespace(
+                name="MemoryOptimized",
+                supportedStorageEditions=[],
+                supportedServerSkus=[
+                    SimpleNamespace(
+                        name="Standard_E2ds_v5",
+                        vCores=2,
+                        supportedMemoryPerVcoreMb=8192,
+                        supportedHaMode=["SameZone", "ZoneRedundant"],
+                    )
+                ],
+            ),
         ],
     )
     retail = [
@@ -1009,7 +1022,11 @@ def test_azure_inventory_databases_adds_quota_hidden_concrete_retail_skus():
     ):
         rows = azure_databases(vendor)
     by_id = {row["database_id"]: row for row in rows}
-    assert set(by_id) == {"Standard_D2s_v3", "Standard_E104ids_v5"}
+    assert set(by_id) == {
+        "Standard_D2s_v3",
+        "Standard_E2ds_v5",
+        "Standard_E104ids_v5",
+    }
     assert by_id["Standard_D2s_v3"]["family"] == "Dsv3"
     assert by_id["Standard_D2s_v3"]["autotuning_advice"] is True
     assert by_id["Standard_D2s_v3"]["storage_extra_autosize"] is True
@@ -1098,6 +1115,163 @@ def test_azure_inventory_databases_skips_series_meter_vm_sizes():
     ):
         rows = azure_databases(vendor)
     assert {row["database_id"] for row in rows} == {"Standard_DC8ads_v5"}
+
+
+def test_azure_inventory_databases_keeps_confidential_only_in_acc_regions():
+    """ConfidentialVM SKUs outside ACC regions (e.g. Korea DCadsv6) are dropped."""
+    vendor = Mock(vendor_id="azure")
+    vendor.regions = [
+        Mock(region_id="westeurope", api_reference="westeurope"),
+        Mock(region_id="koreacentral", api_reference="koreacentral"),
+    ]
+    vendor.servers = []
+    vendor.progress_tracker = Mock(
+        start_task=Mock(), advance_task=Mock(), hide_task=Mock()
+    )
+
+    def caps_for(location):
+        if location == "westeurope":
+            skus = [
+                SimpleNamespace(
+                    name="Standard_DC8ads_v5",
+                    vCores=8,
+                    supportedMemoryPerVcoreMb=4096,
+                    supportedHaMode=[],
+                    securityProfile="ConfidentialVM",
+                    status=None,
+                ),
+                SimpleNamespace(
+                    name="Standard_D2ds_v6",
+                    vCores=2,
+                    supportedMemoryPerVcoreMb=4096,
+                    supportedHaMode=[],
+                    securityProfile=None,
+                    status=None,
+                ),
+            ]
+        else:
+            skus = [
+                SimpleNamespace(
+                    name="Standard_DC8ads_v6",
+                    vCores=8,
+                    supportedMemoryPerVcoreMb=4096,
+                    supportedHaMode=[],
+                    securityProfile="ConfidentialVM",
+                    status=None,
+                ),
+            ]
+        return [
+            SimpleNamespace(
+                supportedServerVersions=[
+                    SimpleNamespace(name="16", status="Available")
+                ],
+                storageAutoGrowthSupported="Enabled",
+                supportedFeatures=[],
+                supportedServerEditions=[
+                    SimpleNamespace(
+                        name="GeneralPurpose",
+                        supportedStorageEditions=[],
+                        supportedServerSkus=skus,
+                    )
+                ],
+            )
+        ]
+
+    with (
+        patch(
+            "sc_crawler.vendors._azure._pg_database_regions",
+            return_value=vendor.regions,
+        ),
+        patch(
+            "sc_crawler.vendors._azure._pg_capabilities",
+            side_effect=caps_for,
+        ),
+        patch("sc_crawler.vendors._azure._pg_retail_prices", return_value=[]),
+    ):
+        rows = azure_databases(vendor)
+    assert {row["database_id"] for row in rows} == {
+        "Standard_DC8ads_v5",
+        "Standard_D2ds_v6",
+    }
+
+
+def test_azure_inventory_databases_retail_requires_capabilities_series():
+    """Retail Standard_* cannot introduce a series never listed in capabilities."""
+    vendor = Mock(vendor_id="azure")
+    vendor.regions = [Mock(region_id="westus3", api_reference="westus3")]
+    vendor.servers = [
+        SimpleNamespace(
+            api_reference="Standard_M32dms_v2",
+            server_id="Standard_M32dms_v2",
+            vcpus=32,
+            memory_amount=896000,
+        ),
+        SimpleNamespace(
+            api_reference="Standard_E104ids_v5",
+            server_id="Standard_E104ids_v5",
+            vcpus=104,
+            memory_amount=917504,
+        ),
+    ]
+    vendor.progress_tracker = Mock(
+        start_task=Mock(), advance_task=Mock(), hide_task=Mock()
+    )
+    capability = SimpleNamespace(
+        supportedServerVersions=[SimpleNamespace(name="16", status="Available")],
+        storageAutoGrowthSupported="Enabled",
+        supportedFeatures=[],
+        supportedServerEditions=[
+            SimpleNamespace(
+                name="MemoryOptimized",
+                supportedStorageEditions=[],
+                supportedServerSkus=[
+                    SimpleNamespace(
+                        name="Standard_E2ds_v5",
+                        vCores=2,
+                        supportedMemoryPerVcoreMb=8192,
+                        supportedHaMode=[],
+                        securityProfile=None,
+                        status=None,
+                    )
+                ],
+            )
+        ],
+    )
+    retail = [
+        {
+            "armSkuName": "Standard_M32dms_v2",
+            "productName": (
+                "Azure Database for PostgreSQL Flexible Server Mdsv2 Series Compute"
+            ),
+            "meterName": "vCore",
+            "skuName": "32 vCore",
+        },
+        {
+            "armSkuName": "Standard_E104ids_v5",
+            "productName": (
+                "Azure Database for PostgreSQL Flexible Server "
+                "Memory Optimized Edsv5 Series Compute"
+            ),
+            "meterName": "vCore",
+            "skuName": "104 vCore",
+        },
+    ]
+    with (
+        patch(
+            "sc_crawler.vendors._azure._pg_database_regions",
+            return_value=vendor.regions,
+        ),
+        patch(
+            "sc_crawler.vendors._azure._pg_capabilities",
+            return_value=[capability],
+        ),
+        patch("sc_crawler.vendors._azure._pg_retail_prices", return_value=retail),
+    ):
+        rows = azure_databases(vendor)
+    assert {row["database_id"] for row in rows} == {
+        "Standard_E2ds_v5",
+        "Standard_E104ids_v5",
+    }
 
 
 def test_azure_burstable_storage_extra_max_excludes_premium_ssd_v2():

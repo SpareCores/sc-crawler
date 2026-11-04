@@ -2210,6 +2210,15 @@ _PG_BACKUP_STORAGE_ID = "BackupStorageLRS"
 _PG_UNSUPPORTED_STORAGE_REASON = (
     "Specified Storage Edition not supported in this region."
 )
+# Confidential Flexible Server SKUs carry securityProfile=ConfidentialVM in
+# capabilities. ACC regions (West Europe, UAE North) are from:
+# https://learn.microsoft.com/en-us/azure/postgresql/security/security-confidential-computing
+# Other regions (e.g. Korea Central) still list DCadsv6/ECadsv6 with the same
+# profile and null status.
+_PG_CONFIDENTIAL_CAPABILITY_REGIONS = frozenset({"westeurope", "uaenorth"})
+_PG_CAPABILITY_DISABLED_STATUSES = frozenset(
+    {"disabled", "unavailable", "notavailable", "notavailablefordeployment"}
+)
 
 
 def _pg_supported_storage_ids(location: str) -> frozenset[str]:
@@ -2398,17 +2407,23 @@ def inventory_databases(vendor):
     """List Azure Database for PostgreSQL Flexible Server types in all regions.
 
     Existence comes from Flexible Server capabilities (``supportedServerSkus``)
-    plus concrete Retail ``Standard_*`` compute meters (sizes capabilities may
-    omit due to quota). Per-vCore series meters are used for pricing only: the
-    VM catalog must not invent database sizes, because it includes shapes
-    Flexible Server never offers (e.g. ``DCasv5`` / ``Dsv6`` vs deployable
-    ``DCadsv5`` / ``Ddsv6``). When ``database_id`` is present, capabilities
-    supply vCPUs, memory, HA, engine versions, storage bounds, and autotuning;
-    otherwise those come from another SKU of the same edition, and
-    vCPUs/memory from the matching VM.
+    plus concrete Retail ``Standard_*`` meters only for series already seen in
+    capabilities (quota-hidden sizes within a real family). Per-vCore series
+    meters are pricing-only and must not invent VM catalog sizes (e.g. ``DCasv5``
+    / ``Dsv6`` vs deployable ``DCadsv5`` / ``Ddsv6``).
+
+    SKUs with ``securityProfile`` ConfidentialVM are kept only when capabilities
+    list them in an ACC region (West Europe / UAE North): other regions can
+    advertise the same profile for non-startable shapes (e.g. Korea Central
+    ``DCadsv6``) with no ``status``/``reason`` distinguishing them. SKUs with an
+    explicit disabled capability status are skipped. When ``database_id`` is in
+    capabilities, those supply vCPUs, memory, HA, engine versions, storage
+    bounds, and autotuning; otherwise edition defaults apply and vCPUs/memory
+    come from the matching VM.
     """
     # database_id -> fields that actually come from capabilities.
     caps_by_id: dict[str, dict] = {}
+    caps_locations: dict[str, set[str]] = defaultdict(set)
     edition_caps: dict[str, dict] = {}
     retail_concrete: dict[str, str] = {}
     servers_by_id = {}
@@ -2478,6 +2493,13 @@ def inventory_databases(vendor):
                     shared["storage_extra_min"] = min(sizes_gb, default=None)
                     shared["storage_extra_max"] = max(sizes_gb, default=None)
                     for sku in getattr(edition, "supportedServerSkus", None) or []:
+                        status = getattr(sku, "status", None)
+                        if (
+                            status
+                            and str(status).lower().replace("_", "")
+                            in _PG_CAPABILITY_DISABLED_STATUSES
+                        ):
+                            continue
                         # https://learn.microsoft.com/en-us/azure/postgresql/high-availability/concepts-high-availability
                         # Burstable does not support HA (the API may still list modes).
                         ha_modes = {
@@ -2498,6 +2520,9 @@ def inventory_databases(vendor):
                             ha = previous["ha"]
                         else:
                             ha = DatabaseHaLevel.ordered(ha)
+                        security_profile = getattr(
+                            sku, "securityProfile", None
+                        ) or getattr(sku, "security_profile", None)
                         facts = {
                             **shared,
                             "edition": edition.name,
@@ -2517,8 +2542,11 @@ def inventory_databases(vendor):
                                 if DatabaseHaLevel.SINGLE_ZONE in ha
                                 else 99.9
                             ),
+                            "security_profile": security_profile
+                            or (previous or {}).get("security_profile"),
                         }
                         caps_by_id[sku.name] = facts
+                        caps_locations[sku.name].add(location)
                         edition_caps[edition.name] = facts
         with sentry_capture_or_raise(vendor=vendor):
             for item in _pg_retail_prices(location):
@@ -2565,11 +2593,21 @@ def inventory_databases(vendor):
         vendor, capabilities_seen, len(edition_caps), "server editions"
     )
 
-    # Capabilities SKUs, plus concrete Retail SKUs that quota hid.
-    wanted = {
-        database_id: facts["edition"] for database_id, facts in caps_by_id.items()
-    }
+    # Capabilities SKUs (confidential only from ACC regions), plus Retail sizes
+    # that fill gaps inside series already offered by capabilities.
+    wanted: dict[str, str] = {}
+    for database_id, facts in caps_by_id.items():
+        profile = (facts.get("security_profile") or "").lower()
+        if profile.startswith("confidential") and not (
+            caps_locations[database_id] & _PG_CONFIDENTIAL_CAPABILITY_REGIONS
+        ):
+            continue
+        wanted[database_id] = facts["edition"]
+    caps_series = {_parse_database_name(database_id)[0] for database_id in wanted}
     for database_id, edition_name in retail_concrete.items():
+        series, _family, _vcpus, _version = _parse_database_name(database_id)
+        if series not in caps_series:
+            continue
         wanted.setdefault(database_id, edition_name)
 
     rows = []
