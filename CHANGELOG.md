@@ -60,6 +60,20 @@ Fix(es):
   regions where the flavor is not available.
 - `OVHcloud`: list only managed database engine versions still on sale (e.g.
   no PostgreSQL 14 after its end of sale).
+- `Azure`: read the temp disk size (`MaxResourceVolumeMB`) as MiB instead of MB
+  (e.g. `D2ds_v5`: 81 instead of 77 GB).
+- `Azure`: take GPU count, model and memory from a per-series table based on the
+  docs instead of name heuristics, falling back to the API's GPU count (e.g.
+  `ND128isr_NDR_GB200_v6`: 4 instead of 1 GPU, `NCC40ads_H100_v5`: 1 instead
+  of 0, `NC24lds_xl_RTXPRO6000BSE_v6`: 1/4 instead of 4). `NP` FPGAs are no
+  longer counted as GPUs.
+- `Azure`: mark the `Dv3`, `Dsv3`, `Ev3` and `Esv3` series as
+  `PLANNED_FOR_RETIREMENT` (retiring on November 15, 2029).
+- `Azure`: list only PostgreSQL Flexible Server series that the capabilities API
+  supports in at least one region, so the retail meters of unsupported series
+  (e.g. `DCasv5`, `Dsv6`, `Ebdsv5`, `Mdsv2`) no longer add database SKUs.
+- `Azure`: stop inheriting the VM size retirements in PostgreSQL SKU status
+  (e.g. `B1ms` is `ACTIVE`, not `PLANNED_FOR_RETIREMENT`).
 
 ## v0.10.2 (October 22, 2026)
 

@@ -235,52 +235,11 @@ entries:
   - vendor: azure
     type: SPEC_MISMATCH
     field: memory_gib
-    verdict: to_verify
-    note: "Resource SKUs API vs docs disagree (e.g. HB120rs_v3 456 vs 448, ND96amsr_A100_v4 1800 vs 1900)."
+    verdict: expected
+    note: "Resource SKUs API vs docs disagree (e.g. HB120rs_v3 456 vs 448, ND96amsr_A100_v4 1800 vs 1900). We store the Resource SKUs API MemoryGB, the value Azure provisions; the docs differ for a few sizes only."
     by: claude (first-pass triage)
     evidence: audit-runs/2026-10-31.tar.xz
-    date: 2026-10-31
-  - vendor: azure
-    type: SPEC_MISMATCH
-    field: storage_gb
-    verdict: confirmed
-    note: "Temp disk ~4.6% low on most sizes: the API's MaxResourceVolumeMB is MiB, stored as MB/1000. Sizes with other ratios (extra NVMe disks) need a separate look."
-    by: claude (first-pass triage)
-    evidence: audit-runs/2026-10-31.tar.xz
-    date: 2026-10-31
-  - vendor: azure
-    type: SPEC_MISMATCH
-    field: gpu_count
-    match: "Standard_(NCC40ads_H100_v5|ND128isr_(NDR_)?GB[23]00_v6)"
-    verdict: confirmed
-    note: "GPU count from name heuristics (_azure.py:766-920): NCC40ads_H100_v5 0 vs 1, GB200/GB300 1 vs 4."
-    by: claude (first-pass triage)
-    evidence: audit-runs/2026-10-31.tar.xz
-    date: 2026-10-31
-  - vendor: azure
-    type: SPEC_MISMATCH
-    field: gpu_count
-    verdict: to_verify
-    note: "Fractional/partial GPU counts vs our heuristics (e.g. NC RTX PRO 6000, NV6)."
-    by: claude (first-pass triage)
-    evidence: audit-runs/2026-10-31.tar.xz
-    date: 2026-10-31
-  - vendor: azure
-    type: STATUS_MISMATCH
-    ours: ACTIVE
-    verdict: to_verify
-    note: "Docs announce retirement (e.g. Dv3/Dsv3 'End of Life'); should be PLANNED_FOR_RETIREMENT."
-    by: claude (first-pass triage)
-    evidence: audit-runs/2026-10-31.tar.xz
-    date: 2026-10-31
-  - vendor: azure
-    type: NOT_AT_VENDOR
-    match: "Standard_[DE]C\\d+(as_v5|ads_v6|es_v6)"
-    verdict: confirmed
-    note: "PostgreSQL flexible server supports confidential computing only on Dcadsv5 and Ecadsv5 (security-confidential-computing page); our DCasv5/ECasv5/DCadsv6/ECadsv6/DCesv6/ECesv6 database SKUs (50) seem to be built from billing meters and VM sizes. The page also limits confidential computing to UAE North and West Europe, but we price DCadsv5/ECadsv5 in chilecentral and northeurope too (not checked automatically)."
-    by: claude (triage, user report on Standard_DC8as_v5)
-    evidence: audit-runs/2026-10-31.tar.xz
-    date: 2026-10-31
+    date: 2026-11-03
   - vendor: azure
     type: NOT_AT_VENDOR
     page: "^postgresql-compute$"
@@ -318,29 +277,12 @@ entries:
     evidence: audit-runs/2026-10-31.tar.xz
     date: 2026-10-31
   - vendor: azure
-    type: STATUS_MISMATCH
-    page: "^postgresql-compute$"
-    match: "Standard_B\\d+m?s"
-    verdict: to_verify
-    note: "Burstable B-series is a supported PostgreSQL tier without retirement notice on the compute page, but PLANNED_FOR_RETIREMENT in our data (likely inherited from the retiring B-series VMs)."
-    by: claude (triage, managed database coverage)
-    evidence: audit-runs/2026-10-31.tar.xz
-    date: 2026-10-31
-  - vendor: azure
     type: NOT_AT_VENDOR
-    page: "^postgresql-compute$"
-    verdict: to_verify
-    note: "Database SKU not on the PostgreSQL compute page: v6 sizes without local disk (Dsv6/Dasv6/Esv6/Easv6; the docs list only Ddsv6/Dadsv6/Edsv6/Eadsv6), Ebdsv5 and M-series v2. Likely built from billing meters like the unsupported confidential SKUs; pricing page is JS-only, so verify in the portal."
-    by: claude (triage, managed database coverage)
-    evidence: audit-runs/2026-10-31.tar.xz
-    date: 2026-10-31
-  - vendor: azure
-    type: NOT_AT_VENDOR
-    verdict: to_verify
-    note: "ACTIVE sizes on no docs page (NVv2, PB6s, NC*ads_A10_v4, ND96is_MI300X_v5, M416s_9/10/12, isolated sizes): retired or non-public sizes still in the Resource SKUs API?"
+    verdict: expected
+    note: "ACTIVE sizes on no docs page (NVv2, PB6s, NC*ads_A10_v4, ND96is_MI300X_v5, M416s_9/10/12, isolated sizes): retired or non-public sizes still in the Resource SKUs API? All are in the Resource SKUs API and have live retail prices (e.g. NV6s_v2, PB6s, ND96is_MI300X_v5, M416s_9_v2), so they stay ACTIVE (likely restricted or preview sizes)."
     by: claude (first-pass triage)
     evidence: audit-runs/2026-10-31.tar.xz
-    date: 2026-10-31
+    date: 2026-11-03
   - vendor: azure
     type: FEATURE_MISMATCH
     field: sla
