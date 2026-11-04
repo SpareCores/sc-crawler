@@ -229,7 +229,7 @@ entries:
     match: "Standard_D(64|96)l(d)?s_v7"
     verdict: false_positive
     note: "Docs values (126 / 384 GiB) contradict the 2 GiB/vCPU low-memory series."
-    by: claude (first-pass triage)
+    by: bridgend84
     evidence: audit-runs/2026-10-31.tar.xz
     date: 2026-10-31
   - vendor: azure
@@ -237,7 +237,7 @@ entries:
     field: memory_gib
     verdict: expected
     note: "Resource SKUs API vs docs disagree (e.g. HB120rs_v3 456 vs 448, ND96amsr_A100_v4 1800 vs 1900). We store the Resource SKUs API MemoryGB, the value Azure provisions; the docs differ for a few sizes only."
-    by: claude (first-pass triage)
+    by: bridgend84
     evidence: audit-runs/2026-10-31.tar.xz
     date: 2026-11-03
   - vendor: azure
@@ -246,7 +246,7 @@ entries:
     match: "Standard_(D16ads_v5|E16ads_v5|E32ads_v5|E64ads_v5)"
     verdict: false_positive
     note: "Typos on the PostgreSQL compute page (e.g. 'D16ds_v5 / D16ds_v5', 'E32ds_v5 / D32ads_v5') hide these sizes."
-    by: claude (triage, managed database coverage)
+    by: bridgend84
     evidence: audit-runs/2026-10-31.tar.xz
     date: 2026-10-31
   - vendor: azure
@@ -255,7 +255,7 @@ entries:
     match: "Standard_E192ids_v6"
     verdict: false_positive
     note: "Listed as 'E192ds_v6' (192 vCores, 1832 GiB) on the PostgreSQL compute page; the VM size is Standard_E192ids_v6."
-    by: claude (triage, managed database coverage)
+    by: bridgend84
     evidence: audit-runs/2026-10-31.tar.xz
     date: 2026-10-31
   - vendor: azure
@@ -264,7 +264,7 @@ entries:
     match: "Standard_E192ds_v6"
     verdict: false_positive
     note: "The PostgreSQL compute page names Standard_E192ids_v6 (which we have) as 'E192ds_v6'."
-    by: claude (triage, managed database coverage)
+    by: bridgend84
     evidence: audit-runs/2026-10-31.tar.xz
     date: 2026-10-31
   - vendor: azure
@@ -273,14 +273,14 @@ entries:
     match: "Standard_E64ads_v4"
     verdict: false_positive
     note: "Page typo: the row 'E64ds_v5 / E64ads_v4' refers to E64ads_v5 (the page lists no Eadsv4 series)."
-    by: claude (triage, managed database coverage)
+    by: bridgend84
     evidence: audit-runs/2026-10-31.tar.xz
     date: 2026-10-31
   - vendor: azure
     type: NOT_AT_VENDOR
     verdict: expected
     note: "ACTIVE sizes on no docs page (NVv2, PB6s, NC*ads_A10_v4, ND96is_MI300X_v5, M416s_9/10/12, isolated sizes): retired or non-public sizes still in the Resource SKUs API? All are in the Resource SKUs API and have live retail prices (e.g. NV6s_v2, PB6s, ND96is_MI300X_v5, M416s_9_v2), so they stay ACTIVE (likely restricted or preview sizes)."
-    by: claude (first-pass triage)
+    by: bridgend84
     evidence: audit-runs/2026-10-31.tar.xz
     date: 2026-11-03
   - vendor: azure
@@ -288,6 +288,6 @@ entries:
     field: sla
     verdict: expected
     note: "Single SLA value per SKU (best case, 99.99 with zone-redundant HA) vs per-HA-mode SLAs in the docs."
-    by: claude (first-pass triage)
+    by: bridgend84
     evidence: audit-runs/2026-10-31.tar.xz
     date: 2026-10-31
