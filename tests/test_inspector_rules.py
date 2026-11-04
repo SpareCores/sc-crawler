@@ -162,13 +162,7 @@ def test_nvidia_tasks_blocked_without_gpus():
 
 
 @pytest.mark.parametrize(
-    "accelerator_type",
-    [
-        AcceleratorType.TPU,
-        AcceleratorType.NPU,
-        AcceleratorType.FPGA,
-        AcceleratorType.VPU,
-    ],
+    "accelerator_type", [t for t in AcceleratorType if t != AcceleratorType.GPU]
 )
 def test_nvidia_tasks_blocked_for_non_gpu_accelerators(accelerator_type):
     server = _server(accelerator_count=4, accelerator_type=accelerator_type)
