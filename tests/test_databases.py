@@ -930,29 +930,11 @@ def test_azure_inventory_databases_ha_from_supported_ha_mode():
     assert by_id["Standard_E2s_v3"]["status"] == Status.ACTIVE
 
 
-def test_azure_inventory_databases_adds_quota_hidden_retail_skus():
-    """Retail series meters fill SKUs capabilities omitted; versions stay from capabilities."""
+def test_azure_inventory_databases_adds_quota_hidden_concrete_retail_skus():
+    """Concrete Retail Standard_* fills sizes capabilities omitted; series meters do not invent VMs."""
     vendor = Mock(vendor_id="azure")
     vendor.regions = [Mock(region_id="westus3", api_reference="westus3")]
     vendor.servers = [
-        SimpleNamespace(
-            api_reference="Standard_D2s_v6",
-            server_id="Standard_D2s_v6",
-            vcpus=2,
-            memory_amount=8192,
-        ),
-        SimpleNamespace(
-            api_reference="Standard_D4s_v6",
-            server_id="Standard_D4s_v6",
-            vcpus=4,
-            memory_amount=16384,
-        ),
-        SimpleNamespace(
-            api_reference="Standard_D2ls_v6",
-            server_id="Standard_D2ls_v6",
-            vcpus=2,
-            memory_amount=4096,
-        ),
         SimpleNamespace(
             api_reference="Standard_E104ids_v5",
             server_id="Standard_E104ids_v5",
@@ -986,6 +968,7 @@ def test_azure_inventory_databases_adds_quota_hidden_retail_skus():
     )
     retail = [
         {
+            # Series meter alone must not invent Standard_D*s_v6 from the VM catalog.
             "armSkuName": (
                 "Azure_Database_for_PostgreSQL_Flexible_Server_"
                 "General_Purpose_Dsv6_Series_Compute_1_vCore"
@@ -1026,23 +1009,15 @@ def test_azure_inventory_databases_adds_quota_hidden_retail_skus():
     ):
         rows = azure_databases(vendor)
     by_id = {row["database_id"]: row for row in rows}
+    assert set(by_id) == {"Standard_D2s_v3", "Standard_E104ids_v5"}
     assert by_id["Standard_D2s_v3"]["family"] == "Dsv3"
-    assert "Standard_D2ls_v6" not in by_id
-    d2 = by_id["Standard_D2s_v6"]
-    assert d2["family"] == "Dsv6"
-    assert d2["vcpus"] == 2
-    assert d2["memory_amount"] == 8192
-    assert d2["engine_versions"] == ["16"]
-    assert d2["autotuning_advice"] is True
-    assert d2["storage_extra_autosize"] is True
-    assert d2["server_id"] == "Standard_D2s_v6"
-    assert d2["api_reference_object"] == {"sku_name": "GP_Standard_D2s_v6"}
-    assert d2["ha"] == [
+    assert by_id["Standard_D2s_v3"]["autotuning_advice"] is True
+    assert by_id["Standard_D2s_v3"]["storage_extra_autosize"] is True
+    assert by_id["Standard_D2s_v3"]["ha"] == [
         DatabaseHaLevel.MULTI_ZONE,
         DatabaseHaLevel.SINGLE_ZONE,
         DatabaseHaLevel.NONE,
     ]
-    assert by_id["Standard_D4s_v6"]["vcpus"] == 4
     e104 = by_id["Standard_E104ids_v5"]
     assert e104["family"] == "Edsv5"
     assert e104["vcpus"] == 104
@@ -1051,8 +1026,8 @@ def test_azure_inventory_databases_adds_quota_hidden_retail_skus():
     assert e104["api_reference_object"] == {"sku_name": "MO_Standard_E104ids_v5"}
 
 
-def test_azure_inventory_databases_skips_confidential_series_vm_sizes():
-    """DCasv5 / DCesv6 / ECasv5 series meters must not invent VM-only sizes."""
+def test_azure_inventory_databases_skips_series_meter_vm_sizes():
+    """Series meters must not invent VM-only sizes Flexible Server never lists."""
     vendor = Mock(vendor_id="azure")
     vendor.regions = [Mock(region_id="westeurope", api_reference="westeurope")]
     vendor.servers = [
@@ -1064,25 +1039,27 @@ def test_azure_inventory_databases_skips_confidential_series_vm_sizes():
             "Standard_DC8ads_v5",
             "Standard_DC8es_v6",
             "Standard_EC8as_v5",
+            "Standard_D2s_v6",
+            "Standard_D2ds_v6",
         )
     ]
     vendor.progress_tracker = Mock(
         start_task=Mock(), advance_task=Mock(), hide_task=Mock()
     )
     capability = SimpleNamespace(
-        supported_server_versions=[SimpleNamespace(name="16", status="Available")],
-        storage_auto_growth_supported="Enabled",
-        supported_features=[],
-        supported_server_editions=[
+        supportedServerVersions=[SimpleNamespace(name="16", status="Available")],
+        storageAutoGrowthSupported="Enabled",
+        supportedFeatures=[],
+        supportedServerEditions=[
             SimpleNamespace(
                 name="GeneralPurpose",
-                supported_storage_editions=[],
-                supported_server_skus=[
+                supportedStorageEditions=[],
+                supportedServerSkus=[
                     SimpleNamespace(
                         name="Standard_DC8ads_v5",
-                        v_cores=8,
-                        supported_memory_per_vcore_mb=4096,
-                        supported_ha_mode=[],
+                        vCores=8,
+                        supportedMemoryPerVcoreMb=4096,
+                        supportedHaMode=[],
                     )
                 ],
             )
@@ -1092,16 +1069,21 @@ def test_azure_inventory_databases_skips_confidential_series_vm_sizes():
         {
             "armSkuName": (
                 "Azure_Database_for_PostgreSQL_Flexible_Server_"
-                f"Confidential_Compute_{series}_Series_Compute_1_vCore"
+                f"{label}_Series_Compute_1_vCore"
             ),
             "productName": (
                 "Azure Database for PostgreSQL Flexible Server "
-                f"Confidential Compute {series} Series Compute"
+                f"{product} Series Compute"
             ),
             "meterName": "1 vCore",
             "skuName": "1 vCore",
         }
-        for series in ("DCasv5", "DCesv6", "ECasv5")
+        for label, product in (
+            ("Confidential_Compute_DCasv5", "Confidential Compute DCasv5"),
+            ("Confidential_Compute_DCesv6", "Confidential Compute DCesv6"),
+            ("Confidential_Compute_ECasv5", "Confidential Compute ECasv5"),
+            ("General_Purpose_Dsv6", "General Purpose Dsv6"),
+        )
     ]
     with (
         patch(

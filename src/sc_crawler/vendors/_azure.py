@@ -2172,9 +2172,6 @@ _PG_DATABASE_NAME_RE = recompile(
     r"(?:_v(?P<version>\d*))?$"
 )
 _PG_FLAT_COMPUTE_SKUS = frozenset({"B1MS", "B2S"})
-# Confidential series meters (e.g. DCasv5) match VM sizes Flexible Server never
-# offers (DC8as_v5); only the ads sizes from capabilities are deployable.
-_PG_CONFIDENTIAL_FAMILIES = ("DC", "EC")
 # Edition and vendor tokens are optional: e.g. "Flexible Server Mdsv2 Series Compute"
 # and "General Purpose AMD Dadsv5 Series Compute".
 _PG_PRODUCT_SERIES_RE = recompile(
@@ -2400,30 +2397,26 @@ def _pg_engine_versions(capability) -> list[str]:
 def inventory_databases(vendor):
     """List Azure Database for PostgreSQL Flexible Server types in all regions.
 
-    Retail compute meters decide which instances exist. Capabilities is
-    quota-filtered, so a size can be missing there. When ``database_id`` is
-    present, capabilities supplies vCPUs, memory, HA, engine versions,
-    storage bounds, and autotuning. Otherwise those come from another SKU of
-    the same edition, and vCPUs/memory come from the matching VM.
-    A per-vCore series meter has no size list; matching VM SKUs name the sizes,
-    except for confidential (DC/EC) series, whose VM sizes are not deployable.
+    Existence comes from Flexible Server capabilities (``supportedServerSkus``)
+    plus concrete Retail ``Standard_*`` compute meters (sizes capabilities may
+    omit due to quota). Per-vCore series meters are used for pricing only: the
+    VM catalog must not invent database sizes, because it includes shapes
+    Flexible Server never offers (e.g. ``DCasv5`` / ``Dsv6`` vs deployable
+    ``DCadsv5`` / ``Ddsv6``). When ``database_id`` is present, capabilities
+    supply vCPUs, memory, HA, engine versions, storage bounds, and autotuning;
+    otherwise those come from another SKU of the same edition, and
+    vCPUs/memory from the matching VM.
     """
     # database_id -> fields that actually come from capabilities.
     caps_by_id: dict[str, dict] = {}
     edition_caps: dict[str, dict] = {}
     retail_concrete: dict[str, str] = {}
-    retail_series: dict[str, str] = {}
     servers_by_id = {}
-    servers_by_series: dict[str, list] = defaultdict(list)
     for server in vendor.servers:
         name = server.api_reference
         if not name or "-" in name:
             continue
         servers_by_id[name] = server
-        match = _PG_DATABASE_NAME_RE.match(name)
-        # i/m/l/t are stripped from the retail series name, so those VM shapes are not this series.
-        if match and not _PG_SERIES_SKIP_FEATURES & set(match["features"].lower()):
-            servers_by_series[_parse_database_name(name)[0]].append(server)
 
     capabilities_seen = 0
     regions = _pg_database_regions(vendor)
@@ -2564,28 +2557,20 @@ def inventory_databases(vendor):
                     if match["version"]:
                         database_id += f"_v{match['version']}"
                     retail_concrete.setdefault(database_id, edition_name)
-                elif series_name:
-                    retail_series.setdefault(series_name, edition_name)
+                # Series meters (no Standard_* size) are ignored for existence;
+                # they still price sizes via _pg_lookup_retail_price.
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
     _pg_check_capabilities_parsed(
         vendor, capabilities_seen, len(edition_caps), "server editions"
     )
 
-    # Capabilities SKUs, plus retail SKUs quota hid. Series meters name no size,
-    # so the VM catalog fills those database_ids (not for confidential series).
+    # Capabilities SKUs, plus concrete Retail SKUs that quota hid.
     wanted = {
         database_id: facts["edition"] for database_id, facts in caps_by_id.items()
     }
     for database_id, edition_name in retail_concrete.items():
         wanted.setdefault(database_id, edition_name)
-    present_series = {_parse_database_name(database_id)[0] for database_id in wanted}
-    for series_name, edition_name in retail_series.items():
-        if series_name not in present_series and not series_name.upper().startswith(
-            _PG_CONFIDENTIAL_FAMILIES
-        ):
-            for server in servers_by_series.get(series_name, []):
-                wanted.setdefault(server.api_reference, edition_name)
 
     rows = []
     for database_id, edition_name in wanted.items():

@@ -6,6 +6,10 @@ New benchmark(s):
 
 Fix(es):
 
+- `Azure`: stop inventing PostgreSQL Flexible Server sizes from the VM catalog
+  when Retail only has a per-vCore series meter (phantoms such as `DCasv5` /
+  `Dsv6`). Existence comes from capabilities and concrete `Standard_*` retail
+  meters only; series meters remain for pricing.
 - `Azure`: price PostgreSQL compute from the `1 vCore` meter (as the pricing
   page does), as some sized meters are stale.
 - `Azure`: label `Mdsv2` PostgreSQL SKUs as `MemoryOptimized`.
