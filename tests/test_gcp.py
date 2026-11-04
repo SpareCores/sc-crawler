@@ -1115,7 +1115,7 @@ def test_gcp_search_servers_fills_tpu_fields():
 
     row = rows[0]
     assert row["accelerator_count"] == 4
-    assert row["accelerator_type"] == AcceleratorType.TPU
+    assert row["accelerator_type"] == AcceleratorType.NPU
     assert row["accelerator_model"] == "v5e"
     assert row["accelerator_manufacturer"] == "Google"
     assert row["accelerator_family"] == "TPU"
@@ -1559,8 +1559,8 @@ def test_gcp_inventory_storage_prices_use_capacity_skus():
     [
         ("nvidia-h100-80gb", AcceleratorType.GPU),
         ("nvidia-future-gpu", AcceleratorType.GPU),
-        ("ct5lp", AcceleratorType.TPU),
-        ("tpu7x", AcceleratorType.TPU),
+        ("ct5lp", AcceleratorType.NPU),
+        ("tpu7x", AcceleratorType.NPU),
         ("unknown-accelerator", None),
     ],
 )
