@@ -457,7 +457,8 @@ def _get_region_availability_info(
     return region_availability_info
 
 
-# Non-GPU accelerators reported in GPUSpec (standardized model name, lowercase)
+# Non-GPU accelerators reported in GPUSpec (standardized model name, lowercase),
+# based on the GPUSpec values returned by DescribeInstanceTypes as of 2026-11
 _NON_GPU_ACCELERATORS = {
     "xilinx vu9p": AcceleratorType.FPGA,
     "intel arria 10 gx 1150": AcceleratorType.FPGA,

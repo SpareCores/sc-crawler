@@ -818,7 +818,9 @@ def _parse_server_name(name):
     gpu_model = None
     gpu_memory = None
     if family == "NP":
-        # NP10s, NP20s and NP40s have 1, 2 and 4 Xilinx Alveo U250 FPGAs (64 GB each)
+        # NP10s, NP20s and NP40s have 1, 2 and 4 Xilinx Alveo U250 FPGAs (64 GB each),
+        # also reported as "GPUs" in the Resource SKU capabilities:
+        # https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/retirement/np-series-retirement
         gpus = vcpus // 10
         gpu_model = "Alveo U250"
         gpu_memory = convert_gb_to_mib(64)

@@ -18,6 +18,20 @@ depends_on: Union[str, Sequence[str], None] = None
 _NEW_VALUES = ("NPU", "FPGA", "VPU")
 _OLD_VALUES = ("GPU", "TPU")
 
+# (column, old comment, new comment) as TPUs are now stored as NPU
+_SERVER_COLUMN_COMMENTS = (
+    (
+        "accelerator_count",
+        "Number of accelerator(s), e.g. GPUs or TPUs.",
+        "Number of accelerator(s), e.g. GPUs or NPUs.",
+    ),
+    (
+        "accelerator_type",
+        "The type of the primary accelerator, e.g. GPU or TPU.",
+        "The type of the primary accelerator, e.g. GPU or NPU.",
+    ),
+)
+
 
 def is_scd_migration() -> bool:
     return bool(op.get_context().config.attributes.get("scd"))
@@ -36,6 +50,9 @@ def upgrade() -> None:
     # SQLAlchemy stores AcceleratorType member names (GPU, TPU, …), not values.
     for value in _NEW_VALUES:
         op.execute(f"ALTER TYPE acceleratortype ADD VALUE IF NOT EXISTS '{value}'")
+    # SQLite does not store column comments
+    for column, _, comment in _SERVER_COLUMN_COMMENTS:
+        op.alter_column(scdize_suffix("server"), column, comment=comment)
 
 
 def downgrade() -> None:
@@ -43,6 +60,8 @@ def downgrade() -> None:
         return
 
     server_table_name = scdize_suffix("server")
+    for column, comment, _ in _SERVER_COLUMN_COMMENTS:
+        op.alter_column(server_table_name, column, comment=comment)
     new_values = ", ".join(f"'{value}'" for value in _NEW_VALUES)
     # the new values cannot be represented by the old enum
     op.execute(

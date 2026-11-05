@@ -600,7 +600,8 @@ def _get_storages_of_instance_type(instance_type):
 
 # DescribeInstanceTypes field of the accelerators: key of the device list, total
 # memory and accelerator type. The API reports Trainium2 memory as 512 GiB per device
-# (8 TiB in total), while the AWS docs list 96 GiB (1.5 TB in total).
+# (8 TiB in total), while the AWS docs list 96 GiB (1.5 TB in total):
+# https://aws.amazon.com/ec2/instance-types/trn2/
 _ACCELERATOR_INFOS = {
     "GpuInfo": ("Gpus", "TotalGpuMemoryInMiB", AcceleratorType.GPU),
     "NeuronInfo": (
