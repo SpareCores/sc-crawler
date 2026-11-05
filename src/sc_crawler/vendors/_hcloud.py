@@ -3,9 +3,11 @@
 import os
 from datetime import UTC, datetime
 from functools import cache
+from re import compile as recompile
 
 from hcloud import Client
 
+from ..logger import logger
 from ..lookup import map_compliance_frameworks_to_vendor
 from ..sentry import sentry_capture_or_raise
 from ..table_fields import (
@@ -181,11 +183,38 @@ def _get_server_types():
     return _client().server_types.get_all()
 
 
+@cache
+def _warn_unknown_server(kind: str, name: str) -> None:
+    """Warn about a server type without family/series, once per name and run."""
+    logger.warning(f"Unknown Hetzner server {kind} of {name}, leaving {kind} empty.")
+
+
 def _server_family(server):
-    """Human-friendly server family from the API `category`, e.g. Cost Optimized."""
+    """Human-friendly server family from the API `category`, e.g. Cost Optimized.
+
+    Returns None if the API has no category, so no family is guessed.
+    """
     if server.category:
         return server.category.replace("_", " ").title()
-    return server.name.rstrip("0123456789").upper()
+    _warn_unknown_server("family", server.name)
+    return None
+
+
+# Server type names are the series letters followed by the size/generation digits,
+# e.g. cx23 (cx), cax11 (cax), cpx31 (cpx), ccx53 (ccx). The API has no series field
+# and the Hetzner docs do not define it, so this is a naming convention.
+_SERVER_SERIES_RE = recompile(r"^([a-z]+)\d+$")
+
+
+def _server_series(server):
+    """Series of a server type: the letters of its name, e.g. cx for cx23.
+
+    Returns None for names not matching the pattern, so no series is guessed.
+    """
+    if match := _SERVER_SERIES_RE.match(server.name):
+        return match.group(1)
+    _warn_unknown_server("series", server.name)
+    return None
 
 
 def _server_cpu(server):
@@ -396,6 +425,7 @@ def inventory_servers(vendor):
                     "display_name": server.name,
                     "description": server.description,
                     "family": _server_family(server),
+                    "series": _server_series(server),
                     "vcpus": server.cores,
                     "hypervisor": "QEMU",
                     "cpu_allocation": (
@@ -425,6 +455,8 @@ def inventory_servers(vendor):
                     "storage_size": server.disk,
                     "storage_type": StorageType.NVME_SSD,
                     "storages": [],
+                    # https://docs.hetzner.com/cloud/volumes/overview/
+                    "compatible_storage_ids": ["block"],
                     # TODO: have to implement manual mapping for network_speed related fields
                     "network_speed_baseline": None,
                     "network_speed_max": None,
