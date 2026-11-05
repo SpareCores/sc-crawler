@@ -23,4 +23,5 @@ from sc_crawler.vendors._alicloud import _accelerator_type
     ],
 )
 def test_accelerator_type(gpu_model, gpu_count, expected):
+    """GPUSpec models map to their accelerator type, defaulting to GPU."""
     assert _accelerator_type(gpu_model, gpu_count) == expected

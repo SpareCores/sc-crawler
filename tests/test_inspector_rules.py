@@ -139,6 +139,7 @@ def test_nvidia_tasks_blocked_without_gpus():
     "accelerator_type", [t for t in AcceleratorType if t != AcceleratorType.GPU]
 )
 def test_nvidia_tasks_blocked_for_non_gpu_accelerators(accelerator_type):
+    """NVIDIA tasks are skipped on all non-GPU accelerator types."""
     server = _server(accelerator_count=4, accelerator_type=accelerator_type)
     reasons = block_reasons(server, ["nvidia_smi", "nvbandwidth"])
     assert reasons["nvidia_smi"] == ["No GPUs available."]

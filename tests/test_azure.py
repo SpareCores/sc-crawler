@@ -8,6 +8,7 @@ from sc_crawler.vendors._azure import _parse_server_name, _standardize_server
     "name,fpgas", [("Standard_NP10s", 1), ("Standard_NP20s", 2), ("Standard_NP40s", 4)]
 )
 def test_np_series_fpgas(name, fpgas):
+    """NP-series FPGA count, model and memory are parsed from the name."""
     family, _, count, model, memory = _parse_server_name(name)
     assert family == "NP"
     assert count == fpgas
@@ -16,6 +17,7 @@ def test_np_series_fpgas(name, fpgas):
 
 
 def test_np_series_stored_as_fpga():
+    """NP-series servers are stored with the FPGA accelerator type."""
     capabilities = {
         "CpuArchitectureType": "x64",
         "vCPUs": "20",

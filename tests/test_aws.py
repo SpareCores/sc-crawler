@@ -8,6 +8,7 @@ from sc_crawler.vendors._aws import (
 
 
 def _device(name, manufacturer, count, memory):
+    """Build an accelerator device as in the DescribeInstanceTypes response."""
     device = {"Name": name, "Count": count, "MemoryInfo": {"SizeInMiB": memory}}
     if manufacturer:
         device["Manufacturer"] = manufacturer
@@ -19,6 +20,11 @@ def _device(name, manufacturer, count, memory):
     [
         ({}, (0, 0, 0, None, None, None)),
         ({"FpgaInfo": {"TotalFpgaMemoryInMiB": 0}}, (0, 0, 0, None, None, None)),
+        # no memory reported
+        (
+            {"FpgaInfo": {"Fpgas": [{"Name": "VU9P", "Count": 1}]}},
+            (1, 0, 0, "AWS", "VU9P", AcceleratorType.FPGA),
+        ),
         (
             {
                 "GpuInfo": {
@@ -78,10 +84,12 @@ def _device(name, manufacturer, count, memory):
     ],
 )
 def test_accelerators_of_instance_type(instance_type, expected):
+    """Accelerator summary and type for each AWS accelerator info field."""
     assert _get_gpu_of_instance_type(instance_type) == expected
 
 
 def test_accelerators_expanded_by_count():
+    """Devices are expanded into individual accelerators by their count."""
     instance_type = {
         "NeuronInfo": {
             "NeuronDevices": [_device("Trainium", None, 16, 32768)],

@@ -924,6 +924,7 @@ def _parse_server_name(name):
 
 
 def _standardize_server(server: dict, vendor) -> dict:
+    """Create a Server-compatible dict from an Azure Resource SKU."""
     # example Resource Skus - List response moved to _compute_resources
     name_family, features, gpus, gpu_model, gpu_memory = _parse_server_name(
         server["name"]

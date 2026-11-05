@@ -634,14 +634,14 @@ def _accelerators_of_instance_type(instance_type):
                 "Name": device["Name"],
                 # Inferentia and Trainium devices have no manufacturer
                 "Manufacturer": device.get("Manufacturer", "AWS"),
-                "Memory": device["MemoryInfo"]["SizeInMiB"],
+                "Memory": (device.get("MemoryInfo") or {}).get("SizeInMiB", 0),
             }
             for device in info.get(devices_key) or []
         ]
         # Habana Gaudi (dl1) is listed among the GPUs
         if devices and "Gaudi" in devices[0]["Name"]:
             acc_type = AcceleratorType.NPU
-        return acc_type, devices, info[total_key]
+        return acc_type, devices, info.get(total_key, 0)
     return None, [], 0
 
 
