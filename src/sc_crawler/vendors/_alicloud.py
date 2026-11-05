@@ -472,6 +472,13 @@ _NON_GPU_ACCELERATORS = {
 }
 
 
+def _gpu_description(gpu_count: float, gpu_model: Optional[str], memory_mib: float):
+    """Describe the accelerators of a server, e.g. 8xV100 32 GiB VRAM."""
+    if not (gpu_count and gpu_model):
+        return None
+    return f"{gpu_count}x{gpu_model} {memory_mib / 1024:g} GiB VRAM"
+
+
 def _accelerator_type(gpu_model: Optional[str], gpu_count: float):
     """Map the GPUSpec model to AcceleratorType, defaulting to GPU."""
     if not gpu_count:
@@ -1525,11 +1532,7 @@ def inventory_servers(vendor):
             f"{vcpus} vCPUs",
             f"{memory_size_gb} GiB RAM",
             f"{storage_size} GB {storage_type.value if storage_type else ''} storage",
-            (
-                f"{gpu_count}x{gpu_model} {gpu_memory_per_gpu} GiB VRAM"
-                if gpu_count and gpu_model
-                else None
-            ),
+            _gpu_description(gpu_count, gpu_model, gpu_memory_per_gpu),
         ]
         description = f"{family} family ({', '.join(filter(None, description_parts))})"
         server_id = instance_type.get("InstanceTypeId")
