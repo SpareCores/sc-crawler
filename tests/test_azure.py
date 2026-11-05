@@ -489,19 +489,19 @@ def test_azure_inventory_databases_ha_from_supported_ha_mode():
 
 
 def test_azure_inventory_databases_adds_quota_hidden_retail_skus():
-    """Retail series meters fill SKUs capabilities omitted; versions stay from capabilities."""
+    """Concrete retail sizes fill gaps in series seen in capabilities; series meters and unknown series invent nothing."""
     vendor = Mock(vendor_id="azure")
     vendor.regions = [Mock(region_id="westus3", api_reference="westus3")]
     vendor.servers = [
         SimpleNamespace(
-            api_reference="Standard_D2s_v6",
-            server_id="Standard_D2s_v6",
+            api_reference="Standard_D2s_v3",
+            server_id="Standard_D2s_v3",
             vcpus=2,
             memory_amount=8192,
         ),
         SimpleNamespace(
-            api_reference="Standard_D4s_v6",
-            server_id="Standard_D4s_v6",
+            api_reference="Standard_D4s_v3",
+            server_id="Standard_D4s_v3",
             vcpus=4,
             memory_amount=16384,
         ),
@@ -543,6 +543,15 @@ def test_azure_inventory_databases_adds_quota_hidden_retail_skus():
         ],
     )
     retail = [
+        {
+            "armSkuName": "Standard_D4s_v3",
+            "productName": (
+                "Azure Database for PostgreSQL Flexible Server "
+                "General Purpose Dsv3 Series Compute"
+            ),
+            "meterName": "vCore",
+            "skuName": "4 vCore",
+        },
         {
             "armSkuName": (
                 "Azure_Database_for_PostgreSQL_Flexible_Server_"
@@ -586,34 +595,31 @@ def test_azure_inventory_databases_adds_quota_hidden_retail_skus():
     by_id = {row["database_id"]: row for row in rows}
     assert by_id["Standard_D2s_v3"]["family"] == "General Purpose"
     assert by_id["Standard_D2s_v3"]["series"] == "Dsv3"
+    # series meters and series absent from capabilities do not invent sizes
     assert "Standard_D2ls_v6" not in by_id
-    d2 = by_id["Standard_D2s_v6"]
-    assert d2["family"] == "General Purpose"
-    assert d2["series"] == "Dsv6"
+    assert "Standard_D2s_v6" not in by_id
+    assert "Standard_D4s_v6" not in by_id
+    assert "Standard_E104ids_v5" not in by_id
+    d2 = by_id["Standard_D2s_v3"]
     assert d2["vcpus"] == 2
     assert d2["memory_amount"] == 8192
     assert d2["engine_versions"] == ["16"]
     assert d2["autotuning_advice"] is True
     assert d2["storage_extra_autosize"] is True
-    assert d2["server_id"] == "Standard_D2s_v6"
-    assert d2["api_reference_object"] == {"sku_name": "GP_Standard_D2s_v6"}
+    assert d2["api_reference_object"] == {"sku_name": "GP_Standard_D2s_v3"}
     assert d2["ha"] == [
         DatabaseHaLevel.MULTI_ZONE,
         DatabaseHaLevel.SINGLE_ZONE,
         DatabaseHaLevel.NONE,
     ]
-    assert by_id["Standard_D4s_v6"]["vcpus"] == 4
-    e104 = by_id["Standard_E104ids_v5"]
-    assert e104["family"] == "Memory Optimized"
-    assert e104["series"] == "Edsv5"
-    assert e104["vcpus"] == 104
-    assert e104["memory_amount"] == 917504
-    assert e104["engine_versions"] == ["16"]
-    assert e104["api_reference_object"] == {"sku_name": "MO_Standard_E104ids_v5"}
-    # the MemoryOptimized edition is retail only, the capabilities do not list it:
-    # storage unknown (None), unlike the listed edition without storage editions ([])
-    assert e104["compatible_storage_ids"] is None
     assert d2["compatible_storage_ids"] == []
+    # quota-hidden size inside a capabilities series
+    d4 = by_id["Standard_D4s_v3"]
+    assert d4["series"] == "Dsv3"
+    assert d4["vcpus"] == 4
+    assert d4["memory_amount"] == 16384
+    assert d4["engine_versions"] == ["16"]
+    assert d4["api_reference_object"] == {"sku_name": "GP_Standard_D4s_v3"}
 
 
 def test_azure_burstable_storage_extra_max_excludes_premium_ssd_v2():

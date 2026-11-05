@@ -6,6 +6,12 @@ New benchmark(s):
 
 Fix(es):
 
+- `Azure`: stop inventing Flexible Server sizes from the VM catalog when Retail
+  only has a per-vCore series meter (e.g. `DCasv5` / `Dsv6`), series meters
+  remain for pricing.
+- `Azure`: keep ConfidentialVM Flexible Server SKUs only from ACC regions
+  (West Europe / UAE North), drop billing-only Retail series not in
+  capabilities (e.g. `Mdsv2`).
 - `Azure`: price PostgreSQL compute from the `1 vCore` meter (as the pricing
   page does), as some sized meters are stale.
 - `Azure`: label `Mdsv2` PostgreSQL SKUs as `MemoryOptimized`.
