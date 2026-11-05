@@ -602,6 +602,7 @@ def test_azure_inventory_databases_adds_quota_hidden_concrete_retail_skus():
     assert e104["engine_versions"] == ["16"]
     assert e104["api_reference_object"] == {"sku_name": "MO_Standard_E104ids_v5"}
 
+
 def test_azure_inventory_databases_skips_series_meter_vm_sizes():
     """Series meters must not invent VM-only sizes Flexible Server never lists."""
     vendor = Mock(vendor_id="azure")
