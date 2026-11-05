@@ -1,11 +1,30 @@
 ## v0.10.x (DEVELOPMENT)
 
+‼ Breaking changes:
+
+- `GCP` TPUs are stored with the `NPU` instead of the `TPU` accelerator type.
+  `TPU` is kept in the `AcceleratorType` enum for existing records.
+
+New feature(s):
+
+- Add `NPU`, `FPGA` and `VPU` to the `AcceleratorType` enum (with a migration
+  extending the PostgreSQL enum).
+- `AWS`: store Inferentia, Trainium, Qualcomm AI100 and Habana Gaudi (previously
+  `GPU`) as `NPU`, FPGA (`f1`, `f2`) and video transcoding (`vt1`) accelerators
+  as `FPGA` and `VPU`.
+- `Azure`: store the NP-series FPGAs as `FPGA`.
+- `Alibaba Cloud`: store FPGA, video transcoding and AI accelerators as `FPGA`,
+  `VPU` and `NPU` instead of `GPU`.
+- Skip the `nvidia_smi` and `nvbandwidth` inspector tasks on all non-GPU
+  accelerators.
+
 New benchmark(s):
 
 - `nvbandwidth:slot:local_copy`: per-GPU VRAM copy bandwidth (nvbandwidth v0.7+).
 
 Fix(es):
 
+- `Alibaba Cloud`: show the GPU memory in GiB (was MiB) in server descriptions.
 - `Azure`: stop inventing Flexible Server sizes from the VM catalog when Retail
   only has a per-vCore series meter (e.g. `DCasv5` / `Dsv6`), series meters
   remain for pricing.
