@@ -127,14 +127,13 @@ def _get_server_framework_run_ids(server: "Server", framework: str) -> List[str]
         return []
 
 
-def _server_variant_basepath(server: "Server", variant: int | None) -> str | PathLike:
+def _server_variant_basepath(server: "Server", variant: int) -> str | PathLike:
     """Return the base path for a server's hardware variant."""
-    base = _server_path(server)
-    return base if variant is None else path.join(base, str(variant))
+    return path.join(_server_path(server), str(variant))
 
 
 def _server_variant_framework_basepath(
-    server: "Server", variant: int | None, framework: str
+    server: "Server", variant: int, framework: str
 ) -> str | PathLike:
     """Return the base path for a server's hardware variant and framework."""
     return path.join(_server_variant_basepath(server, variant), framework)
@@ -142,7 +141,7 @@ def _server_variant_framework_basepath(
 
 def _server_variant_framework_path(
     server: "Server",
-    variant: int | None,
+    variant: int,
     framework: str,
     relpath: str | list[str] | None = None,
 ) -> str | PathLike:
@@ -153,18 +152,55 @@ def _server_variant_framework_path(
     )
 
 
+def _server_variants(server: "Server") -> list[int]:
+    """Return the hardware variants recorded for a server, in ascending order."""
+    try:
+        return sorted(
+            int(p.name)
+            for p in Path(_server_path(server)).iterdir()
+            if p.is_dir() and p.name.isdigit()
+        )
+    except FileNotFoundError:
+        return []
+
+
 def _server_framework_path(
     server: "Server", framework: str, relpath: str | list[str] | None = None
 ) -> str | PathLike:
     """Return the path for a server's framework with an optional relative path.
 
-    Hardware-variant layout: default to variant 0 with a fallback to variantless path.
+    Use variant 0 if it has a successful run of the framework, otherwise the
+    lowest-numbered variant that has (e.g. a benchmark that only ran after the
+    server landed on new hardware). If no variant has a successful run, use the
+    first one that has the framework at all, and variant 0 if none has (so the
+    caller gets a missing path). The variant is picked by the framework folder,
+    so all files of a framework (meta.json, stdout, ...) come from the same run.
     """
-    # TODO drop the fallback after sc-inspector-data migrated to the variant layout
-    variant_path = _server_variant_framework_path(server, 0, framework, relpath)
-    if path.exists(variant_path):
-        return variant_path
-    return _server_variant_framework_path(server, None, framework, relpath)
+    first_variant = None
+    for variant in _server_variants(server):
+        basepath = _server_variant_framework_basepath(server, variant, framework)
+        if not path.isdir(basepath):
+            continue
+        if _framework_run_succeeded(basepath):
+            return _server_variant_framework_path(server, variant, framework, relpath)
+        if first_variant is None:
+            first_variant = variant
+    return _server_variant_framework_path(
+        server, first_variant if first_variant is not None else 0, framework, relpath
+    )
+
+
+def _framework_run_succeeded(basepath: str | PathLike) -> bool:
+    """Whether a framework folder holds a successful run.
+
+    Folders without a readable meta.json count as successful, so only runs
+    recorded as failed or unfinished are skipped.
+    """
+    try:
+        with open(path.join(basepath, "meta.json"), "r") as fp:
+            return json.load(fp).get("exit_code") == 0
+    except (OSError, ValueError, AttributeError):
+        return True
 
 
 def _database_framework_path(
