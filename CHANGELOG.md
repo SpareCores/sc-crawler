@@ -9,6 +9,8 @@ New feature(s):
 - Populate `Server.compatible_storage_ids` and `Database.compatible_storage_ids`
   for the same vendors (`None` if unknown, `[]` if no extra storage can be
   attached).
+- Alembic migration updating the `family` and `series` column comments of the
+  server and database tables.
 - `AWS`: take the instance family from the Pricing API
   `instanceFamilyCategory`, with a docs based fallback.
 - `Azure`: derive disk and PostgreSQL storage compatibility from the VM
