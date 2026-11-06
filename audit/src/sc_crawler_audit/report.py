@@ -66,7 +66,7 @@ def write_report(
     with open(out_dir / "findings.jsonl", "w") as fh:
         for finding in findings:
             fh.write(json.dumps(finding.to_dict(), default=str) + "\n")
-    with open(out_dir / "findings.csv", "w", newline="") as fh:
+    with open(out_dir / "findings.csv", "w", newline="", encoding="utf-8") as fh:
         rows = [f.to_dict() for f in findings]
         if rows:
             writer = csv.DictWriter(fh, fieldnames=list(rows[0]))
@@ -216,8 +216,8 @@ def write_report(
     # free-form notes of this run (persistent verdicts belong to triage.yaml)
     notes = out_dir / "notes.md"
     if notes.exists():
-        lines += ["", notes.read_text().strip()]
+        lines += ["", notes.read_text(encoding="utf-8").strip()]
 
     path = out_dir / "report.md"
-    path.write_text("\n".join(lines) + "\n")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path

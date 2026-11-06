@@ -50,7 +50,7 @@ def collect_urls(root: Path, sources: Sources) -> Dict[str, List[dict]]:
     }
     found = defaultdict(lambda: defaultdict(list))
     for path in files:
-        if not path.exists() or "audit" in path.parts:
+        if not path.exists() or "audit" in path.relative_to(root).parts:
             continue
         for lineno, line in enumerate(path.read_text().splitlines(), start=1):
             for url in URL_PATTERN.findall(line):

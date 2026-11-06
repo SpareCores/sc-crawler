@@ -535,13 +535,42 @@ def test_upcloud_inventory_database_storages_from_service_plans():
     assert by_id["standard"]["scope"] == DatabaseStorageScope.DATA
     assert by_id["standard"]["max_iops"] == 10000
     assert by_id["maxiops"]["max_iops"] == 100000
-    # Standard: legacy only in this fixture (50–400 GiB per node).
+    # Standard: legacy only in this fixture (50–800 GiB per node).
     assert by_id["standard"]["min_size"] == round(50 * _GIB_TO_GB)
-    assert by_id["standard"]["max_size"] == round(400 * _GIB_TO_GB)
+    assert by_id["standard"]["max_size"] == round(800 * _GIB_TO_GB)
     # MaxIOPS: rdb.standard shape options (80–640 GiB).
     assert by_id["maxiops"]["min_size"] == round(80 * _GIB_TO_GB)
     assert by_id["maxiops"]["max_size"] == round(640 * _GIB_TO_GB)
     assert by_id["maxiops"]["max_throughput"] == 400
+
+
+def test_upcloud_database_storage_bounds_keep_per_node_sizes_of_multi_node_plans():
+    vendor = Mock(vendor_id="upcloud")
+    with (
+        patch(
+            "sc_crawler.vendors._upcloud._get_pg_service_type",
+            return_value={
+                "service_plans": [
+                    {
+                        "plan": "3x2xCPU-4GB-100GB",
+                        "node_count": 3,
+                        "storage_size": 102400,
+                        "storage_cap_size": 512000,
+                        "components": {"storage": {"included_gib": 100}},
+                    },
+                ]
+            },
+        ),
+        patch(
+            "sc_crawler.vendors._upcloud._get_database_plans",
+            return_value={"service_types": []},
+        ),
+    ):
+        rows = inventory_database_storages(vendor)
+    assert len(rows) == 1
+    assert rows[0]["database_storage_id"] == "standard"
+    assert rows[0]["min_size"] == round(100 * _GIB_TO_GB)
+    assert rows[0]["max_size"] == round(500 * _GIB_TO_GB)
 
 
 def test_upcloud_inventory_database_storage_prices_from_zone_list():

@@ -23,6 +23,7 @@ entries:
   - vendor: hcloud
     type: SPEC_MISMATCH
     field: memory_gib
+    match: "(CAX|CCX|CPX|CX)\\d+"
     verdict: false_positive
     note: "_hcloud.py:417 multiplies the API's GB value by 1000 instead of 1024 (all SKUs -2.34%). Not a bug: Hetzner's \"GB\" is 1000 MiB, dmidecode in sc-inspector-data shows 4000 MB on cx22/cx23/cpx22/cax11 and 16 GB + 7616 MB = 24000 MiB on cpx52, so memory * 1000 (MiB) is right."
     by: bridgend84
@@ -30,6 +31,7 @@ entries:
     date: 2026-11-02
   - vendor: hcloud
     type: PRICE_MISSING_IN_DB
+    match: "(CAX\\d+|CX[2-5]3|CPX[1-5]1)"
     verdict: expected
     note: "Page shows the 'from' price for the cheapest locations; we lack prices there. Check per-location availability at crawl time. Verified against the API on 2026-11-02: our prices exist but are INACTIVE where the type is sold out (available false, e.g. cx23-53, cax*) or retired (cpx11-51 in EU/sin, unavailable_after 2025-12-31); the audit only exports ACTIVE prices."
     by: bridgend84
@@ -396,6 +398,17 @@ entries:
     date: 2026-11-04
   - vendor: ovh
     type: FEATURE_MISMATCH
+    field: engine_versions
+    ours: "['14', '15', '16', '17', '18']"
+    theirs: "['15', '16', '17', '18']"
+    verdict: false_positive
+    note: "PostgreSQL 14 still listed for us (docs: 15-18); SLA one level higher than the docs. PostgreSQL 14 is END_OF_SALE in the availability API (end of sale 2026-05-12) and is no longer listed since 2026-11-02 (fixed). SLA matches the product page (Production 99.95%, Advanced 99.99%: the 3-AZ level; 1-AZ regions have 99.9%/99.95%)."
+    by: bridgend84
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-11-02
+  - vendor: ovh
+    type: FEATURE_MISMATCH
+    field: sla
     verdict: false_positive
     note: "PostgreSQL 14 still listed for us (docs: 15-18); SLA one level higher than the docs. PostgreSQL 14 is END_OF_SALE in the availability API (end of sale 2026-05-12) and is no longer listed since 2026-11-02 (fixed). SLA matches the product page (Production 99.95%, Advanced 99.99%: the 3-AZ level; 1-AZ regions have 99.9%/99.95%)."
     by: bridgend84
@@ -432,6 +445,7 @@ entries:
   - vendor: azure
     type: SPEC_MISMATCH
     field: memory_gib
+    match: "Standard_(EC32ad?s(_cc)?_v5|HB120(-\\d+)?rs_v3|HB368(-\\d+)?rs_v5|ND128isr_NDR_GB200_v6|ND96amsr_A100_v4)"
     verdict: expected
     note: "Resource SKUs API vs docs disagree (e.g. HB120rs_v3 456 vs 448, ND96amsr_A100_v4 1800 vs 1900). We store the Resource SKUs API MemoryGB, the value Azure provisions; the docs differ for a few sizes only."
     by: bridgend84
@@ -475,6 +489,7 @@ entries:
     date: 2026-10-31
   - vendor: azure
     type: NOT_AT_VENDOR
+    match: "Standard_(NV\\d+s_v2|PB6s|NC\\d+ads_A10_v4|ND96is_MI300X_v5|M416d?s_(9|10|12)_v[23]|M16s_v3|M32ts_v3|E96ias_v4|EC96iad?s_v5)"
     verdict: expected
     note: "ACTIVE sizes on no docs page (NVv2, PB6s, NC*ads_A10_v4, ND96is_MI300X_v5, M416s_9/10/12, isolated sizes): retired or non-public sizes still in the Resource SKUs API? All are in the Resource SKUs API and have live retail prices (e.g. NV6s_v2, PB6s, ND96is_MI300X_v5, M416s_9_v2), so they stay ACTIVE (likely restricted or preview sizes)."
     by: bridgend84
@@ -483,6 +498,18 @@ entries:
   - vendor: azure
     type: FEATURE_MISMATCH
     field: sla
+    page: "^postgresql-(ha|reliability)$"
+    theirs: "99.95"
+    verdict: expected
+    note: "Single SLA value per SKU (best case, 99.99 with zone-redundant HA) vs per-HA-mode SLAs in the docs."
+    by: bridgend84
+    evidence: audit-runs/2026-10-31.tar.xz
+    date: 2026-10-31
+  - vendor: azure
+    type: FEATURE_MISMATCH
+    field: sla
+    page: "^postgresql-reliability$"
+    theirs: "99.9"
     verdict: expected
     note: "Single SLA value per SKU (best case, 99.99 with zone-redundant HA) vs per-HA-mode SLAs in the docs."
     by: bridgend84

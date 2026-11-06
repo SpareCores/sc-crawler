@@ -14,7 +14,7 @@ import sqlite3
 import subprocess
 import tarfile
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePath, PurePosixPath
 from typing import Optional
 
 from . import PROJECT_ROOT, __version__
@@ -54,9 +54,18 @@ def _db_metadata(db: Optional[Path]) -> dict:
         return {}
 
 
+def _added_separately(relative: PurePath) -> bool:
+    """Paths in a run directory (e.g. an extracted archive) replaced when archiving."""
+    return relative == PurePath(MANIFEST) or relative.parts[:1] == ("config",)
+
+
 def build_manifest(run_dir: Path, db: Optional[Path] = None) -> dict:
     run_dir = Path(run_dir)
-    files = sorted(p for p in run_dir.rglob("*") if p.is_file())
+    files = sorted(
+        p
+        for p in run_dir.rglob("*")
+        if p.is_file() and not _added_separately(p.relative_to(run_dir))
+    )
     status = _git("status", "--porcelain", "--", ".")
     return {
         "run": run_dir.name,
@@ -110,8 +119,12 @@ def create_archive(
     manifest = build_manifest(run_dir, db)
     manifest_bytes = json.dumps(manifest, indent=2).encode()
 
+    def skip_added_separately(info: tarfile.TarInfo) -> Optional[tarfile.TarInfo]:
+        relative = PurePosixPath(info.name).relative_to(run_dir.name)
+        return None if _added_separately(relative) else info
+
     with tarfile.open(output, "w:xz") as tar:
-        tar.add(run_dir, arcname=run_dir.name)
+        tar.add(run_dir, arcname=run_dir.name, filter=skip_added_separately)
         for config in ("sources.yaml", "triage.yaml"):
             if (PROJECT_ROOT / config).exists():
                 tar.add(

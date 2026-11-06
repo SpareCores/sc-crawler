@@ -181,13 +181,16 @@ def fetch_page(
         return result
 
     target.mkdir(parents=True, exist_ok=True)
-    (target / f"{slug}.{'json' if is_json else 'html'}").write_bytes(response.content)
+    # keep the last good snapshot if this fetch failed (e.g. an error page)
+    if error is None:
+        raw_path = target / f"{slug}.{'json' if is_json else 'html'}"
+        raw_path.write_bytes(response.content)
     if markdown:
         header = (
             f"<!-- source: {response.url} | fetched_at: {now} | "
             f"sha256: {result.sha256} -->\n\n"
         )
-        (target / f"{slug}.md").write_text(header + markdown)
+        (target / f"{slug}.md").write_text(header + markdown, encoding="utf-8")
     meta_path.write_text(json.dumps(asdict(result), indent=2))
 
     if page.follow and error is None:
@@ -285,6 +288,6 @@ def import_page(
         f"<!-- source: {page.url} | manually saved: {captured} | "
         f"sha256: {result.sha256} -->\n\n"
     )
-    (target / f"{slug}.md").write_text(header + markdown)
+    (target / f"{slug}.md").write_text(header + markdown, encoding="utf-8")
     (target / f"{slug}.meta.json").write_text(json.dumps(asdict(result), indent=2))
     return result

@@ -1549,7 +1549,6 @@ def _database_storage_size_bounds(tier_id: str) -> tuple[int, int] | None:
     max_gib = 0
     if tier_id == "standard":
         for plan in _get_pg_service_type().get("service_plans", []):
-            nodes = plan.get("node_count") or 1
             included = (
                 (plan.get("components") or {}).get("storage", {}).get("included_gib")
             )
@@ -1558,10 +1557,9 @@ def _database_storage_size_bounds(tier_id: str) -> tuple[int, int] | None:
                 if included is not None
                 else plan["storage_size"] // _MIB_PER_GIB
             )
-            # Per-node floor; cap is cluster storage_cap converted per node.
-            floor_gib = base_gib // nodes
-            cap_gib = plan["storage_cap_size"] // _MIB_PER_GIB // nodes
-            min_gib = floor_gib if min_gib is None else min(min_gib, floor_gib)
+            # API sizes are per node, whatever the node count of the plan.
+            cap_gib = plan["storage_cap_size"] // _MIB_PER_GIB
+            min_gib = base_gib if min_gib is None else min(min_gib, base_gib)
             max_gib = max(max_gib, cap_gib)
     for service_type in _get_database_plans().get("service_types", []):
         if service_type.get("type") not in ("pg", "postgresql"):

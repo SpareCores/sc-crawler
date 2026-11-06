@@ -454,6 +454,86 @@ def test_archive_roundtrip(tmp_path):
     assert "2026-01-01/config/sources.yaml" in names
 
 
+def test_archive_of_extracted_run_has_unique_members(tmp_path):
+    import json
+    import tarfile
+
+    from sc_crawler_audit.archive import create_archive, verify_archive
+
+    run = tmp_path / "2026-01-01"
+    (run / "config").mkdir(parents=True)
+    (run / "config" / "sources.yaml").write_text("old\n")
+    (run / "manifest.json").write_text("{}")
+    (run / "findings.jsonl").write_text("{}\n")
+    # same name below the top level is regular run content
+    (run / "pages" / "config").mkdir(parents=True)
+    (run / "pages" / "config" / "cloud.md").write_text("# Hetzner\n")
+
+    path, manifest = create_archive(run)
+    assert {f["path"] for f in manifest["files"]} == {
+        "findings.jsonl",
+        "pages/config/cloud.md",
+    }
+    assert verify_archive(path) == []
+    with tarfile.open(path) as tar:
+        names = tar.getnames()
+        assert json.load(tar.extractfile("2026-01-01/manifest.json"))["run"]
+        assert tar.extractfile("2026-01-01/config/sources.yaml").read() != b"old\n"
+    assert len(names) == len(set(names))
+
+
+def test_failed_fetch_keeps_raw_snapshot_and_reports_error(tmp_path):
+    import json
+    from unittest.mock import Mock
+
+    from sc_crawler_audit.fetch import fetch_page
+
+    def response(status, content):
+        return Mock(
+            url="https://www.vultr.com/pricing/",
+            status_code=status,
+            content=content,
+            text=content.decode(),
+            headers={"content-type": "text/html"},
+        )
+
+    vendor = VendorSources(allowed_domains=["vultr.com"], pages=[])
+    page = SourcePage(
+        id="pricing", url="https://www.vultr.com/pricing/", kinds=["db_prices"]
+    )
+    session = Mock()
+    good = "<html><body><main>árlista</main></body></html>".encode()
+    session.get.return_value = response(200, good)
+    fetch_page("vultr", vendor, page, tmp_path, session=session)
+    pages = tmp_path / "pages" / "vultr"
+    assert "árlista" in (pages / "pricing.md").read_bytes().decode("utf-8")
+
+    session.get.return_value = response(503, b"<html>Unavailable</html>")
+    meta_path = pages / "pricing.meta.json"
+    meta = json.loads(meta_path.read_text())
+    meta["fetched_at"] = "2020-01-01T00:00:00+00:00"
+    meta_path.write_text(json.dumps(meta))
+    result = fetch_page("vultr", vendor, page, tmp_path, session=session)
+    assert result.error == "HTTP 503"
+    assert (pages / "pricing.html").read_bytes() == good
+    assert json.loads(meta_path.read_text())["error"] == "HTTP 503"
+
+
+def test_seed_urls_skip_audit_only_below_root(tmp_path):
+    from sc_crawler_audit.schema import Sources
+    from sc_crawler_audit.seed import collect_urls
+
+    root = tmp_path / "audit" / "checkout"
+    (root / "src" / "audit").mkdir(parents=True)
+    (root / "src" / "a.py").write_text("# https://www.vultr.com/kept/\n")
+    (root / "src" / "audit" / "b.py").write_text("# https://www.vultr.com/skipped/\n")
+    sources = Sources(
+        vendors={"vultr": VendorSources(allowed_domains=["vultr.com"], pages=[])}
+    )
+    urls = [entry["url"] for entry in collect_urls(root, sources)["vultr"]]
+    assert urls == ["https://www.vultr.com/kept/"]
+
+
 def test_db_series_row_covers_family(tmp_path):
     def db(database_id, family):
         return {

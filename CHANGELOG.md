@@ -1,4 +1,4 @@
-## v0.10.3 (November 04, 2026)
+## v0.10.3 (November 06, 2026)
 
 New benchmark(s):
 
