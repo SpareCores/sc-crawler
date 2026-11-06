@@ -11,7 +11,8 @@ New feature(s):
   extending the PostgreSQL enum).
 - `AWS`: store Inferentia, Trainium, Qualcomm AI100 and Habana Gaudi (previously
   `GPU`) as `NPU`, FPGA (`f1`, `f2`) and video transcoding (`vt1`) accelerators
-  as `FPGA` and `VPU`.
+  as `FPGA` and `VPU`. Trainium2 memory is taken from the AWS docs (96 GiB per
+  device), as the API reports 512 GiB.
 - `Azure`: store the NP-series FPGAs as `FPGA`.
 - `Alibaba Cloud`: store FPGA, video transcoding and AI accelerators as `FPGA`,
   `VPU` and `NPU` instead of `GPU`.

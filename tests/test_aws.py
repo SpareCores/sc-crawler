@@ -54,6 +54,16 @@ def _device(name, manufacturer, count, memory):
             },
             (12, 32768, 393216, "AWS", "Inferentia2", AcceleratorType.NPU),
         ),
+        # Trainium2 memory from the AWS docs instead of the API
+        (
+            {
+                "NeuronInfo": {
+                    "NeuronDevices": [_device("Trainium2", None, 16, 524288)],
+                    "TotalNeuronDeviceMemoryInMiB": 8388608,
+                }
+            },
+            (16, 98304, 1572864, "AWS", "Trainium2", AcceleratorType.NPU),
+        ),
         (
             {
                 "InferenceAcceleratorInfo": {

@@ -598,10 +598,13 @@ def _get_storages_of_instance_type(instance_type):
     return [to_storage(disk, nvme=info.get("NvmeSupport", False)) for disk in disks]
 
 
-# DescribeInstanceTypes field of the accelerators: key of the device list, total
-# memory and accelerator type. The API reports Trainium2 memory as 512 GiB per device
-# (8 TiB in total), while the AWS docs list 96 GiB (1.5 TB in total):
+# The API reports Trainium2 memory as 512 GiB per device (8 TiB in total on
+# trn2.48xlarge), while the AWS docs list 1.5 TB HBM for the 16 chips (96 GiB each):
 # https://aws.amazon.com/ec2/instance-types/trn2/
+_DEVICE_MEMORY_OVERRIDES_MIB = {"Trainium2": 96 * 1024}
+
+# DescribeInstanceTypes field of the accelerators: key of the device list, total
+# memory and accelerator type.
 _ACCELERATOR_INFOS = {
     "GpuInfo": ("Gpus", "TotalGpuMemoryInMiB", AcceleratorType.GPU),
     "NeuronInfo": (
@@ -635,14 +638,20 @@ def _accelerators_of_instance_type(instance_type):
                 "Name": device["Name"],
                 # Inferentia and Trainium devices have no manufacturer
                 "Manufacturer": device.get("Manufacturer", "AWS"),
-                "Memory": (device.get("MemoryInfo") or {}).get("SizeInMiB", 0),
+                "Memory": _DEVICE_MEMORY_OVERRIDES_MIB.get(
+                    device["Name"],
+                    (device.get("MemoryInfo") or {}).get("SizeInMiB", 0),
+                ),
             }
             for device in info.get(devices_key) or []
         ]
         # Habana Gaudi (dl1) is listed among the GPUs
         if devices and "Gaudi" in devices[0]["Name"]:
             acc_type = AcceleratorType.NPU
-        return acc_type, devices, info.get(total_key, 0)
+        total = info.get(total_key, 0)
+        if any(device["Name"] in _DEVICE_MEMORY_OVERRIDES_MIB for device in devices):
+            total = sum(device["Count"] * device["Memory"] for device in devices)
+        return acc_type, devices, total
     return None, [], 0
 
 
