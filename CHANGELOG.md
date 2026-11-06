@@ -1,11 +1,17 @@
 ## v0.10.x (DEVELOPMENT)
 
+New feature(s):
+
+- `OVH`: list flex flavors as separate servers.
+
 New benchmark(s):
 
 - `nvbandwidth:slot:local_copy`: per-GPU VRAM copy bandwidth (nvbandwidth v0.7+).
 
 Fix(es):
 
+- `OVH`: October 2026 pricing update (separately billed IPv4 for all instance
+  ranges, and local storage for Gen3).
 - `Azure`: stop inventing Flexible Server sizes from the VM catalog when Retail
   only has a per-vCore series meter (e.g. `DCasv5` / `Dsv6`), series meters
   remain for pricing.
