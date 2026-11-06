@@ -1,11 +1,23 @@
 ## v0.10.3 (November 06, 2026)
 
+New feature(s):
+
+- `OVH`: list flex flavors as separate servers.
+
 New benchmark(s):
 
 - `nvbandwidth:slot:local_copy`: per-GPU VRAM copy bandwidth (nvbandwidth v0.7+).
 
 Fix(es):
 
+- `OVH`: October 2026 pricing update (separately billed IPv4 for all instance
+  ranges, and local storage for Gen3).
+- `Azure`: stop inventing Flexible Server sizes from the VM catalog when Retail
+  only has a per-vCore series meter (e.g. `DCasv5` / `Dsv6`), series meters
+  remain for pricing.
+- `Azure`: keep ConfidentialVM Flexible Server SKUs only from ACC regions
+  (West Europe / UAE North), drop billing-only Retail series not in
+  capabilities (e.g. `Mdsv2`).
 - `Azure`: price PostgreSQL compute from the `1 vCore` meter (as the pricing
   page does), as some sized meters are stale.
 - `Azure`: label `Mdsv2` PostgreSQL SKUs as `MemoryOptimized`.
