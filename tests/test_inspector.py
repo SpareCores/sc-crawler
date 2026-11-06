@@ -140,6 +140,36 @@ def test_gcp_inspector_lsblk_still_overrides_api_storage():
     assert updated["storages"][0].size == partition_gb
 
 
+@pytest.mark.parametrize(
+    "boot_name, boot_model, local_names",
+    [
+        # the boot Persistent Disk is not always nvme0, e.g. on a3-highgpu-8g
+        ("nvme1n1", "nvme_card-pd", ["nvme0n1", "nvme2n1"]),
+        ("nvme0n1", "nvme_card-pd", ["nvme1n1", "nvme2n1"]),
+        ("sda", "PersistentDisk", ["nvme0n1", "nvme1n1"]),
+    ],
+)
+def test_gcp_inspector_lsblk_skips_boot_persistent_disk_by_model(
+    boot_name, boot_model, local_names
+):
+    partition_gb = (375 * 1024**3) // 1000**3
+    lsblk = {
+        "blockdevices": [
+            {"name": boot_name, "size": 128 * 1024**3, "model": boot_model},
+            *(
+                {"name": name, "size": 375 * 1024**3, "model": f"nvme_card{i}"}
+                for i, name in enumerate(local_names)
+            ),
+        ]
+    }
+    with ExitStack() as stack:
+        _patch_missing_inspector_lookups(stack, _server_lsblk=lsblk)
+        updated = inspect_update_server_dict(_z4d_server())
+
+    assert updated["storage_size"] == 2 * partition_gb
+    assert [disk.size for disk in updated["storages"]] == [partition_gb] * 2
+
+
 def test_missing_nvidia_smi_does_not_mark_server_as_gpu():
     with ExitStack() as stack:
         _patch_missing_inspector_lookups(stack)

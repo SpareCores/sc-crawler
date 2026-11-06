@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(sc-audit:*)",
+      "Bash(.venv/bin/sc-audit:*)",
+      "Read(audit-out/**)",
+      "Edit(audit-out/**)",
+      "Write(audit-out/**)",
+      "WebSearch",
+      "WebFetch(domain:alibabacloud.com)",
+      "WebFetch(domain:aws.amazon.com)",
+      "WebFetch(domain:azure.microsoft.com)",
+      "WebFetch(domain:b0.p.awsstatic.com)",
+      "WebFetch(domain:cloud.google.com)",
+      "WebFetch(domain:docs.aws.amazon.com)",
+      "WebFetch(domain:docs.cloud.google.com)",
+      "WebFetch(domain:g.alicdn.com)",
+      "WebFetch(domain:hetzner.com)",
+      "WebFetch(domain:learn.microsoft.com)",
+      "WebFetch(domain:microsoft.com)",
+      "WebFetch(domain:ovhcloud.com)",
+      "WebFetch(domain:upcloud.com)",
+      "WebFetch(domain:vultr.com)",
+      "WebFetch(domain:website.spot.ec2.aws.a2z.com)"
+    ]
+  }
+}

@@ -600,6 +600,11 @@ def test_azure_sku_lifecycle_status_from_retired_sizes_list():
         "Standard_DC8ads_cc_v5",
         "Standard_EC4as_cc_v5",
         "Standard_EC4ads_cc_v5",
+        "Standard_D2s_v3",
+        "Standard_D2_v3",
+        "Standard_E2s_v3",
+        "Standard_E64-16s_v3",
+        "Standard_E64is_v3",
     ]
     retired = [
         "Standard_A2",
@@ -613,11 +618,10 @@ def test_azure_sku_lifecycle_status_from_retired_sizes_list():
         "Standard_NC24rs_v3",
     ]
     active = [
-        "Standard_D2s_v3",
         "Standard_D4s_v5",
         "Standard_B2als_v2",
-        "Standard_E2s_v3",
-        "Standard_E4s_v3",
+        "Standard_E4s_v4",
+        "Standard_D4ds_v4",
         "Standard_DC4as_v5",
         "Standard_L8s_v3",
         "Standard_NC4as_T4_v3",
@@ -698,6 +702,15 @@ def test_azure_sku_lifecycle_status_transitions_on_retirement_date():
     )
     assert (
         _azure_sku_lifecycle_status("Standard_DC8ds_v3", as_of=date(2029, 10, 31))
+        == Status.RETIRED
+    )
+    # Dv3/Dsv3/Ev3/Esv3: retires 2029-11-15
+    assert (
+        _azure_sku_lifecycle_status("Standard_E4s_v3", as_of=date(2029, 11, 14))
+        == Status.PLANNED_FOR_RETIREMENT
+    )
+    assert (
+        _azure_sku_lifecycle_status("Standard_D4_v3", as_of=date(2029, 11, 15))
         == Status.RETIRED
     )
 
@@ -925,7 +938,8 @@ def test_azure_inventory_databases_ha_from_supported_ha_mode():
         DatabaseHaStrategy.PASSIVE_STANDBY,
         DatabaseHaStrategy.NONE,
     ]
-    assert by_id["Standard_B1ms"]["status"] == Status.PLANNED_FOR_RETIREMENT
+    # Flexible Server does not inherit the B-series v1 VM retirement
+    assert by_id["Standard_B1ms"]["status"] == Status.ACTIVE
     assert by_id["Standard_D2s_v3"]["status"] == Status.ACTIVE
     assert by_id["Standard_E2s_v3"]["status"] == Status.ACTIVE
 
@@ -940,6 +954,12 @@ def test_azure_inventory_databases_adds_quota_hidden_concrete_retail_skus():
             server_id="Standard_E104ids_v5",
             vcpus=104,
             memory_amount=917504,
+        ),
+        SimpleNamespace(
+            api_reference="Standard_DC2as_v5",
+            server_id="Standard_DC2as_v5",
+            vcpus=2,
+            memory_amount=8192,
         ),
     ]
     vendor.progress_tracker = Mock(
@@ -961,10 +981,15 @@ def test_azure_inventory_databases_adds_quota_hidden_concrete_retail_skus():
                         vCores=2,
                         supportedMemoryPerVcoreMb=4096,
                         supportedHaMode=["SameZone", "ZoneRedundant"],
-                    )
+                    ),
+                    SimpleNamespace(
+                        name="Standard_D8s_v6",
+                        vCores=8,
+                        supportedMemoryPerVcoreMb=4096,
+                        supportedHaMode=["SameZone", "ZoneRedundant"],
+                    ),
                 ],
             ),
-            # Same series as the quota-hidden Retail size; Retail must not invent new series.
             SimpleNamespace(
                 name="MemoryOptimized",
                 supportedStorageEditions=[],
@@ -982,6 +1007,18 @@ def test_azure_inventory_databases_adds_quota_hidden_concrete_retail_skus():
     retail = [
         {
             # Series meter alone must not invent Standard_D*s_v6 from the VM catalog.
+            "armSkuName": (
+                "Azure_Database_for_PostgreSQL_Flexible_Server_"
+                "Confidential_Compute_DCasv5_Series_Compute"
+            ),
+            "productName": (
+                "Azure Database for PostgreSQL Flexible Server "
+                "Confidential Compute DCasv5 Series Compute"
+            ),
+            "meterName": "vCore",
+            "skuName": "vCore",
+        },
+        {
             "armSkuName": (
                 "Azure_Database_for_PostgreSQL_Flexible_Server_"
                 "General_Purpose_Dsv6_Series_Compute_1_vCore"
@@ -1024,10 +1061,17 @@ def test_azure_inventory_databases_adds_quota_hidden_concrete_retail_skus():
     by_id = {row["database_id"]: row for row in rows}
     assert set(by_id) == {
         "Standard_D2s_v3",
+        "Standard_D8s_v6",
         "Standard_E2ds_v5",
         "Standard_E104ids_v5",
     }
     assert by_id["Standard_D2s_v3"]["family"] == "Dsv3"
+    assert "Standard_D2ls_v6" not in by_id
+    # DCasv5 has a retail meter, but no size of the series is in capabilities
+    assert "Standard_DC2as_v5" not in by_id
+    # series meters name no size, so only capabilities lists Dsv6 sizes
+    assert "Standard_D8s_v6" in by_id
+    assert "Standard_D2s_v6" not in by_id
     assert by_id["Standard_D2s_v3"]["autotuning_advice"] is True
     assert by_id["Standard_D2s_v3"]["storage_extra_autosize"] is True
     assert by_id["Standard_D2s_v3"]["ha"] == [
@@ -2925,10 +2969,15 @@ def test_aws_inventory_server_prices_deactivates_unoffered_instance_types():
         status=Status.ACTIVE,
     )
     region.name = "US East (N. Virginia)"
+    region.zones = [
+        Mock(zone_id="use1-az1", status=Status.ACTIVE),
+        Mock(zone_id="use1-az2", status=Status.INACTIVE),
+    ]
     m5 = _aws_server_mock("m5.large", Status.ACTIVE)
     t1 = _aws_server_mock("t1.micro", Status.ACTIVE)
+    m4 = _aws_server_mock("m4.large", Status.ACTIVE)
     mac = _aws_server_mock("mac1.metal", Status.ACTIVE)
-    vendor = _aws_vendor(regions=[region], servers=[m5, t1, mac])
+    vendor = _aws_vendor(regions=[region], servers=[m5, t1, m4, mac])
     products = [
         {
             "product": {
@@ -2948,6 +2997,15 @@ def test_aws_inventory_server_prices_deactivates_unoffered_instance_types():
             },
             "terms": _aws_ondemand_terms("0.02"),
         },
+        {
+            "product": {
+                "attributes": {
+                    "location": "US East (N. Virginia)",
+                    "instanceType": "m4.large",
+                }
+            },
+            "terms": {**_aws_ondemand_terms("0.1"), "Reserved": {"x": {}}},
+        },
     ]
     with (
         patch(
@@ -2964,12 +3022,17 @@ def test_aws_inventory_server_prices_deactivates_unoffered_instance_types():
     ):
         prices = aws_server_prices(vendor)
         aws_reconcile_server_status(vendor)
-    assert {(p["server_id"], p["zone_id"]) for p in prices} == {
-        ("m5.large", "use1-az1")
+    # not offered prices are kept as INACTIVE in the ACTIVE zones of the region
+    assert {(p["server_id"], p["zone_id"], p["status"]) for p in prices} == {
+        ("m5.large", "use1-az1", Status.ACTIVE),
+        ("t1.micro", "use1-az1", Status.INACTIVE),
+        ("m4.large", "use1-az1", Status.INACTIVE),
     }
     assert m5.status == Status.ACTIVE
-    # still priced, but not offered in any zone
-    assert t1.status == Status.INACTIVE
+    # still priced, but not offered in any zone and no Reserved terms
+    assert t1.status == Status.RETIRED
+    # still priced with Reserved terms, but not offered in any zone
+    assert m4.status == Status.INACTIVE
     # offered, even without a Linux on-demand SKU
     assert mac.status == Status.ACTIVE
 
@@ -2993,9 +3056,12 @@ def test_aws_reconcile_server_status_keeps_spot_only_instance_types_active():
     region.name = "US East (N. Virginia)"
     spot_only = _aws_server_mock("p4d.24xlarge", Status.INACTIVE)
     vendor = _aws_vendor(regions=[region], servers=[spot_only])
-    with patch(
-        "sc_crawler.vendors._aws._describe_instance_type_offerings_per_zone_with_progress",
-        return_value={},
+    with (
+        patch("sc_crawler.vendors._aws._boto_get_products", return_value=[]),
+        patch(
+            "sc_crawler.vendors._aws._describe_instance_type_offerings_per_zone_with_progress",
+            return_value={},
+        ),
     ):
         aws_reconcile_server_status(vendor, spot_server_ids={"p4d.24xlarge"})
     assert spot_only.status == Status.ACTIVE
@@ -3014,9 +3080,12 @@ def test_aws_reconcile_server_status_sets_missing_accelerator_type_of_active_ser
     gpu_inactive = _aws_server_mock("p3.2xlarge", Status.ACTIVE, 1)
     no_gpu = _aws_server_mock("m5.large", Status.INACTIVE)
     vendor = _aws_vendor(regions=[region], servers=[gpu_active, gpu_inactive, no_gpu])
-    with patch(
-        "sc_crawler.vendors._aws._describe_instance_type_offerings_per_zone_with_progress",
-        return_value={"m5.large": ["use1-az1"]},
+    with (
+        patch("sc_crawler.vendors._aws._boto_get_products", return_value=[]),
+        patch(
+            "sc_crawler.vendors._aws._describe_instance_type_offerings_per_zone_with_progress",
+            return_value={"m5.large": ["use1-az1"]},
+        ),
     ):
         aws_reconcile_server_status(vendor, spot_server_ids={"g4ad.xlarge"})
     assert gpu_active.status == Status.ACTIVE

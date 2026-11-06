@@ -278,12 +278,33 @@ def _hcloud_location_status(location, now: datetime) -> Status:
 
 
 def _hcloud_server_status(server, now: datetime) -> Status:
-    """Map Hetzner per-location support/deprecation to a single Server status."""
+    """Map Hetzner per-location support/deprecation to a single Server status.
+
+    Sold out locations (`available is False`) count as ACTIVE: the type is still
+    offered there, only out of stock, which often changes within hours. The
+    related per-location prices stay INACTIVE (see `inventory_server_prices`).
+    """
     if not server.locations:
         return Status.INACTIVE
+    statuses = {_hcloud_location_status(location, now) for location in server.locations}
     return Status.best(
-        {_hcloud_location_status(location, now) for location in server.locations}
+        {Status.ACTIVE if status == Status.INACTIVE else status for status in statuses}
     )
+
+
+def _retired_servers(vendor, server_types) -> list[dict]:
+    """Known servers no longer returned by the API, as RETIRED Server dicts.
+
+    The server types endpoint returns the full catalogue (deprecated types
+    included until they are removed), so a missing type is retired, not a
+    partial response.
+    """
+    listed = {str(server.id) for server in server_types}
+    return [
+        server.model_dump(exclude={"observed_at"}) | {"status": Status.RETIRED}
+        for server in vendor.servers
+        if server.server_id not in listed
+    ]
 
 
 # ##############################################################################
@@ -375,12 +396,14 @@ def inventory_servers(vendor):
 
     Lifecycle (per-location server type fields): `deprecation.unavailable_after` in
     past -> RETIRED, `deprecation` present -> PLANNED_FOR_RETIREMENT,
-    `available is False` or empty locations -> INACTIVE, otherwise ACTIVE.
-    See `_hcloud_server_status`.
+    empty locations -> INACTIVE, otherwise (including sold out) ACTIVE.
+    See `_hcloud_server_status`. Known types removed from the API -> RETIRED,
+    see `_retired_servers`.
     """
     now = datetime.now(UTC)
+    server_types = _get_server_types()
     items = []
-    for server in _get_server_types():
+    for server in server_types:
         with sentry_capture_or_raise(vendor=vendor):
             # CPU info not available via the API,
             # collected from https://www.hetzner.com/cloud/
@@ -442,7 +465,7 @@ def inventory_servers(vendor):
                     "status": _hcloud_server_status(server, now),
                 }
             )
-    return items
+    return items + _retired_servers(vendor, server_types)
 
 
 def inventory_server_prices(vendor):

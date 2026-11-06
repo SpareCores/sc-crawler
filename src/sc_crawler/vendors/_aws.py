@@ -4,7 +4,7 @@ import json
 import re
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from functools import cache
 from itertools import chain, repeat
 from logging import DEBUG, WARN
@@ -339,13 +339,33 @@ def _collect_regions_servers(vendor: Vendor) -> dict[str, dict[str, list[str]]]:
     return regions_servers
 
 
+# spot prices not updated since are ignored for the server status
+_SPOT_PRICE_MAX_AGE = timedelta(days=7)
+
+
+def _price_list_server_ids() -> Tuple[set[str], set[str]]:
+    """Instance types with on-demand prices, and those also with Reserved terms in any region."""
+    priced, reserved = set(), set()
+    for product in _get_server_products():
+        instance_type = product["product"]["attributes"].get("instanceType")
+        if instance_type is None:
+            continue
+        priced.add(instance_type)
+        if product["terms"].get("Reserved"):
+            reserved.add(instance_type)
+    return priced, reserved
+
+
 def _reconcile_server_status(
     vendor: Vendor, spot_server_ids: Collection[str] = ()
 ) -> None:
-    """Update server status from EC2 offerings and spot availability.
+    """Update server status from EC2 offerings, spot availability and the price list.
 
-    Not offered in any ACTIVE region/zone and absent from spot -> INACTIVE.
-    AWS does not confirm retirement, so never mark RETIRED here.
+    Offered in any ACTIVE region/zone or with recent spot prices -> ACTIVE.
+    Otherwise RETIRED if it has on-demand prices but no Reserved terms in the
+    price list (closed to new commitments), else INACTIVE (e.g. not offered to
+    our account). New instance types often lack Reserved terms too, but they
+    are offered or have spot prices.
     """
     regions_servers = _collect_regions_servers(vendor)
     offered_server_ids = {
@@ -354,12 +374,17 @@ def _reconcile_server_status(
         for server_id in zone_servers
     }
     available_server_ids = offered_server_ids | set(spot_server_ids)
+    priced_server_ids, reserved_server_ids = _price_list_server_ids()
     for server in vendor.servers:
-        server.status = (
-            Status.ACTIVE
-            if server.server_id in available_server_ids
-            else Status.INACTIVE
-        )
+        if server.server_id in available_server_ids:
+            server.status = Status.ACTIVE
+        elif (
+            server.server_id in priced_server_ids
+            and server.server_id not in reserved_server_ids
+        ):
+            server.status = Status.RETIRED
+        else:
+            server.status = Status.INACTIVE
         # servers kept ACTIVE only by spot prices are not returned by
         # describe_instance_types, so might miss fields added since last crawled
         if (
@@ -540,6 +565,11 @@ def _annotate_instance_type(instance_type_id):
     return text
 
 
+def _supports_nvme(storage_info) -> bool:
+    """Whether the instance store is NVMe: `NvmeSupport` is required, supported or unsupported."""
+    return storage_info.get("NvmeSupport") in ("required", "supported")
+
+
 def _get_storage_of_instance_type(instance_type, nvme=False):
     """Get overall storage size and type (tupple) from instance details."""
     if "InstanceStorageInfo" not in instance_type:
@@ -547,7 +577,7 @@ def _get_storage_of_instance_type(instance_type, nvme=False):
     info = instance_type["InstanceStorageInfo"]
     storage_size = info["TotalSizeInGB"]
     storage_type = info["Disks"][0].get("Type").lower()
-    if storage_type == "ssd" and info.get("NvmeSupport", False):
+    if storage_type == "ssd" and _supports_nvme(info):
         storage_type = "nvme ssd"
     return (storage_size, storage_type)
 
@@ -574,6 +604,30 @@ def _get_ebs_network_speed_gbps(
     )
 
 
+def _get_network_speed_gbps(instance_type) -> Tuple[float, float]:
+    """Get network baseline and peak bandwidth (Gbps) summed over all network cards.
+
+    For multi-card instance types, the instance-level `NetworkPerformance` (e.g.
+    "400 Gigabit" or "4x 100 Gigabit") is used as the peak and caps the baseline,
+    as some report the instance total on each card (e.g. 2x 200 Gbps cards with
+    200 Gbps total for `c6in.32xlarge`), others less than the total (e.g. 8x 200
+    Gbps cards with 3200 Gbps total for `p6-b200.48xlarge`).
+    """
+    network_info = instance_type["NetworkInfo"]
+    cards = network_info["NetworkCards"]
+    baseline = sum(card["BaselineBandwidthInGbps"] for card in cards)
+    peak = sum(card["PeakBandwidthInGbps"] for card in cards)
+    if len(cards) > 1:
+        match = re.search(
+            r"(?:(\d+)x\s*)?(\d+(?:\.\d+)?)\s*Gigabit",
+            network_info.get("NetworkPerformance", ""),
+        )
+        if match:
+            total = int(match.group(1) or 1) * float(match.group(2))
+            baseline, peak = min(baseline, total), total
+    return (baseline, peak)
+
+
 def _array_expand_by_count(array):
     """Expand an array with its items Count field."""
     array = [[a] * a["Count"] for a in array]
@@ -595,7 +649,7 @@ def _get_storages_of_instance_type(instance_type):
     # replicate number of disks
     disks = info["Disks"]
     disks = _array_expand_by_count(disks)
-    return [to_storage(disk, nvme=info.get("NvmeSupport", False)) for disk in disks]
+    return [to_storage(disk, nvme=_supports_nvme(info)) for disk in disks]
 
 
 def _get_gpu_of_instance_type(instance_type):
@@ -652,7 +706,7 @@ def _make_server_from_instance_type(instance_type, vendor) -> dict:
     cpu_info = instance_type["ProcessorInfo"]
     gpu_info = _get_gpu_of_instance_type(instance_type)
     storage_info = _get_storage_of_instance_type(instance_type)
-    network_card = instance_type["NetworkInfo"]["NetworkCards"][0]
+    network_baseline_gbps, network_max_gbps = _get_network_speed_gbps(instance_type)
     ebs_baseline_gbps, ebs_max_gbps = _get_ebs_network_speed_gbps(instance_type)
     return {
         "server_id": it,
@@ -675,7 +729,17 @@ def _make_server_from_instance_type(instance_type, vendor) -> dict:
         "accelerator_count": gpu_info[0],
         "accelerator_memory_min": gpu_info[1],
         "accelerator_memory_total": gpu_info[2],
-        # GpuInfo lists GPUs only (no Inferentia/Trainium or FPGA accelerators)
+        # TODO DEV-1015: store non-GPU accelerators (needs new AcceleratorType
+        #      values + alembic migration, as acceleratortype is a PostgreSQL enum):
+        #      - NeuronInfo.NeuronDevices (Count, Name, CoreInfo, MemoryInfo.SizeInMiB):
+        #        Inferentia (inf1), Inferentia2 (inf2), Trainium (trn1/trn1n),
+        #        Trainium2 (trn2/trn2u). The API reports 512 GiB per Trainium2
+        #        device (8 TiB on trn2.48xlarge), the docs 96 GiB (1.5 TB total).
+        #      - InferenceAcceleratorInfo.Accelerators: Qualcomm AI100 (dl2q).
+        #      - FpgaInfo.Fpgas: Xilinx Virtex UltraScale+ (f1, f2).
+        #      - MediaAcceleratorInfo.Accelerators: Xilinx U30 (vt1).
+        #      - GpuInfo also lists Habana Gaudi HL-205 (dl1), stored as GPU.
+        #      Also update inspector_rules (nvidia_smi/nvbandwidth skip only TPU).
         "accelerator_type": AcceleratorType.GPU if gpu_info[0] else None,
         "accelerator_manufacturer": gpu_info[3],
         "accelerator_model": gpu_info[4],
@@ -683,8 +747,8 @@ def _make_server_from_instance_type(instance_type, vendor) -> dict:
         "storage_size": storage_info[0],
         "storage_type": storage_info[1],
         "storages": _get_storages_of_instance_type(instance_type),
-        "network_speed_baseline": network_card["BaselineBandwidthInGbps"],
-        "network_speed_max": network_card["PeakBandwidthInGbps"],
+        "network_speed_baseline": network_baseline_gbps,
+        "network_speed_max": network_max_gbps,
         "network_storage_speed_baseline": ebs_baseline_gbps,
         "network_storage_speed_max": ebs_max_gbps,
     }
@@ -1560,8 +1624,8 @@ def inventory_servers(vendor):
     """List all available AWS instance types in all regions via `boto3` calls.
 
     Lifecycle is reconciled after spot price collection via
-    `_reconcile_server_status`
-    (offerings + spot in ACTIVE regions -> ACTIVE, else INACTIVE).
+    `_reconcile_server_status` (offerings + recent spot in ACTIVE regions ->
+    ACTIVE, on-demand price without Reserved terms -> RETIRED, else INACTIVE).
     """
     # TODO consider dropping this in favor of pricing.get_products, as
     #      it has info e.g. on instanceFamily although other fields
@@ -1602,6 +1666,16 @@ def inventory_server_prices(vendor):
             zones = regions_servers.get(region.api_reference, {}).get(
                 server.server_id, []
             )
+            status = Status.ACTIVE
+            # not offered to our account (e.g. closed to new accounts or retired):
+            # keep the price list price as INACTIVE in all zones of the region
+            if not zones and region.api_reference in regions_servers:
+                zones = [
+                    zone.zone_id
+                    for zone in region.zones
+                    if zone.status == Status.ACTIVE
+                ]
+                status = Status.INACTIVE
             price = _extract_ondemand_price(product["terms"])
             for zone in zones:
                 server_prices.append(
@@ -1616,6 +1690,7 @@ def inventory_server_prices(vendor):
                         "price": float(price[0]),
                         "currency": price[1],
                         "unit": PriceUnit.HOUR,
+                        "status": status,
                     }
                 )
         except KeyError as e:
@@ -1694,7 +1769,25 @@ def inventory_server_prices_spot(vendor):
         )
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
-    _reconcile_server_status(vendor, {product["InstanceType"] for product in products})
+    # the latest spot price is returned even if it was last updated long ago,
+    # e.g. after the instance type was closed to new accounts
+    spot_since = datetime.now(UTC) - _SPOT_PRICE_MAX_AGE
+    _reconcile_server_status(
+        vendor,
+        {
+            product["InstanceType"]
+            for product in products
+            if product["Timestamp"] >= spot_since
+        },
+    )
+    # the last known spot price of a server no longer available is not orderable
+    server_statuses = {server.server_id: server.status for server in vendor.servers}
+    for server_price in server_prices:
+        server_price["status"] = (
+            Status.ACTIVE
+            if server_statuses[server_price["server_id"]] == Status.ACTIVE
+            else Status.INACTIVE
+        )
     return server_prices
 
 
