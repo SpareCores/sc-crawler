@@ -1,9 +1,11 @@
 from datetime import UTC, datetime
 
+import pytest
+
 from sc_crawler_audit.compare import compare_vendor
 from sc_crawler_audit.export import Ours, sku_keys
 from sc_crawler_audit.parsers import _aws_network, _aws_storage
-from sc_crawler_audit.schema import Extraction, SourcePage, VendorSources
+from sc_crawler_audit.schema import DbSpec, Extraction, SourcePage, VendorSources
 from sc_crawler_audit.sources import extracted_dir, is_allowed, page_slug
 
 
@@ -482,6 +484,19 @@ def test_archive_of_extracted_run_has_unique_members(tmp_path):
     assert len(names) == len(set(names))
 
 
+def test_archive_ignores_parent_dirs_and_nested_manifests(tmp_path):
+    from sc_crawler_audit.archive import create_archive, verify_archive
+
+    run = tmp_path / "extracted" / "2026-01-01"
+    (run / "pages" / "hcloud").mkdir(parents=True)
+    # a page with the same name as the manifest of the archive
+    (run / "pages" / "hcloud" / "manifest.json").write_text("{}")
+
+    path, manifest = create_archive(run)
+    assert manifest["counts"]["extractions"] == 0
+    assert verify_archive(path) == []
+
+
 def test_failed_fetch_keeps_raw_snapshot_and_reports_error(tmp_path):
     import json
     from unittest.mock import Mock
@@ -516,7 +531,38 @@ def test_failed_fetch_keeps_raw_snapshot_and_reports_error(tmp_path):
     result = fetch_page("vultr", vendor, page, tmp_path, session=session)
     assert result.error == "HTTP 503"
     assert (pages / "pricing.html").read_bytes() == good
-    assert json.loads(meta_path.read_text())["error"] == "HTTP 503"
+    # the metadata still describes the kept snapshot, the failure is stored next to it
+    kept = json.loads(meta_path.read_text())
+    assert kept["status"] == 200 and not kept["error"]
+    failed_path = pages / "pricing.failed.json"
+    assert json.loads(failed_path.read_text())["error"] == "HTTP 503"
+
+    session.get.return_value = response(200, good)
+    assert not fetch_page("vultr", vendor, page, tmp_path, session=session).error
+    assert not failed_path.exists()
+
+
+def test_first_failed_fetch_is_stored_in_metadata(tmp_path):
+    import json
+    from unittest.mock import Mock
+
+    from sc_crawler_audit.fetch import fetch_page
+
+    vendor = VendorSources(allowed_domains=["vultr.com"], pages=[])
+    page = SourcePage(
+        id="pricing", url="https://www.vultr.com/pricing/", kinds=["db_prices"]
+    )
+    session = Mock()
+    session.get.return_value = Mock(
+        url=page.url,
+        status_code=503,
+        content=b"<html>Unavailable</html>",
+        text="<html>Unavailable</html>",
+        headers={"content-type": "text/html"},
+    )
+    fetch_page("vultr", vendor, page, tmp_path, session=session)
+    meta = json.loads((tmp_path / "pages" / "vultr" / "pricing.meta.json").read_text())
+    assert meta["error"] == "HTTP 503"
 
 
 def test_seed_urls_skip_audit_only_below_root(tmp_path):
@@ -666,3 +712,82 @@ def test_import_page(tmp_path):
     )
     meta = json.loads((tmp_path / "pages" / "vultr" / "pricing.meta.json").read_text())
     assert meta["manual"] is True and meta["status"] == 200
+
+
+def test_find_servers_prefers_exact_name():
+    ours = Ours(
+        vendor="alicloud",
+        servers=[
+            # same normalized key, active first otherwise
+            _server("ecs.g7ne.xlarge", 4, 16384),
+            _server("ecs.g7nex.large", 2, 8192, status="INACTIVE"),
+        ],
+        server_prices=[], databases=[], database_prices=[], regions=[], zones=[],
+    )  # fmt: skip
+    assert ours.find_servers("ecs.g7nex.large")[0]["server_id"] == "ecs.g7nex.large"
+    assert ours.find_servers("g7nex.large")[0]["server_id"] == "ecs.g7nex.large"
+    assert ours.find_servers("ecs.g7ne.xlarge")[0]["server_id"] == "ecs.g7ne.xlarge"
+    # no exact name: active first
+    assert ours.find_servers("G7NE XLARGE")[0]["server_id"] == "ecs.g7ne.xlarge"
+
+
+def test_db_feature_rejects_invalid_applies_to_regex():
+    from pydantic import ValidationError
+
+    from sc_crawler_audit.schema import DbFeature
+
+    common = dict(feature="sla", value=99.9, evidence_quote="99.9%")
+    assert DbFeature(**common).applies_to is None
+    assert DbFeature(**common, applies_to="^db-").applies_to == "^db-"
+    with pytest.raises(ValidationError, match="invalid regex"):
+        DbFeature(**common, applies_to="(")
+
+
+def test_db_spec_mismatch_of_secondary_page_confirmed_by_authority(tmp_path):
+    from sc_crawler_audit.compare import Comparer
+
+    ours = Ours(
+        vendor="aws",
+        servers=[], server_prices=[],
+        databases=[{
+            "database_id": "db.m8g.large", "name": "db.m8g.large",
+            "api_reference": "db.m8g.large", "status": "ACTIVE", "family": None,
+            "vcpus": 2, "memory_amount": 8192, "storage_size": None,
+        }],
+        database_prices=[], regions=[], zones=[],
+    )  # fmt: skip
+    url = "https://aws.amazon.com/a"
+    docs = SourcePage(id="docs", url=url, kinds=["db_specs"])
+    feed = SourcePage(id="feed", url=url, kinds=["db_specs"], spec_authority=False)
+    spec = DbSpec(sku="db.m8g.large", vcpus=4, evidence_quote="db.m8g.large")
+    comparer = Comparer("aws", VendorSources(allowed_domains=[], pages=[]), ours)
+    comparer.authoritative_pages = {"docs"}
+    comparer.compare_db_spec(feed, spec)
+    comparer.compare_db_spec(docs, spec)
+    comparer.flag_source_conflicts()
+    assert {f.severity for f in comparer.findings} == {"high"}
+
+
+def test_report_splits_groups_by_severity(tmp_path):
+    from sc_crawler_audit.compare import Finding
+    from sc_crawler_audit.report import write_report
+
+    def finding(severity, sku):
+        return Finding(
+            vendor="hcloud", type="STATUS_MISMATCH", severity=severity, page_id="docs",
+            url="https://docs.hetzner.com/a", independent=True, sku=sku, field="status",
+            code_hint="vendors/_hcloud.py:inventory_servers",
+        )  # fmt: skip
+
+    path = write_report(
+        [finding("low", "a"), finding("medium", "b")],
+        {"hcloud": {}},
+        tmp_path,
+        tmp_path / "missing.db",
+        datetime.now(UTC),
+    )
+    report = path.read_text(encoding="utf-8")
+    assert "| medium | STATUS_MISMATCH | status | 1 " in report
+    assert "| low | STATUS_MISMATCH | status | 1 " in report
+    assert "### medium: STATUS_MISMATCH status (1)" in report
+    assert "### low: STATUS_MISMATCH status (1)" in report

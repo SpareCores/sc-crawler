@@ -282,7 +282,8 @@ entries:
 `audit-out/` is git-ignored. A run directory holds:
 
 - `pages/`: snapshots of the vendor pages (raw HTML/JSON, Markdown, `*.meta.json` with the final
-  URL, HTTP status, sha256 and fetch time);
+  URL, HTTP status, sha256 and fetch time of the kept snapshot, `*.failed.json` with the last
+  failed fetch since then);
 - `extracted/`: extraction files;
 - `ours/`: from `export`;
 - `findings.jsonl`, `findings.csv` and `report.md`, plus optional free-form `notes.md` (included in

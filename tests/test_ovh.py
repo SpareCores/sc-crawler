@@ -937,6 +937,21 @@ def test_inventory_databases_skip_end_of_sale_versions(mock_ovh_client):
     assert rows[0]["engine_versions"] == ["15"]
 
 
+def test_inventory_databases_without_versions_on_sale_are_inactive(mock_ovh_client):
+    _extend_ovh_get(
+        mock_ovh_client,
+        availability=[
+            _pg_offer(version="13", status="END_OF_SALE"),
+            _pg_offer(version="14", status="END_OF_SALE"),
+        ],
+        capabilities=_pg_capabilities(),
+        catalog_addons=[],
+    )
+    rows = inventory_databases(_ovh_vendor())
+    assert rows[0]["engine_versions"] == []
+    assert rows[0]["status"] == Status.INACTIVE
+
+
 def test_get_regions_skips_regions_without_compute_or_databases(mock_ovh_client):
     services = {
         "GRA11": ["instance", "volume"],

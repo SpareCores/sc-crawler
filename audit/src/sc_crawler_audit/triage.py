@@ -92,7 +92,7 @@ def load_triage(path: Optional[Path] = None) -> List[TriageEntry]:
     source = Path(path) if path else DEFAULT_TRIAGE
     if not source.exists():
         return []
-    data = yaml.safe_load(source.read_text()) or {}
+    data = yaml.safe_load(source.read_text(encoding="utf-8")) or {}
     entries = [TriageEntry.model_validate(entry) for entry in data.get("entries", [])]
     for entry in entries:
         for pattern in (entry.match, entry.page):

@@ -35,6 +35,17 @@ def sku_keys(vendor: str, *names: Optional[str]) -> set:
     return keys
 
 
+def exact_names(vendor: str, *names: Optional[str]) -> set:
+    """Lowercased names keeping separators, with and without the vendor prefixes."""
+    exact = set()
+    for name in filter(None, names):
+        name = str(name).lower()
+        exact.add(name)
+        for prefix in SKU_PREFIXES.get(vendor, []):
+            exact.add(re.sub(rf"^{prefix}[^a-z0-9]?", "", name))
+    return exact
+
+
 def _rows(conn: sqlite3.Connection, sql: str, *params) -> List[dict]:
     cursor = conn.execute(sql, params)
     columns = [c[0] for c in cursor.description]
@@ -105,12 +116,27 @@ class Ours:
         self.db_prices_by_db_region = dict(db_prices)
 
     def find_servers(self, sku: str) -> List[dict]:
-        """Our servers matching a vendor SKU label, active ones first."""
+        """Our servers matching a vendor SKU label, exact names then active ones first.
+
+        Normalized keys can collide (e.g. g7ne.xlarge and g7nex.large).
+        """
         found = {}
         for key in sku_keys(self.vendor, sku):
             for server in self.server_index.get(key, []):
                 found[server["server_id"]] = server
-        return sorted(found.values(), key=lambda s: s["status"] != "ACTIVE")
+        exact = exact_names(self.vendor, sku)
+
+        def rank(server: dict) -> tuple:
+            names = exact_names(
+                self.vendor,
+                server["server_id"],
+                server["name"],
+                server["api_reference"],
+                server["display_name"],
+            )
+            return (not exact & names, server["status"] != "ACTIVE")
+
+        return sorted(found.values(), key=rank)
 
     def find_databases(self, sku: str) -> List[dict]:
         found = {}

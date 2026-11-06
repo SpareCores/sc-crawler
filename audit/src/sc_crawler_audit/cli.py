@@ -132,7 +132,8 @@ def parse(
             target = extracted_dir(out, vendor_id)
             target.mkdir(parents=True, exist_ok=True)
             (target / f"{page_slug(page.id)}.json").write_text(
-                extraction.model_dump_json(indent=2, exclude_defaults=True)
+                extraction.model_dump_json(indent=2, exclude_defaults=True),
+                encoding="utf-8",
             )
             console.log(
                 f"{vendor_id}/{page.id}: {len(extraction.servers)} servers, "
@@ -212,7 +213,9 @@ def validate(
     for vendor_id, _ in selected_vendors(load_sources(sources), vendor, exclude_vendor):
         for path in sorted(extracted_dir(out, vendor_id).glob("*.json")):
             try:
-                extraction = Extraction.model_validate_json(path.read_text())
+                extraction = Extraction.model_validate_json(
+                    path.read_text(encoding="utf-8")
+                )
                 if extraction.vendor != vendor_id:
                     raise ValueError(f"vendor is {extraction.vendor}, not {vendor_id}")
             except (ValidationError, ValueError) as e:
@@ -243,7 +246,8 @@ def export(
         (target / f"{vendor_id}.json").write_text(
             json.dumps(
                 ours.to_dict(vendor_sources.reference_regions), indent=2, default=str
-            )
+            ),
+            encoding="utf-8",
         )
         console.log(f"{vendor_id}: {ours.summary()}")
 
@@ -307,7 +311,9 @@ def seed_urls(
 
     candidates = collect_urls(root, load_sources(sources))
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(yaml.safe_dump(candidates, sort_keys=False, width=120))
+    output.write_text(
+        yaml.safe_dump(candidates, sort_keys=False, width=120), encoding="utf-8"
+    )
     for vendor_id, urls in candidates.items():
         new = sum(not u["in_sources"] for u in urls)
         console.log(f"{vendor_id}: {len(urls)} URLs, {new} not yet in sources")

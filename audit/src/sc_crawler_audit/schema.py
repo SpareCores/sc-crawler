@@ -11,11 +11,12 @@ presents them: GiB for memory, GB for disks, Gbps for network, and the
 `unit` field for prices.
 """
 
+import re
 from datetime import datetime
 from enum import Enum
 from typing import List, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class PageKind(str, Enum):
@@ -234,6 +235,16 @@ class DbFeature(Evidence):
     applies_to: Optional[str] = Field(
         default=None, description="Regex on SKU names if the value is not vendor-wide."
     )
+
+    @field_validator("applies_to")
+    @classmethod
+    def applies_to_is_regex(cls, value: Optional[str]) -> Optional[str]:
+        if value is not None:
+            try:
+                re.compile(value)
+            except re.error as e:
+                raise ValueError(f"invalid regex: {e}") from e
+        return value
 
 
 class RegionInfo(Evidence):

@@ -680,6 +680,8 @@ class Comparer:
                 self.add(page, "VALUE_MISSING_IN_DB", "info", "database",
                          field=field_, theirs=theirs, **common)  # fmt: skip
                 continue
+            if page.spec_authority:
+                self.checked_by_authority.add((db["database_id"], field_))
             diff = rel_diff(float(ours), float(theirs))
             if abs(diff) <= tolerance:
                 self.agreements[(db["database_id"], field_)].add(page.id)
@@ -961,7 +963,9 @@ def load_extractions(
     for page in iter_pages(vendor, vendor_id, out_dir):
         path = extracted_dir(out_dir, vendor_id) / f"{page_slug(page.id)}.json"
         if path.exists():
-            pages.append((page, Extraction.model_validate_json(path.read_text())))
+            pages.append(
+                (page, Extraction.model_validate_json(path.read_text(encoding="utf-8")))
+            )
     return pages
 
 

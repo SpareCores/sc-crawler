@@ -44,7 +44,6 @@ from ..tables import Vendor
 from ..utils import (
     _GIB_TO_GB,
     _HOURS_PER_MONTH,
-    convert_gb_to_mib,
     list_search,
     scmodels_to_dict,
 )
@@ -765,7 +764,7 @@ def _azure_sku_lifecycle_status(sku_name: str, as_of: date | None = None) -> Sta
     return Status.ACTIVE
 
 
-# GPU sizes by series: (size regex, model, GPU memory in GB, GPUs by vCPUs).
+# GPU sizes by series: (size regex, model, GPU memory in GiB, GPUs by vCPUs).
 # GPU counts not listed come from the Resource SKUs API (`GPUs` capability),
 # which reports partial GPUs as 1 and misses some series (e.g. GB200, V710).
 # https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nc-family
@@ -821,7 +820,7 @@ def _gpu_spec(name: str, api_gpus: str | None) -> tuple[float, str | None, int |
         if pattern.match(size):
             vcpus = int(recompile(r"^[A-Z]+(\d+)").match(size)[1])
             gpus = (counts or {}).get(vcpus) or float(api_gpus or 0)
-            return gpus, model, convert_gb_to_mib(memory)
+            return gpus, model, memory * 1024
     # NP-series reports its FPGAs as GPUs
     if size.startswith(("NC", "ND", "NG", "NV")):
         return float(api_gpus or 0), None, None

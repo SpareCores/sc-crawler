@@ -93,12 +93,17 @@ def count_table_rows(markdown: str) -> int:
     return sum(1 for line in markdown.splitlines() if line.lstrip().startswith("|"))
 
 
-def _is_fresh(meta_path: Path, ttl: timedelta) -> bool:
+def _has_good_snapshot(meta_path: Path) -> bool:
     if not meta_path.exists():
         return False
     meta = json.loads(meta_path.read_text())
-    if meta.get("error") or meta.get("status") != 200:
+    return not meta.get("error") and meta.get("status") == 200
+
+
+def _is_fresh(meta_path: Path, ttl: timedelta) -> bool:
+    if not _has_good_snapshot(meta_path):
         return False
+    meta = json.loads(meta_path.read_text())
     fetched_at = datetime.fromisoformat(meta["fetched_at"])
     return datetime.now(UTC) - fetched_at < ttl
 
@@ -191,7 +196,14 @@ def fetch_page(
             f"sha256: {result.sha256} -->\n\n"
         )
         (target / f"{slug}.md").write_text(header + markdown, encoding="utf-8")
-    meta_path.write_text(json.dumps(asdict(result), indent=2))
+    # the metadata must keep describing the snapshot kept above after a failed fetch
+    failed_path = target / f"{slug}.failed.json"
+    if error is not None and _has_good_snapshot(meta_path):
+        failed_path.write_text(json.dumps(asdict(result), indent=2))
+    else:
+        meta_path.write_text(json.dumps(asdict(result), indent=2))
+    if error is None:
+        failed_path.unlink(missing_ok=True)
 
     if page.follow and error is None:
         pattern = re.compile(page.follow.pattern)

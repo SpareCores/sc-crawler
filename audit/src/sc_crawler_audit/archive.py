@@ -87,7 +87,9 @@ def build_manifest(run_dir: Path, db: Optional[Path] = None) -> dict:
         "counts": {
             "pages": sum(1 for p in files if p.parts[-3:-2] == ("pages",)
                          and p.name.endswith(".meta.json")),
-            "extractions": sum(1 for p in files if "extracted" in p.parts),
+            "extractions": sum(
+                1 for p in files if "extracted" in p.relative_to(run_dir).parts
+            ),
             "findings": _count_lines(run_dir / "findings.jsonl"),
         },
         "files": [
@@ -150,7 +152,10 @@ def verify_archive(archive: Path) -> list[str]:
     problems = []
     with tarfile.open(archive, "r:xz") as tar:
         members = {m.name: m for m in tar.getmembers() if m.isfile()}
-        manifest_name = next((n for n in members if n.endswith(f"/{MANIFEST}")), None)
+        # only the one at the root, as run content may have the same name
+        manifest_name = next(
+            (n for n in members if PurePosixPath(n).parts[1:] == (MANIFEST,)), None
+        )
         if manifest_name is None:
             return ["manifest.json is missing"]
         root = manifest_name.rsplit("/", 1)[0]

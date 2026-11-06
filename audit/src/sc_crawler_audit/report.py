@@ -125,19 +125,21 @@ def write_report(
         for finding in vendor_findings:
             if finding.severity == "info":
                 continue
-            groups[(finding.type, finding.field or "")].append(finding)
+            groups[(finding.severity, finding.type, finding.field or "")].append(
+                finding
+            )
         lines += [
             "",
             "| severity | type | field | count | confirmed | to verify | untriaged |",
             "|---|---|---|---|---|---|---|",
         ]
-        for (type_, field), group in sorted(
+        for (severity, type_, field), group in sorted(
             groups.items(),
-            key=lambda kv: (SEVERITY_ORDER[kv[1][0].severity], -len(kv[1])),
+            key=lambda kv: (SEVERITY_ORDER[kv[0][0]], -len(kv[1])),
         ):
             verdicts = Counter(f.verdict for f in group)
             lines.append(
-                f"| {group[0].severity} | {type_} | {field} | {len(group)} "
+                f"| {severity} | {type_} | {field} | {len(group)} "
                 f"| {verdicts['confirmed']} | {verdicts['to_verify']} "
                 f"| {verdicts[None]} |"
             )
@@ -147,13 +149,13 @@ def write_report(
                 f"\nPlus {len(info)} info-level findings (values the vendor publishes "
                 "but we don't have), see `findings.csv`."
             )
-        for (type_, field), group in sorted(
+        for (severity, type_, field), group in sorted(
             groups.items(),
-            key=lambda kv: (SEVERITY_ORDER[kv[1][0].severity], -len(kv[1])),
+            key=lambda kv: (SEVERITY_ORDER[kv[0][0]], -len(kv[1])),
         ):
             lines += [
                 "",
-                f"### {group[0].severity}: {type_} {field} ({len(group)})",
+                f"### {severity}: {type_} {field} ({len(group)})",
                 "",
                 f"Code to check: `{group[0].code_hint}`",
                 "",

@@ -48,12 +48,22 @@ entries:
     date: 2026-10-31
   - vendor: aws
     type: SPEC_MISMATCH
+    field: gpu_count
     match: "(inf|trn|vt|f2|dl2q)\\d*n?\\..*"
     verdict: confirmed
     note: "Non-GPU accelerators (Inferentia, Trainium, FPGA, Qualcomm AI100) are not stored as accelerators for AWS, unlike Alibaba NPUs or GCP TPUs. Decide if intended. Intended to be stored (DEV-1015): the API has NeuronInfo, InferenceAcceleratorInfo, FpgaInfo and MediaAcceleratorInfo, but AcceleratorType has GPU and TPU only. Details in the TODO in _aws._make_server_from_instance_type."
     by: bridgend84
     evidence: audit-runs/2026-10-31.tar.xz
     date: 2026-11-02
+  - vendor: aws
+    type: SPEC_MISMATCH
+    field: gpu_model
+    match: "(inf|trn|vt|f2|dl2q)\\d*n?\\..*"
+    verdict: confirmed
+    note: "Model of non-GPU accelerators; same cause as the accelerator count entry above (DEV-1015)."
+    by: claude
+    evidence: audit-runs/2026-11-04.tar.xz
+    date: 2026-11-06
   - vendor: aws
     type: SPEC_MISMATCH
     field: cpu_model
@@ -295,18 +305,12 @@ entries:
   # ---------------------------------------------------------------- alicloud
   - vendor: alicloud
     type: NOT_AT_VENDOR
+    match: "ecs\\.(n1|n2|e3|s2|s3|c1|c2|m1|sn1|sn2|d1|i1(-c\\d+d1)?|g8ise|c9h|gn8ia(-2x)?)\\..*"
     verdict: expected
     note: "Mostly old families (n1/n2/e3/s2/s3/c1/c2/m1/sn1/sn2/d1/i1) missing from the current docs: phased out but ACTIVE for us? Some new families (g8ise, c9h, gn8ia) are also missing from the docs page. Still orderable via the API (2026-11-02): DescribeAvailableResource has WithStock for c1/c2/s2/s3/m1 in ap-southeast-5, i1 in cn-hongkong, d1 in cn-beijing/chengdu/hangzhou, n1/n2/e3/sn1/sn2 in several regions; the retired-instance-types page lists them as retired on the China website only. g8ise/c9h/gn8ia are newer than the docs page."
     by: bridgend84
     evidence: audit-runs/2026-10-31.tar.xz
     date: 2026-11-02
-  - vendor: alicloud
-    match: "ecs\\.g7nex\\.large"
-    verdict: false_positive
-    note: "SKU matching paired the page's g7nex.large with our g7ne.xlarge (same name without separators) although we have g7nex.large; the matcher should prefer the exact name."
-    by: claude (cursor)
-    evidence: audit-runs/2026-11-04.tar.xz
-    date: 2026-11-04
   - vendor: alicloud
     type: SPEC_MISMATCH
     field: gpu_model
@@ -344,6 +348,8 @@ entries:
     date: 2026-11-04
   - vendor: alicloud
     type: STATUS_MISMATCH
+    field: status
+    ours: INACTIVE
     verdict: expected
     note: "Documented, but INACTIVE for us (status from per-region DescribeAvailableResource). 2026-11-02: of the publicly priced but INACTIVE types, most are WithoutStock in every zone (fixed: _ALICLOUD_STATUS_CATEGORY_TO_SERVER_LIFECYCLE keeps them ACTIVE, per-zone prices stay INACTIVE); the rest are not returned by DescribeAvailableResource for our account at all and stay INACTIVE."
     by: bridgend84
@@ -505,14 +511,6 @@ entries:
     by: bridgend84
     evidence: audit-runs/2026-10-31.tar.xz
     date: 2026-10-31
-  - vendor: azure
-    type: SPEC_MISMATCH
-    field: gpu_memory_total_gib
-    verdict: confirmed
-    note: "Ours are 6.9% below the docs for all GPU sizes: _azure._gpu_spec converts the docs' GPU memory (e.g. H100 80 GB) with convert_gb_to_mib as decimal GB (76293 MiB), while AWS stores the same H100 as 81920 MiB. GPU memory 'GB' is GiB; use memory * 1024."
-    by: claude (cursor)
-    evidence: audit-runs/2026-11-04.tar.xz
-    date: 2026-11-04
   - vendor: azure
     type: SPEC_MISMATCH
     field: gpu_model

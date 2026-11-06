@@ -82,6 +82,8 @@ Fix(es):
   `ND128isr_NDR_GB200_v6`: 4 instead of 1 GPU, `NCC40ads_H100_v5`: 1 instead
   of 0, `NC24lds_xl_RTXPRO6000BSE_v6`: 1/4 instead of 4). `NP` FPGAs are no
   longer counted as GPUs.
+- `Azure`: read GPU memory as GiB instead of GB (e.g. H100: 80 instead of 74.5
+  GiB).
 - `Azure`: mark the `Dv3`, `Dsv3`, `Ev3` and `Esv3` series as
   `PLANNED_FOR_RETIREMENT` (retiring on November 15, 2029).
 - `Azure`: list only PostgreSQL Flexible Server series that the capabilities API
