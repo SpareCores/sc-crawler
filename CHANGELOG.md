@@ -1,7 +1,23 @@
 ## v0.10.x (DEVELOPMENT)
 
+‼ Breaking changes:
+
+- `GCP` TPUs are stored with the `NPU` instead of the `TPU` accelerator type.
+  `TPU` is kept in the `AcceleratorType` enum for existing records.
+
 New feature(s):
 
+- Add `NPU`, `FPGA` and `VPU` to the `AcceleratorType` enum (with a migration
+  extending the PostgreSQL enum).
+- `AWS`: store Inferentia, Trainium, Qualcomm AI100 and Habana Gaudi (previously
+  `GPU`) as `NPU`, FPGA (`f1`, `f2`) and video transcoding (`vt1`) accelerators
+  as `FPGA` and `VPU`. Trainium2 memory is taken from the AWS docs (96 GiB per
+  device), as the API reports 512 GiB.
+- `Azure`: store the NP-series FPGAs as `FPGA`.
+- `Alibaba Cloud`: store FPGA, video transcoding and AI accelerators as `FPGA`,
+  `VPU` and `NPU` instead of `GPU`.
+- Skip the `nvidia_smi` and `nvbandwidth` inspector tasks on all non-GPU
+  accelerators.
 - `OVH`: list flex flavors as separate servers.
 
 New benchmark(s):
@@ -10,6 +26,7 @@ New benchmark(s):
 
 Fix(es):
 
+- `Alibaba Cloud`: show the GPU memory in GiB (was MiB) in server descriptions.
 - Inspector: load a server's benchmark results from other hardware variants
   when variant `0` has no successful run of that benchmark (e.g. pgbench runs
   that landed on newer Azure hardware).

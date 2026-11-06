@@ -764,7 +764,7 @@ class ServerFields(
     )
     accelerator_count: float = Field(
         default=0,
-        description="Number of accelerator(s), e.g. GPUs or TPUs.",
+        description="Number of accelerator(s), e.g. GPUs or NPUs.",
     )
     accelerator_memory_min: Optional[int] = Field(
         default=None,
@@ -776,7 +776,7 @@ class ServerFields(
     )
     accelerator_type: Optional[AcceleratorType] = Field(
         default=None,
-        description="The type of the primary accelerator, e.g. GPU or TPU.",
+        description="The type of the primary accelerator, e.g. GPU or NPU.",
     )
     accelerator_manufacturer: Optional[str] = Field(
         default=None,

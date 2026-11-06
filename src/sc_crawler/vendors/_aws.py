@@ -598,39 +598,89 @@ def _get_storages_of_instance_type(instance_type):
     return [to_storage(disk, nvme=info.get("NvmeSupport", False)) for disk in disks]
 
 
+# The API reports Trainium2 memory as 512 GiB per device (8 TiB in total on
+# trn2.48xlarge), while the AWS docs list 1.5 TB HBM for the 16 chips (96 GiB each):
+# https://aws.amazon.com/ec2/instance-types/trn2/
+_DEVICE_MEMORY_OVERRIDES_MIB = {"Trainium2": 96 * 1024}
+
+# DescribeInstanceTypes field of the accelerators: key of the device list, total
+# memory and accelerator type.
+_ACCELERATOR_INFOS = {
+    "GpuInfo": ("Gpus", "TotalGpuMemoryInMiB", AcceleratorType.GPU),
+    "NeuronInfo": (
+        "NeuronDevices",
+        "TotalNeuronDeviceMemoryInMiB",
+        AcceleratorType.NPU,
+    ),
+    "InferenceAcceleratorInfo": (
+        "Accelerators",
+        "TotalInferenceMemoryInMiB",
+        AcceleratorType.NPU,
+    ),
+    "FpgaInfo": ("Fpgas", "TotalFpgaMemoryInMiB", AcceleratorType.FPGA),
+    "MediaAcceleratorInfo": (
+        "Accelerators",
+        "TotalMediaMemoryInMiB",
+        AcceleratorType.VPU,
+    ),
+}
+
+
+def _accelerators_of_instance_type(instance_type):
+    """Get the accelerator type, devices (Count, Name, Manufacturer, Memory), and total memory."""
+    for info_key, (devices_key, total_key, acc_type) in _ACCELERATOR_INFOS.items():
+        if info_key not in instance_type:
+            continue
+        info = instance_type[info_key]
+        devices = [
+            {
+                "Count": device["Count"],
+                "Name": device["Name"],
+                # Inferentia and Trainium devices have no manufacturer
+                "Manufacturer": device.get("Manufacturer", "AWS"),
+                "Memory": _DEVICE_MEMORY_OVERRIDES_MIB.get(
+                    device["Name"],
+                    (device.get("MemoryInfo") or {}).get("SizeInMiB", 0),
+                ),
+            }
+            for device in info.get(devices_key) or []
+        ]
+        # Habana Gaudi (dl1) is listed among the GPUs
+        if devices and "Gaudi" in devices[0]["Name"]:
+            acc_type = AcceleratorType.NPU
+        total = info.get(total_key, 0)
+        if any(device["Name"] in _DEVICE_MEMORY_OVERRIDES_MIB for device in devices):
+            total = sum(device["Count"] * device["Memory"] for device in devices)
+        return acc_type, devices, total
+    return None, [], 0
+
+
 def _get_gpu_of_instance_type(instance_type):
-    """Get overall GPU count, min and total memory, and manufacturer, name."""
-    if "GpuInfo" not in instance_type:
-        return (0, 0, 0, None, None)
-    info = instance_type["GpuInfo"]
-    memory_min = min([gpu["MemoryInfo"]["SizeInMiB"] for gpu in info["Gpus"]])
-    memory_total = info["TotalGpuMemoryInMiB"]
-    count = sum([gpu["Count"] for gpu in info["Gpus"]])
+    """Get overall accelerator count, min and total memory, manufacturer, name, type."""
+    acc_type, devices, memory_total = _accelerators_of_instance_type(instance_type)
+    if not devices:
+        return (0, 0, 0, None, None, None)
+    memory_min = min([device["Memory"] for device in devices])
+    count = sum([device["Count"] for device in devices])
     # most common
-    manufacturer = mode([gpu["Manufacturer"] for gpu in info["Gpus"]])
-    model = mode([gpu["Name"] for gpu in info["Gpus"]])
+    manufacturer = mode([device["Manufacturer"] for device in devices])
+    model = mode([device["Name"] for device in devices])
     if not count:
         count = _standardize_gpu_count(model, count, memory_total)
-    return (count, memory_min, memory_total, manufacturer, model)
+    return (count, memory_min, memory_total, manufacturer, model, acc_type)
 
 
 def _get_gpus_of_instance_type(instance_type):
-    """Get individual GPUs as an array."""
-    if "GpuInfo" not in instance_type:
-        return []
-    info = instance_type["GpuInfo"]
-
-    def to_gpu(gpu):
-        return Accelerator(
-            manufacturer=gpu["Manufacturer"],
-            model=gpu["Name"],
-            memory=gpu["MemoryInfo"]["SizeInMiB"],
+    """Get individual accelerators as an array."""
+    _, devices, _ = _accelerators_of_instance_type(instance_type)
+    return [
+        Accelerator(
+            manufacturer=device["Manufacturer"],
+            model=device["Name"],
+            memory=device["Memory"],
         )
-
-    # replicate number of disks
-    gpus = info["Gpus"]
-    gpus = _array_expand_by_count(gpus)
-    return [to_gpu(gpu) for gpu in gpus]
+        for device in _array_expand_by_count(devices)
+    ]
 
 
 def _make_server_from_instance_type(instance_type, vendor) -> dict:
@@ -675,8 +725,7 @@ def _make_server_from_instance_type(instance_type, vendor) -> dict:
         "accelerator_count": gpu_info[0],
         "accelerator_memory_min": gpu_info[1],
         "accelerator_memory_total": gpu_info[2],
-        # GpuInfo lists GPUs only (no Inferentia/Trainium or FPGA accelerators)
-        "accelerator_type": AcceleratorType.GPU if gpu_info[0] else None,
+        "accelerator_type": gpu_info[5] if gpu_info[0] else None,
         "accelerator_manufacturer": gpu_info[3],
         "accelerator_model": gpu_info[4],
         "accelerators": _get_gpus_of_instance_type(instance_type),

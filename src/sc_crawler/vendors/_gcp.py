@@ -548,11 +548,11 @@ def _gcp_accelerator_type(guest_accelerator_type: str) -> AcceleratorType | None
     """Map machineTypes.accelerators.guestAcceleratorType to AcceleratorType."""
     info = _GCP_ACCELERATOR.get(guest_accelerator_type)
     if info:
-        return AcceleratorType.TPU if info[1] == "TPU" else AcceleratorType.GPU
+        return AcceleratorType.NPU if info[1] == "TPU" else AcceleratorType.GPU
     if guest_accelerator_type.startswith("nvidia-"):
         return AcceleratorType.GPU
     if guest_accelerator_type.startswith(("ct", "tpu")):
-        return AcceleratorType.TPU
+        return AcceleratorType.NPU
     return None
 
 

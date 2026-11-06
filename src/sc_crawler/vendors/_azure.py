@@ -817,6 +817,13 @@ def _parse_server_name(name):
     gpus = 0
     gpu_model = None
     gpu_memory = None
+    if family == "NP":
+        # NP10s, NP20s and NP40s have 1, 2 and 4 Xilinx Alveo U250 FPGAs (64 GB each),
+        # also reported as "GPUs" in the Resource SKU capabilities:
+        # https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/retirement/np-series-retirement
+        gpus = vcpus // 10
+        gpu_model = "Alveo U250"
+        gpu_memory = convert_gb_to_mib(64)
     if family in ["NC", "ND", "NG", "NV"]:
         if "T4" in spacers_list:
             gpu_model = "T4"
@@ -919,8 +926,11 @@ def _parse_server_name(name):
 
 
 def _standardize_server(server: dict, vendor) -> dict:
+    """Create a Server-compatible dict from an Azure Resource SKU."""
     # example Resource Skus - List response moved to _compute_resources
-    family, features, gpus, gpu_model, gpu_memory = _parse_server_name(server["name"])
+    name_family, features, gpus, gpu_model, gpu_memory = _parse_server_name(
+        server["name"]
+    )
     # override family from SKU listing
     family = recompile(r"(?i)family$").sub(
         "", recompile(r"(?i)^standard").sub("", server["family"])
@@ -995,7 +1005,13 @@ def _standardize_server(server: dict, vendor) -> dict:
         ),
         "memory_amount": float(capability("MemoryGB")) * 1024,  # MiB
         "accelerator_count": round(gpus, 4),
-        "accelerator_type": AcceleratorType.GPU if gpus else None,
+        "accelerator_type": (
+            None
+            if not gpus
+            else AcceleratorType.FPGA
+            if name_family == "NP"
+            else AcceleratorType.GPU
+        ),
         "accelerator_model": gpu_model,
         "accelerator_memory_min": (
             0

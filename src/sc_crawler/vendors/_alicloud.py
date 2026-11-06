@@ -457,6 +457,35 @@ def _get_region_availability_info(
     return region_availability_info
 
 
+# Non-GPU accelerators reported in GPUSpec (standardized model name, lowercase),
+# based on the GPUSpec values returned by DescribeInstanceTypes as of 2026-11
+_NON_GPU_ACCELERATORS = {
+    "xilinx vu9p": AcceleratorType.FPGA,
+    "intel arria 10 gx 1150": AcceleratorType.FPGA,
+    "agf 027": AcceleratorType.FPGA,
+    "netint t408": AcceleratorType.VPU,
+    "alinpu 800": AcceleratorType.NPU,
+    "ppu 810": AcceleratorType.NPU,
+    "a910e": AcceleratorType.NPU,
+    "a910x": AcceleratorType.NPU,
+    "a910z": AcceleratorType.NPU,
+}
+
+
+def _gpu_description(gpu_count: float, gpu_model: Optional[str], memory_mib: float):
+    """Describe the accelerators of a server, e.g. 8xV100 32 GiB VRAM."""
+    if not (gpu_count and gpu_model):
+        return None
+    return f"{gpu_count}x{gpu_model} {memory_mib / 1024:g} GiB VRAM"
+
+
+def _accelerator_type(gpu_model: Optional[str], gpu_count: float):
+    """Map the GPUSpec model to AcceleratorType, defaulting to GPU."""
+    if not gpu_count:
+        return None
+    return _NON_GPU_ACCELERATORS.get((gpu_model or "").lower(), AcceleratorType.GPU)
+
+
 def _get_resource_status_category(
     region_availability_info: dict[str, list[dict]],
     region_id: str,
@@ -1503,11 +1532,7 @@ def inventory_servers(vendor):
             f"{vcpus} vCPUs",
             f"{memory_size_gb} GiB RAM",
             f"{storage_size} GB {storage_type.value if storage_type else ''} storage",
-            (
-                f"{gpu_count}x{gpu_model} {gpu_memory_per_gpu} GiB VRAM"
-                if gpu_count and gpu_model
-                else None
-            ),
+            _gpu_description(gpu_count, gpu_model, gpu_memory_per_gpu),
         ]
         description = f"{family} family ({', '.join(filter(None, description_parts))})"
         server_id = instance_type.get("InstanceTypeId")
@@ -1557,7 +1582,7 @@ def inventory_servers(vendor):
                 "accelerator_count": gpu_count,
                 "accelerator_memory_min": gpu_memory_per_gpu,
                 "accelerator_memory_total": gpu_memory_total,
-                "accelerator_type": AcceleratorType.GPU if gpu_count else None,
+                "accelerator_type": _accelerator_type(gpu_model, gpu_count),
                 # TODO fill in from GPUSpec? or just let the inspector fill it in?
                 "accelerator_manufacturer": gpu_manufacturer,
                 "accelerator_family": gpu_family,
