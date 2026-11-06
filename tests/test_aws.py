@@ -1,4 +1,6 @@
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 from sc_crawler.table_fields import Status, StorageType
 from sc_crawler.vendors import _aws
@@ -127,4 +129,58 @@ def test_aws_reconcile_server_status(monkeypatch):
         "dl1.24xlarge": Status.INACTIVE,
         "u-6tb1.metal": Status.INACTIVE,
         "t3.spotonly": Status.ACTIVE,
+    }
+
+
+def test_aws_spot_prices_inactive_for_servers_no_longer_available(monkeypatch):
+    now = datetime.now(UTC)
+
+    def _spot(instance_type, timestamp):
+        return {
+            "AvailabilityZone": "us-east-1a",
+            "InstanceType": instance_type,
+            "SpotPrice": "0.1",
+            "Timestamp": timestamp,
+        }
+
+    monkeypatch.setattr(
+        _aws,
+        "_describe_spot_price_history",
+        lambda region: [
+            _spot("m5.large", now),
+            _spot("t3.spotonly", now),
+            # the last known price is returned even if it is months old
+            _spot("g4ad.xlarge", now - timedelta(days=35)),
+        ],
+    )
+    monkeypatch.setattr(
+        _aws,
+        "_collect_regions_servers",
+        lambda vendor: {"us-east-1": {"m5.large": ["use1-az1"]}},
+    )
+    monkeypatch.setattr(
+        _aws,
+        "_get_server_products",
+        lambda: [
+            {
+                "product": {"attributes": {"instanceType": "g4ad.xlarge"}},
+                "terms": {"OnDemand": {"x": {}}},
+            }
+        ],
+    )
+    region = SimpleNamespace(region_id="us-east-1", status="active")
+    vendor = MagicMock(
+        vendor_id="aws",
+        regions=[region],
+        zones=[SimpleNamespace(name="us-east-1a", zone_id="use1-az1", region=region)],
+        servers=[
+            SimpleNamespace(server_id=server_id, accelerator_count=0)
+            for server_id in ("m5.large", "t3.spotonly", "g4ad.xlarge")
+        ],
+    )
+    prices = _aws.inventory_server_prices_spot(vendor)
+    assert {row["server_id"]: row["status"] for row in prices} == {
+        "m5.large": Status.ACTIVE,
+        "t3.spotonly": Status.ACTIVE,
+        "g4ad.xlarge": Status.INACTIVE,
     }

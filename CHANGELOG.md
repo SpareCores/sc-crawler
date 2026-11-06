@@ -20,7 +20,6 @@ Fix(es):
   capabilities (e.g. `Mdsv2`).
 - `Azure`: price PostgreSQL compute from the `1 vCore` meter (as the pricing
   page does), as some sized meters are stale.
-- `Azure`: label `Mdsv2` PostgreSQL SKUs as `MemoryOptimized`.
 - `Azure`: re-enable the `newzealandnorth` region.
 - `nvbandwidth`: fix `p2p:duplex` score and `gpu_count` for v0.6+ stacked
   bidirectional matrices.
@@ -42,7 +41,8 @@ Fix(es):
   and `x1e` as `SSD` instead of `NVMe SSD`.
 - `AWS`: mark instance types not offered (and without spot prices in the past 7
   days) as `RETIRED` if they have no Reserved terms in the price list (e.g.
-  `f1`, `g3`, `p2`, `p3`), and keep their on-demand prices as `INACTIVE`.
+  `f1`, `g3`, `p2`, `p3`), and keep their on-demand and last known spot prices
+  as `INACTIVE`.
 - `GCP`: price E2 shared-core machines (`e2-micro`, `e2-small`, `e2-medium`)
   for their billed fractional vCPU (0.25, 0.5, 1) instead of 2 vCPUs.
 - `GCP`: use the 14,000 GiB Titanium SSD disks of `z4m` (and 7,000 GiB of

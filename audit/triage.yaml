@@ -398,16 +398,6 @@ entries:
     date: 2026-11-04
   - vendor: ovh
     type: FEATURE_MISMATCH
-    field: engine_versions
-    ours: "['14', '15', '16', '17', '18']"
-    theirs: "['15', '16', '17', '18']"
-    verdict: false_positive
-    note: "PostgreSQL 14 still listed for us (docs: 15-18); SLA one level higher than the docs. PostgreSQL 14 is END_OF_SALE in the availability API (end of sale 2026-05-12) and is no longer listed since 2026-11-02 (fixed). SLA matches the product page (Production 99.95%, Advanced 99.99%: the 3-AZ level; 1-AZ regions have 99.9%/99.95%)."
-    by: bridgend84
-    evidence: audit-runs/2026-10-31.tar.xz
-    date: 2026-11-02
-  - vendor: ovh
-    type: FEATURE_MISMATCH
     field: sla
     verdict: false_positive
     note: "PostgreSQL 14 still listed for us (docs: 15-18); SLA one level higher than the docs. PostgreSQL 14 is END_OF_SALE in the availability API (end of sale 2026-05-12) and is no longer listed since 2026-11-02 (fixed). SLA matches the product page (Production 99.95%, Advanced 99.99%: the 3-AZ level; 1-AZ regions have 99.9%/99.95%)."

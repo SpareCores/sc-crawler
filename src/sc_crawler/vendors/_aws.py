@@ -1780,6 +1780,14 @@ def inventory_server_prices_spot(vendor):
             if product["Timestamp"] >= spot_since
         },
     )
+    # the last known spot price of a server no longer available is not orderable
+    server_statuses = {server.server_id: server.status for server in vendor.servers}
+    for server_price in server_prices:
+        server_price["status"] = (
+            Status.ACTIVE
+            if server_statuses[server_price["server_id"]] == Status.ACTIVE
+            else Status.INACTIVE
+        )
     return server_prices
 
 
