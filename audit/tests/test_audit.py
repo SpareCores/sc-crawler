@@ -1,7 +1,6 @@
 from datetime import UTC, datetime
 
 import pytest
-
 from sc_crawler_audit.compare import compare_vendor
 from sc_crawler_audit.export import Ours, sku_keys
 from sc_crawler_audit.parsers import _aws_network, _aws_storage
@@ -733,7 +732,6 @@ def test_find_servers_prefers_exact_name():
 
 def test_db_feature_rejects_invalid_applies_to_regex():
     from pydantic import ValidationError
-
     from sc_crawler_audit.schema import DbFeature
 
     common = dict(feature="sla", value=99.9, evidence_quote="99.9%")
