@@ -1,10 +1,17 @@
 from contextlib import ExitStack
+from os import path
 from unittest.mock import patch
 
 import pytest
 
-from sc_crawler.inspector import _standardize_gpu_count, inspect_update_server_dict
-from sc_crawler.table_fields import CpuAllocation, CpuArchitecture, StorageType
+from sc_crawler.inspector import (
+    _server_framework_meta,
+    _server_framework_path,
+    _standardize_gpu_count,
+    inspect_update_server_dict,
+)
+from sc_crawler.table_bases import ServerBase
+from sc_crawler.table_fields import CpuAllocation, CpuArchitecture, Status, StorageType
 
 _INSPECTOR_LOOKUPS = (
     "_server_dmidecode_section",
@@ -139,3 +146,105 @@ def test_missing_nvidia_smi_does_not_mark_server_as_gpu():
         updated = inspect_update_server_dict(_z4d_server())
 
     assert updated.get("accelerator_type") is None
+
+
+def _variant_server(tmp_path, monkeypatch, layout):
+    """Create an inspector data tree for one server: {relpath: content}."""
+    monkeypatch.setattr(
+        "sc_crawler.inspector.inspector_data_path",
+        lambda dir_name="data": str(tmp_path / dir_name),
+    )
+    base = tmp_path / "data" / "azure" / "Standard_D2ds_v5"
+    for relpath, content in layout.items():
+        file = base / relpath
+        file.parent.mkdir(parents=True, exist_ok=True)
+        file.write_text(content)
+    return ServerBase(
+        vendor_id="azure",
+        server_id="Standard_D2ds_v5",
+        name="Standard_D2ds_v5",
+        api_reference="Standard_D2ds_v5",
+        display_name="Standard_D2ds_v5",
+        description="test",
+        vcpus=2,
+        memory_amount=8192,
+        storage_size=0,
+        status=Status.ACTIVE,
+    )
+
+
+def test_server_framework_path_prefers_variant_0(tmp_path, monkeypatch):
+    server = _variant_server(
+        tmp_path,
+        monkeypatch,
+        {
+            "0/lscpu/stdout": "v0",
+            "1/lscpu/stdout": "v1",
+            "schedule/lscpu/meta.json": "{}",
+        },
+    )
+    with open(_server_framework_path(server, "lscpu", "stdout")) as fp:
+        assert fp.read() == "v0"
+
+
+def test_server_framework_path_falls_back_to_other_variant(tmp_path, monkeypatch):
+    """A benchmark that only ran on a newer hardware variant is still found."""
+    server = _variant_server(
+        tmp_path,
+        monkeypatch,
+        {
+            "0/lscpu/stdout": "v0",
+            "2/pgbench_postgres_ro_durable/stdout": "v2",
+            "10/pgbench_postgres_ro_durable/stdout": "v10",
+            "1/pgbench_postgres_ro_durable/stdout": "v1",
+            "1/pgbench_postgres_ro_durable/meta.json": '{"exit_code": 0}',
+            "schedule/pgbench_postgres_ro_durable/meta.json": '{"exit_code": 1}',
+        },
+    )
+    framework = "pgbench_postgres_ro_durable"
+    with open(_server_framework_path(server, framework, "stdout")) as fp:
+        assert fp.read() == "v1"
+    assert _server_framework_meta(server, framework) == {"exit_code": 0}
+
+
+def test_server_framework_path_missing_framework(tmp_path, monkeypatch):
+    """A framework no variant has resolves to a missing path under variant 0."""
+    server = _variant_server(tmp_path, monkeypatch, {"1/lscpu/stdout": "v1"})
+    missing = _server_framework_path(server, "geekbench", "stdout")
+    assert not path.exists(missing)
+    assert path.join("Standard_D2ds_v5", "0", "geekbench", "stdout") in str(missing)
+    with pytest.raises(FileNotFoundError):
+        _server_framework_meta(server, "geekbench")
+
+
+def test_server_framework_path_skips_failed_or_unfinished_runs(tmp_path, monkeypatch):
+    """An aborted run on one variant doesn't hide a successful run on another."""
+    server = _variant_server(
+        tmp_path,
+        monkeypatch,
+        {
+            "0/pgbench_postgres_ro_durable/meta.json": '{"exit_code": 1}',
+            "0/pgbench_postgres_ro_durable/stdout": "v0",
+            "1/pgbench_postgres_ro_durable/meta.json": '{"exit_code": null}',
+            "2/pgbench_postgres_ro_durable/meta.json": '{"exit_code": 0}',
+            "2/pgbench_postgres_ro_durable/stdout": "v2",
+        },
+    )
+    framework = "pgbench_postgres_ro_durable"
+    with open(_server_framework_path(server, framework, "stdout")) as fp:
+        assert fp.read() == "v2"
+    assert _server_framework_meta(server, framework) == {"exit_code": 0}
+
+
+def test_server_framework_path_keeps_failed_run_without_alternative(
+    tmp_path, monkeypatch
+):
+    server = _variant_server(
+        tmp_path,
+        monkeypatch,
+        {
+            "1/geekbench/meta.json": '{"exit_code": 1}',
+            "2/geekbench/meta.json": '{"exit_code": 2}',
+        },
+    )
+    assert _server_framework_meta(server, "geekbench") == {"exit_code": 1}
