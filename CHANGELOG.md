@@ -1,4 +1,18 @@
-## v0.10.x (DEVELOPMENT)
+## v0.10.3 (November 06, 2026)
+
+New feature(s):
+
+- Populate `Server.family`, `Server.series`, `Database.family` and
+  `Database.series` for `GCP`, `Hetzner`, `AliCloud`, `UpCloud`, `OVH`,
+  `Vultr`, `AWS` and `Azure`. `family` is the broad workload class in the
+  vendor's own naming, `series` the hardware line and generation.
+- Populate `Server.compatible_storage_ids` and `Database.compatible_storage_ids`
+  for the same vendors (`None` if unknown, `[]` if no extra storage can be
+  attached).
+- `AWS`: take the instance family from the Pricing API
+  `instanceFamilyCategory`, with a docs based fallback.
+- `Azure`: derive disk and PostgreSQL storage compatibility from the VM
+  capabilities and the PostgreSQL capabilities API.
 
 New benchmark(s):
 

@@ -877,12 +877,10 @@ def _get_instance_type_disk_categories(vendor: Vendor) -> dict[str, list[str]]:
 
     @cachier(hash_func=jsoned_hash, separate_files=True)
     def fetch_region_disk_categories(region_id: str) -> dict[str, list[str]]:
-        try:
+        with sentry_capture_or_raise(vendor=vendor):
             zones = _get_zones(ecs_clients[region_id], region_id)
             return _parse_instance_type_disk_categories(zones)
-        except Exception as e:
-            logger.error(f"Failed to get disk categories for region {region_id}: {e}")
-            return {}
+        return {}
 
     vendor.progress_tracker.start_task(
         name="Fetching server disk categories", total=len(vendor.regions)

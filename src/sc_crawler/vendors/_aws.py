@@ -667,16 +667,9 @@ def _server_series_categories() -> dict:
     Maps the series (e.g. m5n) to the `instanceFamilyCategory` attribute of the
     products, e.g. General Purpose, Memory Optimized or Accelerated Computing. Not
     listed there are e.g. the Mac instances, see `_SERIES_FAMILY` for the fallback.
-    Falls back to an empty mapping if the Pricing API is not available.
+    Errors of the Pricing API are raised, `inventory_servers` handles them.
     """
-    try:
-        products = _get_server_products()
-    except Exception as e:
-        logger.warning(
-            "Failed to fetch the instance categories from the Pricing API, "
-            f"using the docs based categories only: {e}"
-        )
-        return {}
+    products = _get_server_products()
     categories = {}
     for product in products:
         attributes = product["product"]["attributes"]
@@ -1672,7 +1665,8 @@ def inventory_servers(vendor):
     #      are messier (e.g. extract memory from string)
     # load the instance categories once, before processing the instance types
     vendor.progress_tracker.start_task(name="Fetching instance categories", total=None)
-    _server_series_categories()
+    with sentry_capture_or_raise(vendor=vendor):
+        _server_series_categories()
     vendor.progress_tracker.hide_task()
     servers = parallel_fetch_servers(
         vendor, _boto_describe_instance_types, "InstanceType", "regions"

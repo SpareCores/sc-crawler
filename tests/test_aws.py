@@ -1068,20 +1068,15 @@ def test_aws_pricing_api_category_wins_and_docs_dict_is_the_fallback():
         )
 
 
-def test_aws_pricing_api_failure_falls_back_to_the_docs_dict():
+def test_aws_pricing_api_failure_is_raised():
     _server_series_categories.cache_clear()
-    with (
-        patch(
-            "sc_crawler.vendors._aws._get_server_products",
-            side_effect=RuntimeError("no access"),
-        ),
-        patch("sc_crawler.vendors._aws.logger") as logger,
+    with patch(
+        "sc_crawler.vendors._aws._get_server_products",
+        side_effect=RuntimeError("no access"),
     ):
-        assert _server_series_categories() == {}
+        with pytest.raises(RuntimeError, match="no access"):
+            _server_series_categories()
     _server_series_categories.cache_clear()
-    warnings = [call.args[0] for call in logger.warning.call_args_list]
-    assert len(warnings) == 1
-    assert "no access" in warnings[0]
 
 
 def test_aws_unknown_family_is_empty_and_warned_once():

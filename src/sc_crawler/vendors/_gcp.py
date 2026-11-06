@@ -2453,6 +2453,7 @@ _PG_TIER_FAMILY_SERIES = {
     "g1-small": ("General Purpose", "Shared Core"),
     "perf-optimized-N": ("General Purpose", "N2"),
     "perf-optimized-C4": ("General Purpose", "C4"),
+    "perf-optimized-C4D": ("General Purpose", "C4D"),
     # the series is only documented for SQL Server, with the same machine types:
     # https://docs.cloud.google.com/sql/docs/sqlserver/machine-series-overview
     "memory-optimized-N": ("Memory Optimized", "Memory-optimized-N2"),
@@ -2481,6 +2482,8 @@ _PG_TIER_STORAGE_IDS = {
     "memory-optimized-N": ["cloudsql-ssd"],
     # Enterprise Plus: C4 and C4A have Hyperdisk Balanced only
     "perf-optimized-C4": ["cloudsql-hyperdisk"],
+    # not in the PostgreSQL docs: assumed to be like the C4 based perf-optimized-C4
+    "perf-optimized-C4D": ["cloudsql-hyperdisk"],
     "c4a-highmem": ["cloudsql-hyperdisk"],
 }
 

@@ -346,8 +346,8 @@ def _server_series(server: dict) -> str | None:
     """Series of a plan from its id: the hardware line of the plan type.
 
     E.g. vc2-1c-1gb -> vc2, vhp-2c-4gb-amd -> vhp-amd, voc-g-2c-8gb-50s-amd -> voc-g,
-    vx1-m-2c-16g -> vx1-m. GPU plans get the GPU token (vcg-l40s-16c-... -> l40s,
-    vbm-48c-1024gb-4-a100-gpu -> a100). Bare metal plans without GPU have no series.
+    vx1-m-2c-16g -> vx1-m. GPU plans get the GPU token (vcg-l40s-16c-... -> l40s). Bare
+    metal plans have no series.
     """
     plan_id = server["id"]
     plan_type = server["type"]
@@ -362,10 +362,8 @@ def _server_series(server: dict) -> str | None:
     elif plan_type in ("vcg", "vdm") and len(parts) > 1:
         series = parts[1]
     elif plan_type in ("SSD", "NVMe"):
-        # only the bare metal GPU plans have a GPU token, e.g. ...-8-h100-gpu
-        if plan_id.endswith("-gpu") and len(parts) > 2:
-            series = parts[-2]
-        return series
+        # bare metal plans have no series
+        return None
     if series is None:
         _warn_unknown("series", plan_id)
     return series
@@ -1025,7 +1023,8 @@ def inventory_servers(vendor):
             "storage_size": storage_size,
             "storage_type": storage_type,
             "storages": [],
-            # Block storage cannot be attached to bare metal (/v2/plans-metal) plans.
+            # Block storage cannot be attached to bare metal (/v2/plans-metal) plans:
+            # https://docs.vultr.com/support/products/storage/can-i-attach-vultr-block-storage-volume-to-vultr-bare-metal-server
             "compatible_storage_ids": (
                 []
                 if server["id"] in metal_ids

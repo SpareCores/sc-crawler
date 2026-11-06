@@ -1839,6 +1839,7 @@ def test_standardize_gpu_family_rtx_6000_by_memory(raw, memory, family):
         ("n1-highmem", "General Purpose", "N1"),
         ("perf-optimized-N", "General Purpose", "N2"),
         ("perf-optimized-C4", "General Purpose", "C4"),
+        ("perf-optimized-C4D", "General Purpose", "C4D"),
         ("c4a-highmem", "General Purpose", "C4A"),
         ("memory-optimized-N", "Memory Optimized", "Memory-optimized-N2"),
     ],
@@ -1855,6 +1856,7 @@ def test_gcp_pg_tier_family_series(family_slug, family, series):
         ("perf-optimized-N", ["cloudsql-ssd"]),
         ("memory-optimized-N", ["cloudsql-ssd"]),
         ("perf-optimized-C4", ["cloudsql-hyperdisk"]),
+        ("perf-optimized-C4D", ["cloudsql-hyperdisk"]),
         ("c4a-highmem", ["cloudsql-hyperdisk"]),
     ],
 )

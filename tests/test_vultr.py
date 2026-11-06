@@ -211,8 +211,7 @@ def test_vultr_inventory_database_storage_collectors_are_empty():
         ("vdm", "vcg-a100-12c-120g-80vram", "Dedicated Metal GPU", "a100"),
         ("SSD", "vbm-4c-32gb", "Bare Metal SSD", None),
         ("NVMe", "vbm-24c-384gb-amd", "Bare Metal NVMe", None),
-        ("NVMe", "vbm-112c-2048gb-8-h100-gpu", "Bare Metal NVMe", "h100"),
-        ("NVMe", "vbm-72c-480gb-gh200-gpu", "Bare Metal NVMe", "gh200"),
+        ("NVMe", "vbm-112c-2048gb-8-h100-gpu", "Bare Metal NVMe", None),
     ],
 )
 def test_vultr_server_family_and_series(plan_type, plan_id, family, series):
