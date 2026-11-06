@@ -88,11 +88,35 @@ def _shown(value) -> str:
     return str(value)
 
 
+class _UniqueKeyLoader(yaml.SafeLoader):
+    """SafeLoader rejecting duplicate explicit keys, which would silently overwrite."""
+
+    def construct_mapping(self, node, deep=False):
+        seen = set()
+        for key_node, _ in node.value:
+            if (
+                not isinstance(key_node, yaml.ScalarNode)
+                or key_node.tag == "tag:yaml.org,2002:merge"
+            ):
+                continue
+            key = self.construct_object(key_node, deep=True)
+            if key in seen:
+                raise yaml.constructor.ConstructorError(
+                    "while constructing a mapping",
+                    node.start_mark,
+                    f"found duplicate key {key!r}",
+                    key_node.start_mark,
+                )
+            seen.add(key)
+        return super().construct_mapping(node, deep=deep)
+
+
 def load_triage(path: Optional[Path] = None) -> List[TriageEntry]:
     source = Path(path) if path else DEFAULT_TRIAGE
     if not source.exists():
         return []
-    data = yaml.safe_load(source.read_text(encoding="utf-8")) or {}
+    # the loader is a SafeLoader subclass, so no arbitrary objects are constructed
+    data = yaml.load(source.read_text(encoding="utf-8"), Loader=_UniqueKeyLoader) or {}
     entries = [TriageEntry.model_validate(entry) for entry in data.get("entries", [])]
     for entry in entries:
         for pattern in (entry.match, entry.page):

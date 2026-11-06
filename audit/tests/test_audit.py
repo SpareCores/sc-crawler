@@ -789,3 +789,64 @@ def test_report_splits_groups_by_severity(tmp_path):
     assert "| low | STATUS_MISMATCH | status | 1 " in report
     assert "### medium: STATUS_MISMATCH status (1)" in report
     assert "### low: STATUS_MISMATCH status (1)" in report
+
+
+def test_load_triage_rejects_duplicate_keys(tmp_path):
+    import yaml
+    from sc_crawler_audit.triage import load_triage
+
+    path = tmp_path / "triage.yaml"
+    path.write_text(
+        "entries:\n"
+        "  - vendor: aws\n"
+        "    verdict: expected\n"
+        "    note: first\n"
+        "    note: second\n"
+    )
+    with pytest.raises(yaml.constructor.ConstructorError, match="duplicate key 'note'"):
+        load_triage(path)
+
+
+def test_load_triage_keeps_yaml_merges(tmp_path):
+    from sc_crawler_audit.triage import load_triage
+
+    path = tmp_path / "triage.yaml"
+    path.write_text(
+        "defaults: &defaults\n"
+        "  vendor: aws\n"
+        "  verdict: expected\n"
+        "  note: inherited\n"
+        "entries:\n"
+        "  - <<: *defaults\n"
+        "    note: overridden\n"
+    )
+    entries = load_triage(path)
+    assert [(e.vendor, e.note) for e in entries] == [("aws", "overridden")]
+
+
+@pytest.mark.parametrize("corrupt", ["{truncated", "[]"])
+def test_fetch_replaces_unreadable_metadata(tmp_path, corrupt):
+    import json
+    from unittest.mock import Mock
+
+    from sc_crawler_audit.fetch import fetch_page
+
+    vendor = VendorSources(allowed_domains=["vultr.com"], pages=[])
+    page = SourcePage(
+        id="pricing", url="https://www.vultr.com/pricing/", kinds=["db_prices"]
+    )
+    pages = tmp_path / "pages" / "vultr"
+    pages.mkdir(parents=True)
+    meta_path = pages / "pricing.meta.json"
+    meta_path.write_text(corrupt)
+    session = Mock()
+    session.get.return_value = Mock(
+        url=page.url,
+        status_code=200,
+        content=b"<html><body><main>prices</main></body></html>",
+        text="<html><body><main>prices</main></body></html>",
+        headers={"content-type": "text/html"},
+    )
+    result = fetch_page("vultr", vendor, page, tmp_path, session=session)
+    assert not result.error and not result.cached
+    assert json.loads(meta_path.read_text())["status"] == 200

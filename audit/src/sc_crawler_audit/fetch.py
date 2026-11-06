@@ -93,17 +93,24 @@ def count_table_rows(markdown: str) -> int:
     return sum(1 for line in markdown.splitlines() if line.lstrip().startswith("|"))
 
 
+def _read_meta(meta_path: Path) -> dict:
+    """Metadata of a stored page, empty if missing or unreadable (e.g. truncated)."""
+    try:
+        meta = json.loads(meta_path.read_text())
+    except (OSError, ValueError):
+        return {}
+    return meta if isinstance(meta, dict) else {}
+
+
 def _has_good_snapshot(meta_path: Path) -> bool:
-    if not meta_path.exists():
-        return False
-    meta = json.loads(meta_path.read_text())
+    meta = _read_meta(meta_path)
     return not meta.get("error") and meta.get("status") == 200
 
 
 def _is_fresh(meta_path: Path, ttl: timedelta) -> bool:
     if not _has_good_snapshot(meta_path):
         return False
-    meta = json.loads(meta_path.read_text())
+    meta = _read_meta(meta_path)
     fetched_at = datetime.fromisoformat(meta["fetched_at"])
     return datetime.now(UTC) - fetched_at < ttl
 
@@ -122,10 +129,10 @@ def fetch_page(
     slug = page_slug(page.id)
     meta_path = target / f"{slug}.meta.json"
     if not dry_run and _is_fresh(meta_path, ttl):
-        return FetchResult(**{**json.loads(meta_path.read_text()), "cached": True})
+        return FetchResult(**{**_read_meta(meta_path), "cached": True})
     # keep pages saved manually from a browser (see `import_page`)
-    if meta_path.exists() and json.loads(meta_path.read_text()).get("manual"):
-        return FetchResult(**{**json.loads(meta_path.read_text()), "cached": True})
+    if _read_meta(meta_path).get("manual"):
+        return FetchResult(**{**_read_meta(meta_path), "cached": True})
 
     now = datetime.now(UTC).isoformat()
     session = session or requests.Session()
