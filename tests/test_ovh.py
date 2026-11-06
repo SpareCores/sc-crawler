@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import pytest
+from cachier import get_global_params, set_global_params
 
 from sc_crawler.table_fields import (
     Allocation,
@@ -22,6 +23,7 @@ from sc_crawler.vendors._ovh import (
     _get_catalog,
     _get_database_availability,
     _get_database_capabilities,
+    _get_flavors,
     _get_gpu_info,
     _get_project_id,
     _get_region,
@@ -44,12 +46,22 @@ _MIB_PER_GIB = 1024
 
 
 @pytest.fixture(autouse=True)
+def no_disk_cache():
+    """Never read or write the cachier disk cache in tests."""
+    enabled = get_global_params().caching_enabled
+    set_global_params(caching_enabled=False)
+    yield
+    set_global_params(caching_enabled=enabled)
+
+
+@pytest.fixture(autouse=True)
 def mock_ovh_client():
     """Mock OVH client and most common API endpoints for all tests."""
     _client.cache_clear()
     _get_project_id.cache_clear()
     _get_regions.cache_clear()
     _get_region.cache_clear()
+    _get_flavors.cache_clear()
     _get_catalog.cache_clear()
     _get_database_availability.cache_clear()
     _get_database_capabilities.cache_clear()
@@ -1053,10 +1065,8 @@ def test_inventory_servers_gen3_ipv4_and_flex_variants(mock_ovh_client):
     # b3-8-flex has the same disk as b3-8, so it's skipped
     assert set(servers) == {"b3-8", "b3-16", "b3-16-flex", "b2-15", "b2-15-flex"}
 
-    assert servers["b3-8"]["ipv4"] == 0
-    assert servers["b3-16-flex"]["ipv4"] == 0
-    assert servers["b2-15"]["ipv4"] == 1
-    assert servers["b2-15-flex"]["ipv4"] == 1
+    # IPv4 is billed separately on every instance range
+    assert all(s["ipv4"] == 0 for s in servers.values())
 
     flex = servers["b3-16-flex"]
     assert flex["api_reference"] == "b3-16-flex"

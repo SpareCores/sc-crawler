@@ -2,8 +2,9 @@
 
 from functools import cache
 from os import environ, getenv
-from typing import List, Optional
+from typing import Any, List, Optional
 
+from cachier import cachier
 from ovh import Client
 
 from ..lookup import map_compliance_frameworks_to_vendor
@@ -50,6 +51,18 @@ def _client() -> Client:
         if ev not in environ:
             raise KeyError(f"Missing environment variable: {ev}")
     return Client()
+
+
+@cachier(separate_files=True)
+def _get_cached(path: str, **params) -> Any:
+    """GET an API path, with the response cached on disk by cachier.
+
+    Used for the slow (1+ sec) endpoints. The path (including the project id)
+    and the query parameters are part of the cache key. Each response is stored
+    in a separate file to avoid loading all the other (large) responses on each
+    lookup.
+    """
+    return _client().get(path, **params)
 
 
 @cache
@@ -162,7 +175,7 @@ def _get_region(region_name: str, project_id: Optional[str] = None) -> dict:
     #         'eu-south-mil-c'
     #     ]
     # }
-    return _client().get(f"/cloud/project/{project_id}/region/{region_name}")
+    return _get_cached(f"/cloud/project/{project_id}/region/{region_name}")
 
 
 def _is_compute_region(region_name: str, project_id: Optional[str] = None) -> bool:
@@ -199,7 +212,7 @@ def _get_volume_types(region_name: str, project_id: Optional[str] = None) -> lis
     #     {'name': 'high-speed'},
     #     {'name': 'classic'}
     # ]
-    return _client().get(f"/cloud/project/{project_id}/region/{region_name}/volumeType")
+    return _get_cached(f"/cloud/project/{project_id}/region/{region_name}/volumeType")
 
 
 def _get_region_storage_ids(region_name: str) -> set[str]:
@@ -214,6 +227,7 @@ def _get_region_storage_ids(region_name: str) -> set[str]:
     }
 
 
+@cache
 def _get_flavors(project_id: Optional[str] = None) -> list[dict]:
     """Fetch instance flavors available to a project.
 
@@ -485,7 +499,7 @@ def _get_catalog(subsidiary: str = getenv("OVH_SUBSIDIARY", "IE")) -> dict:
     #         }
     #     ]
     # }
-    return _client().get("/order/catalog/public/cloud", ovhSubsidiary=subsidiary)
+    return _get_cached("/order/catalog/public/cloud", ovhSubsidiary=subsidiary)
 
 
 @cache
@@ -568,7 +582,7 @@ def _get_database_availability(project_id: Optional[str] = None) -> list[dict]:
     #     },
     #     # ...
     # ]
-    return _client().get(f"/cloud/project/{project_id}/database/availability")
+    return _get_cached(f"/cloud/project/{project_id}/database/availability")
 
 
 @cache
@@ -686,8 +700,9 @@ def _get_database_capabilities(project_id: Optional[str] = None) -> dict:
     return _client().get(f"/cloud/project/{project_id}/database/capabilities")
 
 
-# Since 2026-10-01, the local storage and public IPv4 of Gen3 (B3, C3, R3)
-# instances are billed separately from the (unchanged) hourly instance price:
+# Since 2026-10-01, the local storage of Gen3 (B3, C3, R3) instances and the
+# public IPv4 of all instance ranges are billed separately from the (unchanged)
+# hourly instance price:
 # https://blog.ovhcloud.com/en/posts/public-cloud-pricing-update-october-2026/
 # The local storage price is taken from the public catalog, falling back to the
 # announced price while it's still listed at 0 (as of 2026-10-29), and the IPv4
@@ -700,7 +715,7 @@ _IPV4_HOUR_PRICE = 0.0027
 
 
 def _is_gen3(server_id: str) -> bool:
-    """Check if an instance type is Gen3 with separately billed storage and IPv4."""
+    """Check if an instance type is Gen3 with separately billed local storage."""
     return server_id.split("-")[0] in _GEN3_FAMILIES
 
 
@@ -1370,8 +1385,9 @@ def inventory_servers(vendor) -> list[dict]:
             # https://www.ovhcloud.com/en-ie/public-cloud/prices/
             "inbound_traffic": 0,
             "outbound_traffic": 0,
-            # each instance gets one IPv4, billed separately for Gen3
-            "ipv4": 0 if _is_gen3(server_id) else 1,
+            # since 2026-10-01, IPv4 is billed separately on every instance range
+            # (see inventory_ipv4_prices), so none is included in the instance
+            "ipv4": 0,
             "status": (
                 Status.ACTIVE
                 if "active" in (blobs.get("tags") or [])
@@ -1420,7 +1436,8 @@ def inventory_server_prices(vendor) -> list[dict]:
     addons = {addon["planCode"]: addon for addon in catalog["addons"]}
     local_storage_gb_price = _get_catalog_hourly_price(_GEN3_LOCAL_STORAGE_PLAN)
     if not local_storage_gb_price:
-        # the announced fallback price is in EUR
+        # the announced fallback price is in EUR, so non-EUR subsidiaries are
+        # not supported while the price is missing from the catalog
         if catalog["locale"]["currencyCode"] != "EUR":
             raise ValueError(
                 "No Gen3 local storage price in the catalog and no fallback "
@@ -1652,21 +1669,27 @@ def inventory_traffic_prices(vendor) -> list[dict]:
 def inventory_ipv4_prices(vendor) -> list[dict]:
     """OVHcloud Public Cloud IPv4 pricing.
 
-    Since 2026-10-01, public IPv4 addresses of Gen3 instances are billed
-    separately at €0.0027/hour as per the announcement. Note that the API
-    catalog endpoint still states the "publiccloud-publicip-ip" product to be
-    included on the single-AZ and 3AZ regions (as of 2026-10-27).
+    Since 2026-10-01, public IPv4 addresses are billed separately at
+    €0.0027/hour as per the announcement. Note that the API catalog endpoint
+    still states the "publiccloud-publicip-ip" product to be included on the
+    single-AZ and 3AZ regions (as of 2026-10-27).
+
+    The IPv4 price is stored per region and not per server family, as OVH
+    bills it separately on every instance range (including Gen2 and earlier,
+    not only Gen3 as the announcement says it was previously included in),
+    so no IPv4 is included in the servers (see the `ipv4` field).
 
     Data sources:
 
     - <https://blog.ovhcloud.com/en/posts/public-cloud-pricing-update-october-2026/>
+    - <https://us.ovhcloud.com/resources/blog/public-cloud-our-prices-are-changing/>
     - <https://www.ovhcloud.com/en/public-cloud/prices>
     """
     items = []
     for region in vendor.regions:
         if not _is_compute_region(region.api_reference):
             continue
-        # NOTE local zone prices are different, but these are skipped for now
+        # NOTE Local Zones (with different IPv4 prices) are not supported, see inventory_regions
         items.append(
             {
                 "vendor_id": vendor.vendor_id,

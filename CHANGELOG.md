@@ -10,7 +10,8 @@ New benchmark(s):
 
 Fix(es):
 
-- `OVH`: October 2026 pricing update (separately billed Gen3 IPv4 and local storage).
+- `OVH`: October 2026 pricing update (separately billed IPv4 for all instance
+  ranges, and local storage for Gen3).
 - `Azure`: stop inventing Flexible Server sizes from the VM catalog when Retail
   only has a per-vCore series meter (e.g. `DCasv5` / `Dsv6`), series meters
   remain for pricing.
