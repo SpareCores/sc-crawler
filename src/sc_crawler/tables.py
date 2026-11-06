@@ -231,11 +231,17 @@ class Vendor(VendorBase, table=True):
         (besides the default model.vendor_id filter) referencing the
         model object with SQLModel syntax.
 
+        Records marked as [SUPERSEDED][sc_crawler.table_fields.Status] are kept as-is.
+
         Examples:
             >>> aws.set_table_rows_inactive(ServerPrice, ServerPrice.price < 10)  # doctest: +SKIP
         """
         if self.session:
-            query = update(model).where(model.vendor_id == self.vendor_id)
+            query = (
+                update(model)
+                .where(model.vendor_id == self.vendor_id)
+                .where(model.status != Status.SUPERSEDED)
+            )
             for arg in args:
                 query = query.where(arg)
             self.session.exec(query.values(status=Status.INACTIVE))

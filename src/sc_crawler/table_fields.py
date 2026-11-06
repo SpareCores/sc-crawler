@@ -56,15 +56,18 @@ class Status(str, Enum):
     """Planned for retirement; only valid for Server and Database."""
     RETIRED = "retired"
     """Not orderable anymore, but prices may still exist (e.g. active multi-year contracts). Only valid for Server and Database."""
+    SUPERSEDED = "superseded"
+    """Superseded by a new resource record (e.g., due to renaming, re-keying, or migration). Never reset by the crawler."""
 
     @classmethod
     def best(cls, statuses: Collection["Status"]) -> "Status":
-        """Return the best of the given statuses: ACTIVE, PLANNED_FOR_RETIREMENT, INACTIVE, then RETIRED."""
+        """Return the best of the given statuses: ACTIVE, PLANNED_FOR_RETIREMENT, INACTIVE, RETIRED, then SUPERSEDED."""
         for status in (
             cls.ACTIVE,
             cls.PLANNED_FOR_RETIREMENT,
             cls.INACTIVE,
             cls.RETIRED,
+            cls.SUPERSEDED,
         ):
             if status in statuses:
                 return status
@@ -77,8 +80,8 @@ class Status(str, Enum):
 
     @property
     def is_general(self) -> bool:
-        """Whether this status is valid for non-server/database models (ACTIVE or INACTIVE only)."""
-        return self in (Status.ACTIVE, Status.INACTIVE)
+        """Whether this status is valid for non-server/database models (ACTIVE, INACTIVE or SUPERSEDED only)."""
+        return self in (Status.ACTIVE, Status.INACTIVE, Status.SUPERSEDED)
 
 
 class ResourceType(str, Enum):
