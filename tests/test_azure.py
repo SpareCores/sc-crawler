@@ -157,6 +157,11 @@ def test_azure_sku_lifecycle_status_from_retired_sizes_list():
         "Standard_DC8ads_cc_v5",
         "Standard_EC4as_cc_v5",
         "Standard_EC4ads_cc_v5",
+        "Standard_D2s_v3",
+        "Standard_D2_v3",
+        "Standard_E2s_v3",
+        "Standard_E64-16s_v3",
+        "Standard_E64is_v3",
     ]
     retired = [
         "Standard_A2",
@@ -170,11 +175,10 @@ def test_azure_sku_lifecycle_status_from_retired_sizes_list():
         "Standard_NC24rs_v3",
     ]
     active = [
-        "Standard_D2s_v3",
         "Standard_D4s_v5",
         "Standard_B2als_v2",
-        "Standard_E2s_v3",
-        "Standard_E4s_v3",
+        "Standard_E4s_v4",
+        "Standard_D4ds_v4",
         "Standard_DC4as_v5",
         "Standard_L8s_v3",
         "Standard_NC4as_T4_v3",
@@ -255,6 +259,15 @@ def test_azure_sku_lifecycle_status_transitions_on_retirement_date():
     )
     assert (
         _azure_sku_lifecycle_status("Standard_DC8ds_v3", as_of=date(2029, 10, 31))
+        == Status.RETIRED
+    )
+    # Dv3/Dsv3/Ev3/Esv3: retires 2029-11-15
+    assert (
+        _azure_sku_lifecycle_status("Standard_E4s_v3", as_of=date(2029, 11, 14))
+        == Status.PLANNED_FOR_RETIREMENT
+    )
+    assert (
+        _azure_sku_lifecycle_status("Standard_D4_v3", as_of=date(2029, 11, 15))
         == Status.RETIRED
     )
 
@@ -484,7 +497,8 @@ def test_azure_inventory_databases_ha_from_supported_ha_mode():
         DatabaseHaStrategy.PASSIVE_STANDBY,
         DatabaseHaStrategy.NONE,
     ]
-    assert by_id["Standard_B1ms"]["status"] == Status.PLANNED_FOR_RETIREMENT
+    # Flexible Server does not inherit the B-series v1 VM retirement
+    assert by_id["Standard_B1ms"]["status"] == Status.ACTIVE
     assert by_id["Standard_D2s_v3"]["status"] == Status.ACTIVE
     assert by_id["Standard_E2s_v3"]["status"] == Status.ACTIVE
 
@@ -773,6 +787,12 @@ def test_azure_inventory_databases_retail_requires_capabilities_series():
             vcpus=104,
             memory_amount=917504,
         ),
+        SimpleNamespace(
+            api_reference="Standard_DC2as_v5",
+            server_id="Standard_DC2as_v5",
+            vcpus=2,
+            memory_amount=8192,
+        ),
     ]
     vendor.progress_tracker = Mock(
         start_task=Mock(), advance_task=Mock(), hide_task=Mock()
@@ -793,12 +813,33 @@ def test_azure_inventory_databases_retail_requires_capabilities_series():
                         supportedHaMode=[],
                         securityProfile=None,
                         status=None,
-                    )
+                    ),
+                    SimpleNamespace(
+                        name="Standard_D8s_v6",
+                        vCores=8,
+                        supportedMemoryPerVcoreMb=4096,
+                        supportedHaMode=[],
+                        securityProfile=None,
+                        status=None,
+                    ),
                 ],
             )
         ],
     )
     retail = [
+        {
+            # series meter alone must not invent sizes: no DCasv5 size in capabilities
+            "armSkuName": (
+                "Azure_Database_for_PostgreSQL_Flexible_Server_"
+                "Confidential_Compute_DCasv5_Series_Compute"
+            ),
+            "productName": (
+                "Azure Database for PostgreSQL Flexible Server "
+                "Confidential Compute DCasv5 Series Compute"
+            ),
+            "meterName": "vCore",
+            "skuName": "vCore",
+        },
         {
             "armSkuName": "Standard_M32dms_v2",
             "productName": (
@@ -830,9 +871,12 @@ def test_azure_inventory_databases_retail_requires_capabilities_series():
     ):
         rows = azure_databases(vendor)
     assert {row["database_id"] for row in rows} == {
+        "Standard_D8s_v6",
         "Standard_E2ds_v5",
         "Standard_E104ids_v5",
     }
+    # DCasv5 has a retail meter, but no size of the series is in capabilities
+    assert "Standard_DC2as_v5" not in {row["database_id"] for row in rows}
 
 
 def test_azure_burstable_storage_extra_max_excludes_premium_ssd_v2():

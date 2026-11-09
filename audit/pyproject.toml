@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sc-crawler-audit"
+dynamic = ["version"]
+requires-python = ">= 3.11"
+description = "Cross-check the published sc-data against official vendor sources (internal tool, not published)."
+readme = "README.md"
+dependencies = [
+  "beautifulsoup4",
+  "markdownify",
+  "pydantic",
+  "PyYAML",
+  "requests",
+  "rich",
+  "typer",
+]
+classifiers = [
+  # PyPI rejects uploads with this classifier
+  "Private :: Do Not Upload",
+]
+
+[project.optional-dependencies]
+testing = ["pytest"]
+
+[project.scripts]
+sc-audit = "sc_crawler_audit.cli:app"
+
+[tool.setuptools.dynamic]
+version = { attr = "sc_crawler_audit.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

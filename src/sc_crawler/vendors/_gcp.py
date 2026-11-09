@@ -224,12 +224,15 @@ def _server_accelerators() -> dict:
 
 
 # https://cloud.google.com/compute/docs/disks/local-ssd
-# Z4D Titanium SSD partitions are 3,500 GiB (both standardlssd and highlssd):
+# Z4M Titanium SSD disks are 14,000 GiB, Z4D ones 3,500 GiB (both standardlssd
+# and highlssd) or 7,000 GiB on bare metal:
 # https://cloud.google.com/compute/docs/storage-optimized-machines
 def _local_ssd_partition_gib(server_name: str) -> int:
     family = server_name.split("-")[0].lower()
+    if family == "z4m":
+        return 14000
     if family == "z4d":
-        return 3500
+        return 7000 if server_name.endswith("-metal") else 3500
     if family == "z3" and server_name.endswith("-metal"):
         return 6000
     if family in ["a4x", "z3"] or (family == "c4" and server_name.endswith("-metal")):
@@ -722,6 +725,14 @@ def _skus(service_name: str) -> List[compute_v1.types.compute.Zone]:
 
 # there are a few odd descriptions that needs lookup,
 # otherwise the descriptions match the server family
+# E2 shared-core machines have 2 vCPUs, but are billed for a fraction of a vCPU:
+# https://cloud.google.com/compute/docs/general-purpose-machines#sharedcore
+_SHARED_CORE_BILLED_VCPUS = {"e2-micro": 0.25, "e2-small": 0.5, "e2-medium": 1}
+
+_C2_SKU_DESCRIPTION = recompile(
+    r"^(Spot Preemptible )?Compute optimized (Core|Ram) running in "
+)
+
 SERVER_DESCRIPTION_TO_FAMILY = {
     "Compute optimized": "C2",
     "Memory-optimized": "M1",
@@ -1007,6 +1018,9 @@ def _skus_dict():
                 and (
                     "Instance Core running in" in sku.description
                     or "Instance Ram running in" in sku.description
+                    # C2 SKUs are being renamed without "Instance", e.g.
+                    # "Compute optimized Core running in Americas"
+                    or _C2_SKU_DESCRIPTION.match(sku.description)
                 )
             ):
                 # sku.description examples:
@@ -1020,6 +1034,7 @@ def _skus_dict():
                 # e.g. "M4NUltramem224Instance Ram running in Iowa"
                 family = sub(r"^Spot Preemptible ", "", sku.description)
                 family = sub(r" ?Instance.*", "", family)
+                family = sub(r" (Core|Ram) running in.*", "", family)
                 family = sub(r" Predefined$", "", family)
                 family = sub(r" AMD$", "", family)
                 family = sub(r" Arm$", "", family)
@@ -1428,7 +1443,7 @@ def _inventory_server_prices(vendor: Vendor, allocation: Allocation) -> List[dic
                 try:
                     price = (
                         skus["cpu"][family][server_region][allocation.value.lower()][0]
-                        * server.vcpus
+                        * _SHARED_CORE_BILLED_VCPUS.get(server.name, server.vcpus)
                         + skus["ram"][family][server_region][allocation.value.lower()][
                             0
                         ]

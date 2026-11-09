@@ -1295,7 +1295,8 @@ def inventory_databases(vendor):
                 for name in shape.get("backups") or []
                 if name in _DATABASE_BACKUP_RETENTION_DAYS
             ]
-            continuous_backups = min(backup_days) if backup_days else None
+            # maximum retention, incl. the extended tier at extra cost
+            continuous_backups = max(backup_days) if backup_days else None
             # Persist flexible-plan create args (incl. discontinuous storage
             # bands) in api_reference_object so consumers can snap
             # plan_storage_gib without re-calling GET /database/plans.
@@ -1367,7 +1368,8 @@ def inventory_databases(vendor):
         memory_amount = plan.get("memory_amount")
         components = plan.get("components", {})
         storage_component = components.get("storage", {})
-        # UI/plan names say GB, but API values are GiB
+        # UI/plan names say GB, but API values are GiB, and apply to each node
+        # (e.g. included_gib is 100 for all 1x/2x/3x-...-100GB plans)
         # https://upcloud.com/docs/products/managed-postgresql/configurations/
         nodes = node_count or 1
         included_gib = storage_component.get("included_gib")
@@ -1376,12 +1378,12 @@ def inventory_databases(vendor):
             if included_gib is not None
             else plan["storage_size"] // _MIB_PER_GIB
         )
-        storage_size_gb = round((bundled_gib // nodes) * _GIB_TO_GB)
+        storage_size_gb = round(bundled_gib * _GIB_TO_GB)
         storage_step_gb = round(
             (plan["storage_step_size"] // _MIB_PER_GIB) * _GIB_TO_GB
         )
         storage_extra_max_gb = round(
-            ((plan["storage_cap_size"] - plan["storage_size"]) // _MIB_PER_GIB // nodes)
+            ((plan["storage_cap_size"] - plan["storage_size"]) // _MIB_PER_GIB)
             * _GIB_TO_GB
         )
         dynamic_storage_supported = storage_component.get("dynamic_storage_supported")
@@ -1622,7 +1624,6 @@ def _database_storage_size_bounds(tier_id: str) -> tuple[int, int] | None:
     max_gib = 0
     if tier_id == "standard":
         for plan in _get_pg_service_type().get("service_plans", []):
-            nodes = plan.get("node_count") or 1
             included = (
                 (plan.get("components") or {}).get("storage", {}).get("included_gib")
             )
@@ -1631,10 +1632,9 @@ def _database_storage_size_bounds(tier_id: str) -> tuple[int, int] | None:
                 if included is not None
                 else plan["storage_size"] // _MIB_PER_GIB
             )
-            # Per-node floor; cap is cluster storage_cap converted per node.
-            floor_gib = base_gib // nodes
-            cap_gib = plan["storage_cap_size"] // _MIB_PER_GIB // nodes
-            min_gib = floor_gib if min_gib is None else min(min_gib, floor_gib)
+            # API sizes are per node, whatever the node count of the plan.
+            cap_gib = plan["storage_cap_size"] // _MIB_PER_GIB
+            min_gib = base_gib if min_gib is None else min(min_gib, base_gib)
             max_gib = max(max_gib, cap_gib)
     for service_type in _get_database_plans().get("service_types", []):
         if service_type.get("type") not in ("pg", "postgresql"):

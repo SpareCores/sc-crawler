@@ -44,7 +44,6 @@ from ..tables import Vendor
 from ..utils import (
     _GIB_TO_GB,
     _HOURS_PER_MONTH,
-    convert_gb_to_mib,
     list_search,
     scmodels_to_dict,
 )
@@ -606,7 +605,8 @@ STORAGE_PRICE_UNIT_MAPPING: dict[str, float | None] = {
 """Storage capacity units → multiplier to convert the raw API price to $/GB/month."""
 
 # VM size series lifecycle. Previous-gen without a retirement date stays ACTIVE
-# (Dv3/Dsv3, Ev3/Esv3, Ev4/Esv4, Eav4/Easv4, Edv4/Edsv4, Preview DC).
+# (Ev4/Esv4, Eav4/Easv4, Edv4/Edsv4, Preview DC).
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirements-and-capacity-restrictions
 # https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retired-sizes-list
 # https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/previous-gen-sizes-list
 # https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/av1-series-retirement
@@ -653,6 +653,7 @@ _AZURE_SKU_LIFECYCLE_RULES = (
     (recompile(r"^G\d+$", IGNORECASE), date(2028, 11, 15)),  # G-series
     (recompile(r"^GS\d+(-\d+)?$", IGNORECASE), date(2028, 11, 15)),  # Gs-series
     (recompile(r"^L\d+s_v2$", IGNORECASE), date(2028, 11, 15)),  # Lsv2-series
+    (recompile(r"^[DE]\d+(-\d+)?i?s?_v3$", IGNORECASE), date(2029, 11, 15)),  # noqa: E501  # Dv3/Dsv3/Ev3/Esv3-series
     (recompile(r"^NV\d+s_v3$", IGNORECASE), date(2026, 9, 30)),  # noqa: E501  # NVv3-series (M60), not NCasT4_v3
     (recompile(r"^NV\d+a[h]?s_v4$", IGNORECASE), date(2026, 9, 30)),  # NVv4-series
     (recompile(r"^NP\d+s$", IGNORECASE), date(2027, 5, 31)),  # NP-series
@@ -710,6 +711,69 @@ def _azure_sku_lifecycle_status(sku_name: str, as_of: date | None = None) -> Sta
     return Status.ACTIVE
 
 
+# GPU sizes by series: (size regex, model, GPU memory in GiB, GPUs by vCPUs).
+# GPU counts not listed come from the Resource SKUs API (`GPUs` capability),
+# which reports partial GPUs as 1 and misses some series (e.g. GB200, V710).
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nc-family
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nd-family
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/ng-family
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nv-family
+_AZURE_GPU_SERIES = (
+    (r"^NC\d+as_T4_v3$", "T4", 16, None),
+    (r"^NC\d+r?s_v3$", "V100", 16, None),
+    (r"^NC\d+ads_A10_v4$", "A10", 24, None),
+    (r"^NC\d+ads_A100_v4$", "A100", 80, None),
+    (r"^NCC?\d+adi?s_H100_v5$", "H100", 94, None),
+    (
+        r"^NC\d+l?ds_xl_RTXPRO6000BSE_v6$",
+        "RTX PRO 6000",
+        96,
+        {24: 1 / 4, 36: 1 / 4, 72: 1 / 2, 144: 1, 288: 2},
+    ),
+    (r"^ND40rs_v2$", "V100", 32, None),
+    (r"^ND96asr_v4$", "A100", 40, None),
+    (r"^ND96amsr_A100_v4$", "A100", 80, None),
+    (r"^ND96isr?_H100_v5$", "H100", 80, {96: 8}),
+    (r"^ND96isr?_H200_v5$", "H200", 141, {96: 8}),
+    (r"^ND96isr?_MI300X_v5$", "MI300X", 192, {96: 8}),
+    (r"^ND128isr_NDR_GB200_v6$", "GB200", 192, {128: 4}),
+    (r"^ND128isr_GB300_v6$", "GB300", 288, {128: 4}),
+    (r"^NG\d+adm?s_V620_v1$", "V620", 32, {8: 1 / 4, 16: 1 / 2, 32: 1}),
+    (r"^NV\d+s_v[23]$", "M60", 8, None),
+    (r"^NV\d+as_v4$", "MI25", 16, {4: 1 / 8, 8: 1 / 4, 16: 1 / 2, 32: 1}),
+    (
+        r"^NV\d+adm?s_A10_v5$",
+        "A10",
+        24,
+        {6: 1 / 6, 12: 1 / 3, 18: 1 / 2, 36: 1, 72: 2},
+    ),
+    (
+        r"^NV\d+adm?s_V710_v5$",
+        "V710",
+        24,
+        {4: 1 / 6, 8: 1 / 3, 12: 1 / 2, 24: 1, 28: 1},
+    ),
+)
+_AZURE_GPU_SERIES = tuple(
+    (recompile(pattern), model, memory, counts)
+    for pattern, model, memory, counts in _AZURE_GPU_SERIES
+)
+
+
+def _gpu_spec(name: str, api_gpus: str | None) -> tuple[float, str | None, int | None]:
+    """GPU count, model and memory (MiB per full GPU) of a VM size."""
+    size = name.removeprefix("Standard_")
+    for pattern, model, memory, counts in _AZURE_GPU_SERIES:
+        if pattern.match(size):
+            vcpus = int(recompile(r"^[A-Z]+(\d+)").match(size)[1])
+            gpus = (counts or {}).get(vcpus) or float(api_gpus or 0)
+            return gpus, model, memory * 1024
+    # NP-series reports its FPGAs as GPUs
+    if size.startswith(("NC", "ND", "NG", "NV")):
+        return float(api_gpus or 0), None, None
+    return 0, None, None
+
+
 def _parse_server_name(name):
     """Extract information from the server name/size.
 
@@ -752,117 +816,7 @@ def _parse_server_name(name):
     # s = Premium Storage capable, including possible use of Ultra SSD
     features = [char for char in data["features"]] if data["features"] else []
 
-    spacers_list = (data.get("spacers") or "").split("_")
-
-    accelerators = any(
-        [s in ["A100", "H100", "MI300X", "V620", "A10"] for s in spacers_list]
-    )
-
-    family = data["family"]
-    vcpus = int(data["vcpus"])
-    # accelerators are not always mentioned in the old server names, so we need a manual mapping
-    gpus = 0
-    gpu_model = None
-    gpu_memory = None
-    if family in ["NC", "ND", "NG", "NV"]:
-        if "T4" in spacers_list:
-            gpu_model = "T4"
-            gpu_memory = convert_gb_to_mib(16)
-        elif "A10" in spacers_list:
-            gpu_model = "A10"
-            gpu_memory = convert_gb_to_mib(24)
-        elif "M60" in spacers_list:
-            gpu_model = "M60"
-            gpu_memory = convert_gb_to_mib(8)
-        # V620 has 32 GB of GPU memory, info from this page:
-        # https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/ngadsv620-series?tabs=sizeaccelerators
-        elif "V620" in spacers_list:
-            gpu_model = "V620"
-            gpu_memory = convert_gb_to_mib(32)
-        # V710 has 24 GB of GPU memory, info from this page:
-        # https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nvadsv710-v5-series?tabs=sizeaccelerators
-        elif "V710" in spacers_list:
-            gpu_model = "V710"
-            gpu_memory = convert_gb_to_mib(24)
-        # default to one, list all the exceptions below
-        gpus = 1
-        if family == "NC":
-            if vcpus == 24:
-                # Standard_NC24ads_A100_v4 has only 1 GPU,
-                # but Standard_NC24(r) has 4x Tesla K80
-                if not accelerators:
-                    gpus = 4
-            if vcpus in [12, 48, 80]:
-                # Standard_NC48ads_A100_v4
-                # Standard_NC80adis_H100_v5
-                gpus = 2
-            if vcpus in [64, 96]:
-                # Standard_NC64as_T4_v3
-                # Standard_NC96ads_A100_v4
-                gpus = 4
-        if family == "ND":
-            if vcpus in [12]:
-                gpus = 2
-            if vcpus in [24]:
-                gpus = 4
-            if vcpus in [40]:
-                # Standard_ND40rs_v2
-                gpu_model = "V100"
-                gpus = 8
-                gpu_memory = convert_gb_to_mib(32)
-            if vcpus in [96]:
-                gpus = 8
-        if family == "NG":
-            if vcpus in [8]:
-                # Standard_NG8ads_V620_v1
-                if gpu_model == "V620":
-                    gpus = 1 / 4
-            if vcpus in [16]:
-                # Standard_NG16ads_V620_v1
-                if gpu_model == "V620":
-                    gpus = 1 / 2
-        if family == "NV":
-            # all NV servers without gpu_model have different base GPU memory sizes depending on the version
-            # so we only set fractional gpu_count for now
-            if vcpus in [4]:
-                # Standard_NV4as_v4
-                gpus = 1 / 8
-                # Standard_NV4ads_V710_v5
-                if gpu_model == "V710":
-                    gpus = 1 / 6
-            if vcpus in [6]:
-                # Standard_NV6s_v2
-                gpus = 1 / 2
-                # Standard_NV6ads_A10_v5
-                if gpu_model == "A10":
-                    gpus = 1 / 6
-            if vcpus in [8]:
-                # Standard_NV8as_v4
-                gpus = 1 / 4
-                # Standard_NV8ads_V710_v5
-                if gpu_model == "V710":
-                    gpus = 1 / 3
-            if vcpus in [12]:
-                # Standard_NV12ads_A10_v5
-                if gpu_model == "A10":
-                    gpus = 1 / 3
-                if gpu_model == "V710":
-                    gpus = 1 / 2
-            if vcpus in [16]:
-                # Standard_NV16as_v4
-                gpus = 1 / 2
-            if vcpus in [18]:
-                # Standard_NV18ads_A10_v5
-                if gpu_model == "A10":
-                    gpus = 1 / 2
-            if vcpus in [24, 72]:
-                gpus = 2
-                if gpu_model == "V710":
-                    gpus = 1
-            if vcpus in [48]:
-                gpus = 4
-
-    return (family, features, gpus, gpu_model, gpu_memory)
+    return (data["family"], features)
 
 
 # VM size family categories by the leading letters of the size names.
@@ -1018,7 +972,7 @@ def _vm_series(size_name: str, sku_family: str) -> str:
 
 def _standardize_server(server: dict, vendor) -> dict:
     # example Resource Skus - List response moved to _compute_resources
-    family, features, gpus, gpu_model, gpu_memory = _parse_server_name(server["name"])
+    family, features = _parse_server_name(server["name"])
     # override family from SKU listing
     family = recompile(r"(?i)family$").sub(
         "", recompile(r"(?i)^standard").sub("", server["family"])
@@ -1031,6 +985,7 @@ def _standardize_server(server: dict, vendor) -> dict:
             return default
 
     architecture = ARCHITECTURE_MAPPING[capability("CpuArchitectureType")]
+    gpus, gpu_model, gpu_memory = _gpu_spec(server["name"], capability("GPUs"))
     # construct a server description as Azure doesn't provide one
     description = family + " family"
     description_extras = [SERVER_FEATURES[f] for f in features]
@@ -1045,11 +1000,11 @@ def _standardize_server(server: dict, vendor) -> dict:
     # SKUs without a temp disk report MaxResourceVolumeMB "0" (truthy string).
     storages = []
     temp_mb = capability("MaxResourceVolumeMB")
-    # values might be off, see e.g. DC1s_v2 reporting 51200 MB and showing 50 GiB in docs
+    # MaxResourceVolumeMB is MiB, e.g. DC1s_v2 reports 51200 and shows 50 GiB in docs
     if temp_mb and float(temp_mb) > 0:
         storages.append(
             Disk(
-                size=round(float(temp_mb) / 1e3),
+                size=round(float(temp_mb) * 1024**2 / 1e9),
                 storage_type=StorageType.SSD,
                 description="temp disk",
             )
@@ -2896,7 +2851,9 @@ def inventory_databases(vendor):
                 "database_monitoring": True,
                 "continuous_backups": 35,
                 "sla": sla,
-                "status": _azure_sku_lifecycle_status(database_id),
+                # VM size retirements (e.g. B-series v1) are not announced for
+                # Flexible Server compute, so don't inherit the VM lifecycle.
+                "status": Status.ACTIVE,
             }
         )
     return rows
