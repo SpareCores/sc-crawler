@@ -227,6 +227,22 @@ def _get_region_storage_ids(region_name: str) -> set[str]:
     }
 
 
+def _flavor_availability() -> dict[tuple[str, str], bool]:
+    """Whether a flavor's hourly plan is available, by (region, plan code).
+
+    The flavor API can list the same flavor/region more than once.
+    """
+    availability: dict[tuple[str, str], bool] = {}
+    for flavor in _get_flavors():
+        plan_code = (flavor.get("planCodes") or {}).get("hourly")
+        if plan_code:
+            key = (flavor["region"], plan_code)
+            availability[key] = availability.get(key, False) or bool(
+                flavor.get("available")
+            )
+    return availability
+
+
 @cache
 def _get_flavors(project_id: Optional[str] = None) -> list[dict]:
     """Fetch instance flavors available to a project.
@@ -1216,13 +1232,20 @@ def inventory_zones(vendor) -> list[dict]:
 def inventory_servers(vendor) -> list[dict]:
     """List all server types (called "flavors" at OVHcloud).
 
-    Lifecycle (catalog plan `blobs.tags`): `active` tag -> ACTIVE, otherwise
-    INACTIVE. The `legacy` tag is not treated as retirement.
+    Lifecycle: `active` catalog tag (`blobs.tags`) or available in any region
+    of the project's flavor API (so the server has ACTIVE prices) -> ACTIVE,
+    otherwise INACTIVE (e.g. untagged t1/t2 flavors are ACTIVE, flavors with
+    the `legacy` tag are not in the flavor API). There is no retirement date.
 
     Flex flavors are listed as separate servers with their own local disk
     size, except when it matches the classic flavor (see `_get_flex_flavors`).
     """
     items = []
+    available_plan_codes = {
+        plan_code
+        for (_, plan_code), available in _flavor_availability().items()
+        if available
+    }
     flex_flavors = _get_flex_flavors()
 
     server_plans = [
@@ -1294,19 +1317,20 @@ def inventory_servers(vendor) -> list[dict]:
             capacity = disk.get("capacity", 0)
             if not capacity:
                 continue
-            # no number field here
             is_nvme = (
                 "nvme"
                 in disk.get("technology", "").lower()
                 + disk.get("interface", "").lower()
             )
             storage_type = StorageType.NVME_SSD if is_nvme else StorageType.SSD
-            storages.append(
-                Disk(
-                    size=capacity,
-                    storage_type=storage_type,
+            # e.g. 2x 960 GB on bm-s1, 4x 3840 GB passthrough NVMe on h100-1520
+            for _ in range(disk.get("number", 1)):
+                storages.append(
+                    Disk(
+                        size=capacity,
+                        storage_type=storage_type,
+                    )
                 )
-            )
         storage_type = storages[0].storage_type if storages else None
 
         def describe(storages: List[Disk]) -> str:
@@ -1391,6 +1415,7 @@ def inventory_servers(vendor) -> list[dict]:
             "status": (
                 Status.ACTIVE
                 if "active" in (blobs.get("tags") or [])
+                or server["planCode"] in available_plan_codes
                 else Status.INACTIVE
             ),
         }
@@ -1448,6 +1473,7 @@ def inventory_server_prices(vendor) -> list[dict]:
     # list all server <> region offers with a link to the price list
     offers = _get_flavors()
     offers = [o for o in offers if o["osType"] == "linux"]
+    availability = _flavor_availability()
     items = []
     # the same flavor/region can be listed multiple times by the flavor API
     seen_offers: set[tuple[str, str]] = set()
@@ -1503,7 +1529,12 @@ def inventory_server_prices(vendor) -> list[dict]:
                     "price_upfront": 0,
                     "price_tiered": [],
                     "currency": catalog["locale"]["currencyCode"],
-                    "status": Status.ACTIVE,
+                    # e.g. sold out in the region
+                    "status": (
+                        Status.ACTIVE
+                        if availability.get((offer["region"], plan_code))
+                        else Status.INACTIVE
+                    ),
                 }
             )
     vendor.progress_tracker.hide_task()
@@ -1802,7 +1833,9 @@ def inventory_databases(vendor):
             scheduled = backups.get("available")
             retention = backups.get("retentionDays", 0)
 
-            engine_versions.add(offer["version"])
+            # skip versions no longer sold (e.g. PostgreSQL 14 is END_OF_SALE)
+            if offer_status == Status.ACTIVE:
+                engine_versions.add(offer["version"])
             max_read_replicas = max(max_read_replicas, max_nodes - 1)
             scheduled_backups = scheduled_backups or bool(scheduled)
             continuous_backups = max(continuous_backups, retention)

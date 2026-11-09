@@ -134,3 +134,9 @@ def test_database_ha_strategy_ordered():
         DatabaseHaStrategy.PASSIVE_STANDBY,
         DatabaseHaStrategy.NONE,
     ]
+
+
+def test_azure_gpu_memory_is_gib():
+    from sc_crawler.vendors._azure import _gpu_spec
+
+    assert _gpu_spec("Standard_ND96isr_H100_v5", "8") == (8, "H100", 80 * 1024)

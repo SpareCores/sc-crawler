@@ -782,6 +782,8 @@ def test_gcp_search_servers_fills_gpu_and_bundled_local_ssd_fields():
         ("z3-highmem-192-highlssd-metal", 6000),
         ("z4d-highmem-16-standardlssd", 3500),
         ("z4d-highmem-192-highlssd", 3500),
+        ("z4d-highmem-384-standardlssd-metal", 7000),
+        ("z4m-highmem-16", 14000),
     ],
 )
 def test_gcp_local_ssd_partition_gib(server_name, expected):
@@ -1606,3 +1608,95 @@ def test_standardize_gpu_family_rtx_6000_by_memory(raw, memory, family):
         )
         == family
     )
+
+
+def test_gcp_skus_dict_indexes_c2_skus_with_and_without_instance():
+    skus = [
+        _sku(
+            "Compute optimized Instance Core running in Israel",
+            resource_group="CPU",
+            regions=["me-west1"],
+            units=0,
+            nanos=40_000_000,
+        ),
+        _sku(
+            "Compute optimized Core running in Americas",
+            resource_group="CPU",
+            regions=["us-central1"],
+            units=0,
+            nanos=33_982_000,
+        ),
+        _sku(
+            "Spot Preemptible Compute optimized Ram running in Americas",
+            resource_group="RAM",
+            regions=["us-central1"],
+            units=0,
+            nanos=1_822_000,
+            usage_type="Preemptible",
+        ),
+    ]
+    with patch("sc_crawler.vendors._gcp._skus", return_value=skus):
+        lookup = _skus_dict()
+
+    assert lookup["cpu"]["c2"]["me-west1"]["ondemand"] == (pytest.approx(0.04), "USD")
+    assert lookup["cpu"]["c2"]["us-central1"]["ondemand"] == (
+        pytest.approx(0.033982),
+        "USD",
+    )
+    assert lookup["ram"]["c2"]["us-central1"]["spot"] == (
+        pytest.approx(0.001822),
+        "USD",
+    )
+
+
+@pytest.mark.parametrize(
+    ("name", "billed_vcpus", "memory_gib"),
+    [
+        ("e2-micro", 0.25, 1),
+        ("e2-small", 0.5, 2),
+        ("e2-medium", 1, 4),
+    ],
+)
+def test_gcp_inventory_server_prices_bills_e2_shared_core_fraction(
+    name, billed_vcpus, memory_gib
+):
+    server = SimpleNamespace(
+        name=name,
+        server_id=name,
+        vcpus=2,
+        memory_amount=memory_gib * 1024,
+        accelerator_count=0,
+        accelerator_model=None,
+    )
+    skus = [
+        _sku(
+            "E2 Instance Core running in Americas",
+            resource_group="CPU",
+            regions=["us-central1"],
+            units=0,
+            nanos=21_811_590,
+        ),
+        _sku(
+            "E2 Instance Ram running in Americas",
+            resource_group="RAM",
+            regions=["us-central1"],
+            units=0,
+            nanos=2_923_530,
+        ),
+    ]
+    vendor = _gcp_vendor(servers=[server])
+    with (
+        patch("sc_crawler.vendors._gcp._skus", return_value=skus),
+        patch("sc_crawler.vendors._gcp._server_in_zone", return_value=True),
+        _gcp_accelerators({}),
+        _gcp_bundled_local_ssd({}),
+    ):
+        prices = inventory_server_prices(vendor)
+
+    assert len(prices) == 1
+    assert prices[0]["price"] == pytest.approx(
+        billed_vcpus * 0.02181159 + memory_gib * 0.00292353
+    )
+    if name == "e2-micro":
+        # us-central1 price on https://cloud.google.com/products/compute/pricing
+        assert prices[0]["price"] == pytest.approx(0.008376, abs=1e-6)

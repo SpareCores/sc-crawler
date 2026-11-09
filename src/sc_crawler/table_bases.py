@@ -823,11 +823,11 @@ class ServerFields(
     )
     network_speed_baseline: Optional[float] = Field(
         default=None,
-        description="The baseline network performance (Gbps) of the network card.",
+        description="The baseline network performance (Gbps) of the server, aggregated over all network cards.",
     )
     network_speed_max: Optional[float] = Field(
         default=None,
-        description="The maximum network performance (Gbps) of the network card.",
+        description="The maximum network performance (Gbps) of the server, aggregated over all network cards.",
     )
     network_storage_speed_baseline: Optional[float] = Field(
         default=None,

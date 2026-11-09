@@ -1600,10 +1600,17 @@ def _find_storage_disks_from_lsblk(
         size_gb = size_bytes // 1000**3
         nvme_match = match(r"nvme(\d+)", name)
         nvme_storage_count = int(nvme_match.group(1)) if nvme_match else -1
-        # attached boot network drive is always first
-        if nvme_storage_count >= (
-            1 if _boot_from_attached_network_drive[server.vendor_id] else 0
-        ):
+        model = (d.get("model") or "").strip()
+        if server.vendor_id == "gcp" and model:
+            # the boot Persistent Disk is not always nvme0 (or it is sda), but it's
+            # named "nvme_card-pd" while local SSDs are "nvme_card" or "nvme_card<N>"
+            is_local_nvme = nvme_match is not None and not model.endswith("-pd")
+        else:
+            # attached boot network drive is always first
+            is_local_nvme = nvme_storage_count >= (
+                1 if _boot_from_attached_network_drive[server.vendor_id] else 0
+            )
+        if is_local_nvme:
             disks.append(
                 Disk(
                     size=size_gb,
@@ -1899,8 +1906,11 @@ def inspect_update_server_dict(server: dict) -> dict:
         "accelerator_memory_min": lambda: min(
             [gpu["memory"] for gpu in server["accelerators"]]
         ),
-        "accelerator_memory_total": lambda: sum(
-            [gpu["memory"] for gpu in server["accelerators"]]
+        # skip update (keep unknown vendor data) if there is no HW-inspected GPU info
+        "accelerator_memory_total": lambda: (
+            sum([gpu["memory"] for gpu in server["accelerators"]])
+            if server["accelerators"]
+            else None
         ),
         # skip storage update if lshw parsing failed or API data is present
         "storage_type": lambda: (
