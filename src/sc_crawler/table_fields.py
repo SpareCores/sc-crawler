@@ -138,7 +138,7 @@ class AcceleratorType(str, Enum):
 class Accelerator(Json):
     """Hardware accelerator (e.g. GPU or TPU) details."""
 
-    manufacturer: str
+    manufacturer: Optional[str] = None
     """The manufacturer/brand of the accelerator, e.g. Nvidia or AMD."""
     family: Optional[str] = None
     """The model family/architecture of the accelerator."""

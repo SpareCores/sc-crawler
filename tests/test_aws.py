@@ -206,7 +206,7 @@ def _device(name, manufacturer, count, memory):
         # no memory reported
         (
             {"FpgaInfo": {"Fpgas": [{"Name": "VU9P", "Count": 1}]}},
-            (1, 0, 0, "AWS", "VU9P", AcceleratorType.FPGA),
+            (1, 0, 0, None, "VU9P", AcceleratorType.FPGA),
         ),
         (
             {
@@ -294,3 +294,9 @@ def test_accelerators_expanded_by_count():
     assert accelerators[0].manufacturer == "AWS"
     assert accelerators[0].model == "Trainium"
     assert accelerators[0].memory == 32768
+
+
+def test_accelerator_without_manufacturer():
+    """Only Neuron devices default to AWS, others keep an unknown manufacturer."""
+    instance_type = {"FpgaInfo": {"Fpgas": [{"Name": "VU9P", "Count": 1}]}}
+    assert _get_gpus_of_instance_type(instance_type)[0].manufacturer is None

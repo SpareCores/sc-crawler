@@ -690,8 +690,11 @@ def _accelerators_of_instance_type(instance_type):
             {
                 "Count": device["Count"],
                 "Name": device["Name"],
-                # Inferentia and Trainium devices have no manufacturer
-                "Manufacturer": device.get("Manufacturer", "AWS"),
+                # only Inferentia and Trainium (NeuronInfo) devices have no
+                # manufacturer, other unknown manufacturers stay None
+                "Manufacturer": device.get(
+                    "Manufacturer", "AWS" if info_key == "NeuronInfo" else None
+                ),
                 "Memory": _DEVICE_MEMORY_OVERRIDES_MIB.get(
                     device["Name"],
                     (device.get("MemoryInfo") or {}).get("SizeInMiB", 0),
