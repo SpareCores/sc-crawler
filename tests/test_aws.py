@@ -1,4 +1,6 @@
-from unittest.mock import Mock, patch
+from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
@@ -12,7 +14,9 @@ from sc_crawler.table_fields import (
     DatabaseWireProtocol,
     PriceUnit,
     Status,
+    StorageType,
 )
+from sc_crawler.vendors import _aws
 from sc_crawler.vendors._aws import (
     _active_region_ids,
     _boto_describe_db_major_engine_versions_first,
@@ -21,9 +25,12 @@ from sc_crawler.vendors._aws import (
     _database_family,
     _describe_orderable_db_instance_options_for_class_with_progress,
     _extract_rds_bundled_storage_size,
+    _get_network_speed_gbps,
     _get_rds_instance_products_by_region,
     _get_server_products,
     _get_storage_bounds_from_orderable_options,
+    _get_storage_of_instance_type,
+    _get_storages_of_instance_type,
     _instance_family,
     _instance_series,
     _server_series_categories,
@@ -46,17 +53,6 @@ from sc_crawler.vendors._aws import (
 )
 from sc_crawler.vendors._aws import (
     inventory_server_prices as aws_server_prices,
-)
-from datetime import UTC, datetime, timedelta
-from types import SimpleNamespace
-from unittest.mock import MagicMock
-
-from sc_crawler.table_fields import StorageType
-from sc_crawler.vendors import _aws
-from sc_crawler.vendors._aws import (
-    _get_network_speed_gbps,
-    _get_storage_of_instance_type,
-    _get_storages_of_instance_type,
 )
 
 

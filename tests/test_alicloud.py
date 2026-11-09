@@ -1,21 +1,19 @@
 from unittest.mock import Mock, patch
 
 from sc_crawler.inspector import _standardize_gpu_count
-from sc_crawler.vendors._alicloud import (
-    _DISK_CATEGORY_TO_STORAGE_IDS,
-    _compatible_storage_ids,
-    _instance_category,
-    _parse_instance_type_disk_categories,
-    _warn_unknown_category,
-    inventory_servers,
-    inventory_storages,
-)
 from sc_crawler.table_fields import Status
 from sc_crawler.vendor_helpers import server_status_from_availability_categories
 from sc_crawler.vendors._alicloud import (
     _ALICLOUD_STATUS_CATEGORY_TO_SERVER_LIFECYCLE,
     _ALICLOUD_STATUS_CATEGORY_TO_SERVER_STATUS,
+    _DISK_CATEGORY_TO_STORAGE_IDS,
+    _compatible_storage_ids,
     _gpu_memory_by_spec,
+    _instance_category,
+    _parse_instance_type_disk_categories,
+    _warn_unknown_category,
+    inventory_servers,
+    inventory_storages,
 )
 
 

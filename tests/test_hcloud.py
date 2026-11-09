@@ -3,7 +3,6 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from sqlmodel import Session, SQLModel, create_engine
 
 from sc_crawler import tables
