@@ -1,7 +1,7 @@
 """v0.10.3 extend accelerator type enum with NPU, FPGA and VPU
 
 Revision ID: c7d8e9f0a1b2
-Revises: 37c49fd74cce
+Revises: e8f9a0b1c2d3
 Create Date: 2026-11-03 12:00:00.000000
 
 """
@@ -11,7 +11,7 @@ from typing import Sequence, Union
 from alembic import op
 
 revision: str = "c7d8e9f0a1b2"
-down_revision: Union[str, None] = "37c49fd74cce"
+down_revision: Union[str, None] = "e8f9a0b1c2d3"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

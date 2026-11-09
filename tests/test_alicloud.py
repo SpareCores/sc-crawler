@@ -1,7 +1,42 @@
 import pytest
 
-from sc_crawler.table_fields import AcceleratorType
-from sc_crawler.vendors._alicloud import _accelerator_type, _gpu_description
+from sc_crawler.table_fields import AcceleratorType, Status
+from sc_crawler.vendor_helpers import server_status_from_availability_categories
+from sc_crawler.vendors._alicloud import (
+    _ALICLOUD_STATUS_CATEGORY_TO_SERVER_LIFECYCLE,
+    _ALICLOUD_STATUS_CATEGORY_TO_SERVER_STATUS,
+    _accelerator_type,
+    _gpu_memory_by_spec,
+)
+
+
+def test_alicloud_gpu_memory_by_spec_only_when_unambiguous():
+    instance_types = [
+        {"InstanceTypeId": "ecs.gn7s-c8g1.2xlarge", "GPUSpec": "NVIDIA A30"},
+        {"InstanceTypeId": "x", "GPUSpec": "NVIDIA A30", "GPUMemorySize": 24},
+        {"InstanceTypeId": "y", "GPUSpec": "NVIDIA V100", "GPUMemorySize": 16},
+        {"InstanceTypeId": "z", "GPUSpec": "NVIDIA V100", "GPUMemorySize": 32.0},
+        {"InstanceTypeId": "ecs.gn4.8xlarge", "GPUSpec": "NVIDIA M40"},
+        {"InstanceTypeId": "ecs.g7nex.large", "GPUSpec": ""},
+    ]
+    assert _gpu_memory_by_spec(instance_types) == {"NVIDIA A30": 24.0}
+
+
+def test_alicloud_server_lifecycle_keeps_out_of_stock_types_active():
+    lifecycle = _ALICLOUD_STATUS_CATEGORY_TO_SERVER_LIFECYCLE
+    assert (
+        server_status_from_availability_categories({"WithoutStock"}, lifecycle)
+        == Status.ACTIVE
+    )
+    assert (
+        server_status_from_availability_categories({"ClosedWithoutStock"}, lifecycle)
+        == Status.RETIRED
+    )
+    assert server_status_from_availability_categories(set(), lifecycle) == (
+        Status.INACTIVE
+    )
+    # per-zone prices still follow the stock
+    assert not _ALICLOUD_STATUS_CATEGORY_TO_SERVER_STATUS["WithoutStock"].is_orderable
 
 
 @pytest.mark.parametrize(
@@ -25,18 +60,3 @@ from sc_crawler.vendors._alicloud import _accelerator_type, _gpu_description
 def test_accelerator_type(gpu_model, gpu_count, expected):
     """GPUSpec models map to their accelerator type, defaulting to GPU."""
     assert _accelerator_type(gpu_model, gpu_count) == expected
-
-
-@pytest.mark.parametrize(
-    "gpu_count,gpu_model,memory_mib,expected",
-    [
-        (8, "V100", 32768, "8xV100 32 GiB VRAM"),
-        (0.5, "A10", 12288, "0.5xA10 12 GiB VRAM"),
-        (1, "T4", 1536, "1xT4 1.5 GiB VRAM"),
-        (1, None, 16384, None),
-        (0, "T4", 0, None),
-    ],
-)
-def test_gpu_description(gpu_count, gpu_model, memory_mib, expected):
-    """VRAM is shown in GiB (stored in MiB)."""
-    assert _gpu_description(gpu_count, gpu_model, memory_mib) == expected
