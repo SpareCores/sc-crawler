@@ -2451,9 +2451,9 @@ _PG_TIER_FAMILY_LABELS = {
 _PG_TIER_FAMILY_SERIES = {
     "f1-micro": ("General Purpose", "Shared Core"),
     "g1-small": ("General Purpose", "Shared Core"),
-    "perf-optimized-N": ("General Purpose", "N2"),
-    "perf-optimized-C4": ("General Purpose", "C4"),
-    "perf-optimized-C4D": ("General Purpose", "C4D"),
+    "perf-optimized-N": ("General Purpose", "n2"),
+    "perf-optimized-C4": ("General Purpose", "c4"),
+    "perf-optimized-C4D": ("General Purpose", "c4d"),
     # the series is only documented for SQL Server, with the same machine types:
     # https://docs.cloud.google.com/sql/docs/sqlserver/machine-series-overview
     "memory-optimized-N": ("Memory Optimized", "Memory-optimized-N2"),
@@ -2521,7 +2521,7 @@ def _pg_tier_family_series(family_slug: str) -> tuple[Optional[str], Optional[st
     if family is None:
         _warn_unknown_family("Cloud SQL tier", family_slug)
         return None, None
-    return family, match.group(1).upper()
+    return family, match.group(1)
 
 
 def _pg_sku_family(tier_name: str) -> str:

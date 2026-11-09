@@ -1835,12 +1835,12 @@ def test_standardize_gpu_family_rtx_6000_by_memory(raw, memory, family):
     [
         ("f1-micro", "General Purpose", "Shared Core"),
         ("g1-small", "General Purpose", "Shared Core"),
-        ("n1-standard", "General Purpose", "N1"),
-        ("n1-highmem", "General Purpose", "N1"),
-        ("perf-optimized-N", "General Purpose", "N2"),
-        ("perf-optimized-C4", "General Purpose", "C4"),
-        ("perf-optimized-C4D", "General Purpose", "C4D"),
-        ("c4a-highmem", "General Purpose", "C4A"),
+        ("n1-standard", "General Purpose", "n1"),
+        ("n1-highmem", "General Purpose", "n1"),
+        ("perf-optimized-N", "General Purpose", "n2"),
+        ("perf-optimized-C4", "General Purpose", "c4"),
+        ("perf-optimized-C4D", "General Purpose", "c4d"),
+        ("c4a-highmem", "General Purpose", "c4a"),
         ("memory-optimized-N", "Memory Optimized", "Memory-optimized-N2"),
     ],
 )
@@ -1982,9 +1982,9 @@ def test_gcp_inventory_databases_inherits_gce_machine_type_status():
     # no matching GCE machine type
     assert by_id["db-perf-optimized-N-4"]["status"] == Status.ACTIVE
     assert by_id["db-n1-standard-4"]["family"] == "General Purpose"
-    assert by_id["db-n1-standard-4"]["series"] == "N1"
+    assert by_id["db-n1-standard-4"]["series"] == "n1"
     assert by_id["db-perf-optimized-N-4"]["family"] == "General Purpose"
-    assert by_id["db-perf-optimized-N-4"]["series"] == "N2"
+    assert by_id["db-perf-optimized-N-4"]["series"] == "n2"
     assert by_id["db-n1-standard-4"]["compatible_storage_ids"] == [
         "cloudsql-ssd-standard",
         "cloudsql-hdd",
