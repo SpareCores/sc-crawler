@@ -165,9 +165,9 @@ def test_upcloud_inventory_databases_maps_pg_service_plans():
     assert by_id["2xCPU-4GB-50GB"]["status"] == Status.ACTIVE
     assert by_id["4xCPU-16GB-200GB-ha"]["family"] == "Legacy"
     assert by_id["4xCPU-16GB-200GB-ha"]["server_id"] == "4xCPU-16GB"
-    # Cluster 200 GiB / 2 nodes = 100 GiB per node → decimal GB.
-    assert by_id["4xCPU-16GB-200GB-ha"]["storage_size"] == round(100 * _GIB_TO_GB)
-    assert by_id["4xCPU-16GB-200GB-ha"]["storage_extra_max"] == round(300 * _GIB_TO_GB)
+    # 200 GiB on each node → decimal GB.
+    assert by_id["4xCPU-16GB-200GB-ha"]["storage_size"] == round(200 * _GIB_TO_GB)
+    assert by_id["4xCPU-16GB-200GB-ha"]["storage_extra_max"] == round(600 * _GIB_TO_GB)
     assert by_id["4xCPU-16GB-200GB-ha"]["ha"] == [DatabaseHaLevel.SINGLE_ZONE]
     assert by_id["4xCPU-16GB-200GB-ha"]["ha_strategy"] == [
         DatabaseHaStrategy.READABLE_CLUSTER
@@ -279,16 +279,40 @@ def test_upcloud_inventory_databases_maps_flexible_plans():
     assert by_id["rdb.standard.2CPU-8GB"]["storage_extra_max"] == round(
         640 * _GIB_TO_GB
     )
-    assert by_id["rdb.standard.2CPU-8GB"]["continuous_backups"] == 15
+    # extended tier
+    assert by_id["rdb.standard.2CPU-8GB"]["continuous_backups"] == 31
     assert by_id["rdb.standard.2CPU-8GB"]["max_read_replicas"] == 2
     assert by_id["rdb.standard.2CPU-8GB"]["api_reference_object"] == {
         "service_type": "pg",
         "plan_compute": "rdb.standard.2CPU-8GB",
+        "plan_node_counts": [1, 2, 3],
+        "plan_backups": ["regular", "extended"],
+        "plan_storage": {
+            "step_gib": 10,
+            "options": [
+                {"base_gib": 80, "max_gib": 320},
+                {"base_gib": 160, "max_gib": 640},
+            ],
+        },
+    }
+    assert by_id["rdb.development.1CPU-1GB"]["api_reference_object"] == {
+        "service_type": "pg",
+        "plan_compute": "rdb.development.1CPU-1GB",
+        "plan_node_counts": [1],
+        "plan_backups": ["mini"],
+        "plan_storage": {
+            "step_gib": 10,
+            "options": [{"base_gib": 10, "max_gib": 40}],
+        },
     }
     assert by_id["rdb.memory.64CPU-512GB"]["family"] == "High Memory"
     assert by_id["rdb.memory.64CPU-512GB"]["server_id"] == "HIMEM-64xCPU-512GB"
     assert by_id["rdb.memory.64CPU-512GB"]["memory_amount"] == 512 * 1024
     assert by_id["rdb.memory.64CPU-512GB"]["storage_size"] is None
+    assert by_id["rdb.memory.64CPU-512GB"]["api_reference_object"]["plan_storage"] == {
+        "step_gib": 10,
+        "options": [{"base_gib": 1000, "max_gib": 4000}],
+    }
 
 
 def test_upcloud_inventory_databases_keeps_server_id_none_when_no_match():
@@ -511,13 +535,42 @@ def test_upcloud_inventory_database_storages_from_service_plans():
     assert by_id["standard"]["scope"] == DatabaseStorageScope.DATA
     assert by_id["standard"]["max_iops"] == 10000
     assert by_id["maxiops"]["max_iops"] == 100000
-    # Standard: legacy only in this fixture (50–400 GiB per node).
+    # Standard: legacy only in this fixture (50–800 GiB per node).
     assert by_id["standard"]["min_size"] == round(50 * _GIB_TO_GB)
-    assert by_id["standard"]["max_size"] == round(400 * _GIB_TO_GB)
+    assert by_id["standard"]["max_size"] == round(800 * _GIB_TO_GB)
     # MaxIOPS: rdb.standard shape options (80–640 GiB).
     assert by_id["maxiops"]["min_size"] == round(80 * _GIB_TO_GB)
     assert by_id["maxiops"]["max_size"] == round(640 * _GIB_TO_GB)
     assert by_id["maxiops"]["max_throughput"] == 400
+
+
+def test_upcloud_database_storage_bounds_keep_per_node_sizes_of_multi_node_plans():
+    vendor = Mock(vendor_id="upcloud")
+    with (
+        patch(
+            "sc_crawler.vendors._upcloud._get_pg_service_type",
+            return_value={
+                "service_plans": [
+                    {
+                        "plan": "3x2xCPU-4GB-100GB",
+                        "node_count": 3,
+                        "storage_size": 102400,
+                        "storage_cap_size": 512000,
+                        "components": {"storage": {"included_gib": 100}},
+                    },
+                ]
+            },
+        ),
+        patch(
+            "sc_crawler.vendors._upcloud._get_database_plans",
+            return_value={"service_types": []},
+        ),
+    ):
+        rows = inventory_database_storages(vendor)
+    assert len(rows) == 1
+    assert rows[0]["database_storage_id"] == "standard"
+    assert rows[0]["min_size"] == round(100 * _GIB_TO_GB)
+    assert rows[0]["max_size"] == round(500 * _GIB_TO_GB)
 
 
 def test_upcloud_inventory_database_storage_prices_from_zone_list():

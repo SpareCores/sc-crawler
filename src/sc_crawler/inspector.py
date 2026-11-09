@@ -127,14 +127,13 @@ def _get_server_framework_run_ids(server: "Server", framework: str) -> List[str]
         return []
 
 
-def _server_variant_basepath(server: "Server", variant: int | None) -> str | PathLike:
+def _server_variant_basepath(server: "Server", variant: int) -> str | PathLike:
     """Return the base path for a server's hardware variant."""
-    base = _server_path(server)
-    return base if variant is None else path.join(base, str(variant))
+    return path.join(_server_path(server), str(variant))
 
 
 def _server_variant_framework_basepath(
-    server: "Server", variant: int | None, framework: str
+    server: "Server", variant: int, framework: str
 ) -> str | PathLike:
     """Return the base path for a server's hardware variant and framework."""
     return path.join(_server_variant_basepath(server, variant), framework)
@@ -142,7 +141,7 @@ def _server_variant_framework_basepath(
 
 def _server_variant_framework_path(
     server: "Server",
-    variant: int | None,
+    variant: int,
     framework: str,
     relpath: str | list[str] | None = None,
 ) -> str | PathLike:
@@ -153,18 +152,55 @@ def _server_variant_framework_path(
     )
 
 
+def _server_variants(server: "Server") -> list[int]:
+    """Return the hardware variants recorded for a server, in ascending order."""
+    try:
+        return sorted(
+            int(p.name)
+            for p in Path(_server_path(server)).iterdir()
+            if p.is_dir() and p.name.isdigit()
+        )
+    except FileNotFoundError:
+        return []
+
+
 def _server_framework_path(
     server: "Server", framework: str, relpath: str | list[str] | None = None
 ) -> str | PathLike:
     """Return the path for a server's framework with an optional relative path.
 
-    Hardware-variant layout: default to variant 0 with a fallback to variantless path.
+    Use variant 0 if it has a successful run of the framework, otherwise the
+    lowest-numbered variant that has (e.g. a benchmark that only ran after the
+    server landed on new hardware). If no variant has a successful run, use the
+    first one that has the framework at all, and variant 0 if none has (so the
+    caller gets a missing path). The variant is picked by the framework folder,
+    so all files of a framework (meta.json, stdout, ...) come from the same run.
     """
-    # TODO drop the fallback after sc-inspector-data migrated to the variant layout
-    variant_path = _server_variant_framework_path(server, 0, framework, relpath)
-    if path.exists(variant_path):
-        return variant_path
-    return _server_variant_framework_path(server, None, framework, relpath)
+    first_variant = None
+    for variant in _server_variants(server):
+        basepath = _server_variant_framework_basepath(server, variant, framework)
+        if not path.isdir(basepath):
+            continue
+        if _framework_run_succeeded(basepath):
+            return _server_variant_framework_path(server, variant, framework, relpath)
+        if first_variant is None:
+            first_variant = variant
+    return _server_variant_framework_path(
+        server, first_variant if first_variant is not None else 0, framework, relpath
+    )
+
+
+def _framework_run_succeeded(basepath: str | PathLike) -> bool:
+    """Whether a framework folder holds a successful run.
+
+    Folders without a readable meta.json count as successful, so only runs
+    recorded as failed or unfinished are skipped.
+    """
+    try:
+        with open(path.join(basepath, "meta.json"), "r") as fp:
+            return json.load(fp).get("exit_code") == 0
+    except (OSError, ValueError, AttributeError):
+        return True
 
 
 def _database_framework_path(
@@ -323,20 +359,40 @@ def _server_average_time_to_start(server: "Server") -> float | None:
     return round(sum(durations) / len(durations), 2) if durations else None
 
 
-def _measured_at(resource: Union["Server", "Database"], framework: str) -> str:
-    """End timestamp of the benchmark run, as recorded in its meta.json.
+def _framework_meta(resource: Union["Server", "Database"], framework: str) -> dict:
+    if isinstance(resource, ServerBase):
+        return _server_framework_meta(resource, framework)
+    return _database_framework_meta(resource, framework)
+
+
+def _meta_timestamp(meta: dict, key: str) -> datetime | None:
+    """Parse a timestamp from meta.json.
 
     sc-inspector records naive timestamps in UTC, so make that explicit.
     """
-    if isinstance(resource, ServerBase):
-        ts = _server_framework_meta(resource, framework)["end"]
-    else:
-        ts = _database_framework_meta(resource, framework)["end"]
-    assert ts is not None
+    ts = meta.get(key)
+    if ts is None:
+        return None
     if isinstance(ts, str):
         ts = datetime.fromisoformat(ts)
-    ts = ts.replace(tzinfo=UTC) if ts.tzinfo is None else ts.astimezone(UTC)
+    return ts.replace(tzinfo=UTC) if ts.tzinfo is None else ts.astimezone(UTC)
+
+
+def _measured_at(resource: Union["Server", "Database"], framework: str) -> str:
+    """End timestamp of the benchmark run, as recorded in its meta.json."""
+    ts = _meta_timestamp(_framework_meta(resource, framework), "end")
+    assert ts is not None
     return ts.isoformat()
+
+
+def _duration(resource: Union["Server", "Database"], framework: str) -> dict:
+    """Duration of the benchmarking framework run (seconds), as recorded in its meta.json."""
+    meta = _framework_meta(resource, framework)
+    start = _meta_timestamp(meta, "start")
+    end = _meta_timestamp(meta, "end")
+    if start is None or end is None:
+        return {}
+    return {"duration": round((end - start).total_seconds(), 1)}
 
 
 def _framework_version(resource: Union["Server", "Database"], framework: str) -> dict:
@@ -399,6 +455,7 @@ def _benchmark_metafields(
     environment = {
         **kernel_version.get("environment", {}),
         "measured_at": _measured_at(resource, framework),
+        **_duration(resource, framework),
         **extend_environment,
     }
     if isinstance(resource, ServerBase):
@@ -871,6 +928,10 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
     try:
         with open(_server_framework_stdout_path(server, framework), "r") as fp:
             data = json.load(fp)["nvbandwidth"]
+        # aborted runs (e.g. failed pattern check) still list the testcases
+        # passed before the error, but the whole run is untrustworthy
+        if data.get("error"):
+            raise ValueError(f"nvbandwidth run aborted: {data['error']}")
         passed = {
             testcase["name"]: testcase
             for testcase in data["testcases"]
@@ -880,10 +941,11 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
         for testcase in passed.values():
             matrix = testcase.get("bandwidth_matrix")
             if matrix:
-                gpu_count = max(gpu_count, len(matrix), len(matrix[0]))
+                # columns are GPUs in all testcases (rows can be stacked blocks)
+                gpu_count = max(gpu_count, len(matrix[0]))
         extend_environment = {
             "driver_version": data["Driver Version"],
-            "cuda_runtime_version": data["CUDA Runtime Version"],
+            "cuda_version": data["CUDA Runtime Version"],
             "nvbandwidth_version": data["version"],
             "gpu_count": gpu_count,
             "p2p_supported": any(
@@ -926,6 +988,7 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
         for group, metric, source in (
             ("slot", "host_to_gpu", "host_to_device_memcpy_ce"),
             ("slot", "gpu_to_host", "device_to_host_memcpy_ce"),
+            ("slot", "local_copy", "device_local_copy"),
             ("slot", "latency", "host_device_latency_sm"),
             ("p2p", "single", "device_to_device_memcpy_write_ce"),
             ("p2p", "duplex", "device_to_device_bidirectional_memcpy_write_ce"),
@@ -935,9 +998,21 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
             testcase = passed.get(source)
             if testcase is None:
                 continue
-            cell_count = sum(
-                cell != "N/A" for row in testcase["bandwidth_matrix"] for cell in row
-            )
+            matrix = testcase["bandwidth_matrix"]
+            directions = 1
+            if len(matrix) == 3 * len(matrix[0]):
+                # v0.6+ bidirectional tests stack the two directional blocks and
+                # their Total, with `sum` covering only the Total block
+                matrix = matrix[-len(matrix[0]) :]
+                directions = 2
+            elif len(matrix) > len(matrix[0]):
+                _log_cannot_load_benchmarks(
+                    server,
+                    ":".join([framework, group, metric]),
+                    f"unexpected {len(matrix)}x{len(matrix[0])} matrix",
+                )
+                continue
+            cell_count = sum(cell != "N/A" for row in matrix for cell in row)
             if not cell_count:
                 continue
             benchmarks.append(
@@ -948,7 +1023,7 @@ def inspect_server_benchmarks(server: "Server") -> List[dict]:
                         benchmark_id=":".join([framework, group, metric]),
                         extend_environment=extend_environment,
                     ),
-                    "score": testcase["sum"] / cell_count,
+                    "score": testcase["sum"] / cell_count / directions,
                 }
             )
         sm = passed.get("host_to_device_memcpy_sm")
@@ -1525,10 +1600,17 @@ def _find_storage_disks_from_lsblk(
         size_gb = size_bytes // 1000**3
         nvme_match = match(r"nvme(\d+)", name)
         nvme_storage_count = int(nvme_match.group(1)) if nvme_match else -1
-        # attached boot network drive is always first
-        if nvme_storage_count >= (
-            1 if _boot_from_attached_network_drive[server.vendor_id] else 0
-        ):
+        model = (d.get("model") or "").strip()
+        if server.vendor_id == "gcp" and model:
+            # the boot Persistent Disk is not always nvme0 (or it is sda), but it's
+            # named "nvme_card-pd" while local SSDs are "nvme_card" or "nvme_card<N>"
+            is_local_nvme = nvme_match is not None and not model.endswith("-pd")
+        else:
+            # attached boot network drive is always first
+            is_local_nvme = nvme_storage_count >= (
+                1 if _boot_from_attached_network_drive[server.vendor_id] else 0
+            )
+        if is_local_nvme:
             disks.append(
                 Disk(
                     size=size_gb,
@@ -1824,8 +1906,11 @@ def inspect_update_server_dict(server: dict) -> dict:
         "accelerator_memory_min": lambda: min(
             [gpu["memory"] for gpu in server["accelerators"]]
         ),
-        "accelerator_memory_total": lambda: sum(
-            [gpu["memory"] for gpu in server["accelerators"]]
+        # skip update (keep unknown vendor data) if there is no HW-inspected GPU info
+        "accelerator_memory_total": lambda: (
+            sum([gpu["memory"] for gpu in server["accelerators"]])
+            if server["accelerators"]
+            else None
         ),
         # skip storage update if lshw parsing failed or API data is present
         "storage_type": lambda: (

@@ -1,4 +1,113 @@
-## v0.10.x (DEVELOPMENT)
+## v0.10.3 (November 06, 2026)
+
+New feature(s):
+
+- `OVH`: list flex flavors as separate servers.
+
+New benchmark(s):
+
+- `nvbandwidth:slot:local_copy`: per-GPU VRAM copy bandwidth (nvbandwidth v0.7+).
+
+Fix(es):
+
+- Inspector: load a server's benchmark results from other hardware variants
+  when variant `0` has no successful run of that benchmark (e.g. pgbench runs
+  that landed on newer Azure hardware).
+- `OVH`: October 2026 pricing update (separately billed IPv4 for all instance
+  ranges, and local storage for Gen3).
+- `Azure`: stop inventing Flexible Server sizes from the VM catalog when Retail
+  only has a per-vCore series meter (e.g. `DCasv5` / `Dsv6`), series meters
+  remain for pricing.
+- `Azure`: keep ConfidentialVM Flexible Server SKUs only from ACC regions
+  (West Europe / UAE North), drop billing-only Retail series not in
+  capabilities (e.g. `Mdsv2`).
+- `Azure`: price PostgreSQL compute from the `1 vCore` meter (as the pricing
+  page does), as some sized meters are stale.
+- `Azure`: re-enable the `newzealandnorth` region.
+- `nvbandwidth`: fix `p2p:duplex` score and `gpu_count` for v0.6+ stacked
+  bidirectional matrices.
+- `nvbandwidth`: skip aborted runs (with `error` in the output).
+- `nvbandwidth`: rename environment field `cuda_runtime_version` to
+  `cuda_version`.
+- `AWS`: mark `t1` and `*-flex` (e.g. `r8i-flex`) instance types as burstable
+  instead of dedicated CPU allocation.
+- `Hetzner`: keep sold out server types (e.g. `cx23`–`cx53`) `ACTIVE`, only
+  their per-location prices are `INACTIVE`.
+- `Hetzner`: mark server types removed from the API (e.g. `cx11`–`cx52`) as
+  `RETIRED` instead of `INACTIVE`.
+- `AWS`: use the instance-level network bandwidth for instance types with
+  multiple network cards instead of the first card only (e.g. `p5.48xlarge`
+  3200 instead of 100 Gbps). `Server.network_speed_baseline` and
+  `network_speed_max` are documented as aggregated over all network cards
+  (column comments updated by a migration).
+- `AWS`: store the SATA SSD instance store of e.g. `c3`, `i2`, `m3`, `r3`, `x1`
+  and `x1e` as `SSD` instead of `NVMe SSD`.
+- `AWS`: mark instance types not offered (and without spot prices in the past 7
+  days) as `RETIRED` if they have no Reserved terms in the price list (e.g.
+  `f1`, `g3`, `p2`, `p3`), and keep their on-demand and last known spot prices
+  as `INACTIVE`.
+- `GCP`: price E2 shared-core machines (`e2-micro`, `e2-small`, `e2-medium`)
+  for their billed fractional vCPU (0.25, 0.5, 1) instead of 2 vCPUs.
+- `GCP`: use the 14,000 GiB Titanium SSD disks of `z4m` (and 7,000 GiB of
+  `z4d-highmem-384-standardlssd-metal`) for storage size and the bundled Local
+  SSD price, instead of 375 GiB.
+- `GCP`: parse the renamed C2 SKUs ("Compute optimized Core running in ...")
+  to price `c2-standard` in all regions again.
+- `GCP`: skip the boot Persistent Disk by its model name instead of position in
+  the inspected local NVMe disks (e.g. `a3-highgpu-8g`, `c4-*-lssd`).
+- `AliCloud`: use the GPU memory of other instance types with the same GPU when
+  `GPUMemorySize` is missing (e.g. 24 GiB for the A30 of `ecs.gn7s`), and
+  leave it unknown instead of 0 otherwise.
+- `AliCloud`: show the GPU memory in GiB instead of MiB in server descriptions.
+- `AliCloud`: keep out of stock (`WithoutStock`) instance types `ACTIVE`, only
+  their per-zone prices are `INACTIVE`.
+- Keep unknown `accelerator_memory_total` unknown instead of 0 when the
+  inspector has no GPU data (e.g. GCP `tpu7-standard-*`, UpCloud B300 plans).
+- `UpCloud`: store the storage of multi-node legacy managed database plans per
+  node instead of divided by the node count (e.g. `2x16xCPU-64GB-1000GB`: 1074
+  instead of 537 GB).
+- `UpCloud`: use the longest available backup tier (e.g. 31 days with the
+  extended tier) as `continuous_backups` of flexible managed database plans.
+- `OVHcloud`: count all disks of a flavor (e.g. `bm-s1`: 2x 960 GB, `h100-1520`:
+  4x 3840 GB passthrough NVMe besides the system disk).
+- `OVHcloud`: mark flavors available in the project as `ACTIVE` even without
+  the `active` catalog tag (e.g. `t1`, `t2`), and server prices `INACTIVE` in
+  regions where the flavor is not available.
+- `OVHcloud`: list only managed database engine versions still on sale (e.g.
+  no PostgreSQL 14 after its end of sale).
+- `Azure`: read the temp disk size (`MaxResourceVolumeMB`) as MiB instead of MB
+  (e.g. `D2ds_v5`: 81 instead of 77 GB).
+- `Azure`: take GPU count, model and memory from a per-series table based on the
+  docs instead of name heuristics, falling back to the API's GPU count (e.g.
+  `ND128isr_NDR_GB200_v6`: 4 instead of 1 GPU, `NCC40ads_H100_v5`: 1 instead
+  of 0, `NC24lds_xl_RTXPRO6000BSE_v6`: 1/4 instead of 4). `NP` FPGAs are no
+  longer counted as GPUs.
+- `Azure`: read GPU memory as GiB instead of GB (e.g. H100: 80 instead of 74.5
+  GiB).
+- `Azure`: mark the `Dv3`, `Dsv3`, `Ev3` and `Esv3` series as
+  `PLANNED_FOR_RETIREMENT` (retiring on November 15, 2029).
+- `Azure`: list only PostgreSQL Flexible Server series that the capabilities API
+  supports in at least one region, so the retail meters of unsupported series
+  (e.g. `DCasv5`, `Dsv6`, `Ebdsv5`, `Mdsv2`) no longer add database SKUs.
+- `Azure`: stop inheriting the VM size retirements in PostgreSQL SKU status
+  (e.g. `B1ms` is `ACTIVE`, not `PLANNED_FOR_RETIREMENT`).
+
+## v0.10.2 (October 22, 2026)
+
+New feature(s):
+
+- Record the duration (seconds) of the benchmarking framework run in
+  `BenchmarkScore.environment.duration`.
+- `UpCloud`: store flexible DBaaS plan create args on
+  `Database.api_reference_object` (`plan_node_counts`, `plan_backups`,
+  `plan_storage.step_gib` / `options` bands from `GET /1.3/database/plans`)
+  so consumers can snap `plan_storage_gib` without a schema change.
+
+Fix(es):
+
+- `AWS`: skip the new RDS `UnusedBox` products (no instance family, vCPU, or memory).
+
+## v0.10.1 (October 20, 2026)
 
 New feature(s):
 

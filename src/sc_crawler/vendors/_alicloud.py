@@ -73,6 +73,12 @@ _ALICLOUD_STATUS_CATEGORY_TO_SERVER_STATUS = {
     "WithoutStock": Status.INACTIVE,
     "ClosedWithoutStock": Status.RETIRED,
 }
+# Server status over all zones: out of stock instance types are still offered
+# (stock is replenished), only their per-zone prices are INACTIVE.
+_ALICLOUD_STATUS_CATEGORY_TO_SERVER_LIFECYCLE = {
+    **_ALICLOUD_STATUS_CATEGORY_TO_SERVER_STATUS,
+    "WithoutStock": Status.ACTIVE,
+}
 
 # ##############################################################################
 # Internal helpers
@@ -973,6 +979,20 @@ def _get_instance_types() -> list[dict]:
     return instance_types
 
 
+def _gpu_memory_by_spec(instance_types: list[dict]) -> dict[str, float]:
+    """Per-GPU memory (GiB) by `GPUSpec`, where all instance types reporting it agree.
+
+    Some instance types miss `GPUMemorySize` (e.g. `ecs.gn7s` with NVIDIA A30),
+    while others with the same GPU report it. Fractional GPUs have their own
+    `GPUSpec` (e.g. "NVIDIA A10*1/2"), so they do not mix with whole GPUs.
+    """
+    sizes = defaultdict(set)
+    for instance_type in instance_types:
+        if instance_type.get("GPUMemorySize") and instance_type.get("GPUSpec"):
+            sizes[instance_type["GPUSpec"]].add(float(instance_type["GPUMemorySize"]))
+    return {spec: size.pop() for spec, size in sizes.items() if len(size) == 1}
+
+
 def _determine_cpu_allocation_type(instance_type: dict) -> CpuAllocation:
     """Determine the CPU allocation type based on the instance type properties.
 
@@ -1376,11 +1396,13 @@ def inventory_zones(vendor):
 def inventory_servers(vendor):
     """List all server types at Alibaba Cloud using the `DescribeInstanceTypes` API endpoint.
 
-    Lifecycle (`DescribeAvailableResource` `StatusCategory`): WithStock -> ACTIVE,
-    ClosedWithStock -> PLANNED_FOR_RETIREMENT, WithoutStock -> INACTIVE,
-    ClosedWithoutStock -> RETIRED; missing in availability response -> INACTIVE.
+    Lifecycle (`DescribeAvailableResource` `StatusCategory`): WithStock and
+    WithoutStock (out of stock, but replenished) -> ACTIVE,
+    ClosedWithStock -> PLANNED_FOR_RETIREMENT, ClosedWithoutStock -> RETIRED;
+    missing in availability response -> INACTIVE.
     """
     instance_types = _get_instance_types()
+    gpu_memory_by_spec = _gpu_memory_by_spec(instance_types)
 
     region_availability_info: dict[str, list[dict]] = _get_region_availability_info(
         vendor
@@ -1468,11 +1490,18 @@ def inventory_servers(vendor):
         gpu_count = _standardize_gpu_count(
             instance_type["GPUSpec"], instance_type.get("GPUAmount", 0)
         )
-        gpu_memory_per_gpu = instance_type.get("GPUMemorySize", 0) * 1024  # GiB -> MiB
         # GPUMemorySize contains total memory for fractional or single GPUs, but per-GPU memory for multiple GPUs
-        gpu_memory_total = (
-            gpu_count * gpu_memory_per_gpu if gpu_count >= 1 else gpu_memory_per_gpu
+        gpu_memory_gib = instance_type.get("GPUMemorySize") or (
+            gpu_memory_by_spec.get(instance_type["GPUSpec"]) if gpu_count else 0
         )
+        if gpu_memory_gib is None:
+            # unknown: leave it to the inspector instead of storing 0
+            gpu_memory_per_gpu = gpu_memory_total = None
+        else:
+            gpu_memory_per_gpu = gpu_memory_gib * 1024  # GiB -> MiB
+            gpu_memory_total = (
+                gpu_count * gpu_memory_per_gpu if gpu_count >= 1 else gpu_memory_per_gpu
+            )
         gpu_model = _standardize_gpu_model(instance_type["GPUSpec"])
         gpu_family = None
         gpu_manufacturer = None
@@ -1504,7 +1533,8 @@ def inventory_servers(vendor):
             f"{memory_size_gb} GiB RAM",
             f"{storage_size} GB {storage_type.value if storage_type else ''} storage",
             (
-                f"{gpu_count}x{gpu_model} {gpu_memory_per_gpu} GiB VRAM"
+                f"{gpu_count}x{gpu_model}"
+                + (f" {gpu_memory_gib:g} GiB VRAM" if gpu_memory_gib else "")
                 if gpu_count and gpu_model
                 else None
             ),
@@ -1526,7 +1556,7 @@ def inventory_servers(vendor):
         }
         status = server_status_from_availability_categories(
             status_categories,
-            _ALICLOUD_STATUS_CATEGORY_TO_SERVER_STATUS,
+            _ALICLOUD_STATUS_CATEGORY_TO_SERVER_LIFECYCLE,
         )
 
         items.append(

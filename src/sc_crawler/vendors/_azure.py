@@ -44,7 +44,6 @@ from ..tables import Vendor
 from ..utils import (
     _GIB_TO_GB,
     _HOURS_PER_MONTH,
-    convert_gb_to_mib,
     list_search,
     scmodels_to_dict,
 )
@@ -695,7 +694,8 @@ STORAGE_PRICE_UNIT_MAPPING: dict[str, float | None] = {
 """Storage capacity units → multiplier to convert the raw API price to $/GB/month."""
 
 # VM size series lifecycle. Previous-gen without a retirement date stays ACTIVE
-# (Dv3/Dsv3, Ev3/Esv3, Ev4/Esv4, Eav4/Easv4, Edv4/Edsv4, Preview DC).
+# (Ev4/Esv4, Eav4/Easv4, Edv4/Edsv4, Preview DC).
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirements-and-capacity-restrictions
 # https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retired-sizes-list
 # https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/previous-gen-sizes-list
 # https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/av1-series-retirement
@@ -740,6 +740,7 @@ _AZURE_SKU_LIFECYCLE_RULES = (
     (recompile(r"^G\d+$", IGNORECASE), date(2028, 11, 15)),  # G-series
     (recompile(r"^GS\d+(-\d+)?$", IGNORECASE), date(2028, 11, 15)),  # Gs-series
     (recompile(r"^L\d+s_v2$", IGNORECASE), date(2028, 11, 15)),  # Lsv2-series
+    (recompile(r"^[DE]\d+(-\d+)?i?s?_v3$", IGNORECASE), date(2029, 11, 15)),  # noqa: E501  # Dv3/Dsv3/Ev3/Esv3-series
     (recompile(r"^NV\d+s_v3$", IGNORECASE), date(2026, 9, 30)),  # noqa: E501  # NVv3-series (M60), not NCasT4_v3
     (recompile(r"^NV\d+a[h]?s_v4$", IGNORECASE), date(2026, 9, 30)),  # NVv4-series
     (recompile(r"^NP\d+s$", IGNORECASE), date(2027, 5, 31)),  # NP-series
@@ -750,7 +751,7 @@ _AZURE_SKU_LIFECYCLE_RULES = (
 
 
 def _azure_sku_lifecycle_status(sku_name: str, as_of: date | None = None) -> Status:
-    """Map an Azure VM / Flexible Server SKU name to Server/Database status."""
+    """Map an Azure VM SKU name to Server status."""
     current_date = as_of or datetime.now(UTC).date()
     size = sku_name.removeprefix("Standard_").removeprefix("Basic_")
 
@@ -761,6 +762,69 @@ def _azure_sku_lifecycle_status(sku_name: str, as_of: date | None = None) -> Sta
             return Status.RETIRED
         return Status.PLANNED_FOR_RETIREMENT
     return Status.ACTIVE
+
+
+# GPU sizes by series: (size regex, model, GPU memory in GiB, GPUs by vCPUs).
+# GPU counts not listed come from the Resource SKUs API (`GPUs` capability),
+# which reports partial GPUs as 1 and misses some series (e.g. GB200, V710).
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nc-family
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nd-family
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/ng-family
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nv-family
+_AZURE_GPU_SERIES = (
+    (r"^NC\d+as_T4_v3$", "T4", 16, None),
+    (r"^NC\d+r?s_v3$", "V100", 16, None),
+    (r"^NC\d+ads_A10_v4$", "A10", 24, None),
+    (r"^NC\d+ads_A100_v4$", "A100", 80, None),
+    (r"^NCC?\d+adi?s_H100_v5$", "H100", 94, None),
+    (
+        r"^NC\d+l?ds_xl_RTXPRO6000BSE_v6$",
+        "RTX PRO 6000",
+        96,
+        {24: 1 / 4, 36: 1 / 4, 72: 1 / 2, 144: 1, 288: 2},
+    ),
+    (r"^ND40rs_v2$", "V100", 32, None),
+    (r"^ND96asr_v4$", "A100", 40, None),
+    (r"^ND96amsr_A100_v4$", "A100", 80, None),
+    (r"^ND96isr?_H100_v5$", "H100", 80, {96: 8}),
+    (r"^ND96isr?_H200_v5$", "H200", 141, {96: 8}),
+    (r"^ND96isr?_MI300X_v5$", "MI300X", 192, {96: 8}),
+    (r"^ND128isr_NDR_GB200_v6$", "GB200", 192, {128: 4}),
+    (r"^ND128isr_GB300_v6$", "GB300", 288, {128: 4}),
+    (r"^NG\d+adm?s_V620_v1$", "V620", 32, {8: 1 / 4, 16: 1 / 2, 32: 1}),
+    (r"^NV\d+s_v[23]$", "M60", 8, None),
+    (r"^NV\d+as_v4$", "MI25", 16, {4: 1 / 8, 8: 1 / 4, 16: 1 / 2, 32: 1}),
+    (
+        r"^NV\d+adm?s_A10_v5$",
+        "A10",
+        24,
+        {6: 1 / 6, 12: 1 / 3, 18: 1 / 2, 36: 1, 72: 2},
+    ),
+    (
+        r"^NV\d+adm?s_V710_v5$",
+        "V710",
+        24,
+        {4: 1 / 6, 8: 1 / 3, 12: 1 / 2, 24: 1, 28: 1},
+    ),
+)
+_AZURE_GPU_SERIES = tuple(
+    (recompile(pattern), model, memory, counts)
+    for pattern, model, memory, counts in _AZURE_GPU_SERIES
+)
+
+
+def _gpu_spec(name: str, api_gpus: str | None) -> tuple[float, str | None, int | None]:
+    """GPU count, model and memory (MiB per full GPU) of a VM size."""
+    size = name.removeprefix("Standard_")
+    for pattern, model, memory, counts in _AZURE_GPU_SERIES:
+        if pattern.match(size):
+            vcpus = int(recompile(r"^[A-Z]+(\d+)").match(size)[1])
+            gpus = (counts or {}).get(vcpus) or float(api_gpus or 0)
+            return gpus, model, memory * 1024
+    # NP-series reports its FPGAs as GPUs
+    if size.startswith(("NC", "ND", "NG", "NV")):
+        return float(api_gpus or 0), None, None
+    return 0, None, None
 
 
 def _parse_server_name(name):
@@ -805,122 +869,12 @@ def _parse_server_name(name):
     # s = Premium Storage capable, including possible use of Ultra SSD
     features = [char for char in data["features"]] if data["features"] else []
 
-    spacers_list = (data.get("spacers") or "").split("_")
-
-    accelerators = any(
-        [s in ["A100", "H100", "MI300X", "V620", "A10"] for s in spacers_list]
-    )
-
-    family = data["family"]
-    vcpus = int(data["vcpus"])
-    # accelerators are not always mentioned in the old server names, so we need a manual mapping
-    gpus = 0
-    gpu_model = None
-    gpu_memory = None
-    if family in ["NC", "ND", "NG", "NV"]:
-        if "T4" in spacers_list:
-            gpu_model = "T4"
-            gpu_memory = convert_gb_to_mib(16)
-        elif "A10" in spacers_list:
-            gpu_model = "A10"
-            gpu_memory = convert_gb_to_mib(24)
-        elif "M60" in spacers_list:
-            gpu_model = "M60"
-            gpu_memory = convert_gb_to_mib(8)
-        # V620 has 32 GB of GPU memory, info from this page:
-        # https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/ngadsv620-series?tabs=sizeaccelerators
-        elif "V620" in spacers_list:
-            gpu_model = "V620"
-            gpu_memory = convert_gb_to_mib(32)
-        # V710 has 24 GB of GPU memory, info from this page:
-        # https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nvadsv710-v5-series?tabs=sizeaccelerators
-        elif "V710" in spacers_list:
-            gpu_model = "V710"
-            gpu_memory = convert_gb_to_mib(24)
-        # default to one, list all the exceptions below
-        gpus = 1
-        if family == "NC":
-            if vcpus == 24:
-                # Standard_NC24ads_A100_v4 has only 1 GPU,
-                # but Standard_NC24(r) has 4x Tesla K80
-                if not accelerators:
-                    gpus = 4
-            if vcpus in [12, 48, 80]:
-                # Standard_NC48ads_A100_v4
-                # Standard_NC80adis_H100_v5
-                gpus = 2
-            if vcpus in [64, 96]:
-                # Standard_NC64as_T4_v3
-                # Standard_NC96ads_A100_v4
-                gpus = 4
-        if family == "ND":
-            if vcpus in [12]:
-                gpus = 2
-            if vcpus in [24]:
-                gpus = 4
-            if vcpus in [40]:
-                # Standard_ND40rs_v2
-                gpu_model = "V100"
-                gpus = 8
-                gpu_memory = convert_gb_to_mib(32)
-            if vcpus in [96]:
-                gpus = 8
-        if family == "NG":
-            if vcpus in [8]:
-                # Standard_NG8ads_V620_v1
-                if gpu_model == "V620":
-                    gpus = 1 / 4
-            if vcpus in [16]:
-                # Standard_NG16ads_V620_v1
-                if gpu_model == "V620":
-                    gpus = 1 / 2
-        if family == "NV":
-            # all NV servers without gpu_model have different base GPU memory sizes depending on the version
-            # so we only set fractional gpu_count for now
-            if vcpus in [4]:
-                # Standard_NV4as_v4
-                gpus = 1 / 8
-                # Standard_NV4ads_V710_v5
-                if gpu_model == "V710":
-                    gpus = 1 / 6
-            if vcpus in [6]:
-                # Standard_NV6s_v2
-                gpus = 1 / 2
-                # Standard_NV6ads_A10_v5
-                if gpu_model == "A10":
-                    gpus = 1 / 6
-            if vcpus in [8]:
-                # Standard_NV8as_v4
-                gpus = 1 / 4
-                # Standard_NV8ads_V710_v5
-                if gpu_model == "V710":
-                    gpus = 1 / 3
-            if vcpus in [12]:
-                # Standard_NV12ads_A10_v5
-                if gpu_model == "A10":
-                    gpus = 1 / 3
-                if gpu_model == "V710":
-                    gpus = 1 / 2
-            if vcpus in [16]:
-                # Standard_NV16as_v4
-                gpus = 1 / 2
-            if vcpus in [18]:
-                # Standard_NV18ads_A10_v5
-                if gpu_model == "A10":
-                    gpus = 1 / 2
-            if vcpus in [24, 72]:
-                gpus = 2
-                if gpu_model == "V710":
-                    gpus = 1
-            if vcpus in [48]:
-                gpus = 4
-
-    return (family, features, gpus, gpu_model, gpu_memory)
+    return (data["family"], features)
 
 
 def _standardize_server(server: dict, vendor) -> dict:
     # example Resource Skus - List response moved to _compute_resources
-    family, features, gpus, gpu_model, gpu_memory = _parse_server_name(server["name"])
+    family, features = _parse_server_name(server["name"])
     # override family from SKU listing
     family = recompile(r"(?i)family$").sub(
         "", recompile(r"(?i)^standard").sub("", server["family"])
@@ -933,6 +887,7 @@ def _standardize_server(server: dict, vendor) -> dict:
             return default
 
     architecture = ARCHITECTURE_MAPPING[capability("CpuArchitectureType")]
+    gpus, gpu_model, gpu_memory = _gpu_spec(server["name"], capability("GPUs"))
     # construct a server description as Azure doesn't provide one
     description = family + " family"
     description_extras = [SERVER_FEATURES[f] for f in features]
@@ -947,11 +902,11 @@ def _standardize_server(server: dict, vendor) -> dict:
     # SKUs without a temp disk report MaxResourceVolumeMB "0" (truthy string).
     storages = []
     temp_mb = capability("MaxResourceVolumeMB")
-    # values might be off, see e.g. DC1s_v2 reporting 51200 MB and showing 50 GiB in docs
+    # MaxResourceVolumeMB is MiB, e.g. DC1s_v2 reports 51200 and shows 50 GiB in docs
     if temp_mb and float(temp_mb) > 0:
         storages.append(
             Disk(
-                size=round(float(temp_mb) / 1e3),
+                size=round(float(temp_mb) * 1024**2 / 1e9),
                 storage_type=StorageType.SSD,
                 description="temp disk",
             )
@@ -1128,6 +1083,15 @@ def inventory_regions(vendor):
 
     Coordinates were provided by the Microsoft API, which doesn't seem
     to be very reliable.
+
+    Some regions are restricted to specific customer scenarios, such as
+    disaster recovery within a geography (e.g. `australiacentral2`,
+    `brazilsoutheast`, `germanynorth`, `norwaywest`, `southafricawest`,
+    `uaecentral`, `swedensouth`), see
+    <https://learn.microsoft.com/en-us/azure/reliability/regions-list>.
+    These are listed if visible to the subscription, but services and SKUs
+    are usually not available there without a region access request:
+    <https://learn.microsoft.com/en-us/troubleshoot/azure/general/region-access-request-process>.
     """
 
     manual_datas = {
@@ -1577,10 +1541,6 @@ def inventory_regions(vendor):
             # not production region?
             # https://github.com/Azure/azure-dev/issues/2165#issuecomment-1542948509
             if region["name"] == "brazilus":
-                continue
-            # exclude for now as this new region is popping up and being removed
-            # from their API response randomly, so messing with git history
-            if region["name"] == "newzealandnorth":
                 continue
             manual_data = manual_datas.get(region["name"])
             if not manual_data:
@@ -2099,6 +2059,22 @@ def _pg_capabilities(location: str) -> list[SimpleNamespace]:
     return [as_namespace(item) for item in _pg_capabilities_by_location(location)]
 
 
+def _pg_check_capabilities_parsed(vendor, capabilities_seen: int, parsed: int, what):
+    """Fail loudly when capabilities were returned but nothing could be parsed.
+
+    Some regions legitimately list no editions (e.g. OfferRestricted), but all
+    regions doing so means the response shape changed (e.g. the 3.0.0 SDK
+    switched `as_dict()` keys from snake_case to camelCase), which would
+    otherwise silently sync 0 rows.
+    """
+    if capabilities_seen and not parsed:
+        with sentry_capture_or_raise(vendor=vendor):
+            raise ValueError(
+                f"Got {capabilities_seen} PostgreSQL capabilities record(s), "
+                f"but parsed no {what} from them. Did the API/SDK response format change?"
+            )
+
+
 def _pg_retail_prices(location: str) -> list[dict]:
     # example Azure Retail Prices response:
     # {
@@ -2151,9 +2127,11 @@ _PG_DATABASE_NAME_RE = recompile(
     r"(?:_v(?P<version>\d*))?$"
 )
 _PG_FLAT_COMPUTE_SKUS = frozenset({"B1MS", "B2S"})
+# Edition and vendor tokens are optional: e.g. "Flexible Server Mdsv2 Series Compute"
+# and "General Purpose AMD Dadsv5 Series Compute".
 _PG_PRODUCT_SERIES_RE = recompile(
-    r"(?i)(?:Confidential Compute|General Purpose|Memory Optimized|Memory Purpose|Burstable)\s+"
-    r"(?P<series>[A-Za-z0-9]+)\s+Series"
+    r"(?i)(?:(?:Confidential Compute|General Purpose|Memory Optimized|Memory Purpose|Burstable)\s+)?"
+    r"(?:AMD\s+)?(?P<series>[A-Za-z0-9]+)\s+Series"
 )
 _PG_EDITION_PRODUCT_TOKENS = {
     "GeneralPurpose": ("general purpose",),
@@ -2187,14 +2165,23 @@ _PG_BACKUP_STORAGE_ID = "BackupStorageLRS"
 _PG_UNSUPPORTED_STORAGE_REASON = (
     "Specified Storage Edition not supported in this region."
 )
+# Confidential Flexible Server SKUs carry securityProfile=ConfidentialVM in
+# capabilities. ACC regions (West Europe, UAE North) are from:
+# https://learn.microsoft.com/en-us/azure/postgresql/security/security-confidential-computing
+# Other regions (e.g. Korea Central) still list DCadsv6/ECadsv6 with the same
+# profile and null status.
+_PG_CONFIDENTIAL_CAPABILITY_REGIONS = frozenset({"westeurope", "uaenorth"})
+_PG_CAPABILITY_DISABLED_STATUSES = frozenset(
+    {"disabled", "unavailable", "notavailable", "notavailablefordeployment"}
+)
 
 
 def _pg_supported_storage_ids(location: str) -> frozenset[str]:
     ids: set[str] = set()
     for capability in _pg_capabilities(location):
-        for edition in getattr(capability, "supported_server_editions", None) or []:
+        for edition in getattr(capability, "supportedServerEditions", None) or []:
             for storage_edition in (
-                getattr(edition, "supported_storage_editions", None) or []
+                getattr(edition, "supportedStorageEditions", None) or []
             ):
                 if (
                     getattr(storage_edition, "reason", None)
@@ -2242,6 +2229,23 @@ def _pg_lookup_retail_price(
     edition_name: str | None,
     prices_by_arm: dict[str, list[dict]],
 ) -> dict | None:
+    parsed = None
+    with sentry_capture_or_raise(vendor=vendor):
+        parsed = _parse_database_name(database_id)
+
+    # The public pricing page bills vCore series as the "1 vCore" meter x vCores.
+    # Sized Standard_* meters are sometimes stale (e.g. australiacentral 96 vCore
+    # kept 2023 prices, ~2x) or copy-pasted from another size (D8ds_v5 == D16ds_v5
+    # in westcentralus), and the "vCore" series meter can lag behind as well.
+    if parsed is not None and parsed[3]:
+        series_re = recompile(rf"(?i)(?<![a-z0-9]){parsed[0]} Series Compute")
+        for rows in prices_by_arm.values():
+            for item in rows:
+                if item.get("skuName") == "1 vCore" and series_re.search(
+                    item.get("productName") or ""
+                ):
+                    return item
+
     if database_id in prices_by_arm:
         return prices_by_arm[database_id][0]
 
@@ -2251,9 +2255,6 @@ def _pg_lookup_retail_price(
     if alias.upper() in prices_by_arm:
         return prices_by_arm[alias.upper()][0]
 
-    parsed = None
-    with sentry_capture_or_raise(vendor=vendor):
-        parsed = _parse_database_name(database_id)
     if parsed is None:
         return None
     series, family, cores, version = parsed
@@ -2349,7 +2350,7 @@ def _pg_hourly_compute_price(
 
 def _pg_engine_versions(capability) -> list[str]:
     versions = []
-    for version in getattr(capability, "supported_server_versions", None) or []:
+    for version in getattr(capability, "supportedServerVersions", None) or []:
         name = version.name
         if not name or getattr(version, "status", None) == "Disabled":
             continue
@@ -2360,30 +2361,34 @@ def _pg_engine_versions(capability) -> list[str]:
 def inventory_databases(vendor):
     """List Azure Database for PostgreSQL Flexible Server types in all regions.
 
-    Retail compute meters decide which instances exist. Capabilities is
-    quota-filtered, so a size can be missing there. When ``database_id`` is
-    present, capabilities supplies vCPUs, memory, HA, engine versions,
-    storage bounds, and autotuning. Otherwise those come from another SKU of
-    the same edition, and vCPUs/memory come from the matching VM.
-    A per-vCore series meter has no size list; matching VM SKUs name the sizes.
+    Existence comes from Flexible Server capabilities (``supportedServerSkus``)
+    plus concrete Retail ``Standard_*`` meters only for series already seen in
+    capabilities (quota-hidden sizes within a real family). Per-vCore series
+    meters are pricing-only and must not invent VM catalog sizes (e.g. ``DCasv5``
+    / ``Dsv6`` vs deployable ``DCadsv5`` / ``Ddsv6``).
+
+    SKUs with ``securityProfile`` ConfidentialVM are kept only when capabilities
+    list them in an ACC region (West Europe / UAE North): other regions can
+    advertise the same profile for non-startable shapes (e.g. Korea Central
+    ``DCadsv6``) with no ``status``/``reason`` distinguishing them. SKUs with an
+    explicit disabled capability status are skipped. When ``database_id`` is in
+    capabilities, those supply vCPUs, memory, HA, engine versions, storage
+    bounds, and autotuning; otherwise edition defaults apply and vCPUs/memory
+    come from the matching VM.
     """
     # database_id -> fields that actually come from capabilities.
     caps_by_id: dict[str, dict] = {}
+    caps_locations: dict[str, set[str]] = defaultdict(set)
     edition_caps: dict[str, dict] = {}
     retail_concrete: dict[str, str] = {}
-    retail_series: dict[str, str] = {}
     servers_by_id = {}
-    servers_by_series: dict[str, list] = defaultdict(list)
     for server in vendor.servers:
         name = server.api_reference
         if not name or "-" in name:
             continue
         servers_by_id[name] = server
-        match = _PG_DATABASE_NAME_RE.match(name)
-        # i/m/l/t are stripped from the retail series name, so those VM shapes are not this series.
-        if match and not _PG_SERIES_SKIP_FEATURES & set(match["features"].lower()):
-            servers_by_series[_parse_database_name(name)[0]].append(server)
 
+    capabilities_seen = 0
     regions = _pg_database_regions(vendor)
     vendor.progress_tracker.start_task(
         name="Scanning region(s) for database(s)", total=len(regions)
@@ -2392,15 +2397,16 @@ def inventory_databases(vendor):
         location = region.api_reference
         with sentry_capture_or_raise(vendor=vendor):
             for capability in _pg_capabilities(location):
+                capabilities_seen += 1
                 features = {
                     getattr(feature, "name", None): getattr(feature, "status", None)
                     == "Enabled"
-                    for feature in getattr(capability, "supported_features", None) or []
+                    for feature in getattr(capability, "supportedFeatures", None) or []
                 }
                 shared = {
                     "engine_versions": _pg_engine_versions(capability),
                     "storage_extra_autosize": {"Enabled": True, "Disabled": False}.get(
-                        getattr(capability, "storage_auto_growth_supported", None),
+                        getattr(capability, "storageAutoGrowthSupported", None),
                         features.get("StorageAutoGrowth"),
                     ),
                     # IndexTuning → advice; AdaptiveAutoVacuumAutoApply → apply (vacuum GUCs).
@@ -2414,15 +2420,15 @@ def inventory_databases(vendor):
                     ),
                 }
                 for edition in (
-                    getattr(capability, "supported_server_editions", None) or []
+                    getattr(capability, "supportedServerEditions", None) or []
                 ):
-                    # Azure storage_size_mb values are MiB.
+                    # Azure storageSizeMb values are MiB.
                     # Premium SSD v2 is General Purpose and Memory Optimized only, Burstable is capped by Premium SSD (~32 TiB).
                     # https://learn.microsoft.com/en-us/azure/postgresql/compute-storage/concepts-storage-premium-ssd-v2
                     sizes_gb = [
                         round(int(size_mb) / 1024 * _GIB_TO_GB)
                         for storage_edition in (
-                            getattr(edition, "supported_storage_editions", None) or []
+                            getattr(edition, "supportedStorageEditions", None) or []
                         )
                         if getattr(storage_edition, "reason", None)
                         != _PG_UNSUPPORTED_STORAGE_REASON
@@ -2431,22 +2437,29 @@ def inventory_databases(vendor):
                             and storage_edition.name == "ManagedDiskV2"
                         )
                         for storage_mb in (
-                            getattr(storage_edition, "supported_storage_mb", None) or []
+                            getattr(storage_edition, "supportedStorageMb", None) or []
                         )
                         for size_mb in (
-                            getattr(storage_mb, "storage_size_mb", None),
-                            getattr(storage_mb, "maximum_storage_size_mb", None),
+                            getattr(storage_mb, "storageSizeMb", None),
+                            getattr(storage_mb, "maximumStorageSizeMb", None),
                         )
                         if size_mb is not None
                     ]
                     shared["storage_extra_min"] = min(sizes_gb, default=None)
                     shared["storage_extra_max"] = max(sizes_gb, default=None)
-                    for sku in getattr(edition, "supported_server_skus", None) or []:
+                    for sku in getattr(edition, "supportedServerSkus", None) or []:
+                        status = getattr(sku, "status", None)
+                        if (
+                            status
+                            and str(status).lower().replace("_", "")
+                            in _PG_CAPABILITY_DISABLED_STATUSES
+                        ):
+                            continue
                         # https://learn.microsoft.com/en-us/azure/postgresql/high-availability/concepts-high-availability
                         # Burstable does not support HA (the API may still list modes).
                         ha_modes = {
                             getattr(mode, "value", str(mode))
-                            for mode in getattr(sku, "supported_ha_mode", None) or []
+                            for mode in getattr(sku, "supportedHaMode", None) or []
                         }
                         ha = [DatabaseHaLevel.NONE]
                         if edition.name != "Burstable":
@@ -2462,13 +2475,16 @@ def inventory_databases(vendor):
                             ha = previous["ha"]
                         else:
                             ha = DatabaseHaLevel.ordered(ha)
+                        security_profile = getattr(
+                            sku, "securityProfile", None
+                        ) or getattr(sku, "security_profile", None)
                         facts = {
                             **shared,
                             "edition": edition.name,
-                            "vcpus": int(sku.v_cores) if sku.v_cores else None,
+                            "vcpus": int(sku.vCores) if sku.vCores else None,
                             "memory_amount": (
-                                int(sku.supported_memory_per_vcore_mb * sku.v_cores)
-                                if sku.v_cores and sku.supported_memory_per_vcore_mb
+                                int(sku.supportedMemoryPerVcoreMb * sku.vCores)
+                                if sku.vCores and sku.supportedMemoryPerVcoreMb
                                 else None
                             ),
                             "ha": ha,
@@ -2481,8 +2497,11 @@ def inventory_databases(vendor):
                                 if DatabaseHaLevel.SINGLE_ZONE in ha
                                 else 99.9
                             ),
+                            "security_profile": security_profile
+                            or (previous or {}).get("security_profile"),
                         }
                         caps_by_id[sku.name] = facts
+                        caps_locations[sku.name].add(location)
                         edition_caps[edition.name] = facts
         with sentry_capture_or_raise(vendor=vendor):
             for item in _pg_retail_prices(location):
@@ -2521,23 +2540,30 @@ def inventory_databases(vendor):
                     if match["version"]:
                         database_id += f"_v{match['version']}"
                     retail_concrete.setdefault(database_id, edition_name)
-                elif series_name:
-                    retail_series.setdefault(series_name, edition_name)
+                # Series meters (no Standard_* size) are ignored for existence;
+                # they still price sizes via _pg_lookup_retail_price.
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
+    _pg_check_capabilities_parsed(
+        vendor, capabilities_seen, len(edition_caps), "server editions"
+    )
 
-    # Capabilities SKUs, plus retail SKUs quota hid. Series meters name no size,
-    # so the VM catalog fills those database_ids.
-    wanted = {
-        database_id: facts["edition"] for database_id, facts in caps_by_id.items()
-    }
+    # Capabilities SKUs (confidential only from ACC regions), plus Retail sizes
+    # that fill gaps inside series already offered by capabilities.
+    wanted: dict[str, str] = {}
+    for database_id, facts in caps_by_id.items():
+        profile = (facts.get("security_profile") or "").lower()
+        if profile.startswith("confidential") and not (
+            caps_locations[database_id] & _PG_CONFIDENTIAL_CAPABILITY_REGIONS
+        ):
+            continue
+        wanted[database_id] = facts["edition"]
+    caps_series = {_parse_database_name(database_id)[0] for database_id in wanted}
     for database_id, edition_name in retail_concrete.items():
+        series, _family, _vcpus, _version = _parse_database_name(database_id)
+        if series not in caps_series:
+            continue
         wanted.setdefault(database_id, edition_name)
-    present_series = {_parse_database_name(database_id)[0] for database_id in wanted}
-    for series_name, edition_name in retail_series.items():
-        if series_name not in present_series:
-            for server in servers_by_series.get(series_name, []):
-                wanted.setdefault(server.api_reference, edition_name)
 
     rows = []
     for database_id, edition_name in wanted.items():
@@ -2554,7 +2580,8 @@ def inventory_databases(vendor):
         ha, ha_strategy, sla = facts["ha"], facts["ha_strategy"], facts["sla"]
         if own:
             edition_name = own["edition"]
-            vcpus, memory_amount = own["vcpus"], own["memory_amount"]
+            vcpus = own["vcpus"] or vcpus
+            memory_amount = own["memory_amount"]
         else:
             if server and server.vcpus:
                 vcpus = server.vcpus
@@ -2642,7 +2669,9 @@ def inventory_databases(vendor):
                 "database_monitoring": True,
                 "continuous_backups": 35,
                 "sla": sla,
-                "status": _azure_sku_lifecycle_status(database_id),
+                # VM size retirements (e.g. B-series v1) are not announced for
+                # Flexible Server compute, so don't inherit the VM lifecycle.
+                "status": Status.ACTIVE,
             }
         )
     return rows
@@ -2656,7 +2685,7 @@ def inventory_database_prices(vendor):
     whenever Retail has a meter for a known instance in that region.
 
     OfferRestricted=Enabled means this subscription cannot list or provision
-    Flexible Server SKUs there (empty supported_server_editions), so capabilities
+    Flexible Server SKUs there (empty supportedServerEditions), so capabilities
     give no confirmed region availability. Retail list prices may still exist;
     we keep those rows.
     https://learn.microsoft.com/en-us/azure/postgresql/troubleshoot/how-to-resolve-capacity-errors
@@ -2739,6 +2768,7 @@ def inventory_database_prices(vendor):
 def inventory_database_storages(vendor):
     """List all Azure Database for PostgreSQL Flexible Server storage options via the capabilities API."""
     storages: dict[str, dict] = {}
+    capabilities_seen = 0
     regions = _pg_database_regions(vendor)
     vendor.progress_tracker.start_task(
         name="Scanning region(s) for database_storage(s)", total=len(regions)
@@ -2747,11 +2777,12 @@ def inventory_database_storages(vendor):
         location = region.api_reference
         with sentry_capture_or_raise(vendor=vendor):
             for capability in _pg_capabilities(location):
+                capabilities_seen += 1
                 for edition in (
-                    getattr(capability, "supported_server_editions", None) or []
+                    getattr(capability, "supportedServerEditions", None) or []
                 ):
                     for storage_edition in (
-                        getattr(edition, "supported_storage_editions", None) or []
+                        getattr(edition, "supportedStorageEditions", None) or []
                     ):
                         if (
                             getattr(storage_edition, "reason", None)
@@ -2766,35 +2797,35 @@ def inventory_database_storages(vendor):
                         max_iops_values: list[int] = []
                         max_throughput = None
                         default_mb = getattr(
-                            storage_edition, "default_storage_size_mb", None
+                            storage_edition, "defaultStorageSizeMb", None
                         )
                         if default_mb is not None:
                             sizes_mb.append(int(default_mb))
-                        for storage_mb in storage_edition.supported_storage_mb or []:
-                            size = getattr(storage_mb, "storage_size_mb", None)
+                        for storage_mb in storage_edition.supportedStorageMb or []:
+                            size = getattr(storage_mb, "storageSizeMb", None)
                             if size is not None:
                                 sizes_mb.append(int(size))
                             maximum_size = getattr(
-                                storage_mb, "maximum_storage_size_mb", None
+                                storage_mb, "maximumStorageSizeMb", None
                             )
                             if maximum_size is not None:
                                 sizes_mb.append(int(maximum_size))
-                            iops = getattr(storage_mb, "supported_iops", None)
+                            iops = getattr(storage_mb, "supportedIops", None)
                             if iops is not None:
                                 max_iops_values.append(int(iops))
                             maximum_iops = getattr(
-                                storage_mb, "supported_maximum_iops", None
+                                storage_mb, "supportedMaximumIops", None
                             )
                             if maximum_iops is not None:
                                 max_iops_values.append(int(maximum_iops))
                             for tier in (
-                                getattr(storage_mb, "supported_iops_tiers", None) or []
+                                getattr(storage_mb, "supportedIopsTiers", None) or []
                             ):
                                 tier_iops = getattr(tier, "iops", None)
                                 if tier_iops is not None:
                                     max_iops_values.append(int(tier_iops))
                             throughput = getattr(
-                                storage_mb, "supported_maximum_throughput", None
+                                storage_mb, "supportedMaximumThroughput", None
                             )
                             if throughput is not None:
                                 max_throughput = max(
@@ -2802,7 +2833,7 @@ def inventory_database_storages(vendor):
                                 )
 
                         bounds = {
-                            # Azure storage_size_mb values are MiB
+                            # Azure storageSizeMb values are MiB
                             "min_size": (
                                 round(min(sizes_mb) / 1024 * _GIB_TO_GB)
                                 if sizes_mb
@@ -2844,6 +2875,9 @@ def inventory_database_storages(vendor):
                                 )
         vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
+    _pg_check_capabilities_parsed(
+        vendor, capabilities_seen, len(storages), "storage editions"
+    )
 
     items = []
     for storage_id, bounds in sorted(storages.items()):
