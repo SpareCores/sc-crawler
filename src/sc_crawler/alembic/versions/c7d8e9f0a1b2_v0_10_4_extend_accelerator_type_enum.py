@@ -1,4 +1,4 @@
-"""v0.10.3 extend accelerator type enum with NPU, FPGA and VPU
+"""v0.10.4 extend accelerator type enum with NPU, FPGA and VPU
 
 Revision ID: c7d8e9f0a1b2
 Revises: e8f9a0b1c2d3

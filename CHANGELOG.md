@@ -1,4 +1,4 @@
-## v0.10.3 (November 06, 2026)
+## v0.10.4 (November 09, 2026)
 
 ‼ Breaking changes:
 
@@ -18,6 +18,11 @@ New feature(s):
   `VPU` and `NPU` instead of `GPU`.
 - Skip the `nvidia_smi` and `nvbandwidth` inspector tasks on all non-GPU
   accelerators.
+
+## v0.10.3 (November 06, 2026)
+
+New feature(s):
+
 - `OVH`: list flex flavors as separate servers.
 
 New benchmark(s):
