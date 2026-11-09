@@ -26,12 +26,21 @@ New feature(s):
 - `AliCloud` (disk categories), `AWS` (instance categories): handle API errors with
   the Sentry wrapper instead of logging them.
 
+New feature(s):
+
+- `OVH`: list flex flavors as separate servers.
+
 New benchmark(s):
 
 - `nvbandwidth:slot:local_copy`: per-GPU VRAM copy bandwidth (nvbandwidth v0.7+).
 
 Fix(es):
 
+- Inspector: load a server's benchmark results from other hardware variants
+  when variant `0` has no successful run of that benchmark (e.g. pgbench runs
+  that landed on newer Azure hardware).
+- `OVH`: October 2026 pricing update (separately billed IPv4 for all instance
+  ranges, and local storage for Gen3).
 - `Azure`: stop inventing Flexible Server sizes from the VM catalog when Retail
   only has a per-vCore series meter (e.g. `DCasv5` / `Dsv6`), series meters
   remain for pricing.
