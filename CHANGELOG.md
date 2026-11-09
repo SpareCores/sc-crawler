@@ -15,6 +15,16 @@ New feature(s):
   `instanceFamilyCategory`, with a docs based fallback.
 - `Azure`: derive disk and PostgreSQL storage compatibility from the VM
   capabilities and the PostgreSQL capabilities API.
+- Database `series` matches the server `series` where a database runs on a known
+  server type (`GCP` lowercase machine series, `Azure` server series built like
+  the database series).
+- Unify the `family` spelling across vendors: `General Purpose` (`AliCloud`) and
+  `High Performance Computing` (`AWS`, `Azure`, `AliCloud`).
+- `UpCloud`: keep the `High CPU` / `High Memory` family of the retired `HICPU` /
+  `HIMEM` plans.
+- `Vultr`: no `series` for bare metal plans.
+- `AliCloud` (disk categories), `AWS` (instance categories): handle API errors with
+  the Sentry wrapper instead of logging them.
 
 New benchmark(s):
 
