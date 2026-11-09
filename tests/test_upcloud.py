@@ -681,6 +681,12 @@ def test_upcloud_server_family_from_api_family():
         ("gpu", "GPU"),
     ]:
         assert _server_family({"name": "x", "family": api_family}) == family
+    # retired plans reported as general_purpose keep the family of the name prefix
+    for name, family in [
+        ("HICPU-8xCPU-16GB", "High CPU"),
+        ("HIMEM-2xCPU-16GB", "High Memory"),
+    ]:
+        assert _server_family({"name": name, "family": "general_purpose"}) == family
 
 
 def test_upcloud_missing_family_is_empty_and_warned_once():
@@ -699,6 +705,7 @@ def test_upcloud_inventory_servers_sets_family_and_series():
         _plan("STARTER-1xCPU-4GB", "starter"),
         # the API puts the HIMEM/HICPU plans into general_purpose
         _plan("HIMEM-2xCPU-8GB", "general_purpose"),
+        _plan("HICPU-2xCPU-4GB", "general_purpose"),
         _plan("CLOUDNATIVE-2xCPU-8GB", "cloud_native"),
         _plan(
             "GPU-8xCPU-64GB-1xL40S",
@@ -720,7 +727,8 @@ def test_upcloud_inventory_servers_sets_family_and_series():
         rows = inventory_servers(Mock(vendor_id="upcloud"))
     by_id = {row["server_id"]: row for row in rows}
     assert by_id["STARTER-1xCPU-4GB"]["family"] == "Starter"
-    assert by_id["HIMEM-2xCPU-8GB"]["family"] == "General Purpose"
+    assert by_id["HIMEM-2xCPU-8GB"]["family"] == "High Memory"
+    assert by_id["HICPU-2xCPU-4GB"]["family"] == "High CPU"
     assert by_id["CLOUDNATIVE-2xCPU-8GB"]["family"] == "Cloud Native"
     assert by_id["GPU-8xCPU-64GB-1xL40S"]["family"] == "GPU"
     # series is only set for GPU plans, as the GPU model
@@ -732,11 +740,7 @@ def test_upcloud_inventory_servers_sets_family_and_series():
     assert by_id["CLOUDNATIVE-2xCPU-8GB"]["ipv4"] == 0
     for name in ["STARTER-1xCPU-4GB", "HIMEM-2xCPU-8GB", "GPU-8xCPU-64GB-1xL40S"]:
         assert by_id[name]["ipv4"] == 1
-    # the description uses the API family, not the plan name prefix
-    assert (
-        by_id["HIMEM-2xCPU-8GB"]["description"]
-        == "General Purpose (2 vCPUs, 8 GiB RAM)"
-    )
+    assert by_id["HIMEM-2xCPU-8GB"]["description"] == "High Memory (2 vCPUs, 8 GiB RAM)"
     assert by_id["GPU-8xCPU-64GB-1xL40S"]["description"] == (
         "GPU (8 vCPUs, 64 GiB RAM, 1x L40S)"
     )

@@ -510,6 +510,10 @@ UPCLOUD_STORAGES = [
 # words of the API family kept in upper case instead of title case, e.g. gpu -> GPU
 _FAMILY_ACRONYMS = {"gpu"}
 
+# The plans API puts the retired HICPU-* and HIMEM-* plans into general_purpose, so
+# their family comes from the plan name prefix instead.
+_PLAN_PREFIX_FAMILY = {"HICPU": "High CPU", "HIMEM": "High Memory"}
+
 
 @cache
 def _warn_unknown_family(name: str) -> None:
@@ -531,9 +535,13 @@ def _server_family(server: dict):
     E.g. cloud_native -> Cloud Native, general_purpose -> General Purpose. The field
     is not in the API docs, the values were checked against a live response
     (2026-10-27): starter, developer, premium, cloud_native, general_purpose, gpu.
+    The retired HICPU and HIMEM plans are reported as general_purpose by the API,
+    those keep the High CPU / High Memory family of their name prefix.
     Returns None if missing, so no family is guessed.
     https://developers.upcloud.com/1.3/7-plans/
     """
+    if family := _PLAN_PREFIX_FAMILY.get(server["name"].split("-")[0]):
+        return family
     if family := server.get("family"):
         words = family.split("_")
         return " ".join(
