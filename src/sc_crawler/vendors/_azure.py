@@ -1001,6 +1001,21 @@ def _compatible_storage_ids(server: dict) -> list[str]:
     return storage_ids
 
 
+def _vm_series(size_name: str, sku_family: str) -> str:
+    """Series of a VM size, built like the series of the PostgreSQL databases.
+
+    The database series come from `_parse_database_name`, so the same function is used
+    here and a database joins the server it runs on, e.g. Standard_D2ds_v5 -> Ddsv5.
+    That drops the isolated i and the m/l/t memory shape letters, so e.g. the low memory
+    Standard_D2lds_v5 is in Ddsv5 too. Sizes the parser does not know (GPU, HPC, other
+    odd shapes) keep the SKU family of the API, they have no database counterpart.
+    """
+    try:
+        return _parse_database_name(size_name)[0]
+    except ValueError:
+        return sku_family
+
+
 def _standardize_server(server: dict, vendor) -> dict:
     # example Resource Skus - List response moved to _compute_resources
     family, features, gpus, gpu_model, gpu_memory = _parse_server_name(server["name"])
@@ -1066,7 +1081,7 @@ def _standardize_server(server: dict, vendor) -> dict:
         },
         "display_name": server["name"].removeprefix("Standard_"),
         "family": _vm_family_category(server["name"]),
-        "series": family.strip(),
+        "series": _vm_series(server["name"], family.strip()),
         "vcpus": int(capability("vCPUsAvailable")),
         "hypervisor": "Microsoft Hyper-V",
         "cpu_allocation": (

@@ -26,6 +26,7 @@ from sc_crawler.vendors._azure import (
     _ultra_disk_vm_sizes,
     _vm_family_category,
     _vm_retirement_dates,
+    _vm_series,
     _warn_unknown_disk,
     inventory_storage_prices,
     inventory_storages,
@@ -1558,6 +1559,23 @@ def test_pg_storage_prices_skip_unsupported_retail_meters():
         prices = azure_database_storage_prices(vendor)
     storage_ids = {row["database_storage_id"] for row in prices}
     assert storage_ids == {"ManagedDisk", "ManagedDiskV2", "BackupStorageLRS"}
+
+
+@pytest.mark.parametrize(
+    "size,sku_family,series",
+    [
+        # the SKU family spells these differently from the database series
+        ("Standard_D2s_v3", "DSv3", "Dsv3"),
+        ("Standard_D2ds_v5", "DDSv5", "Ddsv5"),
+        ("Standard_B1ms", "BS", "Bs"),
+        ("Standard_D4ads_v6", "Dadv6", "Dadsv6"),
+        ("Standard_E4ads_v6", "Eadv6", "Eadsv6"),
+        # sizes unknown to the database parser keep the SKU family
+        ("Standard_NC24ads_A100_v4", "NCADSA100v4", "NCADSA100v4"),
+    ],
+)
+def test_azure_vm_series_matches_database_series(size, sku_family, series):
+    assert _vm_series(size, sku_family) == series
 
 
 def test_parse_database_name_series():
