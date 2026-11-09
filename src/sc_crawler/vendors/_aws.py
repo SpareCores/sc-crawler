@@ -680,9 +680,17 @@ def _server_series_categories() -> dict:
     return categories
 
 
+# Pricing API spellings changed to match the other vendors.
+# Only the spellings that differ from the other vendors are listed. If more show up,
+# this can be switched to a generic rule (hyphens to spaces, title case) with an
+# explicit entry only for the HPC spelling.
+_CATEGORY_SPELLING = {"High-Performance Computing": "High Performance Computing"}
+
+
 def _series_family(series: str) -> Optional[str]:
     """Category of an instance type series: Pricing API first, then the docs dict."""
-    return _server_series_categories().get(series) or _SERIES_TO_FAMILY.get(series)
+    category = _server_series_categories().get(series) or _SERIES_TO_FAMILY.get(series)
+    return _CATEGORY_SPELLING.get(category, category)
 
 
 @cache

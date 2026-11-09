@@ -95,9 +95,9 @@ def _no_compute_api_disks():
         ("Standard_ND96isr_H100_v5", "GPU Accelerated"),
         ("Standard_NV36ads_A10_v5", "GPU Accelerated"),
         ("Standard_NP10s", "FPGA Accelerated"),
-        ("Standard_HB120rs_v3", "High Performance Compute"),
+        ("Standard_HB120rs_v3", "High Performance Computing"),
         # retired H-series
-        ("Standard_H16r", "High Performance Compute"),
+        ("Standard_H16r", "High Performance Computing"),
         # not documented by Microsoft, and unknown families are not guessed
         ("Standard_PB6s", None),
         ("Standard_ZZ4s_v1", None),

@@ -993,7 +993,7 @@ def test_aws_inventory_database_storage_prices_skip_missing_catalog():
         ("p5.48xlarge", "p5", "Accelerated Computing"),
         ("p6-b200.48xlarge", "p6-b200", "Accelerated Computing"),
         ("trn2.48xlarge", "trn2", "Accelerated Computing"),
-        ("hpc7a.96xlarge", "hpc7a", "High-Performance Computing"),
+        ("hpc7a.96xlarge", "hpc7a", "High Performance Computing"),
         # retired types, still listed by the Pricing API
         ("f1.2xlarge", "f1", "Accelerated Computing"),
         ("g3s.xlarge", "g3s", "Accelerated Computing"),

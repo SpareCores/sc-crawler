@@ -46,7 +46,14 @@ def test_alicloud_instance_category_is_family_and_warned_once():
             _instance_category(
                 _instance_type("ecs.g7.large", "ecs.g7", "General-purpose")
             )
-            == "General-purpose"
+            == "General Purpose"
+        )
+        # spelling unified with the other vendors
+        assert (
+            _instance_category(
+                _instance_type("ecs.hfc6.large", "ecs.hfc6", "High Performance Compute")
+            )
+            == "High Performance Computing"
         )
         missing = _instance_type("ecs.new.large", "ecs.new", "")
         assert _instance_category(missing) is None
@@ -89,7 +96,7 @@ def test_alicloud_inventory_servers_sets_family_and_series():
     assert by_id["ecs.gn5-c4g1.xlarge"]["compatible_storage_ids"] is None
     vendor.log.assert_called_once()
     assert "1 instance types" in vendor.log.call_args.args[0]
-    assert by_id["ecs.g7.large"]["family"] == "General-purpose"
+    assert by_id["ecs.g7.large"]["family"] == "General Purpose"
     assert by_id["ecs.g7.large"]["series"] == "ecs.g7"
     assert by_id["ecs.gn5-c4g1.xlarge"]["family"] == "Compute-optimized with GPU"
     assert by_id["ecs.gn5-c4g1.xlarge"]["series"] == "ecs.gn5"

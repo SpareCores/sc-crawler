@@ -883,7 +883,7 @@ _VM_FAMILY_CATEGORIES = {
     "Storage Optimized": "L",
     "GPU Accelerated": "NC NCC ND NG NV",
     "FPGA Accelerated": "NP",
-    "High Performance Compute": (
+    "High Performance Computing": (
         "HB HC HX "
         # retired in 2022, described as HPC virtual machines (H8 ... H16mr)
         # https://learn.microsoft.com/en-us/previous-versions/azure/virtual-machines/articles/virtual-machines/h-series-retirement
