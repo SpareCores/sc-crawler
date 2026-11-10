@@ -3077,6 +3077,7 @@ def test_aws_reconcile_server_status_sets_missing_accelerator_type_of_active_ser
     region.name = "US East (N. Virginia)"
     # spot-only GPU server last crawled before accelerator_type was introduced
     gpu_active = _aws_server_mock("g4ad.xlarge", Status.INACTIVE, 1)
+    gpu_active.accelerator_manufacturer = "AMD"
     gpu_inactive = _aws_server_mock("p3.2xlarge", Status.ACTIVE, 1)
     no_gpu = _aws_server_mock("m5.large", Status.INACTIVE)
     vendor = _aws_vendor(regions=[region], servers=[gpu_active, gpu_inactive, no_gpu])

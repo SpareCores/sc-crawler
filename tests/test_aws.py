@@ -136,6 +136,23 @@ def test_aws_reconcile_server_status(monkeypatch):
     }
 
 
+@pytest.mark.parametrize(
+    "manufacturer, expected",
+    [("NVIDIA", AcceleratorType.GPU), ("Xilinx", None), (None, None)],
+)
+def test_aws_reconcile_spot_only_accelerator_type(monkeypatch, manufacturer, expected):
+    monkeypatch.setattr(_aws, "_collect_regions_servers", lambda vendor: {})
+    monkeypatch.setattr(_aws, "_get_server_products", lambda: [])
+    server = SimpleNamespace(
+        server_id="x.spotonly",
+        accelerator_count=1,
+        accelerator_type=None,
+        accelerator_manufacturer=manufacturer,
+    )
+    _aws._reconcile_server_status(SimpleNamespace(servers=[server]), {"x.spotonly"})
+    assert server.accelerator_type == expected
+
+
 def test_aws_spot_prices_inactive_for_servers_no_longer_available(monkeypatch):
     now = datetime.now(UTC)
 
@@ -203,10 +220,10 @@ def _device(name, manufacturer, count, memory):
     [
         ({}, (0, 0, 0, None, None, None)),
         ({"FpgaInfo": {"TotalFpgaMemoryInMiB": 0}}, (0, 0, 0, None, None, None)),
-        # no memory reported
+        # no memory reported: unknown, not 0
         (
             {"FpgaInfo": {"Fpgas": [{"Name": "VU9P", "Count": 1}]}},
-            (1, 0, 0, None, "VU9P", AcceleratorType.FPGA),
+            (1, None, None, None, "VU9P", AcceleratorType.FPGA),
         ),
         (
             {

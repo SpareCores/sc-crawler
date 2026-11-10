@@ -386,11 +386,13 @@ def _reconcile_server_status(
         else:
             server.status = Status.INACTIVE
         # servers kept ACTIVE only by spot prices are not returned by
-        # describe_instance_types, so might miss fields added since last crawled
+        # describe_instance_types, so might miss fields added since last crawled;
+        # only GPU manufacturers prove a GPU, other accelerators stay None
         if (
             server.status == Status.ACTIVE
             and server.accelerator_count > 0
             and server.accelerator_type is None
+            and server.accelerator_manufacturer in ("NVIDIA", "AMD")
         ):
             server.accelerator_type = AcceleratorType.GPU
 
@@ -695,9 +697,10 @@ def _accelerators_of_instance_type(instance_type):
                 "Manufacturer": device.get(
                     "Manufacturer", "AWS" if info_key == "NeuronInfo" else None
                 ),
+                # unknown memory stays None (0 would mean no memory)
                 "Memory": _DEVICE_MEMORY_OVERRIDES_MIB.get(
                     device["Name"],
-                    (device.get("MemoryInfo") or {}).get("SizeInMiB", 0),
+                    (device.get("MemoryInfo") or {}).get("SizeInMiB"),
                 ),
             }
             for device in info.get(devices_key) or []
@@ -705,7 +708,7 @@ def _accelerators_of_instance_type(instance_type):
         # Habana Gaudi (dl1) is listed among the GPUs
         if devices and "Gaudi" in devices[0]["Name"]:
             acc_type = AcceleratorType.NPU
-        total = info.get(total_key, 0)
+        total = info.get(total_key)
         if any(device["Name"] in _DEVICE_MEMORY_OVERRIDES_MIB for device in devices):
             total = sum(device["Count"] * device["Memory"] for device in devices)
         return acc_type, devices, total
@@ -717,7 +720,10 @@ def _get_gpu_of_instance_type(instance_type):
     acc_type, devices, memory_total = _accelerators_of_instance_type(instance_type)
     if not devices:
         return (0, 0, 0, None, None, None)
-    memory_min = min([device["Memory"] for device in devices])
+    memory_min = min(
+        [device["Memory"] for device in devices if device["Memory"] is not None],
+        default=None,
+    )
     count = sum([device["Count"] for device in devices])
     # most common
     manufacturer = mode([device["Manufacturer"] for device in devices])

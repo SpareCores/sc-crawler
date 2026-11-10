@@ -144,7 +144,7 @@ class Accelerator(Json):
     """The model family/architecture of the accelerator."""
     model: Optional[str] = None
     """The model number of the accelerator."""
-    memory: int
+    memory: Optional[int] = None
     """Memory (MiB) allocated to the accelerator."""
     firmware_version: Optional[str] = None
     """Firmware version."""
