@@ -479,7 +479,13 @@ _NON_GPU_ACCELERATORS = {
 
 
 def _accelerator_type(gpu_model: Optional[str], gpu_count: float):
-    """Map the GPUSpec model to AcceleratorType, defaulting to GPU."""
+    """Map the GPUSpec model to AcceleratorType.
+
+    Defaults to GPU, as the API reports all accelerators in the GPU fields
+    (GPUAmount, GPUSpec) and almost all of them are GPUs, so only the known
+    non-GPU chips are listed in `_NON_GPU_ACCELERATORS`. New GPU models are
+    covered without changes, while a new non-GPU chip needs to be added there.
+    """
     if not gpu_count:
         return None
     return _NON_GPU_ACCELERATORS.get((gpu_model or "").lower(), AcceleratorType.GPU)
