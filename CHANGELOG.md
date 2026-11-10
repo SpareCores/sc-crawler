@@ -1,3 +1,31 @@
+## v0.11.0 (DEVELOPMENT)
+
+‼ Breaking changes:
+
+- New `ARCHIVED` status for records replaced by another record or deliberately
+  dropped, set only by the archive rules in `sc_crawler.archive_rules`.
+- `Hetzner`: former datacenter regions (`2`–`7`) with their zones and prices,
+  and the `app:static_web` benchmark with its scores are `ARCHIVED`. The
+  former datacenter ids are dropped from `Region.aliases`.
+
+New feature(s):
+
+- `pull` and `sync` apply the archive rules, also to child records (e.g.
+  prices of a region, scores of a benchmark).
+- `copy --exclude-status` to leave out rows by status, e.g. `archived`.
+- `archived-by` command to list the rules archiving a record.
+
+Database migrations:
+
+- Add the `archive_rule` table.
+- Add `ARCHIVED` to the `status` enum (PostgreSQL).
+
+Fix(es):
+
+- Compare dict-type primary keys (e.g. `BenchmarkScore.config`) as `JSONB` in
+  PostgreSQL.
+- `sync --log-changes-path` failed on rows with a dict-type primary key.
+
 ## v0.10.3 (November 06, 2026)
 
 New feature(s):
@@ -112,10 +140,6 @@ Fix(es):
 New feature(s):
 
 - `Hetzner`: use the server type `category` as server family.
-- New `SUPERSEDED` status for records replaced by a new record (e.g. due to
-  renaming or re-keying), which is never reset by the crawler or `sync`. The
-  former `Hetzner` datacenter region ids (`2`–`7`) and their zones and prices
-  are marked as `SUPERSEDED` via a database migration.
 
 New benchmark(s):
 
