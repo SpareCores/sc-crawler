@@ -242,7 +242,7 @@ class MetaColumns(ScModel):
         if not value.is_general:
             raise ValueError(
                 f"{value!r} is only valid for Server and Database. "
-                f"Use ACTIVE, INACTIVE or SUPERSEDED for {cls.__name__}."
+                f"Use ACTIVE, INACTIVE or ARCHIVED for {cls.__name__}."
             )
         return value
 
@@ -1562,4 +1562,48 @@ class BenchmarkScoreFields(HasBenchmarkPKFK, HasVendorPKFK):
 
 
 class BenchmarkScoreBase(MetaColumns, BenchmarkScoreFields):
+    pass
+
+
+class ArchiveRuleFields(ScModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    table_name: str = Field(
+        primary_key=True,
+        description="Name of the table of the archived record(s), e.g. `region`.",
+    )
+    # HashableDict as these are primary keys, see BenchmarkScoreFields.config
+    match: HashableDict | dict = Field(
+        sa_type=HashableJSON,
+        primary_key=True,
+        description=(
+            "Primary key of the record to archive, or a subset of its columns "
+            "to archive all records with those values, "
+            'e.g. {"region_id": "2", "vendor_id": "hcloud"}.'
+        ),
+    )
+    successor: HashableDict | dict = Field(
+        default={},
+        sa_type=HashableJSON,
+        primary_key=True,
+        description=(
+            "New values of the `match` columns identifying the successor of "
+            "each archived record. Empty when there is no successor, or none "
+            "that can be given as fixed values (see `reason`)."
+        ),
+    )
+    reason: Optional[str] = Field(
+        default=None,
+        description="Why the record(s) got archived.",
+    )
+
+    @model_validator(mode="before")
+    def _sort_keys(cls, values):
+        """Store `match` and `successor` with sorted keys."""
+        for field in ("match", "successor"):
+            values[field] = HashableDict.sorted(values.get(field) or {})
+        return values
+
+
+class ArchiveRuleBase(MetaColumns, ArchiveRuleFields):
     pass

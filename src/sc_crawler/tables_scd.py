@@ -6,6 +6,7 @@ from typing import List
 from sqlmodel import Field, SQLModel
 
 from .table_bases import (
+    ArchiveRuleBase,
     BenchmarkBase,
     BenchmarkScoreBase,
     ComplianceFrameworkBase,
@@ -223,6 +224,12 @@ class BenchmarkScoreScd(Scd, BenchmarkScoreBase, table=True):
         primary_key=True,
         description="Reference to the Vendor.",
     )
+
+
+class ArchiveRuleScd(Scd, ArchiveRuleBase, table=True):
+    """SCD version of .tables.ArchiveRule."""
+
+    pass
 
 
 tables_scd: List[SQLModel] = [o for o in globals().values() if is_table(o)]

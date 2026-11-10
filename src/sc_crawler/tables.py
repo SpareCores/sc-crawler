@@ -23,6 +23,7 @@ from .inspector import (
 from .inspector_rules import block_reasons
 from .logger import VendorProgressTracker, VoidProgressTracker, log_start_end, logger
 from .table_bases import (
+    ArchiveRuleBase,
     BenchmarkBase,
     BenchmarkScoreBase,
     ComplianceFrameworkBase,
@@ -48,6 +49,7 @@ from .table_fields import (
     Allocation,
     CpuAllocation,  # noqa: F401 imported for mkdocstrings
     CpuArchitecture,  # noqa: F401 imported for mkdocstrings
+    HashableDict,
     PriceUnit,  # noqa: F401 imported for mkdocstrings
     ResourceType,
     Status,
@@ -231,7 +233,7 @@ class Vendor(VendorBase, table=True):
         (besides the default model.vendor_id filter) referencing the
         model object with SQLModel syntax.
 
-        Records marked as [SUPERSEDED][sc_crawler.table_fields.Status] are kept as-is.
+        Records marked as [ARCHIVED][sc_crawler.table_fields.Status] are kept as-is.
 
         Examples:
             >>> aws.set_table_rows_inactive(ServerPrice, ServerPrice.price < 10)  # doctest: +SKIP
@@ -240,7 +242,7 @@ class Vendor(VendorBase, table=True):
             query = (
                 update(model)
                 .where(model.vendor_id == self.vendor_id)
-                .where(model.status != Status.SUPERSEDED)
+                .where(model.status != Status.ARCHIVED)
             )
             for arg in args:
                 query = query.where(arg)
@@ -842,6 +844,26 @@ class BenchmarkScore(BenchmarkScoreBase, table=True):
         },
     )
     benchmark: Benchmark = Relationship(back_populates="benchmark_scores")
+
+
+class ArchiveRule(ArchiveRuleBase, table=True):
+    """Rules archiving records that were replaced by another record or deliberately dropped.
+
+    The rules are defined in [sc_crawler.archive_rules][], and are applied by
+    the `pull` and `sync` commands (see [sc_crawler.archive_helpers][]), which set the matched records and their
+    child records to [ARCHIVED][sc_crawler.table_fields.Status].
+
+    Examples:
+        >>> from sc_crawler.tables import ArchiveRule
+        >>> ArchiveRule(table_name="benchmark", match={"benchmark_id": "foo"}, reason="Dropped.")
+        ArchiveRule(table_name='benchmark', match={'benchmark_id': 'foo'}, reason='Dropped.', successor={}...
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # SQLModel does not run validators on table models
+        self.match = HashableDict.sorted(self.match)
+        self.successor = HashableDict.sorted(self.successor)
 
 
 Country.model_rebuild()
