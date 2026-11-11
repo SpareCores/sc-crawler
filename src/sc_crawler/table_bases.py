@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from functools import cache
 from hashlib import sha1
 from json import dumps
-from typing import List, Optional, Set, Union
+from typing import TYPE_CHECKING, List, Optional, Set, Union
 
 from pydantic import (
     ConfigDict,
@@ -19,7 +19,7 @@ from sqlalchemy import Enum as SaEnum
 from sqlalchemy.ext.hybrid import Comparator, hybrid_property
 from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import declared_attr, reconstructor
-from sqlmodel import JSON, Field, Session, SQLModel, select
+from sqlmodel import JSON, Field, Session, SQLModel, func, select
 
 from .str_utils import snake_case
 from .table_fields import (
@@ -49,6 +49,9 @@ from .table_fields import (
     WorkloadScoreBreakdown,
 )
 from .workload_profiles import BenchmarkSource, MeasuredSource
+
+if TYPE_CHECKING:
+    from .tables import ArchiveRule
 
 
 class ScMetaModel(SQLModel.__class__):
@@ -225,7 +228,7 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
         )
 
     @classmethod
-    def matches_rule(cls, rule, primary_key: dict) -> bool:
+    def matches_rule(cls, rule: "ArchiveRule", primary_key: dict) -> bool:
         """Check if an archive rule archives the record with the given primary key.
 
         Args:
@@ -343,7 +346,7 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
         """
         pks = sorted(cls.get_columns()["primary_keys"])
         rows = session.exec(statement=select(cls))
-        row_count = session.query(cls).count()
+        row_count = session.exec(select(func.count()).select_from(cls)).one()
         if progress:
             table_task_id = progress.add_task(
                 cls.get_table_name(),
@@ -1726,9 +1729,13 @@ class BenchmarkScoreBase(MetaColumns, BenchmarkScoreFields):
     def get_key_filters(cls, rule_table_name: str, keys: dict) -> Optional[dict]:
         """Map a rule on a resource onto `resource_type` and `resource_id`."""
         filters = super().get_key_filters(rule_table_name, keys)
-        if filters is None or rule_table_name not in ResourceType:
+        # membership via `in` raises TypeError for plain strings on Python 3.11
+        resource_type = {member.value: member for member in ResourceType}.get(
+            rule_table_name
+        )
+        if filters is None or resource_type is None:
             return filters
-        filters["resource_type"] = ResourceType(rule_table_name)
+        filters["resource_type"] = resource_type
         id_column = f"{rule_table_name}_id"
         if id_column in filters:
             filters["resource_id"] = filters.pop(id_column)
