@@ -1,7 +1,7 @@
 """v0.10.3 update server and database family and series column comments
 
 Revision ID: 7e3a9c1b5d24
-Revises: 37c49fd74cce
+Revises: e8f9a0b1c2d3
 Create Date: 2026-11-06 12:00:00.000000
 
 """
@@ -13,7 +13,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "7e3a9c1b5d24"
-down_revision: Union[str, None] = "37c49fd74cce"
+down_revision: Union[str, None] = "e8f9a0b1c2d3"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
