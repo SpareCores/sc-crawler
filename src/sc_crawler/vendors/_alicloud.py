@@ -466,10 +466,10 @@ def _get_region_availability_info(
 # Non-GPU accelerators reported in GPUSpec (standardized model name, lowercase),
 # based on the GPUSpec values returned by DescribeInstanceTypes as of 2026-11
 _NON_GPU_ACCELERATORS = {
-    "xilinx vu9p": AcceleratorType.FPGA,
-    "intel arria 10 gx 1150": AcceleratorType.FPGA,
-    "agf 027": AcceleratorType.FPGA,
-    "netint t408": AcceleratorType.VPU,
+    "vu9p": AcceleratorType.FPGA,
+    "arria 10 gx 1150": AcceleratorType.FPGA,
+    "agf027": AcceleratorType.FPGA,
+    "t408": AcceleratorType.VPU,
     "alinpu 800": AcceleratorType.NPU,
     "ppu 810": AcceleratorType.NPU,
     "a910e": AcceleratorType.NPU,
@@ -489,6 +489,18 @@ def _accelerator_type(gpu_model: Optional[str], gpu_count: float):
     if not gpu_count:
         return None
     return _NON_GPU_ACCELERATORS.get((gpu_model or "").lower(), AcceleratorType.GPU)
+
+
+def _gpu_manufacturer_of_family(family: Optional[str]) -> Optional[str]:
+    """Get the GPU manufacturer from the instance family name, if it tells.
+
+    The "gn" families (and their "ebmgn" bare metal variants) are "compute
+    optimized instances equipped with NVIDIA GPUs":
+    https://help.aliyun.com/zh/ecs/user-guide/instance-specification-naming-and-classification
+    """
+    if (family or "").removeprefix("ecs.").startswith(("gn", "ebmgn")):
+        return "NVIDIA"
+    return None
 
 
 def _get_resource_status_category(
@@ -1556,6 +1568,17 @@ def inventory_servers(vendor):
                 gpu_model = None
                 gpu_family = "Ada Lovelace"
                 gpu_manufacturer = "NVIDIA"
+            # the GPU architecture instead of the model
+            elif gpu_model == "Lovelace":
+                gpu_model = None
+                gpu_family = "Ada Lovelace"
+                gpu_manufacturer = "NVIDIA"
+            # "Blackwell series: NVIDIA G59" in the above SLA statement
+            elif gpu_model == "G59":
+                gpu_family = "Blackwell"
+                gpu_manufacturer = "NVIDIA"
+        if gpu_count and not gpu_manufacturer:
+            gpu_manufacturer = _gpu_manufacturer_of_family(family)
         description_parts = [
             f"{vcpus} vCPUs",
             f"{memory_size_gb} GiB RAM",

@@ -1097,6 +1097,29 @@ def test_gcp_inventory_server_prices_uses_specialized_ultramem_skus(
     assert prices[0]["price"] == pytest.approx(expected)
 
 
+def test_gcp_search_servers_tpu_missing_from_catalog_is_google():
+    machine = SimpleNamespace(
+        id=7002,
+        name="tpu7-standard-1t",
+        description="",
+        guest_cpus=24,
+        is_shared_cpu=False,
+        architecture="X86_64",
+        memory_mb=96 * 1024,
+        deprecated=SimpleNamespace(state=""),
+        accelerators=[
+            SimpleNamespace(guest_accelerator_type="tpu7", guest_accelerator_count=1)
+        ],
+        bundled_local_ssds=None,
+    )
+    with patch("sc_crawler.vendors._gcp._servers", return_value=[machine]):
+        row = _search_servers("us-central1-a")[0]
+
+    assert row["accelerator_type"] == AcceleratorType.NPU
+    assert row["accelerator_manufacturer"] == "Google"
+    assert row["accelerator_memory_min"] is None
+
+
 def test_gcp_search_servers_fills_tpu_fields():
     machine = SimpleNamespace(
         id=7001,

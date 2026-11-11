@@ -976,6 +976,9 @@ def _search_servers(zone_name: str) -> List[dict]:
                 # unset so inspector can still fill it later
                 zone_servers[-1]["accelerator_memory_min"] = None
                 zone_servers[-1]["accelerator_memory_total"] = None
+                # TPUs are made by Google, even if not in the catalog yet
+                if zone_servers[-1]["accelerator_type"] == AcceleratorType.NPU:
+                    zone_servers[-1]["accelerator_manufacturer"] = "Google"
         bundled = server.bundled_local_ssds
         if bundled and bundled.partition_count:
             storage_size = round(

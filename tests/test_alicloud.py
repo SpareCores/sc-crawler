@@ -6,6 +6,7 @@ from sc_crawler.vendors._alicloud import (
     _ALICLOUD_STATUS_CATEGORY_TO_SERVER_LIFECYCLE,
     _ALICLOUD_STATUS_CATEGORY_TO_SERVER_STATUS,
     _accelerator_type,
+    _gpu_manufacturer_of_family,
     _gpu_memory_by_spec,
 )
 
@@ -46,10 +47,10 @@ def test_alicloud_server_lifecycle_keeps_out_of_stock_types_active():
         (None, 1, AcceleratorType.GPU),
         ("VG1000", 1, AcceleratorType.GPU),
         ("T4", 0, None),
-        ("Xilinx VU9p", 1, AcceleratorType.FPGA),
-        ("INTEL ARRIA 10 GX 1150", 1, AcceleratorType.FPGA),
-        ("AGF 027", 1, AcceleratorType.FPGA),
-        ("NETINT T408", 12, AcceleratorType.VPU),
+        ("VU9P", 1, AcceleratorType.FPGA),
+        ("Arria 10 GX 1150", 1, AcceleratorType.FPGA),
+        ("AGF027", 1, AcceleratorType.FPGA),
+        ("T408", 12, AcceleratorType.VPU),
         ("ALINPU 800", 4, AcceleratorType.NPU),
         ("PPU 810", 1, AcceleratorType.NPU),
         ("A910E", 8, AcceleratorType.NPU),
@@ -60,3 +61,17 @@ def test_alicloud_server_lifecycle_keeps_out_of_stock_types_active():
 def test_accelerator_type(gpu_model, gpu_count, expected):
     """GPUSpec models map to their accelerator type, defaulting to GPU."""
     assert _accelerator_type(gpu_model, gpu_count) == expected
+
+
+@pytest.mark.parametrize(
+    "family,expected",
+    [
+        ("ecs.gn8v", "NVIDIA"),
+        ("ecs.ebmgn7t", "NVIDIA"),
+        ("ecs.ebmgp7", None),
+        ("ecs.av8m", None),
+        (None, None),
+    ],
+)
+def test_gpu_manufacturer_of_family(family, expected):
+    assert _gpu_manufacturer_of_family(family) == expected

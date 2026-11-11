@@ -1406,9 +1406,24 @@ def _standardize_gpu_model(model, server=None):
         "Quadro ",
         "GeeForce ",
         "AMD ",
+        "Xilinx ",
+        "NETINT ",
+        "INTEL ",
+        "intel ",
     ]:
         if model.startswith(prefix):
             model = model[len(prefix) :].lstrip()
+    # AliCloud GPUSpec spellings
+    if model == "ARRIA 10 GX 1150":
+        model = "Arria 10 GX 1150"
+    if model == "VU9p":
+        model = "VU9P"
+    if model == "AGF 027":
+        model = "AGF027"
+    if model == "MI-308X":
+        model = "MI308X"
+    if model == "5880":
+        model = "RTX 5880"
     if model == "nvidia-a100-80gb":
         model = "A100-SXM4-80GB"
     if model == "nvidia-b200":
@@ -1509,21 +1524,50 @@ def _standardize_gpu_family(server):
     return family
 
 
-_NVIDIA_GPU_MODELS = {
-    "A100",
-    "B200",
-    "GB200",
-    "GB300",
-    "H100",
-    "H200",
-    "L4",
-    "T4",
-    "T4G",
-    "V100",
-    "P100",
-    "P4",
-    "K80",
-    "RTX PRO 6000",
+# Manufacturer of the standardized accelerator models, used when the vendor
+# does not report the manufacturer.
+_ACCELERATOR_MANUFACTURERS = {
+    **dict.fromkeys(
+        [
+            "A10",
+            "A30",
+            "A100",
+            "A800",
+            "B200",
+            "GA107",
+            "GB200",
+            "GB300",
+            "GeForce GTX 1060",
+            "GeForce GTX 1070",
+            "GeForce GTX 1080 Ti",
+            "H100",
+            "H200",
+            "K80",
+            "L4",
+            "M40",
+            "M60",
+            "P100",
+            "P4",
+            "RTX 5880",
+            "RTX 6000",
+            "RTX PRO 6000",
+            "T4",
+            "T4G",
+            "V100",
+        ],
+        "NVIDIA",
+    ),
+    **dict.fromkeys(
+        ["Alveo U250", "MI25", "MI300X", "MI308X", "S7150", "V620", "V710"], "AMD"
+    ),
+    **dict.fromkeys(["Arria 10 GX 1150", "SG1"], "Intel"),
+    "AGF027": "Altera",
+    "VU9P": "Xilinx",
+    "T408": "NETINT",
+    # Hanguang 800
+    "ALINPU 800": "T-Head",
+    # Zhenwu 810E
+    "PPU 810": "T-Head",
 }
 
 
@@ -1986,10 +2030,9 @@ def inspect_update_server_dict(server: dict) -> dict:
             server["accelerator_model"], server
         )
         server["accelerator_family"] = _standardize_gpu_family(server)
-        if (
-            not server.get("accelerator_manufacturer")
-            and server["accelerator_model"] in _NVIDIA_GPU_MODELS
-        ):
-            server["accelerator_manufacturer"] = "NVIDIA"
+        if not server.get("accelerator_manufacturer"):
+            server["accelerator_manufacturer"] = _ACCELERATOR_MANUFACTURERS.get(
+                server["accelerator_model"]
+            )
 
     return server
