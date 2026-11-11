@@ -99,8 +99,9 @@ def _no_compute_api_disks():
         ("Standard_HB120rs_v3", "High Performance Computing"),
         # retired H-series
         ("Standard_H16r", "High Performance Computing"),
-        # not documented by Microsoft, and unknown families are not guessed
-        ("Standard_PB6s", None),
+        # Azure ML FPGA VM, not in the size overview
+        ("Standard_PB6s", "FPGA Accelerated"),
+        # unknown families are not guessed
         ("Standard_ZZ4s_v1", None),
     ],
 )

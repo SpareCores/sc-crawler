@@ -836,7 +836,14 @@ _VM_FAMILY_CATEGORIES = {
     ),
     "Storage Optimized": "L",
     "GPU Accelerated": "NC NCC ND NG NV",
-    "FPGA Accelerated": "NP",
+    "FPGA Accelerated": (
+        "NP "
+        # Azure ML FPGA VM with Intel Arria 10 FPGAs. The size overview does not list
+        # it, so the class comes from these (retired) Microsoft pages
+        # https://learn.microsoft.com/en-us/azure/machine-learning/how-to-deploy-fpga-web-service?view=azureml-api-1
+        # https://learn.microsoft.com/en-us/python/api/azureml-core/azureml.core.compute.aks.akscompute
+        "PB"
+    ),
     "High Performance Computing": (
         "HB HC HX "
         # retired in 2022, described as HPC virtual machines (H8 ... H16mr)
@@ -858,8 +865,7 @@ _MEMORY_OPTIMIZED_D_SIZES = recompile(r"^DS?1[1-5](-\d+)?(_v2)?$")
 def _vm_family_category(server_name: str) -> Optional[str]:
     """Look up the family category (e.g. General Purpose) of a VM size.
 
-    Returns None for families not listed above, so new families are not mislabeled
-    (e.g. PB6s is not documented by Microsoft).
+    Returns None for families not listed above, so new families are not mislabeled.
     """
     size = recompile(r"^(?:Standard|Basic)_").sub("", server_name)
     if _MEMORY_OPTIMIZED_D_SIZES.match(size):
