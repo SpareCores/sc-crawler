@@ -1052,16 +1052,26 @@ def inventory_servers(vendor):
     return items
 
 
+def _active_region_ids(vendor) -> set[str]:
+    """Regions returned by /v2/regions: plan locations can list retired regions (e.g. `cmh`)."""
+    return {
+        region.region_id for region in vendor.regions if region.status == Status.ACTIVE
+    }
+
+
 def inventory_server_prices(vendor):
     """List all on-demand server and bare metal prices in all regions from Vultr API.
 
     Servers are billed hourly up to a monthly cap, described as tiered prices."""
     plans = _get_plans()
     plans_metal = _get_plans_metal()
+    region_ids = _active_region_ids(vendor)
 
     items = []
     for server in plans + plans_metal:
         for region_id in server.get("locations", []):
+            if region_id not in region_ids:
+                continue
             if server["deploy_ondemand"]:
                 location_cost = server.get("location_cost", {})
                 hourly_price = server.get("hourly_cost")
@@ -1101,10 +1111,13 @@ def inventory_server_prices_spot(vendor):
     Servers are billed hourly up to a monthly cap, described as tiered prices."""
     plans = _get_plans()
     plans_metal = _get_plans_metal()
+    region_ids = _active_region_ids(vendor)
 
     items = []
     for server in plans + plans_metal:
         for region_id in server.get("locations", []):
+            if region_id not in region_ids:
+                continue
             if server["deploy_preemptible"]:
                 location_cost = server.get("location_cost", {})
                 hourly_price = server.get("hourly_cost_preemptible")
@@ -1378,6 +1391,7 @@ def inventory_database_prices(vendor):
     Plans with more than one node are highly available within a single zone."""
     databases = {database.database_id: database for database in vendor.databases}
     plans = _get_database_plans()
+    region_ids = _active_region_ids(vendor)
     items = []
     for plan in plans:
         database_id = plan.get("id")
@@ -1408,10 +1422,14 @@ def inventory_database_prices(vendor):
                 {"lower": monthly_cap + 1, "upper": "Infinity", "price": 0},
             ]
         for location in plan.get("locations", []):
+            # database plan locations are upper case, e.g. AMS
+            region_id = location.lower()
+            if region_id not in region_ids:
+                continue
             items.append(
                 {
                     "vendor_id": vendor.vendor_id,
-                    "region_id": location,
+                    "region_id": region_id,
                     "database_id": database_id,
                     "allocation": Allocation.ONDEMAND,
                     "ha": ha,

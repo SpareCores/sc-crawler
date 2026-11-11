@@ -20,6 +20,8 @@ from sc_crawler.vendors._vultr import (
     inventory_database_storage_prices,
     inventory_database_storages,
     inventory_databases,
+    inventory_server_prices,
+    inventory_server_prices_spot,
     inventory_servers,
 )
 
@@ -144,8 +146,40 @@ def test_vultr_inventory_databases_maps_plans_and_versions():
     assert by_id["vultr-dbaas-business-cc-4-160-8-ha"]["status"] == Status.INACTIVE
 
 
-def test_vultr_inventory_database_prices_uses_hourly_with_monthly_tiers():
+def _vendor_with_regions():
     vendor = Mock(vendor_id="vultr")
+    vendor.regions = [
+        Mock(region_id="ewr", status=Status.ACTIVE),
+        Mock(region_id="fra", status=Status.ACTIVE),
+        Mock(region_id="cmh", status=Status.INACTIVE),
+    ]
+    return vendor
+
+
+def test_vultr_inventory_server_prices_skip_inactive_and_unknown_regions():
+    vendor = _vendor_with_regions()
+    plan = {
+        "id": "voc-c-1c-2gb-25s-amd",
+        "hourly_cost": 0.038,
+        "monthly_cost": 28,
+        "hourly_cost_preemptible": 0.02,
+        "monthly_cost_preemptible": 14,
+        "deploy_ondemand": True,
+        "deploy_preemptible": True,
+        "locations": ["ewr", "cmh", "mci"],
+    }
+    with (
+        patch("sc_crawler.vendors._vultr._get_plans", return_value=[plan]),
+        patch("sc_crawler.vendors._vultr._get_plans_metal", return_value=[]),
+    ):
+        ondemand = inventory_server_prices(vendor)
+        spot = inventory_server_prices_spot(vendor)
+    assert [row["region_id"] for row in ondemand] == ["ewr"]
+    assert [row["region_id"] for row in spot] == ["ewr"]
+
+
+def test_vultr_inventory_database_prices_uses_hourly_with_monthly_tiers():
+    vendor = _vendor_with_regions()
     vendor.databases = [
         Mock(database_id="vultr-dbaas-cc-2-80-4"),
         Mock(database_id="vultr-dbaas-cc-4-160-8-ha"),
@@ -158,19 +192,23 @@ def test_vultr_inventory_database_prices_uses_hourly_with_monthly_tiers():
                 "hourly_cost": 0.09,
                 "monthly_cost": 60,
                 "number_of_nodes": 1,
-                "locations": ["ewr"],
+                "locations": ["EWR", "CMH", "MCI"],
                 "currency": "USD",
             },
             {
                 "id": "vultr-dbaas-cc-4-160-8-ha",
                 "monthly_cost": 120,
                 "number_of_nodes": 2,
-                "locations": ["fra"],
+                "locations": ["FRA"],
                 "currency": "USD",
             },
         ],
     ):
         rows = inventory_database_prices(vendor)
+    assert sorted((row["database_id"], row["region_id"]) for row in rows) == [
+        ("vultr-dbaas-cc-2-80-4", "ewr"),
+        ("vultr-dbaas-cc-4-160-8-ha", "fra"),
+    ]
     by_id = {row["database_id"]: row for row in rows}
     single = by_id["vultr-dbaas-cc-2-80-4"]
     assert single["allocation"] == Allocation.ONDEMAND
