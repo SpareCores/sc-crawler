@@ -60,6 +60,10 @@ def test_alicloud_instance_category_is_family_and_warned_once():
             )
             == "High Performance Computing"
         )
+        # retired family without category in the API: category of the docs
+        assert (
+            _instance_category(_instance_type("ecs.n1.small", "ecs.n1", "")) == "Shared"
+        )
         missing = _instance_type("ecs.new.large", "ecs.new", "")
         assert _instance_category(missing) is None
         assert _instance_category(missing) is None

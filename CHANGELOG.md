@@ -20,6 +20,9 @@ New feature(s):
   the database series).
 - Unify the `family` spelling across vendors: `General Purpose` (`AliCloud`) and
   `High Performance Computing` (`AWS`, `Azure`, `AliCloud`).
+- `AliCloud`: family of the retired `sn1`, `sn2`, `c4`, `ce4`, `cm4`, `n1`, `n2` and
+  `e3` types from the docs (the API has no category for them), `Azure`:
+  `FPGA Accelerated` family for the `PB` sizes.
 - `UpCloud`: keep the `High CPU` / `High Memory` family of the retired `HICPU` /
   `HIMEM` plans.
 - `Vultr`: no `series` for bare metal plans.

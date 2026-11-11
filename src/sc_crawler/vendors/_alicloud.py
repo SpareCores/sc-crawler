@@ -1086,17 +1086,41 @@ _CATEGORY_SPELLING = {
 }
 
 
+# The API returns no `InstanceCategory` for these retired families, so the category
+# comes from the docs, written as the API does for the current families (`Shared` for
+# the shared n4, mn4, e4 etc., `High Clock Speed` for the hfc/hfg/hfr families, and the
+# category of the sn1ne / sn2ne). The old "Series I" families (t1, s1, s2, s3, m1, m2,
+# c1, c2) and u0 are not categorized in the docs, so they are left empty.
+# https://www.alibabacloud.com/help/en/ecs/user-guide/retired-instance-types
+# https://www.alibabacloud.com/help/en/ecs/user-guide/shared-instance-families
+_RETIRED_FAMILY_CATEGORY = {
+    "ecs.sn1": "Compute-optimized",
+    "ecs.sn2": "General Purpose",
+    "ecs.c4": "High Clock Speed",
+    "ecs.ce4": "High Clock Speed",
+    "ecs.cm4": "High Clock Speed",
+    "ecs.n1": "Shared",
+    "ecs.n2": "Shared",
+    "ecs.e3": "Shared",
+}
+
+
 def _instance_category(instance_type: dict) -> Optional[str]:
     """Family of an instance type: the `InstanceCategory` as returned by the API.
 
     E.g. General-purpose, Memory-optimized, Compute-optimized with GPU. Documented at
     <https://www.alibabacloud.com/help/en/ecs/developer-reference/api-ecs-2014-05-26-describeinstancetypes>.
     Only the spelling of General Purpose and High Performance Computing is unified
-    with the other vendors, see `_CATEGORY_SPELLING`.
+    with the other vendors, see `_CATEGORY_SPELLING`. A few retired families without
+    category in the API use the one of the docs, see `_RETIRED_FAMILY_CATEGORY`.
     Returns None if missing, so no family is guessed.
     """
     if category := instance_type.get("InstanceCategory"):
         return _CATEGORY_SPELLING.get(category, category)
+    if category := _RETIRED_FAMILY_CATEGORY.get(
+        instance_type.get("InstanceTypeFamily")
+    ):
+        return category
     _warn_unknown_category(instance_type.get("InstanceTypeId"))
     return None
 
