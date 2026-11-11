@@ -10,14 +10,6 @@ from typer.testing import CliRunner
 
 from sc_crawler import cli as cli_module
 from sc_crawler.alembic_helpers import pkg_folder
-from sc_crawler.archive_helpers import (
-    apply_archive_rules,
-    archived_by,
-    check_archive_rules,
-    child_tables,
-    is_archived,
-    unmatched_archive_rules,
-)
 from sc_crawler.archive_rules import archive_rules
 from sc_crawler.cli import cli, supported_vendors
 from sc_crawler.table_fields import Allocation, HashableDict, ResourceType, Status
@@ -26,12 +18,13 @@ from sc_crawler.tables import (
     Benchmark,
     BenchmarkScore,
     Region,
+    Server,
     ServerPrice,
     Zone,
     tables,
 )
 from sc_crawler.tables_scd import tables_scd
-from sc_crawler.utils import create_sc_engine
+from sc_crawler.utils import create_sc_engine, table_name_to_model
 
 # child tables of the archived records, as listed in the RFC on archived records
 CHILD_TABLES = {
@@ -80,10 +73,6 @@ runner = CliRunner()
 
 def _primary_keys(model) -> list[str]:
     return model.get_columns()["primary_keys"]
-
-
-def _model(table_name: str):
-    return next(t for t in tables if t.get_table_name() == table_name)
 
 
 def _engine(path=None):
@@ -185,7 +174,7 @@ def _seed(session: Session, status=Status.INACTIVE):
 
 
 def test_archive_rules_are_valid():
-    assert check_archive_rules() == []
+    assert ArchiveRule.check() == []
 
 
 def test_archive_rules_have_sorted_keys():
@@ -285,7 +274,7 @@ def test_initial_archive_rules():
     ],
 )
 def test_check_archive_rules_finds_problems(rules, problem):
-    problems = check_archive_rules([ArchiveRule(**rule) for rule in rules])
+    problems = ArchiveRule.check([ArchiveRule(**rule) for rule in rules])
     assert problems
     assert all(problem in p for p in problems)
 
@@ -312,17 +301,20 @@ def test_check_archive_rules_allows_chains_splits_merges_and_drops():
         ArchiveRule(table_name=t, match=m, successor=s, reason=r)
         for t, m, s, r in rules
     ]
-    assert check_archive_rules(rules) == []
+    assert ArchiveRule.check(rules) == []
 
 
 # ##############################################################################
 # matching against the schema
 
 
-def test_child_tables():
+def test_parent_tables():
     for table in tables:
         table_name = table.get_table_name()
-        assert set(child_tables(table_name)) == CHILD_TABLES.get(table_name, set())
+        children = {
+            t.get_table_name() for t in tables if table_name in t.get_parent_tables()
+        }
+        assert children == CHILD_TABLES.get(table_name, set())
 
 
 def test_child_tables_have_the_key_columns_of_their_parents():
@@ -344,7 +336,7 @@ def test_child_tables_have_the_key_columns_of_their_parents():
     # foreign key, as resource_id with the related resource_type
     score_pks = _primary_keys(BenchmarkScore)
     for parent, (id_column, _) in RESOURCE_PARENTS.items():
-        parent_pks = _primary_keys(_model(parent))
+        parent_pks = _primary_keys(table_name_to_model(parent))
         assert set(parent_pks) - {id_column} <= set(score_pks)
         assert id_column in parent_pks
         assert id_column not in score_pks
@@ -368,14 +360,13 @@ def test_is_archived():
             "allocation": "ondemand",
         }
 
-    assert is_archived("region", {"vendor_id": "hcloud", "region_id": "2"})
-    assert not is_archived("region", {"vendor_id": "hcloud", "region_id": "nbg1"})
-    assert not is_archived("region", {"vendor_id": "aws", "region_id": "2"})
-    assert is_archived("server_price", price("2", "2"))
-    assert is_archived("server_price_scd", price("2", "2"))
-    assert not is_archived("server_price", price("nbg1", "nbg1"))
+    assert Region.is_archived({"vendor_id": "hcloud", "region_id": "2"})
+    assert not Region.is_archived({"vendor_id": "hcloud", "region_id": "nbg1"})
+    assert not Region.is_archived({"vendor_id": "aws", "region_id": "2"})
+    assert ServerPrice.is_archived(price("2", "2"))
+    assert not ServerPrice.is_archived(price("nbg1", "nbg1"))
     # not a child of the regions
-    assert not is_archived("server", {"vendor_id": "hcloud", "server_id": "2"})
+    assert not Server.is_archived({"vendor_id": "hcloud", "server_id": "2"})
     score = {
         "vendor_id": "aws",
         "benchmark_id": "app:static_web",
@@ -383,8 +374,8 @@ def test_is_archived():
         "resource_id": "t3.nano",
         "config": {},
     }
-    assert is_archived("benchmark_score", score)
-    assert not is_archived("benchmark_score", score | {"benchmark_id": "foo"})
+    assert BenchmarkScore.is_archived(score)
+    assert not BenchmarkScore.is_archived(score | {"benchmark_id": "foo"})
 
 
 def test_rules_match_dict_columns_as_a_whole():
@@ -401,10 +392,10 @@ def test_rules_match_dict_columns_as_a_whole():
         "resource_type": "server",
         "resource_id": "t3.nano",
     }
-    assert is_archived("benchmark_score", score | {"config": {"a": 2, "b": 1}}, rules)
-    assert not is_archived("benchmark_score", score | {"config": {"a": 2}}, rules)
-    assert not is_archived(
-        "benchmark_score", score | {"config": {"a": 2, "b": 1, "c": 3}}, rules
+    assert BenchmarkScore.is_archived(score | {"config": {"a": 2, "b": 1}}, rules)
+    assert not BenchmarkScore.is_archived(score | {"config": {"a": 2}}, rules)
+    assert not BenchmarkScore.is_archived(
+        score | {"config": {"a": 2, "b": 1, "c": 3}}, rules
     )
 
     engine = _engine()
@@ -416,7 +407,7 @@ def test_rules_match_dict_columns_as_a_whole():
         other.config = HashableDict(a=2)
         session.add(other)
         session.commit()
-        assert apply_archive_rules(session, rules) == {"benchmark_score": 2}
+        assert ArchiveRule.apply(session, rules) == {"benchmark_score": 2}
         archived = session.exec(
             select(BenchmarkScore.benchmark_id, BenchmarkScore.resource_id).where(
                 BenchmarkScore.status == Status.ARCHIVED
@@ -433,7 +424,7 @@ def test_apply_archive_rules():
     engine = _engine()
     with Session(engine) as session:
         _seed(session)
-        archived = apply_archive_rules(session)
+        archived = ArchiveRule.apply(session)
         session.commit()
         assert archived == {
             "region": 1,
@@ -457,7 +448,7 @@ def test_apply_archive_rules():
         assert len(rules) == len(archive_rules)
         assert all(rule.status == Status.ACTIVE for rule in rules)
         # nothing to do on the next run
-        assert apply_archive_rules(session) == {}
+        assert ArchiveRule.apply(session) == {}
         assert len(session.exec(select(ArchiveRule)).all()) == len(archive_rules)
 
 
@@ -468,7 +459,7 @@ def test_apply_archive_rules_on_active_records_and_without_parents():
         session.add_all([_server_price("2"), _server_price("nbg1")])
         session.add_all([_score("app:static_web"), _score("static_web:rps")])
         session.commit()
-        assert apply_archive_rules(session) == {
+        assert ArchiveRule.apply(session) == {
             "server_price": 1,
             "benchmark_score": 1,
         }
@@ -491,7 +482,7 @@ def test_apply_archive_rules_marks_scores_of_servers_only_by_resource_type():
         session.add_all([_score("foo"), _score("foo", server_id="2"), database_score])
         session.add_all([_server_price("nbg1"), _server_price("nbg1", server_id="2")])
         session.commit()
-        assert apply_archive_rules(session, rules) == {
+        assert ArchiveRule.apply(session, rules) == {
             "server_price": 1,
             "benchmark_score": 1,
         }
@@ -517,7 +508,7 @@ def _example_value(model, column: str):
 
 
 def _example_key(table_name: str, **overrides) -> dict:
-    model = _model(table_name)
+    model = table_name_to_model(table_name)
     return {
         column: overrides.get(column, _example_value(model, column))
         for column in _primary_keys(model)
@@ -534,7 +525,7 @@ def _example_score_key(resource_type: ResourceType) -> dict:
     return _example_key(
         "benchmark_score",
         resource_type=resource_type,
-        resource_id=_example_value(_model(parent), id_column),
+        resource_id=_example_value(table_name_to_model(parent), id_column),
     )
 
 
@@ -568,9 +559,11 @@ def test_archived_by_returns_the_rules_of_the_table_and_its_parents():
                         for parent, (_, parent_type) in RESOURCE_PARENTS.items()
                         if parent_type != resource_type
                     }
-                for name in (table_name, table_name + "_scd"):
-                    rules = archived_by(session, name, key | {"observed_at": "now"})
-                    assert {rule.table_name for rule in rules} == expected, name
+                # other columns, e.g. observed_at of SCD records, are ignored
+                rules = table_name_to_model(table_name).archived_by(
+                    session, key | {"observed_at": "now"}
+                )
+                assert {rule.table_name for rule in rules} == expected, table_name
 
         # other records are not archived
         for table_name in table_names:
@@ -579,9 +572,8 @@ def test_archived_by_returns_the_rules_of_the_table_and_its_parents():
                 for column, value in _example_key(table_name).items()
                 if column.endswith("_id") or column == "config"
             }
-            assert (
-                archived_by(session, table_name, _example_key(table_name, **key)) == []
-            )
+            model = table_name_to_model(table_name)
+            assert model.archived_by(session, _example_key(table_name, **key)) == []
 
 
 def test_archived_by_child_of_several_parents_and_removed_rules():
@@ -595,32 +587,32 @@ def test_archived_by_child_of_several_parents_and_removed_rules():
         "allocation": "ONDEMAND",
     }
     with Session(engine) as session:
-        assert archived_by(session, "server_price", key) == []
-        apply_archive_rules(session)
+        assert ServerPrice.archived_by(session, key) == []
+        ArchiveRule.apply(session)
         # rules removed from the code are kept as inactive
         session.exec(update(ArchiveRule).values(status=Status.INACTIVE))
         session.commit()
-        rules = archived_by(session, "server_price", key)
+        rules = ServerPrice.archived_by(session, key)
         assert [(rule.table_name, rule.match["region_id"]) for rule in rules] == [
             ("region", "2"),
             ("zone", "2"),
         ]
         assert all(rule.status == Status.INACTIVE for rule in rules)
         assert rules[0].successor == {"vendor_id": "hcloud", "region_id": "nbg1"}
-        assert archived_by(session, "server_price", key | {"region_id": "nbg1"}) == []
+        assert ServerPrice.archived_by(session, key | {"region_id": "nbg1"}) == []
 
         with pytest.raises(ValueError, match="Missing primary key"):
-            archived_by(session, "server_price", {"vendor_id": "hcloud"})
+            ServerPrice.archived_by(session, {"vendor_id": "hcloud"})
         with pytest.raises(ValueError, match="Unknown table"):
-            archived_by(session, "foo", key)
+            table_name_to_model("foo")
         with pytest.raises(ValueError):
-            archived_by(session, "server_price", key | {"allocation": "foo"})
+            ServerPrice.archived_by(session, key | {"allocation": "foo"})
 
 
 def test_archived_by_command(tmp_path):
     db = tmp_path / "db.sqlite"
     with Session(_engine(db)) as session:
-        apply_archive_rules(session)
+        ArchiveRule.apply(session)
         session.commit()
     args = ["archived-by", "--connection-string", f"sqlite:///{db}"]
     result = runner.invoke(
@@ -652,7 +644,7 @@ def test_copy_exclude_status(tmp_path):
     source = tmp_path / "source.sqlite"
     with Session(_engine(source)) as session:
         _seed(session)
-        apply_archive_rules(session)
+        ArchiveRule.apply(session)
         session.add(_region("inactive", Status.INACTIVE))
         session.commit()
 
@@ -704,7 +696,7 @@ def test_sync_handles_rows_found_only_in_target(tmp_path):
     log = tmp_path / "changes.log"
     with Session(_engine(source)) as session:
         session.add_all([_region("nbg1"), _zone("nbg1"), _benchmark("static_web:rps")])
-        apply_archive_rules(session)
+        ArchiveRule.apply(session)
         session.commit()
     with Session(_engine(target)) as session:
         session.add_all(
@@ -810,7 +802,7 @@ def test_unmatched_archive_rules():
         # all the archived records are only in the target
         _seed(target_session, Status.ARCHIVED)
         sessions = [source_session, target_session]
-        messages = unmatched_archive_rules(sessions, ["region", "benchmark"])
+        messages = ArchiveRule.find_unmatched(sessions, ["region", "benchmark"])
         # regions 3-7 and their successors are in neither database
         assert len(messages) == 10
         assert all(m.startswith("Archive rule region ") for m in messages)
@@ -818,9 +810,9 @@ def test_unmatched_archive_rules():
         assert sum(m.endswith("for its match.") for m in messages) == 5
         assert sum(m.endswith("for its successor.") for m in messages) == 5
 
-        assert unmatched_archive_rules(sessions, ["server"]) == []
-        assert len(unmatched_archive_rules(sessions)) == 20
-        assert len(unmatched_archive_rules([source_session])) == 26
+        assert ArchiveRule.find_unmatched(sessions, ["server"]) == []
+        assert len(ArchiveRule.find_unmatched(sessions)) == 20
+        assert len(ArchiveRule.find_unmatched([source_session])) == 26
 
         rules = [
             ArchiveRule(
@@ -834,7 +826,7 @@ def test_unmatched_archive_rules():
                 successor={"benchmark_id": "static_web:rps"},
             ),
         ]
-        messages = unmatched_archive_rules(sessions, rules=rules)
+        messages = ArchiveRule.find_unmatched(sessions, rules=rules)
         assert len(messages) == 1
         assert messages[0].startswith(
             "Archive rule benchmark_score {'benchmark_id': 'typo'}"

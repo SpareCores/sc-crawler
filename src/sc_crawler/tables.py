@@ -3,11 +3,11 @@
 import logging
 from importlib import import_module
 from types import ModuleType
-from typing import Callable, List, Optional
+from typing import Callable, Dict, List, Optional
 
 from pydantic import PrivateAttr
-from sqlalchemy import ForeignKeyConstraint, update
-from sqlmodel import Relationship, Session, SQLModel
+from sqlalchemy import ForeignKeyConstraint, literal, update
+from sqlmodel import Relationship, Session, SQLModel, select
 
 from .description_ingestor import (
     descriptions_data_path,
@@ -56,6 +56,7 @@ from .table_fields import (
     StorageType,  # noqa: F401 imported for mkdocstrings
     TrafficDirection,  # noqa: F401 imported for mkdocstrings
 )
+from .utils import table_name_to_model
 
 
 class Country(CountryBase, table=True):
@@ -850,8 +851,8 @@ class ArchiveRule(ArchiveRuleBase, table=True):
     """Rules archiving records that were replaced by another record or deliberately dropped.
 
     The rules are defined in [sc_crawler.archive_rules][], and are applied by
-    the `pull` and `sync` commands (see [sc_crawler.archive_helpers][]), which set the matched records and their
-    child records to [ARCHIVED][sc_crawler.table_fields.Status].
+    the `pull` and `sync` commands (see [apply][sc_crawler.tables.ArchiveRule.apply]), which set the matched
+    records and their child records to [ARCHIVED][sc_crawler.table_fields.Status].
 
     Examples:
         >>> from sc_crawler.tables import ArchiveRule
@@ -864,6 +865,159 @@ class ArchiveRule(ArchiveRuleBase, table=True):
         # SQLModel does not run validators on table models
         self.match = HashableDict.sorted(self.match)
         self.successor = HashableDict.sorted(self.successor)
+
+    @classmethod
+    def apply(
+        cls, session: Session, rules: Optional[List["ArchiveRule"]] = None
+    ) -> Dict[str, int]:
+        """Store the rules in the database, and archive the records they match.
+
+        All rules are written to the `archive_rule` table (also the ones not
+        matching any record), then the matched records and their child records
+        are set to [ARCHIVED][sc_crawler.table_fields.Status].
+
+        Args:
+            session: Database connection. Changes are not committed.
+            rules: Rules to apply. Defaults to all current rules.
+
+        Returns:
+            Number of newly archived records per table name.
+        """
+        if rules is None:
+            from .archive_rules import archive_rules as rules
+        items = [rule.model_dump(exclude={"observed_at"}) for rule in rules]
+        insert_items(cls, items, session=session)
+        archived = {}
+        for model in tables:
+            condition = model.archive_condition(rules)
+            if condition is None:
+                continue
+            result = session.exec(
+                update(model)
+                .where(condition)
+                .where(model.status != Status.ARCHIVED)
+                .values(status=Status.ARCHIVED)
+            )
+            if result.rowcount:
+                archived[model.get_table_name()] = result.rowcount
+        return archived
+
+    @classmethod
+    def find_unmatched(
+        cls,
+        sessions: List[Session],
+        table_names: Optional[List[str]] = None,
+        rules: Optional[List["ArchiveRule"]] = None,
+    ) -> List[str]:
+        """Describe the rules referring to records that are in none of the databases.
+
+        Checks both the `match` and the (non-empty) `successor` of the rules,
+        e.g. to find typos in the ids, or successors not provided by the vendor.
+
+        Args:
+            sessions: Connections to the databases to look up the records in.
+            table_names: Check only the rules of these tables. Defaults to all tables.
+            rules: Rules to check. Defaults to all current rules.
+
+        Returns:
+            A message for each `match` or `successor` without any record.
+        """
+        if rules is None:
+            from .archive_rules import archive_rules as rules
+        messages = []
+        for rule in rules:
+            if table_names is not None and rule.table_name not in table_names:
+                continue
+            model = table_name_to_model(rule.table_name)
+            for field in ("match", "successor"):
+                keys = getattr(rule, field)
+                if not keys:
+                    continue
+                query = (
+                    select(literal(1))
+                    .select_from(model)
+                    .where(model.get_filters_condition(keys))
+                    .limit(1)
+                )
+                if not any(session.exec(query).first() for session in sessions):
+                    messages.append(
+                        f"Archive rule {rule.table_name} {dict(rule.match)} -> "
+                        f"{dict(rule.successor)}: no record found for its {field}."
+                    )
+        return messages
+
+    @classmethod
+    def check(cls, rules: Optional[List["ArchiveRule"]] = None) -> List[str]:
+        """Check the definition of the rules, without a database.
+
+        Args:
+            rules: Rules to check. Defaults to all current rules.
+
+        Returns:
+            Description of the problems found: unknown tables, `match` keys that
+                are not primary key columns of the table, `successor` with other
+                keys than `match`, missing `reason` of rules without a successor,
+                and rules leading back to a record they archived (cycles).
+        """
+        if rules is None:
+            from .archive_rules import archive_rules as rules
+        problems = []
+        valid = []
+        for rule in rules:
+            label = f"{rule.table_name} {dict(rule.match)} -> {dict(rule.successor)}"
+            if rule.table_name.endswith("_scd"):
+                problems.append(f"{label}: rules cannot refer to SCD tables")
+                continue
+            try:
+                primary_keys = table_name_to_model(rule.table_name).get_columns()[
+                    "primary_keys"
+                ]
+            except ValueError:
+                problems.append(f"{label}: unknown table")
+                continue
+            if not rule.match:
+                problems.append(f"{label}: empty match")
+                continue
+            unknown = [key for key in rule.match if key not in primary_keys]
+            if unknown:
+                problems.append(f"{label}: match keys {unknown} are not primary keys")
+                continue
+            if rule.successor and set(rule.successor) != set(rule.match):
+                problems.append(f"{label}: successor and match have different keys")
+                continue
+            if rule.successor == rule.match:
+                problems.append(f"{label}: the successor is the archived record itself")
+                continue
+            if not rule.successor and not rule.reason:
+                problems.append(
+                    f"{label}: no reason given for a rule without successor"
+                )
+            valid.append(rule)
+
+        def leads_back(start: ArchiveRule, known: dict, path: tuple) -> bool:
+            """Follow the rules from the successor of `start`, with `known` key columns."""
+            if all(known.get(k, start) == v for k, v in start.match.items()):
+                return True
+            return any(
+                leads_back(
+                    start, {**known, **rule.match, **rule.successor}, path + (i,)
+                )
+                for i, rule in enumerate(valid)
+                if i not in path
+                and rule.successor
+                and rule.table_name == start.table_name
+                # `known` holds the key columns set by the rules followed so far,
+                # the other columns can have any value
+                and all(known.get(k, v) == v for k, v in rule.match.items())
+            )
+
+        for i, rule in enumerate(valid):
+            if rule.successor and leads_back(rule, dict(rule.successor), (i,)):
+                problems.append(
+                    f"{rule.table_name} {dict(rule.match)} -> {dict(rule.successor)}: "
+                    "following the rules leads back to the archived record"
+                )
+        return problems
 
 
 Country.model_rebuild()

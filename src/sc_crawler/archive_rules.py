@@ -21,8 +21,11 @@ here, which are applied by the `pull` and `sync` commands on every run:
 - Never remove a rule that has archived records. Rules removed from here
   are kept as `INACTIVE` in the `archive_rule` table.
 
-The functions matching and applying the rules, and tracing which rules
-archived a record are in [sc_crawler.archive_helpers][].
+The methods matching and applying the rules are on
+[ScModel][sc_crawler.table_bases.ScModel] and
+[ArchiveRule][sc_crawler.tables.ArchiveRule], e.g.
+[archived_by][sc_crawler.table_bases.ScModel.archived_by] tracing which rules
+archived a record.
 
 Use `ARCHIVED` only for our own decisions about the identity of a record,
 see [Status][sc_crawler.table_fields.Status] on how it differs from

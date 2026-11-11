@@ -38,12 +38,6 @@ from typing_extensions import Annotated
 from . import __version__
 from . import vendors as vendors_module
 from .alembic_helpers import alembic_cfg, get_revision
-from .archive_helpers import (
-    apply_archive_rules,
-    archived_by,
-    is_archived,
-    unmatched_archive_rules,
-)
 from .insert import insert_items
 from .logger import ProgressPanel, ScRichHandler, VendorProgressTracker, logger
 from .lookup import benchmarks, compliance_frameworks, countries
@@ -590,7 +584,7 @@ def sync(
                         continue
                     pk = loads(key)
                     status = Status.INACTIVE
-                    if is_archived(table_name, pk):
+                    if model.is_archived(pk):
                         status = Status.ARCHIVED
                     if statuses[key] != status:
                         obj = get_row_by_pk(session, model, pk).model_dump()
@@ -603,7 +597,7 @@ def sync(
     # check if the records referenced by the archive rules exist
     with Session(source_engine) as source_session:
         with Session(target_engine) as target_session:
-            for message in unmatched_archive_rules(
+            for message in ArchiveRule.find_unmatched(
                 [source_session, target_session], list(source_hash.keys())
             ):
                 logger.warning(message)
@@ -1017,7 +1011,7 @@ def pull(
 
             # needs to be the last step writing records, so that the status of
             # the archived records is not overwritten
-            archived = apply_archive_rules(session)
+            archived = ArchiveRule.apply(session)
             session.commit()
             logger.info(
                 "Archive rules applied, %d record(s) archived%s."
@@ -1066,7 +1060,8 @@ def archived_by_command(
     has_scd = inspect(engine).has_table(ArchiveRuleScd.get_table_name())
     with Session(engine) as session:
         try:
-            rules = archived_by(session, table_name, pk)
+            model = table_name_to_model(table_name.removesuffix("_scd"))
+            rules = model.archived_by(session, pk)
         except ValueError as exc:
             raise typer.BadParameter(str(exc)) from exc
         if not rules:
