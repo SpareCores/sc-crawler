@@ -144,6 +144,7 @@ def inventory_servers(vendor):
     #             "display_name": ,
     #             "description": None,
     #             "family": None,
+    #             "series": None,
     #             "vcpus": ,
     #             "hypervisor": None,
     #             "cpu_allocation": CpuAllocation....,
@@ -178,6 +179,7 @@ def inventory_servers(vendor):
     #             "storage_size": 0,
     #             "storage_type": None,
     #             "storages": [],
+    #             "compatible_storage_ids": None,  # [] if none can be attached
     #             "network_speed": None,
     #             "inbound_traffic": 0,
     #             "outbound_traffic": 0,
@@ -294,6 +296,7 @@ def inventory_databases(vendor):
     #             "display_name": ,
     #             "description": None,
     #             "family": None,
+    #             "series": None,
     #             "server_id": None,
     #             "vcpus": None,
     #             "memory_amount": None,  # MiB
@@ -311,6 +314,7 @@ def inventory_databases(vendor):
     #             "storage_extra_min": None,  # GB
     #             "storage_extra_max": None,  # GB
     #             "storage_extra_autosize": None,
+    #             "compatible_storage_ids": None,  # [] if none can be attached
     #             "disk_encryption": None,
     #             "scheduled_backups": None,
     #             "continuous_backups": None,  # max PITR retention (days)
