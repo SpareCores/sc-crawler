@@ -8,6 +8,7 @@ from itertools import chain
 from logging import CRITICAL, INFO, WARN, getLogger
 from os import environ
 from random import shuffle
+from re import sub
 from time import time
 from typing import Optional
 
@@ -1076,14 +1077,19 @@ def _warn_unknown_category(instance_type_id: str) -> None:
     )
 
 
-# `InstanceCategory` spellings of the API changed to match the other vendors.
-# Only the spellings that differ from the other vendors are listed. If more show up,
-# this can be switched to a generic rule (hyphens to spaces, title case) with an
-# explicit entry only for the HPC spelling.
+# `InstanceCategory` spelling of the API changed to match the other vendors: hyphens
+# are replaced by a space and the word after is capitalized (General-purpose ->
+# General Purpose, Compute-optimized with GPU -> Compute Optimized with GPU), plus the
+# HPC spelling.
 _CATEGORY_SPELLING = {
-    "General-purpose": "General Purpose",
     "High Performance Compute": "High Performance Computing",
 }
+
+
+def _category_spelling(category: str) -> str:
+    if category in _CATEGORY_SPELLING:
+        return _CATEGORY_SPELLING[category]
+    return sub(r"-(\w)", lambda match: " " + match.group(1).upper(), category)
 
 
 # The API returns no `InstanceCategory` for these retired families, so the category
@@ -1094,7 +1100,7 @@ _CATEGORY_SPELLING = {
 # https://www.alibabacloud.com/help/en/ecs/user-guide/retired-instance-types
 # https://www.alibabacloud.com/help/en/ecs/user-guide/shared-instance-families
 _RETIRED_FAMILY_CATEGORY = {
-    "ecs.sn1": "Compute-optimized",
+    "ecs.sn1": "Compute Optimized",
     "ecs.sn2": "General Purpose",
     "ecs.c4": "High Clock Speed",
     "ecs.ce4": "High Clock Speed",
@@ -1108,15 +1114,15 @@ _RETIRED_FAMILY_CATEGORY = {
 def _instance_category(instance_type: dict) -> Optional[str]:
     """Family of an instance type: the `InstanceCategory` as returned by the API.
 
-    E.g. General-purpose, Memory-optimized, Compute-optimized with GPU. Documented at
+    E.g. General Purpose, Memory Optimized, Compute Optimized with GPU. Documented at
     <https://www.alibabacloud.com/help/en/ecs/developer-reference/api-ecs-2014-05-26-describeinstancetypes>.
-    Only the spelling of General Purpose and High Performance Computing is unified
-    with the other vendors, see `_CATEGORY_SPELLING`. A few retired families without
+    Only the spelling is unified with the other vendors (no hyphens, and High
+    Performance Computing), see `_category_spelling`. A few retired families without
     category in the API use the one of the docs, see `_RETIRED_FAMILY_CATEGORY`.
     Returns None if missing, so no family is guessed.
     """
     if category := instance_type.get("InstanceCategory"):
-        return _CATEGORY_SPELLING.get(category, category)
+        return _category_spelling(category)
     if category := _RETIRED_FAMILY_CATEGORY.get(
         instance_type.get("InstanceTypeFamily")
     ):

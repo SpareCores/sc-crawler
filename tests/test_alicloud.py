@@ -53,7 +53,13 @@ def test_alicloud_instance_category_is_family_and_warned_once():
             )
             == "General Purpose"
         )
-        # spelling unified with the other vendors
+        # spelling unified with the other vendors: no hyphens
+        assert (
+            _instance_category(
+                _instance_type("ecs.c7.large", "ecs.c7", "Compute-optimized")
+            )
+            == "Compute Optimized"
+        )
         assert (
             _instance_category(
                 _instance_type("ecs.hfc6.large", "ecs.hfc6", "High Performance Compute")
@@ -107,7 +113,7 @@ def test_alicloud_inventory_servers_sets_family_and_series():
     assert "1 instance types" in vendor.log.call_args.args[0]
     assert by_id["ecs.g7.large"]["family"] == "General Purpose"
     assert by_id["ecs.g7.large"]["series"] == "ecs.g7"
-    assert by_id["ecs.gn5-c4g1.xlarge"]["family"] == "Compute-optimized with GPU"
+    assert by_id["ecs.gn5-c4g1.xlarge"]["family"] == "Compute Optimized with GPU"
     assert by_id["ecs.gn5-c4g1.xlarge"]["series"] == "ecs.gn5"
     # description still shows the series
     assert by_id["ecs.g7.large"]["description"].startswith("ecs.g7 family (")
