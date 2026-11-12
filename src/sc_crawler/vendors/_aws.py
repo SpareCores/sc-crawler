@@ -386,11 +386,13 @@ def _reconcile_server_status(
         else:
             server.status = Status.INACTIVE
         # servers kept ACTIVE only by spot prices are not returned by
-        # describe_instance_types, so might miss fields added since last crawled
+        # describe_instance_types, so might miss fields added since last crawled;
+        # only GPU manufacturers prove a GPU, other accelerators stay None
         if (
             server.status == Status.ACTIVE
             and server.accelerator_count > 0
             and server.accelerator_type is None
+            and server.accelerator_manufacturer in ("NVIDIA", "AMD")
         ):
             server.accelerator_type = AcceleratorType.GPU
 
@@ -652,39 +654,96 @@ def _get_storages_of_instance_type(instance_type):
     return [to_storage(disk, nvme=_supports_nvme(info)) for disk in disks]
 
 
+# The API reports Trainium2 memory as 512 GiB per device (8 TiB in total on
+# trn2.48xlarge), while the AWS docs list 1.5 TB HBM for the 16 chips (96 GiB each):
+# https://aws.amazon.com/ec2/instance-types/trn2/
+_DEVICE_MEMORY_OVERRIDES_MIB = {"Trainium2": 96 * 1024}
+
+# DescribeInstanceTypes field of the accelerators: key of the device list, total
+# memory and accelerator type.
+_ACCELERATOR_INFOS = {
+    "GpuInfo": ("Gpus", "TotalGpuMemoryInMiB", AcceleratorType.GPU),
+    "NeuronInfo": (
+        "NeuronDevices",
+        "TotalNeuronDeviceMemoryInMiB",
+        AcceleratorType.NPU,
+    ),
+    "InferenceAcceleratorInfo": (
+        "Accelerators",
+        "TotalInferenceMemoryInMiB",
+        AcceleratorType.NPU,
+    ),
+    "FpgaInfo": ("Fpgas", "TotalFpgaMemoryInMiB", AcceleratorType.FPGA),
+    "MediaAcceleratorInfo": (
+        "Accelerators",
+        "TotalMediaMemoryInMiB",
+        AcceleratorType.VPU,
+    ),
+}
+
+
+def _accelerators_of_instance_type(instance_type):
+    """Get the accelerator type, devices (Count, Name, Manufacturer, Memory), and total memory."""
+    for info_key, (devices_key, total_key, acc_type) in _ACCELERATOR_INFOS.items():
+        if info_key not in instance_type:
+            continue
+        info = instance_type[info_key]
+        devices = [
+            {
+                "Count": device["Count"],
+                "Name": device["Name"],
+                # only Inferentia and Trainium (NeuronInfo) devices have no
+                # manufacturer, other unknown manufacturers stay None
+                "Manufacturer": device.get(
+                    "Manufacturer", "AWS" if info_key == "NeuronInfo" else None
+                ),
+                # unknown memory stays None (0 would mean no memory)
+                "Memory": _DEVICE_MEMORY_OVERRIDES_MIB.get(
+                    device["Name"],
+                    (device.get("MemoryInfo") or {}).get("SizeInMiB"),
+                ),
+            }
+            for device in info.get(devices_key) or []
+        ]
+        # Habana Gaudi (dl1) is listed among the GPUs
+        if devices and "Gaudi" in devices[0]["Name"]:
+            acc_type = AcceleratorType.NPU
+        total = info.get(total_key)
+        if any(device["Name"] in _DEVICE_MEMORY_OVERRIDES_MIB for device in devices):
+            total = sum(device["Count"] * device["Memory"] for device in devices)
+        return acc_type, devices, total
+    return None, [], 0
+
+
 def _get_gpu_of_instance_type(instance_type):
-    """Get overall GPU count, min and total memory, and manufacturer, name."""
-    if "GpuInfo" not in instance_type:
-        return (0, 0, 0, None, None)
-    info = instance_type["GpuInfo"]
-    memory_min = min([gpu["MemoryInfo"]["SizeInMiB"] for gpu in info["Gpus"]])
-    memory_total = info["TotalGpuMemoryInMiB"]
-    count = sum([gpu["Count"] for gpu in info["Gpus"]])
+    """Get overall accelerator count, min and total memory, manufacturer, name, type."""
+    acc_type, devices, memory_total = _accelerators_of_instance_type(instance_type)
+    if not devices:
+        return (0, 0, 0, None, None, None)
+    memory_min = min(
+        [device["Memory"] for device in devices if device["Memory"] is not None],
+        default=None,
+    )
+    count = sum([device["Count"] for device in devices])
     # most common
-    manufacturer = mode([gpu["Manufacturer"] for gpu in info["Gpus"]])
-    model = mode([gpu["Name"] for gpu in info["Gpus"]])
+    manufacturer = mode([device["Manufacturer"] for device in devices])
+    model = mode([device["Name"] for device in devices])
     if not count:
         count = _standardize_gpu_count(model, count, memory_total)
-    return (count, memory_min, memory_total, manufacturer, model)
+    return (count, memory_min, memory_total, manufacturer, model, acc_type)
 
 
 def _get_gpus_of_instance_type(instance_type):
-    """Get individual GPUs as an array."""
-    if "GpuInfo" not in instance_type:
-        return []
-    info = instance_type["GpuInfo"]
-
-    def to_gpu(gpu):
-        return Accelerator(
-            manufacturer=gpu["Manufacturer"],
-            model=gpu["Name"],
-            memory=gpu["MemoryInfo"]["SizeInMiB"],
+    """Get individual accelerators as an array."""
+    _, devices, _ = _accelerators_of_instance_type(instance_type)
+    return [
+        Accelerator(
+            manufacturer=device["Manufacturer"],
+            model=device["Name"],
+            memory=device["Memory"],
         )
-
-    # replicate number of disks
-    gpus = info["Gpus"]
-    gpus = _array_expand_by_count(gpus)
-    return [to_gpu(gpu) for gpu in gpus]
+        for device in _array_expand_by_count(devices)
+    ]
 
 
 # Instance family categories of the instance type series that are not listed by the
@@ -830,18 +889,7 @@ def _make_server_from_instance_type(instance_type, vendor) -> dict:
         "accelerator_count": gpu_info[0],
         "accelerator_memory_min": gpu_info[1],
         "accelerator_memory_total": gpu_info[2],
-        # TODO DEV-1015: store non-GPU accelerators (needs new AcceleratorType
-        #      values + alembic migration, as acceleratortype is a PostgreSQL enum):
-        #      - NeuronInfo.NeuronDevices (Count, Name, CoreInfo, MemoryInfo.SizeInMiB):
-        #        Inferentia (inf1), Inferentia2 (inf2), Trainium (trn1/trn1n),
-        #        Trainium2 (trn2/trn2u). The API reports 512 GiB per Trainium2
-        #        device (8 TiB on trn2.48xlarge), the docs 96 GiB (1.5 TB total).
-        #      - InferenceAcceleratorInfo.Accelerators: Qualcomm AI100 (dl2q).
-        #      - FpgaInfo.Fpgas: Xilinx Virtex UltraScale+ (f1, f2).
-        #      - MediaAcceleratorInfo.Accelerators: Xilinx U30 (vt1).
-        #      - GpuInfo also lists Habana Gaudi HL-205 (dl1), stored as GPU.
-        #      Also update inspector_rules (nvidia_smi/nvbandwidth skip only TPU).
-        "accelerator_type": AcceleratorType.GPU if gpu_info[0] else None,
+        "accelerator_type": gpu_info[5] if gpu_info[0] else None,
         "accelerator_manufacturer": gpu_info[3],
         "accelerator_model": gpu_info[4],
         "accelerators": _get_gpus_of_instance_type(instance_type),

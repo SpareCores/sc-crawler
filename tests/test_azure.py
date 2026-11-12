@@ -5,6 +5,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from sc_crawler.table_fields import (
+    AcceleratorType,
     DatabaseHaLevel,
     DatabaseHaStrategy,
     DatabaseSecurityFeature,
@@ -15,6 +16,7 @@ from sc_crawler.vendors._azure import (
     _azure_sku_lifecycle_status,
     _compatible_storage_ids,
     _disk_sku_names,
+    _gpu_spec,
     _parse_database_name,
     _pg_database_regions,
     _pg_edition_family,
@@ -1980,3 +1982,31 @@ def test_azure_unknown_disk_type_is_not_added_and_warned_once():
     warnings = [call.args[0] for call in logger.warning.call_args_list]
     assert len(warnings) == 1
     assert "FutureDisk_LRS" in warnings[0]
+
+
+@pytest.mark.parametrize(
+    "name,fpgas", [("Standard_NP10s", 1), ("Standard_NP20s", 2), ("Standard_NP40s", 4)]
+)
+def test_np_series_fpgas(name, fpgas):
+    """NP-series FPGA count comes from the API, model and memory from the table."""
+    assert _gpu_spec(name, str(fpgas)) == (fpgas, "Alveo U250", 64 * 1024)
+
+
+def test_np_series_stored_as_fpga():
+    """NP-series servers are stored with the FPGA accelerator type."""
+    capabilities = {
+        "CpuArchitectureType": "x64",
+        "vCPUs": "20",
+        "vCPUsAvailable": "20",
+        "MemoryGB": "424",
+        "GPUs": "2",
+    }
+    server = {
+        "name": "Standard_NP20s",
+        "family": "standardNPSFamily",
+        "capabilities": [{"name": k, "value": v} for k, v in capabilities.items()],
+    }
+    row = _standardize_server(server, type("Vendor", (), {"vendor_id": "azure"})())
+    assert row["accelerator_type"] == AcceleratorType.FPGA
+    assert row["accelerator_count"] == 2
+    assert row["accelerator_memory_total"] == 2 * 64 * 1024

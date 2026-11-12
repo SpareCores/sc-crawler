@@ -849,11 +849,11 @@ def _gcp_accelerator_type(guest_accelerator_type: str) -> AcceleratorType | None
     """Map machineTypes.accelerators.guestAcceleratorType to AcceleratorType."""
     info = _GCP_ACCELERATOR.get(guest_accelerator_type)
     if info:
-        return AcceleratorType.TPU if info[1] == "TPU" else AcceleratorType.GPU
+        return AcceleratorType.NPU if info[1] == "TPU" else AcceleratorType.GPU
     if guest_accelerator_type.startswith("nvidia-"):
         return AcceleratorType.GPU
     if guest_accelerator_type.startswith(("ct", "tpu")):
-        return AcceleratorType.TPU
+        return AcceleratorType.NPU
     return None
 
 
@@ -1313,6 +1313,9 @@ def _search_servers(zone_name: str) -> List[dict]:
                 # unset so inspector can still fill it later
                 zone_servers[-1]["accelerator_memory_min"] = None
                 zone_servers[-1]["accelerator_memory_total"] = None
+                # TPUs are made by Google, even if not in the catalog yet
+                if zone_servers[-1]["accelerator_type"] == AcceleratorType.NPU:
+                    zone_servers[-1]["accelerator_manufacturer"] = "Google"
         bundled = server.bundled_local_ssds
         if bundled and bundled.partition_count:
             storage_size = round(
