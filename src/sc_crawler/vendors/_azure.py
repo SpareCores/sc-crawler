@@ -579,113 +579,24 @@ ARCHITECTURE_MAPPING = {
     "Arm64": CpuArchitecture.ARM64,
 }
 
-STORAGE_METER_MAPPING = {
-    # Premium SSD (P-series) — unit: 1/Month, price per whole disk
-    "P1 LRS Disk": ("Premium_LRS", 4),
-    "P2 LRS Disk": ("Premium_LRS", 8),
-    "P3 LRS Disk": ("Premium_LRS", 16),
-    "P4 LRS Disk": ("Premium_LRS", 32),
-    "P6 LRS Disk": ("Premium_LRS", 64),
-    "P10 LRS Disk": ("Premium_LRS", 128),
-    "P15 LRS Disk": ("Premium_LRS", 256),
-    "P20 LRS Disk": ("Premium_LRS", 512),
-    "P30 LRS Disk": ("Premium_LRS", 1024),
-    "P40 LRS Disk": ("Premium_LRS", 2048),
-    "P50 LRS Disk": ("Premium_LRS", 4096),
-    "P60 LRS Disk": ("Premium_LRS", 8192),
-    "P70 LRS Disk": ("Premium_LRS", 16384),
-    "P80 LRS Disk": ("Premium_LRS", 32767),
-    # Premium SSD ZRS (P-series) — unit: 1/Month, price per whole disk
-    "P1 ZRS Disk": ("Premium_ZRS", 4),
-    "P2 ZRS Disk": ("Premium_ZRS", 8),
-    "P3 ZRS Disk": ("Premium_ZRS", 16),
-    "P4 ZRS Disk": ("Premium_ZRS", 32),
-    "P6 ZRS Disk": ("Premium_ZRS", 64),
-    "P10 ZRS Disk": ("Premium_ZRS", 128),
-    "P15 ZRS Disk": ("Premium_ZRS", 256),
-    "P20 ZRS Disk": ("Premium_ZRS", 512),
-    "P30 ZRS Disk": ("Premium_ZRS", 1024),
-    "P40 ZRS Disk": ("Premium_ZRS", 2048),
-    "P50 ZRS Disk": ("Premium_ZRS", 4096),
-    "P60 ZRS Disk": ("Premium_ZRS", 8192),
-    "P70 ZRS Disk": ("Premium_ZRS", 16384),
-    "P80 ZRS Disk": ("Premium_ZRS", 32767),
-    # Standard SSD (E-series) LRS — unit: 1/Month, price per whole disk
-    "E1 LRS Disk": ("StandardSSD_LRS", 4),
-    "E2 LRS Disk": ("StandardSSD_LRS", 8),
-    "E3 LRS Disk": ("StandardSSD_LRS", 16),
-    "E4 LRS Disk": ("StandardSSD_LRS", 32),
-    "E6 LRS Disk": ("StandardSSD_LRS", 64),
-    "E10 LRS Disk": ("StandardSSD_LRS", 128),
-    "E15 LRS Disk": ("StandardSSD_LRS", 256),
-    "E20 LRS Disk": ("StandardSSD_LRS", 512),
-    "E30 LRS Disk": ("StandardSSD_LRS", 1024),
-    "E40 LRS Disk": ("StandardSSD_LRS", 2048),
-    "E50 LRS Disk": ("StandardSSD_LRS", 4096),
-    "E60 LRS Disk": ("StandardSSD_LRS", 8192),
-    "E70 LRS Disk": ("StandardSSD_LRS", 16384),
-    "E80 LRS Disk": ("StandardSSD_LRS", 32767),
-    # Standard SSD ZRS (E-series) — unit: 1/Month, price per whole disk
-    "E1 ZRS Disk": ("StandardSSD_ZRS", 4),
-    "E2 ZRS Disk": ("StandardSSD_ZRS", 8),
-    "E3 ZRS Disk": ("StandardSSD_ZRS", 16),
-    "E4 ZRS Disk": ("StandardSSD_ZRS", 32),
-    "E6 ZRS Disk": ("StandardSSD_ZRS", 64),
-    "E10 ZRS Disk": ("StandardSSD_ZRS", 128),
-    "E15 ZRS Disk": ("StandardSSD_ZRS", 256),
-    "E20 ZRS Disk": ("StandardSSD_ZRS", 512),
-    "E30 ZRS Disk": ("StandardSSD_ZRS", 1024),
-    "E40 ZRS Disk": ("StandardSSD_ZRS", 2048),
-    "E50 ZRS Disk": ("StandardSSD_ZRS", 4096),
-    "E60 ZRS Disk": ("StandardSSD_ZRS", 8192),
-    "E70 ZRS Disk": ("StandardSSD_ZRS", 16384),
-    "E80 ZRS Disk": ("StandardSSD_ZRS", 32767),
-    # Standard HDD (S-series) LRS — unit: 1/Month, price per whole disk
-    # (Standard HDD ZRS is not offered as per-disk pricing)
-    "S4 LRS Disk": ("Standard_LRS", 32),
-    "S6 LRS Disk": ("Standard_LRS", 64),
-    "S10 LRS Disk": ("Standard_LRS", 128),
-    "S15 LRS Disk": ("Standard_LRS", 256),
-    "S20 LRS Disk": ("Standard_LRS", 512),
-    "S30 LRS Disk": ("Standard_LRS", 1024),
-    "S40 LRS Disk": ("Standard_LRS", 2048),
-    "S50 LRS Disk": ("Standard_LRS", 4096),
-    "S60 LRS Disk": ("Standard_LRS", 8192),
-    "S70 LRS Disk": ("Standard_LRS", 16384),
-    "S80 LRS Disk": ("Standard_LRS", 32767),
-    # Ultra SSD LRS — unit: 1 GiB/Hour, price per GiB per hour (disk size divisor = 1)
-    "Ultra LRS Provisioned Capacity": ("UltraSSD_LRS", 1),
-    # Premium SSD v2 LRS — unit: 1 GiB/Hour, price per GiB per hour (disk size divisor = 1)
-    "Premium LRS Provisioned Capacity": ("PremiumV2_LRS", 1),
-}
-"""Map Storage price meter names to the storage type ID and the disk size in GiB.
-
-Disk sizes sourced from the Azure Managed Disks pricing page:
-<https://azure.microsoft.com/en-us/pricing/details/managed-disks/>
-
-Meter names sourced from the Azure Retail Prices API:
-<https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices>
-
-The disk size (second tuple element) is used to convert per-disk (``1/Month``) prices
-to $/GiB/month by dividing the retail price by this value.  For provisioned-capacity
-meters (``1 GiB/Hour``) the divisor is 1 because the price is already expressed per GiB.
-
-The following meter categories are intentionally **not** included:
-
-- ``* Disk Mount`` — the extra monthly fee charged per VM when a disk is attached to
-  more than one VM simultaneously (Azure Shared Disks feature).  This is an access/
-  attach charge, not a storage-capacity charge.
-- ``Confidential Compute Encryption * Provisioned Capacity`` — surcharge for
-  customer-managed key (CMK) encryption on confidential VMs.
-- ``LRS/ZRS Burst Enablement`` — monthly fee to permanently enable burst IOPS on
-  Premium SSD disks.
-- ``* Disk - Free`` / ``SAP Special *`` — zero-price promotional entries.
-- ``Instant Access Snapshots`` — snapshot restore-access fee.
-- Standard HDD ZRS is not offered as per-disk pricing (only as per-GiB/month).
-"""
+# The managed disk price meters (e.g. "P10 LRS Disk") with the disk SKU and the disk
+# size in GiB are derived from the disk resource SKUs, see `_storage_meter_mapping`.
+#
+# The following meter categories are intentionally **not** mapped:
+#
+# - ``* Disk Mount`` — the extra monthly fee charged per VM when a disk is attached to
+#   more than one VM simultaneously (Azure Shared Disks feature).  This is an access/
+#   attach charge, not a storage-capacity charge.
+# - ``Confidential Compute Encryption * Provisioned Capacity`` — surcharge for
+#   customer-managed key (CMK) encryption on confidential VMs.
+# - ``LRS/ZRS Burst Enablement`` — monthly fee to permanently enable burst IOPS on
+#   Premium SSD disks.
+# - ``* Disk - Free`` / ``SAP Special *`` — zero-price promotional entries.
+# - ``Instant Access Snapshots`` — snapshot restore-access fee.
+# - Standard HDD ZRS is not offered as per-disk pricing (only as per-GiB/month).
 
 STORAGE_PRICE_UNIT_MAPPING: dict[str, float | None] = {
-    "1/Month": None,  # per whole disk — handled separately via STORAGE_METER_MAPPING
+    "1/Month": None,  # per whole disk — handled separately via _storage_meter_mapping
     "1 GiB/Month": 1 / _GIB_TO_GB,
     "1 GB/Month": 1.0,
     "1 GiB/Hour": _HOURS_PER_MONTH / _GIB_TO_GB,
@@ -712,6 +623,8 @@ STORAGE_PRICE_UNIT_MAPPING: dict[str, float | None] = {
 # https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/hc-series-retirement
 # https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/hbv2-series-retirement
 # https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/msv2-mdsv2-retirement
+# Fallback of the retirement dates of the API (`_vm_retirement_dates`), for the sizes
+# without date there.
 # Rule format: (compiled regex, retired_on date).
 # - If as_of >= retired_on -> RETIRED.
 # - Else matched -> PLANNED_FOR_RETIREMENT.
@@ -750,11 +663,45 @@ _AZURE_SKU_LIFECYCLE_RULES = (
 )
 
 
-def _azure_sku_lifecycle_status(sku_name: str, as_of: date | None = None) -> Status:
-    """Map an Azure VM SKU name to Server status."""
-    current_date = as_of or datetime.now(UTC).date()
-    size = sku_name.removeprefix("Standard_").removeprefix("Basic_")
+@cache
+def _vm_retirement_dates() -> dict[str, date]:
+    """Retirement date of the VM sizes from the Compute resource SKUs.
 
+    Read from the `RetirementDateUtc` capability (`MM/DD/YYYY`). The `9999-01-01`
+    placeholder, meaning no retirement date, is skipped, as are the sizes without date.
+    """
+    dates = {}
+    for resource in _compute_resources():
+        if resource["resourceType"] != "virtualMachines":
+            continue
+        for capability in resource.get("capabilities") or []:
+            if capability["name"] != "RetirementDateUtc":
+                continue
+            try:
+                retired_on = datetime.strptime(capability["value"], "%m/%d/%Y").date()
+            except (TypeError, ValueError):
+                break
+            if retired_on.year < 9999:
+                dates[resource["name"]] = retired_on
+            break
+    return dates
+
+
+def _azure_sku_lifecycle_status(sku_name: str, as_of: date | None = None) -> Status:
+    """Map an Azure VM / Flexible Server SKU name to Server/Database status.
+
+    The retirement date of the API (see `_vm_retirement_dates`) is used if there is one,
+    the `_AZURE_SKU_LIFECYCLE_RULES` of the docs are the fallback for the other sizes.
+    """
+    current_date = as_of or datetime.now(UTC).date()
+
+    api_retired_on = _vm_retirement_dates().get(sku_name)
+    if api_retired_on:
+        if current_date >= api_retired_on:
+            return Status.RETIRED
+        return Status.PLANNED_FOR_RETIREMENT
+
+    size = sku_name.removeprefix("Standard_").removeprefix("Basic_")
     for pattern, retired_on in _AZURE_SKU_LIFECYCLE_RULES:
         if not pattern.fullmatch(size):
             continue
@@ -872,6 +819,163 @@ def _parse_server_name(name):
     return (data["family"], features)
 
 
+# VM size family categories by the leading letters of the size names.
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/overview
+_VM_FAMILY_CATEGORIES = {
+    "General Purpose": (
+        # DS is the previous generation D family with Premium Storage support
+        # https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/previous-gen-sizes-list
+        "A B D DC DS"
+    ),
+    "Compute Optimized": "F FX",
+    "Memory Optimized": (
+        "E EC M "
+        # previous generation, listed as memory optimized
+        # https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/previous-gen-sizes-list
+        "G GS"
+    ),
+    "Storage Optimized": "L",
+    "GPU Accelerated": "NC NCC ND NG NV",
+    "FPGA Accelerated": (
+        "NP "
+        # Azure ML FPGA VM with Intel Arria 10 FPGAs. The size overview does not list
+        # it, so the class comes from these (retired) Microsoft pages
+        # https://learn.microsoft.com/en-us/azure/machine-learning/how-to-deploy-fpga-web-service?view=azureml-api-1
+        # https://learn.microsoft.com/en-us/python/api/azureml-core/azureml.core.compute.aks.akscompute
+        "PB"
+    ),
+    "High Performance Computing": (
+        "HB HC HX "
+        # retired in 2022, described as HPC virtual machines (H8 ... H16mr)
+        # https://learn.microsoft.com/en-us/previous-versions/azure/virtual-machines/articles/virtual-machines/h-series-retirement
+        "H"
+    ),
+}
+_VM_FAMILY_TO_CATEGORY = {
+    family: category
+    for category, families in _VM_FAMILY_CATEGORIES.items()
+    for family in families.split()
+}
+# D11-D15 and DS11-DS15 (and their v2 versions) are memory optimized sizes,
+# unlike the rest of the D family
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/memory-optimized/dv2-dsv2-series-memory
+_MEMORY_OPTIMIZED_D_SIZES = recompile(r"^DS?1[1-5](-\d+)?(_v2)?$")
+
+
+def _vm_family_category(server_name: str) -> Optional[str]:
+    """Look up the family category (e.g. General Purpose) of a VM size.
+
+    Returns None for families not listed above, so new families are not mislabeled.
+    """
+    size = recompile(r"^(?:Standard|Basic)_").sub("", server_name)
+    if _MEMORY_OPTIMIZED_D_SIZES.match(size):
+        return "Memory Optimized"
+    # A8-A11 were compute intensive sizes, but there is no Microsoft documentation
+    # listing them anywhere else than the A family, which is general purpose
+    letters = recompile(r"^[A-Z]+").match(size)
+    return _VM_FAMILY_TO_CATEGORY.get(letters.group(0)) if letters else None
+
+
+# Requirement of a VM size for each managed disk type. Standard HDD and Standard SSD
+# have no VM size restriction in the docs (the NVMe FAQ lists them as usable with NVMe
+# sizes). Premium SSD and Premium SSD v2 need a premium storage capable size
+# (`PremiumIO`): the deploy guide attaches Premium SSD v2 to a VM size "that supports
+# Premium Storage". Ultra Disk needs a size with `UltraSSDAvailable` in a region or zone.
+# https://learn.microsoft.com/en-us/azure/virtual-machines/disks-types
+# https://learn.microsoft.com/en-us/azure/virtual-machines/disks-enable-ultra-ssd
+# https://learn.microsoft.com/en-us/azure/virtual-machines/disks-deploy-premium-v2
+# https://learn.microsoft.com/en-us/azure/virtual-machines/enable-nvme-remote-faqs
+_DISK_VM_REQUIREMENTS = {
+    "Standard_LRS": None,
+    "StandardSSD_LRS": None,
+    "StandardSSD_ZRS": None,
+    "PremiumV2_LRS": "premium",
+    "Premium_LRS": "premium",
+    "Premium_ZRS": "premium",
+    # Ultra Disk is available on the premium storage capable sizes
+    "UltraSSD_LRS": "ultra",
+}
+
+
+@cache
+def _disk_sku_names() -> list[str]:
+    """Names of the managed disk types, from the disk resource SKUs."""
+    return sorted(
+        {r["name"] for r in _compute_resources() if r["resourceType"] == "disks"}
+    )
+
+
+@cache
+def _ultra_disk_vm_sizes() -> frozenset[str]:
+    """VM sizes that support Ultra disks in at least one region or zone.
+
+    Read from the `UltraSSDAvailable` capability of the resource SKUs, set on the size or
+    on its zones, over all regions.
+    """
+
+    def available(capabilities) -> bool:
+        return any(
+            c["name"] == "UltraSSDAvailable" and c["value"] == "True"
+            for c in capabilities or []
+        )
+
+    sizes = set()
+    for resource in _compute_resources():
+        if resource["resourceType"] != "virtualMachines":
+            continue
+        if available(resource.get("capabilities")) or any(
+            available(zone.get("capabilities"))
+            for location in resource.get("locationInfo") or []
+            for zone in location.get("zoneDetails") or []
+        ):
+            sizes.add(resource["name"])
+    return frozenset(sizes)
+
+
+@cache
+def _warn_unknown_disk(disk: str) -> None:
+    """Warn about a disk type without known VM requirement, once per disk and run."""
+    logger.warning(f"Unknown Azure disk type {disk}, not added to compatible storages.")
+
+
+def _compatible_storage_ids(server: dict) -> list[str]:
+    """Managed disk types that can be attached to a VM size, see `_DISK_VM_REQUIREMENTS`.
+
+    Premium SSD needs the `PremiumIO` capability, Ultra Disk also needs
+    `UltraSSDAvailable` in any region or zone (the sizes listed as Ultra compatible are
+    premium storage capable, but the API also has `UltraSSDAvailable` for a few sizes
+    without `PremiumIO`).
+    """
+    premium = any(
+        c["name"] == "PremiumIO" and c["value"] == "True"
+        for c in server.get("capabilities") or []
+    )
+    ultra = premium and server["name"] in _ultra_disk_vm_sizes()
+    allowed = {None: True, "premium": premium, "ultra": ultra}
+    storage_ids = []
+    for disk in _disk_sku_names():
+        if disk not in _DISK_VM_REQUIREMENTS:
+            _warn_unknown_disk(disk)
+        elif allowed[_DISK_VM_REQUIREMENTS[disk]]:
+            storage_ids.append(disk)
+    return storage_ids
+
+
+def _vm_series(size_name: str, sku_family: str) -> str:
+    """Series of a VM size, built like the series of the PostgreSQL databases.
+
+    The database series come from `_parse_database_name`, so the same function is used
+    here and a database joins the server it runs on, e.g. Standard_D2ds_v5 -> Ddsv5.
+    That drops the isolated i and the m/l/t memory shape letters, so e.g. the low memory
+    Standard_D2lds_v5 is in Ddsv5 too. Sizes the parser does not know (GPU, HPC, other
+    odd shapes) keep the SKU family of the API, they have no database counterpart.
+    """
+    try:
+        return _parse_database_name(size_name)[0]
+    except ValueError:
+        return sku_family
+
+
 def _standardize_server(server: dict, vendor) -> dict:
     # example Resource Skus - List response moved to _compute_resources
     family, features = _parse_server_name(server["name"])
@@ -937,7 +1041,8 @@ def _standardize_server(server: dict, vendor) -> dict:
             "hardware_profile": {"vm_size": server["name"]},
         },
         "display_name": server["name"].removeprefix("Standard_"),
-        "family": family,
+        "family": _vm_family_category(server["name"]),
+        "series": _vm_series(server["name"], family.strip()),
         "vcpus": int(capability("vCPUsAvailable")),
         "hypervisor": "Microsoft Hyper-V",
         "cpu_allocation": (
@@ -965,6 +1070,7 @@ def _standardize_server(server: dict, vendor) -> dict:
         "storage_size": round(sum([s.size for s in storages])),  # int GB
         "storage_type": storage_type,
         "storages": storages,
+        "compatible_storage_ids": _compatible_storage_ids(server),
         # TODO: have to implement manual mapping for network_speed related fields
         "network_speed_baseline": None,
         "network_speed_max": None,
@@ -1667,6 +1773,41 @@ def inventory_server_prices_spot(vendor):
     return _inventory_server_prices(vendor, Allocation.SPOT)
 
 
+@cache
+def _storage_meter_mapping() -> dict[str, tuple[str, int]]:
+    """Map the managed disk price meter names to the disk SKU and the disk size in GiB.
+
+    Derived from the disk resource SKUs of the Compute API, no hardcoded table:
+
+    - Disks with size tiers (Premium SSD, Standard SSD, Standard HDD) are priced per
+      whole disk: the meter is the tier (`size`, e.g. P10) with the redundancy, e.g.
+      "P10 LRS Disk", and the disk size is the `MaxSizeGiB` of the tier.
+    - Disks without size tiers (Premium SSD v2, Ultra) are priced per provisioned GiB,
+      e.g. "Ultra LRS Provisioned Capacity", so the size to divide with is 1.
+
+    Disk sizes: <https://azure.microsoft.com/en-us/pricing/details/managed-disks/>
+    Meter names: <https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices>
+    """
+    mapping = {}
+    for resource in _compute_resources():
+        if resource["resourceType"] != "disks":
+            continue
+        sku = resource["name"]
+        size = resource.get("size") or ""
+        # redundancy: LRS or ZRS, e.g. Premium_LRS
+        redundancy = sku.rpartition("_")[2]
+        capabilities = {
+            c["name"]: c["value"] for c in resource.get("capabilities") or []
+        }
+        if recompile(r"[A-Z]\d+").fullmatch(size):
+            max_size = capabilities.get("MaxSizeGiB")
+            if max_size:
+                mapping[f"{size} {redundancy} Disk"] = (sku, int(max_size))
+        else:
+            mapping[f"{resource['tier']} {redundancy} Provisioned Capacity"] = (sku, 1)
+    return mapping
+
+
 def inventory_storages(vendor):
     """List all storage options via the Compute resource manager client.
 
@@ -1703,7 +1844,7 @@ def inventory_storages(vendor):
         description = f"{disk['tier']} tier {storage_type.name} ({redundancy_type})"
         storage_sizes = [
             storage[1]
-            for storage in STORAGE_METER_MAPPING.values()
+            for storage in _storage_meter_mapping().values()
             if storage[0] == disk["name"]
         ]
         min_size = (
@@ -1749,10 +1890,11 @@ def inventory_storage_prices(vendor):
 
     regions = scmodels_to_dict(vendor.regions, keys=["region_id"])
     storages = scmodels_to_dict(vendor.storages, keys=["storage_id"])
+    storage_meters = _storage_meter_mapping()
 
     prices = defaultdict(list)
     for p in retail_prices:
-        mapping = STORAGE_METER_MAPPING.get(p["meterName"])
+        mapping = storage_meters.get(p["meterName"])
         if not (
             mapping
             and mapping[0] in storages.keys()
@@ -2138,6 +2280,21 @@ _PG_EDITION_PRODUCT_TOKENS = {
     "MemoryOptimized": ("memory optimized", "memory purpose"),
     "Burstable": ("burstable",),
 }
+
+
+def _pg_edition_family(edition_name: str | None) -> str | None:
+    """Family of a PostgreSQL flexible server edition: the words of its API name.
+
+    The capabilities API names the pricing tiers in CamelCase, e.g. Burstable,
+    GeneralPurpose or MemoryOptimized, which are the pricing tiers of Azure Database
+    for PostgreSQL flexible server:
+    https://learn.microsoft.com/en-us/azure/postgresql/compute-storage/concepts-compute
+    """
+    if not edition_name:
+        return None
+    return recompile(r"(?<=[a-z])(?=[A-Z])").sub(" ", edition_name)
+
+
 _PG_SKU_NAME_PREFIX = {
     "Burstable": "B",
     "GeneralPurpose": "GP",
@@ -2192,6 +2349,33 @@ def _pg_supported_storage_ids(location: str) -> frozenset[str]:
                 if storage_id:
                     ids.add(storage_id)
     return frozenset(ids)
+
+
+def _pg_supported_storage_editions(edition) -> list:
+    """Storage editions of a flexible server edition that can be used in one location.
+
+    Storage editions marked as not supported in the location are skipped. Premium SSD v2
+    is for the General Purpose and Memory Optimized editions only, although the API
+    lists it for Burstable as well:
+    https://learn.microsoft.com/en-us/azure/postgresql/compute-storage/concepts-storage-premium-ssd-v2
+    """
+    return [
+        storage_edition
+        for storage_edition in getattr(edition, "supportedStorageEditions", None) or []
+        if getattr(storage_edition, "reason", None) != _PG_UNSUPPORTED_STORAGE_REASON
+        and not (
+            edition.name == "Burstable" and storage_edition.name == "ManagedDiskV2"
+        )
+    ]
+
+
+def _pg_edition_storage_ids(edition) -> set[str]:
+    """Data storage types of a flexible server edition in one location."""
+    return {
+        storage_edition.name
+        for storage_edition in _pg_supported_storage_editions(edition)
+        if storage_edition.name
+    }
 
 
 _PG_ARM_SERIES_RE = recompile(
@@ -2380,6 +2564,8 @@ def inventory_databases(vendor):
     caps_by_id: dict[str, dict] = {}
     caps_locations: dict[str, set[str]] = defaultdict(set)
     edition_caps: dict[str, dict] = {}
+    # edition -> storage types available in any of the regions
+    storage_ids_by_edition: dict[str, set[str]] = defaultdict(set)
     retail_concrete: dict[str, str] = {}
     servers_by_id = {}
     for server in vendor.servers:
@@ -2427,15 +2613,7 @@ def inventory_databases(vendor):
                     # https://learn.microsoft.com/en-us/azure/postgresql/compute-storage/concepts-storage-premium-ssd-v2
                     sizes_gb = [
                         round(int(size_mb) / 1024 * _GIB_TO_GB)
-                        for storage_edition in (
-                            getattr(edition, "supportedStorageEditions", None) or []
-                        )
-                        if getattr(storage_edition, "reason", None)
-                        != _PG_UNSUPPORTED_STORAGE_REASON
-                        and not (
-                            edition.name == "Burstable"
-                            and storage_edition.name == "ManagedDiskV2"
-                        )
+                        for storage_edition in _pg_supported_storage_editions(edition)
                         for storage_mb in (
                             getattr(storage_edition, "supportedStorageMb", None) or []
                         )
@@ -2445,6 +2623,9 @@ def inventory_databases(vendor):
                         )
                         if size_mb is not None
                     ]
+                    storage_ids_by_edition[edition.name] |= _pg_edition_storage_ids(
+                        edition
+                    )
                     shared["storage_extra_min"] = min(sizes_gb, default=None)
                     shared["storage_extra_max"] = max(sizes_gb, default=None)
                     for sku in getattr(edition, "supportedServerSkus", None) or []:
@@ -2622,7 +2803,14 @@ def inventory_databases(vendor):
                 "engine": DatabaseEngine.POSTGRESQL,
                 "wire_protocol": DatabaseWireProtocol.POSTGRESQL,
                 "engine_versions": facts["engine_versions"],
-                "family": series,
+                "family": _pg_edition_family(edition_name),
+                "series": series,
+                # unknown (None) for an edition the capabilities API did not list
+                "compatible_storage_ids": (
+                    sorted(storage_ids_by_edition[edition_name])
+                    if edition_name in storage_ids_by_edition
+                    else None
+                ),
                 "vcpus": vcpus,
                 "memory_amount": memory_amount,
                 "storage_size": None,
@@ -2718,7 +2906,8 @@ def inventory_database_prices(vendor):
                 price_item = _pg_lookup_retail_price(
                     vendor=vendor,
                     database_id=database.database_id,
-                    edition_name=database.family,
+                    # series of the database, e.g. Dsv3 to match the product names
+                    edition_name=_parse_database_name(database.database_id)[0],
                     prices_by_arm=prices_by_arm,
                 )
                 if price_item is None:
