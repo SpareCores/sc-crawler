@@ -9,7 +9,11 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v6.2.0
         with:
-          python-version: 3.11
+          # tox can test all Python versions between 3.11 and 3.14,
+          # but we only test 3.11 (prod run) and 3.14 (recent release)
+          python-version: |
+            3.14
+            3.11
       - name: Install tox
         run: pip install tox
       - name: Install local pkg
