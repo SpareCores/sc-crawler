@@ -80,7 +80,7 @@ class Status(str, Enum):
     Valid for all tables. Set by the crawler for records no longer returned by
     the vendor or defined in code, and by `sync` for records missing from the
     source. No vendor signal on end of sale (`RETIRED`), and not replaced or
-    dropped by us (`ARCHIVED`).
+    dropped (`ARCHIVED`).
     """
     PLANNED_FOR_RETIREMENT = "planned-for-retirement"
     """Retirement announced, but still orderable (unlike `RETIRED`).

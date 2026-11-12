@@ -4,7 +4,7 @@ Schema changes only: records are set to ARCHIVED by the `pull` and `sync`
 commands based on the archive rules, never by migrations.
 
 Revision ID: 255dc3cde0c6
-Revises: e8f9a0b1c2d3
+Revises: 7e3a9c1b5d24
 Create Date: 2026-11-10 12:00:00.000000
 
 """
@@ -16,7 +16,7 @@ import sqlmodel
 from alembic import op
 
 revision: str = "255dc3cde0c6"
-down_revision: Union[str, None] = "e8f9a0b1c2d3"
+down_revision: Union[str, None] = "7e3a9c1b5d24"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
