@@ -195,6 +195,18 @@ def test_geekbench_and_passmark_allowed_at_32_vcpus():
     assert reasons == {"geekbench": [], "passmark": []}
 
 
+def test_vllm_blocked_below_2_vcpus():
+    server = _server(vcpus=1, memory_amount=8 * 1024)
+    assert block_reasons(server, "vllm")["vllm"] == [
+        "Benchmark needs at least 2 vCPUs."
+    ]
+
+
+def test_vllm_allowed_at_2_vcpus():
+    server = _server(vcpus=2, memory_amount=8 * 1024)
+    assert block_reasons(server, "vllm")["vllm"] == []
+
+
 def test_storage_blocked_without_bundled_disk():
     server = _server(storage_size=0)
     assert block_reasons(server, "storage")["storage"] == [
