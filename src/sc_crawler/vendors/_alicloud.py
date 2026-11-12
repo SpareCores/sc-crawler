@@ -8,6 +8,7 @@ from itertools import chain
 from logging import CRITICAL, INFO, WARN, getLogger
 from os import environ
 from random import shuffle
+from re import sub
 from time import time
 from typing import Optional
 
@@ -865,6 +866,94 @@ def _get_zones(client: EcsClient, region_id: str) -> list[dict]:
     return response.body.to_map()["Zones"]["Zone"]
 
 
+# Disk categories of the DescribeZones response mapped to our storage ids (see
+# inventory_storages). The API only knows cloud_essd, not its performance levels
+# (PL0-PL3): all four are assumed to be available. Neither the ESSD page nor the
+# instance family overview restricts a PL by instance family: they only say that
+# the instance type can cap the performance (e.g. PL1-PL3 cannot reach their peak on
+# the economy e and the burstable t5/t6 families). Other categories (e.g.
+# ephemeral_ssd, the local disk) are not block storage options in our schema.
+# The overview says sn2ne supports only standard SSD and ultra disk (no ESSD), but
+# the API returned cloud_essd for it in a live run (2026-10-27): not resolved.
+# https://www.alibabacloud.com/help/en/ecs/user-guide/essds
+# https://www.alibabacloud.com/help/en/ecs/user-guide/overview-of-instance-families
+# https://www.alibabacloud.com/help/en/ecs/developer-reference/api-ecs-2014-05-26-describezones
+_DISK_CATEGORY_TO_STORAGE_IDS = {
+    "cloud_essd": [
+        "cloud_essd-pl0",
+        "cloud_essd-pl1",
+        "cloud_essd-pl2",
+        "cloud_essd-pl3",
+    ],
+    "cloud_ssd": ["cloud_ssd"],
+    "cloud_efficiency": ["cloud_efficiency"],
+    "cloud": ["cloud"],
+}
+
+
+def _parse_instance_type_disk_categories(zones: list[dict]) -> dict[str, list[str]]:
+    """Map instance types to their data disk categories from DescribeZones zones.
+
+    Each `AvailableResources.ResourcesInfo` item lists the instance types and the
+    data disk categories that can be used together in that zone.
+    """
+    categories: dict[str, set[str]] = defaultdict(set)
+    for zone in zones:
+        for info in zone.get("AvailableResources", {}).get("ResourcesInfo", []):
+            disks = info.get("DataDiskCategories", {}).get(
+                "supportedDataDiskCategory", []
+            )
+            types = info.get("InstanceTypes", {}).get("supportedInstanceType", [])
+            for instance_type in types:
+                categories[instance_type].update(disks)
+    return {k: sorted(v) for k, v in categories.items()}
+
+
+def _get_instance_type_disk_categories(vendor: Vendor) -> dict[str, list[str]]:
+    """Fetch the data disk categories of each instance type across all regions.
+
+    Uses the `DescribeZones` API endpoint, one call per region, and returns the union
+    of the categories seen in any zone.
+
+    NOTE: checked against the live API on 2026-10-27: the response shape matches and
+    98% of the ACTIVE servers got storage ids (the rest are old generations and the
+    hpc8ae/hpc8i types). Whether the categories are accurate per instance type, and
+    not only per zone, is not confirmed.
+    """
+    ecs_clients: dict[str, EcsClient] = _ecs_clients(vendor)
+
+    @cachier(hash_func=jsoned_hash, separate_files=True)
+    def fetch_region_disk_categories(region_id: str) -> dict[str, list[str]]:
+        with sentry_capture_or_raise(vendor=vendor):
+            zones = _get_zones(ecs_clients[region_id], region_id)
+            return _parse_instance_type_disk_categories(zones)
+        return {}
+
+    vendor.progress_tracker.start_task(
+        name="Fetching server disk categories", total=len(vendor.regions)
+    )
+    merged: dict[str, set[str]] = defaultdict(set)
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        for region_categories in executor.map(
+            fetch_region_disk_categories, [r.region_id for r in vendor.regions]
+        ):
+            for instance_type, categories in region_categories.items():
+                merged[instance_type].update(categories)
+            vendor.progress_tracker.advance_task()
+    vendor.progress_tracker.hide_task()
+    return {k: sorted(v) for k, v in merged.items()}
+
+
+def _compatible_storage_ids(disk_categories: list[str]) -> list[str]:
+    """Map the data disk categories of an instance type to our storage ids."""
+    return [
+        storage_id
+        for category, storage_ids in _DISK_CATEGORY_TO_STORAGE_IDS.items()
+        if category in disk_categories
+        for storage_id in storage_ids
+    ]
+
+
 def _get_instance_types() -> list[dict]:
     """Fetch instance types using the `DescribeInstanceTypes` API endpoint."""
 
@@ -1017,6 +1106,69 @@ def _get_instance_types() -> list[dict]:
         for instance_type in response.body.instance_types.instance_type:
             instance_types.append(instance_type.to_map())
     return instance_types
+
+
+@cache
+def _warn_unknown_category(instance_type_id: str) -> None:
+    """Warn about an instance type without category, once per type and run."""
+    logger.warning(
+        f"Missing Alibaba Cloud InstanceCategory of {instance_type_id}, "
+        "leaving family empty."
+    )
+
+
+# `InstanceCategory` spelling of the API changed to match the other vendors: hyphens
+# are replaced by a space and the word after is capitalized (General-purpose ->
+# General Purpose, Compute-optimized with GPU -> Compute Optimized with GPU), plus the
+# HPC spelling.
+_CATEGORY_SPELLING = {
+    "High Performance Compute": "High Performance Computing",
+}
+
+
+def _category_spelling(category: str) -> str:
+    if category in _CATEGORY_SPELLING:
+        return _CATEGORY_SPELLING[category]
+    return sub(r"-(\w)", lambda match: " " + match.group(1).upper(), category)
+
+
+# The API returns no `InstanceCategory` for these retired families, so the category
+# comes from the docs, written as the API does for the current families (`Shared` for
+# the shared n4, mn4, e4 etc., `High Clock Speed` for the hfc/hfg/hfr families, and the
+# category of the sn1ne / sn2ne). The old "Series I" families (t1, s1, s2, s3, m1, m2,
+# c1, c2) and u0 are not categorized in the docs, so they are left empty.
+# https://www.alibabacloud.com/help/en/ecs/user-guide/retired-instance-types
+# https://www.alibabacloud.com/help/en/ecs/user-guide/shared-instance-families
+_RETIRED_FAMILY_CATEGORY = {
+    "ecs.sn1": "Compute Optimized",
+    "ecs.sn2": "General Purpose",
+    "ecs.c4": "High Clock Speed",
+    "ecs.ce4": "High Clock Speed",
+    "ecs.cm4": "High Clock Speed",
+    "ecs.n1": "Shared",
+    "ecs.n2": "Shared",
+    "ecs.e3": "Shared",
+}
+
+
+def _instance_category(instance_type: dict) -> Optional[str]:
+    """Family of an instance type: the `InstanceCategory` as returned by the API.
+
+    E.g. General Purpose, Memory Optimized, Compute Optimized with GPU. Documented at
+    <https://www.alibabacloud.com/help/en/ecs/developer-reference/api-ecs-2014-05-26-describeinstancetypes>.
+    Only the spelling is unified with the other vendors (no hyphens, and High
+    Performance Computing), see `_category_spelling`. A few retired families without
+    category in the API use the one of the docs, see `_RETIRED_FAMILY_CATEGORY`.
+    Returns None if missing, so no family is guessed.
+    """
+    if category := instance_type.get("InstanceCategory"):
+        return _category_spelling(category)
+    if category := _RETIRED_FAMILY_CATEGORY.get(
+        instance_type.get("InstanceTypeFamily")
+    ):
+        return category
+    _warn_unknown_category(instance_type.get("InstanceTypeId"))
+    return None
 
 
 def _gpu_memory_by_spec(instance_types: list[dict]) -> dict[str, float]:
@@ -1447,6 +1599,8 @@ def inventory_servers(vendor):
     region_availability_info: dict[str, list[dict]] = _get_region_availability_info(
         vendor
     )
+    disk_categories = _get_instance_type_disk_categories(vendor)
+    no_storage_ids: list[str] = []
 
     CPU_ARCH_MAP = {"X86": CpuArchitecture.X86_64, "ARM": CpuArchitecture.ARM64}
     STORAGE_CATEGORY_MAP = {
@@ -1510,7 +1664,9 @@ def inventory_servers(vendor):
         return network_fields
 
     for instance_type in instance_types:
-        family = instance_type.get("InstanceTypeFamily")
+        # e.g. ecs.g7, the instance family called series in our schema
+        series = instance_type.get("InstanceTypeFamily")
+        family = _instance_category(instance_type)
         vcpus = instance_type.get("CpuCoreCount")
         cpu_model = instance_type.get("PhysicalProcessorModel")
         memory_size_mb = int((instance_type.get("MemorySize") * 1024))
@@ -1590,8 +1746,14 @@ def inventory_servers(vendor):
                 else None
             ),
         ]
-        description = f"{family} family ({', '.join(filter(None, description_parts))})"
         server_id = instance_type.get("InstanceTypeId")
+        # no entry in DescribeZones: unknown (None), not "no compatible storage" ([])
+        if server_id in disk_categories:
+            compatible_storage_ids = _compatible_storage_ids(disk_categories[server_id])
+        else:
+            compatible_storage_ids = None
+            no_storage_ids.append(server_id)
+        description = f"{series} family ({', '.join(filter(None, description_parts))})"
         status_categories = {
             category
             for region_id, zones in region_availability_info.items()
@@ -1621,6 +1783,7 @@ def inventory_servers(vendor):
                 "display_name": server_id,
                 "description": description,
                 "family": family,
+                "series": series,
                 "vcpus": vcpus,
                 "hypervisor": "KVM",
                 "cpu_allocation": _determine_cpu_allocation_type(instance_type),
@@ -1647,6 +1810,7 @@ def inventory_servers(vendor):
                 "storage_size": storage_size,
                 "storage_type": storage_type,
                 "storages": [],
+                "compatible_storage_ids": compatible_storage_ids,
                 # TODO: have to implement manual mapping here too, no detailed
                 # network info available for every instance type in API response
                 **_parse_network_fields(instance_type),
@@ -1657,6 +1821,12 @@ def inventory_servers(vendor):
             }
         )
 
+    if no_storage_ids:
+        vendor.log(
+            f"No known block storage for {len(no_storage_ids)} instance types "
+            f"(e.g. {', '.join(no_storage_ids[:5])}), leaving compatible storage unknown.",
+            level=WARN,
+        )
     return items
 
 

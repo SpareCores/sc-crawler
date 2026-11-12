@@ -746,10 +746,109 @@ def _get_gpus_of_instance_type(instance_type):
     ]
 
 
+# Instance family categories of the instance type series that are not listed by the
+# `instanceFamilyCategory` of the Pricing API (see `_server_series_categories`), which
+# is the main source. As of 2026-10-30 these are the series missing from the Linux,
+# shared tenancy, on-demand EC2 products (25,326 products in all regions): the Mac
+# instances, which only run on Dedicated Hosts, and a few UltraServer / high memory
+# types. Categories as on the docs page:
+# https://docs.aws.amazon.com/ec2/latest/instancetypes/instance-types.html
+_SERIES_FAMILY = {
+    "General Purpose": (
+        "mac-m3ultra mac-m4 mac-m4max mac-m4pro mac1 mac2 mac2-m1ultra mac2-m2 "
+        "mac2-m2pro"
+    ),
+    "Memory Optimized": "u7inh-32tb",
+    "Accelerated Computing": "p6e-gb200 trn2u",
+}
+_SERIES_TO_FAMILY = {
+    series: family
+    for family, series_list in _SERIES_FAMILY.items()
+    for series in series_list.split()
+}
+
+
+def _instance_series(instance_type: str) -> str:
+    """Instance type series, e.g. c5 for c5.large."""
+    return instance_type.split(".")[0]
+
+
+@cache
+def _server_series_categories() -> dict:
+    """Category of the EC2 instance type series from the Pricing API.
+
+    Maps the series (e.g. m5n) to the `instanceFamilyCategory` attribute of the
+    products, e.g. General Purpose, Memory Optimized or Accelerated Computing. Not
+    listed there are e.g. the Mac instances, see `_SERIES_FAMILY` for the fallback.
+    Errors of the Pricing API are raised, `inventory_servers` handles them.
+    """
+    products = _get_server_products()
+    categories = {}
+    for product in products:
+        attributes = product["product"]["attributes"]
+        instance_type = attributes.get("instanceType")
+        category = attributes.get("instanceFamilyCategory")
+        if instance_type and category:
+            categories.setdefault(_instance_series(instance_type), category)
+    return categories
+
+
+# Pricing API spellings changed to match the other vendors.
+# Only the spellings that differ from the other vendors are listed. If more show up,
+# this can be switched to a generic rule (hyphens to spaces, title case) with an
+# explicit entry only for the HPC spelling.
+_CATEGORY_SPELLING = {"High-Performance Computing": "High Performance Computing"}
+
+
+def _series_family(series: str) -> Optional[str]:
+    """Category of an instance type series: Pricing API first, then the docs dict."""
+    category = _server_series_categories().get(series) or _SERIES_TO_FAMILY.get(series)
+    return _CATEGORY_SPELLING.get(category, category)
+
+
+@cache
+def _warn_unknown_family(series: str) -> None:
+    """Warn about a series without category, once per series and run."""
+    logger.warning(f"Unknown AWS instance family of {series}, leaving family empty.")
+
+
+def _instance_family(instance_type: str) -> Optional[str]:
+    """Look up the family category (e.g. General Purpose) of an instance type.
+
+    Returns None for series not listed by the Pricing API nor above, so new series
+    are not mislabeled.
+    """
+    series = _instance_series(instance_type)
+    family = _series_family(series)
+    if family is None:
+        _warn_unknown_family(series)
+    return family
+
+
+def _compatible_storage_ids(instance_type) -> Optional[list[str]]:
+    """EBS volume types that can be attached to an instance type.
+
+    All of them, if the instance type can attach EBS volumes (`MaximumEbsAttachments`
+    of the API): no volume type is limited to specific instance types. io1 is available
+    for all instance types, io2 can be attached to all of them (Nitro based ones support
+    up to 256,000 IOPS, others up to 64,000), and st1/sc1 only cannot be boot volumes.
+    https://docs.aws.amazon.com/ebs/latest/userguide/ebs-volume-types.html
+    https://docs.aws.amazon.com/ebs/latest/userguide/provisioned-iops.html
+    https://docs.aws.amazon.com/ebs/latest/userguide/hdd-vols.html
+    """
+    attachments = (instance_type.get("EbsInfo") or {}).get("MaximumEbsAttachments")
+    if attachments is None:
+        # not reported by the API: unknown, not "no EBS volume can be attached"
+        return None
+    if attachments > 0:
+        return list(storage_manual_data)
+    return []
+
+
 def _make_server_from_instance_type(instance_type, vendor) -> dict:
     """Create a SQLModel Server-compatible dict from AWS raw API response."""
     it = instance_type["InstanceType"]
-    family = it.split(".")[0]
+    series = _instance_series(it)
     allocation = CpuAllocation.DEDICATED
     # BurstablePerformanceSupported is False for t1 (still uses CPU credits) and
     # flex instances (baseline with scaling up to full CPU 95% of the time):
@@ -757,8 +856,8 @@ def _make_server_from_instance_type(instance_type, vendor) -> dict:
     # https://aws.amazon.com/ec2/instance-types/r8i/
     if (
         instance_type.get("BurstablePerformanceSupported", False)
-        or family == "t1"
-        or family.endswith("-flex")
+        or series == "t1"
+        or series.endswith("-flex")
     ):
         allocation = CpuAllocation.BURSTABLE
     vcpu_info = instance_type["VCpuInfo"]
@@ -777,7 +876,9 @@ def _make_server_from_instance_type(instance_type, vendor) -> dict:
         "display_name": it,
         "description": _annotate_instance_type(it),
         "hypervisor": instance_type.get("Hypervisor", None),
-        "family": family,
+        "family": _instance_family(it),
+        "series": series,
+        "compatible_storage_ids": _compatible_storage_ids(instance_type),
         "vcpus": vcpu_info["DefaultVCpus"],
         "cpu_allocation": allocation,
         "cpu_cores": vcpu_info["DefaultCores"],
@@ -929,8 +1030,12 @@ def _search_storage(
     return volumes
 
 
+@cache
 def _get_server_products() -> list:
-    """Fetch on-demand Linux EC2 instance prices using the `GetProducts` API."""
+    """Fetch on-demand Linux EC2 instance prices using the `GetProducts` API.
+
+    Cached in memory, as the list is large and used by multiple inventory functions.
+    """
 
     # example GetProducts response:
     # {
@@ -1678,6 +1783,11 @@ def inventory_servers(vendor):
     # TODO consider dropping this in favor of pricing.get_products, as
     #      it has info e.g. on instanceFamily although other fields
     #      are messier (e.g. extract memory from string)
+    # load the instance categories once, before processing the instance types
+    vendor.progress_tracker.start_task(name="Fetching instance categories", total=None)
+    with sentry_capture_or_raise(vendor=vendor):
+        _server_series_categories()
+    vendor.progress_tracker.hide_task()
     servers = parallel_fetch_servers(
         vendor, _boto_describe_instance_types, "InstanceType", "regions"
     )
@@ -2506,6 +2616,36 @@ def _get_rds_instance_products_by_region() -> tuple[
     }
 
 
+def _database_compatible_storage_ids(options: list) -> Optional[list[str]]:
+    """Storage types of an RDS instance class from its orderable options.
+
+    The `StorageType` of `DescribeOrderableDBInstanceOptions` is the id of the database
+    storage (gp2, gp3, io1, io2). Storage types not in the mapping are ignored.
+    https://docs.aws.amazon.com/AmazonRDS/latest/APIReference/API_OrderableDBInstanceOption.html
+    """
+    if not options:
+        # no orderable options: unknown, not "no storage"
+        return None
+    storage_types = {(option.get("StorageType") or "").lower() for option in options}
+    return [
+        storage_id
+        for storage_id in _DATABASE_STORAGE_MAPPING
+        if storage_id in storage_types
+    ]
+
+
+def _database_family(database_id: str, pricing_family: str) -> str:
+    """Family category of an RDS instance class, same as of its EC2 instance type.
+
+    The RDS pricing products have no `instanceFamilyCategory` (only `instanceFamily`),
+    so the category of the EC2 series is used. Falls back to the category of the RDS
+    pricing API for series that are not EC2 instance types (e.g. db.x2g), in Title
+    Case like the EC2 categories.
+    """
+    series = _instance_series(database_id.removeprefix("db."))
+    return _series_family(series) or pricing_family.title()
+
+
 def inventory_databases(vendor):
     """List all available AWS RDS PostgreSQL instance types via `boto3` calls.
 
@@ -2630,7 +2770,11 @@ def inventory_databases(vendor):
                     "engine": DatabaseEngine.POSTGRESQL,
                     "wire_protocol": DatabaseWireProtocol.POSTGRESQL,
                     "engine_versions": major_versions,
-                    "family": product["instanceFamily"],
+                    "family": _database_family(database_id, product["instanceFamily"]),
+                    "series": _instance_series(database_id.removeprefix("db.")),
+                    "compatible_storage_ids": _database_compatible_storage_ids(
+                        db_instance_options
+                    ),
                     "description": description,
                     "server_id": server_id,
                     "vcpus": product["vcpu"],

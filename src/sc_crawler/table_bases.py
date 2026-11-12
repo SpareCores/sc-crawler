@@ -641,12 +641,17 @@ class ServerFields(
     description: str = Field(description="Short description.", nullable=False)
     family: Optional[str] = Field(
         default=None,
-        description="Server family, e.g. General-purpose machine (GCP), or M5g (AWS).",
+        description=(
+            "Broad workload class of the server in the vendor's own naming, "
+            "e.g. General Purpose, Compute Optimized or Memory Optimized."
+        ),
     )
-    # TODO populate in the vendor modules
     series: Optional[str] = Field(
         default=None,
-        description="Server series within the family, e.g. b3 (OVH General Purpose).",
+        description=(
+            "Hardware line and generation of the server, "
+            "e.g. m5 (AWS), n2 (GCP) or b3 (OVH)."
+        ),
     )
     # inspector_status: str = Field(
     #     default=None,
@@ -948,12 +953,17 @@ class DatabaseFields(
 ):
     family: Optional[str] = Field(
         default=None,
-        description="Hardware family or class classification.",
+        description=(
+            "Broad workload class of the database in the vendor's own naming, "
+            "e.g. General Purpose or Memory Optimized."
+        ),
     )
-    # TODO populate in the vendor modules
     series: Optional[str] = Field(
         default=None,
-        description="Hardware series within the family.",
+        description=(
+            "Hardware line and generation of the database, "
+            "matching the series of the server it runs on, where known."
+        ),
     )
     server_id: Optional[str] = Field(
         default=None,

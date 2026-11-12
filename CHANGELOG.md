@@ -23,6 +23,32 @@ New feature(s):
 
 New feature(s):
 
+- Populate `Server.family`, `Server.series`, `Database.family` and
+  `Database.series` for `GCP`, `Hetzner`, `AliCloud`, `UpCloud`, `OVH`,
+  `Vultr`, `AWS` and `Azure`. `family` is the broad workload class in the
+  vendor's own naming, `series` the hardware line and generation.
+- Populate `Server.compatible_storage_ids` and `Database.compatible_storage_ids`
+  for the same vendors (`None` if unknown, `[]` if no extra storage can be
+  attached).
+- Alembic migration updating the `family` and `series` column comments of the
+  server and database tables.
+- `AWS`: take the instance family from the Pricing API
+  `instanceFamilyCategory`, with a docs based fallback.
+- `Azure`: derive disk and PostgreSQL storage compatibility from the VM
+  capabilities and the PostgreSQL capabilities API.
+- Database `series` matches the server `series` where a database runs on a known
+  server type (`GCP` lowercase machine series, `Azure` server series built like
+  the database series).
+- Unify the `family` spelling across vendors: `General Purpose` (`AliCloud`) and
+  `High Performance Computing` (`AWS`, `Azure`, `AliCloud`).
+- `AliCloud`: family of the retired `sn1`, `sn2`, `c4`, `ce4`, `cm4`, `n1`, `n2` and
+  `e3` types from the docs (the API has no category for them), `Azure`:
+  `FPGA Accelerated` family for the `PB` sizes.
+- `UpCloud`: keep the `High CPU` / `High Memory` family of the retired `HICPU` /
+  `HIMEM` plans.
+- `Vultr`: no `series` for bare metal plans.
+- `AliCloud` (disk categories), `AWS` (instance categories): handle API errors with
+  the Sentry wrapper instead of logging them.
 - `OVH`: list flex flavors as separate servers.
 
 New benchmark(s):
