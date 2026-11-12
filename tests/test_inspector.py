@@ -5,9 +5,11 @@ from unittest.mock import patch
 import pytest
 
 from sc_crawler.inspector import (
+    _ACCELERATOR_MANUFACTURERS,
     _server_framework_meta,
     _server_framework_path,
     _standardize_gpu_count,
+    _standardize_gpu_model,
     inspect_update_server_dict,
 )
 from sc_crawler.table_bases import ServerBase
@@ -267,3 +269,27 @@ def test_server_framework_path_keeps_failed_run_without_alternative(
         },
     )
     assert _server_framework_meta(server, "geekbench") == {"exit_code": 1}
+
+
+@pytest.mark.parametrize(
+    "raw,model,manufacturer",
+    [
+        ("INTEL ARRIA 10 GX 1150", "Arria 10 GX 1150", "Intel"),
+        ("intel SG1", "SG1", "Intel"),
+        ("Xilinx VU9p", "VU9P", "Xilinx"),
+        ("NETINT T408", "T408", "NETINT"),
+        ("AGF 027", "AGF027", "Altera"),
+        ("MI-308X", "MI308X", "AMD"),
+        ("Alveo U250", "Alveo U250", "AMD"),
+        ("5880", "RTX 5880", "NVIDIA"),
+        ("A10", "A10", "NVIDIA"),
+        ("ALINPU 800", "ALINPU 800", "T-Head"),
+        # unknown chips stay without manufacturer
+        ("PPU 810", "PPU 810", "T-Head"),
+        ("A910X", "A910X", None),
+        ("VG1000", "VG1000", None),
+    ],
+)
+def test_standardize_accelerator_model_and_manufacturer(raw, model, manufacturer):
+    assert _standardize_gpu_model(raw) == model
+    assert _ACCELERATOR_MANUFACTURERS.get(model) == manufacturer

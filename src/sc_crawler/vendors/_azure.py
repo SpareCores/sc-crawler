@@ -753,6 +753,9 @@ _AZURE_GPU_SERIES = (
         24,
         {4: 1 / 6, 8: 1 / 3, 12: 1 / 2, 24: 1, 28: 1},
     ),
+    # FPGAs (reported as GPUs by the API):
+    # https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/retirement/np-series-retirement
+    (r"^NP\d+s$", "Alveo U250", 64, None),
 )
 _AZURE_GPU_SERIES = tuple(
     (recompile(pattern), model, memory, counts)
@@ -768,7 +771,6 @@ def _gpu_spec(name: str, api_gpus: str | None) -> tuple[float, str | None, int |
             vcpus = int(recompile(r"^[A-Z]+(\d+)").match(size)[1])
             gpus = (counts or {}).get(vcpus) or float(api_gpus or 0)
             return gpus, model, memory * 1024
-    # NP-series reports its FPGAs as GPUs
     if size.startswith(("NC", "ND", "NG", "NV")):
         return float(api_gpus or 0), None, None
     return 0, None, None
@@ -977,6 +979,7 @@ def _vm_series(size_name: str, sku_family: str) -> str:
 
 
 def _standardize_server(server: dict, vendor) -> dict:
+    """Create a Server-compatible dict from an Azure Resource SKU."""
     # example Resource Skus - List response moved to _compute_resources
     family, features = _parse_server_name(server["name"])
     # override family from SKU listing
@@ -1055,7 +1058,13 @@ def _standardize_server(server: dict, vendor) -> dict:
         ),
         "memory_amount": float(capability("MemoryGB")) * 1024,  # MiB
         "accelerator_count": round(gpus, 4),
-        "accelerator_type": AcceleratorType.GPU if gpus else None,
+        "accelerator_type": (
+            None
+            if not gpus
+            else AcceleratorType.FPGA
+            if gpu_model == "Alveo U250"
+            else AcceleratorType.GPU
+        ),
         "accelerator_model": gpu_model,
         "accelerator_memory_min": (
             0

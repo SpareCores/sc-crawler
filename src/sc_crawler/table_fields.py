@@ -120,24 +120,31 @@ class Cpu(Json):
 
 
 class AcceleratorType(str, Enum):
-    """Type of a hardware accelerator, e.g. GPU or TPU."""
+    """Type of a hardware accelerator, e.g. GPU or NPU."""
 
     GPU = "GPU"
     """Graphics Processing Unit."""
     TPU = "TPU"
-    """Tensor Processing Unit."""
+    """Tensor Processing Unit. Deprecated: Google TPUs are stored as NPU."""
+    NPU = "NPU"
+    """Neural Processing Unit, e.g. Google TPU, AWS Inferentia and Trainium, Habana
+    Gaudi or Qualcomm AI100."""
+    FPGA = "FPGA"
+    """Field-Programmable Gate Array, e.g. Xilinx Virtex UltraScale+."""
+    VPU = "VPU"
+    """Video Processing Unit: video transcoding card, e.g. Xilinx U30."""
 
 
 class Accelerator(Json):
     """Hardware accelerator (e.g. GPU or TPU) details."""
 
-    manufacturer: str
+    manufacturer: Optional[str] = None
     """The manufacturer/brand of the accelerator, e.g. Nvidia or AMD."""
     family: Optional[str] = None
     """The model family/architecture of the accelerator."""
     model: Optional[str] = None
     """The model number of the accelerator."""
-    memory: int
+    memory: Optional[int] = None
     """Memory (MiB) allocated to the accelerator."""
     firmware_version: Optional[str] = None
     """Firmware version."""

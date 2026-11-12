@@ -1,13 +1,17 @@
 from unittest.mock import Mock, patch
 
+import pytest
+
 from sc_crawler.inspector import _standardize_gpu_count
-from sc_crawler.table_fields import Status
+from sc_crawler.table_fields import AcceleratorType, Status
 from sc_crawler.vendor_helpers import server_status_from_availability_categories
 from sc_crawler.vendors._alicloud import (
     _ALICLOUD_STATUS_CATEGORY_TO_SERVER_LIFECYCLE,
     _ALICLOUD_STATUS_CATEGORY_TO_SERVER_STATUS,
     _DISK_CATEGORY_TO_STORAGE_IDS,
+    _accelerator_type,
     _compatible_storage_ids,
+    _gpu_manufacturer_of_family,
     _gpu_memory_by_spec,
     _instance_category,
     _parse_instance_type_disk_categories,
@@ -196,3 +200,40 @@ def test_alicloud_server_lifecycle_keeps_out_of_stock_types_active():
     )
     # per-zone prices still follow the stock
     assert not _ALICLOUD_STATUS_CATEGORY_TO_SERVER_STATUS["WithoutStock"].is_orderable
+
+
+@pytest.mark.parametrize(
+    "gpu_model,gpu_count,expected",
+    [
+        ("T4", 1, AcceleratorType.GPU),
+        (None, 1, AcceleratorType.GPU),
+        ("VG1000", 1, AcceleratorType.GPU),
+        ("T4", 0, None),
+        ("VU9P", 1, AcceleratorType.FPGA),
+        ("Arria 10 GX 1150", 1, AcceleratorType.FPGA),
+        ("AGF027", 1, AcceleratorType.FPGA),
+        ("T408", 12, AcceleratorType.VPU),
+        ("ALINPU 800", 4, AcceleratorType.NPU),
+        ("PPU 810", 1, AcceleratorType.NPU),
+        ("A910E", 8, AcceleratorType.NPU),
+        ("A910X", 8, AcceleratorType.NPU),
+        ("A910Z", 8, AcceleratorType.NPU),
+    ],
+)
+def test_accelerator_type(gpu_model, gpu_count, expected):
+    """GPUSpec models map to their accelerator type, defaulting to GPU."""
+    assert _accelerator_type(gpu_model, gpu_count) == expected
+
+
+@pytest.mark.parametrize(
+    "family,expected",
+    [
+        ("ecs.gn8v", "NVIDIA"),
+        ("ecs.ebmgn7t", "NVIDIA"),
+        ("ecs.ebmgp7", None),
+        ("ecs.av8m", None),
+        (None, None),
+    ],
+)
+def test_gpu_manufacturer_of_family(family, expected):
+    assert _gpu_manufacturer_of_family(family) == expected

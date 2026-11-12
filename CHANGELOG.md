@@ -1,3 +1,24 @@
+## v0.10.4 (November 09, 2026)
+
+‼ Breaking changes:
+
+- `GCP` TPUs are stored with the `NPU` instead of the `TPU` accelerator type.
+  `TPU` is kept in the `AcceleratorType` enum for existing records.
+
+New feature(s):
+
+- Add `NPU`, `FPGA` and `VPU` to the `AcceleratorType` enum (with a migration
+  extending the PostgreSQL enum).
+- `AWS`: store Inferentia, Trainium, Qualcomm AI100 and Habana Gaudi (previously
+  `GPU`) as `NPU`, FPGA (`f1`, `f2`) and video transcoding (`vt1`) accelerators
+  as `FPGA` and `VPU`. Trainium2 memory is taken from the AWS docs (96 GiB per
+  device), as the API reports 512 GiB.
+- `Azure`: store the NP-series FPGAs as `FPGA`.
+- `AliCloud`: store FPGA, video transcoding and AI accelerators as `FPGA`,
+  `VPU` and `NPU` instead of `GPU`.
+- Skip the `nvidia_smi` and `nvbandwidth` inspector tasks on all non-GPU
+  accelerators.
+
 ## v0.10.3 (November 06, 2026)
 
 New feature(s):
