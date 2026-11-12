@@ -38,7 +38,7 @@ from typing_extensions import Annotated
 from . import __version__
 from . import vendors as vendors_module
 from .alembic_helpers import alembic_cfg, get_revision
-from .insert import insert_items
+from .insert import _primary_key_tuple, insert_items
 from .logger import ProgressPanel, ScRichHandler, VendorProgressTracker, logger
 from .lookup import benchmarks, compliance_frameworks, countries
 from .sentry import before_send, sentry_capture_or_raise
@@ -361,7 +361,8 @@ def copy(
     """Copy the standard Crawler tables of a database into a blank database.
 
     All rows are copied by default. Use `--exclude-status` to leave out rows,
-    e.g. the archived records that are kept only for history.
+    e.g. the archived records that are kept only for history. Rows referencing
+    a left out row (e.g. the zones of an excluded region) are also left out.
     """
 
     source_engine = create_engine(source, pool_pre_ping=True)
@@ -378,28 +379,41 @@ def copy(
     )
     panel = Panel(progress, title="Copying tables", expand=False)
 
+    # left out rows per table name, to also leave out the rows referencing them
+    left_out = {}
     with Live(panel):
+        # tables are ordered so that referenced tables come first
         for table in tables:
             with Session(source_engine) as source_session:
-                query = select(table)
-                if exclude_status:
-                    query = query.where(table.status.not_in(exclude_status))
-                rows = source_session.exec(statement=query)
+                rows = source_session.exec(statement=select(table))
                 items = [row.model_dump() for row in rows]
+            if exclude_status:
+                # (referencing columns, referenced values of the left out rows)
+                references = [
+                    (
+                        fk.column_keys,
+                        {
+                            tuple(row[e.column.name] for e in fk.elements)
+                            for row in left_out[fk.referred_table.name]
+                        },
+                    )
+                    for fk in table.__table__.foreign_key_constraints
+                ]
+                kept, left_out[table.get_table_name()] = [], []
+                for item in items:
+                    if item["status"] in exclude_status or any(
+                        tuple(item[c] for c in columns) in values
+                        for columns, values in references
+                    ):
+                        left_out[table.get_table_name()].append(item)
+                    else:
+                        kept.append(item)
+                items = kept
             with Session(target_engine) as target_session:
                 insert_items(table, items, session=target_session, progress=progress)
                 target_session.commit()
     with target_engine.begin() as connection:
         command.stamp(alembic_cfg(connection), "heads")
-
-
-def _identifier_part(value) -> str:
-    """Format a primary key value to be part of a record identifier in logs."""
-    if isinstance(value, dict):
-        return dumps(value, sort_keys=True)
-    if isinstance(value, Enum):
-        return str(value.value)
-    return str(value)
 
 
 @cli.command()
@@ -568,14 +582,12 @@ def sync(
                 if missing:
                     # look up the status of all rows at once instead of
                     # loading the rows found only in the target one by one
-                    pks = sorted(model.get_columns()["primary_keys"])
+                    pks = model.get_columns()["primary_keys"]
                     rows = session.exec(
                         select(*[getattr(model, pk) for pk in pks], model.status)
                     )
-                    # same keys as in ScModel.hash
                     statuses = {
-                        dumps(dict(zip(pks, row[:-1])), sort_keys=True): row[-1]
-                        for row in rows
+                        model.pk_key(dict(zip(pks, row[:-1]))): row[-1] for row in rows
                     }
                 for key in missing:
                     # archived rows are kept as-is, the others are set to
@@ -633,9 +645,7 @@ def sync(
                         log_file.write(f"\n### {table_name}\n\n")
                         for action_types in ["new", "update", "deleted"]:
                             for item in actions[action_types][table_name]:
-                                identifier = "/".join(
-                                    [_identifier_part(item[key]) for key in pks]
-                                )
+                                identifier = "/".join(_primary_key_tuple(item, pks))
                                 log_file.write(
                                     f"- {action_types.title()}: {identifier}\n"
                                 )
@@ -918,11 +928,16 @@ def pull(
         with Session(engine) as session:
             # reset status of static objects to phase out old records
             # these records can be set INACTIVE as will be all overwritten in the next lines
-            for model in [ComplianceFramework, Country, Benchmark, ArchiveRule]:
-                session.exec(update(model).values(status=Status.INACTIVE))
+            static_models = [ComplianceFramework, Country, Benchmark, ArchiveRule]
             # we can only reset vendors in case of a full run
             if len(vendors) == len(supported_vendors):
-                session.exec(update(Vendor).values(status=Status.INACTIVE))
+                static_models.append(Vendor)
+            for model in static_models:
+                session.exec(
+                    update(model)
+                    .where(model.status != Status.ARCHIVED)
+                    .values(status=Status.INACTIVE)
+                )
             # add/merge static objects to database
             for compliance_framework in compliance_frameworks.values():
                 session.merge(compliance_framework)

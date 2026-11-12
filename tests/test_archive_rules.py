@@ -690,6 +690,63 @@ def test_copy_exclude_status(tmp_path):
         assert _statuses(session, Region) == {"nbg1": Status.ACTIVE}
 
 
+def test_copy_exclude_status_leaves_out_rows_referencing_left_out_rows(tmp_path):
+    source = tmp_path / "source.sqlite"
+    with Session(_engine(source)) as session:
+        session.add_all(
+            [
+                _region("old", Status.INACTIVE),
+                _zone("old"),
+                _server_price("old"),
+                _benchmark("old", Status.INACTIVE),
+                _score("old"),
+                _region("nbg1"),
+                _zone("nbg1"),
+                _server_price("nbg1"),
+                _benchmark("static_web:rps"),
+                _score("static_web:rps"),
+            ]
+        )
+        session.commit()
+
+    target = tmp_path / "active.sqlite"
+    result = runner.invoke(
+        cli,
+        [
+            *["copy", "--source", f"sqlite:///{source}"],
+            *["--target", f"sqlite:///{target}", "--exclude-status", "inactive"],
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    with Session(create_engine(f"sqlite:///{target}")) as session:
+        for model in (Region, Zone, ServerPrice):
+            assert _statuses(session, model) == {"nbg1": Status.ACTIVE}
+        for model in (Benchmark, BenchmarkScore):
+            assert _statuses(session, model) == {"static_web:rps": Status.ACTIVE}
+
+
+def test_downgrade_resets_archived_statuses(tmp_path):
+    connection_string = f"sqlite:///{tmp_path / 'db.sqlite'}"
+    upgrade = ["schemas", "upgrade", "--connection-string", connection_string]
+    assert runner.invoke(cli, upgrade).exit_code == 0
+    with Session(create_sc_engine(connection_string)) as session:
+        session.add(_region("2", Status.ARCHIVED))
+        session.commit()
+
+    result = runner.invoke(
+        cli,
+        [
+            *["schemas", "downgrade", "--connection-string", connection_string],
+            *["--revision", "7e3a9c1b5d24"],
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    with create_engine(connection_string).connect() as conn:
+        assert conn.exec_driver_sql("SELECT status FROM region").all() == [
+            ("INACTIVE",)
+        ]
+
+
 def test_sync_handles_rows_found_only_in_target(tmp_path):
     source = tmp_path / "source.sqlite"
     target = tmp_path / "target.sqlite"

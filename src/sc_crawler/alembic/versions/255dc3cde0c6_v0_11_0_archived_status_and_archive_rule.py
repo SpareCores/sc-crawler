@@ -123,11 +123,19 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_table(scdize_suffix("archive_rule"))
 
+    for table in _STATUS_TABLES:
+        table_name = scdize_suffix(table)
+        op.execute(
+            f"""
+            UPDATE {table_name}
+            SET status = 'INACTIVE'
+            WHERE status = 'ARCHIVED'
+            """  # noqa: S608
+        )
+
     if op.get_context().dialect.name != "postgresql":
         return
 
-    # Statuses are not reset: this fails when there are still ARCHIVED records,
-    # which need to be handled by hand before downgrading.
     # All status columns must be retyped when recreating the enum.
     op.execute("ALTER TYPE status RENAME TO status_old")
     op.execute(

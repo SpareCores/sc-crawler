@@ -328,6 +328,12 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
         )
 
     @classmethod
+    def pk_key(cls, values: dict) -> str:
+        """JSON dump of the primary key columns of a row, as used in [hash][sc_crawler.table_bases.ScModel.hash]."""
+        pks = sorted(cls.get_columns()["primary_keys"])
+        return dumps({pk: values.get(pk) for pk in pks}, sort_keys=True)
+
+    @classmethod
     def hash(
         cls,
         session: Session,
@@ -358,8 +364,7 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
             # NOTE Pydantic is warning when read Accelerator/Storage as dict
             # https://github.com/tiangolo/sqlmodel/issues/63#issuecomment-1081555082
             rowdict = row.model_dump(warnings=False)
-            keys = {pk: rowdict.get(pk) for pk in pks}
-            keys_id = dumps(keys, sort_keys=True)
+            keys_id = cls.pk_key(rowdict)
             for dropkey in [*ignored, *pks]:
                 rowdict.pop(dropkey, None)
             rowhash = sha1(dumps(rowdict, sort_keys=True).encode()).hexdigest()
@@ -1787,6 +1792,8 @@ class ArchiveRuleFields(ScModel):
     @model_validator(mode="before")
     def _sort_keys(cls, values):
         """Store `match` and `successor` with sorted keys."""
+        if not isinstance(values, dict):
+            return values
         for field in ("match", "successor"):
             values[field] = HashableDict.sorted(values.get(field) or {})
         return values

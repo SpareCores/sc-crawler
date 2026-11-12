@@ -437,6 +437,7 @@ def recompute_workload_profiles(session: Session) -> int:
     session.exec(
         update(BenchmarkScore)
         .where(BenchmarkScore.benchmark_id.like("workload_profile:%"))
+        .where(BenchmarkScore.status != Status.ARCHIVED)
         .values(status=Status.INACTIVE)
     )
     insert_items(BenchmarkScore, profile_rows, session=session)
