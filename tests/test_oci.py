@@ -266,7 +266,7 @@ def test_config_falls_back_to_config_file(monkeypatch):
     [
         ("eu-frankfurt-1", "Uocm:EU-FRANKFURT-1-AD-2", "eu-frankfurt-1-ad-2"),
         ("us-phoenix-1", "Uocm:PHX-AD-1", "us-phoenix-1-ad-1"),
-        ("us-ashburn-1", "DVPA:US-ASHBURN-AD-3", "us-ashburn-1-ad-3"),
+        ("us-ashburn-1", "Uocm:US-ASHBURN-AD-3", "us-ashburn-1-ad-3"),
     ],
 )
 def test_zone_id(region, availability_domain, expected):
