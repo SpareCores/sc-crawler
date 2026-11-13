@@ -40,11 +40,12 @@ Other functions and variables must be prefixed with an underscore to suggest tho
 
 ## Status and retirement checks
 
-Set `status` on every `Server` and `Database` row. Possible values: `ACTIVE`, `INACTIVE`, `PLANNED_FOR_RETIREMENT`, `RETIRED`.
+Set `status` on every `Server` and `Database` row. Possible values: `ACTIVE`, `INACTIVE`, `PLANNED_FOR_RETIREMENT`, `RETIRED`. See [Status][sc_crawler.table_fields.Status] for the definition of each.
 
 - Map the vendor's lifecycle API fields to these four states. Document the mapping in the `inventory_servers` / `inventory_databases` docstring.
 - Use only explicit API or documentation signals for `PLANNED_FOR_RETIREMENT` and `RETIRED`. Do not infer retirement from naming patterns like "previous generation" unless there is a confirmed mapping.
 - If multiple signals exist (e.g. per-region availability), pick the best: `ACTIVE` > `PLANNED_FOR_RETIREMENT` > `INACTIVE` > `RETIRED`.
+- Never set `ARCHIVED` in a vendor module. It is not a vendor signal: it marks records that we replaced by another record (e.g. after changing how the ids of a vendor's regions are generated) or dropped on purpose, and it is set only from the rules in [sc_crawler.archive_rules][]. When changing the id of existing records, add a rule there for each old → new pair instead of leaving the old records behind as `INACTIVE`.
 
 ## Progress bars
 

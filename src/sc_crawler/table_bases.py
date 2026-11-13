@@ -1,9 +1,10 @@
 """Tiny helper classes for the most commonly used fields to be inherited by [sc_crawler.tables][]."""
 
 from datetime import UTC, datetime
+from functools import cache
 from hashlib import sha1
 from json import dumps
-from typing import List, Optional, Union
+from typing import TYPE_CHECKING, List, Optional, Set, Union
 
 from pydantic import (
     ConfigDict,
@@ -13,11 +14,12 @@ from pydantic import (
     model_validator,
 )
 from rich.progress import Progress
-from sqlalchemy import and_, case
+from sqlalchemy import ColumnElement, and_, case, or_
+from sqlalchemy import Enum as SaEnum
 from sqlalchemy.ext.hybrid import Comparator, hybrid_property
 from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import declared_attr, reconstructor
-from sqlmodel import JSON, Field, Session, SQLModel, select
+from sqlmodel import JSON, Field, Session, SQLModel, func, select
 
 from .str_utils import snake_case
 from .table_fields import (
@@ -47,6 +49,9 @@ from .table_fields import (
     WorkloadScoreBreakdown,
 )
 from .workload_profiles import BenchmarkSource, MeasuredSource
+
+if TYPE_CHECKING:
+    from .tables import ArchiveRule
 
 
 class ScMetaModel(SQLModel.__class__):
@@ -174,6 +179,161 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
         return scds[0]
 
     @classmethod
+    @cache
+    def get_parent_tables(cls) -> Set[str]:
+        """Names of the tables whose archived records archive the records of this table.
+
+        These are the tables referenced by a foreign key that is part of the
+        primary key of the table, and the parents of all these tables.
+        """
+        from .utils import table_name_to_model
+
+        parents = {
+            constraint.referred_table.name
+            for constraint in cls.__table__.foreign_key_constraints
+            if all(column.primary_key for column in constraint.columns)
+        }
+        for parent in list(parents):
+            parents |= table_name_to_model(parent).get_parent_tables()
+        return parents
+
+    @classmethod
+    def get_key_filters(cls, rule_table_name: str, keys: dict) -> Optional[dict]:
+        """Translate the `match` or `successor` of an archive rule into column filters on the table.
+
+        This defines which records an [ArchiveRule][sc_crawler.tables.ArchiveRule]
+        refers to, for both the SQL conditions and matching primary keys in
+        Python. Tables referencing a parent without a foreign key override it.
+
+        Args:
+            rule_table_name: The `table_name` of the rule.
+            keys: The `match` or `successor` of the rule.
+
+        Returns:
+            Dict of column names and values of the table, or `None` if the
+                rule does not apply to the table.
+        """
+        if (
+            cls.get_table_name() != rule_table_name
+            and rule_table_name not in cls.get_parent_tables()
+        ):
+            return None
+        return dict(keys)
+
+    @classmethod
+    def get_filters_condition(cls, filters: dict) -> ColumnElement:
+        """SQL condition selecting the rows of the table with the given column values."""
+        return and_(
+            *[getattr(cls, column) == value for column, value in filters.items()]
+        )
+
+    @classmethod
+    def matches_rule(cls, rule: "ArchiveRule", primary_key: dict) -> bool:
+        """Check if an archive rule archives the record with the given primary key.
+
+        Args:
+            rule: An [ArchiveRule][sc_crawler.tables.ArchiveRule].
+            primary_key: Primary key columns of the record with their values.
+        """
+        filters = cls.get_key_filters(rule.table_name, rule.match)
+        if filters is None:
+            return False
+        return all(
+            column in primary_key and primary_key[column] == value
+            for column, value in filters.items()
+        )
+
+    @classmethod
+    def is_archived(cls, primary_key: dict, rules: Optional[list] = None) -> bool:
+        """Check if any of the archive rules archives the record with the given primary key.
+
+        Args:
+            primary_key: Primary key columns of the record with their values.
+            rules: [ArchiveRule][sc_crawler.tables.ArchiveRule]s to check. Defaults to all current rules.
+        """
+        if rules is None:
+            from .archive_rules import archive_rules as rules
+        return any(cls.matches_rule(rule, primary_key) for rule in rules)
+
+    @classmethod
+    def archive_condition(cls, rules: Optional[list] = None) -> Optional[ColumnElement]:
+        """SQL condition selecting the rows of the table archived by the rules.
+
+        Child records are selected by the key columns of the rules instead of
+        looking up their parents, so it also finds the child records of parents
+        that are not in the database.
+
+        Args:
+            rules: [ArchiveRule][sc_crawler.tables.ArchiveRule]s to apply. Defaults to all current rules.
+
+        Returns:
+            SQLAlchemy condition, or `None` if no rule applies to the table.
+        """
+        if rules is None:
+            from .archive_rules import archive_rules as rules
+        conditions = []
+        for rule in rules:
+            filters = cls.get_key_filters(rule.table_name, rule.match)
+            if filters is not None:
+                conditions.append(cls.get_filters_condition(filters))
+        return or_(*conditions) if conditions else None
+
+    @classmethod
+    def archived_by(cls, session: Session, primary_key: dict) -> list:
+        """List the archive rules archiving a record, including the rules on its parent tables.
+
+        Reads the rules from the `archive_rule` table of the database, so it also
+        returns the rules that were removed from the code since (stored with
+        `INACTIVE` status), and uses the same matching as `pull` and `sync`.
+        It does not look up the record itself.
+
+        Args:
+            session: Database connection.
+            primary_key: All primary key columns of the record with their values.
+                Other keys (e.g. `observed_at` of an SCD record) are ignored.
+
+        Returns:
+            The matching [ArchiveRule][sc_crawler.tables.ArchiveRule]s, ordered
+                by table name, `match` and `successor`.
+        """
+        from .tables import ArchiveRule
+
+        columns = cls.get_columns()["primary_keys"]
+        missing = [column for column in columns if column not in primary_key]
+        if missing:
+            raise ValueError(
+                f"Missing primary key column(s) of {cls.get_table_name()}: "
+                f"{', '.join(missing)}"
+            )
+        key = {}
+        for column in columns:
+            value = primary_key[column]
+            # accept the name or value of enum members, which are stored by name
+            column_type = cls.__table__.columns[column].type
+            if isinstance(column_type, SaEnum) and column_type.enum_class is not None:
+                enum_class = column_type.enum_class
+                if isinstance(value, str) and value in enum_class.__members__:
+                    value = enum_class[value]
+                else:
+                    value = enum_class(value)
+            key[column] = value
+        rules = [
+            rule
+            for rule in session.exec(select(ArchiveRule)).all()
+            if cls.matches_rule(rule, key)
+        ]
+        return sorted(
+            rules,
+            key=lambda rule: (rule.table_name, str(rule.match), str(rule.successor)),
+        )
+
+    @classmethod
+    def pk_key(cls, values: dict) -> str:
+        """JSON dump of the primary key columns of a row, as used in [hash][sc_crawler.table_bases.ScModel.hash]."""
+        pks = sorted(cls.get_columns()["primary_keys"])
+        return dumps({pk: values.get(pk) for pk in pks}, sort_keys=True)
+
+    @classmethod
     def hash(
         cls,
         session: Session,
@@ -192,7 +352,7 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
         """
         pks = sorted(cls.get_columns()["primary_keys"])
         rows = session.exec(statement=select(cls))
-        row_count = session.query(cls).count()
+        row_count = session.exec(select(func.count()).select_from(cls)).one()
         if progress:
             table_task_id = progress.add_task(
                 cls.get_table_name(),
@@ -204,8 +364,7 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
             # NOTE Pydantic is warning when read Accelerator/Storage as dict
             # https://github.com/tiangolo/sqlmodel/issues/63#issuecomment-1081555082
             rowdict = row.model_dump(warnings=False)
-            keys = {pk: rowdict.get(pk) for pk in pks}
-            keys_id = dumps(keys, sort_keys=True)
+            keys_id = cls.pk_key(rowdict)
             for dropkey in [*ignored, *pks]:
                 rowdict.pop(dropkey, None)
             rowhash = sha1(dumps(rowdict, sort_keys=True).encode()).hexdigest()
@@ -242,7 +401,7 @@ class MetaColumns(ScModel):
         if not value.is_general:
             raise ValueError(
                 f"{value!r} is only valid for Server and Database. "
-                f"Use ACTIVE or INACTIVE for {cls.__name__}."
+                f"Use ACTIVE, INACTIVE or ARCHIVED for {cls.__name__}."
             )
         return value
 
@@ -1572,4 +1731,73 @@ class BenchmarkScoreFields(HasBenchmarkPKFK, HasVendorPKFK):
 
 
 class BenchmarkScoreBase(MetaColumns, BenchmarkScoreFields):
+    # Scores refer to the resource of each ResourceType without a foreign key:
+    # the value of the type is the parent table, and `<value>_id` its id column.
+
+    @classmethod
+    @cache
+    def get_parent_tables(cls) -> Set[str]:
+        """Parent tables of the scores, including the resources they refer to."""
+        return super().get_parent_tables() | {rt.value for rt in ResourceType}
+
+    @classmethod
+    def get_key_filters(cls, rule_table_name: str, keys: dict) -> Optional[dict]:
+        """Map a rule on a resource onto `resource_type` and `resource_id`."""
+        filters = super().get_key_filters(rule_table_name, keys)
+        # membership via `in` raises TypeError for plain strings on Python 3.11
+        resource_type = {member.value: member for member in ResourceType}.get(
+            rule_table_name
+        )
+        if filters is None or resource_type is None:
+            return filters
+        filters["resource_type"] = resource_type
+        id_column = f"{rule_table_name}_id"
+        if id_column in filters:
+            filters["resource_id"] = filters.pop(id_column)
+        return filters
+
+
+class ArchiveRuleFields(ScModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    table_name: str = Field(
+        primary_key=True,
+        description="Name of the table of the archived record(s), e.g. `region`.",
+    )
+    # HashableDict as these are primary keys, see BenchmarkScoreFields.config
+    match: HashableDict | dict = Field(
+        sa_type=HashableJSON,
+        primary_key=True,
+        description=(
+            "Primary key of the record to archive, or a subset of its columns "
+            "to archive all records with those values, "
+            'e.g. {"region_id": "2", "vendor_id": "hcloud"}.'
+        ),
+    )
+    successor: HashableDict | dict = Field(
+        default={},
+        sa_type=HashableJSON,
+        primary_key=True,
+        description=(
+            "New values of the `match` columns identifying the successor of "
+            "each archived record. Empty when there is no successor, or none "
+            "that can be given as fixed values (see `reason`)."
+        ),
+    )
+    reason: Optional[str] = Field(
+        default=None,
+        description="Why the record(s) got archived.",
+    )
+
+    @model_validator(mode="before")
+    def _sort_keys(cls, values):
+        """Store `match` and `successor` with sorted keys."""
+        if not isinstance(values, dict):
+            return values
+        for field in ("match", "successor"):
+            values[field] = HashableDict.sorted(values.get(field) or {})
+        return values
+
+
+class ArchiveRuleBase(MetaColumns, ArchiveRuleFields):
     pass
