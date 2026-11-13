@@ -9,6 +9,7 @@ from typing import Any
 
 import oci
 from cachier import cachier
+from requests import get
 
 from ..inspector import _extract_manufacturer
 from ..logger import logger
@@ -16,14 +17,20 @@ from ..lookup import map_compliance_frameworks_to_vendor
 from ..sentry import sentry_capture_or_raise
 from ..table_fields import (
     AcceleratorType,
+    Allocation,
     CpuAllocation,
     CpuArchitecture,
     Disk,
+    PriceUnit,
     Status,
     StorageType,
 )
 from ..utils import _MIB_PER_GIB
 from ..vendor_helpers import parallel_fetch_servers
+
+_API_TIMEOUT = 30
+# https://docs.oracle.com/en-us/iaas/Content/GSG/Tasks/signingup_topic-Estimating_Costs.htm
+_PRICE_LIST_URL = "https://apexapps.oracle.com/pls/apex/cetools/api/v1/products/"
 
 # Curated location of the commercial (OC1 realm) regions, as the API only returns
 # the region identifier and key. Names, cities and countries are from
@@ -471,6 +478,122 @@ _BLOCK_VOLUMES: dict[str, dict] = {
 # https://www.oracle.com/cloud/storage/block-volumes/faq/
 _BLOCK_VOLUME_MIN_SIZE = 50
 _BLOCK_VOLUME_MAX_SIZE = 32 * 1024
+
+# Part numbers of the public price list by shape series, optionally prefixed by
+# VM or BM when the part differs. The price list has no reference to the shapes,
+# so this is a manual mapping based on the display name of the parts (the hardware
+# generation of the series, e.g. X9 for Standard3 and Optimized3) and
+# https://www.oracle.com/cloud/compute/pricing/
+# The price of a server is the sum of its OCPUs, memory (GB) and local NVMe
+# storage (TB) multiplied by the hourly price of the related parts. Parts
+# without a memory price include the memory, and the hourly price per GPU
+# includes the OCPUs, memory and local storage of the shape.
+_SHAPE_PRICE_PARTS: dict[str, dict[str, str]] = {
+    # Compute - Virtual Machine Standard - X5 / Bare Metal Standard - X5
+    "VM.Standard1": {"ocpu": "B88317"},
+    "BM.Standard1": {"ocpu": "B88315"},
+    # Compute - Virtual Machine Standard - B1 / Bare Metal Standard - B1
+    "VM.Standard.B1": {"ocpu": "B91120"},
+    "BM.Standard.B1": {"ocpu": "B91119"},
+    # Compute - Virtual Machine Standard - X7 / Bare Metal Standard - X7
+    "VM.Standard2": {"ocpu": "B88514"},
+    "BM.Standard2": {"ocpu": "B88513"},
+    # Compute - Standard - X9
+    "Standard3": {"ocpu": "B94176", "memory": "B94177"},
+    # OCI - Compute - Standard - X12 Ax
+    "Standard4.Ax": {"ocpu": "B112141", "memory": "B112142"},
+    # Compute - Standard - E2
+    "Standard.E2": {"ocpu": "B90425"},
+    "Standard.E3": {"ocpu": "B92306", "memory": "B92307"},
+    "Standard.E4": {"ocpu": "B93113", "memory": "B93114"},
+    "Standard.E5": {"ocpu": "B97384", "memory": "B97385"},
+    "Standard.E6": {"ocpu": "B111129", "memory": "B111130"},
+    "Standard.E6.Ax": {"ocpu": "B112530", "memory": "B112531"},
+    "Standard.A1": {"ocpu": "B93297", "memory": "B93298"},
+    "Standard.A2": {"ocpu": "B109529", "memory": "B109530"},
+    "Standard.A4": {"ocpu": "B112145", "memory": "B112146"},
+    "Standard.A4.Ax": {"ocpu": "B112532", "memory": "B112533"},
+    # Compute - Optimized - X9
+    "Optimized3": {"ocpu": "B93311", "memory": "B93312"},
+    # Compute - Virtual Machine Dense I/O - X7 / Bare Metal Dense I/O - X7
+    "VM.DenseIO2": {"ocpu": "B88516"},
+    "BM.DenseIO2": {"ocpu": "B88515"},
+    "DenseIO.E4": {"ocpu": "B93121", "memory": "B93122", "nvme": "B93123"},
+    "DenseIO.E5": {"ocpu": "B98202", "memory": "B98203", "nvme": "B98204"},
+    "DenseIO.E6.Ax": {"ocpu": "B112556", "memory": "B112557", "nvme": "B112558"},
+    # Compute - Bare Metal Standard - HPC - X7
+    "BM.HPC2": {"ocpu": "B90398"},
+    # Compute - Virtual Machine GPU Standard - X7 / Bare Metal GPU Standard - X7
+    "VM.GPU2": {"gpu": "B88518"},
+    "BM.GPU2": {"gpu": "B88517"},
+    # Compute - GPU Standard - V2
+    "GPU3": {"gpu": "B89734"},
+    # Compute - GPU - E3
+    "GPU4": {"gpu": "B92740"},
+    "GPU.A10": {"gpu": "B95909"},
+    "GPU.A100-v2": {"gpu": "B95907"},
+    "GPU.L40S": {"gpu": "B109479"},
+    "GPU.H100": {"gpu": "B98415"},
+    "GPU.H200": {"gpu": "B110519"},
+    "GPU.B200": {"gpu": "B110978"},
+    "GPU.B300": {"gpu": "B112237"},
+    "GPU.GB200": {"gpu": "B110979"},
+    "GPU.GB300": {"gpu": "B112140"},
+    "GPU.RTXPRO": {"gpu": "B112613"},
+    "GPU.MI300X": {"gpu": "B109485"},
+    "GPU.MI355X": {"gpu": "B111758"},
+}
+
+# VM shape series supporting preemptible capacity, which "costs 50% less than
+# on-demand capacity in all regions" as per
+# https://docs.oracle.com/en-us/iaas/Content/Compute/Concepts/preemptible.htm
+# Not available for bare metal, burstable and extended memory instances.
+_PREEMPTIBLE_SERIES = frozenset(
+    {
+        "Standard1",
+        "Standard.B1",
+        "Standard2",
+        "Standard3",
+        "Standard.E2",
+        "Standard.E3",
+        "Standard.E4",
+        "Standard.E5",
+        "Standard.E6",
+        "Standard.A1",
+        "Standard.A4",
+        "DenseIO1",
+        "DenseIO2",
+        "GPU2",
+        "GPU3",
+        "Optimized3",
+    }
+)
+_PREEMPTIBLE_DISCOUNT = 0.5
+
+# Block Volume storage (GB/month) and Volume Performance Unit (per GB/month) parts
+_BLOCK_VOLUME_STORAGE_PART = "B91961"
+_BLOCK_VOLUME_VPU_PART = "B91962"
+
+# Outbound data transfer parts of the price list by the prefix of the region:
+# - B88327: Originating in North America, Europe, and UK
+# - B93455: Originating in APAC, Japan, and South America
+# - B93456: Originating in Middle East and Africa
+# NOTE the Mexican regions are not named in any of the groups, and are listed
+# with North America based on their location.
+_EGRESS_PARTS: dict[str, str] = {
+    "us": "B88327",
+    "ca": "B88327",
+    "mx": "B88327",
+    "eu": "B88327",
+    "uk": "B88327",
+    "ap": "B93455",
+    "sa": "B93455",
+    "me": "B93456",
+    "il": "B93456",
+    "af": "B93456",
+}
+# tiered prices of the price list have no upper limit in the last tier
+_PRICE_RANGE_INFINITY = 999999999999999
 
 
 @cache
@@ -1017,6 +1140,169 @@ def _shape_servers(shape: dict, vendor) -> list[dict]:
     return items
 
 
+@cachier()
+def _get_price_list() -> list[dict]:
+    """List the products of the public Oracle Cloud price list in USD.
+
+    The prices are the same in all commercial regions.
+
+    Reference: <https://docs.oracle.com/en-us/iaas/Content/GSG/Tasks/signingup_topic-Estimating_Costs.htm>
+    """
+    # example response:
+    # {
+    #     'lastUpdated': '2026-11-02T14:49:49.342Z',
+    #     'items': [
+    #         {
+    #             'partNumber': 'B97384',
+    #             'displayName': 'Compute - Standard - E5 - OCPU',
+    #             'metricName': 'OCPU Per Hour',
+    #             'serviceCategory': 'Compute - Virtual Machine',
+    #             'currencyCodeLocalizations': [
+    #                 {
+    #                     'currencyCode': 'USD',
+    #                     'prices': [{'model': 'PAY_AS_YOU_GO', 'value': 0.03}],
+    #                 },
+    #             ],
+    #         },
+    #         {
+    #             'partNumber': 'B93297',
+    #             'displayName': 'Compute - Standard - A1 - OCPU',
+    #             'metricName': 'OCPU Per Hour',
+    #             'serviceCategory': 'Compute - Virtual Machine',
+    #             'currencyCodeLocalizations': [
+    #                 {
+    #                     'currencyCode': 'USD',
+    #                     'prices': [
+    #                         {
+    #                             'model': 'PAY_AS_YOU_GO',
+    #                             'value': 0,
+    #                             'rangeMin': 0,
+    #                             'rangeMax': 3000,
+    #                         },
+    #                         {
+    #                             'model': 'PAY_AS_YOU_GO',
+    #                             'value': 0.01,
+    #                             'rangeMin': 3000,
+    #                             'rangeMax': 999999999999999,
+    #                         },
+    #                     ],
+    #                 },
+    #             ],
+    #         },
+    #         # ...
+    #     ],
+    # }
+    response = get(
+        _PRICE_LIST_URL, params={"currencyCode": "USD"}, timeout=_API_TIMEOUT
+    )
+    response.raise_for_status()
+    return response.json()["items"]
+
+
+@cache
+def _price_parts() -> dict[str, dict]:
+    """Products of the price list by part number."""
+    return {item["partNumber"]: item for item in _get_price_list()}
+
+
+def _part_price_tiers(part_number: str) -> list[dict]:
+    """Pay as you go price tiers of a part in USD, ordered by the usage range."""
+    part = _price_parts()[part_number]
+    prices = [
+        price
+        for localization in part["currencyCodeLocalizations"]
+        if localization["currencyCode"] == "USD"
+        for price in localization["prices"]
+        if price["model"] == "PAY_AS_YOU_GO"
+    ]
+    if not prices:
+        raise KeyError(f"No pay as you go USD price found for OCI part {part_number}")
+    return sorted(prices, key=lambda price: price.get("rangeMin") or 0)
+
+
+def _part_price(part_number: str) -> float:
+    """Pay as you go price of a part in USD, ignoring the free tier (if any)."""
+    return _part_price_tiers(part_number)[-1]["value"]
+
+
+@cache
+def _warn_no_price(shape_name: str) -> None:
+    """Warn about a shape without known price parts, once per shape and run."""
+    logger.warning(
+        f"No known price list parts for the OCI shape {shape_name}, skipping prices."
+    )
+
+
+def _shape_price_parts(shape_name: str) -> dict[str, str] | None:
+    """Price list parts of a shape, see `_SHAPE_PRICE_PARTS`."""
+    kind, series = _shape_series(shape_name)
+    return _SHAPE_PRICE_PARTS.get(f"{kind}.{series}") or _SHAPE_PRICE_PARTS.get(series)
+
+
+def _config_hourly_price(shape: dict, config: dict) -> float | None:
+    """Hourly on-demand price of a server configuration of a shape.
+
+    Returns None when the price list parts of the shape are not known.
+    """
+    parts = _shape_price_parts(shape["shape"])
+    if parts is None:
+        _warn_no_price(shape["shape"])
+        return None
+    if "gpu" in parts:
+        return shape["gpus"] * _part_price(parts["gpu"])
+    price = config["ocpus"] * _part_price(parts["ocpu"])
+    if "memory" in parts:
+        price += config["memory_gb"] * _part_price(parts["memory"])
+    if "nvme" in parts:
+        price += config["local_disks_gb"] / 1000 * _part_price(parts["nvme"])
+    return price
+
+
+def _inventory_server_prices(vendor, allocation: Allocation) -> list[dict]:
+    """List the server prices of all active zones for an allocation type."""
+    items = []
+    zones = [zone for zone in vendor.zones if zone.status == Status.ACTIVE]
+    vendor.progress_tracker.start_task(
+        name=f"Searching {allocation.value} server prices", total=len(zones)
+    )
+    for zone in zones:
+        for shape in _get_shapes(zone.region_id, zone.api_reference):
+            with sentry_capture_or_raise(vendor=vendor):
+                # limited to two instances per tenancy, see inventory_servers
+                if shape.get("billing_type") == "ALWAYS_FREE":
+                    continue
+                kind, series = _shape_series(shape["shape"])
+                is_spot = allocation == Allocation.SPOT
+                if is_spot and (kind != "VM" or series not in _PREEMPTIBLE_SERIES):
+                    continue
+                for config in _shape_configs(shape):
+                    if is_spot and config["extended_memory"]:
+                        continue
+                    price = _config_hourly_price(shape, config)
+                    if price is None:
+                        break
+                    if is_spot:
+                        price *= 1 - _PREEMPTIBLE_DISCOUNT
+                    items.append(
+                        {
+                            "vendor_id": vendor.vendor_id,
+                            "region_id": zone.region_id,
+                            "zone_id": zone.zone_id,
+                            "server_id": config["server_id"],
+                            "operating_system": "Linux",
+                            "allocation": allocation,
+                            "unit": PriceUnit.HOUR,
+                            "price": price,
+                            "price_upfront": 0,
+                            "price_tiered": [],
+                            "currency": "USD",
+                        }
+                    )
+        vendor.progress_tracker.advance_task()
+    vendor.progress_tracker.hide_task()
+    return items
+
+
 def inventory_compliance_frameworks(vendor):
     """Manual list of known compliance frameworks at Oracle Cloud Infrastructure.
 
@@ -1154,11 +1440,33 @@ def inventory_servers(vendor):
 
 
 def inventory_server_prices(vendor):
-    return []
+    """List the on-demand price of the servers in all active zones.
+
+    The availability of the shapes is from the API (per availability domain),
+    while the prices are from the public price list, which is the same in all
+    commercial regions and has no reference to the shapes, so the related parts
+    are looked up from a manual mapping (see `_SHAPE_PRICE_PARTS`). Shapes
+    without known parts are logged and listed without prices.
+
+    Notes:
+
+    - The monthly free tier of the Arm-based A1 shapes (3,000 OCPU and 18,000 GB
+      hours) is per tenancy, so it is not applied.
+    - Only Linux prices are listed (no license fee for Oracle Linux and the
+      other free images).
+    """
+    return _inventory_server_prices(vendor, Allocation.ONDEMAND)
 
 
 def inventory_server_prices_spot(vendor):
-    return []
+    """List the preemptible price of the servers in all active zones.
+
+    There is no spot market at OCI: preemptible capacity has a fixed 50%
+    discount on the on-demand price in all regions, and is available only for
+    the VM shapes listed in `_PREEMPTIBLE_SERIES`, as per
+    <https://docs.oracle.com/en-us/iaas/Content/Compute/Concepts/preemptible.htm>.
+    """
+    return _inventory_server_prices(vendor, Allocation.SPOT)
 
 
 def inventory_storages(vendor):
