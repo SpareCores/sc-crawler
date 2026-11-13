@@ -24,6 +24,7 @@ from ..table_fields import (
     PriceUnit,
     Status,
     StorageType,
+    TrafficDirection,
 )
 from ..utils import _MIB_PER_GIB
 from ..vendor_helpers import parallel_fetch_servers
@@ -1470,19 +1471,136 @@ def inventory_server_prices_spot(vendor):
 
 
 def inventory_storages(vendor):
-    return []
+    """List the performance levels of the Block Volume service as storages.
+
+    There is no API to list the performance levels, so these are from a
+    manual list (see `_BLOCK_VOLUMES`).
+
+    Data sources:
+
+    - <https://docs.oracle.com/en-us/iaas/Content/Block/Concepts/blockvolumeperformance.htm>
+    - <https://www.oracle.com/cloud/storage/block-volumes/faq/>
+
+    Sizes are in GB, and throughput values are in MB/s as per the documentation.
+    """
+    items = []
+    for storage_id, storage in _BLOCK_VOLUMES.items():
+        items.append(
+            {
+                "storage_id": storage_id,
+                "vendor_id": vendor.vendor_id,
+                "name": storage["name"],
+                "description": storage["description"],
+                "storage_type": StorageType.NVME_SSD,
+                "max_iops": storage["max_iops"],
+                "max_throughput": storage["max_throughput"],
+                "min_size": _BLOCK_VOLUME_MIN_SIZE,
+                "max_size": _BLOCK_VOLUME_MAX_SIZE,
+            }
+        )
+    return items
 
 
 def inventory_storage_prices(vendor):
-    return []
+    """List the Block Volume prices in all regions.
+
+    The monthly price of a GB is the storage price plus the price of the
+    Volume Performance Units (VPU) of the performance level, both from the
+    public price list, which is the same in all commercial regions.
+    """
+    storage_price = _part_price(_BLOCK_VOLUME_STORAGE_PART)
+    vpu_price = _part_price(_BLOCK_VOLUME_VPU_PART)
+    items = []
+    for region in vendor.regions:
+        for storage_id, storage in _BLOCK_VOLUMES.items():
+            items.append(
+                {
+                    "vendor_id": vendor.vendor_id,
+                    "region_id": region.region_id,
+                    "storage_id": storage_id,
+                    "unit": PriceUnit.GB_MONTH,
+                    "price": storage_price + storage["vpus"] * vpu_price,
+                    "currency": "USD",
+                }
+            )
+    return items
+
+
+def _price_tiers(part_number: str) -> list[dict]:
+    """Convert the usage ranges of a price list part to tiered prices."""
+    tiers = _part_price_tiers(part_number)
+    if len(tiers) < 2:
+        return []
+    return [
+        {
+            "lower": tier["rangeMin"] + 1,
+            "upper": (
+                "Infinity"
+                if tier["rangeMax"] >= _PRICE_RANGE_INFINITY
+                else tier["rangeMax"]
+            ),
+            "price": tier["value"],
+        }
+        for tier in tiers
+    ]
 
 
 def inventory_traffic_prices(vendor):
-    return []
+    """List the inbound and outbound traffic prices in all regions.
+
+    Inbound traffic is free. The first 10 TB of outbound traffic is free per
+    month and tenancy, then priced per GB depending on the location of the
+    region (see `_EGRESS_PARTS`), as per the public price list.
+    """
+    items = []
+    for region in vendor.regions:
+        with sentry_capture_or_raise(vendor=vendor):
+            part_number = _EGRESS_PARTS[region.region_id.split("-")[0]]
+            items.append(
+                {
+                    "vendor_id": vendor.vendor_id,
+                    "region_id": region.region_id,
+                    "price": 0,
+                    "price_tiered": [],
+                    "currency": "USD",
+                    "unit": PriceUnit.GB_MONTH,
+                    "direction": TrafficDirection.IN,
+                }
+            )
+            items.append(
+                {
+                    "vendor_id": vendor.vendor_id,
+                    "region_id": region.region_id,
+                    "price": _part_price(part_number),  # max tier price
+                    "price_tiered": _price_tiers(part_number),
+                    "currency": "USD",
+                    "unit": PriceUnit.GB_MONTH,
+                    "direction": TrafficDirection.OUT,
+                }
+            )
+    return items
 
 
 def inventory_ipv4_prices(vendor):
-    return []
+    """Public IPv4 addresses are free of charge at OCI.
+
+    Neither ephemeral, nor reserved public IP addresses are charged: there is
+    no related part in the public price list, and "there is no charge to use
+    this feature" as per the announcement of the reserved public IPs at
+    <https://blogs.oracle.com/cloud-infrastructure/release-announcement-reserved-public-ips-are-now-available-on-oracle-cloud-infrastructure>.
+    """
+    items = []
+    for region in vendor.regions:
+        items.append(
+            {
+                "vendor_id": vendor.vendor_id,
+                "region_id": region.region_id,
+                "price": 0,
+                "currency": "USD",
+                "unit": PriceUnit.MONTH,
+            }
+        )
+    return items
 
 
 # TODO: Implement database collectors (OCI Database with PostgreSQL)
