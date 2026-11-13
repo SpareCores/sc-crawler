@@ -6,6 +6,7 @@ from .vendors import (  # noqa: F401
     azure,
     gcp,
     hcloud,
+    oci,
     ovh,
     upcloud,
     vultr,

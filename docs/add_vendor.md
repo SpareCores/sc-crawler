@@ -180,7 +180,10 @@ def inventory_servers(vendor):
     #             "storage_type": None,
     #             "storages": [],
     #             "compatible_storage_ids": None,  # [] if none can be attached
-    #             "network_speed": None,
+    #             "network_speed_baseline": None,  # Gbps
+    #             "network_speed_max": None,  # Gbps
+    #             "network_storage_speed_baseline": None,  # Gbps
+    #             "network_storage_speed_max": None,  # Gbps
     #             "inbound_traffic": 0,
     #             "outbound_traffic": 0,
     #             "ipv4": 0,

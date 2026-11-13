@@ -201,6 +201,41 @@ This choice affects the currency used for prices.
 
 <details markdown="1">
 
+<summary>Oracle Cloud Infrastructure</summary>
+
+Create a user (preferably in a dedicated group, e.g. `sc-crawler`) with an
+[API signing key](https://docs.oracle.com/en-us/iaas/Content/API/Concepts/apisigningkey.htm),
+and allow the group to list the regions, availability domains and compute shapes
+of the tenancy with the following policy statements:
+
+```text
+Allow group sc-crawler to inspect tenancies in tenancy
+Allow group sc-crawler to inspect compartments in tenancy
+Allow group sc-crawler to inspect instance-family in tenancy
+```
+
+Then configure the following environment variables:
+
+- `OCI_USER_OCID`
+- `OCI_TENANCY_OCID`
+- `OCI_FINGERPRINT`
+- `OCI_REGION`: the home region of the tenancy (e.g. `eu-frankfurt-1`)
+- `OCI_PRIVATE_KEY` (the content of the PEM file) or `OCI_PRIVATE_KEY_PATH`
+
+Without the `OCI_TENANCY_OCID` environment variable, the standard
+`~/.oci/config` file is used, with the profile optionally set in
+`OCI_CONFIG_PROFILE`.
+
+Note that availability domains and compute shapes can be listed only in the
+regions the tenancy is subscribed to, and only for the shapes with a service
+limit in the tenancy (e.g. GPU shapes are not listed by default), so subscribe
+to all regions and request the service limits as needed. The prices are from
+the public price list, which does not require authentication.
+
+</details>
+
+<details markdown="1">
+
 <summary>Alibaba Cloud</summary>
 
 Create a RAM user with the `AliyunBSSReadOnlyAccess`, `AliyunECSReadOnlyAccess` and `AliyunRDSReadOnlyAccess` system policies (or a custom policy with at least the `bss:DescribeProduct` and `ecs:DescribePrice` permissions), then configure the following environment variables:

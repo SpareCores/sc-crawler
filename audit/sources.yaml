@@ -477,6 +477,50 @@ vendors:
         kinds: [regions]
         complete: true
 
+  oci:
+    allowed_domains: [oracle.com]
+    reference_regions: [us-ashburn-1]
+    pages:
+      - id: compute-shapes
+        url: "https://docs.oracle.com/en-us/iaas/Content/Compute/References/computeshapes.htm"
+        kinds: [server_specs, gpu, lifecycle]
+        notes: >-
+          Flexible shapes are stored as a grid of OCPU and memory configurations
+          with the size added to the server id (e.g. VM.Standard.E5.Flex.4-32 is
+          the VM.Standard.E5.Flex shape with 4 OCPUs and 32 GB memory). 1 OCPU is
+          2 vCPUs on x86 and on the Arm A2/A4 shapes, and 1 vCPU on A1. Only the
+          shapes with a service limit in the crawler's tenancy are collected.
+      - id: compute-pricing
+        url: "https://www.oracle.com/cloud/compute/pricing/"
+        kinds: [server_prices, component_rates, gpu]
+        currency: USD
+        price_region: us-ashburn-1
+        notes: >-
+          Blocks automated clients: save it from a browser and import it with
+          `sc-audit import-page oci compute-pricing FILE`. Prices are per OCPU,
+          GB of memory, TB of local NVMe and GPU hour, and are the same in all
+          regions.
+      - id: price-list
+        url: "https://www.oracle.com/cloud/price-list/"
+        kinds: [component_rates]
+        currency: USD
+        price_region: us-ashburn-1
+        notes: >-
+          Blocks automated clients: save it from a browser and import it with
+          `sc-audit import-page oci price-list FILE`.
+      - id: preemptible
+        url: "https://docs.oracle.com/en-us/iaas/Content/Compute/Concepts/preemptible.htm"
+        kinds: [server_prices]
+        notes: >-
+          Preemptible (spot) capacity costs 50% less than on-demand, only on the
+          listed VM shape series.
+      - id: regions
+        url: "https://docs.oracle.com/en-us/iaas/Content/General/Concepts/regions.htm"
+        kinds: [regions]
+        notes: >-
+          Only the OC1 (commercial) realm is collected. Regions the crawler's
+          tenancy is not subscribed to are stored as inactive.
+
   ovh:
     allowed_domains: [ovhcloud.com]
     reference_regions: [GRA]

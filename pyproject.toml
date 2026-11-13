@@ -62,6 +62,7 @@ gcp = ["google-cloud", "google-cloud-compute", "google-cloud-billing", "google-a
 azure = ["azure-identity", "azure-mgmt-resource", "azure-mgmt-resource-subscriptions", "azure-mgmt-compute", "azure-mgmt-postgresqlflexibleservers>=3"]
 upcloud = ["upcloud-api"]
 ovh = ["ovh"]
+oci = ["oci"]
 alicloud = ["alibabacloud-ecs20140526", "alibabacloud-bssopenapi20171214", "alibabacloud-rds20140815"]
 vendors = [
   "sparecores-crawler[aws]",
@@ -71,6 +72,7 @@ vendors = [
   "sparecores-crawler[upcloud]",
   "sparecores-crawler[ovh]",
   "sparecores-crawler[alicloud]",
+  "sparecores-crawler[oci]",
 ]
 all = ["sparecores-crawler[testing]", "sparecores-crawler[vendors]", "sparecores-crawler[apm]"]
 
