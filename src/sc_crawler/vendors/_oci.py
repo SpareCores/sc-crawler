@@ -1,16 +1,29 @@
 """Inventory of Oracle Cloud Infrastructure via its API and the public price list: servers, storages, traffic and IPv4 addresses, with their prices."""
 
 from functools import cache
+from math import ceil
 from os import environ, getenv
+from re import compile as recompile
+from re import search, sub
 from typing import Any
 
 import oci
 from cachier import cachier
 
+from ..inspector import _extract_manufacturer
 from ..logger import logger
 from ..lookup import map_compliance_frameworks_to_vendor
 from ..sentry import sentry_capture_or_raise
-from ..table_fields import Status
+from ..table_fields import (
+    AcceleratorType,
+    CpuAllocation,
+    CpuArchitecture,
+    Disk,
+    Status,
+    StorageType,
+)
+from ..utils import _MIB_PER_GIB
+from ..vendor_helpers import parallel_fetch_servers
 
 # Curated location of the commercial (OC1 realm) regions, as the API only returns
 # the region identifier and key. Names, cities and countries are from
@@ -345,6 +358,120 @@ _REGION_LOCATIONS: dict[str, dict] = {
     },
 }
 
+# VM or BM (bare metal) prefix, then the series, then the size of the shape,
+# e.g. VM.Standard.E5.Flex, VM.Standard.E2.1.Micro or BM.GPU.A100-v2.8
+_SHAPE_RE = recompile(r"^(VM|BM)\.(.+?)\.(?:Flex|\d+(?:\.Micro)?)$")
+
+# https://docs.oracle.com/en-us/iaas/Content/Compute/References/computeshapes.htm
+_SHAPE_FAMILIES: dict[str, str] = {
+    "Standard": "Standard",
+    "DenseIO": "Dense I/O",
+    "GPU": "GPU",
+    "HPC": "HPC",
+    "Optimized": "Optimized",
+}
+
+# An OCPU is a physical core with two threads (vCPUs) on x86, while the Arm
+# shapes have no SMT, and the OCPU is defined per processor generation:
+# "1 OCPU on Arm A1 = 1 core on Arm A1 or 1 vCPU" and
+# "1 OCPU on Arm A2 and A4 = 2 cores on Arm A2 and A4 or 2 vCPUs" as per
+# https://docs.oracle.com/en-us/iaas/Content/Compute/References/computeshapes.htm
+_X86_VCPUS_PER_OCPU = 2
+_ARM_VCPUS_PER_OCPU: dict[str, int] = {"A1": 1, "A2": 2, "A4": 2}
+
+# Flexible shapes can be launched with any number of OCPUs and memory within
+# the limits of the shape, so a grid of the below OCPU counts (and the maximum
+# of the shape) and memory per vCPU ratios (GiB) is listed as separate servers.
+_FLEX_OCPUS: tuple[int, ...] = (1, 2, 4, 8, 16, 32, 64)
+_FLEX_MEMORY_GB_PER_VCPU: tuple[int, ...] = (2, 4, 8)
+
+# Flexible Dense I/O shapes come in fixed configurations: memory is fixed per
+# OCPU, and a 6.8 TB NVMe drive is attached per 8 OCPUs, as per
+# https://docs.oracle.com/en-us/iaas/Content/Compute/References/computeshapes.htm#vm-dense
+_DENSE_IO_FLEX: dict[str, dict] = {
+    "VM.DenseIO.E4.Flex": {"ocpus": (8, 16, 32), "memory_gb_per_ocpu": 16},
+    "VM.DenseIO.E5.Flex": {
+        "ocpus": (8, 16, 24, 32, 40, 48),
+        "memory_gb_per_ocpu": 12,
+    },
+    "VM.DenseIO.E6.Ax.Flex": {
+        "ocpus": (8, 16, 24, 32, 40, 48),
+        "memory_gb_per_ocpu": 12,
+    },
+}
+_DENSE_IO_FLEX_OCPUS_PER_DISK = 8
+_DENSE_IO_FLEX_DISK_GB = 6800
+
+# GPU model and per-GPU memory (GB) of the GPU shape series, from the "GPU
+# Shapes" tables (GPU memory of the shape divided by the number of GPUs) at
+# https://docs.oracle.com/en-us/iaas/Content/Compute/References/computeshapes.htm#bm-gpu
+_GPU_SERIES: dict[str, dict] = {
+    "GPU2": {"model": "P100", "vram_gb": 16, "family": "Pascal"},
+    "GPU3": {"model": "V100", "vram_gb": 16, "family": "Volta"},
+    "GPU4": {"model": "A100", "vram_gb": 40, "family": "Ampere"},
+    "GPU.A10": {"model": "A10", "vram_gb": 24, "family": "Ampere"},
+    "GPU.A100-v2": {"model": "A100", "vram_gb": 80, "family": "Ampere"},
+    "GPU.L40S": {"model": "L40S", "vram_gb": 48, "family": "Ada Lovelace"},
+    "GPU.H100": {"model": "H100", "vram_gb": 80, "family": "Hopper"},
+    "GPU.H200": {"model": "H200", "vram_gb": 141, "family": "Hopper"},
+    "GPU.B200": {"model": "B200", "vram_gb": 180, "family": "Blackwell"},
+    "GPU.B300": {"model": "B300", "vram_gb": 262.5, "family": "Blackwell"},
+    "GPU.GB200": {"model": "GB200", "vram_gb": 192, "family": "Blackwell"},
+    "GPU.GB300": {"model": "GB300", "vram_gb": 278, "family": "Blackwell"},
+    "GPU.RTXPRO": {"model": "RTX PRO 6000", "vram_gb": 96, "family": "Blackwell"},
+    "GPU.MI300X": {
+        "manufacturer": "AMD",
+        "model": "MI300X",
+        "vram_gb": 192,
+        "family": "CDNA3",
+    },
+    "GPU.MI355X": {
+        "manufacturer": "AMD",
+        "model": "MI355X",
+        "vram_gb": 288,
+        "family": "CDNA4",
+    },
+}
+
+# Block Volume performance levels with the Volume Performance Units (VPU) per GB,
+# IOPS and throughput (MB/s) limits per volume, as per
+# https://docs.oracle.com/en-us/iaas/Content/Block/Concepts/blockvolumeperformance.htm
+# Ultra High Performance volumes can be configured with 30-120 VPUs per GB, and
+# are listed with the minimum.
+_BLOCK_VOLUMES: dict[str, dict] = {
+    "lower-cost": {
+        "name": "Block Volume Lower Cost",
+        "description": "For throughput intensive workloads with large sequential I/O (2 IOPS/GB, 0 VPU/GB). Not available for boot volumes.",
+        "vpus": 0,
+        "max_iops": 3_000,
+        "max_throughput": 480,
+    },
+    "balanced": {
+        "name": "Block Volume Balanced",
+        "description": "Default performance level for boot and block volumes (60 IOPS/GB, 10 VPUs/GB).",
+        "vpus": 10,
+        "max_iops": 25_000,
+        "max_throughput": 480,
+    },
+    "higher-performance": {
+        "name": "Block Volume Higher Performance",
+        "description": "For workloads with high I/O requirements (75 IOPS/GB, 20 VPUs/GB).",
+        "vpus": 20,
+        "max_iops": 50_000,
+        "max_throughput": 680,
+    },
+    "ultra-high-performance": {
+        "name": "Block Volume Ultra High Performance",
+        "description": "For workloads with the highest I/O requirements (90 IOPS/GB at 30 VPUs/GB, configurable up to 225 IOPS/GB, 300,000 IOPS and 2,680 MB/s per volume at 120 VPUs/GB).",
+        "vpus": 30,
+        "max_iops": 75_000,
+        "max_throughput": 880,
+    },
+}
+# https://www.oracle.com/cloud/storage/block-volumes/faq/
+_BLOCK_VOLUME_MIN_SIZE = 50
+_BLOCK_VOLUME_MAX_SIZE = 32 * 1024
+
 
 @cache
 def _config() -> dict:
@@ -474,6 +601,422 @@ def _zone_id(region: str, availability_domain: str) -> str:
     return f"{region}-ad-{number}"
 
 
+@cachier(separate_files=True)
+def _get_shapes(region: str, availability_domain: str) -> list[dict]:
+    """List the shapes that can be launched in an availability domain (ListShapes).
+
+    Note that only the shapes with a service limit in the tenancy are listed,
+    so e.g. GPU, HPC and VM Dense I/O shapes are missing by default.
+
+    Reference: <https://docs.oracle.com/en-us/iaas/api/#/en/iaas/20160918/Shape/ListShapes>
+    """
+    # example response (after `oci.util.to_dict`), unrelated fields dropped:
+    # [
+    #     {
+    #         'shape': 'VM.Standard.E5.Flex',
+    #         'processor_description': '2.3 GHz AMD EPYC™ 9J14 (Genoa)',
+    #         'ocpus': 1.0,
+    #         'memory_in_gbs': 12.0,
+    #         'networking_bandwidth_in_gbps': 1.0,
+    #         'gpus': 0,
+    #         'gpu_description': None,
+    #         'local_disks': 0,
+    #         'local_disks_total_size_in_gbs': None,
+    #         'local_disk_description': None,
+    #         'rdma_ports': 0,
+    #         'rdma_bandwidth_in_gbps': 0,
+    #         'ocpu_options': {'min': 1.0, 'max': 126.0, 'max_per_numa_node': 94.0},
+    #         'memory_options': {
+    #             'min_in_g_bs': 1.0,
+    #             'max_in_g_bs': 2098.0,
+    #             'default_per_ocpu_in_g_bs': 12.0,
+    #             'min_per_ocpu_in_gbs': 1.0,
+    #             'max_per_ocpu_in_gbs': 64.0,
+    #             'max_per_numa_node_in_gbs': 1049.0,
+    #         },
+    #         'networking_bandwidth_options': {
+    #             'min_in_gbps': 1.0,
+    #             'max_in_gbps': 40.0,
+    #             'default_per_ocpu_in_gbps': 1.0,
+    #         },
+    #         'baseline_ocpu_utilizations': [
+    #             'BASELINE_1_8',
+    #             'BASELINE_1_2',
+    #             'BASELINE_1_1',
+    #         ],
+    #         'platform_config_options': {'type': 'AMD_VM', ...},
+    #         'is_billed_for_stopped_instance': False,
+    #         'billing_type': 'PAID',
+    #         'quota_names': ['standard-e5-core-count', 'standard-e5-memory-count'],
+    #         'is_subcore': True,
+    #         'is_flexible': True,
+    #         'is_live_migration_supported': True,
+    #     },
+    #     {
+    #         'shape': 'BM.DenseIO.E6.Ax.192',
+    #         'processor_description': '2.7 GHz AMD EPYC™ 9J45 (Turin)',
+    #         'ocpus': 192.0,
+    #         'memory_in_gbs': 2304.0,
+    #         'networking_bandwidth_in_gbps': 200.0,
+    #         'gpus': 0,
+    #         'gpu_description': None,
+    #         'local_disks': 12,
+    #         'local_disks_total_size_in_gbs': 81600.0,
+    #         'local_disk_description': 'NVMe SSD Storage',
+    #         'ocpu_options': None,
+    #         'memory_options': None,
+    #         'networking_bandwidth_options': None,
+    #         'baseline_ocpu_utilizations': None,
+    #         'is_billed_for_stopped_instance': True,
+    #         'billing_type': 'PAID',
+    #         'is_subcore': False,
+    #         'is_flexible': False,
+    #     },
+    #     # ...
+    # ]
+    shapes = oci.pagination.list_call_get_all_results(
+        _client(oci.core.ComputeClient, region).list_shapes,
+        _config()["tenancy"],
+        availability_domain=availability_domain,
+    ).data
+    return oci.util.to_dict(shapes)
+
+
+def _shape_series(shape_name: str) -> tuple[str, str]:
+    """Split a shape name into its kind (VM or BM) and series.
+
+    E.g. VM.Standard.E5.Flex -> (VM, Standard.E5), VM.Standard2.16 -> (VM, Standard2)
+    and BM.GPU.A100-v2.8 -> (BM, GPU.A100-v2).
+    """
+    match = _SHAPE_RE.match(shape_name)
+    if not match:
+        raise ValueError(f"Unknown OCI shape name format: {shape_name}")
+    return match.group(1), match.group(2)
+
+
+@cache
+def _warn_unknown(field: str, name: str) -> None:
+    """Warn about a shape with an unknown field, once per name and run."""
+    logger.warning(f"Unknown OCI shape {field} of {name}, leaving {field} empty.")
+
+
+def _shape_family(series: str) -> str | None:
+    """Family of a shape series, e.g. Standard.E5 -> Standard, DenseIO2 -> Dense I/O.
+
+    Returns None for unknown series, so no family is guessed.
+    """
+    family = _SHAPE_FAMILIES.get(series.split(".")[0].rstrip("0123456789"))
+    if family is None:
+        _warn_unknown("family", series)
+    return family
+
+
+def _is_arm(shape: dict) -> bool:
+    """Check if a shape is running on the Arm-based Ampere processors."""
+    if "ampere" in (shape.get("processor_description") or "").lower():
+        return True
+    _, series = _shape_series(shape["shape"])
+    return bool(search(r"^(Standard|DenseIO)\.A\d", series))
+
+
+def _vcpus_per_ocpu(shape: dict) -> int:
+    """Number of vCPUs per OCPU of a shape, see `_ARM_VCPUS_PER_OCPU`."""
+    if not _is_arm(shape):
+        return _X86_VCPUS_PER_OCPU
+    _, series = _shape_series(shape["shape"])
+    generation = search(r"\.(A\d+)(?:\.|$)", series)
+    if not generation or generation.group(1) not in _ARM_VCPUS_PER_OCPU:
+        raise ValueError(f"Unknown OCPU definition of the Arm shape: {shape['shape']}")
+    return _ARM_VCPUS_PER_OCPU[generation.group(1)]
+
+
+def _parse_processor_description(description: str | None) -> dict:
+    """Extract the CPU speed (GHz), manufacturer, family and model of a shape.
+
+    E.g. `2.3 GHz AMD EPYC™ 9J14 (Genoa)` is a 2.3 GHz AMD EPYC 9J14, and
+    `3.0 GHz Intel® Xeon® Gold 6354 (Ice Lake)` is a 3 GHz Intel Xeon 6354.
+    When both the base and turbo frequencies are listed, the base is used.
+    """
+    text = (description or "").replace("®", "").replace("™", "")
+    # drop the code names, e.g. (Genoa) or (Banshee 12)
+    text = sub(r"\s*\([^)]*\)", "", text).strip()
+    speed = search(r"([\d.]+)\s*GHz", text)
+    family = None
+    model = None
+    if "EPYC" in text:
+        family = "EPYC"
+        model = search(r"EPYC\s+(\S+)", text)
+    elif "Xeon" in text:
+        family = "Xeon"
+        model = search(r"Xeon\s+(?:(?:Platinum|Gold|Silver|Bronze)\s+)?(.+)$", text)
+    elif "AmpereOne" in text:
+        family = search(r"AmpereOne(?:-\w+)?", text).group(0)
+    elif "Altra" in text:
+        family = "Altra"
+    return {
+        "cpu_speed": float(speed.group(1)) if speed else None,
+        "cpu_manufacturer": _extract_manufacturer(text) if text else None,
+        "cpu_family": family,
+        "cpu_model": model.group(1).strip() if model else None,
+    }
+
+
+def _flex_network_speed(shape: dict, ocpus: int) -> float | None:
+    """Network bandwidth (Gbps) of a flexible shape, scaling with the OCPUs."""
+    options = shape.get("networking_bandwidth_options")
+    if not options or not options.get("default_per_ocpu_in_gbps"):
+        return shape.get("networking_bandwidth_in_gbps")
+    speed = options["default_per_ocpu_in_gbps"] * ocpus
+    if options.get("min_in_gbps"):
+        speed = max(speed, options["min_in_gbps"])
+    if options.get("max_in_gbps"):
+        speed = min(speed, options["max_in_gbps"])
+    return speed
+
+
+def _shape_configs(shape: dict) -> list[dict]:
+    """List the server configurations of a shape.
+
+    A fixed shape is a single configuration. Flexible shapes are expanded to a
+    grid of OCPU counts (`_FLEX_OCPUS` and the maximum of the shape) and memory
+    sizes (`_FLEX_MEMORY_GB_PER_VCPU`) within the limits of the shape, with the
+    OCPU count and memory size (GiB) added to the server id, e.g.
+    `VM.Standard.E5.Flex.4-32`. Flexible Dense I/O shapes are listed with their
+    fixed configurations, see `_DENSE_IO_FLEX`.
+
+    Configurations with more OCPUs or memory than available on a NUMA node are
+    marked as extended memory instances.
+    """
+    name = shape["shape"]
+    if not shape.get("is_flexible"):
+        return [
+            {
+                "server_id": name,
+                "ocpus": shape["ocpus"],
+                "memory_gb": shape["memory_in_gbs"],
+                "local_disks": shape.get("local_disks") or 0,
+                "local_disks_gb": shape.get("local_disks_total_size_in_gbs") or 0,
+                "network_speed": shape.get("networking_bandwidth_in_gbps"),
+                "extended_memory": False,
+            }
+        ]
+
+    if name in _DENSE_IO_FLEX:
+        configs = []
+        for ocpus in _DENSE_IO_FLEX[name]["ocpus"]:
+            memory_gb = ocpus * _DENSE_IO_FLEX[name]["memory_gb_per_ocpu"]
+            local_disks = ocpus // _DENSE_IO_FLEX_OCPUS_PER_DISK
+            configs.append(
+                {
+                    "server_id": f"{name}.{ocpus}-{memory_gb}",
+                    "ocpus": ocpus,
+                    "memory_gb": memory_gb,
+                    "local_disks": local_disks,
+                    "local_disks_gb": local_disks * _DENSE_IO_FLEX_DISK_GB,
+                    "network_speed": _flex_network_speed(shape, ocpus),
+                    "extended_memory": False,
+                }
+            )
+        return configs
+    if shape.get("local_disks"):
+        raise ValueError(f"Unknown local disk configurations of flexible shape: {name}")
+
+    ocpu_options = shape["ocpu_options"]
+    memory_options = shape["memory_options"]
+    vcpus_per_ocpu = _vcpus_per_ocpu(shape)
+    ocpu_min = ceil(ocpu_options["min"])
+    ocpu_max = int(ocpu_options["max"])
+    ocpu_grid = sorted(
+        {ocpus for ocpus in _FLEX_OCPUS if ocpu_min <= ocpus <= ocpu_max} | {ocpu_max}
+    )
+    configs = []
+    for ocpus in ocpu_grid:
+        for memory_gb_per_vcpu in _FLEX_MEMORY_GB_PER_VCPU:
+            memory_gb_per_ocpu = memory_gb_per_vcpu * vcpus_per_ocpu
+            memory_gb = ocpus * memory_gb_per_ocpu
+            if (
+                memory_gb < memory_options["min_in_g_bs"]
+                or memory_gb > memory_options["max_in_g_bs"]
+                or memory_gb_per_ocpu < memory_options["min_per_ocpu_in_gbs"]
+                or memory_gb_per_ocpu > memory_options["max_per_ocpu_in_gbs"]
+            ):
+                continue
+            ocpu_numa_max = ocpu_options.get("max_per_numa_node")
+            memory_numa_max = memory_options.get("max_per_numa_node_in_gbs")
+            configs.append(
+                {
+                    "server_id": f"{name}.{ocpus}-{memory_gb}",
+                    "ocpus": ocpus,
+                    "memory_gb": memory_gb,
+                    "local_disks": 0,
+                    "local_disks_gb": 0,
+                    "network_speed": _flex_network_speed(shape, ocpus),
+                    "extended_memory": bool(
+                        (ocpu_numa_max and ocpus > ocpu_numa_max)
+                        or (memory_numa_max and memory_gb > memory_numa_max)
+                    ),
+                }
+            )
+    return configs
+
+
+def _server_description(
+    family: str | None,
+    vcpus: int,
+    memory_gb: float,
+    storages: list[Disk],
+    gpu_count: int = 0,
+    gpu_model: str | None = None,
+    gpu_vram_gb: float | None = None,
+) -> str:
+    nvme_size = sum(d.size for d in storages if d.storage_type == StorageType.NVME_SSD)
+    ssd_size = sum(d.size for d in storages if d.storage_type == StorageType.SSD)
+    description_parts = [
+        f"{vcpus} vCPUs",
+        f"{memory_gb:g} GiB RAM",
+        f"{nvme_size} GB NVMe" if nvme_size else None,
+        f"{ssd_size} GB SSD" if ssd_size else None,
+        (
+            f"{gpu_count}x{gpu_model} {gpu_vram_gb:g} GiB VRAM"
+            if gpu_count and gpu_model and gpu_vram_gb
+            else (f"{gpu_count}x{gpu_model}" if gpu_count and gpu_model else None)
+        ),
+    ]
+    description_parts_str = ", ".join(filter(None, description_parts))
+    return f"{family} ({description_parts_str})" if family else description_parts_str
+
+
+def _shape_servers(shape: dict, vendor) -> list[dict]:
+    """Convert a shape to the list of its server configurations."""
+    name = shape["shape"]
+    kind, series = _shape_series(name)
+    family = _shape_family(series)
+    is_arm = _is_arm(shape)
+    vcpus_per_ocpu = _vcpus_per_ocpu(shape)
+    cpu = _parse_processor_description(shape.get("processor_description"))
+
+    gpu_count = shape.get("gpus") or 0
+    gpu = {}
+    if gpu_count:
+        gpu = _GPU_SERIES.get(series, {})
+        if not gpu:
+            _warn_unknown("GPU model", name)
+    gpu_description = shape.get("gpu_description") or ""
+    gpu_manufacturer = gpu.get("manufacturer") or (
+        (_extract_manufacturer(gpu_description) or "NVIDIA") if gpu_count else None
+    )
+    gpu_vram_gb = gpu.get("vram_gb")
+
+    is_nvme = "nvme" in (shape.get("local_disk_description") or "").lower()
+    storage_type = StorageType.NVME_SSD if is_nvme else StorageType.SSD
+
+    items = []
+    for config in _shape_configs(shape):
+        ocpus = config["ocpus"]
+        vcpus = int(ocpus * vcpus_per_ocpu)
+        memory_gb = config["memory_gb"]
+        storages = [
+            Disk(
+                size=int(config["local_disks_gb"] / config["local_disks"]),
+                storage_type=storage_type,
+            )
+            for _ in range(config["local_disks"])
+        ]
+        items.append(
+            {
+                "vendor_id": vendor.vendor_id,
+                "server_id": config["server_id"],
+                "name": config["server_id"],
+                "api_reference": name,
+                # https://www.pulumi.com/registry/packages/oci/api-docs/core/instance/
+                "api_reference_object": (
+                    {
+                        "shape": name,
+                        "shape_config": {"ocpus": ocpus, "memory_in_gbs": memory_gb},
+                    }
+                    if shape.get("is_flexible")
+                    else {"shape": name}
+                ),
+                "display_name": config["server_id"],
+                "description": _server_description(
+                    f"Bare Metal {family}" if family and kind == "BM" else family,
+                    vcpus,
+                    memory_gb,
+                    storages,
+                    gpu_count,
+                    gpu.get("model"),
+                    gpu_vram_gb,
+                ),
+                "family": family,
+                "series": series,
+                "vcpus": vcpus,
+                "hypervisor": None,
+                # OCPUs are dedicated physical cores, except for the Always Free
+                # micro shape with 1/8 OCPU and the ability to burst
+                "cpu_allocation": (
+                    CpuAllocation.BURSTABLE
+                    if name.endswith(".Micro")
+                    else CpuAllocation.DEDICATED
+                ),
+                "cpu_cores": int(ocpus * (vcpus_per_ocpu if is_arm else 1)),
+                "cpu_speed": cpu["cpu_speed"],
+                "cpu_architecture": (
+                    CpuArchitecture.ARM64 if is_arm else CpuArchitecture.X86_64
+                ),
+                "cpu_manufacturer": cpu["cpu_manufacturer"],
+                "cpu_family": cpu["cpu_family"],
+                "cpu_model": cpu["cpu_model"],
+                "cpu_l1d_cache": None,
+                "cpu_l1d_cache_total": None,
+                "cpu_l1i_cache": None,
+                "cpu_l1i_cache_total": None,
+                "cpu_l2_cache": None,
+                "cpu_l2_cache_total": None,
+                "cpu_l3_cache": None,
+                "cpu_l3_cache_total": None,
+                "cpu_flags": [],
+                "cpus": [],
+                "memory_amount": int(memory_gb * _MIB_PER_GIB),
+                "memory_generation": None,
+                "memory_speed": None,
+                "memory_ecc": None,
+                "accelerator_count": gpu_count,
+                "accelerator_memory_min": (
+                    int(gpu_vram_gb * _MIB_PER_GIB) if gpu_vram_gb else None
+                ),
+                "accelerator_memory_total": (
+                    int(gpu_vram_gb * gpu_count * _MIB_PER_GIB) if gpu_vram_gb else None
+                ),
+                "accelerator_type": AcceleratorType.GPU if gpu_count else None,
+                "accelerator_manufacturer": gpu_manufacturer,
+                "accelerator_family": gpu.get("family"),
+                "accelerator_model": gpu.get("model"),
+                "accelerators": [],
+                "storage_size": sum(disk.size for disk in storages),
+                "storage_type": storage_type if storages else None,
+                "storages": storages,
+                # block volumes can be attached to all VM and bare metal shapes
+                "compatible_storage_ids": list(_BLOCK_VOLUMES),
+                "network_speed_baseline": None,
+                # documented as the "Max Network Bandwidth" of the shapes
+                "network_speed_max": config["network_speed"],
+                "network_storage_speed_baseline": None,
+                "network_storage_speed_max": None,
+                # the free outbound traffic is per tenancy (see inventory_traffic_prices)
+                "inbound_traffic": 0,
+                "outbound_traffic": 0,
+                # public IPv4 addresses are free of charge (see inventory_ipv4_prices)
+                "ipv4": 1,
+                "status": (
+                    Status.INACTIVE
+                    if shape.get("billing_type") == "ALWAYS_FREE"
+                    else Status.ACTIVE
+                ),
+            }
+        )
+    return items
+
+
 def inventory_compliance_frameworks(vendor):
     """Manual list of known compliance frameworks at Oracle Cloud Infrastructure.
 
@@ -581,7 +1124,33 @@ def inventory_zones(vendor):
 
 
 def inventory_servers(vendor):
-    return []
+    """List all shapes of the active zones as servers.
+
+    Shapes are listed per availability domain, as the offers differ. Fixed
+    shapes are stored as a server, while flexible shapes are expanded to a
+    grid of OCPU and memory configurations, each stored as a separate server
+    (see `_shape_configs`). Burstable configurations (a baseline of 12.5% or
+    50% of the OCPUs) are not listed.
+
+    Lifecycle: shapes listed in any of the active zones -> ACTIVE, except for
+    the Always Free micro shape (limited to two instances per tenancy) ->
+    INACTIVE. There is no lifecycle field or retirement date in the API, and
+    the previous generation shapes (past their "end of orderability" date) are
+    still fully supported and can be launched as per
+    <https://docs.oracle.com/en-us/iaas/Content/Compute/References/computeshapes.htm#previous-generation-shapes>,
+    so those are ACTIVE as well.
+    """
+    zone_regions = {zone.api_reference: zone.region_id for zone in vendor.zones}
+
+    def _search_servers(availability_domain: str) -> list[dict]:
+        servers = []
+        region = zone_regions[availability_domain]
+        for shape in _get_shapes(region, availability_domain):
+            with sentry_capture_or_raise(vendor=vendor):
+                servers.extend(_shape_servers(shape, vendor))
+        return servers
+
+    return parallel_fetch_servers(vendor, _search_servers, "server_id", "zones")
 
 
 def inventory_server_prices(vendor):
