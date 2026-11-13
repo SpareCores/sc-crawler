@@ -1,3 +1,13 @@
+## v0.10.x (DEVELOPMENT)
+
+New vendor(s):
+
+- Oracle Cloud Infrastructure (`oci`): regions, availability domains, servers
+  (shapes) with on-demand and preemptible prices, block volumes, traffic and
+  IPv4 prices. Flexible shapes are listed as a grid of OCPU and memory
+  configurations, each stored as a separate server (e.g.
+  `VM.Standard.E5.Flex.4-32`). Managed databases are not supported yet.
+
 ## v0.10.4 (November 09, 2026)
 
 ‼ Breaking changes:
