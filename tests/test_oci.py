@@ -1,5 +1,6 @@
 """Unit tests for the Oracle Cloud Infrastructure vendor module."""
 
+from contextlib import contextmanager
 from unittest.mock import Mock, patch
 
 import pytest
@@ -203,13 +204,16 @@ def price_list():
 
 
 def _vendor(shapes_by_ad=None):
-    """A vendor with a zone for each key of the availability domain -> shapes dict."""
+    """A vendor with a zone for each key of the availability domain -> shapes dict.
+
+    The zones are stored without the tenancy prefix of the availability domains.
+    """
     vendor = Mock(vendor_id="oci")
     vendor.zones = [
         Mock(
             region_id="eu-frankfurt-1",
             zone_id=_zone_id("eu-frankfurt-1", ad),
-            api_reference=ad,
+            api_reference=ad.split(":")[-1],
             status=Status.ACTIVE,
         )
         for ad in (shapes_by_ad or {})
@@ -217,10 +221,18 @@ def _vendor(shapes_by_ad=None):
     return vendor
 
 
+@contextmanager
 def _patch_shapes(shapes_by_ad):
-    return patch.object(
-        _oci, "_get_shapes", side_effect=lambda region, ad: shapes_by_ad[ad]
-    )
+    """Mock the availability domains (with tenancy prefix) and their shapes."""
+    with (
+        patch.object(
+            _oci, "_get_availability_domains", return_value=list(shapes_by_ad)
+        ),
+        patch.object(
+            _oci, "_get_shapes", side_effect=lambda region, ad: shapes_by_ad[ad]
+        ),
+    ):
+        yield
 
 
 def test_config_from_environment(monkeypatch):
@@ -271,6 +283,14 @@ def test_config_falls_back_to_config_file(monkeypatch):
 )
 def test_zone_id(region, availability_domain, expected):
     assert _zone_id(region, availability_domain) == expected
+
+
+def test_availability_domain_adds_tenancy_prefix():
+    names = ["Uocm:PHX-AD-1", "Uocm:PHX-AD-2"]
+    with patch.object(_oci, "_get_availability_domains", return_value=names):
+        assert _oci._availability_domain("us-phoenix-1", "PHX-AD-2") == "Uocm:PHX-AD-2"
+        with pytest.raises(KeyError, match="PHX-AD-3"):
+            _oci._availability_domain("us-phoenix-1", "PHX-AD-3")
 
 
 def test_zone_id_unknown_format():
@@ -644,7 +664,8 @@ def test_inventory_zones_only_in_active_regions():
         "us-phoenix-1-ad-1",
         "us-phoenix-1-ad-2",
     ]
-    assert rows[0]["api_reference"] == "Uocm:PHX-AD-1"
+    # the tenancy prefix is not stored
+    assert rows[0]["api_reference"] == "PHX-AD-1"
     assert rows[0]["name"] == "PHX-AD-1"
     assert rows[0]["region_id"] == "us-phoenix-1"
 

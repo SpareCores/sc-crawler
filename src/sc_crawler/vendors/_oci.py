@@ -713,6 +713,18 @@ def _get_availability_domains(region: str) -> list[str]:
     return [availability_domain.name for availability_domain in availability_domains]
 
 
+def _availability_domain(region: str, name: str) -> str:
+    """Full, tenancy-specific availability domain name of a zone's API reference.
+
+    The prefix of the tenancy is not stored in the zones, so it is looked up for
+    the API calls, e.g. `EU-FRANKFURT-1-AD-1` -> `Uocm:EU-FRANKFURT-1-AD-1`.
+    """
+    for availability_domain in _get_availability_domains(region):
+        if availability_domain.split(":")[-1] == name:
+            return availability_domain
+    raise KeyError(f"Unknown availability domain in {region}: {name}")
+
+
 def _zone_id(region: str, availability_domain: str) -> str:
     """Zone id from the region and the tenancy-specific availability domain name.
 
@@ -1267,7 +1279,8 @@ def _inventory_server_prices(vendor, allocation: Allocation) -> list[dict]:
         name=f"Searching {allocation.value} server prices", total=len(zones)
     )
     for zone in zones:
-        for shape in _get_shapes(zone.region_id, zone.api_reference):
+        availability_domain = _availability_domain(zone.region_id, zone.api_reference)
+        for shape in _get_shapes(zone.region_id, availability_domain):
             with sentry_capture_or_raise(vendor=vendor):
                 # limited to two instances per tenancy, see inventory_servers
                 if shape.get("billing_type") == "ALWAYS_FREE":
@@ -1383,7 +1396,8 @@ def inventory_zones(vendor):
 
     The availability domain names (e.g. `Uocm:EU-FRANKFURT-1-AD-1`) are specific
     to the tenancy, so the zone id is built from the region and the number of
-    the availability domain, and the full name is kept as the API reference.
+    the availability domain, and the name is stored without the prefix of the
+    tenancy (see `_availability_domain` for looking up the full name).
     Note that the numbers are also mapped to the datacenters per tenancy, so
     e.g. AD-1 can be a different datacenter in another tenancy.
 
@@ -1394,15 +1408,15 @@ def inventory_zones(vendor):
     vendor.progress_tracker.start_task(name="Fetching zones", total=len(regions))
     for region in regions:
         for availability_domain in _get_availability_domains(region.api_reference):
-            display_name = availability_domain.split(":")[-1]
+            name = availability_domain.split(":")[-1]
             items.append(
                 {
                     "vendor_id": vendor.vendor_id,
                     "region_id": region.region_id,
                     "zone_id": _zone_id(region.region_id, availability_domain),
-                    "name": display_name,
-                    "api_reference": availability_domain,
-                    "display_name": display_name,
+                    "name": name,
+                    "api_reference": name,
+                    "display_name": name,
                 }
             )
         vendor.progress_tracker.advance_task()
@@ -1429,9 +1443,10 @@ def inventory_servers(vendor):
     """
     zone_regions = {zone.api_reference: zone.region_id for zone in vendor.zones}
 
-    def _search_servers(availability_domain: str) -> list[dict]:
+    def _search_servers(zone_name: str) -> list[dict]:
         servers = []
-        region = zone_regions[availability_domain]
+        region = zone_regions[zone_name]
+        availability_domain = _availability_domain(region, zone_name)
         for shape in _get_shapes(region, availability_domain):
             with sentry_capture_or_raise(vendor=vendor):
                 servers.extend(_shape_servers(shape, vendor))
