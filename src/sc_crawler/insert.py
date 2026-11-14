@@ -1,17 +1,21 @@
 """Helpers to validate and bulk insert per-vendor records into the database."""
 
 from collections import defaultdict
+from datetime import UTC, datetime
 from json import dumps
 from logging import DEBUG
 from typing import TYPE_CHECKING, List, Optional
 
 from pydantic import BaseModel
 from rich.progress import Progress
+from sqlalchemy import ColumnElement, inspect, select
 from sqlalchemy.dialects.postgresql import insert as insert_postgresql
 from sqlalchemy.dialects.sqlite import insert as insert_sqlite
 from sqlmodel import Session, SQLModel
 
 from .str_utils import space_after
+from .table_bases import row_digest, row_key
+from .table_fields import Status
 from .utils import chunk_list, is_postgresql, is_sqlite
 
 if TYPE_CHECKING:
@@ -175,6 +179,42 @@ def bulk_insert_items(
         vendor.log(f"{len(items)} {space_after(prefix)}{model_name}(s) synced.")
 
 
+def _write_items(
+    model: SQLModel,
+    items: List[dict],
+    vendor: Optional["Vendor"],
+    session: Session,
+    progress: Optional[Progress],
+    prefix: str,
+):
+    """Upsert already validated items with bulk insert or merge."""
+    model_name = model.get_table_name()
+    if can_bulk_insert(session):
+        bulk_insert_items(model, items, vendor, session, progress, prefix)
+    else:
+        if vendor:
+            vendor.progress_tracker.start_task(
+                name=f"Syncing {space_after(prefix)}{model_name}(s)", total=len(items)
+            )
+        if progress:
+            pid = progress.add_task(
+                f"Inserting {space_after(prefix)}{model_name}(s)", total=len(items)
+            )
+        for item in items:
+            # vendor's auto session.merge doesn't work due to SQLmodel bug:
+            # - https://github.com/tiangolo/sqlmodel/issues/6
+            # - https://github.com/tiangolo/sqlmodel/issues/342
+            # so need to trigger the merge manually
+            session.merge(model.model_validate(item))
+            if vendor:
+                vendor.progress_tracker.advance_task()
+            if progress:
+                progress.update(pid, advance=1)
+        if vendor:
+            vendor.progress_tracker.hide_task()
+            vendor.log(f"{len(items)} {space_after(prefix)}{model_name}(s) synced.")
+
+
 def insert_items(
     model: SQLModel,
     items: List[dict],
@@ -202,35 +242,141 @@ def insert_items(
             raise TypeError("At least one of `session` or `vendor` is required.")
         session = vendor.session
     model_name = model.get_table_name()
-    columns = model.get_columns()
-    primary_keys = columns["primary_keys"]
+    primary_keys = model.get_columns()["primary_keys"]
 
     # Validate first so JSON primary-key columns (e.g. BenchmarkScore.config)
     # are canonicalized before deduplication.
     items = validate_items(model, items, vendor, prefix)
     items = _dedupe_items(items, primary_keys, vendor, model_name, prefix)
+    _write_items(model, items, vendor, session, progress, prefix)
 
-    if can_bulk_insert(session):
-        bulk_insert_items(model, items, vendor, session, progress, prefix)
-    else:
-        if vendor:
-            vendor.progress_tracker.start_task(
-                name=f"Syncing {space_after(prefix)}{model_name}(s)", total=len(items)
+
+def merge_changed_item(session: Session, item: SQLModel) -> SQLModel:
+    """Merge an object (and its cascaded related rows) into the session, updating `observed_at` only on changed rows.
+
+    Objects built in code (e.g. a [Vendor][sc_crawler.tables.Vendor] with its
+    [Country][sc_crawler.tables.Country]) carry the `observed_at` of their creation,
+    which `session.merge` would copy to the stored rows. So after the merge,
+    rows where only `observed_at` differs get back their stored value (no
+    `UPDATE` is emitted), while new rows and rows with any other changed
+    column get the current time.
+
+    Args:
+        session: Database connection to merge into.
+        item: An SQLModel table object.
+
+    Returns:
+        The persistent object attached to the session.
+    """
+    item = session.merge(item)
+    now = datetime.now(UTC)
+    for obj in session.new:
+        if hasattr(obj, "observed_at"):
+            obj.observed_at = now
+    for obj in session.dirty:
+        state = inspect(obj)
+        if "observed_at" not in state.mapper.column_attrs:
+            continue
+        changed = {
+            attr.key
+            for attr in state.mapper.column_attrs
+            if state.attrs[attr.key].history.has_changes()
+        }
+        if changed - {"observed_at"}:
+            obj.observed_at = now
+        elif changed:
+            obj.observed_at = state.attrs.observed_at.history.deleted[0]
+    return item
+
+
+def upsert_changed_items(
+    model: SQLModel,
+    items: List[dict],
+    *filters: ColumnElement[bool],
+    vendor: Optional["Vendor"] = None,
+    session: Optional[Session] = None,
+    progress: Optional[Progress] = None,
+    prefix: str = "",
+) -> dict:
+    """Write only the new or changed items, and deactivate the missing rows.
+
+    The `filters` define the scope of rows the `items` replace (e.g. a vendor's
+    on-demand server prices). Rows in that scope are compared with the items
+    ignoring `observed_at`, so:
+
+    - new or changed items are upserted with their own `observed_at`,
+    - unchanged items are not written, keeping `observed_at` as the time of the last change,
+    - rows in the scope missing from `items` are set to
+      [INACTIVE][sc_crawler.table_fields.Status] with a fresh `observed_at`
+      (already inactive rows are left untouched).
+
+    Args:
+        model: An SQLModel table definition with primary key(s).
+        items: List of dicts with all columns of the model.
+        *filters: SQLAlchemy expressions selecting the rows replaced by `items`.
+        vendor: Optional related Vendor instance used for database connection, logging and progress bar updates.
+        session: Optional database connections. When not provided, defaults to the `vendor`'s session.
+        progress: Optional progress bar to use instead of `vendor`'s progress bar.
+        prefix: Optional extra description for the model added in front of
+            the model name in logs and progress bar updates.
+
+    Returns:
+        Number of new, changed, unchanged and deactivated rows.
+    """
+    if session is None:
+        if vendor is None:
+            raise TypeError("At least one of `session` or `vendor` is required.")
+        session = vendor.session
+    model_name = model.get_table_name()
+    primary_keys = model.get_columns()["primary_keys"]
+    ignored = ["observed_at", *primary_keys]
+
+    items = validate_items(model, items, vendor, prefix)
+    items = _dedupe_items(items, primary_keys, vendor, model_name, prefix)
+    incoming = {row_key(item, primary_keys): item for item in items}
+
+    # read only the rows in scope via Core (no ORM objects), streamed
+    session.flush()
+    query = select(model.__table__)
+    for f in filters:
+        query = query.where(f)
+    query = query.execution_options(yield_per=10_000)
+    existing = {}
+    now = datetime.now(UTC)
+    deactivated = []
+    for row in session.connection().execute(query).mappings():
+        row = dict(row)
+        key = row_key(row, primary_keys)
+        if key in incoming:
+            # keep the stored PK values: the database tells e.g. JSON {"size": 1}
+            # and {"size": 1.0} apart, while the key treats them as the same row
+            existing[key] = (
+                row_digest(row, ignored),
+                {pk: row[pk] for pk in primary_keys},
             )
-        if progress:
-            pid = progress.add_task(
-                f"Inserting {space_after(prefix)}{model_name}(s)", total=len(items)
-            )
-        for item in items:
-            # vendor's auto session.merge doesn't work due to SQLmodel bug:
-            # - https://github.com/tiangolo/sqlmodel/issues/6
-            # - https://github.com/tiangolo/sqlmodel/issues/342
-            # so need to trigger the merge manually
-            session.merge(model.model_validate(item))
-            if vendor:
-                vendor.progress_tracker.advance_task()
-            if progress:
-                progress.update(pid, advance=1)
-        if vendor:
-            vendor.progress_tracker.hide_task()
-            vendor.log(f"{len(items)} {space_after(prefix)}{model_name}(s) synced.")
+        elif row["status"] != Status.INACTIVE:
+            deactivated.append({**row, "status": Status.INACTIVE, "observed_at": now})
+
+    stats = {"new": 0, "changed": 0, "unchanged": 0, "deactivated": len(deactivated)}
+    changed = []
+    for key, item in incoming.items():
+        if key not in existing:
+            stats["new"] += 1
+            changed.append(item)
+            continue
+        digest, stored_pks = existing[key]
+        if digest != row_digest(item, ignored):
+            stats["changed"] += 1
+            # write under the stored PK so the upsert updates that row
+            changed.append({**item, **stored_pks})
+        else:
+            stats["unchanged"] += 1
+
+    if vendor:
+        vendor.log(
+            f"{space_after(prefix)}{model_name}(s): "
+            + ", ".join(f"{v} {k}" for k, v in stats.items())
+        )
+    if changed or deactivated:
+        _write_items(model, changed + deactivated, vendor, session, progress, prefix)
+    return stats
