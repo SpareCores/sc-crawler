@@ -1,4 +1,4 @@
-## v0.11.0 (November 13, 2026)
+## v0.11.0 (November 16, 2026)
 
 ‼ Breaking changes:
 
@@ -22,6 +22,7 @@ Database migrations:
 
 Fix(es):
 
+- `Azure`: add manual data for the `southeastasia3` and `taiwannorth` regions.
 - Compare dict-type primary keys (e.g. `BenchmarkScore.config`) as `JSONB` in
   PostgreSQL.
 - `sync --log-changes-path` failed on rows with a dict-type primary key.
