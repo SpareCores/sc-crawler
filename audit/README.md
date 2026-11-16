@@ -63,7 +63,7 @@ All `sc-audit` commands take `--out` (default `audit-out/<today>`), `--vendor`/`
 | command | what it does |
 |---|---|
 | `sc-audit fetch [--page REGEX] [--cache-ttl H] [--dry-run]` | download pages and discovered child pages; prints HTTP errors, "JS-rendered?" (tiny Markdown) and "no tables" flags |
-| `sc-audit import-page VENDOR PAGE FILE` | import a page saved from a browser, for official pages that block automated clients (kept by later `fetch` runs, marked `manual` in its metadata) |
+| `sc-audit import-page VENDOR PAGE FILE` | import a page (or a JSON feed with a `.json` URL) saved from a browser, for official pages that block automated clients (kept by later `fetch` runs, marked `manual` in its metadata) |
 | `sc-audit parse` | run deterministic parsers on fetched feeds |
 | `sc-audit pending [--json]` | pages fetched but not yet extracted, with paths for the subagents |
 | `sc-audit schema` | JSON schema of extraction files |

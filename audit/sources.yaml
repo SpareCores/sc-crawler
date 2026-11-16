@@ -514,6 +514,34 @@ vendors:
         notes: >-
           Preemptible (spot) capacity costs 50% less than on-demand, only on the
           listed VM shape series.
+      - id: cost-estimator
+        url: "https://www.oracle.com/cloud/costestimator.html"
+        kinds: [index]
+        notes: >-
+          Blocks automated clients, and JS-rendered anyway, so nothing to import:
+          the "Compute - Virtual Machine", "Compute - Bare Metal"
+          and "Database with PostgreSQL" configurations are built from the data
+          files below (see cost-estimator-shapes). "Database Management" is a
+          monitoring service of Oracle Database, not related to PostgreSQL.
+      - id: cost-estimator-shapes
+        url: "https://www.oracle.com/a/ocom/docs/cloudestimator2/data/shapes.json"
+        kinds: [server_specs, server_prices, component_rates, gpu, db_specs, db_prices]
+        currency: USD
+        price_region: us-ashburn-1
+        spec_authority: false
+        implies_availability: false
+        parser: oci_cost_estimator
+        notes: >-
+          Blocks automated clients: save it from a browser and import it with
+          `sc-audit import-page oci cost-estimator-shapes FILE`. Data feed of
+          the cost estimator: the VM, bare metal and PostgreSQL shapes with the
+          part numbers billed for each, priced from the public price list (the
+          same our ingest reads, but the shape to part number mapping is
+          independent of ours). Fixed
+          shapes are compared as servers, flexible shapes as per-vCPU and per-GiB
+          rates against our grid of configurations. PostgreSQL prices include
+          the PostgreSQL OCPU fee on top of the compute shape, for one node and
+          for two nodes (readable cluster).
       - id: postgresql-pricing
         url: "https://www.oracle.com/cloud/postgresql/pricing/"
         kinds: [db_prices, component_rates]
