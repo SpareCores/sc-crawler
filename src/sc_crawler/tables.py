@@ -6,6 +6,7 @@ from types import ModuleType
 from typing import Callable, Dict, List, Optional
 
 from pydantic import PrivateAttr
+from sqlalchemy import Enum as SaEnum
 from sqlalchemy import ForeignKeyConstraint, literal, update
 from sqlmodel import Relationship, Session, SQLModel, select
 
@@ -962,7 +963,8 @@ class ArchiveRule(ArchiveRuleBase, table=True):
         Returns:
             Description of the problems found: unknown tables, `match` keys that
                 are not primary key columns of the table, `successor` with other
-                keys than `match`, missing `reason` of rules without a successor,
+                keys than `match`, enum columns not given by the value of a
+                member, missing `reason` of rules without a successor,
                 and rules leading back to a record they archived (cycles).
         """
         if rules is None:
@@ -975,12 +977,11 @@ class ArchiveRule(ArchiveRuleBase, table=True):
                 problems.append(f"{label}: rules cannot refer to SCD tables")
                 continue
             try:
-                primary_keys = table_name_to_model(rule.table_name).get_columns()[
-                    "primary_keys"
-                ]
+                model = table_name_to_model(rule.table_name)
             except ValueError:
                 problems.append(f"{label}: unknown table")
                 continue
+            primary_keys = model.get_columns()["primary_keys"]
             if not rule.match:
                 problems.append(f"{label}: empty match")
                 continue
@@ -990,6 +991,23 @@ class ArchiveRule(ArchiveRuleBase, table=True):
                 continue
             if rule.successor and set(rule.successor) != set(rule.match):
                 problems.append(f"{label}: successor and match have different keys")
+                continue
+            # enum members are stored by name, but a rule given by the name
+            # would match only in SQL and not when comparing in Python
+            invalid = []
+            for keys in (rule.match, rule.successor):
+                for key, value in keys.items():
+                    column_type = model.__table__.columns[key].type
+                    if (
+                        isinstance(column_type, SaEnum)
+                        and column_type.enum_class is not None
+                        and value not in [m.value for m in column_type.enum_class]
+                    ):
+                        invalid.append(f"{key}={value!r}")
+            if invalid:
+                problems.append(
+                    f"{label}: {', '.join(invalid)} is not the value of an enum member"
+                )
                 continue
             if rule.successor == rule.match:
                 problems.append(f"{label}: the successor is the archived record itself")

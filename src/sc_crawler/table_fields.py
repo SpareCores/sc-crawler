@@ -68,40 +68,34 @@ class Json(BaseModel):
 class Status(str, Enum):
     """Last known status of a record.
 
-    The docstrings of the values are the reference definitions: keep them
-    up-to-date when adding a status or changing its meaning.
+    The docstrings of the values are shown to end-users (e.g. in the API and
+    on the website), so keep those to what a status means, and document here
+    how the statuses are set:
+
+    - `ACTIVE` and `INACTIVE` are valid for all tables. Records returned by
+      the vendor or defined in code are `ACTIVE`. Records no longer returned
+      or defined are set to `INACTIVE` by `pull`, as well as records missing
+      from the source by `sync`.
+    - `PLANNED_FOR_RETIREMENT` and `RETIRED` are only valid for Server and
+      Database, and are set only from explicit vendor signals.
+    - `ARCHIVED` is valid for all tables. It is set only from the
+      [archive rules][sc_crawler.archive_rules] by `pull` and `sync`, also for
+      child records (e.g. prices of a region), and archived records are not
+      updated afterwards. It is our decision on the identity of a record,
+      never a vendor signal: end of sale is `RETIRED`, and records no longer
+      returned by a vendor are `INACTIVE`.
     """
 
     ACTIVE = "active"
-    """Available. Valid for all tables. Set by the crawler from vendor data or definitions in code."""
+    """Currently available."""
     INACTIVE = "inactive"
-    """Temporarily unavailable or unknown cause, may become `ACTIVE` again.
-
-    Valid for all tables. Set by the crawler for records no longer returned by
-    the vendor or defined in code, and by `sync` for records missing from the
-    source. No vendor signal on end of sale (`RETIRED`), and not replaced or
-    dropped (`ARCHIVED`).
-    """
+    """Currently not available, without a known retirement. May become available again."""
     PLANNED_FOR_RETIREMENT = "planned-for-retirement"
-    """Retirement announced, but still orderable (unlike `RETIRED`).
-
-    Only valid for Server and Database. Set by the crawler from explicit vendor signals.
-    """
+    """Retirement was announced by the vendor, but can still be ordered. Only used for servers and databases."""
     RETIRED = "retired"
-    """Not orderable anymore, but prices may still exist (e.g. active multi-year contracts).
-
-    Only valid for Server and Database. Set by the crawler from explicit vendor
-    signals. Not coming back (unlike `INACTIVE`), and a vendor decision on the
-    same record (unlike `ARCHIVED`).
-    """
+    """Retired by the vendor and cannot be ordered anymore, but prices may still exist (e.g. for active multi-year contracts). Only used for servers and databases."""
     ARCHIVED = "archived"
-    """Replaced by another record (renamed, re-keyed, merged or split) or deliberately dropped by us, kept for history.
-
-    Valid for all tables. Set only from the [archive rules][sc_crawler.archive_rules]
-    by `pull` and `sync`, also for child records (e.g. prices of a region).
-    Our decision on a record's identity, never a vendor signal: end of sale is
-    `RETIRED`, records no longer returned by a vendor are `INACTIVE`.
-    """
+    """Kept only for historical reference: replaced by another record (e.g. renamed, merged or split) or dropped from the dataset."""
 
     @classmethod
     def best(cls, statuses: Collection["Status"]) -> "Status":

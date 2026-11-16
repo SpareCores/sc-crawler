@@ -181,10 +181,17 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
     @classmethod
     @cache
     def get_parent_tables(cls) -> Set[str]:
-        """Names of the tables whose archived records archive the records of this table.
+        """Names of the tables that the records of this table belong to.
 
-        These are the tables referenced by a foreign key that is part of the
-        primary key of the table, and the parents of all these tables.
+        These are the tables referenced by a foreign key made up of primary
+        key columns of this table, and (recursively) the parents of those
+        tables. So a record cannot exist without its parent records, e.g. a
+        server price without its vendor, region, zone and server.
+
+        Examples:
+            >>> from sc_crawler.tables import Zone
+            >>> sorted(Zone.get_parent_tables())
+            ['region', 'vendor']
         """
         from .utils import table_name_to_model
 
@@ -1764,7 +1771,8 @@ class ArchiveRuleFields(ScModel):
         primary_key=True,
         description="Name of the table of the archived record(s), e.g. `region`.",
     )
-    # HashableDict as these are primary keys, see BenchmarkScoreFields.config
+    # use HashableDict as primary keys need to be hashable, but fall back
+    # to dict to avoid PydanticInvalidForJsonSchema
     match: HashableDict | dict = Field(
         sa_type=HashableJSON,
         primary_key=True,

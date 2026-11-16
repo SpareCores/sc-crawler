@@ -12,7 +12,9 @@ here, which are applied by the `pull` and `sync` commands on every run:
 - `match` is the primary key of the record to archive, or a subset of its
   columns to archive every record with those values (a dict column such as
   `config` matches only when the whole dict is equal). `successor` gives
-  the new values of the same columns.
+  the new values of the same columns. Give enum columns by the value of the
+  member (e.g. `spot` for `allocation`), not by its name as stored in the
+  database (`SPOT`).
 - Child records, i.e. records referencing an archived record in their
   primary key (e.g. the zones and prices of a region, or the scores of a
   benchmark), are archived as well without their own rules. Add a rule

@@ -245,6 +245,27 @@ def test_initial_archive_rules():
         ),
         ([dict(table_name="benchmark", match={"benchmark_id": "foo"})], "no reason"),
         (
+            # enum members must be given by value, not by name
+            [
+                dict(
+                    table_name="server_price",
+                    match={"vendor_id": "foo", "allocation": "SPOT"},
+                    reason="foo",
+                )
+            ],
+            "not the value of an enum member",
+        ),
+        (
+            [
+                dict(
+                    table_name="server_price",
+                    match={"vendor_id": "foo", "allocation": "spot"},
+                    successor={"vendor_id": "foo", "allocation": "RESERVED"},
+                )
+            ],
+            "not the value of an enum member",
+        ),
+        (
             [
                 dict(
                     table_name="benchmark",
@@ -296,6 +317,9 @@ def test_check_archive_rules_allows_chains_splits_merges_and_drops():
         ("benchmark_score", {"config": {"x": 1}}, {"config": {"y": 1}}, None),
         # same ids in another table
         ("region", {"region_id": "b"}, {"region_id": "a"}, None),
+        # enum columns by value
+        ("server_price", {"allocation": "spot"}, {"allocation": "ondemand"}, None),
+        ("benchmark_score", {"resource_type": "server"}, {}, "Not needed anymore."),
     ]
     rules = [
         ArchiveRule(table_name=t, match=m, successor=s, reason=r)
