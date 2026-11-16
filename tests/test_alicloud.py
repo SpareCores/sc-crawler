@@ -25,6 +25,7 @@ from sc_crawler.vendors._alicloud import (
     _parse_rds_price,
     _rds_class_memory,
     _rds_class_status,
+    _rds_region_storage_prices,
     _warn_unknown_category,
     inventory_database_prices,
     inventory_database_storage_prices,
@@ -377,6 +378,20 @@ def test_alicloud_rds_class_status(memory_class, orderable, expected):
     assert _rds_class_status({"MemoryClass": memory_class}, orderable) == expected
 
 
+@pytest.mark.parametrize(
+    "memory_class,expected",
+    [
+        (" 4GB（通用型）", Status.ACTIVE),
+        (" 4GB（即将停售）", Status.PLANNED_FOR_RETIREMENT),
+        (" 256GB（已停售）", Status.PLANNED_FOR_RETIREMENT),
+    ],
+)
+def test_alicloud_rds_class_status_of_incomplete_lookup(memory_class, expected):
+    """Not found in a partial lookup is not a signal to retire or drop."""
+    spec = {"MemoryClass": memory_class}
+    assert _rds_class_status(spec, False, complete=False) == expected
+
+
 def _rds_spec(class_code, category, group="通用型", cpu="2", memory=" 4GB", **kwargs):
     spec = {
         "ClassCode": class_code,
@@ -391,9 +406,14 @@ def _rds_spec(class_code, category, group="通用型", cpu="2", memory=" 4GB", *
 
 
 _RDS_PARAMS = {
-    "zone_id": "eu-central-1a",
-    "engine_version": "17.0",
-    "storage_type": "cloud_essd",
+    "zones": [
+        {
+            "zone_id": "eu-central-1a",
+            "engine_version": "17.0",
+            "storage_type": "cloud_essd",
+        }
+    ],
+    "versions": ["14.0", "17.0"],
 }
 _RDS_ZONE_OFFER = {
     "versions": ["14.0", "17.0"],
@@ -401,6 +421,7 @@ _RDS_ZONE_OFFER = {
 }
 _RDS_OFFERS = {
     "eu-central-1": {
+        "complete": True,
         "zones": {
             "basic": {"eu-central-1a": _RDS_ZONE_OFFER},
             "ha": {
@@ -414,7 +435,11 @@ _RDS_OFFERS = {
         },
         "classes": {
             "basic": {"pg.n2.2c.1m": _RDS_PARAMS, "pg.n2.medium.1": _RDS_PARAMS},
-            "ha": {"pg.x4.large.2c": _RDS_PARAMS, "pg.n2.2c.2m": _RDS_PARAMS},
+            "ha": {
+                # not orderable with the older engine version
+                "pg.x4.large.2c": {**_RDS_PARAMS, "versions": ["17.0"]},
+                "pg.n2.2c.2m": _RDS_PARAMS,
+            },
             "cluster": {
                 "pg.x2e.medium.xc": _RDS_PARAMS,
                 # orderable, but not listed by ListClasses
@@ -423,7 +448,7 @@ _RDS_OFFERS = {
         },
     },
     # region without RDS for PostgreSQL
-    "cn-nanjing": {"zones": {}, "classes": {}},
+    "cn-nanjing": {"complete": True, "zones": {}, "classes": {}},
 }
 _RDS_SPECS = {
     "eu-central-1": {
@@ -466,9 +491,9 @@ _RDS_SPECS = {
 }
 
 
-def _rds_patches():
+def _rds_patches(rds_offers=_RDS_OFFERS):
     return (
-        patch("sc_crawler.vendors._alicloud._get_rds_offers", return_value=_RDS_OFFERS),
+        patch("sc_crawler.vendors._alicloud._get_rds_offers", return_value=rds_offers),
         patch(
             "sc_crawler.vendors._alicloud._get_rds_class_specs",
             return_value=_RDS_SPECS,
@@ -480,9 +505,9 @@ def _rds_patches():
     )
 
 
-def _inventory_rds_databases():
+def _inventory_rds_databases(rds_offers=_RDS_OFFERS):
     vendor = Mock(vendor_id="alicloud")
-    offers, specs, clients = _rds_patches()
+    offers, specs, clients = _rds_patches(rds_offers)
     with offers, specs, clients:
         rows = inventory_databases(vendor)
     return vendor, {row["database_id"]: row for row in rows}
@@ -520,6 +545,9 @@ def test_alicloud_inventory_databases_maps_editions_and_lifecycle():
     assert basic["ha"] == [DatabaseHaLevel.NONE]
     assert basic["ha_strategy"] == [DatabaseHaStrategy.NONE]
     assert basic["max_read_replicas"] == 0
+    # no log backups, so no point-in-time restore
+    assert basic["scheduled_backups"] is True
+    assert basic["continuous_backups"] == 0
     assert basic["sla"] is None
     assert basic["compatible_storage_ids"] == [
         "cloud_essd-basic",
@@ -545,6 +573,10 @@ def test_alicloud_inventory_databases_maps_editions_and_lifecycle():
     assert ha["ha"] == [DatabaseHaLevel.MULTI_ZONE, DatabaseHaLevel.SINGLE_ZONE]
     assert ha["ha_strategy"] == [DatabaseHaStrategy.PASSIVE_STANDBY]
     assert ha["max_read_replicas"] == 32
+    assert ha["continuous_backups"] == 730
+    # only the engine versions the instance type is orderable with
+    assert ha["engine_versions"] == ["17"]
+    assert rows["pg.n8.8xlarge.1"]["engine_versions"] == []
     assert ha["sla"] == 99.99
     assert DatabaseSecurityFeature.CUSTOMER_MANAGED_KEYS in ha["security_features"]
     assert rows["pg.n2.2c.2m"]["sla"] == 99.95
@@ -668,3 +700,46 @@ def test_alicloud_inventory_database_storages_and_prices():
         }
     )
     assert {price["region_id"] for price in prices} == {"eu-central-1"}
+
+
+def test_alicloud_inventory_databases_keeps_classes_of_failed_regions():
+    rds_offers = {
+        "eu-central-1": {"complete": False, "zones": {}, "classes": {}},
+        "cn-nanjing": _RDS_OFFERS["cn-nanjing"],
+    }
+    vendor, rows = _inventory_rds_databases(rds_offers)
+    assert rows["pg.n2.2c.1m"]["status"] == Status.ACTIVE
+    assert rows["pg.n2.medium.1"]["status"] == Status.PLANNED_FOR_RETIREMENT
+    assert rows["pg.n8.8xlarge.1"]["status"] == Status.PLANNED_FOR_RETIREMENT
+    assert "not known in all regions" in vendor.log.call_args.args[0]
+
+
+def test_alicloud_storage_price_uses_a_zone_offering_the_disk_type():
+    """Premium ESSD is only offered in the second zone of the instance type."""
+    params_a = {"zone_id": "a", "engine_version": "17.0", "storage_type": "cloud_essd"}
+    params_b = {**params_a, "zone_id": "b"}
+    offer = {
+        "zones": {
+            "ha": {
+                "a": {"versions": ["17.0"], "storage_types": ["cloud_essd"]},
+                "b": {
+                    "versions": ["17.0"],
+                    "storage_types": ["cloud_essd", "cloud_auto"],
+                },
+            }
+        },
+        "classes": {
+            "ha": {"pg.n2.2c.2m": {"zones": [params_a, params_b], "versions": ["17.0"]}}
+        },
+    }
+    with patch(
+        "sc_crawler.vendors._alicloud._fetch_rds_price",
+        return_value={"currency": "USD", "modules": {"rds_storage": 0.001}},
+    ) as fetch:
+        prices = _rds_region_storage_prices(Mock(), "eu-central-1", offer, {})
+    assert sorted(prices) == ["cloud_auto-ha", "cloud_essd-ha"]
+    zones = {
+        call.kwargs["storage_type"]: call.kwargs["zone_id"]
+        for call in fetch.call_args_list
+    }
+    assert zones == {"cloud_essd": "a", "cloud_auto": "b"}
