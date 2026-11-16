@@ -383,7 +383,11 @@ def import_page_cmd(
     if not matches:
         console.print(f"[red]No page {page!r} for {vendor} in sources.yaml[/red]")
         raise typer.Exit(code=1)
-    result = import_page(vendor, matches[0], file, out)
+    try:
+        result = import_page(vendor, matches[0], file, out)
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(code=1)
     console.print(
         f"{vendor}/{page}: imported {result.raw_bytes // 1024} KiB, "
         f"{result.markdown_chars} Markdown chars, {result.table_rows} table rows"

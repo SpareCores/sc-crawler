@@ -283,6 +283,12 @@ def import_page(
     content = source.read_bytes()
     captured = datetime.fromtimestamp(source.stat().st_mtime, UTC).isoformat()
     is_json = page.url.endswith(".json")
+    if is_json:
+        # e.g. an HTML error page saved instead of the feed would break the parser
+        try:
+            json.loads(content)
+        except ValueError as e:
+            raise ValueError(f"{source} is not valid JSON: {e}") from e
     markdown = "" if is_json else html_to_markdown(content)
     table_rows = count_table_rows(markdown)
     result = FetchResult(

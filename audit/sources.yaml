@@ -530,14 +530,15 @@ vendors:
         price_region: us-ashburn-1
         spec_authority: false
         implies_availability: false
+        independent: false
         parser: oci_cost_estimator
         notes: >-
           Blocks automated clients: save it from a browser and import it with
           `sc-audit import-page oci cost-estimator-shapes FILE`. Data feed of
           the cost estimator: the VM, bare metal and PostgreSQL shapes with the
           part numbers billed for each, priced from the public price list (the
-          same our ingest reads, but the shape to part number mapping is
-          independent of ours). Fixed
+          same our ingest reads). Not independent: the shape to part number
+          mapping of our ingest was built by matching this feed. Fixed
           shapes are compared as servers, flexible shapes as per-vCPU and per-GiB
           rates against our grid of configurations. PostgreSQL prices include
           the PostgreSQL OCPU fee on top of the compute shape, for one node and

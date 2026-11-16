@@ -399,6 +399,23 @@ def test_import_page_keeps_json_feeds(tmp_path):
     assert not (pages / "feed.md").exists()
 
 
+def test_import_page_rejects_invalid_json_feeds(tmp_path):
+    source = tmp_path / "shapes.json"
+    source.write_text("<html>Access Denied</html>")
+    page = SourcePage(
+        id="feed", url="https://x/data/shapes.json", kinds=["server_specs"]
+    )
+    with pytest.raises(ValueError, match=r"shapes\.json is not valid JSON: "):
+        import_page("oci", page, source, tmp_path / "out")
+    # nothing is stored as parser input
+    assert not pages_dir(tmp_path / "out", "oci").exists()
+    # non-JSON pages are imported as before
+    html = SourcePage(id="page", url="https://x/pricing/", kinds=["db_features"])
+    assert (
+        import_page("oci", html, source, tmp_path / "out").content_type == "text/html"
+    )
+
+
 def test_is_allowed():
     domains = ["hetzner.com"]
     assert is_allowed("https://www.hetzner.com/cloud/", domains)
