@@ -12,6 +12,10 @@ from sc_crawler.table_fields import (  # noqa: E402
     Allocation,
     CpuAllocation,
     CpuArchitecture,
+    DatabaseEngine,
+    DatabaseHaLevel,
+    DatabaseHaStrategy,
+    DatabaseStorageScope,
     PriceUnit,
     Status,
     StorageType,
@@ -888,9 +892,298 @@ def test_region_locations_cover_egress_parts():
         assert region_id.split("-")[0] in _oci._EGRESS_PARTS
 
 
-def test_database_inventories_are_not_implemented():
+DATABASE_SHAPES = [
+    {
+        "id": "PostgreSQL.VM.Standard.E5.Flex",
+        "shape": "VM.Standard.E5.Flex",
+        "is_flexible": True,
+        "ocpu_count": 2,
+        "memory_size_in_gbs": 32,
+        "shape_ocpu_options": {"min": 1, "max": 64},
+        "shape_memory_options": {
+            "default_per_ocpu_in_gbs": 16,
+            "min_in_gbs": 16,
+            "min_per_ocpu_in_gbs": 1,
+            "max_in_gbs": 1024,
+            "max_per_ocpu_in_gbs": 64,
+        },
+    },
+    {
+        "id": "PostgreSQL.VM.Standard.E5.Flex.2.32GB",
+        "shape": "VM.Standard.E5.Flex",
+        "is_flexible": False,
+        "ocpu_count": 2,
+        "memory_size_in_gbs": 32,
+        "shape_ocpu_options": None,
+        "shape_memory_options": None,
+    },
+    {
+        "id": "PostgreSQL.VM.Standard.E5.Flex.16.256GB",
+        "shape": "VM.Standard.E5.Flex",
+        "is_flexible": False,
+        "ocpu_count": 16,
+        "memory_size_in_gbs": 256,
+        "shape_ocpu_options": None,
+        "shape_memory_options": None,
+    },
+    # flexible shape without fixed size offers
+    {
+        "id": "PostgreSQL.VM.Standard.E6.Flex",
+        "shape": "VM.Standard.E6.Flex",
+        "is_flexible": True,
+        "ocpu_count": 2,
+        "memory_size_in_gbs": 32,
+        "shape_ocpu_options": {"min": 1, "max": 126},
+        "shape_memory_options": {
+            "default_per_ocpu_in_gbs": 16,
+            "min_in_gbs": 16,
+            "min_per_ocpu_in_gbs": 1,
+            "max_in_gbs": 512,
+            "max_per_ocpu_in_gbs": 64,
+        },
+    },
+]
+DATABASE_CONFIGURATIONS = [
+    {
+        "lifecycle_state": "ACTIVE",
+        "db_version": "16",
+        "shape": "PostgreSQL",
+        "compatible_shapes": ["VM.Standard.E5.Flex", "VM.Standard.E6.Flex"],
+    },
+    {
+        "lifecycle_state": "ACTIVE",
+        "db_version": "9",
+        "shape": "PostgreSQL",
+        "compatible_shapes": ["VM.Standard.E5.Flex"],
+    },
+    {
+        "lifecycle_state": "ACTIVE",
+        "db_version": "18",
+        "shape": "PostgreSQL",
+        "compatible_shapes": ["VM.Standard.E5.Flex", "VM.Standard.E6.Flex"],
+    },
+    # inactive or shape-specific configurations are not used
+    {
+        "lifecycle_state": "INACTIVE",
+        "db_version": "12",
+        "shape": "PostgreSQL",
+        "compatible_shapes": ["VM.Standard.E5.Flex"],
+    },
+    {
+        "lifecycle_state": "INACTIVE",
+        "db_version": "14",
+        "shape": "VM.Standard3.Flex.2.32GB",
+        "compatible_shapes": None,
+    },
+]
+DATABASE_PRICE_LIST = PRICE_LIST + [
+    _part("B111129", 0.03),  # E6 OCPU
+    _part("B111130", 0.002),  # E6 memory
+    _part("B99060", 0.098),  # Database with PostgreSQL OCPU
+    _part("B99062", 0.072),  # Database Optimized Storage
+]
+
+
+@pytest.fixture
+def database_api():
+    """Mock the PostgreSQL API and the price list, the same in all regions."""
+    with (
+        patch.object(_oci, "_get_database_shapes", return_value=DATABASE_SHAPES),
+        patch.object(
+            _oci,
+            "_get_database_default_configurations",
+            return_value=DATABASE_CONFIGURATIONS,
+        ),
+        patch.object(_oci, "_get_price_list", return_value=DATABASE_PRICE_LIST),
+    ):
+        yield
+
+
+def _database_vendor():
+    """A vendor with a multi-zone, a single-zone and an inactive region."""
     vendor = Mock(vendor_id="oci")
-    assert inventory_databases(vendor) == []
-    assert inventory_database_prices(vendor) == []
-    assert inventory_database_storages(vendor) == []
-    assert inventory_database_storage_prices(vendor) == []
+    vendor.regions = [
+        Mock(
+            region_id="eu-frankfurt-1",
+            api_reference="eu-frankfurt-1",
+            status=Status.ACTIVE,
+            zones=[Mock(), Mock(), Mock()],
+        ),
+        Mock(
+            region_id="eu-amsterdam-1",
+            api_reference="eu-amsterdam-1",
+            status=Status.ACTIVE,
+            zones=[Mock()],
+        ),
+        Mock(
+            region_id="ap-tokyo-1",
+            api_reference="ap-tokyo-1",
+            status=Status.INACTIVE,
+            zones=[],
+        ),
+    ]
+    vendor.servers = [Mock(server_id="VM.Standard.E5.Flex.2-32")]
+    return vendor
+
+
+def test_database_configs(database_api):
+    configs = {c["database_id"]: c for c in _oci._database_configs("eu-frankfurt-1")}
+    # fixed sizes as is, and a grid only for flexible shapes without fixed sizes
+    assert list(configs) == [
+        "PostgreSQL.VM.Standard.E5.Flex.2.32GB",
+        "PostgreSQL.VM.Standard.E5.Flex.16.256GB",
+        "PostgreSQL.VM.Standard.E6.Flex.2.32GB",
+        "PostgreSQL.VM.Standard.E6.Flex.4.64GB",
+        "PostgreSQL.VM.Standard.E6.Flex.8.128GB",
+        "PostgreSQL.VM.Standard.E6.Flex.16.256GB",
+        # 64 OCPUs is over the 512 GB max memory of the shape
+        "PostgreSQL.VM.Standard.E6.Flex.32.512GB",
+    ]
+    assert configs["PostgreSQL.VM.Standard.E6.Flex.4.64GB"] == {
+        "database_id": "PostgreSQL.VM.Standard.E6.Flex.4.64GB",
+        "shape": "VM.Standard.E6.Flex",
+        "ocpus": 4,
+        "memory_gb": 64,
+    }
+
+
+def test_inventory_databases(database_api):
+    vendor = _database_vendor()
+    rows = {row["database_id"]: row for row in inventory_databases(vendor)}
+    assert len(rows) == 7
+    database = rows["PostgreSQL.VM.Standard.E5.Flex.2.32GB"]
+    assert database["api_reference_object"] == {
+        "shape": "VM.Standard.E5.Flex",
+        "instance_ocpu_count": 2,
+        "instance_memory_size_in_gbs": 32,
+    }
+    assert (database["family"], database["series"]) == ("Standard", "Standard.E5")
+    assert database["server_id"] == "VM.Standard.E5.Flex.2-32"
+    assert (database["vcpus"], database["memory_amount"]) == (4, 32 * 1024)
+    assert database["engine"] == DatabaseEngine.POSTGRESQL
+    # numeric order of the versions with an active configuration for the shape
+    assert database["engine_versions"] == ["9", "16", "18"]
+    assert database["ha"] == [
+        DatabaseHaLevel.MULTI_ZONE,
+        DatabaseHaLevel.SINGLE_ZONE,
+        DatabaseHaLevel.NONE,
+    ]
+    assert database["ha_strategy"] == [
+        DatabaseHaStrategy.READABLE_CLUSTER,
+        DatabaseHaStrategy.NONE,
+    ]
+    assert database["max_read_replicas"] == 7
+    assert database["storage_extra_max"] == 32768
+    assert database["continuous_backups"] == 35
+    assert database["status"] == Status.ACTIVE
+    # tiers of 375,000 IOPS or more require at least 16 OCPUs
+    assert database["compatible_storage_ids"] == [
+        "optimized-75k-iops",
+        "optimized-150k-iops",
+        "optimized-225k-iops",
+        "optimized-300k-iops",
+    ]
+    large = rows["PostgreSQL.VM.Standard.E5.Flex.16.256GB"]
+    assert len(large["compatible_storage_ids"]) == 10
+    assert large["compatible_storage_ids"][-1] == "optimized-750k-iops"
+    # no related server configuration, other versions
+    flex = rows["PostgreSQL.VM.Standard.E6.Flex.4.64GB"]
+    assert flex["server_id"] is None
+    assert flex["engine_versions"] == ["16", "18"]
+    assert flex["series"] == "Standard.E6"
+
+
+def test_inventory_database_prices(database_api):
+    rows = inventory_database_prices(_database_vendor())
+    # no prices in the inactive region
+    assert {row["region_id"] for row in rows} == {"eu-frankfurt-1", "eu-amsterdam-1"}
+
+    def prices(region_id, database_id):
+        return {
+            (row["ha"], row["ha_strategy"]): row["price"]
+            for row in rows
+            if row["region_id"] == region_id and row["database_id"] == database_id
+        }
+
+    # compute shape (OCPU and memory) plus the PostgreSQL fee per OCPU
+    node = 2 * 0.03 + 32 * 0.002 + 2 * 0.098
+    frankfurt = prices("eu-frankfurt-1", "PostgreSQL.VM.Standard.E5.Flex.2.32GB")
+    assert frankfurt == {
+        (DatabaseHaLevel.NONE, DatabaseHaStrategy.NONE): pytest.approx(node),
+        (
+            DatabaseHaLevel.SINGLE_ZONE,
+            DatabaseHaStrategy.READABLE_CLUSTER,
+        ): pytest.approx(2 * node),
+        (
+            DatabaseHaLevel.MULTI_ZONE,
+            DatabaseHaStrategy.READABLE_CLUSTER,
+        ): pytest.approx(2 * node),
+    }
+    # no multi-zone deployment in a region with a single availability domain
+    amsterdam = prices("eu-amsterdam-1", "PostgreSQL.VM.Standard.E5.Flex.2.32GB")
+    assert set(amsterdam) == {
+        (DatabaseHaLevel.NONE, DatabaseHaStrategy.NONE),
+        (DatabaseHaLevel.SINGLE_ZONE, DatabaseHaStrategy.READABLE_CLUSTER),
+    }
+    row = rows[0]
+    assert row["allocation"] == Allocation.ONDEMAND
+    assert row["unit"] == PriceUnit.HOUR
+    assert row["currency"] == "USD"
+
+
+def test_inventory_database_prices_unknown_compute_shape(database_api):
+    shapes = [
+        {
+            "id": "PostgreSQL.VM.Standard9.Flex.2.32GB",
+            "shape": "VM.Standard9.Flex",
+            "is_flexible": False,
+            "ocpu_count": 2,
+            "memory_size_in_gbs": 32,
+        }
+    ]
+    with (
+        patch.object(_oci, "_get_database_shapes", return_value=shapes),
+        patch.object(_oci.logger, "warning") as warning,
+    ):
+        assert inventory_database_prices(_database_vendor()) == []
+    warning.assert_called_once()
+
+
+def test_inventory_database_storages():
+    rows = inventory_database_storages(Mock(vendor_id="oci"))
+    assert len(rows) == 10
+    assert [row["database_storage_id"] for row in rows[:2]] == [
+        "optimized-75k-iops",
+        "optimized-150k-iops",
+    ]
+    assert rows[0]["max_iops"] == 75_000
+    assert rows[-1]["max_iops"] == 750_000
+    assert all(row["scope"] == DatabaseStorageScope.DATA for row in rows)
+    assert all(row["max_size"] == 32768 for row in rows)
+    assert "16 OCPUs" not in rows[3]["description"]
+    assert "16 OCPUs" in rows[4]["description"]
+
+
+def test_inventory_database_storage_prices(database_api):
+    rows = inventory_database_storage_prices(_database_vendor())
+    assert {row["region_id"] for row in rows} == {"eu-frankfurt-1", "eu-amsterdam-1"}
+    by_id = {
+        row["database_storage_id"]: row
+        for row in rows
+        if row["region_id"] == "eu-frankfurt-1"
+    }
+    assert len(by_id) == 10
+    # block volume storage, performance units (2,500 IOPS per VPU) and the
+    # database optimized storage fee
+    assert by_id["optimized-75k-iops"]["price"] == pytest.approx(
+        0.0255 + 30 * 0.0017 + 0.072
+    )
+    assert by_id["optimized-750k-iops"]["price"] == pytest.approx(
+        0.0255 + 300 * 0.0017 + 0.072
+    )
+    assert by_id["optimized-75k-iops"]["unit"] == PriceUnit.GB_MONTH
+
+
+def test_inventory_database_storage_prices_without_service(database_api):
+    with patch.object(_oci, "_get_database_shapes", return_value=[]):
+        assert inventory_database_storage_prices(_database_vendor()) == []
