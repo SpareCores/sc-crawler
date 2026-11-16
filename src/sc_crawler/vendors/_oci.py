@@ -679,8 +679,13 @@ def _get_regions() -> list[dict]:
     return oci.util.to_dict(regions)
 
 
+def _tenancy() -> str:
+    """OCID of the tenancy, also used in the cache key of its specific lookups."""
+    return _config()["tenancy"]
+
+
 @cachier()
-def _get_region_subscriptions() -> list[dict]:
+def _get_region_subscriptions(tenancy: str) -> list[dict]:
     """List the regions the tenancy is subscribed to (ListRegionSubscriptions).
 
     Reference: <https://docs.oracle.com/en-us/iaas/api/#/en/identity/20160918/RegionSubscription/ListRegionSubscriptions>
@@ -696,15 +701,13 @@ def _get_region_subscriptions() -> list[dict]:
     #     # ...
     # ]
     subscriptions = (
-        _client(oci.identity.IdentityClient)
-        .list_region_subscriptions(_config()["tenancy"])
-        .data
+        _client(oci.identity.IdentityClient).list_region_subscriptions(tenancy).data
     )
     return oci.util.to_dict(subscriptions)
 
 
 @cachier(separate_files=True)
-def _get_availability_domains(region: str) -> list[str]:
+def _get_availability_domains(region: str, tenancy: str) -> list[str]:
     """List the availability domain names of a region (ListAvailabilityDomains).
 
     The names are specific to the tenancy, both the prefix and the mapping of
@@ -723,7 +726,7 @@ def _get_availability_domains(region: str) -> list[str]:
     # ]
     availability_domains = (
         _client(oci.identity.IdentityClient, region)
-        .list_availability_domains(_config()["tenancy"])
+        .list_availability_domains(tenancy)
         .data
     )
     return [availability_domain.name for availability_domain in availability_domains]
@@ -735,7 +738,7 @@ def _availability_domain(region: str, name: str) -> str:
     The prefix of the tenancy is not stored in the zones, so it is looked up for
     the API calls, e.g. `EU-FRANKFURT-1-AD-1` -> `Uocm:EU-FRANKFURT-1-AD-1`.
     """
-    for availability_domain in _get_availability_domains(region):
+    for availability_domain in _get_availability_domains(region, _tenancy()):
         if availability_domain.split(":")[-1] == name:
             return availability_domain
     raise KeyError(f"Unknown availability domain in {region}: {name}")
@@ -754,7 +757,7 @@ def _zone_id(region: str, availability_domain: str) -> str:
 
 
 @cachier(separate_files=True)
-def _get_shapes(region: str, availability_domain: str) -> list[dict]:
+def _get_shapes(region: str, availability_domain: str, tenancy: str) -> list[dict]:
     """List the shapes that can be launched in an availability domain (ListShapes).
 
     Note that only the shapes with a service limit in the tenancy are listed,
@@ -828,7 +831,7 @@ def _get_shapes(region: str, availability_domain: str) -> list[dict]:
     # ]
     shapes = oci.pagination.list_call_get_all_results(
         _client(oci.core.ComputeClient, region).list_shapes,
-        _config()["tenancy"],
+        tenancy,
         availability_domain=availability_domain,
     ).data
     return oci.util.to_dict(shapes)
@@ -1301,7 +1304,7 @@ def _inventory_server_prices(vendor, allocation: Allocation) -> list[dict]:
     )
     for zone in zones:
         availability_domain = _availability_domain(zone.region_id, zone.api_reference)
-        for shape in _get_shapes(zone.region_id, availability_domain):
+        for shape in _get_shapes(zone.region_id, availability_domain, _tenancy()):
             with sentry_capture_or_raise(vendor=vendor):
                 # limited to two instances per tenancy, see inventory_servers
                 if shape.get("billing_type") == "ALWAYS_FREE":
@@ -1369,7 +1372,7 @@ def inventory_regions(vendor):
     items = []
     subscribed = {
         subscription["region_name"]
-        for subscription in _get_region_subscriptions()
+        for subscription in _get_region_subscriptions(_tenancy())
         if subscription["status"] == "READY"
     }
     not_subscribed = []
@@ -1428,7 +1431,9 @@ def inventory_zones(vendor):
     regions = [region for region in vendor.regions if region.status == Status.ACTIVE]
     vendor.progress_tracker.start_task(name="Fetching zones", total=len(regions))
     for region in regions:
-        for availability_domain in _get_availability_domains(region.api_reference):
+        for availability_domain in _get_availability_domains(
+            region.api_reference, _tenancy()
+        ):
             name = availability_domain.split(":")[-1]
             items.append(
                 {
@@ -1468,7 +1473,7 @@ def inventory_servers(vendor):
         servers = []
         region = zone_regions[zone_name]
         availability_domain = _availability_domain(region, zone_name)
-        for shape in _get_shapes(region, availability_domain):
+        for shape in _get_shapes(region, availability_domain, _tenancy()):
             with sentry_capture_or_raise(vendor=vendor):
                 servers.extend(_shape_servers(shape, vendor))
         return servers

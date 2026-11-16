@@ -49,6 +49,7 @@ from sc_crawler.vendors._oci import (  # noqa: E402
 )
 
 AD = "Uocm:EU-FRANKFURT-1-AD-1"
+TENANCY = "ocid1.tenancy.oc1..test"
 
 
 def _flex_shape(name="VM.Standard.E5.Flex", **kwargs):
@@ -197,7 +198,9 @@ def _clear_caches():
     for cached in (_oci._price_parts, _oci._warn_no_price, _oci._warn_unknown):
         cached.cache_clear()
     _config.cache_clear()
-    yield
+    # no credentials are needed for the tenancy of the cache keys
+    with patch.object(_oci, "_tenancy", return_value=TENANCY):
+        yield
     _oci._price_parts.cache_clear()
     _config.cache_clear()
 
@@ -234,7 +237,9 @@ def _patch_shapes(shapes_by_ad):
             _oci, "_get_availability_domains", return_value=list(shapes_by_ad)
         ),
         patch.object(
-            _oci, "_get_shapes", side_effect=lambda region, ad: shapes_by_ad[ad]
+            _oci,
+            "_get_shapes",
+            side_effect=lambda region, ad, tenancy: shapes_by_ad[ad],
         ),
     ):
         yield
@@ -652,6 +657,30 @@ def test_inventory_regions_status_from_subscriptions():
     assert rows["ap-tokyo-1"]["status"] == Status.INACTIVE
 
 
+def test_inventory_regions_passes_tenancy_to_cached_lookup():
+    with (
+        patch.object(_oci, "_get_regions", return_value=[]),
+        patch.object(
+            _oci, "_get_region_subscriptions", return_value=[]
+        ) as get_region_subscriptions,
+    ):
+        assert inventory_regions(Mock(vendor_id="oci")) == []
+    get_region_subscriptions.assert_called_once_with(TENANCY)
+
+
+def test_inventory_servers_passes_tenancy_to_cached_lookups():
+    shapes_by_ad = {AD: [_fixed_shape("VM.Standard2.4", 4, 60)]}
+    with (
+        patch.object(
+            _oci, "_get_availability_domains", return_value=[AD]
+        ) as get_availability_domains,
+        patch.object(_oci, "_get_shapes", return_value=shapes_by_ad[AD]) as get_shapes,
+    ):
+        inventory_servers(_vendor(shapes_by_ad))
+    get_availability_domains.assert_called_once_with("eu-frankfurt-1", TENANCY)
+    get_shapes.assert_called_once_with("eu-frankfurt-1", AD, TENANCY)
+
+
 def test_inventory_regions_unknown_region_raises(monkeypatch):
     monkeypatch.delenv("SENTRY_DSN", raising=False)
     with (
@@ -682,7 +711,8 @@ def test_inventory_zones_only_in_active_regions():
         return_value=["Uocm:PHX-AD-1", "Uocm:PHX-AD-2"],
     ) as get_availability_domains:
         rows = inventory_zones(vendor)
-    get_availability_domains.assert_called_once_with("us-phoenix-1")
+    # the tenancy is part of the cache key of the tenancy-specific lookups
+    get_availability_domains.assert_called_once_with("us-phoenix-1", TENANCY)
     assert [row["zone_id"] for row in rows] == [
         "us-phoenix-1-ad-1",
         "us-phoenix-1-ad-2",
