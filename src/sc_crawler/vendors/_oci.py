@@ -4,7 +4,7 @@ from functools import cache
 from math import ceil
 from os import environ, getenv
 from re import compile as recompile
-from re import search, sub
+from re import findall, search, sub
 from typing import Any
 
 import oci
@@ -386,6 +386,11 @@ _SHAPE_FAMILIES: dict[str, str] = {
 # https://docs.oracle.com/en-us/iaas/Content/Compute/References/computeshapes.htm
 _X86_VCPUS_PER_OCPU = 2
 _ARM_VCPUS_PER_OCPU: dict[str, int] = {"A1": 1, "A2": 2, "A4": 2}
+# GPU shapes running on the Arm-based NVIDIA Grace CPUs (no SMT), with an OCPU
+# per core: BM.GPU.GB200.4 and BM.GPU.GB300.4 are listed with 144 OCPUs, which
+# is the 2x 72-core Grace CPUs of a GB200/GB300 compute tray.
+_GRACE_SERIES = frozenset({"GPU.GB200", "GPU.GB300"})
+_GRACE_VCPUS_PER_OCPU = 1
 
 # Flexible shapes can be launched with any number of OCPUs and memory within
 # the limits of the shape, so a grid of the below OCPU counts (and the maximum
@@ -593,7 +598,8 @@ _EGRESS_PARTS: dict[str, str] = {
     "il": "B93456",
     "af": "B93456",
 }
-# tiered prices of the price list have no upper limit in the last tier
+# the price list API returns this number as the `rangeMax` of the last tier of
+# the tiered prices, which is stored as "Infinity" (see `_price_tiers`)
 _PRICE_RANGE_INFINITY = 999999999999999
 
 
@@ -848,10 +854,12 @@ def _shape_family(series: str) -> str | None:
 
 
 def _is_arm(shape: dict) -> bool:
-    """Check if a shape is running on the Arm-based Ampere processors."""
+    """Check if a shape is running on Arm-based (Ampere or NVIDIA Grace) processors."""
     if "ampere" in (shape.get("processor_description") or "").lower():
         return True
     _, series = _shape_series(shape["shape"])
+    if series in _GRACE_SERIES:
+        return True
     return bool(search(r"^(Standard|DenseIO)\.A\d", series))
 
 
@@ -860,6 +868,8 @@ def _vcpus_per_ocpu(shape: dict) -> int:
     if not _is_arm(shape):
         return _X86_VCPUS_PER_OCPU
     _, series = _shape_series(shape["shape"])
+    if series in _GRACE_SERIES:
+        return _GRACE_VCPUS_PER_OCPU
     generation = search(r"\.(A\d+)(?:\.|$)", series)
     if not generation or generation.group(1) not in _ARM_VCPUS_PER_OCPU:
         raise ValueError(f"Unknown OCPU definition of the Arm shape: {shape['shape']}")
@@ -871,12 +881,13 @@ def _parse_processor_description(description: str | None) -> dict:
 
     E.g. `2.3 GHz AMD EPYC™ 9J14 (Genoa)` is a 2.3 GHz AMD EPYC 9J14, and
     `3.0 GHz Intel® Xeon® Gold 6354 (Ice Lake)` is a 3 GHz Intel Xeon 6354.
-    When both the base and turbo frequencies are listed, the base is used.
+    When both the base and turbo frequencies are listed, the turbo (maximum) is
+    used, as the CPU speed is the maximum clock speed.
     """
     text = (description or "").replace("®", "").replace("™", "")
     # drop the code names, e.g. (Genoa) or (Banshee 12)
     text = sub(r"\s*\([^)]*\)", "", text).strip()
-    speed = search(r"([\d.]+)\s*GHz", text)
+    speeds = [float(speed) for speed in findall(r"(\d+(?:\.\d+)?)\s*GHz", text)]
     family = None
     model = None
     if "EPYC" in text:
@@ -890,7 +901,7 @@ def _parse_processor_description(description: str | None) -> dict:
     elif "Altra" in text:
         family = "Altra"
     return {
-        "cpu_speed": float(speed.group(1)) if speed else None,
+        "cpu_speed": max(speeds) if speeds else None,
         "cpu_manufacturer": _extract_manufacturer(text) if text else None,
         "cpu_family": family,
         "cpu_model": model.group(1).strip() if model else None,
@@ -1542,13 +1553,17 @@ def inventory_storage_prices(vendor):
 
 
 def _price_tiers(part_number: str) -> list[dict]:
-    """Convert the usage ranges of a price list part to tiered prices."""
+    """Convert the usage ranges of a price list part to tiered prices.
+
+    The ranges are continuous (the `rangeMin` of a tier is the `rangeMax` of the
+    previous one), and are kept as is.
+    """
     tiers = _part_price_tiers(part_number)
     if len(tiers) < 2:
         return []
     return [
         {
-            "lower": tier["rangeMin"] + 1,
+            "lower": tier["rangeMin"],
             "upper": (
                 "Infinity"
                 if tier["rangeMax"] >= _PRICE_RANGE_INFINITY

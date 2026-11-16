@@ -7,6 +7,7 @@ import pytest
 
 pytest.importorskip("oci")
 
+from sc_crawler.lookup import country_continent_mapping  # noqa: E402
 from sc_crawler.table_fields import (  # noqa: E402
     Allocation,
     CpuAllocation,
@@ -355,7 +356,8 @@ def test_shape_family(series, expected):
         ),
         (
             "2.2 GHz Base 3.9 GHz Turbo Intel® Xeon® Platinum 6987C-P (Granite Rapids)",
-            (2.2, "Intel", "Xeon", "6987C-P"),
+            # the turbo frequency is the maximum clock speed
+            (3.9, "Intel", "Xeon", "6987C-P"),
         ),
         ("3.0 GHz Ampere® Altra™", (3.0, "Ampere", "Altra", None)),
         ("3.0 GHz Ampere® AmpereOne™ (Siryn™)", (3.0, "Ampere", "AmpereOne", None)),
@@ -577,6 +579,23 @@ def test_shape_servers_gpu():
     (server,) = _shape_servers(amd, Mock(vendor_id="oci"))
     assert server["accelerator_manufacturer"] == "AMD"
     assert server["accelerator_memory_total"] == 8 * 192 * 1024
+
+
+def test_shape_servers_grace_gpu_is_arm():
+    shape = _fixed_shape("BM.GPU.GB200.4", 144, 960, gpus=4, processor_description=None)
+    assert _vcpus_per_ocpu(shape) == 1
+    (server,) = _shape_servers(shape, Mock(vendor_id="oci"))
+    assert server["cpu_architecture"] == CpuArchitecture.ARM64
+    assert (server["vcpus"], server["cpu_cores"]) == (144, 144)
+    gb300 = _fixed_shape("BM.GPU.GB300.4", 144, 960, gpus=4)
+    (server,) = _shape_servers(gb300, Mock(vendor_id="oci"))
+    assert server["cpu_architecture"] == CpuArchitecture.ARM64
+    assert server["vcpus"] == 144
+    # other GPU shapes are still x86 with two vCPUs per OCPU
+    b200 = _fixed_shape("BM.GPU.B200.8", 128, 4096, gpus=8)
+    (server,) = _shape_servers(b200, Mock(vendor_id="oci"))
+    assert server["cpu_architecture"] == CpuArchitecture.X86_64
+    assert (server["vcpus"], server["cpu_cores"]) == (256, 128)
 
 
 def test_shape_servers_unknown_gpu_series():
@@ -836,8 +855,8 @@ def test_inventory_traffic_prices(price_list):
     assert outbound["il-jerusalem-1"]["price"] == 0.05
     # first 10 TB is free per month
     assert outbound["eu-frankfurt-1"]["price_tiered"] == [
-        {"lower": 1, "upper": 10240, "price": 0},
-        {"lower": 10241, "upper": "Infinity", "price": 0.0085},
+        {"lower": 0, "upper": 10240, "price": 0},
+        {"lower": 10240, "upper": "Infinity", "price": 0.0085},
     ]
 
 
@@ -857,6 +876,11 @@ def test_inventory_ipv4_prices_are_free():
         ("eu-frankfurt-1", 0),
         ("ap-tokyo-1", 0),
     ]
+
+
+def test_region_locations_have_known_countries():
+    for location in _oci._REGION_LOCATIONS.values():
+        assert location["country_id"] in country_continent_mapping
 
 
 def test_region_locations_cover_egress_parts():
