@@ -1,3 +1,12 @@
+## v0.11.x (DEVELOPMENT)
+
+New feature(s):
+
+- Implement database inventories for `AliCloud`: ApsaraDB RDS for PostgreSQL
+  instance types of the Basic, High-availability and Cluster Editions with
+  their pay-as-you-go prices, and the ESSD storage options priced per edition
+  (e.g. `cloud_essd-ha`). Cluster Edition prices are stored for 2 nodes.
+
 ## v0.11.0 (November 16, 2026)
 
 ‼ Breaking changes:
