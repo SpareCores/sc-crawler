@@ -226,15 +226,22 @@ Without the `OCI_TENANCY_OCID` environment variable, the standard
 `~/.oci/config` file is used, with the profile optionally set in
 `OCI_CONFIG_PROFILE`.
 
-No further policy was needed for the managed PostgreSQL databases: any
+No further policy is needed for the managed PostgreSQL databases: any
 authenticated user can list the shapes of the OCI Database with PostgreSQL
-service, and its default configurations were also listed with the above policy.
+service, and its default configurations are also listed with the above policy.
 
-Note that availability domains, compute and database shapes can be listed only
-in the regions the tenancy is subscribed to, and compute shapes only with a
-service limit in the tenancy (e.g. GPU shapes are not listed by default), so
-subscribe to all regions and request the service limits as needed. The prices
-are from the public price list, which does not require authentication.
+The collected data depends on the tenancy:
+
+- Availability domains, compute and database shapes can be listed only in the
+  regions the tenancy is subscribed to, so the other regions are stored as
+  inactive, without zones, servers and databases. Note that a region
+  subscription cannot be removed.
+- Only the compute shapes that can be launched in the tenancy are listed, e.g.
+  GPU, HPC and VM Dense I/O shapes might be missing without the related service
+  limits.
+
+The prices are from the public price list, which does not require
+authentication.
 
 </details>
 
