@@ -46,7 +46,7 @@ The related user or role requires the below minimum IAM policy:
                 "ec2:DescribeInstanceTypes",
                 "ec2:DescribeSpotPriceHistory",
                 "ec2:DescribeInstanceTypeOfferings",
-                "rds:DescribeOrderableDBInstanceOptions"
+                "rds:DescribeOrderableDBInstanceOptions",
                 "rds:DescribeDBMajorEngineVersions"
             ],
             "Resource": "*"
@@ -242,6 +242,20 @@ The collected data depends on the tenancy:
 
 The prices are from the public price list, which does not require
 authentication.
+
+</details>
+
+<details markdown="1">
+
+<summary>Vultr</summary>
+
+Regions, servers and their prices are collected from the public endpoints of
+the Vultr API without authentication. Listing the managed PostgreSQL database
+plans and versions requires an API key, which can be created in the API
+settings of the Vultr customer portal, and is to be stored in the following
+environment variable:
+
+- `VULTR_API_KEY`
 
 </details>
 
