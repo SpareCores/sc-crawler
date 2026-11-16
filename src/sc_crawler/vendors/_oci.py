@@ -1,4 +1,4 @@
-"""Inventory of Oracle Cloud Infrastructure via its API and the public price list: servers, storages, traffic and IPv4 addresses, with their prices."""
+"""Inventory of Oracle Cloud Infrastructure via its API and the public price list: servers, storages, traffic, IPv4 addresses and managed PostgreSQL, with their prices."""
 
 from functools import cache
 from math import ceil
@@ -20,6 +20,12 @@ from ..table_fields import (
     Allocation,
     CpuAllocation,
     CpuArchitecture,
+    DatabaseEngine,
+    DatabaseHaLevel,
+    DatabaseHaStrategy,
+    DatabaseSecurityFeature,
+    DatabaseStorageScope,
+    DatabaseWireProtocol,
     Disk,
     PriceUnit,
     Status,
@@ -1633,20 +1639,487 @@ def inventory_ipv4_prices(vendor):
     return items
 
 
-# TODO: Implement database collectors (OCI Database with PostgreSQL)
+# OCI Database with PostgreSQL is billed "on top of standard compute and block
+# storage costs" (https://www.oracle.com/cloud/postgresql/pricing/), listed as
+# the compute cost of the shape, storage cost, volume performance unit cost and
+# the "related OCI Database with PostgreSQL fees" at
+# https://docs.oracle.com/en-us/iaas/Content/postgresql/billing.htm
+# - B99060: Database with PostgreSQL - X86 (OCPU per hour)
+# - B99062: Database Optimized Storage (GB per month)
+_DATABASE_OCPU_PART = "B99060"
+_DATABASE_STORAGE_PART = "B99062"
+
+# Flexible database shapes without fixed size offers are listed with the OCPU
+# counts of the fixed sizes of the other shapes (e.g.
+# PostgreSQL.VM.Standard.E5.Flex.2.32GB), with the default memory per OCPU.
+_DATABASE_FLEX_OCPUS: tuple[int, ...] = (2, 4, 8, 16, 32, 64)
+
+# "Maximum read replica nodes per database: 7" and "Maximum storage per database
+# system: 32 TB" as per
+# https://docs.oracle.com/en-us/iaas/Content/postgresql/manage-databases.htm
+_DATABASE_MAX_READ_REPLICAS = 7
+_DATABASE_MAX_STORAGE = 32 * 1024
+# number of nodes of the highly available price rows: a primary and a read
+# replica, which is promoted on the failure of the primary
+_DATABASE_HA_NODES = 2
+
+# Performance tiers (guaranteed IOPS, irrespective of the database size) of the
+# database optimized storage. "Tiers of 375,000 IOPS or more require a shape with
+# at least 16 OCPUs."
+# https://docs.oracle.com/en-us/iaas/Content/postgresql/performance-tiers.htm
+_DATABASE_STORAGE_IOPS: tuple[int, ...] = (
+    75_000,
+    150_000,
+    225_000,
+    300_000,
+    375_000,
+    450_000,
+    525_000,
+    600_000,
+    675_000,
+    750_000,
+)
+_DATABASE_STORAGE_HIGH_IOPS = 375_000
+_DATABASE_STORAGE_HIGH_IOPS_MIN_OCPUS = 16
+# "Those IOPS values map to volume performance units (VPUs)" as per the billing
+# docs, and a block volume has 2,500 IOPS per VPU (e.g. 75,000 IOPS at 30 VPUs):
+# https://docs.oracle.com/en-us/iaas/Content/Block/Concepts/blockvolumeperformance.htm
+_DATABASE_STORAGE_IOPS_PER_VPU = 2_500
+
+
+def _database_storage_id(iops: int) -> str:
+    """Database storage id of a performance tier, e.g. optimized-75k-iops."""
+    return f"optimized-{iops // 1000}k-iops"
+
+
+@cachier(separate_files=True)
+def _get_database_shapes(region: str) -> list[dict]:
+    """List the shapes of OCI Database with PostgreSQL in a region (ListShapes).
+
+    No permission is required: "Any authenticated user can list shapes."
+
+    Reference: <https://docs.oracle.com/en-us/iaas/api/#/en/postgresql/20220915/ShapeCollection/ListShapes>
+    """
+    # example response (after `oci.util.to_dict`):
+    # [
+    #     {
+    #         'id': 'PostgreSQL.VM.Standard.E5.Flex',
+    #         'shape': 'VM.Standard.E5.Flex',
+    #         'is_flexible': True,
+    #         'ocpu_count': 2,
+    #         'memory_size_in_gbs': 32,
+    #         'shape_ocpu_options': {'min': 1, 'max': 64},
+    #         'shape_memory_options': {
+    #             'default_per_ocpu_in_gbs': 16,
+    #             'min_in_gbs': 16,
+    #             'min_per_ocpu_in_gbs': 1,
+    #             'max_in_gbs': 1024,
+    #             'max_per_ocpu_in_gbs': 64,
+    #         },
+    #     },
+    #     {
+    #         'id': 'PostgreSQL.VM.Standard.E5.Flex.2.32GB',
+    #         'shape': 'VM.Standard.E5.Flex',
+    #         'is_flexible': False,
+    #         'ocpu_count': 2,
+    #         'memory_size_in_gbs': 32,
+    #         'shape_ocpu_options': None,
+    #         'shape_memory_options': None,
+    #     },
+    #     # ...
+    # ]
+    shapes = oci.pagination.list_call_get_all_results(
+        _client(oci.psql.PostgresqlClient, region).list_shapes,
+        compartment_id=_config()["tenancy"],
+    ).data
+    return oci.util.to_dict(shapes)
+
+
+@cachier(separate_files=True)
+def _get_database_default_configurations(region: str) -> list[dict]:
+    """List the default configurations of OCI Database with PostgreSQL in a region.
+
+    Used for the supported PostgreSQL versions of the shapes.
+
+    Reference: <https://docs.oracle.com/en-us/iaas/api/#/en/postgresql/20220915/DefaultConfigurationCollection/ListDefaultConfigurations>
+    """
+    # example response (after `oci.util.to_dict`):
+    # [
+    #     {
+    #         'id': 'ocid1.postgresqldefaultconfiguration.oc1.eu-frankfurt-1.amaa...',
+    #         'display_name': 'PostgreSQL.X86-14-0_58',
+    #         'time_created': '2026-11-13T07:26:58.393000+00:00',
+    #         'lifecycle_state': 'ACTIVE',
+    #         'lifecycle_details': None,
+    #         'db_version': '14',
+    #         'shape': 'PostgreSQL',
+    #         'is_flexible': True,
+    #         'instance_ocpu_count': 0,
+    #         'instance_memory_size_in_gbs': 0,
+    #         'compatible_shapes': [
+    #             'VM.Standard3.Flex',
+    #             'VM.Standard.E5.Flex',
+    #             'VM.Standard.E6.Flex',
+    #         ],
+    #     },
+    #     {
+    #         'id': 'ocid1.postgresqldefaultconfiguration.oc1.eu-frankfurt-1.amaa...',
+    #         'display_name': 'PostgreSQL.VM.Standard3.Flex.2.32GB-14-0_29',
+    #         'lifecycle_state': 'INACTIVE',
+    #         'db_version': '14',
+    #         'shape': 'VM.Standard3.Flex.2.32GB',
+    #         'is_flexible': False,
+    #         'instance_ocpu_count': 2,
+    #         'instance_memory_size_in_gbs': 32,
+    #         'compatible_shapes': None,
+    #         # ...
+    #     },
+    #     # ...
+    # ]
+    configurations = oci.pagination.list_call_get_all_results(
+        _client(oci.psql.PostgresqlClient, region).list_default_configurations
+    ).data
+    return oci.util.to_dict(configurations)
+
+
+def _database_configs(region: str) -> list[dict]:
+    """List the database configurations (shape, OCPUs and memory) of a region.
+
+    The fixed size offers of the shapes are listed as is (e.g.
+    `PostgreSQL.VM.Standard.E5.Flex.2.32GB`). Flexible shapes without such offers
+    are expanded to the OCPU counts of `_DATABASE_FLEX_OCPUS` within the limits
+    of the shape, with the default memory per OCPU, using the same id format.
+    """
+    shapes = _get_database_shapes(region)
+    fixed_shapes = {shape["shape"] for shape in shapes if not shape["is_flexible"]}
+    configs = []
+    for shape in shapes:
+        if not shape["is_flexible"]:
+            configs.append(
+                {
+                    "database_id": shape["id"],
+                    "shape": shape["shape"],
+                    "ocpus": shape["ocpu_count"],
+                    "memory_gb": shape["memory_size_in_gbs"],
+                }
+            )
+            continue
+        if shape["shape"] in fixed_shapes:
+            continue
+        ocpu_options = shape["shape_ocpu_options"]
+        memory_options = shape["shape_memory_options"]
+        for ocpus in _DATABASE_FLEX_OCPUS:
+            memory_gb = ocpus * memory_options["default_per_ocpu_in_gbs"]
+            if (
+                ocpus < ocpu_options["min"]
+                or ocpus > ocpu_options["max"]
+                or memory_gb < memory_options["min_in_gbs"]
+                or memory_gb > memory_options["max_in_gbs"]
+            ):
+                continue
+            configs.append(
+                {
+                    "database_id": f"{shape['id']}.{ocpus}.{memory_gb}GB",
+                    "shape": shape["shape"],
+                    "ocpus": ocpus,
+                    "memory_gb": memory_gb,
+                }
+            )
+    return configs
+
+
+def _database_versions(region: str, shape_name: str) -> set[str]:
+    """PostgreSQL major versions with an active default configuration for a shape."""
+    return {
+        configuration["db_version"]
+        for configuration in _get_database_default_configurations(region)
+        if configuration["lifecycle_state"] == "ACTIVE"
+        and shape_name in (configuration.get("compatible_shapes") or [])
+    }
+
+
+def _database_storage_ids(ocpus: int) -> list[str]:
+    """Performance tiers of the database storage available for an OCPU count."""
+    return [
+        _database_storage_id(iops)
+        for iops in _DATABASE_STORAGE_IOPS
+        if iops < _DATABASE_STORAGE_HIGH_IOPS
+        or ocpus >= _DATABASE_STORAGE_HIGH_IOPS_MIN_OCPUS
+    ]
+
+
+def _active_regions(vendor) -> list:
+    """Regions the tenancy is subscribed to, see `inventory_regions`."""
+    return [region for region in vendor.regions if region.status == Status.ACTIVE]
 
 
 def inventory_databases(vendor):
-    return []
+    """List the shapes of OCI Database with PostgreSQL as databases.
+
+    The shapes are listed per region (see `_database_configs` on the sizes), and
+    the supported PostgreSQL versions are from the active default
+    configurations of the service. The features are from the documentation.
+
+    A database system has a primary node and up to 7 read replica nodes on shared
+    storage. With multiple nodes, a read replica is promoted on the failure of
+    the primary node, with the nodes placed in different fault domains of an
+    availability domain, or in different availability domains (with the storage
+    replicated across the availability domains). Note that the latter is
+    available only in the regions with multiple availability domains, see
+    `inventory_database_prices`.
+
+    Lifecycle: shapes listed in any of the active regions -> ACTIVE. There is no
+    lifecycle field in the API.
+
+    Data sources:
+
+    - <https://docs.oracle.com/en-us/iaas/Content/postgresql/overview.htm>
+    - <https://docs.oracle.com/en-us/iaas/Content/postgresql/high-availability.htm>
+    - <https://docs.oracle.com/en-us/iaas/Content/postgresql/manage-databases.htm>
+    - <https://docs.oracle.com/en-us/iaas/releasenotes/services/postgresql/>
+    """
+    databases = {}
+    versions = {}
+    regions = _active_regions(vendor)
+    vendor.progress_tracker.start_task(name="Fetching databases", total=len(regions))
+    for region in regions:
+        for config in _database_configs(region.api_reference):
+            databases[config["database_id"]] = config
+            versions.setdefault(config["database_id"], set()).update(
+                _database_versions(region.api_reference, config["shape"])
+            )
+        vendor.progress_tracker.advance_task()
+    vendor.progress_tracker.hide_task()
+
+    server_ids = {server.server_id for server in vendor.servers}
+    items = []
+    for database_id, config in databases.items():
+        with sentry_capture_or_raise(vendor=vendor):
+            shape_name = config["shape"]
+            ocpus = config["ocpus"]
+            memory_gb = config["memory_gb"]
+            _, series = _shape_series(shape_name)
+            family = _shape_family(series)
+            vcpus = ocpus * _X86_VCPUS_PER_OCPU
+            server_id = f"{shape_name}.{ocpus}-{memory_gb}"
+            items.append(
+                {
+                    "vendor_id": vendor.vendor_id,
+                    "database_id": database_id,
+                    "name": database_id,
+                    "api_reference": database_id,
+                    # https://www.pulumi.com/registry/packages/oci/api-docs/psql/dbsystem/
+                    "api_reference_object": {
+                        "shape": shape_name,
+                        "instance_ocpu_count": ocpus,
+                        "instance_memory_size_in_gbs": memory_gb,
+                    },
+                    "display_name": database_id,
+                    "description": (
+                        f"OCI Database with PostgreSQL {family} "
+                        f"({vcpus} vCPUs, {memory_gb} GiB RAM)"
+                    ),
+                    "family": family,
+                    "series": series,
+                    # the related configuration of the flexible compute shape
+                    "server_id": server_id if server_id in server_ids else None,
+                    "vcpus": vcpus,
+                    "memory_amount": memory_gb * _MIB_PER_GIB,
+                    "engine": DatabaseEngine.POSTGRESQL,
+                    "wire_protocol": DatabaseWireProtocol.POSTGRESQL,
+                    "engine_versions": sorted(versions[database_id], key=int),
+                    # maintenance is "performed only when required for security or
+                    # reliability issues", minor version upgrades are not documented
+                    "auto_upgrade_versions": None,
+                    "ha": [
+                        DatabaseHaLevel.MULTI_ZONE,
+                        DatabaseHaLevel.SINGLE_ZONE,
+                        DatabaseHaLevel.NONE,
+                    ],
+                    "ha_strategy": [
+                        DatabaseHaStrategy.READABLE_CLUSTER,
+                        DatabaseHaStrategy.NONE,
+                    ],
+                    "max_read_replicas": _DATABASE_MAX_READ_REPLICAS,
+                    # custom configurations, also used to enable the extensions
+                    "custom_config": True,
+                    "custom_extensions": True,
+                    # storage is not bundled: it scales automatically, and only
+                    # the used storage is billed
+                    "storage_size": 0,
+                    "storage_extra_min": 0,
+                    "storage_extra_max": _DATABASE_MAX_STORAGE,
+                    "storage_extra_autosize": True,
+                    "compatible_storage_ids": _database_storage_ids(ocpus),
+                    # "Data is encrypted both in-transit and at rest."
+                    "disk_encryption": True,
+                    # daily, weekly or monthly automatic backups
+                    "scheduled_backups": True,
+                    # point-in-time recovery: "The maximum number of days you can
+                    # enter is 35."
+                    "continuous_backups": 35,
+                    # no managed connection pooler is documented
+                    "connection_pool": None,
+                    # https://docs.oracle.com/en-us/iaas/Content/postgresql/metrics.htm
+                    "system_monitoring": True,
+                    # Query Insights
+                    "database_monitoring": True,
+                    "autotuning_advice": None,
+                    "autotuning_apply": None,
+                    # "99.99% uptime SLA" for multi-node database systems (99.9%
+                    # for single-node systems in the single-AD regions)
+                    "sla": 99.99,
+                    "security_features": [
+                        # endpoints "aren't directly accessible from the internet",
+                        # only from the private subnet of the database system
+                        DatabaseSecurityFeature.PRIVATE_NETWORK,
+                        # "Use your own encryption key" (2026-09-15 release note)
+                        DatabaseSecurityFeature.CUSTOMER_MANAGED_KEYS,
+                    ],
+                    "status": Status.ACTIVE,
+                }
+            )
+    return items
+
+
+def _database_node_hourly_price(config: dict) -> float | None:
+    """Hourly price of a database node: the compute shape and the PostgreSQL fee.
+
+    Returns None when the price list parts of the compute shape are not known.
+    """
+    parts = _shape_price_parts(config["shape"])
+    if parts is None or "ocpu" not in parts:
+        _warn_no_price(config["shape"])
+        return None
+    price = config["ocpus"] * _part_price(parts["ocpu"])
+    if "memory" in parts:
+        price += config["memory_gb"] * _part_price(parts["memory"])
+    return price + config["ocpus"] * _part_price(_DATABASE_OCPU_PART)
 
 
 def inventory_database_prices(vendor):
-    return []
+    """List the compute prices of the databases in all active regions.
+
+    The hourly price of a node is the price of the compute shape (OCPUs and
+    memory, as for the servers) plus the PostgreSQL fee per OCPU, both from the
+    public price list, which is the same in all commercial regions. Storage is
+    billed separately, see `inventory_database_storage_prices`.
+
+    Price rows per region:
+
+    - no high availability: a single node,
+    - single-zone readable cluster: a primary and a read replica node in
+      different fault domains of an availability domain,
+    - multi-zone readable cluster: a primary and a read replica node in
+      different availability domains, only in the regions with multiple zones.
+    """
+    items = []
+    for region in _active_regions(vendor):
+        deployments = [
+            (DatabaseHaLevel.NONE, DatabaseHaStrategy.NONE, 1),
+            (
+                DatabaseHaLevel.SINGLE_ZONE,
+                DatabaseHaStrategy.READABLE_CLUSTER,
+                _DATABASE_HA_NODES,
+            ),
+        ]
+        if len(region.zones) > 1:
+            deployments.append(
+                (
+                    DatabaseHaLevel.MULTI_ZONE,
+                    DatabaseHaStrategy.READABLE_CLUSTER,
+                    _DATABASE_HA_NODES,
+                )
+            )
+        for config in _database_configs(region.api_reference):
+            with sentry_capture_or_raise(vendor=vendor):
+                node_price = _database_node_hourly_price(config)
+                if node_price is None:
+                    continue
+                for ha, ha_strategy, nodes in deployments:
+                    items.append(
+                        {
+                            "vendor_id": vendor.vendor_id,
+                            "region_id": region.region_id,
+                            "database_id": config["database_id"],
+                            "allocation": Allocation.ONDEMAND,
+                            "ha": ha,
+                            "ha_strategy": ha_strategy,
+                            "unit": PriceUnit.HOUR,
+                            "price": node_price * nodes,
+                            "price_upfront": 0,
+                            "price_tiered": [],
+                            "currency": "USD",
+                        }
+                    )
+    return items
 
 
 def inventory_database_storages(vendor):
-    return []
+    """List the performance tiers of the database optimized storage.
+
+    Storage is decoupled from the compute nodes, shared by the nodes of a
+    database system, and scales automatically up to 32 TB. There is no API to
+    list the performance tiers, so these are from a manual list (see
+    `_DATABASE_STORAGE_IOPS`).
+
+    Data sources:
+
+    - <https://docs.oracle.com/en-us/iaas/Content/postgresql/performance-tiers.htm>
+    - <https://docs.oracle.com/en-us/iaas/Content/postgresql/manage-databases.htm>
+    """
+    items = []
+    for iops in _DATABASE_STORAGE_IOPS:
+        items.append(
+            {
+                "vendor_id": vendor.vendor_id,
+                "database_storage_id": _database_storage_id(iops),
+                "name": f"Database Optimized Storage {iops // 1000}K IOPS",
+                "description": (
+                    f"Database optimized storage with the {iops:,} IOPS performance tier"
+                    + (
+                        f" (requires at least {_DATABASE_STORAGE_HIGH_IOPS_MIN_OCPUS} OCPUs)."
+                        if iops >= _DATABASE_STORAGE_HIGH_IOPS
+                        else "."
+                    )
+                ),
+                "scope": DatabaseStorageScope.DATA,
+                "redundancy": None,
+                "min_size": 0,
+                "max_size": _DATABASE_MAX_STORAGE,
+                "max_iops": iops,
+                "max_throughput": None,
+            }
+        )
+    return items
 
 
 def inventory_database_storage_prices(vendor):
-    return []
+    """List the database storage prices in all active regions.
+
+    The monthly price of a used GB is the sum of the Block Volume storage price,
+    the price of the Volume Performance Units (VPU) of the performance tier,
+    and the Database Optimized Storage fee, as the service is billed on top of
+    the standard block storage costs (see `_DATABASE_OCPU_PART`). All from the
+    public price list, which is the same in all commercial regions.
+    """
+    storage_price = _part_price(_BLOCK_VOLUME_STORAGE_PART)
+    vpu_price = _part_price(_BLOCK_VOLUME_VPU_PART)
+    database_storage_price = _part_price(_DATABASE_STORAGE_PART)
+    items = []
+    for region in _active_regions(vendor):
+        if not _database_configs(region.api_reference):
+            continue
+        for iops in _DATABASE_STORAGE_IOPS:
+            vpus = iops / _DATABASE_STORAGE_IOPS_PER_VPU
+            items.append(
+                {
+                    "vendor_id": vendor.vendor_id,
+                    "region_id": region.region_id,
+                    "database_storage_id": _database_storage_id(iops),
+                    "unit": PriceUnit.GB_MONTH,
+                    "price": storage_price + vpus * vpu_price + database_storage_price,
+                    "currency": "USD",
+                }
+            )
+    return items
