@@ -525,7 +525,8 @@ vendors:
           billed on top of the standard compute and block storage costs: our
           hourly price of a node is the compute shape (OCPUs and memory) plus
           the PostgreSQL fee per OCPU, and readable cluster prices are for two
-          nodes. Our database ids are the PostgreSQL shape ids of the API (e.g.
+          nodes. Storage is the Database Optimized Storage price plus the
+          performance units of the IOPS tier (30 VPUs per 75,000 IOPS). Our database ids are the PostgreSQL shape ids of the API (e.g.
           PostgreSQL.VM.Standard.E5.Flex.2.32GB is 2 OCPUs = 4 vCPUs with 32 GB).
       - id: postgresql-overview
         url: "https://docs.oracle.com/en-us/iaas/Content/postgresql/overview.htm"

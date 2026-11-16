@@ -1639,13 +1639,16 @@ def inventory_ipv4_prices(vendor):
     return items
 
 
-# OCI Database with PostgreSQL is billed "on top of standard compute and block
-# storage costs" (https://www.oracle.com/cloud/postgresql/pricing/), listed as
-# the compute cost of the shape, storage cost, volume performance unit cost and
-# the "related OCI Database with PostgreSQL fees" at
-# https://docs.oracle.com/en-us/iaas/Content/postgresql/billing.htm
-# - B99060: Database with PostgreSQL - X86 (OCPU per hour)
-# - B99062: Database Optimized Storage (GB per month)
+# "OCI Database with PostgreSQL is calculated by adding a fee on top of your
+# standard compute and block storage cost used to run the cluster" as per
+# https://www.oracle.com/cloud/postgresql/pricing/, with the below parts:
+# - B99060: Database with PostgreSQL - X86 (OCPU per hour), billed on top of
+#   the OCPU and memory parts of the compute shape of each node
+# - B99062: Database Optimized Storage (GB per month), billed with the Volume
+#   Performance Units of the performance tier, but without the Block Volume
+#   storage part
+# The parts and quantities were checked in the cost estimator at
+# https://www.oracle.com/cloud/costestimator.html
 _DATABASE_OCPU_PART = "B99060"
 _DATABASE_STORAGE_PART = "B99062"
 
@@ -1682,8 +1685,8 @@ _DATABASE_STORAGE_IOPS: tuple[int, ...] = (
 _DATABASE_STORAGE_HIGH_IOPS = 375_000
 _DATABASE_STORAGE_HIGH_IOPS_MIN_OCPUS = 16
 # "Those IOPS values map to volume performance units (VPUs)" as per the billing
-# docs, and a block volume has 2,500 IOPS per VPU (e.g. 75,000 IOPS at 30 VPUs):
-# https://docs.oracle.com/en-us/iaas/Content/Block/Concepts/blockvolumeperformance.htm
+# docs: 2,500 IOPS per VPU, so 30 VPUs at 75,000 IOPS and 300 VPUs at 750,000
+# IOPS, as used by the cost estimator.
 _DATABASE_STORAGE_IOPS_PER_VPU = 2_500
 
 
@@ -2097,13 +2100,11 @@ def inventory_database_storages(vendor):
 def inventory_database_storage_prices(vendor):
     """List the database storage prices in all active regions.
 
-    The monthly price of a used GB is the sum of the Block Volume storage price,
-    the price of the Volume Performance Units (VPU) of the performance tier,
-    and the Database Optimized Storage fee, as the service is billed on top of
-    the standard block storage costs (see `_DATABASE_OCPU_PART`). All from the
-    public price list, which is the same in all commercial regions.
+    The monthly price of a used GB is the Database Optimized Storage price plus
+    the price of the Volume Performance Units (VPU) of the performance tier (see
+    `_DATABASE_OCPU_PART`). Both from the public price list, which is the same
+    in all commercial regions.
     """
-    storage_price = _part_price(_BLOCK_VOLUME_STORAGE_PART)
     vpu_price = _part_price(_BLOCK_VOLUME_VPU_PART)
     database_storage_price = _part_price(_DATABASE_STORAGE_PART)
     items = []
@@ -2118,7 +2119,7 @@ def inventory_database_storage_prices(vendor):
                     "region_id": region.region_id,
                     "database_storage_id": _database_storage_id(iops),
                     "unit": PriceUnit.GB_MONTH,
-                    "price": storage_price + vpus * vpu_price + database_storage_price,
+                    "price": database_storage_price + vpus * vpu_price,
                     "currency": "USD",
                 }
             )

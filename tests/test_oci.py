@@ -1173,14 +1173,10 @@ def test_inventory_database_storage_prices(database_api):
         if row["region_id"] == "eu-frankfurt-1"
     }
     assert len(by_id) == 10
-    # block volume storage, performance units (2,500 IOPS per VPU) and the
-    # database optimized storage fee
-    assert by_id["optimized-75k-iops"]["price"] == pytest.approx(
-        0.0255 + 30 * 0.0017 + 0.072
-    )
-    assert by_id["optimized-750k-iops"]["price"] == pytest.approx(
-        0.0255 + 300 * 0.0017 + 0.072
-    )
+    # database optimized storage and performance units (2,500 IOPS per VPU),
+    # without the block volume storage price
+    assert by_id["optimized-75k-iops"]["price"] == pytest.approx(0.072 + 30 * 0.0017)
+    assert by_id["optimized-750k-iops"]["price"] == pytest.approx(0.072 + 300 * 0.0017)
     assert by_id["optimized-75k-iops"]["unit"] == PriceUnit.GB_MONTH
 
 
