@@ -5,6 +5,7 @@ from json import dumps
 from typing import Any, Collection, List, Optional
 
 from pydantic import BaseModel, field_serializer, field_validator
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.types import TypeDecorator
 from sqlmodel import JSON
 
@@ -20,12 +21,31 @@ class HashableDict(dict):
     def __hash__(self):
         return hash(dumps(self, sort_keys=True))
 
+    @classmethod
+    def sorted(cls, value: dict) -> "HashableDict":
+        """Create from a dict with its keys sorted recursively, so that it is always stored as the same JSON.
+
+        Examples:
+            >>> HashableDict.sorted({"b": 1, "a": {"d": 2, "c": 3}})
+            {'a': {'c': 3, 'd': 2}, 'b': 1}
+        """
+        return cls(
+            (k, cls.sorted(v) if isinstance(v, dict) else v)
+            for k, v in sorted(value.items())
+        )
+
 
 class HashableJSON(TypeDecorator):
     """Alternative JSON SQLAlchemy column representation, which can be hashed."""
 
     impl = JSON
     cache_ok = True
+
+    def load_dialect_impl(self, dialect: Any) -> Any:
+        """Use JSONB in PostgreSQL, as JSON cannot be compared, so cannot be a primary key either."""
+        if dialect.name in ("postgresql", "cockroachdb"):
+            return dialect.type_descriptor(JSONB())
+        return dialect.type_descriptor(JSON())
 
     def process_result_value(self, value: str, dialect: Any) -> Any:
         if value is None:
@@ -46,25 +66,46 @@ class Json(BaseModel):
 
 
 class Status(str, Enum):
-    """Last known status of a resource, e.g. active or inactive."""
+    """Last known status of a record.
+
+    The docstrings of the values are shown to end-users (e.g. in the API and
+    on the website), so keep those to what a status means, and document here
+    how the statuses are set:
+
+    - `ACTIVE` and `INACTIVE` are valid for all tables. Records returned by
+      the vendor or defined in code are `ACTIVE`. Records no longer returned
+      or defined are set to `INACTIVE` by `pull`, as well as records missing
+      from the source by `sync`.
+    - `PLANNED_FOR_RETIREMENT` and `RETIRED` are only valid for Server and
+      Database, and are set only from explicit vendor signals.
+    - `ARCHIVED` is valid for all tables. It is set only from the
+      [archive rules][sc_crawler.archive_rules] by `pull` and `sync`, also for
+      child records (e.g. prices of a region), and archived records are not
+      updated afterwards. It is our decision on the identity of a record,
+      never a vendor signal: end of sale is `RETIRED`, and records no longer
+      returned by a vendor are `INACTIVE`.
+    """
 
     ACTIVE = "active"
-    """Active and available resource."""
+    """Currently available."""
     INACTIVE = "inactive"
-    """Unavailable. For Server/Database: temporary or unknown cause."""
+    """Currently not available, without a known retirement. May become available again."""
     PLANNED_FOR_RETIREMENT = "planned-for-retirement"
-    """Planned for retirement; only valid for Server and Database."""
+    """Retirement was announced by the vendor, but can still be ordered. Only used for servers and databases."""
     RETIRED = "retired"
-    """Not orderable anymore, but prices may still exist (e.g. active multi-year contracts). Only valid for Server and Database."""
+    """Retired by the vendor and cannot be ordered anymore, but prices may still exist (e.g. for active multi-year contracts). Only used for servers and databases."""
+    ARCHIVED = "archived"
+    """Kept only for historical reference: replaced by another record (e.g. renamed, merged or split) or dropped from the dataset."""
 
     @classmethod
     def best(cls, statuses: Collection["Status"]) -> "Status":
-        """Return the best of the given statuses: ACTIVE, PLANNED_FOR_RETIREMENT, INACTIVE, then RETIRED."""
+        """Return the best of the given statuses: ACTIVE, PLANNED_FOR_RETIREMENT, INACTIVE, RETIRED, then ARCHIVED."""
         for status in (
             cls.ACTIVE,
             cls.PLANNED_FOR_RETIREMENT,
             cls.INACTIVE,
             cls.RETIRED,
+            cls.ARCHIVED,
         ):
             if status in statuses:
                 return status
@@ -77,8 +118,8 @@ class Status(str, Enum):
 
     @property
     def is_general(self) -> bool:
-        """Whether this status is valid for non-server/database models (ACTIVE or INACTIVE only)."""
-        return self in (Status.ACTIVE, Status.INACTIVE)
+        """Whether this status is valid for non-server/database models (ACTIVE, INACTIVE or ARCHIVED only)."""
+        return self in (Status.ACTIVE, Status.INACTIVE, Status.ARCHIVED)
 
 
 class ResourceType(str, Enum):

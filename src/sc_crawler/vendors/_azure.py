@@ -1386,6 +1386,21 @@ def inventory_regions(vendor):
             "founding_year": 2010,
             "green_energy": False,
         },
+        # second Malaysian region (paired with malaysiawest), still rolling out
+        "southeastasia3": {
+            "country_id": "MY",
+            "city": "Johor Bahru",
+            "state": "Johor",
+            # unknown as no sustainability fact sheet found
+            "green_energy": False,
+        },
+        # city as per the Azure regions list, exact site not disclosed by Microsoft
+        "taiwannorth": {
+            "country_id": "TW",
+            "city": "Taipei",
+            # unknown as no sustainability fact sheet found
+            "green_energy": False,
+        },
         "japaneast": {
             "country_id": "JP",
             "city": "Tokyo",

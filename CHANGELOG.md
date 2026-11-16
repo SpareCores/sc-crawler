@@ -1,4 +1,4 @@
-## v0.10.x (DEVELOPMENT)
+## v0.11.1 (November 16, 2026)
 
 New vendor(s):
 
@@ -7,6 +7,35 @@ New vendor(s):
   IPv4 prices. Flexible shapes are listed as a grid of OCPU and memory
   configurations, each stored as a separate server (e.g.
   `VM.Standard.E5.Flex.4-32`). Managed databases are not supported yet.
+
+## v0.11.0 (November 16, 2026)
+
+‼ Breaking changes:
+
+- New `ARCHIVED` status for records replaced by another record or deliberately
+  dropped, set only by the archive rules in `sc_crawler.archive_rules`.
+- `Hetzner`: former datacenter regions (`2`–`7`) with their zones and prices,
+  and the `app:static_web` benchmark with its scores are `ARCHIVED`. The
+  former datacenter ids are dropped from `Region.aliases`.
+
+New feature(s):
+
+- `pull` and `sync` apply the archive rules, also to child records (e.g.
+  prices of a region, scores of a benchmark).
+- `copy --exclude-status` to leave out rows by status, e.g. `archived`.
+- `archived-by` command to list the rules archiving a record.
+
+Database migrations:
+
+- Add the `archive_rule` table.
+- Add `ARCHIVED` to the `status` enum (PostgreSQL).
+
+Fix(es):
+
+- `Azure`: add manual data for the `southeastasia3` and `taiwannorth` regions.
+- Compare dict-type primary keys (e.g. `BenchmarkScore.config`) as `JSONB` in
+  PostgreSQL.
+- `sync --log-changes-path` failed on rows with a dict-type primary key.
 
 ## v0.10.4 (November 09, 2026)
 
