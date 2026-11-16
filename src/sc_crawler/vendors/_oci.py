@@ -494,8 +494,9 @@ _BLOCK_VOLUME_MAX_SIZE = 32 * 1024
 # Part numbers of the public price list by shape series, optionally prefixed by
 # VM or BM when the part differs. The price list has no reference to the shapes,
 # so this is a manual mapping based on the display name of the parts (the hardware
-# generation of the series, e.g. X9 for Standard3 and Optimized3) and
-# https://www.oracle.com/cloud/compute/pricing/
+# generation of the series, e.g. X9 for Standard3 and Optimized3), matching the
+# parts of the shapes in the data of the cost estimator at
+# https://www.oracle.com/a/ocom/docs/cloudestimator2/data/shapes.json
 # The price of a server is the sum of its OCPUs, memory (GB) and local NVMe
 # storage (TB) multiplied by the hourly price of the related parts. Parts
 # without a memory price include the memory, and the hourly price per GPU
@@ -528,6 +529,7 @@ _SHAPE_PRICE_PARTS: dict[str, dict[str, str]] = {
     # Compute - Optimized - X9
     "Optimized3": {"ocpu": "B93311", "memory": "B93312"},
     # Compute - Virtual Machine Dense I/O - X7 / Bare Metal Dense I/O - X7
+    "VM.DenseIO1": {"ocpu": "B88516"},
     "VM.DenseIO2": {"ocpu": "B88516"},
     "BM.DenseIO2": {"ocpu": "B88515"},
     "DenseIO.E4": {"ocpu": "B93121", "memory": "B93122", "nvme": "B93123"},
@@ -535,6 +537,8 @@ _SHAPE_PRICE_PARTS: dict[str, dict[str, str]] = {
     "DenseIO.E6.Ax": {"ocpu": "B112556", "memory": "B112557", "nvme": "B112558"},
     # Compute - Bare Metal Standard - HPC - X7
     "BM.HPC2": {"ocpu": "B90398"},
+    # OCI - Compute - HPC - E5
+    "BM.HPC.E5": {"ocpu": "B96531"},
     # Compute - Virtual Machine GPU Standard - X7 / Bare Metal GPU Standard - X7
     "VM.GPU2": {"gpu": "B88518"},
     "BM.GPU2": {"gpu": "B88517"},
