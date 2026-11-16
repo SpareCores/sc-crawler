@@ -7,7 +7,7 @@ from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from enum import Enum, StrEnum
 from json import dump as json_dump
-from json import loads
+from json import dumps, loads
 from os import environ
 from pathlib import Path
 from re import sub
@@ -29,7 +29,7 @@ from rich.progress import (
 )
 from rich.table import Table
 from rich.text import Text
-from sqlalchemy import Engine, create_mock_engine, inspect, text
+from sqlalchemy import Engine, create_mock_engine, func, inspect, text
 from sqlalchemy.engine.reflection import Inspector
 from sqlalchemy.sql import quoted_name
 from sqlmodel import Session, create_engine, select, update
@@ -38,13 +38,21 @@ from typing_extensions import Annotated
 from . import __version__
 from . import vendors as vendors_module
 from .alembic_helpers import alembic_cfg, get_revision
-from .insert import insert_items
+from .insert import _primary_key_tuple, insert_items
 from .logger import ProgressPanel, ScRichHandler, VendorProgressTracker, logger
 from .lookup import benchmarks, compliance_frameworks, countries
 from .sentry import before_send, sentry_capture_or_raise
 from .table_fields import Status
-from .tables import Benchmark, ComplianceFramework, Country, Metadata, Vendor, tables
-from .tables_scd import tables_scd
+from .tables import (
+    ArchiveRule,
+    Benchmark,
+    ComplianceFramework,
+    Country,
+    Metadata,
+    Vendor,
+    tables,
+)
+from .tables_scd import ArchiveRuleScd, tables_scd
 from .utils import (
     HashLevels,
     create_sc_engine,
@@ -342,8 +350,20 @@ def copy(
             help="Database URL (SQLAlchemy connection string) that is to be populated with the content of `source`."
         ),
     ],
+    exclude_status: Annotated[
+        List[Status],
+        typer.Option(
+            case_sensitive=False,
+            help="Leave out the rows with this status, e.g. `archived`. Can be specified multiple times.",
+        ),
+    ] = [],
 ):
-    """Copy the standard Crawler tables of a database into a blank database."""
+    """Copy the standard Crawler tables of a database into a blank database.
+
+    All rows are copied by default. Use `--exclude-status` to leave out rows,
+    e.g. the archived records that are kept only for history. Rows referencing
+    a left out row (e.g. the zones of an excluded region) are also left out.
+    """
 
     source_engine = create_engine(source, pool_pre_ping=True)
     target_engine = create_sc_engine(target, pool_pre_ping=True)
@@ -359,11 +379,36 @@ def copy(
     )
     panel = Panel(progress, title="Copying tables", expand=False)
 
+    # left out rows per table name, to also leave out the rows referencing them
+    left_out = {}
     with Live(panel):
+        # tables are ordered so that referenced tables come first
         for table in tables:
             with Session(source_engine) as source_session:
                 rows = source_session.exec(statement=select(table))
                 items = [row.model_dump() for row in rows]
+            if exclude_status:
+                # (referencing columns, referenced values of the left out rows)
+                references = [
+                    (
+                        fk.column_keys,
+                        {
+                            tuple(row[e.column.name] for e in fk.elements)
+                            for row in left_out[fk.referred_table.name]
+                        },
+                    )
+                    for fk in table.__table__.foreign_key_constraints
+                ]
+                kept, left_out[table.get_table_name()] = [], []
+                for item in items:
+                    if item["status"] in exclude_status or any(
+                        tuple(item[c] for c in columns) in values
+                        for columns, values in references
+                    ):
+                        left_out[table.get_table_name()].append(item)
+                    else:
+                        kept.append(item)
+                items = kept
             with Session(target_engine) as target_session:
                 insert_items(table, items, session=target_session, progress=progress)
                 target_session.commit()
@@ -419,7 +464,13 @@ def sync(
 
     - update (rows with different values in `source` and in `target`).
 
-    - inactive (rows with primary keys found in `target`, but not found in `source`).
+    - inactive (rows with primary keys found in `target`, but not found in
+      `source`). Rows already archived in `target` are left unchanged, and
+      rows matching an archive rule are marked as archived instead of inactive.
+
+    The archive rules (see `sc_crawler.archive_rules`) are also checked: the
+    rules of the synced tables referring to records found in neither database
+    are reported.
 
     The records marked for syncing are written to the `target` database's
     standard or SCD tables. When updating the SCD tables, the hashing still
@@ -527,23 +578,48 @@ def sync(
             for table_name, items in target_hash.items():
                 table_task_id = pt.add_task(table_name, total=len(items))
                 model = table_name_to_model(table_name)
-                for key, _ in items.items():
-                    if key not in source_hash[table_name]:
-                        # check if the row was already set to INACTIVE
-                        obj = get_row_by_pk(session, model, loads(key)).model_dump()
-                        if obj["status"] != Status.INACTIVE:
-                            obj["status"] = Status.INACTIVE
-                            obj["observed_at"] = datetime.now(UTC)
-                            actions["deleted"][table_name].append(obj)
-                    pt.update(table_task_id, advance=1)
+                missing = [k for k in items if k not in source_hash[table_name]]
+                if missing:
+                    # look up the status of all rows at once instead of
+                    # loading the rows found only in the target one by one
+                    pks = model.get_columns()["primary_keys"]
+                    rows = session.exec(
+                        select(*[getattr(model, pk) for pk in pks], model.status)
+                    )
+                    statuses = {
+                        model.pk_key(dict(zip(pks, row[:-1]))): row[-1] for row in rows
+                    }
+                for key in missing:
+                    # archived rows are kept as-is, the others are set to
+                    # ARCHIVED or INACTIVE unless already having that status
+                    if statuses[key] == Status.ARCHIVED:
+                        continue
+                    pk = loads(key)
+                    status = Status.INACTIVE
+                    if model.is_archived(pk):
+                        status = Status.ARCHIVED
+                    if statuses[key] != status:
+                        obj = get_row_by_pk(session, model, pk).model_dump()
+                        obj["status"] = status
+                        obj["observed_at"] = datetime.now(UTC)
+                        actions["deleted"][table_name].append(obj)
+                pt.update(table_task_id, advance=len(items))
                 pt.update(tables_task_id, advance=1)
+
+    # check if the records referenced by the archive rules exist
+    with Session(source_engine) as source_session:
+        with Session(target_engine) as target_session:
+            for message in ArchiveRule.find_unmatched(
+                [source_session, target_session], list(source_hash.keys())
+            ):
+                logger.warning(message)
 
     stats = {ka: {ki: len(vi) for ki, vi in va.items()} for ka, va in actions.items()}
     table = Table(title="Sync results")
     table.add_column("Table", no_wrap=True)
     table.add_column("New rows", justify="right")
     table.add_column("Updated rows", justify="right")
-    table.add_column("Deleted rows", justify="right")
+    table.add_column("Deleted/archived rows", justify="right")
     for table_name in source_hash.keys():
         table.add_row(
             table_name,
@@ -569,7 +645,7 @@ def sync(
                         log_file.write(f"\n### {table_name}\n\n")
                         for action_types in ["new", "update", "deleted"]:
                             for item in actions[action_types][table_name]:
-                                identifier = "/".join([item[key] for key in pks])
+                                identifier = "/".join(_primary_key_tuple(item, pks))
                                 log_file.write(
                                     f"- {action_types.title()}: {identifier}\n"
                                 )
@@ -795,6 +871,9 @@ def pull(
     """
     Pull data from available vendor APIs and store in a database.
 
+    As the last step, the archive rules (see `sc_crawler.archive_rules`) are
+    stored in the database, and the records they match are marked as archived.
+
     Vendor API calls are optionally cached as Pickle objects in `~/.cachier`.
     """
 
@@ -849,11 +928,16 @@ def pull(
         with Session(engine) as session:
             # reset status of static objects to phase out old records
             # these records can be set INACTIVE as will be all overwritten in the next lines
-            for model in [ComplianceFramework, Country, Benchmark]:
-                session.exec(update(model).values(status=Status.INACTIVE))
+            static_models = [ComplianceFramework, Country, Benchmark, ArchiveRule]
             # we can only reset vendors in case of a full run
             if len(vendors) == len(supported_vendors):
-                session.exec(update(Vendor).values(status=Status.INACTIVE))
+                static_models.append(Vendor)
+            for model in static_models:
+                session.exec(
+                    update(model)
+                    .where(model.status != Status.ARCHIVED)
+                    .values(status=Status.INACTIVE)
+                )
             # add/merge static objects to database
             for compliance_framework in compliance_frameworks.values():
                 session.merge(compliance_framework)
@@ -940,7 +1024,83 @@ def pull(
                 pbars.tasks.update(task_id, visible=False)
                 logger.info("%d Workload profile score(s) computed and inserted." % n)
 
+            # needs to be the last step writing records, so that the status of
+            # the archived records is not overwritten
+            archived = ArchiveRule.apply(session)
+            session.commit()
+            logger.info(
+                "Archive rules applied, %d record(s) archived%s."
+                % (
+                    sum(archived.values()),
+                    "".join(f", {n} {t}(s)" for t, n in archived.items()),
+                )
+            )
+
         pbars.metadata.append(Text(" - " + str(datetime.now())))
+
+
+@cli.command(name="archived-by")
+def archived_by_command(
+    table_name: Annotated[
+        str,
+        typer.Argument(
+            help="Table of the record, or its SCD twin, e.g. `server_price` or `server_price_scd`."
+        ),
+    ],
+    primary_key: Annotated[
+        str,
+        typer.Argument(
+            help='Primary key of the record as JSON, e.g. \'{"vendor_id": "hcloud", "region_id": "2"}\'.'
+        ),
+    ],
+    connection_string: options.connection_string = "sqlite:///sc-data-all.db",
+):
+    """
+    List the archive rules that archive a record.
+
+    Looks up the rules stored in the `archive_rule` table of the database,
+    including the removed (inactive) rules and the rules on the parent tables
+    of the record (e.g. the region of a server price). The first observation
+    of each rule is read from the `archive_rule_scd` table, if that exists:
+    compare it with the first archived version of the record to tell when it
+    was archived.
+    """
+    try:
+        pk = loads(primary_key)
+    except ValueError as exc:
+        raise typer.BadParameter(f"Not a valid JSON: {exc}") from exc
+    if not isinstance(pk, dict):
+        raise typer.BadParameter("The primary key must be a JSON object.")
+    engine = create_sc_engine(connection_string)
+    has_scd = inspect(engine).has_table(ArchiveRuleScd.get_table_name())
+    with Session(engine) as session:
+        try:
+            model = table_name_to_model(table_name.removesuffix("_scd"))
+            rules = model.archived_by(session, pk)
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc)) from exc
+        if not rules:
+            print("No archive rule found for this record.")
+            return
+        table = Table("Table", "Match", "Successor", "Reason", "Status", "First seen")
+        for rule in rules:
+            first_seen = None
+            if has_scd:
+                first_seen = session.exec(
+                    select(func.min(ArchiveRuleScd.observed_at))
+                    .where(ArchiveRuleScd.table_name == rule.table_name)
+                    .where(ArchiveRuleScd.match == rule.match)
+                    .where(ArchiveRuleScd.successor == rule.successor)
+                ).one()
+            table.add_row(
+                rule.table_name,
+                dumps(rule.match, sort_keys=True),
+                dumps(rule.successor, sort_keys=True),
+                rule.reason or "",
+                rule.status.value,
+                str(first_seen) if first_seen else "unknown",
+            )
+        Console().print(table)
 
 
 if __name__ == "__main__":

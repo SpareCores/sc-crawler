@@ -1,6 +1,7 @@
 """Helpers to validate and bulk insert per-vendor records into the database."""
 
 from collections import defaultdict
+from enum import Enum
 from json import dumps
 from logging import DEBUG
 from typing import TYPE_CHECKING, List, Optional
@@ -24,12 +25,14 @@ def can_bulk_insert(session: Session) -> bool:
 
 
 def _primary_key_tuple(item: dict, primary_keys: list[str]) -> tuple[str, ...]:
-    """Build a stable hashable key for deduplicating rows by primary key."""
+    """Build a stable hashable key for deduplicating or logging rows by primary key."""
     parts: list[str] = []
     for pk in primary_keys:
         value = item.get(pk)
         if isinstance(value, dict):
             parts.append(dumps(value, sort_keys=True))
+        elif isinstance(value, Enum):
+            parts.append(str(value.value))
         else:
             parts.append(str(value))
     return tuple(parts)

@@ -168,7 +168,10 @@ def table_name_to_model(table_name: str) -> ScModel:
     """Return the ScModel schema for a table name."""
     from .tables import tables
 
-    return [t for t in tables if t.get_table_name() == table_name][0]
+    for table in tables:
+        if table.get_table_name() == table_name:
+            return table
+    raise ValueError(f"Unknown table: {table_name}")
 
 
 def get_row_by_pk(session: Session, model: ScModel, pks: dict) -> ScModel:
