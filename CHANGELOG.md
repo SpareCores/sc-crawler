@@ -1,3 +1,16 @@
+## v0.11.x (DEVELOPMENT)
+
+New vendor(s):
+
+- Oracle Cloud Infrastructure (`oci`): regions, availability domains, servers
+  (shapes) with on-demand and preemptible prices, block volumes, traffic and
+  IPv4 prices. Flexible shapes are listed as a grid of OCPU and memory
+  configurations, each stored as a separate server (e.g.
+  `VM.Standard.E5.Flex.4-32`). Managed PostgreSQL (OCI Database with
+  PostgreSQL) shapes are listed as databases with single-node, single-zone and
+  multi-zone readable cluster prices, and the performance tiers of the database
+  optimized storage as database storages.
+
 ## v0.11.0 (November 16, 2026)
 
 ‼ Breaking changes:

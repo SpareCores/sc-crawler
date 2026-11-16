@@ -7,10 +7,14 @@ Each file in the [`src/sc_crawler/vendors`](https://github.com/SpareCores/sc-cra
 1. Define the new [Vendor][sc_crawler.tables.Vendor] instance in `src/sc_crawler/vendors/vendors.py`.
 2. Copy the below [template file](#template-file-for-new-vendors) as a starting point to `src/sc_crawler/vendors/_<vendor_id>.py`.
 3. Update `src/sc_crawler/vendors/__init__.py` to include the new vendor.
-4. Update `docs/add_vendor.md` with the credential requirements for the new vendor.
-5. Implement the `inventory` methods.
-6. Preferably also implement the related cloud-discovery tool in the `resource-tracker` package.
-7. Add the new vendor to `_boot_from_attached_network_drive` in [`_find_storage_disks_from_lsblk`](https://github.com/SpareCores/sc-crawler/blob/main/src/sc_crawler/inspector.py#L1064-L1089) ([`src/sc_crawler/inspector.py`](https://github.com/SpareCores/sc-crawler/blob/main/src/sc_crawler/inspector.py)). The value (`True` or `False`) must match whether the vendor's Pulumi provisioning script in the [sc-runner](https://github.com/SpareCores/sc-runner) repo attaches a network block volume as the boot drive: check `src/sc_runner/resources/<vendor_id>.py`.
+4. If the vendor's SDK is needed, add it as an optional dependency named after the vendor id in `pyproject.toml`, and list that in the `vendors` extra.
+5. Update the "Collect data" section of `docs/index.md` with the credential and permission requirements for the new vendor.
+6. Implement the `inventory` methods.
+7. Make sure that the country of the vendor and of all its regions is listed in `country_continent_mapping` in `src/sc_crawler/lookup.py`, as the related `Country` rows are created from that.
+8. Add unit tests in `tests/test_<vendor_id>.py` with mocked API responses.
+9. Add the official pages to cross-check the collected data to `audit/sources.yaml`, and describe the new vendor in `CHANGELOG.md`.
+10. Preferably also implement the related cloud-discovery tool in the `resource-tracker` package.
+11. Add the new vendor to `_boot_from_attached_network_drive` in `_find_storage_disks_from_lsblk` ([`src/sc_crawler/inspector.py`](https://github.com/SpareCores/sc-crawler/blob/main/src/sc_crawler/inspector.py)). The value (`True` or `False`) must match whether the vendor's Pulumi provisioning script in the [sc-runner](https://github.com/SpareCores/sc-runner) repo attaches a network block volume as the boot drive: check `src/sc_runner/resources/<vendor_id>.py`.
 
 ## Inventory methods
 
@@ -22,7 +26,8 @@ Each vendor module should provide the below functions:
 - `inventory_servers`: Define [`Server`][sc_crawler.tables.Server] instances for the vendor's server/instance types.
 - `inventory_server_prices`: Define the [`ServerPrice`][sc_crawler.tables.ServerPrice] instances for the standard/ondemand (or optionally also for the reserved) pricing of the instance types per region and zone. When applicable, include the monthly cap for tiered pricing in the `price_tiered` field.
 - `inventory_server_prices_spot`: Similar to the above, define [`ServerPrice`][sc_crawler.tables.ServerPrice] instances but the `allocation` field set to [`Allocation.SPOT`][sc_crawler.table_fields.Allocation]. Very likely to see different spot prices per region/zone.
-- `inventory_storage_prices`: Define [`StoragePrice`][sc_crawler.tables.StoragePrice] instances to describe the available storage options that can be attached to the servers.
+- `inventory_storages`: Define [`Storage`][sc_crawler.tables.Storage] instances to describe the available storage options that can be attached to the servers.
+- `inventory_storage_prices`: Define [`StoragePrice`][sc_crawler.tables.StoragePrice] instances for the pricing of the storage options per region.
 - `inventory_databases`: Define [`Database`][sc_crawler.tables.Database] instances for managed database instances (e.g. PostgreSQL).
 - `inventory_database_prices`: Define [`DatabasePrice`][sc_crawler.tables.DatabasePrice] instances for compute pricing per region. `ha` and `ha_strategy` are scalar primary-key fields (one price row per HA deployment). Use hourly `price` with optional monthly cap in `price_tiered`.
 - `inventory_database_storages`: Define [`DatabaseStorage`][sc_crawler.tables.DatabaseStorage] instances for decoupled or add-on storage products.
@@ -45,6 +50,7 @@ Set `status` on every `Server` and `Database` row. Possible values: `ACTIVE`, `I
 - Map the vendor's lifecycle API fields to these four states. Document the mapping in the `inventory_servers` / `inventory_databases` docstring.
 - Use only explicit API or documentation signals for `PLANNED_FOR_RETIREMENT` and `RETIRED`. Do not infer retirement from naming patterns like "previous generation" unless there is a confirmed mapping.
 - If multiple signals exist (e.g. per-region availability), pick the best: `ACTIVE` > `PLANNED_FOR_RETIREMENT` > `INACTIVE` > `RETIRED`.
+- The `status` of the other records is optional (defaults to `ACTIVE`), and can be set when needed: e.g. `INACTIVE` for a region that is listed by the vendor but cannot be queried with the credentials (like the regions an Oracle Cloud Infrastructure tenancy is not subscribed to), or for the price of a server that is sold out in a region.
 - Never set `ARCHIVED` in a vendor module. It is not a vendor signal: it marks records that we replaced by another record (e.g. after changing how the ids of a vendor's regions are generated) or dropped on purpose, and it is set only from the rules in [sc_crawler.archive_rules][]. When changing the id of existing records, add a rule there for each old → new pair instead of leaving the old records behind as `INACTIVE`.
 
 ## Progress bars
@@ -181,10 +187,14 @@ def inventory_servers(vendor):
     #             "storage_type": None,
     #             "storages": [],
     #             "compatible_storage_ids": None,  # [] if none can be attached
-    #             "network_speed": None,
+    #             "network_speed_baseline": None,  # Gbps
+    #             "network_speed_max": None,  # Gbps
+    #             "network_storage_speed_baseline": None,  # Gbps
+    #             "network_storage_speed_max": None,  # Gbps
     #             "inbound_traffic": 0,
     #             "outbound_traffic": 0,
     #             "ipv4": 0,
+    #             "status": Status.ACTIVE,
     #         }
     #     )
     return items
@@ -336,6 +346,7 @@ def inventory_databases(vendor):
     #                 # DatabaseSecurityFeature.CUSTOMER_MANAGED_KEYS,
     #                 # DatabaseSecurityFeature.AUDIT_LOGGING,
     #             ],
+    #             "status": Status.ACTIVE,
     #         }
     #     )
     return items
@@ -373,8 +384,11 @@ def inventory_database_storages(vendor):
     #             "name": ,
     #             "description": None,
     #             "scope": DatabaseStorageScope.DATA,
+    #             "redundancy": None,
     #             "min_size": None,
     #             "max_size": None,
+    #             "max_iops": None,
+    #             "max_throughput": None,
     #         }
     #     )
     return items

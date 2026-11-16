@@ -275,13 +275,21 @@ def import_page(
     """Store a page saved manually from a browser as if it was fetched.
 
     For official pages that block automated clients: a person opens the page in
-    a browser, saves it (HTML), and imports it here. Marked as `manual` in the
-    metadata, with the file's modification time as the capture time.
+    a browser, saves it (HTML, or JSON for a data feed with a `.json` URL), and
+    imports it here. Marked as `manual` in the metadata, with the file's
+    modification time as the capture time.
     """
     source = Path(source)
     content = source.read_bytes()
     captured = datetime.fromtimestamp(source.stat().st_mtime, UTC).isoformat()
-    markdown = html_to_markdown(content)
+    is_json = page.url.endswith(".json")
+    if is_json:
+        # e.g. an HTML error page saved instead of the feed would break the parser
+        try:
+            json.loads(content)
+        except ValueError as e:
+            raise ValueError(f"{source} is not valid JSON: {e}") from e
+    markdown = "" if is_json else html_to_markdown(content)
     table_rows = count_table_rows(markdown)
     result = FetchResult(
         vendor=vendor_id,
@@ -289,24 +297,27 @@ def import_page(
         url=page.url,
         final_url=page.url,
         status=200,
-        content_type="text/html",
+        content_type="application/json" if is_json else "text/html",
         sha256=hashlib.sha256(content).hexdigest(),
         fetched_at=captured,
         raw_bytes=len(content),
         markdown_chars=len(markdown),
         table_rows=table_rows,
-        js_suspect=len(markdown) < 1500,
-        no_tables=bool(set(page.kinds) & TABULAR_KINDS) and table_rows < 3,
+        js_suspect=not is_json and len(markdown) < 1500,
+        no_tables=(
+            not is_json and bool(set(page.kinds) & TABULAR_KINDS) and table_rows < 3
+        ),
         manual=True,
     )
     target = pages_dir(out_dir, vendor_id)
     target.mkdir(parents=True, exist_ok=True)
     slug = page_slug(page.id)
-    (target / f"{slug}.html").write_bytes(content)
-    header = (
-        f"<!-- source: {page.url} | manually saved: {captured} | "
-        f"sha256: {result.sha256} -->\n\n"
-    )
-    (target / f"{slug}.md").write_text(header + markdown, encoding="utf-8")
+    (target / f"{slug}.{'json' if is_json else 'html'}").write_bytes(content)
+    if not is_json:
+        header = (
+            f"<!-- source: {page.url} | manually saved: {captured} | "
+            f"sha256: {result.sha256} -->\n\n"
+        )
+        (target / f"{slug}.md").write_text(header + markdown, encoding="utf-8")
     (target / f"{slug}.meta.json").write_text(json.dumps(asdict(result), indent=2))
     return result

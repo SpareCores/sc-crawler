@@ -1626,6 +1626,7 @@ def _find_storage_disks_from_lsblk(
         "azure": True,
         "gcp": True,
         "hcloud": False,
+        "oci": True,
         "ovh": False,
         "upcloud": True,
         "vultr": False,

@@ -46,7 +46,7 @@ The related user or role requires the below minimum IAM policy:
                 "ec2:DescribeInstanceTypes",
                 "ec2:DescribeSpotPriceHistory",
                 "ec2:DescribeInstanceTypeOfferings",
-                "rds:DescribeOrderableDBInstanceOptions"
+                "rds:DescribeOrderableDBInstanceOptions",
                 "rds:DescribeDBMajorEngineVersions"
             ],
             "Resource": "*"
@@ -196,6 +196,66 @@ via the `OVH_PROJECT_ID` environment variable.
 For the price catalog, we default to using the `IE` (Ireland) OVH subsidiary,
 which can be overridden via the `OVH_SUBSIDIARY` environment variable.
 This choice affects the currency used for prices.
+
+</details>
+
+<details markdown="1">
+
+<summary>Oracle Cloud Infrastructure</summary>
+
+Create a user (preferably in a dedicated group, e.g. `sc-crawler`) with an
+[API signing key](https://docs.oracle.com/en-us/iaas/Content/API/Concepts/apisigningkey.htm),
+and allow the group to list the regions, availability domains and compute shapes
+of the tenancy with the following policy statements:
+
+```text
+Allow group sc-crawler to inspect tenancies in tenancy
+Allow group sc-crawler to inspect compartments in tenancy
+Allow group sc-crawler to inspect instance-family in tenancy
+```
+
+Then configure the following environment variables:
+
+- `OCI_USER_OCID`
+- `OCI_TENANCY_OCID`
+- `OCI_FINGERPRINT`
+- `OCI_REGION`: the home region of the tenancy (e.g. `eu-frankfurt-1`)
+- `OCI_PRIVATE_KEY` (the content of the PEM file) or `OCI_PRIVATE_KEY_PATH`
+
+Without the `OCI_TENANCY_OCID` environment variable, the standard
+`~/.oci/config` file is used, with the profile optionally set in
+`OCI_CONFIG_PROFILE`.
+
+No further policy is needed for the managed PostgreSQL databases: any
+authenticated user can list the shapes of the OCI Database with PostgreSQL
+service, and its default configurations are also listed with the above policy.
+
+The collected data depends on the tenancy:
+
+- Availability domains, compute and database shapes can be listed only in the
+  regions the tenancy is subscribed to, so the other regions are stored as
+  inactive, without zones, servers and databases. Note that a region
+  subscription cannot be removed.
+- Only the compute shapes that can be launched in the tenancy are listed, e.g.
+  GPU, HPC and VM Dense I/O shapes might be missing without the related service
+  limits.
+
+The prices are from the public price list, which does not require
+authentication.
+
+</details>
+
+<details markdown="1">
+
+<summary>Vultr</summary>
+
+Regions, servers and their prices are collected from the public endpoints of
+the Vultr API without authentication. Listing the managed PostgreSQL database
+plans and versions requires an API key, which can be created in the API
+settings of the Vultr customer portal, and is to be stored in the following
+environment variable:
+
+- `VULTR_API_KEY`
 
 </details>
 
