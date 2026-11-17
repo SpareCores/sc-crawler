@@ -128,6 +128,70 @@ def test_azure_standardize_server_family_and_series():
     assert row["series"] == "NCASv3_T4"
 
 
+_BASE_CAPABILITIES = [
+    {"name": "CpuArchitectureType", "value": "x64"},
+    {"name": "vCPUs", "value": "2"},
+    {"name": "vCPUsAvailable", "value": "2"},
+    {"name": "MemoryGB", "value": "8"},
+]
+_TEMP_DISK = {
+    "MaxResourceVolumeMB": "76800",
+    "CombinedTempDiskAndCachedIOPS": "9000",
+    "CombinedTempDiskAndCachedReadBytesPerSecond": "125000000",
+    "CombinedTempDiskAndCachedWriteBytesPerSecond": "125000000",
+}
+_TEMP_SPEED_ONLY = {**_TEMP_DISK, "MaxResourceVolumeMB": "0"}
+_NVME_NO_SPEED = {"NvmeDiskSizeInMiB": "112640"}
+_NVME = {
+    **_NVME_NO_SPEED,
+    "NvmeMaxReadIops": "37500",
+    "NvmeMaxWriteIops": "15000",
+    "NvmeMaxReadBytesPerSecond": "180000000",
+    "NvmeMaxWriteBytesPerSecond": "90000000",
+}
+
+
+@pytest.mark.parametrize(
+    "name,capabilities,expected",
+    [
+        # temp disk IOPS has no read/write split, so it only counts as read
+        ("Standard_D2ds_v5", _TEMP_DISK, (9000, None, 125, 125)),
+        ("Standard_D2ds_v6", _NVME, (37500, 15000, 180, 90)),
+        (
+            "Standard_D2ds_v6",
+            _TEMP_DISK | _NVME,
+            (9000 + 37500, 15000, 125 + 180, 125 + 90),
+        ),
+        # temp disk speed is reported even without a temp disk
+        ("Standard_D2s_v5", _TEMP_SPEED_ONLY, (None, None, None, None)),
+        # NVMe disk without speed in the API or in the docs
+        ("Standard_HB120rs_v2", _NVME_NO_SPEED, (None, None, None, None)),
+        ("Standard_HB120rs_v2", _TEMP_DISK | _NVME_NO_SPEED, (9000, None, 125, 125)),
+        # NVMe speed from the docs: single IOPS and throughput figure as read
+        (
+            "Standard_L8s_v3",
+            _TEMP_DISK | _NVME_NO_SPEED,
+            (9000 + 400_000, None, 125 + 2_000, 125),
+        ),
+        ("Standard_HB176rs_v4", _NVME_NO_SPEED, (None, None, 12_000, 7_000)),
+    ],
+)
+def test_azure_standardize_server_bundled_storage_speed(name, capabilities, expected):
+    server = {
+        "name": name,
+        "family": "standardDDSv5Family",
+        "capabilities": _BASE_CAPABILITIES
+        + [{"name": k, "value": v} for k, v in capabilities.items()],
+    }
+    row = _standardize_server(server, SimpleNamespace(vendor_id="azure"))
+    assert (
+        row["storage_read_iops_max"],
+        row["storage_write_iops_max"],
+        row["storage_read_throughput_max"],
+        row["storage_write_throughput_max"],
+    ) == expected
+
+
 def test_azure_sku_lifecycle_status_from_retired_sizes_list():
     # https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retired-sizes-list
     announced = [
