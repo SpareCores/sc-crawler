@@ -1087,7 +1087,9 @@ def _shape_servers(shape: dict, vendor) -> list[dict]:
                 "vendor_id": vendor.vendor_id,
                 "server_id": config["server_id"],
                 "name": config["server_id"],
-                "api_reference": name,
+                # unique per server, as a shape can have multiple configurations: the
+                # shape and its configuration are in api_reference_object
+                "api_reference": config["server_id"],
                 # https://www.pulumi.com/registry/packages/oci/api-docs/core/instance/
                 "api_reference_object": (
                     {
