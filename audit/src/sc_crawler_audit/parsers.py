@@ -12,7 +12,15 @@ from typing import Callable, Dict, Optional
 
 import requests
 
-from .schema import DbPrice, DbSpec, Extraction, ServerPrice, ServerSpec, SourcePage
+from .schema import (
+    ComponentRate,
+    DbPrice,
+    DbSpec,
+    Extraction,
+    ServerPrice,
+    ServerSpec,
+    SourcePage,
+)
 
 
 def _number(text: Optional[str]) -> Optional[float]:
@@ -234,11 +242,235 @@ def alicloud_instance_price(body: bytes, page: SourcePage, vendor: str) -> Extra
     )
 
 
+# OCPU price part of OCI Database with PostgreSQL, billed on top of the compute
+# shape of the nodes in the cost estimator
+OCI_POSTGRESQL_OCPU_PART = "B99060"
+# public price list, documented at
+# https://docs.oracle.com/en-us/iaas/Content/GSG/Tasks/signingup_topic-Estimating_Costs.htm
+OCI_PRICE_LIST_URL = (
+    "https://apexapps.oracle.com/pls/apex/cetools/api/v1/products/?currencyCode=USD"
+)
+
+
+def _oci_vcpus_per_ocpu(shape_name: str) -> int:
+    """An OCPU is 2 vCPUs, except for the Arm A1 and Grace (GB200/GB300) shapes."""
+    return 1 if re.search(r"\.(A1|GB\d+)\.", shape_name) else 2
+
+
+def _oci_local_disk_gb(text: Optional[str]) -> Optional[float]:
+    """Parse e.g. '3.2 TB NVMe SSD and Block Storage' or '16x 3.84TB Aura 10 NVMe'."""
+    match = re.match(r"(?:(\d+)\s*x\s*)?([\d.]+)\s*TB", text or "")
+    if not match:
+        return 0 if (text or "").lower().startswith("block storage only") else None
+    return round(int(match.group(1) or 1) * float(match.group(2)) * 1000)
+
+
+def _oci_usd_prices(products: dict) -> Dict[str, float]:
+    """Pay as you go USD price by part number, without the free tier (if any)."""
+    prices = {}
+    for item in products["items"]:
+        for localization in item.get("currencyCodeLocalizations") or []:
+            if localization["currencyCode"] != "USD":
+                continue
+            tiers = [
+                price
+                for price in localization["prices"]
+                if price["model"] == "PAY_AS_YOU_GO"
+            ]
+            if tiers:
+                tiers.sort(key=lambda price: price.get("rangeMin") or 0)
+                prices[item["partNumber"]] = float(tiers[-1]["value"])
+    return prices
+
+
+def oci_estimator_shapes(
+    shapes: dict, prices: Dict[str, float], page: SourcePage, vendor: str
+) -> Extraction:
+    """Extract the shapes of the OCI cost estimator with the prices of their parts.
+
+    - Fixed VM and bare metal shapes: specs and hourly price (the sum of the
+      OCPU, memory and local NVMe parts, or the GPU part times the GPU count).
+    - Flexible VM shapes: per-vCPU, per-GiB and local NVMe rates.
+    - PostgreSQL shapes: specs and prices of the fixed sizes for one and two
+      nodes, and component rates for all sizes, with the PostgreSQL OCPU fee
+      added on top of the compute shape, as in the estimator.
+    """
+    servers, server_prices, rates, db_specs, db_prices = [], [], [], [], []
+    for shape in shapes["items"]:
+        # e.g. "BM.GPU.GB200.4 (NVL72)"
+        name = shape["name"].split(" ")[0]
+        kind = name.split(".")[0]
+        if shape.get("status") != "ACTIVE" or kind not in ("VM", "BM", "PostgreSQL"):
+            continue
+        parts = {p["type"]["value"]: p for p in shape["products"]}
+        if "ocpu" not in parts or any(
+            p["partNumber"] not in prices for p in parts.values()
+        ):
+            continue
+        quote = json.dumps(
+            {
+                "name": shape["name"],
+                "products": [
+                    {
+                        "type": p["type"]["value"],
+                        "partNumber": p["partNumber"],
+                        "qty": p["qty"],
+                        "price": prices[p["partNumber"]],
+                    }
+                    for p in shape["products"]
+                ],
+                "bundleMemoryQty": shape.get("bundleMemoryQty"),
+                "gpuQty": shape.get("gpuQty"),
+                "gpuMemoryQty": shape.get("gpuMemoryQty"),
+                "localDisk": shape.get("localDisk"),
+            },
+            sort_keys=True,
+        )
+        vcpus_per_ocpu = _oci_vcpus_per_ocpu(name)
+        ocpus = parts["ocpu"]["qty"]
+        ocpu_price = prices[parts["ocpu"]["partNumber"]]
+        memory_price = (
+            prices[parts["memory"]["partNumber"]] if "memory" in parts else None
+        )
+        is_database = kind == "PostgreSQL"
+        if is_database:
+            ocpu_price += prices[OCI_POSTGRESQL_OCPU_PART]
+
+        if not ocpus or parts["ocpu"].get("max"):
+            # flexible shape: rates for any number of OCPUs and GB of memory
+            if memory_price is None:
+                continue
+            common = dict(
+                target="database" if is_database else "server",
+                sku_prefix=f"{name}.",
+                unit="hour",
+                currency="USD",
+                evidence_quote=quote,
+            )
+            rates.append(
+                ComponentRate(
+                    component="vcpu", price=ocpu_price / vcpus_per_ocpu, **common
+                )
+            )
+            rates.append(
+                ComponentRate(component="memory_gib", price=memory_price, **common)
+            )
+            if "disk" in parts:
+                # priced per TB of local NVMe storage
+                rates.append(
+                    ComponentRate(
+                        component="local_ssd_gib",
+                        price=prices[parts["disk"]["partNumber"]] / 1000,
+                        **common,
+                    )
+                )
+            continue
+
+        memory = shape.get("bundleMemoryQty")
+        if is_database:
+            node_price = ocpus * ocpu_price + parts["memory"]["qty"] * memory_price
+            db_specs.append(
+                DbSpec(
+                    sku=name,
+                    vcpus=int(ocpus * vcpus_per_ocpu),
+                    memory_gib=memory,
+                    evidence_quote=quote,
+                )
+            )
+            for ha_level, ha_strategy, nodes in (
+                (None, "none", 1),
+                ("single_zone", "readable_cluster", 2),
+                ("multi_zone", "readable_cluster", 2),
+            ):
+                db_prices.append(
+                    DbPrice(
+                        sku=name,
+                        ha_level=ha_level,
+                        ha_strategy=ha_strategy,
+                        nodes=nodes,
+                        deployment=f"{nodes} node(s) per cluster",
+                        price=node_price * nodes,
+                        unit="hour",
+                        currency="USD",
+                        evidence_quote=quote,
+                    )
+                )
+            continue
+
+        gpus = shape.get("gpuQty")
+        disk_tb = parts["disk"]["qty"] if "disk" in parts else None
+        # local disks without a separate part are included in the price
+        storage_gb = (
+            disk_tb * 1000 if disk_tb else _oci_local_disk_gb(shape.get("localDisk"))
+        )
+        servers.append(
+            ServerSpec(
+                sku=name,
+                vcpus=int(ocpus * vcpus_per_ocpu),
+                memory_gib=memory,
+                gpu_count=gpus,
+                gpu_memory_total_gib=shape.get("gpuMemoryQty"),
+                storage_gb=storage_gb,
+                storage_type="nvme ssd" if storage_gb else None,
+                status="active",
+                evidence_quote=quote,
+            )
+        )
+        if gpus:
+            # the part of the GPU shapes is priced per GPU, with all included
+            price = gpus * ocpu_price
+        else:
+            price = ocpus * ocpu_price
+            if memory_price is not None:
+                price += parts["memory"]["qty"] * memory_price
+            if disk_tb:
+                price += disk_tb * prices[parts["disk"]["partNumber"]]
+        server_prices.append(
+            ServerPrice(
+                sku=name,
+                price=price,
+                unit="hour",
+                currency="USD",
+                evidence_quote=quote,
+            )
+        )
+    return _extraction(
+        page,
+        vendor,
+        "oci_cost_estimator",
+        servers=servers,
+        server_prices=server_prices,
+        component_rates=rates,
+        db_specs=db_specs,
+        db_prices=db_prices,
+        notes=f"build {(shapes.get('buildId') or {}).get('buildNumber')}",
+    )
+
+
+def oci_cost_estimator(body: bytes, page: SourcePage, vendor: str) -> Extraction:
+    """Shapes of the OCI cost estimator at oracle.com/cloud/costestimator.html.
+
+    The estimator is rendered from JSON files: the shapes (with the part numbers
+    billed for each) are in the fetched file, and the prices of the parts are
+    downloaded from the public price list.
+    """
+    from .fetch import USER_AGENT
+
+    response = requests.get(
+        OCI_PRICE_LIST_URL, headers={"User-Agent": USER_AGENT}, timeout=60
+    )
+    response.raise_for_status()
+    return oci_estimator_shapes(
+        json.loads(body), _oci_usd_prices(response.json()), page, vendor
+    )
+
+
 PARSERS: Dict[str, Callable[[bytes, SourcePage, str], Extraction]] = {
     "aws_ec2_ondemand": aws_ec2_ondemand,
     "aws_ec2_spot": aws_ec2_spot,
     "aws_rds_postgresql": aws_rds_postgresql,
     "alicloud_instance_price": alicloud_instance_price,
+    "oci_cost_estimator": oci_cost_estimator,
 }
 
 # parsers that need to resolve the URL to fetch at run time

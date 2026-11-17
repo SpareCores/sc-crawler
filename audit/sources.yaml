@@ -477,6 +477,105 @@ vendors:
         kinds: [regions]
         complete: true
 
+  oci:
+    allowed_domains: [oracle.com]
+    reference_regions: [us-ashburn-1]
+    pages:
+      - id: compute-shapes
+        url: "https://docs.oracle.com/en-us/iaas/Content/Compute/References/computeshapes.htm"
+        kinds: [server_specs, gpu, lifecycle]
+        notes: >-
+          Flexible shapes are stored as a grid of OCPU and memory configurations
+          with the size added to the server id (e.g. VM.Standard.E5.Flex.4-32 is
+          the VM.Standard.E5.Flex shape with 4 OCPUs and 32 GB memory). 1 OCPU is
+          2 vCPUs on x86 and on the Arm A2/A4 shapes, and 1 vCPU on A1. Only the
+          shapes with a service limit in the crawler's tenancy are collected.
+      - id: compute-pricing
+        url: "https://www.oracle.com/cloud/compute/pricing/"
+        kinds: [server_prices, component_rates, gpu]
+        currency: USD
+        price_region: us-ashburn-1
+        notes: >-
+          Blocks automated clients: save it from a browser and import it with
+          `sc-audit import-page oci compute-pricing FILE`. Prices are per OCPU,
+          GB of memory, TB of local NVMe and GPU hour, and are the same in all
+          regions.
+      - id: price-list
+        url: "https://www.oracle.com/cloud/price-list/"
+        kinds: [component_rates]
+        currency: USD
+        price_region: us-ashburn-1
+        notes: >-
+          Blocks automated clients: save it from a browser and import it with
+          `sc-audit import-page oci price-list FILE`.
+      - id: preemptible
+        url: "https://docs.oracle.com/en-us/iaas/Content/Compute/Concepts/preemptible.htm"
+        kinds: [server_prices]
+        notes: >-
+          Preemptible (spot) capacity costs 50% less than on-demand, only on the
+          listed VM shape series.
+      - id: cost-estimator
+        url: "https://www.oracle.com/cloud/costestimator.html"
+        kinds: [index]
+        notes: >-
+          Blocks automated clients, and JS-rendered anyway, so nothing to import:
+          the "Compute - Virtual Machine", "Compute - Bare Metal"
+          and "Database with PostgreSQL" configurations are built from the data
+          files below (see cost-estimator-shapes). "Database Management" is a
+          monitoring service of Oracle Database, not related to PostgreSQL.
+      - id: cost-estimator-shapes
+        url: "https://www.oracle.com/a/ocom/docs/cloudestimator2/data/shapes.json"
+        kinds: [server_specs, server_prices, component_rates, gpu, db_specs, db_prices]
+        currency: USD
+        price_region: us-ashburn-1
+        spec_authority: false
+        implies_availability: false
+        independent: false
+        parser: oci_cost_estimator
+        notes: >-
+          Blocks automated clients: save it from a browser and import it with
+          `sc-audit import-page oci cost-estimator-shapes FILE`. Data feed of
+          the cost estimator: the VM, bare metal and PostgreSQL shapes with the
+          part numbers billed for each, priced from the public price list (the
+          same our ingest reads). Not independent: the shape to part number
+          mapping of our ingest was built by matching this feed. Fixed
+          shapes are compared as servers, flexible shapes as per-vCPU and per-GiB
+          rates against our grid of configurations. PostgreSQL prices include
+          the PostgreSQL OCPU fee on top of the compute shape, for one node and
+          for two nodes (readable cluster).
+      - id: postgresql-pricing
+        url: "https://www.oracle.com/cloud/postgresql/pricing/"
+        kinds: [db_prices, component_rates]
+        currency: USD
+        price_region: us-ashburn-1
+        notes: >-
+          Blocks automated clients: save it from a browser and import it with
+          `sc-audit import-page oci postgresql-pricing FILE`. The service is
+          billed on top of the standard compute and block storage costs: our
+          hourly price of a node is the compute shape (OCPUs and memory) plus
+          the PostgreSQL fee per OCPU, and readable cluster prices are for two
+          nodes. Storage is the Database Optimized Storage price plus the
+          performance units of the IOPS tier (30 VPUs per 75,000 IOPS). Our database ids are the PostgreSQL shape ids of the API (e.g.
+          PostgreSQL.VM.Standard.E5.Flex.2.32GB is 2 OCPUs = 4 vCPUs with 32 GB).
+      - id: postgresql-overview
+        url: "https://docs.oracle.com/en-us/iaas/Content/postgresql/overview.htm"
+        kinds: [db_features]
+      - id: postgresql-high-availability
+        url: "https://docs.oracle.com/en-us/iaas/Content/postgresql/high-availability.htm"
+        kinds: [db_features]
+      - id: postgresql-limits
+        url: "https://docs.oracle.com/en-us/iaas/Content/postgresql/manage-databases.htm"
+        kinds: [db_specs, db_features]
+      - id: postgresql-performance-tiers
+        url: "https://docs.oracle.com/en-us/iaas/Content/postgresql/performance-tiers.htm"
+        kinds: [db_specs]
+      - id: regions
+        url: "https://docs.oracle.com/en-us/iaas/Content/General/Concepts/regions.htm"
+        kinds: [regions]
+        notes: >-
+          Only the OC1 (commercial) realm is collected. Regions the crawler's
+          tenancy is not subscribed to are stored as inactive.
+
   ovh:
     allowed_domains: [ovhcloud.com]
     reference_regions: [GRA]

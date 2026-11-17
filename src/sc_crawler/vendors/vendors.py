@@ -162,3 +162,31 @@ vultr = Vendor(
     minimum_billing_seconds=3600,
 )
 """Vultr."""
+
+oci = Vendor(
+    vendor_id="oci",
+    name="Oracle Cloud Infrastructure",
+    logo="https://sparecores.com/assets/images/vendors/oci.svg",
+    homepage="https://www.oracle.com/cloud/",
+    country=countries["US"],
+    state="Texas",
+    city="Austin",
+    address_line="2300 Oracle Way",
+    zip_code="78741",
+    founding_year=2016,
+    status_page="https://ocistatus.oraclecloud.com",
+    # worst case, as it depends on the shape (see billing_comment):
+    # https://docs.oracle.com/en-us/iaas/Content/Compute/Tasks/resource-billing-stopped-instances.htm
+    stopped_server_charged=True,
+    # per-second billing with a minimum charge of one minute for VMs and one
+    # hour for bare metal instances, keeping the worst case:
+    # https://docs.oracle.com/iaas/releasenotes/changes/20facdce-34bf-4648-a0a7-de5db73657ce/index.htm
+    billing_increment_seconds=1,
+    minimum_billing_seconds=3600,
+    billing_comment=(
+        "Minimum charge is one minute for VMs and one hour for bare metal instances. "
+        "Billing pauses for stopped Standard, VM.Optimized3 and VM.GPU.A10 instances, "
+        "but continues for Dense I/O, HPC, bare metal Optimized and other GPU shapes."
+    ),
+)
+"""Oracle Cloud Infrastructure."""

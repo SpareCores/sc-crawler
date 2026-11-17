@@ -3,9 +3,15 @@ from datetime import UTC, datetime
 import pytest
 from sc_crawler_audit.compare import compare_vendor
 from sc_crawler_audit.export import Ours, sku_keys
-from sc_crawler_audit.parsers import _aws_network, _aws_storage
+from sc_crawler_audit.fetch import import_page
+from sc_crawler_audit.parsers import (
+    _aws_network,
+    _aws_storage,
+    _oci_usd_prices,
+    oci_estimator_shapes,
+)
 from sc_crawler_audit.schema import DbSpec, Extraction, SourcePage, VendorSources
-from sc_crawler_audit.sources import extracted_dir, is_allowed, page_slug
+from sc_crawler_audit.sources import extracted_dir, is_allowed, page_slug, pages_dir
 
 
 def _server(server_id, vcpus, memory_mib, status="ACTIVE", **kwargs):
@@ -206,6 +212,208 @@ def test_aws_parsers():
     assert _aws_network("Up to 12.5 Gigabit") == 12.5
     assert _aws_network("100 Gigabit") == 100
     assert _aws_network("Low to Moderate") is None
+
+
+def test_oci_cost_estimator_parser():
+    def product(kind, part, qty, minimum=None, maximum=None):
+        return {
+            "type": {"value": kind},
+            "partNumber": part,
+            "qty": qty,
+            "min": minimum,
+            "max": maximum,
+        }
+
+    def shape(name, products, **kwargs):
+        return {"name": name, "status": "ACTIVE", "products": products, **kwargs}
+
+    shapes = {
+        "buildId": {"buildNumber": "1"},
+        "items": [
+            shape("VM.Standard2.4", [product("ocpu", "X7", 4)], bundleMemoryQty=60),
+            shape(
+                "VM.DenseIO2.8",
+                [product("ocpu", "X7D", 8)],
+                bundleMemoryQty=120,
+                localDisk="6.4 TB NVMe SSD and Block Storage",
+            ),
+            shape(
+                "BM.DenseIO.E5.128",
+                [
+                    product("ocpu", "E5O", 128),
+                    product("memory", "E5M", 1536),
+                    product("disk", "E5D", 81.6),
+                ],
+                bundleMemoryQty=1536,
+            ),
+            shape(
+                "BM.GPU.GB200.4 (NVL72)",
+                [product("ocpu", "GB200", 128)],
+                bundleMemoryQty=960,
+                gpuQty=4,
+                gpuMemoryQty=756,
+            ),
+            shape("BM.Standard.A1.160", [product("ocpu", "A1O", 160)]),
+            shape(
+                "VM.Standard.E5.Flex",
+                [
+                    product("ocpu", "E5O", 0, 1, 94),
+                    product("memory", "E5M", 0, 1, 1049),
+                ],
+            ),
+            shape(
+                "VM.DenseIO.E5.Flex",
+                [
+                    product("ocpu", "E5O", 8, 8, 48),
+                    product("memory", "E5M", 96, 96, 576),
+                    product("disk", "E5D", 6.8, 6.8, 40.8),
+                ],
+            ),
+            shape(
+                "PostgreSQL.VM.Standard.E5.Flex.2.32GB",
+                [product("ocpu", "E5O", 2), product("memory", "E5M", 32)],
+                bundleMemoryQty=32,
+            ),
+            shape(
+                "PostgreSQL.VM.Standard.E5.Flex",
+                [
+                    product("ocpu", "E5O", 0, 1, 64),
+                    product("memory", "E5M", 0, 16, 1024),
+                ],
+            ),
+            # container, dedicated host and inactive shapes are skipped
+            shape("CI.Standard.E4.Flex", [product("ocpu", "E5O", 0, 1, 64)]),
+            shape("DVH.Standard2.52", [product("ocpu", "X7", 52)]),
+            {
+                **shape("VM.Standard1.1", [product("ocpu", "X7", 1)]),
+                "status": "RETIRED",
+            },
+            # unknown part
+            shape("VM.Standard9.1", [product("ocpu", "X99", 1)]),
+        ],
+    }
+    products = {
+        "items": [
+            {
+                "partNumber": part,
+                "currencyCodeLocalizations": [
+                    {
+                        "currencyCode": "EUR",
+                        "prices": [{"model": "PAY_AS_YOU_GO", "value": 9}],
+                    },
+                    {"currencyCode": "USD", "prices": prices},
+                ],
+            }
+            for part, prices in {
+                "X7": [{"model": "PAY_AS_YOU_GO", "value": 0.0638}],
+                "X7D": [{"model": "PAY_AS_YOU_GO", "value": 0.1275}],
+                "E5O": [{"model": "PAY_AS_YOU_GO", "value": 0.03}],
+                "E5M": [{"model": "PAY_AS_YOU_GO", "value": 0.002}],
+                "E5D": [{"model": "PAY_AS_YOU_GO", "value": 0.0612}],
+                "GB200": [{"model": "PAY_AS_YOU_GO", "value": 16}],
+                # free tier first, then the paid rate
+                "A1O": [
+                    {"model": "PAY_AS_YOU_GO", "value": 0.01, "rangeMin": 3000},
+                    {"model": "PAY_AS_YOU_GO", "value": 0, "rangeMin": 0},
+                ],
+                "B99060": [{"model": "PAY_AS_YOU_GO", "value": 0.098}],
+            }.items()
+        ]
+    }
+    page = SourcePage(
+        id="estimator", url="https://x/shapes.json", kinds=["server_prices"]
+    )
+    extraction = oci_estimator_shapes(shapes, _oci_usd_prices(products), page, "oci")
+
+    servers = {s.sku: s for s in extraction.servers}
+    prices = {p.sku: p.price for p in extraction.server_prices}
+    assert (
+        set(servers)
+        == set(prices)
+        == {
+            "VM.Standard2.4",
+            "VM.DenseIO2.8",
+            "BM.DenseIO.E5.128",
+            "BM.GPU.GB200.4",
+            "BM.Standard.A1.160",
+        }
+    )
+    assert (servers["VM.Standard2.4"].vcpus, servers["VM.Standard2.4"].memory_gib) == (
+        8,
+        60,
+    )
+    assert prices["VM.Standard2.4"] == pytest.approx(4 * 0.0638)
+    # bundled local disk from the description, so not matched to a diskless SKU
+    assert servers["VM.DenseIO2.8"].storage_gb == 6400
+    assert servers["BM.DenseIO.E5.128"].storage_gb == 81600
+    assert prices["BM.DenseIO.E5.128"] == pytest.approx(
+        128 * 0.03 + 1536 * 0.002 + 81.6 * 0.0612
+    )
+    # per GPU price, one vCPU per OCPU on Grace and A1
+    assert prices["BM.GPU.GB200.4"] == 4 * 16
+    assert servers["BM.GPU.GB200.4"].vcpus == 128
+    assert servers["BM.Standard.A1.160"].vcpus == 160
+    assert prices["BM.Standard.A1.160"] == pytest.approx(160 * 0.01)
+
+    rates = {
+        (r.target, r.sku_prefix, r.component): r.price
+        for r in extraction.component_rates
+    }
+    assert rates == {
+        ("server", "VM.Standard.E5.Flex.", "vcpu"): pytest.approx(0.015),
+        ("server", "VM.Standard.E5.Flex.", "memory_gib"): 0.002,
+        ("server", "VM.DenseIO.E5.Flex.", "vcpu"): pytest.approx(0.015),
+        ("server", "VM.DenseIO.E5.Flex.", "memory_gib"): 0.002,
+        ("server", "VM.DenseIO.E5.Flex.", "local_ssd_gib"): pytest.approx(0.0000612),
+        # the PostgreSQL fee per OCPU is added to the compute shape
+        ("database", "PostgreSQL.VM.Standard.E5.Flex.", "vcpu"): pytest.approx(0.064),
+        ("database", "PostgreSQL.VM.Standard.E5.Flex.", "memory_gib"): 0.002,
+    }
+    (db_spec,) = extraction.db_specs
+    assert (db_spec.sku, db_spec.vcpus, db_spec.memory_gib) == (
+        "PostgreSQL.VM.Standard.E5.Flex.2.32GB",
+        4,
+        32,
+    )
+    assert [
+        (p.ha_level, p.ha_strategy, p.nodes, round(p.price, 4))
+        for p in extraction.db_prices
+    ] == [
+        (None, "none", 1, 0.32),
+        ("single_zone", "readable_cluster", 2, 0.64),
+        ("multi_zone", "readable_cluster", 2, 0.64),
+    ]
+
+
+def test_import_page_keeps_json_feeds(tmp_path):
+    source = tmp_path / "shapes.json"
+    source.write_text('{"items": []}')
+    page = SourcePage(
+        id="feed", url="https://x/data/shapes.json", kinds=["server_specs"]
+    )
+    result = import_page("oci", page, source, tmp_path / "out")
+    assert result.manual and result.content_type == "application/json"
+    assert not result.js_suspect and not result.no_tables
+    pages = pages_dir(tmp_path / "out", "oci")
+    assert (pages / "feed.json").read_text() == '{"items": []}'
+    assert not (pages / "feed.md").exists()
+
+
+def test_import_page_rejects_invalid_json_feeds(tmp_path):
+    source = tmp_path / "shapes.json"
+    source.write_text("<html>Access Denied</html>")
+    page = SourcePage(
+        id="feed", url="https://x/data/shapes.json", kinds=["server_specs"]
+    )
+    with pytest.raises(ValueError, match=r"shapes\.json is not valid JSON: "):
+        import_page("oci", page, source, tmp_path / "out")
+    # nothing is stored as parser input
+    assert not pages_dir(tmp_path / "out", "oci").exists()
+    # non-JSON pages are imported as before
+    html = SourcePage(id="page", url="https://x/pricing/", kinds=["db_features"])
+    assert (
+        import_page("oci", html, source, tmp_path / "out").content_type == "text/html"
+    )
 
 
 def test_is_allowed():
