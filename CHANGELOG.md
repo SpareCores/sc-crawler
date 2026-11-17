@@ -11,6 +11,18 @@ New vendor(s):
   multi-zone readable cluster prices, and the performance tiers of the database
   optimized storage as database storages.
 
+New feature(s):
+
+- `Server.storage_read_iops_max`, `storage_write_iops_max`,
+  `storage_read_throughput_max` and `storage_write_throughput_max`: the
+  vendor-published maximum performance of the bundled (local) disk(s),
+  aggregated over all disks. Empty when the vendor does not publish it.
+  Not populated yet.
+
+Database migrations:
+
+- Add the above 4 columns to the `server` and `server_scd` tables.
+
 ## v0.11.0 (November 16, 2026)
 
 ‼ Breaking changes:

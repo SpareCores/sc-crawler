@@ -186,6 +186,10 @@ def inventory_servers(vendor):
     #             "storage_size": 0,
     #             "storage_type": None,
     #             "storages": [],
+    #             "storage_read_iops_max": None,
+    #             "storage_write_iops_max": None,
+    #             "storage_read_throughput_max": None,  # MB/s
+    #             "storage_write_throughput_max": None,  # MB/s
     #             "compatible_storage_ids": None,  # [] if none can be attached
     #             "network_speed_baseline": None,  # Gbps
     #             "network_speed_max": None,  # Gbps
