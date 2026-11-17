@@ -985,6 +985,22 @@ class ServerFields(
             "the size (GB) and type of each disk."
         ),
     )
+    storage_read_iops_max: Optional[int] = Field(
+        default=None,
+        description="The maximum read IOPS of the bundled disk(s), aggregated over all disks.",
+    )
+    storage_write_iops_max: Optional[int] = Field(
+        default=None,
+        description="The maximum write IOPS of the bundled disk(s), aggregated over all disks.",
+    )
+    storage_read_throughput_max: Optional[int] = Field(
+        default=None,
+        description="The maximum read throughput (MB/s) of the bundled disk(s), aggregated over all disks.",
+    )
+    storage_write_throughput_max: Optional[int] = Field(
+        default=None,
+        description="The maximum write throughput (MB/s) of the bundled disk(s), aggregated over all disks.",
+    )
     compatible_storage_ids: Optional[List[str]] = Field(
         default=None,
         sa_type=JSON(none_as_null=True),
