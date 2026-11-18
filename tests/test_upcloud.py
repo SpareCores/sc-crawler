@@ -869,7 +869,14 @@ def test_upcloud_unknown_storage_tier_is_empty_and_warned_once():
         patch("sc_crawler.vendors._upcloud.logger") as logger,
     ):
         rows = inventory_servers(Mock(vendor_id="upcloud"))
-    assert all(row["storage_read_iops_max"] is None for row in rows)
+    assert {row["server_id"] for row in rows} == {"2xCPU-4GB", "4xCPU-8GB"}
+    for row in rows:
+        assert (
+            row["storage_read_iops_max"],
+            row["storage_write_iops_max"],
+            row["storage_read_throughput_max"],
+            row["storage_write_throughput_max"],
+        ) == (None, None, None, None)
     warnings = [call.args[0] for call in logger.warning.call_args_list]
     assert len(warnings) == 1
     assert "new-tier" in warnings[0]
