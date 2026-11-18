@@ -24,6 +24,10 @@ Fix(es):
   locations, as the region inventory failed on it.
 - Retry the transient network errors (connection resets and timeouts) of the
   `AliCloud` availability zone lookups, instead of marking the region inactive.
+- Keep the previous `AliCloud` spot prices not sampled in a run for up to 30
+  days since their last observation: they were marked inactive after being
+  reactivated, and the reactivation by `observed_at` also matched the ones
+  just marked inactive.
 
 ## v0.11.0 (November 16, 2026)
 

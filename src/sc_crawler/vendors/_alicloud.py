@@ -1965,8 +1965,20 @@ def inventory_server_prices_spot(vendor):
 
     Each region worker fetches spot prices for a random sample of instances within sample_time,
     adapting to different response times, parallelized across regions.
+
+    The previous spot prices not sampled in this run are kept for up to 30 days
+    since their last observation (see `_previous_rows`), while the server is
+    sold on-demand in the zone.
     """
     sample_time = 120  # seconds
+
+    # before the spot prices are marked inactive (also updating `observed_at`)
+    previous = _previous_rows(
+        vendor,
+        ServerPrice,
+        ServerPrice.allocation == Allocation.SPOT,
+        ServerPrice.status == Status.ACTIVE,
+    )
 
     ecs_clients: dict[str, EcsClient] = _ecs_clients(vendor)
 
@@ -2081,13 +2093,22 @@ def inventory_server_prices_spot(vendor):
 
     vendor.progress_tracker.hide_task()
 
-    vendor.set_table_rows_active(
-        ServerPrice,
-        ServerPrice.allocation == Allocation.SPOT,
-        ServerPrice.observed_at >= datetime.now() - timedelta(days=30),
-    )
+    def key(item: dict) -> tuple:
+        return (item["region_id"], item["zone_id"], item["server_id"])
 
-    return items
+    sampled = {key(item) for item in items}
+    # only of the servers still sold on-demand in the zone
+    offered = {
+        (region_id, zone_id, server_id)
+        for region_id, zone_instance_list in ondemand_instances.items()
+        for zone_id, server_id in zone_instance_list
+    }
+    kept = [
+        item for item in previous if key(item) not in sampled and key(item) in offered
+    ]
+    if kept:
+        vendor.log(f"Keeping {len(kept)} previous spot prices not sampled now.")
+    return items + kept
 
 
 def inventory_storages(vendor):

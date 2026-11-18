@@ -42,6 +42,7 @@ from sc_crawler.vendors._alicloud import (
     inventory_database_storage_prices,
     inventory_database_storages,
     inventory_databases,
+    inventory_server_prices_spot,
     inventory_servers,
     inventory_storages,
 )
@@ -1248,3 +1249,64 @@ def test_alicloud_previous_rows_keep_the_recently_observed_ones():
     # the original observation time is kept
     assert rows[0]["observed_at"] == now - timedelta(days=10)
     assert _previous_rows(Mock(session=None), DatabasePrice) == []
+
+
+def test_alicloud_inventory_server_prices_spot_keeps_the_previous_ones():
+    from sc_crawler.table_fields import Allocation
+
+    def ondemand(region_id, zone_id, server_id):
+        return Mock(
+            allocation=Allocation.ONDEMAND,
+            status=Status.ACTIVE,
+            region_id=region_id,
+            zone_id=zone_id,
+            server_id=server_id,
+        )
+
+    vendor = Mock(
+        vendor_id="alicloud",
+        server_prices=[
+            ondemand("r1", "r1a", "ecs.sampled"),
+            ondemand("r1", "r1a", "ecs.not-sampled"),
+        ],
+    )
+
+    def previous(region_id, zone_id, server_id, price):
+        return {
+            "region_id": region_id,
+            "zone_id": zone_id,
+            "server_id": server_id,
+            "price": price,
+        }
+
+    price = Mock()
+    price.price_info.rules.rule = [Mock(description="Preemptible Instance discount")]
+    price.price_info.price.detail_infos.detail_info = [
+        Mock(resource="instanceType", trade_price=0.02)
+    ]
+    price.price_info.price.currency = "USD"
+    with (
+        patch("sc_crawler.vendors._alicloud._ecs_clients", return_value={"r1": Mock()}),
+        patch(
+            "sc_crawler.vendors._alicloud._get_instance_price",
+            side_effect=lambda instance_type, **kwargs: (
+                price if instance_type == "ecs.sampled" else None
+            ),
+        ),
+        patch(
+            "sc_crawler.vendors._alicloud._previous_rows",
+            return_value=[
+                # sampled again: replaced
+                previous("r1", "r1a", "ecs.sampled", 0.01),
+                # not sampled now: kept
+                previous("r1", "r1a", "ecs.not-sampled", 0.03),
+                # not sold on-demand anymore: dropped
+                previous("r1", "r1a", "ecs.gone", 0.04),
+            ],
+        ),
+    ):
+        prices = inventory_server_prices_spot(vendor)
+    assert {(p["server_id"], p["price"]) for p in prices} == {
+        ("ecs.sampled", 0.02),
+        ("ecs.not-sampled", 0.03),
+    }
