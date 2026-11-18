@@ -131,7 +131,7 @@ and `storage_write_throughput_max` (MB/s) hold the vendor-published max speed of
 the disks bundled with a server; NULL means not published. AWS, GCP, Alibaba,
 UpCloud and part of Azure (NVMe sizes) fill them from hardcoded docs tables, so a
 new server type stays NULL until someone adds its row. The crawler logs a warning
-for unknown AWS, GCP and UpCloud types, but not for Azure NVMe sizes missing from
+for unknown Alibaba Cloud, AWS, GCP and UpCloud types, but not for Azure NVMe sizes missing from
 its table, so do not rely on the logs. List the bundled disks without any speed:
 
 ```sh

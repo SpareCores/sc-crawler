@@ -14,8 +14,10 @@ from sc_crawler.vendors._alicloud import (
     _gpu_manufacturer_of_family,
     _gpu_memory_by_spec,
     _instance_category,
+    _local_disk_speed,
     _parse_instance_type_disk_categories,
     _warn_unknown_category,
+    _warn_unknown_local_disk_speed,
     inventory_servers,
     inventory_storages,
 )
@@ -121,6 +123,129 @@ def test_alicloud_inventory_servers_sets_family_and_series():
     assert by_id["ecs.gn5-c4g1.xlarge"]["series"] == "ecs.gn5"
     # description still shows the series
     assert by_id["ecs.g7.large"]["description"].startswith("ecs.g7 family (")
+
+
+def _local_disks(type_id, family, disks, gib):
+    return {
+        "InstanceTypeId": type_id,
+        "InstanceTypeFamily": family,
+        "LocalStorageAmount": disks,
+        "LocalStorageCapacity": gib,
+    }
+
+
+@pytest.mark.parametrize(
+    "instance_type,expected",
+    [
+        # no local disk
+        (_local_disks("ecs.g7.large", "ecs.g7", 0, 0), (None, None, None, None)),
+        # per instance type table: read IOPS only, GB/s -> MB/s
+        (_local_disks("ecs.i4.large", "ecs.i4", 1, 447), (112_500, None, 750, 375)),
+        # shared column of two families
+        (
+            _local_disks("ecs.i4r.4xlarge", "ecs.i4r", 1, 894),
+            (250_000, None, 1_500, 1_000),
+        ),
+        (
+            _local_disks("ecs.i2gne.2xlarge", "ecs.i2gne", 1, 894),
+            (250_000, None, 1_500, 1_000),
+        ),
+        # i2 with more disks: throughput per disk x count, IOPS not published
+        (_local_disks("ecs.i2.8xlarge", "ecs.i2", 4, 1788), (None, None, 8_000, 4_000)),
+        # i2 largest size: published overall IOPS (not 8 x 300k)
+        (
+            _local_disks("ecs.i2.16xlarge", "ecs.i2", 8, 1788),
+            (1_500_000, None, 16_000, 8_000),
+        ),
+        # i1 formula by capacity, x 2 disks, rounded
+        (_local_disks("ecs.i1.xlarge", "ecs.i1", 2, 104), (34_320, 34_320, 291, 177)),
+        # i1 caps: same as the published overall speed of the largest size
+        (
+            _local_disks("ecs.i1.14xlarge", "ecs.i1", 2, 1456),
+            (480_000, 480_000, 4_000, 2_400),
+        ),
+        # HDD: single throughput figure per disk, stored as read
+        (
+            _local_disks("ecs.d1.14xlarge", "ecs.d1", 28, 5500),
+            (None, None, 5_320, None),
+        ),
+        (
+            _local_disks("ecs.d3s.16xlarge", "ecs.d3s", 32, 11100),
+            (None, None, 8_320, None),
+        ),
+        # per disk figure also covers variants of the family
+        (
+            _local_disks("ecs.d1-c14d3.14xlarge", "ecs.d1", 12, 5500),
+            (None, None, 2_280, None),
+        ),
+    ],
+)
+def test_alicloud_local_disk_speed(instance_type, expected):
+    assert _local_disk_speed(instance_type) == expected
+
+
+@pytest.mark.parametrize(
+    "instance_type",
+    [
+        # same API family as ecs.i2, but other disks and not in the docs
+        _local_disks("ecs.i2d.21xlarge", "ecs.i2", 4, 3570),
+        # same API family as ecs.i5e, but not in the docs
+        _local_disks("ecs.i5e-grds-4t.2xlarge", "ecs.i5e", 1, 3576),
+        # larger than the largest listed size
+        _local_disks("ecs.d3c.28xlarge", "ecs.d3c", 8, 12800),
+        # no figures in the docs at all
+        _local_disks("ecs.gn5-c4g1.xlarge", "ecs.gn5", 1, 440),
+    ],
+)
+def test_alicloud_local_disk_speed_unknown_is_empty_and_warned_once(instance_type):
+    _warn_unknown_local_disk_speed.cache_clear()
+    with patch("sc_crawler.vendors._alicloud.logger") as logger:
+        assert _local_disk_speed(instance_type) == (None, None, None, None)
+        assert _local_disk_speed(instance_type) == (None, None, None, None)
+    warnings = [call.args[0] for call in logger.warning.call_args_list]
+    assert len(warnings) == 1
+    assert instance_type["InstanceTypeId"] in warnings[0]
+
+
+def test_alicloud_inventory_servers_bundled_storage_speed():
+    with_disk = {
+        **_instance_type("ecs.i4.large", "ecs.i4", "Local SSD"),
+        "LocalStorageCategory": "local_ssd_pro",
+        "LocalStorageAmount": 1,
+        "LocalStorageCapacity": 447,
+    }
+    instance_types = [
+        with_disk,
+        _instance_type("ecs.g7.large", "ecs.g7", "General-purpose"),
+    ]
+    with (
+        patch(
+            "sc_crawler.vendors._alicloud._get_instance_types",
+            return_value=instance_types,
+        ),
+        patch(
+            "sc_crawler.vendors._alicloud._get_region_availability_info",
+            return_value={},
+        ),
+        patch(
+            "sc_crawler.vendors._alicloud._get_instance_type_disk_categories",
+            return_value={},
+        ),
+    ):
+        rows = inventory_servers(Mock(vendor_id="alicloud"))
+    speeds = {
+        row["server_id"]: (
+            row["storage_read_iops_max"],
+            row["storage_write_iops_max"],
+            row["storage_read_throughput_max"],
+            row["storage_write_throughput_max"],
+        )
+        for row in rows
+    }
+    assert speeds == {
+        "ecs.i4.large": (112_500, None, 750, 375),
+        "ecs.g7.large": (None, None, None, None),
+    }
 
 
 def test_alicloud_parse_instance_type_disk_categories_merges_zones():
