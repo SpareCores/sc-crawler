@@ -1030,7 +1030,7 @@ def _mib(read_iops, write_iops, read_mib, write_mib):
     ],
 )
 def test_gcp_local_ssd_speed(server_name, disks, expected):
-    assert _local_ssd_speed(server_name, disks) == expected
+    assert _local_ssd_speed(server_name, disks, vcpus=192) == expected
 
 
 @pytest.mark.parametrize(
@@ -1047,10 +1047,31 @@ def test_gcp_local_ssd_speed(server_name, disks, expected):
 def test_gcp_local_ssd_speed_unknown_is_empty_and_warned(server_name, disks):
     _warn_unknown_local_ssd_speed.cache_clear()
     with patch("sc_crawler.vendors._gcp.logger") as logger:
-        assert _local_ssd_speed(server_name, disks) == (None, None, None, None)
+        assert _local_ssd_speed(server_name, disks, vcpus=192) == (
+            None,
+            None,
+            None,
+            None,
+        )
     warnings = [call.args[0] for call in logger.warning.call_args_list]
     assert len(warnings) == 1
     assert server_name in warnings[0]
+
+
+@pytest.mark.parametrize(
+    "server_name,disks,vcpus,expected",
+    [
+        # A2 reaches the documented speed only with at least 24 vCPUs
+        ("a2-ultragpu-1g", 1, 12, (None, None, None, None)),
+        ("a2-ultragpu-2g", 2, 24, _mib(340_000, 180_000, 1_320, 700)),
+    ],
+)
+def test_gcp_local_ssd_speed_a2_min_vcpus(server_name, disks, vcpus, expected):
+    _warn_unknown_local_ssd_speed.cache_clear()
+    with patch("sc_crawler.vendors._gcp.logger") as logger:
+        assert _local_ssd_speed(server_name, disks, vcpus) == expected
+    # documented rule, not a missing table row
+    logger.warning.assert_not_called()
 
 
 def test_gcp_search_servers_z4d_titanium_ssd_size():
@@ -1076,7 +1097,7 @@ def test_gcp_search_servers_z4d_titanium_ssd_size():
         rows[0]["storage_write_iops_max"],
         rows[0]["storage_read_throughput_max"],
         rows[0]["storage_write_throughput_max"],
-    ) == _mib(15_600_000, 12_288_000, 75_600, 57_600)
+    ) == (15_600_000, 12_288_000, 79_272, 60_398)
 
 
 def test_gcp_search_servers_parses_fractional_g4_vgpu():

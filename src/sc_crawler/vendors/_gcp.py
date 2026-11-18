@@ -272,6 +272,9 @@ _LOCAL_SSD_SPEED_BY_DISK_COUNT = {
     24: (2_400_000, 1_200_000, 9_360, 4_680),
     32: (3_200_000, 1_600_000, 12_480, 6_240),
 }
+# "To reach the stated performance levels": A2 machine types require at least
+# 24 vCPUs (N1 and N2 have no bundled Local SSD)
+_LOCAL_SSD_MIN_VCPUS = {"a2": 24}
 
 
 @cache
@@ -282,9 +285,12 @@ def _warn_unknown_local_ssd_speed(name: str) -> None:
     )
 
 
-def _local_ssd_speed(server_name: str, partition_count: int) -> tuple:
+def _local_ssd_speed(server_name: str, partition_count: int, vcpus: int) -> tuple:
     """(read IOPS, write IOPS, read MB/s, write MB/s) of the bundled Local SSD."""
     family = server_name.split("-")[0].lower()
+    if vcpus < _LOCAL_SSD_MIN_VCPUS.get(family, 0):
+        # documented rule, not a missing table row: no warning
+        return (None, None, None, None)
     if server_name.endswith("-metal") and f"{family}-metal" in (
         _TITANIUM_SSD_SPEED_PER_DISK
     ):
@@ -1386,7 +1392,7 @@ def _search_servers(zone_name: str) -> List[dict]:
         bundled = server.bundled_local_ssds
         if bundled and bundled.partition_count:
             read_iops, write_iops, read_mbps, write_mbps = _local_ssd_speed(
-                server.name, bundled.partition_count
+                server.name, bundled.partition_count, server.guest_cpus
             )
             storage_size = round(
                 bundled.partition_count
