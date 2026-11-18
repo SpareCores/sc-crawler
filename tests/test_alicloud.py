@@ -16,8 +16,10 @@ from sc_crawler.vendors._alicloud import (
     _ALICLOUD_STATUS_CATEGORY_TO_SERVER_STATUS,
     _DISK_CATEGORY_TO_STORAGE_IDS,
     _accelerator_type,
+    _call_with_retries,
     _compatible_storage_ids,
     _gpu_manufacturer_of_family,
+    _get_zones,
     _gpu_memory_by_spec,
     _instance_category,
     _parse_instance_type_disk_categories,
@@ -963,3 +965,32 @@ def test_alicloud_storage_price_uses_a_zone_offering_the_disk_type():
         for call in fetch.call_args_list
     }
     assert zones == {"cloud_essd": "a", "cloud_auto": "b"}
+
+
+def test_alicloud_call_with_retries_on_transient_errors():
+    call = Mock(
+        side_effect=[
+            Exception("Connection to ecs.cn-chengdu.aliyuncs.com timed out."),
+            Exception("('Connection aborted.', ConnectionResetError(54))"),
+            "ok",
+        ]
+    )
+    with patch("sc_crawler.vendors._alicloud.sleep") as sleep:
+        assert _call_with_retries(call) == "ok"
+    assert [c.args[0] for c in sleep.call_args_list] == [2, 3]
+
+    # not transient, or out of attempts
+    for error, calls in (("InvalidParameter", 1), ("Read timed out", 5)):
+        call = Mock(side_effect=Exception(error))
+        with patch("sc_crawler.vendors._alicloud.sleep"), pytest.raises(Exception):
+            _call_with_retries(call)
+        assert call.call_count == calls
+
+
+def test_alicloud_get_zones_retries_timeouts():
+    client = Mock()
+    response = Mock()
+    response.body.to_map.return_value = {"Zones": {"Zone": [{"ZoneId": "a"}]}}
+    client.describe_zones.side_effect = [Exception("Read timed out."), response]
+    with patch("sc_crawler.vendors._alicloud.sleep"):
+        assert _get_zones(client, "cn-chengdu") == [{"ZoneId": "a"}]

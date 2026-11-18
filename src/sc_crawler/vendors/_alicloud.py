@@ -879,8 +879,36 @@ def _get_zones(client: EcsClient, region_id: str) -> list[dict]:
     #     }
     # }
     request = DescribeZonesRequest(region_id=region_id, accept_language="en-US")
-    response = client.describe_zones(request)
+    response = _call_with_retries(lambda: client.describe_zones(request))
     return response.body.to_map()["Zones"]["Zone"]
+
+
+# transient errors of the API endpoints worth retrying: throttling, and network
+# errors seen at the endpoints far from the client (connection resets and
+# connect or read timeouts)
+_TRANSIENT_ERRORS = (
+    "Throttling",
+    "Connection aborted",
+    "Connection reset",
+    "timed out",
+    "Max retries exceeded",
+)
+
+
+def _call_with_retries(call, attempts: int = 5, max_wait: int = 5):
+    """Run `call()`, retrying on transient errors (see `_TRANSIENT_ERRORS`).
+
+    Waits 2, 3, ... seconds (up to `max_wait`) between the attempts, and raises
+    the last error when all attempts failed or the error is not transient.
+    """
+    for attempt in range(attempts):
+        try:
+            return call()
+        except Exception as e:
+            transient = any(error in str(e) for error in _TRANSIENT_ERRORS)
+            if not transient or attempt == attempts - 1:
+                raise
+            sleep(min(2 + attempt, max_wait))
 
 
 # Disk categories of the DescribeZones response mapped to our storage ids (see
@@ -2407,32 +2435,16 @@ def _rds_clients(vendor: Vendor) -> dict[str, RdsClient]:
     }
 
 
-# transient network errors of the RDS endpoints worth retrying
-_RDS_TRANSIENT_ERRORS = (
-    "Throttling",
-    "Connection aborted",
-    "Connection reset",
-    "Read timed out",
-    "Max retries exceeded",
-)
-
-
 def _rds_call(method, request, attempts: int = 15) -> dict:
     """Call an RDS API method, waiting out the flow control of the endpoint.
 
     E.g. `DescribeAvailableClasses` allows only around 2 requests per 13
     seconds, counted separately for each region, so the wait grows up to that.
-    Connection resets and timeouts (seen at the endpoints far from the client)
-    are retried as well.
+    Connection resets and timeouts are retried as well, see `_call_with_retries`.
     """
-    for attempt in range(attempts):
-        try:
-            return method(request, RuntimeOptions()).body.to_map()
-        except Exception as e:
-            transient = any(error in str(e) for error in _RDS_TRANSIENT_ERRORS)
-            if not transient or attempt == attempts - 1:
-                raise
-            sleep(min(2 + attempt, 13))
+    return _call_with_retries(
+        lambda: method(request, RuntimeOptions()), attempts=attempts, max_wait=13
+    ).body.to_map()
 
 
 def _parse_rds_available_zones(available_zones: list[dict]) -> dict[str, dict]:
@@ -2781,7 +2793,7 @@ def _fetch_rds_price(
     except Exception as e:
         # throttled or unreachable even after the retries: a missing price, not
         # a missing pricing plan
-        level = WARN if any(x in str(e) for x in _RDS_TRANSIENT_ERRORS) else DEBUG
+        level = WARN if any(x in str(e) for x in _TRANSIENT_ERRORS) else DEBUG
         logger.log(
             level, f"No RDS price for {class_code} in {region_id}/{zone_id}: {e}"
         )

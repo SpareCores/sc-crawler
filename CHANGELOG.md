@@ -22,6 +22,8 @@ Fix(es):
 
 - Add the new `AliCloud` region in Amsterdam (`eu-west-3`) to the known
   locations, as the region inventory failed on it.
+- Retry the transient network errors (connection resets and timeouts) of the
+  `AliCloud` availability zone lookups, instead of marking the region inactive.
 
 ## v0.11.0 (November 16, 2026)
 
