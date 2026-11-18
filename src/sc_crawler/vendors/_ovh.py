@@ -1447,6 +1447,8 @@ def inventory_servers(vendor) -> list[dict]:
                     "description": describe(flex_storages),
                     "storage_size": flex_flavors[flex_id],
                     "storages": flex_storages,
+                    # the catalog IOPS are for the classic disk only
+                    "storage_read_iops_max": None,
                 }
             )
 

@@ -1404,10 +1404,15 @@ def test_inventory_servers_gen3_ipv4_and_flex_variants(mock_ovh_client):
         catalog_addons=[
             _instance_addon("b3-8", {"capacity": 50, "technology": "NVMe"}),
             _instance_addon("b3-16", {"capacity": 100, "technology": "NVMe"}),
-            _instance_addon("b2-15", {"capacity": 100, "technology": "SSD"}),
+            _instance_addon(
+                "b2-15", {"capacity": 100, "technology": "SSD", "iops": 4000}
+            ),
         ],
     )
     servers = {s["server_id"]: s for s in inventory_servers(_ovh_vendor())}
+    # the catalog IOPS belong to the classic disk, not to the smaller flex disk
+    assert servers["b2-15"]["storage_read_iops_max"] == 4000
+    assert servers["b2-15-flex"]["storage_read_iops_max"] is None
     # b3-8-flex has the same disk as b3-8, so it's skipped
     assert set(servers) == {"b3-8", "b3-16", "b3-16-flex", "b2-15", "b2-15-flex"}
 
