@@ -783,10 +783,10 @@ def _gpu_spec(name: str, api_gpus: str | None) -> tuple[float, str | None, int |
 # https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/storage-optimized/lsv2-series
 # https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/storage-optimized/lsv3-series
 # https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/storage-optimized/lasv3-series
-# HPC: "block device SSD performance" (GB/s) in the series introductions:
-# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/high-performance-compute/hbv3-series
-# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/high-performance-compute/hbv4-series
-# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/high-performance-compute/hx-series
+# HPC: NVMe disks in a striped array, "Temporary storage" in the series overviews:
+# https://learn.microsoft.com/en-us/azure/virtual-machines/hbv3-series-overview
+# https://learn.microsoft.com/en-us/azure/virtual-machines/hbv4-series-overview
+# https://learn.microsoft.com/en-us/azure/virtual-machines/hx-series-overview
 _AZURE_NVME_SPEED_SERIES = (
     (
         r"^L\d+a?s_v[23]$",
@@ -799,9 +799,9 @@ _AZURE_NVME_SPEED_SERIES = (
             80: (3_800_000, None, 20_000, None),
         },
     ),
-    (r"^HB120(-\d+)?rs_v3$", (None, None, 7_000, None)),
-    (r"^HB176(-\d+)?rs_v4$", (None, None, 12_000, 7_000)),
-    (r"^HX176(-\d+)?rs$", (None, None, 12_000, 7_000)),
+    (r"^HB120(-\d+)?rs_v3$", (186_000, 201_000, 7_000, 3_000)),
+    (r"^HB176(-\d+)?rs_v4$", (186_000, 201_000, 12_000, 7_000)),
+    (r"^HX176(-\d+)?rs$", (186_000, 201_000, 12_000, 7_000)),
 )
 _AZURE_NVME_SPEED_SERIES = tuple(
     (recompile(pattern), speeds) for pattern, speeds in _AZURE_NVME_SPEED_SERIES

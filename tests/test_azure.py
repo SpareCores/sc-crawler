@@ -164,7 +164,8 @@ _NVME = {
         ),
         # temp disk speed is reported even without a temp disk
         ("Standard_D2s_v5", _TEMP_SPEED_ONLY, (None, None, None, None)),
-        # NVMe disk without speed in the API or in the docs
+        # HBv2: NVMe disk without speed in the API or in the docs
+        # (hbv2-series-overview lists the disk only)
         ("Standard_HB120rs_v2", _NVME_NO_SPEED, (None, None, None, None)),
         ("Standard_HB120rs_v2", _TEMP_DISK | _NVME_NO_SPEED, (9000, None, 125, 125)),
         # NVMe speed from the docs: single IOPS and throughput figure as read
@@ -173,7 +174,8 @@ _NVME = {
             _TEMP_DISK | _NVME_NO_SPEED,
             (9000 + 400_000, None, 125 + 2_000, 125),
         ),
-        ("Standard_HB176rs_v4", _NVME_NO_SPEED, (None, None, 12_000, 7_000)),
+        ("Standard_HB176rs_v4", _NVME_NO_SPEED, (186_000, 201_000, 12_000, 7_000)),
+        ("Standard_HB120rs_v3", _NVME_NO_SPEED, (186_000, 201_000, 7_000, 3_000)),
     ],
 )
 def test_azure_standardize_server_bundled_storage_speed(name, capabilities, expected):
