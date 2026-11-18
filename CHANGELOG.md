@@ -18,6 +18,11 @@ New feature(s):
   their pay-as-you-go prices, and the ESSD storage options priced per edition
   (e.g. `cloud_essd-ha`). Cluster Edition prices are stored for 2 nodes.
 
+Fix(es):
+
+- Add the new `AliCloud` region in Amsterdam (`eu-west-3`) to the known
+  locations, as the region inventory failed on it.
+
 ## v0.11.0 (November 16, 2026)
 
 ‼ Breaking changes:

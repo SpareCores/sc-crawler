@@ -1473,6 +1473,14 @@ locations = {
         "country_id": "FR",
         "founding_year": 2026,
     },
+    # https://www.alibabacloud.com/en/press-room/first-public-cloud-region-in-the-netherlands
+    "eu-west-3": {
+        "city": "Amsterdam",
+        "lat": 52.3676,
+        "lon": 4.9041,
+        "country_id": "NL",
+        "founding_year": 2026,
+    },
     "eu-central-1": {
         "alias": ["eu-central-de46-a01"],
         "city": "Frankfurt",
