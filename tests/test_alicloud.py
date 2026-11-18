@@ -17,6 +17,7 @@ from sc_crawler.vendors._alicloud import (
     _DISK_CATEGORY_TO_STORAGE_IDS,
     _accelerator_type,
     _compatible_storage_ids,
+    _fetch_rds_price,
     _gpu_manufacturer_of_family,
     _gpu_memory_by_spec,
     _instance_category,
@@ -25,6 +26,7 @@ from sc_crawler.vendors._alicloud import (
     _parse_rds_price,
     _rds_class_memory,
     _rds_class_status,
+    _rds_map_regions,
     _rds_region_storage_prices,
     _warn_unknown_category,
     inventory_database_prices,
@@ -743,3 +745,46 @@ def test_alicloud_storage_price_uses_a_zone_offering_the_disk_type():
         for call in fetch.call_args_list
     }
     assert zones == {"cloud_essd": "a", "cloud_auto": "b"}
+
+
+def test_alicloud_fetch_rds_price_warns_when_throttled():
+    client = Mock()
+    client.describe_price_with_options.side_effect = Exception("Throttling.User")
+    with (
+        patch("sc_crawler.vendors._alicloud.sleep"),
+        patch("sc_crawler.vendors._alicloud.logger") as logger,
+    ):
+        price = _fetch_rds_price(
+            client,
+            "r",
+            "pg.x",
+            "basic",
+            "z",
+            "17.0",
+            "cloud_essd",
+            20,
+        )
+    assert price is None
+    assert logger.log.call_args.args[0] == 30
+
+
+def test_alicloud_rds_map_regions_results_are_kept_for_the_session():
+    vendor = Mock(session=Mock())
+    fetch = Mock(return_value={"x": 1})
+    with (
+        patch(
+            "sc_crawler.vendors._alicloud._rds_clients",
+            return_value={"r1": Mock()},
+        ),
+        patch("sc_crawler.vendors._alicloud._rds_region_results", {}),
+        # no disk cache of the API calls
+        patch("sc_crawler.vendors._alicloud.cachier", lambda **kwargs: lambda f: f),
+    ):
+        name = "test lookup kept for the session"
+        assert _rds_map_regions(vendor, name, fetch, None) == {"r1": {"x": 1}}
+        _rds_map_regions(vendor, name, fetch, None)
+        assert fetch.call_count == 1
+        # a new run with a new session
+        vendor.session = Mock()
+        _rds_map_regions(vendor, name, fetch, None)
+        assert fetch.call_count == 2

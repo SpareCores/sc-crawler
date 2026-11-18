@@ -5,11 +5,11 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from functools import cache
 from itertools import chain
-from logging import CRITICAL, INFO, WARN, getLogger
+from logging import CRITICAL, DEBUG, INFO, WARN, getLogger
 from os import environ
 from random import shuffle
 from re import search, sub
-from time import sleep, time
+from time import monotonic, sleep, time
 from typing import Collection, Optional
 
 from alibabacloud_bssopenapi20171214.client import Client as BssClient
@@ -2406,19 +2406,32 @@ def _rds_clients(vendor: Vendor) -> dict[str, RdsClient]:
     }
 
 
+# transient network errors of the RDS endpoints worth retrying
+_RDS_TRANSIENT_ERRORS = (
+    "Throttling",
+    "Connection aborted",
+    "Connection reset",
+    "Read timed out",
+    "Max retries exceeded",
+)
+
+
 def _rds_call(method, request, attempts: int = 15) -> dict:
     """Call an RDS API method, waiting out the flow control of the endpoint.
 
     E.g. `DescribeAvailableClasses` allows only around 2 requests per 13
-    seconds, counted separately for each region.
+    seconds, counted separately for each region, so the wait grows up to that.
+    Connection resets and timeouts (seen at the endpoints far from the client)
+    are retried as well.
     """
     for attempt in range(attempts):
         try:
             return method(request, RuntimeOptions()).body.to_map()
         except Exception as e:
-            if "Throttling" not in str(e) or attempt == attempts - 1:
+            transient = any(error in str(e) for error in _RDS_TRANSIENT_ERRORS)
+            if not transient or attempt == attempts - 1:
                 raise
-            sleep(min(2 + attempt, 5))
+            sleep(min(2 + attempt, 13))
 
 
 def _parse_rds_available_zones(available_zones: list[dict]) -> dict[str, dict]:
@@ -2746,13 +2759,20 @@ def _fetch_rds_price(
     try:
         return _parse_rds_price(_rds_call(client.describe_price_with_options, request))
     except Exception as e:
-        logger.debug(f"No RDS price for {class_code} in {region_id}/{zone_id}: {e}")
+        # throttled or unreachable even after the retries: a missing price, not
+        # a missing pricing plan
+        level = WARN if any(x in str(e) for x in _RDS_TRANSIENT_ERRORS) else DEBUG
+        logger.log(
+            level, f"No RDS price for {class_code} in {region_id}/{zone_id}: {e}"
+        )
         return None
 
 
 # results of the slow, throttled RDS lookups shared by the database inventories
-# of a run, by the name of the lookup and the regions
-_rds_region_results: dict[tuple, dict[str, dict]] = {}
+# of a run (bound to the session of the vendor), by the name of the lookup and
+# the regions, kept for at most a few hours (when running without a session)
+_rds_region_results: dict[tuple, tuple[object, float, dict[str, dict]]] = {}
+_RDS_REGION_RESULTS_TTL = 6 * 60 * 60
 
 
 def _rds_map_regions(vendor: Vendor, name: str, fetch, fallback) -> dict[str, dict]:
@@ -2764,7 +2784,13 @@ def _rds_map_regions(vendor: Vendor, name: str, fetch, fallback) -> dict[str, di
     clients = _rds_clients(vendor)
     key = (name, tuple(sorted(clients)))
     if key in _rds_region_results:
-        return _rds_region_results[key]
+        session, fetched_at, results = _rds_region_results[key]
+        if (
+            session is vendor.session
+            and monotonic() - fetched_at < _RDS_REGION_RESULTS_TTL
+        ):
+            return results
+        del _rds_region_results[key]
 
     @cachier(hash_func=jsoned_hash, separate_files=True)
     def fetch_region(name: str, region_id: str):
@@ -2790,7 +2816,7 @@ def _rds_map_regions(vendor: Vendor, name: str, fetch, fallback) -> dict[str, di
             vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
     if complete:
-        _rds_region_results[key] = results
+        _rds_region_results[key] = (vendor.session, monotonic(), results)
     return results
 
 
