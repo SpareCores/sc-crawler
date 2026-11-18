@@ -15,7 +15,7 @@ from sc_crawler.table_fields import (
     Status,
     StorageType,
 )
-from sc_crawler.utils import _GIB_TO_GB
+from sc_crawler.utils import _GIB_TO_GB, _MIB_TO_MB
 from sc_crawler.vendors._gcp import (
     _PG_STORAGE_SPECS,
     _PG_TIER_FAMILY_SERIES,
@@ -28,6 +28,7 @@ from sc_crawler.vendors._gcp import (
     _gcp_accelerator_type,
     _gcp_machine_type_status,
     _local_ssd_partition_gib,
+    _local_ssd_speed,
     _machine_family,
     _pg_compute_sku_class,
     _pg_storage_id,
@@ -40,6 +41,7 @@ from sc_crawler.vendors._gcp import (
     _skus_dict,
     _support_key,
     _warn_unknown_family,
+    _warn_unknown_local_ssd_speed,
     _warn_unknown_storage_series,
     _warn_unknown_tier_storage,
     inventory_database_prices,
@@ -985,6 +987,72 @@ def test_gcp_local_ssd_partition_gib(server_name, expected):
     assert _local_ssd_partition_gib(server_name) == expected
 
 
+def _mib(read_iops, write_iops, read_mib, write_mib):
+    """Expected speed tuple from a docs row (throughput in MiB/s)."""
+    return (
+        read_iops,
+        write_iops,
+        round(read_mib * _MIB_TO_MB),
+        round(write_mib * _MIB_TO_MB),
+    )
+
+
+@pytest.mark.parametrize(
+    "server_name,disks,expected",
+    [
+        # Titanium SSD scales linearly with the number of disks
+        ("c4-standard-4-lssd", 1, _mib(150_000, 75_000, 625, 330)),
+        ("c4-standard-32-lssd", 5, _mib(750_000, 375_000, 3_125, 1_650)),
+        ("c4a-standard-64-lssd", 14, _mib(2_100_000, 1_050_000, 9_100, 4_620)),
+        ("z3-highmem-8-highlssd", 1, _mib(750_000, 500_000, 3_000, 2_500)),
+        ("z4m-highmem-192", 12, _mib(15_600_000, 12_288_000, 75_600, 57_600)),
+        # bare metal with larger disks
+        (
+            "c4-standard-288-lssd-metal",
+            6,
+            _mib(7_200_000, 3_600_000, 30_000, 15_840),
+        ),
+        (
+            "z4d-highmem-384-standardlssd-metal",
+            12,
+            _mib(15_600_000, 12_288_000, 75_600, 57_600),
+        ),
+        # Z3 bare metal follows the VM rate
+        (
+            "z3-highmem-192-highlssd-metal",
+            12,
+            _mib(9_000_000, 6_000_000, 36_000, 30_000),
+        ),
+        # Local SSD by disk count, not linear (same speed for 4 and 8 disks)
+        ("c3-standard-22-lssd", 4, _mib(680_000, 360_000, 2_650, 1_400)),
+        ("c3-standard-44-lssd", 8, _mib(680_000, 360_000, 2_650, 1_400)),
+        ("a3-ultragpu-8g", 32, _mib(3_200_000, 1_600_000, 12_480, 6_240)),
+    ],
+)
+def test_gcp_local_ssd_speed(server_name, disks, expected):
+    assert _local_ssd_speed(server_name, disks) == expected
+
+
+@pytest.mark.parametrize(
+    "server_name,disks",
+    [
+        # A4X: no performance figures in the docs
+        ("a4x-highgpu-4g", 4),
+        # disk count missing from the Local SSD table
+        ("c3-standard-x-lssd", 12),
+        # unknown series
+        ("x9-standard-8-lssd", 1),
+    ],
+)
+def test_gcp_local_ssd_speed_unknown_is_empty_and_warned(server_name, disks):
+    _warn_unknown_local_ssd_speed.cache_clear()
+    with patch("sc_crawler.vendors._gcp.logger") as logger:
+        assert _local_ssd_speed(server_name, disks) == (None, None, None, None)
+    warnings = [call.args[0] for call in logger.warning.call_args_list]
+    assert len(warnings) == 1
+    assert server_name in warnings[0]
+
+
 def test_gcp_search_servers_z4d_titanium_ssd_size():
     machine = SimpleNamespace(
         id=1,
@@ -1003,6 +1071,12 @@ def test_gcp_search_servers_z4d_titanium_ssd_size():
 
     assert rows[0]["storage_size"] == round(24 * 3500 * _GIB_TO_GB)
     assert rows[0]["storage_type"] == StorageType.NVME_SSD
+    assert (
+        rows[0]["storage_read_iops_max"],
+        rows[0]["storage_write_iops_max"],
+        rows[0]["storage_read_throughput_max"],
+        rows[0]["storage_write_throughput_max"],
+    ) == _mib(15_600_000, 12_288_000, 75_600, 57_600)
 
 
 def test_gcp_search_servers_parses_fractional_g4_vgpu():
