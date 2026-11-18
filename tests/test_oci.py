@@ -512,7 +512,7 @@ def test_shape_servers_flex():
     vendor = Mock(vendor_id="oci")
     servers = {s["server_id"]: s for s in _shape_servers(_flex_shape(), vendor)}
     server = servers["VM.Standard.E5.Flex.4-32"]
-    assert server["api_reference"] == "VM.Standard.E5.Flex"
+    assert server["api_reference"] == "VM.Standard.E5.Flex.4-32"
     assert server["api_reference_object"] == {
         "shape": "VM.Standard.E5.Flex",
         "shape_config": {"ocpus": 4, "memory_in_gbs": 32},
@@ -555,6 +555,7 @@ def test_shape_servers_bare_metal_dense_io():
     (server,) = _shape_servers(DENSE_IO_BM, Mock(vendor_id="oci"))
     assert server["server_id"] == "BM.DenseIO.E6.Ax.192"
     assert server["api_reference_object"] == {"shape": "BM.DenseIO.E6.Ax.192"}
+    assert server["api_reference"] == "BM.DenseIO.E6.Ax.192"
     assert (server["family"], server["series"]) == ("Dense I/O", "DenseIO.E6.Ax")
     assert (server["vcpus"], server["cpu_cores"]) == (384, 192)
     assert server["storage_size"] == 81600
