@@ -124,6 +124,29 @@ sc-audit compare --out $OUT --db ~/downloads/sc-data-all.db
 This writes `$OUT/report.md`, `findings.csv` and `findings.jsonl`. Re-run
 `compare` for all vendors at the end, as each run overwrites the report.
 
+### Bundled disk speed
+
+`storage_read_iops_max`, `storage_write_iops_max`, `storage_read_throughput_max`
+and `storage_write_throughput_max` (MB/s) hold the vendor-published max speed of
+the disks bundled with a server; NULL means not published. AWS, GCP, Alibaba,
+UpCloud and part of Azure (NVMe sizes) fill them from hardcoded docs tables, so a
+new server type stays NULL until someone adds its row (the crawler logs a warning
+once per unknown type). List the bundled disks without any speed:
+
+```sh
+sqlite3 ~/downloads/sc-data-all.db "SELECT vendor_id, server_id, storage_size
+  FROM server WHERE status = 'ACTIVE' AND storage_size > 0
+  AND vendor_id IN ('alicloud', 'aws', 'azure', 'gcp', 'upcloud')
+  AND storage_read_iops_max IS NULL AND storage_write_iops_max IS NULL
+  AND storage_read_throughput_max IS NULL AND storage_write_throughput_max IS NULL
+  ORDER BY 1, 2"
+```
+
+For each one, check the docs page cited next to the table in
+`src/sc_crawler/vendors/_<vendor>.py`. If the page now lists it, tell the user
+which row to add; types the docs leave blank are expected (e.g. AWS
+`_INSTANCE_STORE_IOPS_NOT_PUBLISHED`). Put the result in `$OUT/notes.md`.
+
 ## 4. Triage
 
 Verdicts are persistent: they live in `audit/triage.yaml`
