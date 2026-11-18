@@ -17,7 +17,10 @@ New feature(s):
   `storage_read_throughput_max` and `storage_write_throughput_max`: the
   vendor-published maximum performance of the bundled (local) disk(s),
   aggregated over all disks. Empty when the vendor does not publish it.
-  Not populated yet.
+  Populated for AWS, GCP and UpCloud from the vendor docs, for Azure from the
+  API (with docs for the NVMe disks of L-series and HPC sizes), and for OVH
+  from the catalog (read IOPS only). Existing rows are not backfilled by the
+  migration, only by the next inventory refresh.
 
 Database migrations:
 

@@ -130,8 +130,9 @@ This writes `$OUT/report.md`, `findings.csv` and `findings.jsonl`. Re-run
 and `storage_write_throughput_max` (MB/s) hold the vendor-published max speed of
 the disks bundled with a server; NULL means not published. AWS, GCP, Alibaba,
 UpCloud and part of Azure (NVMe sizes) fill them from hardcoded docs tables, so a
-new server type stays NULL until someone adds its row (the crawler logs a warning
-once per unknown type). List the bundled disks without any speed:
+new server type stays NULL until someone adds its row. The crawler logs a warning
+for unknown AWS, GCP and UpCloud types, but not for Azure NVMe sizes missing from
+its table, so do not rely on the logs. List the bundled disks without any speed:
 
 ```sh
 sqlite3 ~/downloads/sc-data-all.db "SELECT vendor_id, server_id, storage_size
@@ -144,8 +145,9 @@ sqlite3 ~/downloads/sc-data-all.db "SELECT vendor_id, server_id, storage_size
 
 For each one, check the docs page cited next to the table in
 `src/sc_crawler/vendors/_<vendor>.py`. If the page now lists it, tell the user
-which row to add; types the docs leave blank are expected (e.g. AWS
-`_INSTANCE_STORE_IOPS_NOT_PUBLISHED`). Put the result in `$OUT/notes.md`.
+which row to add. Expected gaps: types the docs leave blank (AWS
+`_INSTANCE_STORE_IOPS_NOT_PUBLISHED`, Azure HBv2), and GCP types below
+`_LOCAL_SSD_MIN_VCPUS` (e.g. `a2-ultragpu-1g`). Put the result in `$OUT/notes.md`.
 
 ## 4. Triage
 
