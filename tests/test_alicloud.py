@@ -27,11 +27,15 @@ from sc_crawler.vendors._alicloud import (
     _fetch_rds_offers,
     _fetch_rds_price,
     _parse_rds_price,
+    _previous_rows,
     _rds_class_editions,
     _rds_class_memory,
     _rds_class_status,
     _rds_class_vcpus,
     _rds_map_regions,
+    _rds_multi_zone,
+    _rds_region_prices,
+    _rds_security_features,
     _rds_region_storage_prices,
     _warn_unknown_category,
     inventory_database_prices,
@@ -310,10 +314,19 @@ def test_alicloud_parse_rds_available_zones():
             "eu-central-1a": {
                 "versions": ["17.0", "14.0"],
                 "storage_types": ["cloud_essd", "cloud_auto"],
+                # disk types of each version
+                "version_storage_types": {
+                    "17.0": ["cloud_essd", "cloud_auto"],
+                    "14.0": ["cloud_essd"],
+                },
             }
         },
         "ha": {
-            "eu-central-1a": {"versions": ["17.0"], "storage_types": ["cloud_essd"]}
+            "eu-central-1a": {
+                "versions": ["17.0"],
+                "storage_types": ["cloud_essd"],
+                "version_storage_types": {"17.0": ["cloud_essd"]},
+            }
         },
     }
 
@@ -425,6 +438,7 @@ _RDS_PARAMS = {
         }
     ],
     "versions": ["14.0", "17.0"],
+    "zone_versions": {"eu-central-1a": ["17.0", "14.0"]},
 }
 _RDS_PARAMS_MULTI_ZONE = {
     **_RDS_PARAMS,
@@ -432,10 +446,16 @@ _RDS_PARAMS_MULTI_ZONE = {
         *_RDS_PARAMS["zones"],
         {**_RDS_PARAMS["zones"][0], "zone_id": "eu-central-1b"},
     ],
+    "zone_versions": {"eu-central-1a": ["17.0"], "eu-central-1b": ["17.0"]},
 }
+_RDS_STORAGE_TYPES_OFFERED = ["cloud_essd", "cloud_auto", "cloud_essd2", "cloud_essd3"]
 _RDS_ZONE_OFFER = {
     "versions": ["14.0", "17.0"],
-    "storage_types": ["cloud_essd", "cloud_auto", "cloud_essd2", "cloud_essd3"],
+    "storage_types": _RDS_STORAGE_TYPES_OFFERED,
+    "version_storage_types": {
+        "14.0": _RDS_STORAGE_TYPES_OFFERED,
+        "17.0": _RDS_STORAGE_TYPES_OFFERED,
+    },
 }
 _RDS_OFFERS = {
     "eu-central-1": {
@@ -525,7 +545,7 @@ def _rds_patches(rds_offers=_RDS_OFFERS, rds_specs=_RDS_SPECS):
 
 
 def _inventory_rds_databases(rds_offers=_RDS_OFFERS, rds_specs=_RDS_SPECS, previous=()):
-    vendor = Mock(vendor_id="alicloud")
+    vendor = Mock(vendor_id="alicloud", session=None)
     offers, specs, clients = _rds_patches(rds_offers, rds_specs)
     with (
         offers,
@@ -771,6 +791,124 @@ def test_alicloud_inventory_databases_keeps_previous_classes_without_specs():
     assert "pg.n2.2c.2m" not in rows
 
 
+def test_alicloud_inventory_databases_keeps_previous_classes_not_found_at_all():
+    """Neither orderable, nor listed in the regions with specs."""
+    rds_offers = {
+        "eu-central-1": {"complete": False, "zones": {}, "classes": {}},
+        "cn-nanjing": _RDS_OFFERS["cn-nanjing"],
+    }
+    rds_specs = {"eu-central-1": None, "cn-nanjing": _RDS_SPECS["cn-nanjing"]}
+    previous = [_previous_database("pg.x4.large.2c")]
+    vendor, rows = _inventory_rds_databases(rds_offers, rds_specs, previous)
+    assert rows["pg.x4.large.2c"] == previous[0]
+
+
+def test_alicloud_inventory_databases_keeps_the_planned_retirement_without_specs():
+    """The end of sale might be noted in the regions without specs."""
+    rds_specs = {
+        "eu-central-1": {"pg.n2.2c.1m": _RDS_SPECS["eu-central-1"]["pg.n2.2c.1m"]},
+        "cn-nanjing": None,
+    }
+    previous = [_previous_database("pg.n2.2c.1m", Status.PLANNED_FOR_RETIREMENT)]
+    vendor, rows = _inventory_rds_databases(rds_specs=rds_specs, previous=previous)
+    assert rows["pg.n2.2c.1m"]["status"] == Status.PLANNED_FOR_RETIREMENT
+    # complete specs: recalculated
+    vendor, rows = _inventory_rds_databases(previous=previous)
+    assert rows["pg.n2.2c.1m"]["status"] == Status.ACTIVE
+
+
+@pytest.mark.parametrize(
+    "memory_class,expected",
+    [
+        (" 4GB（即将停售）", Status.PLANNED_FOR_RETIREMENT),
+        (" 256GB（已停售）", Status.RETIRED),
+        (" 4GB（通用型）", None),
+    ],
+)
+def test_alicloud_rds_class_status_of_unconfirmed_absence(memory_class, expected):
+    spec = {"MemoryClass": memory_class}
+    assert _rds_class_status(spec, False, absence_confirmed=False) == expected
+
+
+def test_alicloud_inventory_databases_features_by_edition_and_family():
+    vendor, rows = _inventory_rds_databases()
+    assert rows["pg.n2.2c.1m"]["connection_pool"] is True
+    assert rows["pg.x4.large.2c"]["connection_pool"] is True
+    # no PgBouncer in the Cluster Edition
+    assert rows["pg.x2e.medium.xc"]["connection_pool"] is False
+    for family in ("General Purpose", None, "Unknown"):
+        assert (
+            DatabaseSecurityFeature.CUSTOMER_MANAGED_KEYS
+            not in _rds_security_features(family)
+        )
+    for family in ("Dedicated", "Security Enhanced"):
+        assert DatabaseSecurityFeature.CUSTOMER_MANAGED_KEYS in _rds_security_features(
+            family
+        )
+
+
+def test_alicloud_rds_region_prices_try_more_zones():
+    params = [
+        {"zone_id": zone_id, "engine_version": "17.0", "storage_type": "cloud_essd"}
+        for zone_id in ("a", "b", "c", "d")
+    ]
+    offer = {"classes": {"ha": {"pg.x": {"zones": params, "versions": ["17.0"]}}}}
+
+    def fetch_price(zone_id, **kwargs):
+        if zone_id == "b":
+            return {"currency": "USD", "modules": {"rds_class": 0.5}}
+        return None
+
+    with patch(
+        "sc_crawler.vendors._alicloud._fetch_rds_price", side_effect=fetch_price
+    ) as fetch:
+        prices = _rds_region_prices(Mock(), "r", offer, {}, {"pg.x": "ha"})
+    assert prices == {"pg.x": (0.5, "USD")}
+    assert [call.kwargs["zone_id"] for call in fetch.call_args_list] == ["a", "b"]
+
+    with patch(
+        "sc_crawler.vendors._alicloud._fetch_rds_price", return_value=None
+    ) as fetch:
+        assert _rds_region_prices(Mock(), "r", offer, {}, {"pg.x": "ha"}) == {}
+    # bounded
+    assert fetch.call_count == 3
+
+
+def test_alicloud_inventory_database_prices_keep_the_failed_regions():
+    vendor, rows = _inventory_rds_databases()
+    vendor.databases = [
+        Mock(
+            database_id=row["database_id"],
+            status=row["status"],
+            api_reference_object=row["api_reference_object"],
+        )
+        for row in rows.values()
+    ]
+    rds_offers = {
+        **_RDS_OFFERS,
+        "eu-west-1": {"complete": False, "zones": {}, "classes": {}},
+    }
+    previous_price = {"region_id": "eu-west-1", "database_id": "pg.n2.2c.1m"}
+    offers, specs, clients = _rds_patches(rds_offers)
+    with (
+        offers,
+        specs,
+        patch(
+            "sc_crawler.vendors._alicloud._rds_clients",
+            return_value={region_id: Mock() for region_id in rds_offers},
+        ),
+        patch("sc_crawler.vendors._alicloud._fetch_rds_price", return_value=None),
+        patch(
+            "sc_crawler.vendors._alicloud._previous_active_prices",
+            return_value=[previous_price],
+        ) as previous,
+    ):
+        prices = inventory_database_prices(vendor)
+    assert previous.call_args.args[2] == {"eu-west-1"}
+    assert previous_price in prices
+    assert {price["region_id"] for price in prices} == {"eu-central-1", "eu-west-1"}
+
+
 def test_alicloud_inventory_databases_unknown_vcpus():
     rds_specs = {
         "eu-central-1": {
@@ -816,7 +954,11 @@ def _rds_offers_client(zone_versions, orderable):
 
     def available_classes(request, runtime):
         probes.append((request.zone_id, request.engine_version))
-        found = orderable.get((request.zone_id, request.engine_version), [])
+        found = orderable.get((request.zone_id, request.engine_version))
+        if found is None:
+            raise Exception(
+                "Error: InvalidCondition.NotFound code: 404, No class found"
+            )
         return Mock(
             body=Mock(
                 to_map=Mock(
@@ -843,12 +985,12 @@ def test_alicloud_fetch_rds_offers_probes_each_older_version_once():
             ("z-a", "17.0"): ["pg.a"],
             ("z-b", "17.0"): ["pg.a"],
             ("z-c", "17.0"): ["pg.a"],
-            # only orderable with an older version not probed in its zone
+            # only orderable with a middle version not probed in its zone
             ("z-c", "16.0"): ["pg.missed"],
         },
     )
     classes = _fetch_rds_offers(client, "r")["classes"]["basic"]
-    # known limitation: a middle version is not probed in all zones
+    # known limitation of the compromise
     assert "pg.missed" not in classes
     assert sorted(probes) == [
         ("z-a", "13.0"),
@@ -860,6 +1002,46 @@ def test_alicloud_fetch_rds_offers_probes_each_older_version_once():
         ("z-c", "15.0"),
         ("z-c", "17.0"),
     ]
+    # the newest versions first
+    assert probes[:3] == [("z-a", "17.0"), ("z-b", "17.0"), ("z-c", "17.0")]
+
+
+def test_alicloud_fetch_rds_offers_middle_versions_in_a_single_zone():
+    """As in cn-shanghai: the Intel SGX instance types with PostgreSQL 13-15
+    in 2 of the zones offering PostgreSQL 10-18."""
+    versions = [f"{v}.0" for v in range(10, 19)]
+    orderable = {(zone, "18.0"): ["pg.a"] for zone in ("z-b", "z-c", "z-l")}
+    for version in ("13.0", "14.0", "15.0"):
+        orderable[("z-b", version)] = ["pg.x4t.large.2c"]
+        orderable[("z-l", version)] = ["pg.x4t.large.2c", "pg.x4t.2xlarge.2c"]
+    client, probes = _rds_offers_client(
+        {"z-b": versions, "z-c": versions, "z-l": versions}, orderable
+    )
+    classes = _fetch_rds_offers(client, "r")["classes"]["basic"]
+    # the middle versions are only probed in the first zone offering the most
+    # versions, then the newest one found in the other zones as well
+    assert classes["pg.x4t.large.2c"]["zone_versions"] == {
+        "z-b": ["15.0", "14.0", "13.0"],
+        "z-l": ["15.0"],
+    }
+    assert _rds_multi_zone(classes["pg.x4t.large.2c"])
+    # without its other versions in the other zones
+    assert classes["pg.x4t.2xlarge.2c"]["zone_versions"] == {"z-l": ["15.0"]}
+    assert not _rds_multi_zone(classes["pg.x4t.2xlarge.2c"])
+    assert _rds_multi_zone(classes["pg.a"])
+    # 3 newest, 3 oldest, 7 middle versions and 2 follow-ups instead of 27 calls
+    assert len(probes) == 15
+    assert probes[-2:] == [("z-c", "15.0"), ("z-l", "15.0")]
+
+
+def test_alicloud_fetch_rds_offers_middle_versions_missed():
+    """Known limitation: not orderable in the zone the version was probed in."""
+    versions = [f"{v}.0" for v in range(10, 19)]
+    orderable = {(zone, "18.0"): ["pg.a"] for zone in ("z-b", "z-l")}
+    orderable[("z-l", "13.0")] = ["pg.x4t.2xlarge.2c"]
+    client, probes = _rds_offers_client({"z-b": versions, "z-l": versions}, orderable)
+    classes = _fetch_rds_offers(client, "r")["classes"]["basic"]
+    assert "pg.x4t.2xlarge.2c" not in classes
 
 
 def test_alicloud_fetch_rds_offers_finds_classes_of_the_oldest_version_in_all_zones():
@@ -891,6 +1073,15 @@ def test_alicloud_fetch_rds_offers_finds_classes_of_the_oldest_version_in_all_zo
     # the newest version found in a zone is kept for the price queries
     assert zones("pg.a") == [("z-b", "18.0"), ("z-l", "18.0")]
     assert sorted(classes["pg.a"]["versions"], key=float) == versions
+    assert _rds_multi_zone(classes["pg.x4t.large.2c"])
+    assert not _rds_multi_zone(classes["pg.x4t.2xlarge.2c"])
+
+
+def test_alicloud_rds_multi_zone_needs_a_shared_engine_version():
+    assert _rds_multi_zone({"zone_versions": {"a": ["13.0"], "b": ["13.0", "18.0"]}})
+    # orderable in two zones, but with different engine versions
+    assert not _rds_multi_zone({"zone_versions": {"a": ["13.0"], "b": ["18.0"]}})
+    assert not _rds_multi_zone({"zone_versions": {"a": ["13.0", "18.0"]}})
 
 
 def test_alicloud_fetch_rds_price_warns_when_throttled():
@@ -936,6 +1127,36 @@ def test_alicloud_rds_map_regions_results_are_kept_for_the_session():
         assert fetch.call_count == 2
 
 
+def test_alicloud_rds_map_regions_retries_only_the_failed_regions():
+    vendor = Mock(session=Mock())
+    calls = []
+
+    def fetch(client, region_id):
+        calls.append(region_id)
+        if region_id == "r2" and calls.count("r2") == 1:
+            raise Exception("Connection reset")
+        return {"region": region_id}
+
+    with (
+        patch(
+            "sc_crawler.vendors._alicloud._rds_clients",
+            return_value={"r1": Mock(), "r2": Mock()},
+        ),
+        patch("sc_crawler.vendors._alicloud._rds_region_results", {}),
+        patch("sc_crawler.vendors._alicloud.cachier", lambda **kwargs: lambda f: f),
+    ):
+        name = "test lookup retried per region"
+        assert _rds_map_regions(vendor, name, fetch, "failed") == {
+            "r1": {"region": "r1"},
+            "r2": "failed",
+        }
+        assert _rds_map_regions(vendor, name, fetch, "failed") == {
+            "r1": {"region": "r1"},
+            "r2": {"region": "r2"},
+        }
+        assert sorted(calls) == ["r1", "r2", "r2"]
+
+
 def test_alicloud_storage_price_uses_a_zone_offering_the_disk_type():
     """Premium ESSD is only offered in the second zone of the instance type."""
     params_a = {"zone_id": "a", "engine_version": "17.0", "storage_type": "cloud_essd"}
@@ -943,10 +1164,15 @@ def test_alicloud_storage_price_uses_a_zone_offering_the_disk_type():
     offer = {
         "zones": {
             "ha": {
-                "a": {"versions": ["17.0"], "storage_types": ["cloud_essd"]},
+                "a": {
+                    "versions": ["17.0"],
+                    "storage_types": ["cloud_essd"],
+                    "version_storage_types": {"17.0": ["cloud_essd"]},
+                },
                 "b": {
                     "versions": ["17.0"],
                     "storage_types": ["cloud_essd", "cloud_auto"],
+                    "version_storage_types": {"17.0": ["cloud_essd", "cloud_auto"]},
                 },
             }
         },
@@ -994,3 +1220,31 @@ def test_alicloud_get_zones_retries_timeouts():
     client.describe_zones.side_effect = [Exception("Read timed out."), response]
     with patch("sc_crawler.vendors._alicloud.sleep"):
         assert _get_zones(client, "cn-chengdu") == [{"ZoneId": "a"}]
+
+
+def test_alicloud_previous_rows_keep_the_recently_observed_ones():
+    from datetime import UTC, datetime, timedelta
+
+    from sc_crawler.tables import DatabasePrice
+
+    now = datetime.now(UTC)
+
+    def row(database_id, days, tz=UTC):
+        observed_at = (now - timedelta(days=days)).replace(tzinfo=tz)
+        return Mock(
+            observed_at=observed_at,
+            _mapping={"database_id": database_id, "observed_at": observed_at},
+        )
+
+    vendor = Mock(vendor_id="alicloud")
+    vendor.session.exec.return_value = [
+        row("recent", 10),
+        # naive timestamps of SQLite are in UTC
+        row("naive", 29, tz=None),
+        row("old", 31),
+    ]
+    rows = _previous_rows(vendor, DatabasePrice)
+    assert [r["database_id"] for r in rows] == ["recent", "naive"]
+    # the original observation time is kept
+    assert rows[0]["observed_at"] == now - timedelta(days=10)
+    assert _previous_rows(Mock(session=None), DatabasePrice) == []

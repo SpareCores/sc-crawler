@@ -2,7 +2,7 @@
 
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from functools import cache
 from itertools import chain
 from logging import CRITICAL, DEBUG, INFO, WARN, getLogger
@@ -68,7 +68,13 @@ from ..table_fields import (
     StorageType,
     TrafficDirection,
 )
-from ..tables import Database, ServerPrice, Vendor
+from ..tables import (
+    Database,
+    DatabasePrice,
+    DatabaseStoragePrice,
+    ServerPrice,
+    Vendor,
+)
 from ..utils import _GIB_TO_GB, _HOURS_PER_MONTH, jsoned_hash
 from ..vendor_helpers import (
     get_region_by_id,
@@ -2313,6 +2319,7 @@ _RDS_EDITIONS: dict[str, dict] = {
         "ha_strategy": DatabaseHaStrategy.NONE,
         "max_read_replicas": 0,
         "continuous_backups": 0,
+        "connection_pool": True,
     },
     # primary and a not accessible secondary node, in the same or in another zone
     # for the same price; the instance type price covers both nodes; up to 32
@@ -2325,6 +2332,7 @@ _RDS_EDITIONS: dict[str, dict] = {
         "ha_strategy": DatabaseHaStrategy.PASSIVE_STANDBY,
         "max_read_replicas": 32,
         "continuous_backups": 730,
+        "connection_pool": True,
     },
     # primary and 1 to 8 readable secondary nodes, in up to as many zones as
     # nodes; instance type and storage are billed per node, so the prices are
@@ -2337,6 +2345,8 @@ _RDS_EDITIONS: dict[str, dict] = {
         "ha_strategy": DatabaseHaStrategy.READABLE_CLUSTER,
         "max_read_replicas": 8,
         "continuous_backups": 730,
+        # PgBouncer is only available in the Basic and High-availability Editions
+        "connection_pool": False,
     },
 }
 _RDS_CATEGORY_TO_EDITION = {
@@ -2396,6 +2406,8 @@ _RDS_CLASS_GROUP_TO_FAMILY = {
     "独享套餐": "Dedicated",
     "Intel SGX 安全增强": "Security Enhanced",
 }
+# families of the dedicated instance types, supporting customer managed KMS keys
+_RDS_CUSTOMER_MANAGED_KEY_FAMILIES = {"Dedicated", "Security Enhanced"}
 # notes in the `MemoryClass` of `ListClasses`: "end of sale soon" and "end of sale"
 _RDS_END_OF_SALE_SOON = "即将停售"
 _RDS_END_OF_SALE = "已停售"
@@ -2454,7 +2466,9 @@ def _parse_rds_available_zones(available_zones: list[dict]) -> dict[str, dict]:
     pairs of zones listed on their own as well.
 
     Returns:
-        `{edition_id: {zone_id: {"versions": [...], "storage_types": [...]}}}`
+        `{edition_id: {zone_id: {"versions": [...], "storage_types": [...],
+        "version_storage_types": {version: [...]}}}}` with the disk types of
+        all versions, and of each version.
     """
     offers: dict[str, dict] = {}
     for zone in available_zones:
@@ -2478,13 +2492,23 @@ def _parse_rds_available_zones(available_zones: list[dict]) -> dict[str, dict]:
                     if not edition_id or not storage_types:
                         continue
                     offer = offers.setdefault(edition_id, {}).setdefault(
-                        zone_id, {"versions": [], "storage_types": []}
+                        zone_id,
+                        {
+                            "versions": [],
+                            "storage_types": [],
+                            "version_storage_types": {},
+                        },
                     )
                     if version["Version"] not in offer["versions"]:
                         offer["versions"].append(version["Version"])
+                    version_storage_types = offer["version_storage_types"].setdefault(
+                        version["Version"], []
+                    )
                     for storage_type in storage_types:
                         if storage_type not in offer["storage_types"]:
                             offer["storage_types"].append(storage_type)
+                        if storage_type not in version_storage_types:
+                            version_storage_types.append(storage_type)
     return offers
 
 
@@ -2494,25 +2518,36 @@ def _fetch_rds_offers(client: RdsClient, region_id: str) -> dict:
     `DescribeAvailableZones` lists the editions, engine versions and storage
     types of the zones. `DescribeAvailableClasses` lists the orderable instance
     types of a zone for an edition, engine version and storage type (all
-    required): it is called with the newest engine version of the edition in
-    each zone and ESSD PL1, as older versions support fewer instance types, and
-    the instance types do not differ by the cloud disk type.
+    required). The instance types do not differ by the cloud disk type (ESSD
+    PL1 is used when offered for the version), but do by the engine version and
+    zone, e.g. the Intel SGX ones are only orderable with PostgreSQL 13-15 in
+    some zones.
 
-    Some instance types are only orderable with older engine versions (e.g.
-    the Intel SGX ones with PostgreSQL 13 in some zones), so it is also called
-    with the oldest engine version in each zone. The engine versions of an
-    instance type are looked up by calling it with the rest of the versions as
-    well, but each only in a single zone of the edition (the one offering the
-    most versions when possible), to limit the heavily throttled calls (around 2
-    per 13 seconds in a region, so e.g. 8 older versions of 3 editions take
-    almost 3 minutes).
+    The calls are heavily throttled (around 2 per 15 seconds in a region), so
+    probing all engine versions in all zones would take e.g. 23 minutes in
+    `cn-shanghai` (8 zones, 9 versions in 2 editions and 5 in the third). As a
+    compromise, taking around 9 minutes there, it is called with the newest
+    and the oldest engine version in each zone, and the rest of the versions
+    only once each, in the zone offering the most versions (or in another zone
+    for the versions not offered there). The instance types found only with
+    such a middle version (e.g. `pg.x4t.large.2c` with PostgreSQL 13-15 in
+    `cn-shanghai-b`) are looked up with their newest version in the other
+    zones as well (finding it in `cn-shanghai-l` too), without their other
+    versions there.
+
+    Still missed: an instance type only orderable with a middle version, when
+    not orderable in the zone it was probed in, and with none of the instance
+    types found there in the other zones (e.g. if `pg.x4t.2xlarge.2c` was the
+    only Intel SGX instance type, as it is not orderable in `cn-shanghai-b`).
 
     Returns:
         `{"complete": True, "zones": <see _parse_rds_available_zones>,
-        "classes": {edition_id: {class_code: {"zones": [...], "versions": [...]}}}}`
-        with the `{"zone_id", "engine_version", "storage_type"}` parameters an
-        instance type was found with in each zone (to be used in price
-        queries), and the engine versions it was found with.
+        "classes": {edition_id: {class_code: {"zones": [...], "versions": [...],
+        "zone_versions": {zone_id: [...]}}}}}` with the `{"zone_id",
+        "engine_version", "storage_type"}` parameters of the newest engine
+        version an instance type was found with in each zone (to be used in
+        price queries), the engine versions it was found with, and those by
+        zone.
     """
     # example DescribeAvailableZones response:
     # {
@@ -2573,74 +2608,101 @@ def _fetch_rds_offers(client: RdsClient, region_id: str) -> dict:
         #     ],
         #     'RequestId': '01A1E561-0016-3460-8F6C-727574DB374B'
         # }
-        available = _rds_call(
-            client.describe_available_classes_with_options,
-            DescribeAvailableClassesRequest(
-                region_id=region_id,
-                zone_id=params["zone_id"],
-                engine=_RDS_ENGINE,
-                engine_version=params["engine_version"],
-                category=_RDS_EDITIONS[edition_id]["category"],
-                dbinstance_storage_type=params["storage_type"],
-                instance_charge_type="Postpaid",
-                order_type="BUY",
-                commodity_code=_RDS_COMMODITY_CODE,
-            ),
-        )
+        try:
+            available = _rds_call(
+                client.describe_available_classes_with_options,
+                DescribeAvailableClassesRequest(
+                    region_id=region_id,
+                    zone_id=params["zone_id"],
+                    engine=_RDS_ENGINE,
+                    engine_version=params["engine_version"],
+                    category=_RDS_EDITIONS[edition_id]["category"],
+                    dbinstance_storage_type=params["storage_type"],
+                    instance_charge_type="Postpaid",
+                    order_type="BUY",
+                    commodity_code=_RDS_COMMODITY_CODE,
+                ),
+            )
+        except Exception as e:
+            # no instance type orderable with the engine version in the zone
+            if "InvalidCondition.NotFound" not in str(e):
+                raise
+            available = {}
         found = [
             available_class["DBInstanceClass"]
             for available_class in available.get("DBInstanceClasses") or []
         ]
         for class_code in found:
-            versions = (
-                classes.setdefault(edition_id, {})
-                .setdefault(class_code, {"zones": [], "versions": []})
-                .get("versions")
+            available_class = classes.setdefault(edition_id, {}).setdefault(
+                class_code, {"zones": [], "versions": [], "zone_versions": {}}
             )
-            if params["engine_version"] not in versions:
-                versions.append(params["engine_version"])
+            if params["engine_version"] not in available_class["versions"]:
+                available_class["versions"].append(params["engine_version"])
+            zone_versions = available_class["zone_versions"].setdefault(
+                params["zone_id"], []
+            )
+            # the newest engine version found in each zone (probed first)
+            if not zone_versions:
+                available_class["zones"].append(params)
+            zone_versions.append(params["engine_version"])
         return found
 
-    def probe(edition_id: str, params: dict) -> None:
-        for class_code in available_classes(edition_id, params):
-            zones_found = classes[edition_id][class_code]["zones"]
-            # the first (newest) engine version found in each zone
-            if all(z["zone_id"] != params["zone_id"] for z in zones_found):
-                zones_found.append(params)
+    def probe(edition_id: str, zone_id: str, version: str) -> list[str]:
+        storage_types = zones[edition_id][zone_id]["version_storage_types"][version]
+        return available_classes(
+            edition_id,
+            {
+                "zone_id": zone_id,
+                "engine_version": version,
+                "storage_type": (
+                    "cloud_essd" if "cloud_essd" in storage_types else storage_types[0]
+                ),
+            },
+        )
 
     for edition_id, edition_zones in zones.items():
-        newest = {}
-        for zone_id, offer in edition_zones.items():
-            newest[zone_id] = params = {
-                "zone_id": zone_id,
-                "engine_version": max(offer["versions"], key=float),
-                "storage_type": (
-                    "cloud_essd"
-                    if "cloud_essd" in offer["storage_types"]
-                    else offer["storage_types"][0]
-                ),
-            }
-            probe(edition_id, params)
-        # the oldest engine version in all zones, as some instance types are
-        # only orderable with the older versions (in some of the zones)
-        probed = {params["engine_version"] for params in newest.values()}
+        # the newest engine version in all zones (first, as the newest version
+        # an instance type is found with in a zone is used in price queries)
+        newest = {
+            zone_id: max(offer["versions"], key=float)
+            for zone_id, offer in edition_zones.items()
+        }
+        # instance types found with the newest or the oldest versions
+        found_in_all_zones = set()
+        # (zone, version) pairs probed
+        pairs = set(newest.items())
+        for zone_id, version in newest.items():
+            found_in_all_zones.update(probe(edition_id, zone_id, version))
+        # the oldest engine version in all zones
+        probed = set(newest.values())
         for zone_id, offer in edition_zones.items():
             oldest = min(offer["versions"], key=float)
-            if oldest != newest[zone_id]["engine_version"]:
+            if oldest != newest[zone_id]:
                 probed.add(oldest)
-                probe(edition_id, {**newest[zone_id], "engine_version": oldest})
-        # the rest of the engine versions once each, preferably in the zone
-        # offering the most versions, and in another zone for the versions not
-        # offered there
+                pairs.add((zone_id, oldest))
+                found_in_all_zones.update(probe(edition_id, zone_id, oldest))
+        # the rest of the engine versions once each, see above
         by_versions = sorted(
             edition_zones, key=lambda z: (-len(edition_zones[z]["versions"]), z)
         )
         for zone_id in by_versions:
-            for version in edition_zones[zone_id]["versions"]:
-                if version in probed:
-                    continue
-                probed.add(version)
-                probe(edition_id, {**newest[zone_id], "engine_version": version})
+            for version in sorted(
+                edition_zones[zone_id]["versions"], key=float, reverse=True
+            ):
+                if version not in probed:
+                    probed.add(version)
+                    pairs.add((zone_id, version))
+                    probe(edition_id, zone_id, version)
+        # the newest version of the instance types only found with a middle
+        # version in the other zones offering it, see above
+        for class_code, available in sorted(classes.get(edition_id, {}).items()):
+            if class_code in found_in_all_zones:
+                continue
+            version = max(available["versions"], key=float)
+            for zone_id, offer in edition_zones.items():
+                if version in offer["versions"] and (zone_id, version) not in pairs:
+                    pairs.add((zone_id, version))
+                    probe(edition_id, zone_id, version)
     return {"complete": True, "zones": zones, "classes": classes}
 
 
@@ -2802,27 +2864,36 @@ def _fetch_rds_price(
 
 # results of the slow, throttled RDS lookups shared by the database inventories
 # of a run (bound to the session of the vendor), by the name of the lookup and
-# the regions, kept for at most a few hours (when running without a session)
-_rds_region_results: dict[tuple, tuple[object, float, dict[str, dict]]] = {}
+# the region, kept for at most a few hours (when running without a session)
+_rds_region_results: dict[tuple[str, str], tuple[object, float, dict]] = {}
 _RDS_REGION_RESULTS_TTL = 6 * 60 * 60
 
 
 def _rds_map_regions(vendor: Vendor, name: str, fetch, fallback) -> dict[str, dict]:
     """Run `fetch(client, region_id)` for all active regions in parallel threads.
 
-    The results are kept for the rest of the run. Failing regions are logged,
-    and get the `fallback` value.
+    The results of the regions are kept for the rest of the run. Failing
+    regions are logged, get the `fallback` value, and are retried in the next
+    call.
     """
     clients = _rds_clients(vendor)
-    key = (name, tuple(sorted(clients)))
-    if key in _rds_region_results:
-        session, fetched_at, results = _rds_region_results[key]
-        if (
-            session is vendor.session
-            and monotonic() - fetched_at < _RDS_REGION_RESULTS_TTL
-        ):
-            return results
-        del _rds_region_results[key]
+
+    def cached(region_id: str) -> bool:
+        entry = _rds_region_results.get((name, region_id))
+        return bool(
+            entry
+            and entry[0] is vendor.session
+            and monotonic() - entry[1] < _RDS_REGION_RESULTS_TTL
+        )
+
+    results = {
+        region_id: _rds_region_results[(name, region_id)][2]
+        for region_id in clients
+        if cached(region_id)
+    }
+    missing = [region_id for region_id in clients if region_id not in results]
+    if not missing:
+        return results
 
     @cachier(hash_func=jsoned_hash, separate_files=True)
     def fetch_region(name: str, region_id: str):
@@ -2835,21 +2906,22 @@ def _rds_map_regions(vendor: Vendor, name: str, fetch, fallback) -> dict[str, di
             logger.error(f"Failed to fetch {name} in region {region_id}: {e}")
             return region_id, fallback, False
 
-    vendor.progress_tracker.start_task(name=f"Fetching {name}", total=len(clients))
-    results = {}
-    complete = True
+    vendor.progress_tracker.start_task(name=f"Fetching {name}", total=len(missing))
     # the flow control of the RDS endpoints is counted for each region
-    with ThreadPoolExecutor(max_workers=max(len(clients), 1)) as executor:
+    with ThreadPoolExecutor(max_workers=len(missing)) as executor:
         for region_id, result, succeeded in executor.map(
-            fetch_region_or_fallback, clients
+            fetch_region_or_fallback, missing
         ):
             results[region_id] = result
-            complete = complete and succeeded
+            if succeeded:
+                _rds_region_results[(name, region_id)] = (
+                    vendor.session,
+                    monotonic(),
+                    result,
+                )
             vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
-    if complete:
-        _rds_region_results[key] = (vendor.session, monotonic(), results)
-    return results
+    return {region_id: results[region_id] for region_id in clients}
 
 
 def _get_rds_offers(vendor: Vendor) -> dict[str, dict]:
@@ -2897,17 +2969,25 @@ def _rds_end_of_sale(spec: dict) -> bool:
     return _RDS_END_OF_SALE in memory_class or _RDS_END_OF_SALE_SOON in memory_class
 
 
-def _rds_class_status(spec: dict, orderable: bool) -> Optional[Status]:
+def _rds_class_status(
+    spec: dict, orderable: bool, absence_confirmed: bool = True
+) -> Optional[Status]:
     """Lifecycle of an RDS instance type.
 
     Orderable in at least one region -> ACTIVE, or PLANNED_FOR_RETIREMENT when
     `ListClasses` notes its end of sale. Not orderable anywhere -> RETIRED when
     the end of sale is noted, otherwise unknown (`None`): not to be listed.
+
+    When not found in an incomplete lookup (the absence is not confirmed), an
+    upcoming end of sale is not a reason to retire: PLANNED_FOR_RETIREMENT.
     """
     if orderable:
         return (
             Status.PLANNED_FOR_RETIREMENT if _rds_end_of_sale(spec) else Status.ACTIVE
         )
+    memory_class = spec.get("MemoryClass") or ""
+    if _RDS_END_OF_SALE_SOON in memory_class and not absence_confirmed:
+        return Status.PLANNED_FOR_RETIREMENT
     return Status.RETIRED if _rds_end_of_sale(spec) else None
 
 
@@ -2933,7 +3013,7 @@ def _rds_security_features(family: Optional[str]) -> list[DatabaseSecurityFeatur
         DatabaseSecurityFeature.CLIENT_CERT_AUTH,
         DatabaseSecurityFeature.ENFORCED_TLS,
     ]
-    if family != "General Purpose":
+    if family in _RDS_CUSTOMER_MANAGED_KEY_FAMILIES:
         features.append(DatabaseSecurityFeature.CUSTOMER_MANAGED_KEYS)
     features.append(DatabaseSecurityFeature.AUDIT_LOGGING)
     return features
@@ -2971,25 +3051,48 @@ def _database_edition_id(database) -> Optional[str]:
     return _RDS_CATEGORY_TO_EDITION.get(category.lower())
 
 
-def _previous_orderable_databases(vendor: Vendor) -> dict[str, dict]:
-    """The orderable databases of the vendor already in the database, as dicts.
+# previous records kept when not known to be gone are dropped after this long
+# without being observed
+_PREVIOUS_ROWS_MAX_AGE = timedelta(days=30)
 
-    Selecting the columns (instead of the ORM objects) keeps the
-    `vendor.databases` relationship and the identity map of the session
-    untouched, as those are not refreshed by the bulk inserts of this run.
+
+def _previous_rows(vendor: Vendor, model, *filters) -> list[dict]:
+    """The records of the vendor already in the database, observed recently, as dicts.
+
+    To keep the records not known to be gone (e.g. in the regions failing to be
+    looked up), as the records of the vendor are marked inactive before
+    inserting the new ones. The records keep their `observed_at`, so they are
+    dropped after `_PREVIOUS_ROWS_MAX_AGE` without being observed (the
+    inactivation also updates it, so this is to be called before that).
+
+    Selecting the columns (instead of the ORM objects) keeps the relationships
+    of the vendor (e.g. `vendor.databases`) and the identity map of the session
+    untouched, as those are not refreshed by the bulk inserts of the run.
     """
     if not vendor.session:
-        return {}
-    columns = [
-        column for column in Database.__table__.columns if column.name != "observed_at"
-    ]
+        return []
     rows = vendor.session.exec(
-        select(*columns).where(Database.vendor_id == vendor.vendor_id)
+        select(*model.__table__.columns).where(
+            model.vendor_id == vendor.vendor_id, *filters
+        )
     )
+    cutoff = datetime.now(UTC) - _PREVIOUS_ROWS_MAX_AGE
+    previous = []
+    for row in rows:
+        observed_at = row.observed_at
+        if observed_at.tzinfo is None:
+            observed_at = observed_at.replace(tzinfo=UTC)
+        if observed_at >= cutoff:
+            previous.append(dict(row._mapping))
+    return previous
+
+
+def _previous_orderable_databases(vendor: Vendor) -> dict[str, dict]:
+    """The orderable databases of the vendor already in the database, see `_previous_rows`."""
     return {
-        row.database_id: dict(row._mapping)
-        for row in rows
-        if Status(row.status).is_orderable
+        row["database_id"]: row
+        for row in _previous_rows(vendor, Database)
+        if Status(row["status"]).is_orderable
     }
 
 
@@ -3047,7 +3150,8 @@ def inventory_databases(vendor):
         class_code for _, class_code in versions if class_code not in classes
     )
     if not specs_complete:
-        kept += [class_code for class_code in unknown if class_code in previous]
+        # also the ones not found by any of the lookups
+        kept += [class_code for class_code in previous if class_code not in classes]
         unknown = [class_code for class_code in unknown if class_code not in previous]
     if unknown:
         vendor.log(
@@ -3063,9 +3167,17 @@ def inventory_databases(vendor):
             if not orderable and not offers_complete and class_code in previous:
                 kept.append(class_code)
                 continue
-            status = _rds_class_status(spec, orderable)
+            status = _rds_class_status(spec, orderable, offers_complete)
             if status is None:
                 continue
+            # the end of sale might be noted in the regions without specs
+            if (
+                not specs_complete
+                and status == Status.ACTIVE
+                and previous.get(class_code, {}).get("status")
+                == Status.PLANNED_FOR_RETIREMENT
+            ):
+                status = Status.PLANNED_FOR_RETIREMENT
             edition = _RDS_EDITIONS[edition_id]
             class_group = spec.get("ClassGroup") or ""
             family = _RDS_CLASS_GROUP_TO_FAMILY.get(class_group)
@@ -3180,7 +3292,7 @@ def inventory_databases(vendor):
                     "scheduled_backups": True,
                     "continuous_backups": edition["continuous_backups"],
                     # https://www.alibabacloud.com/help/en/rds/apsaradb-rds-for-postgresql/use-pgbouncer-to-enable-or-disable-connection-pooling
-                    "connection_pool": True,
+                    "connection_pool": edition["connection_pool"],
                     # Enhanced Monitoring of the host and the engine, and the
                     # Database Autonomy Service (DAS) in all editions.
                     "system_monitoring": True,
@@ -3213,31 +3325,59 @@ def _rds_region_prices(
     Only for the instance types of the `editions` (`{class_code: edition_id}`).
 
     The `ReferencePrice` of `ListClasses` is used when available, and
-    `DescribePrice` is called for the rest of the orderable instance types.
-    Prices are per node in the Cluster Edition.
+    `DescribePrice` is called for the rest of the orderable instance types, in
+    up to 3 zones the instance type was found in, until priced. Prices are per
+    node in the Cluster Edition.
     """
     prices = {}
     for edition_id, classes in offer["classes"].items():
         for class_code, available in classes.items():
             if editions.get(class_code) != edition_id:
                 continue
-            params = available["zones"][0]
             reference_price = specs.get(class_code, {}).get("ReferencePrice")
             if reference_price:
                 # USD cents
                 prices[class_code] = (float(reference_price) / 100, "USD")
                 continue
-            price = _fetch_rds_price(
-                client=client,
-                region_id=region_id,
-                class_code=class_code,
-                edition_id=edition_id,
-                storage_size=_RDS_STORAGE_TYPES[params["storage_type"]]["min_size"],
-                **params,
-            )
-            if price and price["modules"].get("rds_class"):
-                prices[class_code] = (price["modules"]["rds_class"], price["currency"])
+            for params in available["zones"][:3]:
+                price = _fetch_rds_price(
+                    client=client,
+                    region_id=region_id,
+                    class_code=class_code,
+                    edition_id=edition_id,
+                    storage_size=_RDS_STORAGE_TYPES[params["storage_type"]]["min_size"],
+                    **params,
+                )
+                if price and price["modules"].get("rds_class"):
+                    prices[class_code] = (
+                        price["modules"]["rds_class"],
+                        price["currency"],
+                    )
+                    break
     return prices
+
+
+def _rds_multi_zone(available: dict) -> bool:
+    """Whether an instance type is orderable in multiple zones with the same engine version."""
+    zones_by_version = Counter(
+        version
+        for versions in available.get("zone_versions", {}).values()
+        for version in set(versions)
+    )
+    return any(count > 1 for count in zones_by_version.values())
+
+
+def _previous_active_prices(vendor: Vendor, model, region_ids, *filters) -> list[dict]:
+    """The active prices of the vendor already in the database in some regions, see `_previous_rows`."""
+    if not region_ids:
+        return []
+    return _previous_rows(
+        vendor,
+        model,
+        model.region_id.in_(sorted(region_ids)),
+        model.status == Status.ACTIVE,
+        *filters,
+    )
 
 
 def inventory_database_prices(vendor):
@@ -3278,18 +3418,21 @@ def inventory_database_prices(vendor):
             )
         except Exception as e:
             logger.error(f"Failed to get database prices in region {region_id}: {e}")
-            return region_id, {}
+            return region_id, None
 
     items = []
+    failed = {region_id for region_id, offer in offers.items() if not offer["complete"]}
     with ThreadPoolExecutor(max_workers=max(len(offers), 1)) as executor:
         for region_id, prices in executor.map(fetch_region_prices, offers):
+            if prices is None:
+                failed.add(region_id)
+                prices = {}
             offer = offers[region_id]
             for class_code, (price, currency) in sorted(prices.items()):
                 edition_id = editions[class_code]
                 edition = _RDS_EDITIONS[edition_id]
-                # orderable in multiple zones of the region
-                available = offer["classes"][edition_id][class_code]
-                multi_zone = len({p["zone_id"] for p in available["zones"]}) > 1
+                # orderable in multiple zones of the region with an engine version
+                multi_zone = _rds_multi_zone(offer["classes"][edition_id][class_code])
                 for ha in edition["ha"]:
                     if ha == DatabaseHaLevel.MULTI_ZONE and not multi_zone:
                         continue
@@ -3310,7 +3453,19 @@ def inventory_database_prices(vendor):
                     )
             vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
-    return items
+    kept = _previous_active_prices(
+        vendor,
+        DatabasePrice,
+        failed,
+        DatabasePrice.allocation == Allocation.ONDEMAND,
+    )
+    if failed:
+        vendor.log(
+            f"Keeping {len(kept)} previous database prices of the regions failing "
+            f"to be looked up: {', '.join(sorted(failed))}",
+            level=WARN,
+        )
+    return items + kept
 
 
 def inventory_database_storages(vendor):
@@ -3379,7 +3534,8 @@ def _rds_region_storage_prices(
         )
         for storage_type in sorted(storage_types):
             size = _RDS_STORAGE_TYPES[storage_type]["min_size"]
-            # any zone of an instance type offering the disk type
+            # any zone of an instance type offering the disk type for the
+            # engine version it was found with
             candidates = [
                 (class_code, params)
                 for class_code, available in classes
@@ -3389,7 +3545,9 @@ def _rds_region_storage_prices(
                             zone_params
                             for zone_params in available["zones"]
                             if storage_type
-                            in zones[zone_params["zone_id"]]["storage_types"]
+                            in zones[zone_params["zone_id"]][
+                                "version_storage_types"
+                            ].get(zone_params["engine_version"], [])
                         ),
                         None,
                     )
@@ -3445,11 +3603,15 @@ def inventory_database_storage_prices(vendor):
             logger.error(
                 f"Failed to get database storage prices in region {region_id}: {e}"
             )
-            return region_id, {}
+            return region_id, None
 
     items = []
+    failed = {region_id for region_id, offer in offers.items() if not offer["complete"]}
     with ThreadPoolExecutor(max_workers=max(len(offers), 1)) as executor:
         for region_id, prices in executor.map(fetch_region_prices, offers):
+            if prices is None:
+                failed.add(region_id)
+                prices = {}
             for storage_id, (price, currency) in sorted(prices.items()):
                 if storage_id not in storage_ids:
                     continue
@@ -3473,4 +3635,11 @@ def inventory_database_storage_prices(vendor):
                 )
             vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
-    return items
+    kept = _previous_active_prices(vendor, DatabaseStoragePrice, failed)
+    if failed:
+        vendor.log(
+            f"Keeping {len(kept)} previous database storage prices of the regions "
+            f"failing to be looked up: {', '.join(sorted(failed))}",
+            level=WARN,
+        )
+    return items + kept
