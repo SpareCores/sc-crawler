@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from functools import cache
 from itertools import chain
-from logging import CRITICAL, DEBUG, INFO, WARN, getLogger
+from logging import CRITICAL, INFO, WARN, getLogger
 from os import environ
 from random import shuffle
 from re import search, sub
@@ -2108,6 +2108,10 @@ def inventory_server_prices_spot(vendor):
     ]
     if kept:
         vendor.log(f"Keeping {len(kept)} previous spot prices not sampled now.")
+    if not items and not kept:
+        _expire_previous_rows(
+            vendor, ServerPrice, ServerPrice.allocation == Allocation.SPOT
+        )
     return items + kept
 
 
@@ -2850,6 +2854,10 @@ def _fetch_rds_price(
         The parsed prices (see `_parse_rds_price`), or `None` when the instance
         type is not sold in the region (e.g. listed as available, but without a
         pricing plan).
+
+    Raises:
+        _RdsPriceUnavailable: when the price could not be looked up due to
+            transient errors, even after the retries.
     """
     request = RdsDescribePriceRequest(
         region_id=region_id,
@@ -2874,13 +2882,19 @@ def _fetch_rds_price(
     try:
         return _parse_rds_price(_rds_call(client.describe_price_with_options, request))
     except Exception as e:
-        # throttled or unreachable even after the retries: a missing price, not
-        # a missing pricing plan
-        level = WARN if any(x in str(e) for x in _TRANSIENT_ERRORS) else DEBUG
-        logger.log(
-            level, f"No RDS price for {class_code} in {region_id}/{zone_id}: {e}"
-        )
+        if any(x in str(e) for x in _TRANSIENT_ERRORS):
+            # throttled or unreachable even after the retries: a missing price,
+            # not a missing pricing plan
+            logger.warning(
+                f"No RDS price for {class_code} in {region_id}/{zone_id}: {e}"
+            )
+            raise _RdsPriceUnavailable(str(e)) from e
+        logger.debug(f"No RDS price for {class_code} in {region_id}/{zone_id}: {e}")
         return None
+
+
+class _RdsPriceUnavailable(Exception):
+    """A price that could not be looked up due to transient errors (see `_TRANSIENT_ERRORS`)."""
 
 
 # results of the slow, throttled RDS lookups shared by the database inventories
@@ -3171,8 +3185,15 @@ def inventory_databases(vendor):
         class_code for _, class_code in versions if class_code not in classes
     )
     if not specs_complete:
-        # also the ones not found by any of the lookups
-        kept += [class_code for class_code in previous if class_code not in classes]
+        # also the ones not found by any of the lookups, unless the complete
+        # availability lookup confirms that they are not orderable
+        orderable_codes = {class_code for _, class_code in versions}
+        kept += [
+            class_code
+            for class_code in previous
+            if class_code not in classes
+            and (not offers_complete or class_code in orderable_codes)
+        ]
         unknown = [class_code for class_code in unknown if class_code not in previous]
     if unknown:
         vendor.log(
@@ -3340,7 +3361,7 @@ def _rds_region_prices(
     offer: dict,
     specs: dict[str, dict],
     editions: dict[str, str],
-) -> dict[str, tuple[float, str]]:
+) -> tuple[dict[str, tuple[float, str]], set[str]]:
     """Hourly price (in USD) and currency of the orderable instance types of a region.
 
     Only for the instance types of the `editions` (`{class_code: edition_id}`).
@@ -3349,8 +3370,13 @@ def _rds_region_prices(
     `DescribePrice` is called for the rest of the orderable instance types, in
     up to 3 zones the instance type was found in, until priced. Prices are per
     node in the Cluster Edition.
+
+    Returns:
+        The prices by instance type, and the instance types not priced due to
+        transient errors (see `_RdsPriceUnavailable`).
     """
     prices = {}
+    failed = set()
     for edition_id, classes in offer["classes"].items():
         for class_code, available in classes.items():
             if editions.get(class_code) != edition_id:
@@ -3360,22 +3386,31 @@ def _rds_region_prices(
                 # USD cents
                 prices[class_code] = (float(reference_price) / 100, "USD")
                 continue
+            unavailable = False
             for params in available["zones"][:3]:
-                price = _fetch_rds_price(
-                    client=client,
-                    region_id=region_id,
-                    class_code=class_code,
-                    edition_id=edition_id,
-                    storage_size=_RDS_STORAGE_TYPES[params["storage_type"]]["min_size"],
-                    **params,
-                )
+                try:
+                    price = _fetch_rds_price(
+                        client=client,
+                        region_id=region_id,
+                        class_code=class_code,
+                        edition_id=edition_id,
+                        storage_size=_RDS_STORAGE_TYPES[params["storage_type"]][
+                            "min_size"
+                        ],
+                        **params,
+                    )
+                except _RdsPriceUnavailable:
+                    unavailable = True
+                    continue
                 if price and price["modules"].get("rds_class"):
                     prices[class_code] = (
                         price["modules"]["rds_class"],
                         price["currency"],
                     )
                     break
-    return prices
+            if class_code not in prices and unavailable:
+                failed.add(class_code)
+    return prices, failed
 
 
 def _rds_multi_zone(available: dict) -> bool:
@@ -3388,16 +3423,46 @@ def _rds_multi_zone(available: dict) -> bool:
     return any(count > 1 for count in zones_by_version.values())
 
 
-def _previous_active_prices(vendor: Vendor, model, region_ids, *filters) -> list[dict]:
-    """The active prices of the vendor already in the database in some regions, see `_previous_rows`."""
-    if not region_ids:
+def _previous_active_prices(
+    vendor: Vendor, model, region_ids, *filters, ids: Optional[set] = None
+) -> list[dict]:
+    """The active prices of the vendor already in the database, see `_previous_rows`.
+
+    Args:
+        region_ids: All prices of these regions.
+        ids: Optional `(region_id, id)` pairs, where `id` is the value of the
+            first primary key column after the region (e.g. `database_id`).
+    """
+    ids = ids or set()
+    regions = set(region_ids) | {region_id for region_id, _ in ids}
+    if not regions:
         return []
-    return _previous_rows(
-        vendor,
-        model,
-        model.region_id.in_(sorted(region_ids)),
-        model.status == Status.ACTIVE,
-        *filters,
+    keys = model.get_columns()["primary_keys"]
+    id_key = keys[keys.index("region_id") + 1]
+    return [
+        row
+        for row in _previous_rows(
+            vendor,
+            model,
+            model.region_id.in_(sorted(regions)),
+            model.status == Status.ACTIVE,
+            *filters,
+        )
+        if row["region_id"] in region_ids or (row["region_id"], row[id_key]) in ids
+    ]
+
+
+def _expire_previous_rows(vendor: Vendor, model, *filters) -> None:
+    """Mark the active records not observed for `_PREVIOUS_ROWS_MAX_AGE` inactive.
+
+    For the inventories returning no records at all, as then the previous
+    records are not marked inactive.
+    """
+    if not vendor.session:
+        return
+    cutoff = (datetime.now(UTC) - _PREVIOUS_ROWS_MAX_AGE).replace(tzinfo=None)
+    vendor.set_table_rows_inactive(
+        model, model.status == Status.ACTIVE, model.observed_at < cutoff, *filters
     )
 
 
@@ -3443,11 +3508,15 @@ def inventory_database_prices(vendor):
 
     items = []
     failed = {region_id for region_id, offer in offers.items() if not offer["complete"]}
+    # instance types of the regions not priced due to transient errors
+    failed_classes = set()
     with ThreadPoolExecutor(max_workers=max(len(offers), 1)) as executor:
-        for region_id, prices in executor.map(fetch_region_prices, offers):
-            if prices is None:
+        for region_id, result in executor.map(fetch_region_prices, offers):
+            if result is None:
                 failed.add(region_id)
-                prices = {}
+                result = ({}, set())
+            prices, region_failed_classes = result
+            failed_classes.update((region_id, c) for c in region_failed_classes)
             offer = offers[region_id]
             for class_code, (price, currency) in sorted(prices.items()):
                 edition_id = editions[class_code]
@@ -3479,12 +3548,18 @@ def inventory_database_prices(vendor):
         DatabasePrice,
         failed,
         DatabasePrice.allocation == Allocation.ONDEMAND,
+        ids=failed_classes,
     )
-    if failed:
+    if failed or failed_classes:
         vendor.log(
             f"Keeping {len(kept)} previous database prices of the regions failing "
-            f"to be looked up: {', '.join(sorted(failed))}",
+            f"to be looked up ({', '.join(sorted(failed)) or '-'}), and of "
+            f"{len(failed_classes)} instance types not priced due to transient errors.",
             level=WARN,
+        )
+    if not items and not kept:
+        _expire_previous_rows(
+            vendor, DatabasePrice, DatabasePrice.allocation == Allocation.ONDEMAND
         )
     return items + kept
 
@@ -3536,9 +3611,16 @@ def _rds_region_storage_prices(
 
     The storage price is only available as part of the price of an instance, so
     `DescribePrice` is called with an orderable instance type of each edition
-    for each of its disk types. Prices are per node in the Cluster Edition.
+    for each of its disk types, in a zone and with an engine version the
+    instance type was found with, offering the disk type. Prices are per node
+    in the Cluster Edition.
+
+    Returns:
+        The prices by database storage, and the database storages not priced due
+        to transient errors (see `_RdsPriceUnavailable`).
     """
     prices = {}
+    failed = set()
     for edition_id, zones in offer["zones"].items():
         storage_types = {
             storage_type
@@ -3555,43 +3637,50 @@ def _rds_region_storage_prices(
         )
         for storage_type in sorted(storage_types):
             size = _RDS_STORAGE_TYPES[storage_type]["min_size"]
-            # any zone of an instance type offering the disk type for the
-            # engine version it was found with
+            # any zone and engine version of an instance type offering the
+            # disk type
             candidates = [
                 (class_code, params)
                 for class_code, available in classes
                 if (
                     params := next(
                         (
-                            zone_params
-                            for zone_params in available["zones"]
+                            (zone_id, version)
+                            for zone_id, versions in available["zone_versions"].items()
+                            for version in versions
                             if storage_type
-                            in zones[zone_params["zone_id"]][
-                                "version_storage_types"
-                            ].get(zone_params["engine_version"], [])
+                            in zones[zone_id]["version_storage_types"].get(version, [])
                         ),
                         None,
                     )
                 )
             ]
-            for class_code, params in candidates[:3]:
-                price = _fetch_rds_price(
-                    client=client,
-                    region_id=region_id,
-                    class_code=class_code,
-                    edition_id=edition_id,
-                    zone_id=params["zone_id"],
-                    engine_version=params["engine_version"],
-                    storage_type=storage_type,
-                    storage_size=size,
-                )
+            storage_id = _rds_storage_id(storage_type, edition_id)
+            unavailable = False
+            for class_code, (zone_id, version) in candidates[:3]:
+                try:
+                    price = _fetch_rds_price(
+                        client=client,
+                        region_id=region_id,
+                        class_code=class_code,
+                        edition_id=edition_id,
+                        zone_id=zone_id,
+                        engine_version=version,
+                        storage_type=storage_type,
+                        storage_size=size,
+                    )
+                except _RdsPriceUnavailable:
+                    unavailable = True
+                    continue
                 if price and price["modules"].get("rds_storage"):
-                    prices[_rds_storage_id(storage_type, edition_id)] = (
+                    prices[storage_id] = (
                         price["modules"]["rds_storage"],
                         price["currency"],
                     )
                     break
-    return prices
+            if storage_id not in prices and unavailable:
+                failed.add(storage_id)
+    return prices, failed
 
 
 def inventory_database_storage_prices(vendor):
@@ -3628,11 +3717,15 @@ def inventory_database_storage_prices(vendor):
 
     items = []
     failed = {region_id for region_id, offer in offers.items() if not offer["complete"]}
+    # database storages of the regions not priced due to transient errors
+    failed_storages = set()
     with ThreadPoolExecutor(max_workers=max(len(offers), 1)) as executor:
-        for region_id, prices in executor.map(fetch_region_prices, offers):
-            if prices is None:
+        for region_id, result in executor.map(fetch_region_prices, offers):
+            if result is None:
                 failed.add(region_id)
-                prices = {}
+                result = ({}, set())
+            prices, region_failed_storages = result
+            failed_storages.update((region_id, s) for s in region_failed_storages)
             for storage_id, (price, currency) in sorted(prices.items()):
                 if storage_id not in storage_ids:
                     continue
@@ -3656,11 +3749,16 @@ def inventory_database_storage_prices(vendor):
                 )
             vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
-    kept = _previous_active_prices(vendor, DatabaseStoragePrice, failed)
-    if failed:
+    kept = _previous_active_prices(
+        vendor, DatabaseStoragePrice, failed, ids=failed_storages
+    )
+    if failed or failed_storages:
         vendor.log(
             f"Keeping {len(kept)} previous database storage prices of the regions "
-            f"failing to be looked up: {', '.join(sorted(failed))}",
+            f"failing to be looked up ({', '.join(sorted(failed)) or '-'}), and of "
+            f"{len(failed_storages)} storages not priced due to transient errors.",
             level=WARN,
         )
+    if not items and not kept:
+        _expire_previous_rows(vendor, DatabaseStoragePrice)
     return items + kept
