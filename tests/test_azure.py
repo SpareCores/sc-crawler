@@ -176,6 +176,12 @@ _NVME = {
         ),
         ("Standard_HB176rs_v4", _NVME_NO_SPEED, (186_000, 201_000, 12_000, 7_000)),
         ("Standard_HB120rs_v3", _NVME_NO_SPEED, (186_000, 201_000, 7_000, 3_000)),
+        # docs fill only the metrics the API leaves empty
+        (
+            "Standard_HX176-24rs",
+            {**_NVME_NO_SPEED, "NvmeMaxReadIops": "190000"},
+            (190_000, 201_000, 12_000, 7_000),
+        ),
     ],
 )
 def test_azure_standardize_server_bundled_storage_speed(name, capabilities, expected):

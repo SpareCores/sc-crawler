@@ -128,11 +128,13 @@ This writes `$OUT/report.md`, `findings.csv` and `findings.jsonl`. Re-run
 
 `storage_read_iops_max`, `storage_write_iops_max`, `storage_read_throughput_max`
 and `storage_write_throughput_max` (MB/s) hold the vendor-published max speed of
-the disks bundled with a server; NULL means not published. AWS, GCP, Alibaba,
-UpCloud and part of Azure (NVMe sizes) fill them from hardcoded docs tables, so a
-new server type stays NULL until someone adds its row. The crawler logs a warning
-for unknown Alibaba Cloud, AWS, GCP and UpCloud types, but not for Azure NVMe sizes missing from
-its table, so do not rely on the logs. List the bundled disks without any speed:
+the disks bundled with a server; NULL means not collected: either the vendor
+does not publish it, or our lookup misses it. AWS, GCP, Alibaba, UpCloud and part
+of Azure (NVMe sizes) fill them from hardcoded docs tables, so a new server type
+can stay NULL until someone updates the table. The crawler logs a warning for
+unknown Alibaba Cloud, AWS, GCP and UpCloud types, but not for Azure NVMe sizes
+missing from its table, so do not rely on the logs. List the bundled disks
+without any speed:
 
 ```sh
 sqlite3 ~/downloads/sc-data-all.db "SELECT vendor_id, server_id, storage_size
@@ -144,8 +146,11 @@ sqlite3 ~/downloads/sc-data-all.db "SELECT vendor_id, server_id, storage_size
 ```
 
 For each one, check the docs page cited next to the table in
-`src/sc_crawler/vendors/_<vendor>.py`. If the page now lists it, tell the user
-which row to add. Expected gaps: types the docs leave blank (AWS
+`src/sc_crawler/vendors/_<vendor>.py`. Tables match by server type, by family
+(e.g. Alibaba HDD and i1 per-disk figures) or by disk count (GCP Local SSD), so
+first check how the lookup matches: a missing family or disk count may cover
+several server types. If the page now has the figures, tell the user which
+entry to add. Expected gaps: types the docs leave blank (AWS
 `_INSTANCE_STORE_IOPS_NOT_PUBLISHED`, Azure HBv2), and GCP types below
 `_LOCAL_SSD_MIN_VCPUS` (e.g. `a2-ultragpu-1g`). Put the result in `$OUT/notes.md`.
 

@@ -71,8 +71,8 @@ def _foreign_keys(table_name: str, is_scd: bool) -> tuple:
 def get_server_table(is_scd: bool, with_new_columns: bool = False) -> sa.Table:
     """Pre-v0.11.1 ``server`` / ``server_scd`` schema (copy_from source).
 
-    With ``with_new_columns``, the post-upgrade schema, used by the SQLite
-    downgrade so that it also works in SQL-only (offline) mode.
+    With ``with_new_columns``, the post-upgrade schema, used by the SQL-only
+    (offline) SQLite downgrade.
     """
     is_postgresql = op.get_context().dialect.name == "postgresql"
     json_type = sa.dialects.postgresql.JSONB if is_postgresql else sa.JSON
@@ -467,9 +467,12 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     server_table_name = scdize_suffix("server")
+    # SQL-only SQLite downgrade cannot reflect the table: use the post-upgrade
+    # schema; live downgrades reflect the actual table
+    context = op.get_context()
     copy_from = (
         get_server_table(is_scd_migration(), with_new_columns=True)
-        if op.get_context().dialect.name == "sqlite"
+        if context.dialect.name == "sqlite" and context.as_sql
         else None
     )
     with op.batch_alter_table(
