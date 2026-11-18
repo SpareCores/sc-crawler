@@ -68,8 +68,12 @@ def _foreign_keys(table_name: str, is_scd: bool) -> tuple:
     )
 
 
-def get_server_table(is_scd: bool) -> sa.Table:
-    """Pre-v0.11.1 ``server`` / ``server_scd`` schema (copy_from source)."""
+def get_server_table(is_scd: bool, with_new_columns: bool = False) -> sa.Table:
+    """Pre-v0.11.1 ``server`` / ``server_scd`` schema (copy_from source).
+
+    With ``with_new_columns``, the post-upgrade schema, used by the SQLite
+    downgrade so that it also works in SQL-only (offline) mode.
+    """
     is_postgresql = op.get_context().dialect.name == "postgresql"
     json_type = sa.dialects.postgresql.JSONB if is_postgresql else sa.JSON
     table_name = scdize_suffix("server")
@@ -357,6 +361,7 @@ def get_server_table(is_scd: bool) -> sa.Table:
             nullable=False,
             comment="JSON array of disks attached to the server, including the size (GB) and type of each disk.",
         ),
+        *(_new_columns() if with_new_columns else ()),
         sa.Column(
             "compatible_storage_ids",
             json_type(none_as_null=True),
@@ -462,6 +467,13 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     server_table_name = scdize_suffix("server")
-    with op.batch_alter_table(server_table_name, schema=None) as batch_op:
+    copy_from = (
+        get_server_table(is_scd_migration(), with_new_columns=True)
+        if op.get_context().dialect.name == "sqlite"
+        else None
+    )
+    with op.batch_alter_table(
+        server_table_name, schema=None, copy_from=copy_from
+    ) as batch_op:
         for name, _ in reversed(_NEW_COLUMNS):
             batch_op.drop_column(name)
