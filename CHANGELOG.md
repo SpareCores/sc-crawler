@@ -11,6 +11,15 @@ New vendor(s):
   multi-zone readable cluster prices, and the performance tiers of the database
   optimized storage as database storages.
 
+Fix(es):
+
+- `aws`: Pricing API clients use adaptive retry mode with up to 10 attempts.
+  botocore 1.44.0 made the standard retry mode (3 attempts) the default, so
+  throttled `GetProducts` calls failed and the vendor was skipped.
+- Progress bars of a failed vendor are cleaned up: its running tasks are hidden
+  and its elapsed timer is stopped, instead of counting up while later vendors
+  are being processed. Task ids are no longer shared between vendors.
+
 ## v0.11.0 (November 16, 2026)
 
 ‼ Breaking changes:

@@ -960,7 +960,8 @@ def pull(
                         f"Skipping vendor {vendor.vendor_id} due to vendor API error.",
                         logging.ERROR,
                     )
-                    vendor.progress_tracker.update_vendor(step="✘")
+                    # hide the tasks left running and stop the vendor's timer
+                    vendor.progress_tracker.fail_vendor()
 
                 with sentry_capture_or_raise(
                     vendor=vendor,
