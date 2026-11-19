@@ -4,7 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 from itertools import chain, repeat
 from typing import Callable, Collection, List, Literal, Mapping, Optional
 
-from .table_fields import Disk, Status
+from .table_fields import DISK_SPEED_FIELDS, Disk, Status
 from .tables import Region, Vendor
 
 
@@ -137,15 +137,6 @@ def get_region_by_id(region_id: str, vendor: Vendor) -> Optional[Region]:
         ),
         None,
     )
-
-
-DISK_SPEED_FIELDS = (
-    "read_iops_max",
-    "write_iops_max",
-    "read_throughput_max",
-    "write_throughput_max",
-)
-"""Speed fields of a `Disk`, matching the `storage_*` server columns."""
 
 
 def disk_speed_totals(storages: List[Disk]) -> dict:

@@ -342,6 +342,15 @@ class Disk(Json):
     """Vendor-published maximum write throughput of the disk (MB/s)."""
 
 
+DISK_SPEED_FIELDS = (
+    "read_iops_max",
+    "write_iops_max",
+    "read_throughput_max",
+    "write_throughput_max",
+)
+"""Speed fields of a `Disk`, matching the `storage_*` server columns."""
+
+
 class TrafficDirection(str, Enum):
     """Direction of the network traffic."""
 
