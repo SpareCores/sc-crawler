@@ -1475,3 +1475,23 @@ def test_accelerator_without_manufacturer():
     """Only Neuron devices default to AWS, others keep an unknown manufacturer."""
     instance_type = {"FpgaInfo": {"Fpgas": [{"Name": "VU9P", "Count": 1}]}}
     assert _get_gpus_of_instance_type(instance_type)[0].manufacturer is None
+
+
+def test_aws_pricing_client_uses_adaptive_retries():
+    with patch("sc_crawler.vendors._aws.boto3.client") as client:
+        _aws._pricing_client()
+    client.assert_called_once()
+    assert client.call_args.args == ("pricing",)
+    assert client.call_args.kwargs["region_name"] == "us-east-1"
+    retries = client.call_args.kwargs["config"].retries
+    assert retries["mode"] == "adaptive"
+    assert retries["max_attempts"] >= 5
+
+
+def test_aws_get_products_uses_the_pricing_client():
+    paginator = Mock(paginate=Mock(return_value=[{"PriceList": ['{"a": 1}']}]))
+    client = Mock(get_paginator=Mock(return_value=paginator))
+    with patch("sc_crawler.vendors._aws._pricing_client", return_value=client):
+        products = _aws._boto_get_products.__wrapped__("AmazonEC2", {"x": "y"})
+    assert products == [{"a": 1}]
+    client.get_paginator.assert_called_once_with("get_products")
