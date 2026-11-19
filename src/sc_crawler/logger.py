@@ -246,7 +246,9 @@ class VendorProgressTracker:
             advance: Number of steps to advance.
         """
 
-        self.tasks.update(task_id or self.last_task(), advance=advance)
+        if task_id is None:
+            task_id = self.last_task()
+        self.tasks.update(task_id, advance=advance)
 
     def update_task(self, task_id: Optional[TaskID] = None, **kwargs) -> None:
         """Update the task's progress bar.
@@ -260,7 +262,9 @@ class VendorProgressTracker:
 
         See [`rich.progress.Progress.update`][] for further keyword arguments.
         """
-        self.tasks.update(task_id or self.last_task(), **kwargs)
+        if task_id is None:
+            task_id = self.last_task()
+        self.tasks.update(task_id, **kwargs)
 
     def hide_task(self, task_id: Optional[TaskID] = None):
         """Hide a task from the list of progress bars.
@@ -269,7 +273,9 @@ class VendorProgressTracker:
             task_id: The progress bar's identifier returned by `start_task`.
                 Defaults to the most recently created task.
         """
-        task_id = task_id or self.last_task()
+        # TaskID 0 is falsy, so compare to None instead of using `or`
+        if task_id is None:
+            task_id = self.last_task()
         self.tasks.update(task_id, visible=False)
         self.tasks.stop_task(task_id)
         if task_id in self.task_ids:

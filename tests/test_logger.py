@@ -36,6 +36,41 @@ def test_hide_task_stops_and_unregisters_the_task():
     assert tracker.task_ids == []
 
 
+def test_hide_task_zero_keeps_the_last_task_running():
+    panel = _panel()
+    tracker = _tracker(panel)
+    first = tracker.start_task("first", total=None)
+    second = tracker.start_task("second", total=None)
+    assert first == 0
+
+    tracker.hide_task(first)
+
+    assert not panel.tasks._tasks[first].visible
+    assert panel.tasks._tasks[first].stop_time is not None
+    assert panel.tasks._tasks[second].visible
+    assert panel.tasks._tasks[second].stop_time is None
+    assert tracker.task_ids == [second]
+
+
+def test_advance_and_update_task_zero_do_not_touch_the_last_task():
+    panel = _panel()
+    tracker = _tracker(panel)
+    first = tracker.start_task("first", total=5)
+    second = tracker.start_task("second", total=5)
+    assert first == 0
+
+    tracker.advance_task(first, advance=2)
+    tracker.update_task(first, description="renamed")
+
+    assert panel.tasks._tasks[first].completed == 2
+    assert panel.tasks._tasks[first].description == "renamed"
+    assert panel.tasks._tasks[second].completed == 0
+    assert panel.tasks._tasks[second].description == "Vendor: second"
+    # still defaulting to the last task without a task id
+    tracker.advance_task()
+    assert panel.tasks._tasks[second].completed == 1
+
+
 def test_fail_vendor_hides_tasks_and_stops_the_vendor_timer():
     panel = _panel()
     tracker = _tracker(panel)
