@@ -163,8 +163,10 @@ class VendorProgressTracker:
     """[rich.progress.Progress][] for tracking the lower-level tasks within each step."""
     metadata: Text
     """[rich.text.Text][] metadata, e.g. data sources and records to be udpated."""
-    task_ids: List[TaskID] = []
+    task_ids: List[TaskID]
     """List of active task ids for the current `vendor`."""
+    vendor_task_id: Optional[TaskID]
+    """The `TaskID` of the vendor's progress bar, set by `start_vendor`."""
 
     def __init__(self, vendor: Vendor, progress_panel: ProgressPanel):
         self.vendor = vendor
@@ -172,6 +174,10 @@ class VendorProgressTracker:
         self.vendors = progress_panel.vendors
         self.tasks = progress_panel.tasks
         self.metadata = progress_panel.metadata
+        # per instance, so that tasks left behind by a failed vendor do not leak
+        # into the next vendor's tracker
+        self.task_ids = []
+        self.vendor_task_id = None
 
     def start_vendor(self, total: int) -> TaskID:
         """Starts a progress bar for the Vendor's steps.
@@ -182,7 +188,15 @@ class VendorProgressTracker:
         Returns:
             TaskId: The progress bar's identifier to be referenced in future updates.
         """
-        return self.vendors.add_task(self.vendor.name, total=total, step="")
+        self.vendor_task_id = self.vendors.add_task(
+            self.vendor.name, total=total, step=""
+        )
+        return self.vendor_task_id
+
+    def _vendor_task(self) -> TaskID:
+        if self.vendor_task_id is None:
+            return self.vendors.task_ids[-1]
+        return self.vendor_task_id
 
     def advance_vendor(self, advance: int = 1) -> None:
         """Increment the number of finished steps.
@@ -190,7 +204,7 @@ class VendorProgressTracker:
         Args:
             advance: Number of steps to advance.
         """
-        self.vendors.update(self.vendors.task_ids[-1], advance=advance)
+        self.vendors.update(self._vendor_task(), advance=advance)
 
     def update_vendor(self, **kwargs) -> None:
         """Update the vendor's progress bar.
@@ -198,7 +212,7 @@ class VendorProgressTracker:
         Useful fields:
         - `step`: Name of the currently running step to be shown on the progress bar.
         """
-        self.vendors.update(self.vendors.task_ids[-1], **kwargs)
+        self.vendors.update(self._vendor_task(), **kwargs)
 
     def start_task(self, name: str, total: int) -> TaskID:
         """Starts a progress bar in the list of current jobs.
@@ -232,7 +246,9 @@ class VendorProgressTracker:
             advance: Number of steps to advance.
         """
 
-        self.tasks.update(task_id or self.last_task(), advance=advance)
+        if task_id is None:
+            task_id = self.last_task()
+        self.tasks.update(task_id, advance=advance)
 
     def update_task(self, task_id: Optional[TaskID] = None, **kwargs) -> None:
         """Update the task's progress bar.
@@ -246,7 +262,9 @@ class VendorProgressTracker:
 
         See [`rich.progress.Progress.update`][] for further keyword arguments.
         """
-        self.tasks.update(task_id or self.last_task(), **kwargs)
+        if task_id is None:
+            task_id = self.last_task()
+        self.tasks.update(task_id, **kwargs)
 
     def hide_task(self, task_id: Optional[TaskID] = None):
         """Hide a task from the list of progress bars.
@@ -255,8 +273,34 @@ class VendorProgressTracker:
             task_id: The progress bar's identifier returned by `start_task`.
                 Defaults to the most recently created task.
         """
-        self.tasks.update(task_id or self.last_task(), visible=False)
-        self.task_ids.pop()
+        # TaskID 0 is falsy, so compare to None instead of using `or`
+        if task_id is None:
+            task_id = self.last_task()
+        self.tasks.update(task_id, visible=False)
+        self.tasks.stop_task(task_id)
+        if task_id in self.task_ids:
+            self.task_ids.remove(task_id)
+
+    def fail_vendor(self, step: str = "✘") -> None:
+        """Clean up the progress bars of a vendor failed mid-way.
+
+        Removes the progress bars of the vendor's interrupted steps from the
+        display (e.g. when an exception interrupted an inventory step before its
+        `hide_task` call), and stops the vendor's progress bar so its elapsed time
+        no longer increases while the next vendors are being processed. These are
+        display entries only, the interrupted work is not running anymore.
+
+        Args:
+            step: Text to show as the current step on the vendor's progress bar.
+        """
+        while self.task_ids:
+            self.hide_task(self.task_ids[-1])
+        # not started: do not fall back to (and stop) another tracker's vendor task
+        if self.vendor_task_id is None:
+            return
+        vendor_task_id = self._vendor_task()
+        self.vendors.update(vendor_task_id, step=step)
+        self.vendors.stop_task(vendor_task_id)
 
 
 class VoidProgressTracker(VendorProgressTracker):
@@ -287,4 +331,7 @@ class VoidProgressTracker(VendorProgressTracker):
         pass
 
     def hide_task(self, *args, **kwargs):
+        pass
+
+    def fail_vendor(self, *args, **kwargs):
         pass
