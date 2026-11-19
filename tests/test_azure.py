@@ -10,7 +10,9 @@ from sc_crawler.table_fields import (
     DatabaseHaStrategy,
     DatabaseSecurityFeature,
     Status,
+    StorageType,
 )
+from sc_crawler.vendor_helpers import disk_speed_totals
 from sc_crawler.vendors._azure import (
     _PG_PRODUCT_SERIES_RE,
     _azure_sku_lifecycle_status,
@@ -198,6 +200,39 @@ def test_azure_standardize_server_bundled_storage_speed(name, capabilities, expe
         row["storage_read_throughput_max"],
         row["storage_write_throughput_max"],
     ) == expected
+    # the totals are the sums of the disk group entries
+    assert disk_speed_totals(row["storages"]) == {
+        "storage_read_iops_max": expected[0],
+        "storage_write_iops_max": expected[1],
+        "storage_read_throughput_max": expected[2],
+        "storage_write_throughput_max": expected[3],
+    }
+
+
+def test_azure_standardize_server_storages_speed_per_disk_group():
+    server = {
+        "name": "Standard_L8s_v3",
+        "family": "standardLSv3Family",
+        "capabilities": _BASE_CAPABILITIES
+        + [{"name": k, "value": v} for k, v in (_TEMP_DISK | _NVME).items()],
+    }
+    row = _standardize_server(server, SimpleNamespace(vendor_id="azure"))
+    temp, nvme = row["storages"]
+    assert temp.description == "temp disk"
+    assert (
+        temp.read_iops_max,
+        temp.write_iops_max,
+        temp.read_throughput_max,
+        temp.write_throughput_max,
+    ) == (9000, None, 125, 125)
+    # API values win over the docs table
+    assert nvme.storage_type == StorageType.NVME_SSD
+    assert (
+        nvme.read_iops_max,
+        nvme.write_iops_max,
+        nvme.read_throughput_max,
+        nvme.write_throughput_max,
+    ) == (37500, 15000, 180, 90)
 
 
 def test_azure_sku_lifecycle_status_from_retired_sizes_list():

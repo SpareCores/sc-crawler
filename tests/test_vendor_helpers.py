@@ -1,8 +1,18 @@
 from sqlmodel import Session, SQLModel, create_engine, select
 
-from sc_crawler.table_fields import DatabaseHaLevel, DatabaseHaStrategy, Status
+from sc_crawler.table_fields import (
+    DatabaseHaLevel,
+    DatabaseHaStrategy,
+    Disk,
+    Status,
+    StorageType,
+)
 from sc_crawler.tables import Country, Region
-from sc_crawler.vendor_helpers import server_status_from_availability_categories
+from sc_crawler.vendor_helpers import (
+    disk_speed_totals,
+    server_status_from_availability_categories,
+    split_disk_speed,
+)
 from sc_crawler.vendors import vendors
 
 _ALICLOUD_CATEGORY_TO_SERVER_STATUS = {
@@ -177,3 +187,49 @@ def test_azure_gpu_memory_is_gib():
     from sc_crawler.vendors._azure import _gpu_spec
 
     assert _gpu_spec("Standard_ND96isr_H100_v5", "8") == (8, "H100", 80 * 1024)
+
+
+def test_disk_speed_totals_sums_known_values():
+    disks = [
+        Disk(size=10, storage_type=StorageType.SSD, read_iops_max=100),
+        Disk(
+            size=10,
+            storage_type=StorageType.NVME_SSD,
+            read_iops_max=50,
+            write_iops_max=20,
+        ),
+        Disk(size=10, storage_type=StorageType.SSD),
+    ]
+    assert disk_speed_totals(disks) == {
+        "storage_read_iops_max": 150,
+        "storage_write_iops_max": 20,
+        "storage_read_throughput_max": None,
+        "storage_write_throughput_max": None,
+    }
+    assert disk_speed_totals([]) == dict.fromkeys(
+        [
+            "storage_read_iops_max",
+            "storage_write_iops_max",
+            "storage_read_throughput_max",
+            "storage_write_throughput_max",
+        ]
+    )
+
+
+def test_split_disk_speed():
+    assert split_disk_speed(1_000, 4) == 250
+    assert split_disk_speed(1_000, 3) == 333
+    assert split_disk_speed(None, 4) is None
+    assert split_disk_speed(0, 4) is None
+    assert split_disk_speed(1_000, 0) is None
+
+
+def test_disk_speed_fields_default_to_none_for_old_rows():
+    # rows stored before the speed fields existed
+    disk = Disk.model_validate({"size": 10, "storage_type": "ssd"})
+    assert (
+        disk.read_iops_max,
+        disk.write_iops_max,
+        disk.read_throughput_max,
+        disk.write_throughput_max,
+    ) == (None, None, None, None)

@@ -47,7 +47,7 @@ from ..utils import (
     list_search,
     scmodels_to_dict,
 )
-from ..vendor_helpers import preprocess_servers
+from ..vendor_helpers import disk_speed_totals, preprocess_servers
 
 credential = DefaultAzureCredential()
 
@@ -1055,8 +1055,8 @@ def _standardize_server(server: dict, vendor) -> dict:
         description = description + "s"
     # Bundled local disks only. OS disk is a managed disk chosen at deploy time.
     # SKUs without a temp disk report MaxResourceVolumeMB "0" (truthy string).
+    # one entry per disk group (temp disk, all NVMe disks) with the group speed
     storages = []
-    read_iops, write_iops, read_mbps, write_mbps = [], [], [], []
     temp_mb = capability("MaxResourceVolumeMB")
     # MaxResourceVolumeMB is MiB, e.g. DC1s_v2 reports 51200 and shows 50 GiB in docs
     if temp_mb and float(temp_mb) > 0:
@@ -1065,34 +1065,34 @@ def _standardize_server(server: dict, vendor) -> dict:
                 size=round(float(temp_mb) * 1024**2 / 1e9),
                 storage_type=StorageType.SSD,
                 description="temp disk",
+                # single IOPS number (no read/write split) stored as read
+                read_iops_max=capability_int("CombinedTempDiskAndCachedIOPS"),
+                read_throughput_max=capability_int(
+                    "CombinedTempDiskAndCachedReadBytesPerSecond", 1_000_000
+                ),
+                write_throughput_max=capability_int(
+                    "CombinedTempDiskAndCachedWriteBytesPerSecond", 1_000_000
+                ),
             )
-        )
-        # temp disk speed: single IOPS number (no read/write split) stored as read
-        read_iops.append(capability_int("CombinedTempDiskAndCachedIOPS"))
-        read_mbps.append(
-            capability_int("CombinedTempDiskAndCachedReadBytesPerSecond", 1_000_000)
-        )
-        write_mbps.append(
-            capability_int("CombinedTempDiskAndCachedWriteBytesPerSecond", 1_000_000)
         )
     # NVMe disks are explicitely reported in base 2 unit
     nvme_mib = capability("NvmeDiskSizeInMiB")
     if nvme_mib and float(nvme_mib) > 0:
+        # Resource SKUs API speed, documented speed for sizes not in the API
+        docs = _nvme_speed(server["name"])
         storages.append(
             Disk(
                 size=round(float(nvme_mib) * 1024**2 / 1e9),
                 storage_type=StorageType.NVME_SSD,
+                read_iops_max=capability_int("NvmeMaxReadIops") or docs[0],
+                write_iops_max=capability_int("NvmeMaxWriteIops") or docs[1],
+                read_throughput_max=(
+                    capability_int("NvmeMaxReadBytesPerSecond", 1_000_000) or docs[2]
+                ),
+                write_throughput_max=(
+                    capability_int("NvmeMaxWriteBytesPerSecond", 1_000_000) or docs[3]
+                ),
             )
-        )
-        # Resource SKUs API speed, documented speed for sizes not in the API
-        docs = _nvme_speed(server["name"])
-        read_iops.append(capability_int("NvmeMaxReadIops") or docs[0])
-        write_iops.append(capability_int("NvmeMaxWriteIops") or docs[1])
-        read_mbps.append(
-            capability_int("NvmeMaxReadBytesPerSecond", 1_000_000) or docs[2]
-        )
-        write_mbps.append(
-            capability_int("NvmeMaxWriteBytesPerSecond", 1_000_000) or docs[3]
         )
     if any(disk.storage_type == StorageType.NVME_SSD for disk in storages):
         storage_type = StorageType.NVME_SSD
@@ -1147,10 +1147,7 @@ def _standardize_server(server: dict, vendor) -> dict:
         "storage_type": storage_type,
         "storages": storages,
         # sum over the bundled disks with a known value, None if none is known
-        "storage_read_iops_max": sum(v for v in read_iops if v) or None,
-        "storage_write_iops_max": sum(v for v in write_iops if v) or None,
-        "storage_read_throughput_max": sum(v for v in read_mbps if v) or None,
-        "storage_write_throughput_max": sum(v for v in write_mbps if v) or None,
+        **disk_speed_totals(storages),
         "compatible_storage_ids": _compatible_storage_ids(server),
         # TODO: have to implement manual mapping for network_speed related fields
         "network_speed_baseline": None,

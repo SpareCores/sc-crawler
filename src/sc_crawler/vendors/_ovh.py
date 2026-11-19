@@ -33,6 +33,7 @@ from ..utils import (
     _MICROCENTS_PER_CURRENCY_UNIT,
     scmodels_to_dict,
 )
+from ..vendor_helpers import disk_speed_totals
 
 
 @cache
@@ -1292,7 +1293,6 @@ def inventory_servers(vendor) -> list[dict]:
         gpu_model = _gpu_model or gpu.get("model", None)
 
         storages: List[Disk] = []
-        read_iops = []
         for disk in technical.get("nvme", {}).get("disks", []):
             capacity = disk.get("capacity", 0)
             if not capacity:
@@ -1314,15 +1314,16 @@ def inventory_servers(vendor) -> list[dict]:
                 + disk.get("interface", "").lower()
             )
             storage_type = StorageType.NVME_SSD if is_nvme else StorageType.SSD
-            # Single IOPS figure without read/write split, stored as read.
-            # Only listed for older families on single-disk entries, e.g. 4000 on c2-15.
-            read_iops.append(disk.get("iops"))
             # e.g. 2x 960 GB on bm-s1, 4x 3840 GB passthrough NVMe on h100-1520
             for _ in range(disk.get("number", 1)):
                 storages.append(
                     Disk(
                         size=capacity,
                         storage_type=storage_type,
+                        # Single IOPS figure without read/write split, stored as read.
+                        # Only listed for older families on single-disk entries,
+                        # e.g. 4000 on c2-15.
+                        read_iops_max=disk.get("iops"),
                     )
                 )
         storage_type = storages[0].storage_type if storages else None
@@ -1396,10 +1397,7 @@ def inventory_servers(vendor) -> list[dict]:
             "storage_type": storage_type,
             "storages": storages,
             # sum over the bundled disks with a known value, None if none is known
-            "storage_read_iops_max": sum(v for v in read_iops if v) or None,
-            "storage_write_iops_max": None,
-            "storage_read_throughput_max": None,
-            "storage_write_throughput_max": None,
+            **disk_speed_totals(storages),
             # Block Storage volumes are currently not available for Metal instances
             # https://docs.ovhcloud.com/en/guides/public-cloud/compute/create-and-configure-an-additional-disk-on-an-instance
             "compatible_storage_ids": (
@@ -1448,7 +1446,7 @@ def inventory_servers(vendor) -> list[dict]:
                     "storage_size": flex_flavors[flex_id],
                     "storages": flex_storages,
                     # the catalog IOPS are for the classic disk only
-                    "storage_read_iops_max": None,
+                    **disk_speed_totals(flex_storages),
                 }
             )
 

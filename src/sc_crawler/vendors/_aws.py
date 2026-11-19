@@ -52,6 +52,7 @@ from ..utils import (
 from ..vendor_helpers import (
     parallel_fetch_servers,
     preprocess_servers,
+    split_disk_speed,
 )
 
 # ##############################################################################
@@ -636,21 +637,31 @@ def _array_expand_by_count(array):
     return list(chain(*array))
 
 
-def _get_storages_of_instance_type(instance_type):
-    """Get individual storages as an array."""
+def _get_storages_of_instance_type(instance_type, iops=(None, None)):
+    """Get individual storages as an array.
+
+    The documented (read, write) IOPS `iops` are totals over the identical
+    volumes, so they are split evenly between the disks.
+    """
     if "InstanceStorageInfo" not in instance_type:
         return []
     info = instance_type["InstanceStorageInfo"]
+    # replicate number of disks
+    disks = _array_expand_by_count(info["Disks"])
+    read_iops = split_disk_speed(iops[0], len(disks))
+    write_iops = split_disk_speed(iops[1], len(disks))
 
     def to_storage(disk, nvme=False):
         kind = disk.get("Type").lower()
         if kind == "ssd" and nvme:
             kind = "nvme ssd"
-        return Disk(size=disk["SizeInGB"], storage_type=kind)
+        return Disk(
+            size=disk["SizeInGB"],
+            storage_type=kind,
+            read_iops_max=read_iops,
+            write_iops_max=write_iops,
+        )
 
-    # replicate number of disks
-    disks = info["Disks"]
-    disks = _array_expand_by_count(disks)
     return [to_storage(disk, nvme=_supports_nvme(info)) for disk in disks]
 
 
@@ -1578,7 +1589,7 @@ def _make_server_from_instance_type(instance_type, vendor) -> dict:
         "accelerators": _get_gpus_of_instance_type(instance_type),
         "storage_size": storage_info[0],
         "storage_type": storage_info[1],
-        "storages": _get_storages_of_instance_type(instance_type),
+        "storages": _get_storages_of_instance_type(instance_type, instance_store_iops),
         "storage_read_iops_max": instance_store_iops[0],
         "storage_write_iops_max": instance_store_iops[1],
         # throughput is not documented for instance store volumes

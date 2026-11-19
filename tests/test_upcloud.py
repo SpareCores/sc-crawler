@@ -849,6 +849,16 @@ def test_upcloud_inventory_servers_bundled_storage_speed(storage_tier, expected)
         row["storage_read_throughput_max"],
         row["storage_write_throughput_max"],
     ) == expected
+    # the single plan disk carries the same speed
+    assert [
+        (
+            d.read_iops_max,
+            d.write_iops_max,
+            d.read_throughput_max,
+            d.write_throughput_max,
+        )
+        for d in row["storages"]
+    ] == ([expected] if storage_tier else [])
 
 
 def test_upcloud_unknown_storage_tier_is_empty_and_warned_once():
@@ -877,6 +887,10 @@ def test_upcloud_unknown_storage_tier_is_empty_and_warned_once():
             row["storage_read_throughput_max"],
             row["storage_write_throughput_max"],
         ) == (None, None, None, None)
+        # the disk is listed without speed
+        assert [(d.size, d.read_iops_max) for d in row["storages"]] == [
+            (row["storage_size"], None)
+        ]
     warnings = [call.args[0] for call in logger.warning.call_args_list]
     assert len(warnings) == 1
     assert "new-tier" in warnings[0]

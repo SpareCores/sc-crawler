@@ -1242,6 +1242,23 @@ def test_aws_storage_type_nvme_support():
     ] == [StorageType.SSD, StorageType.SSD]
 
 
+def test_aws_storages_split_instance_store_iops():
+    # docs total over the 2 identical volumes, split evenly
+    disks = _get_storages_of_instance_type(_storage("required"), (30_000, 15_001))
+    assert [(d.read_iops_max, d.write_iops_max) for d in disks] == [
+        (15_000, 7_500),
+        (15_000, 7_500),
+    ]
+    assert all(
+        d.read_throughput_max is None and d.write_throughput_max is None for d in disks
+    )
+    # unknown IOPS: disks without speed
+    for disk in _get_storages_of_instance_type(_storage("required"), (None, None)):
+        assert (disk.read_iops_max, disk.write_iops_max) == (None, None)
+    # no instance store
+    assert _get_storages_of_instance_type({}, (30_000, 15_000)) == []
+
+
 @pytest.mark.parametrize(
     "instance_type,expected",
     [

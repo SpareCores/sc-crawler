@@ -550,6 +550,10 @@ def test_ovh_inventory_servers_bundled_storage_speed(
     (row,) = inventory_servers(_ovh_vendor())
 
     assert row["storage_read_iops_max"] == read_iops
+    # the catalog IOPS stays on the disk it is listed for
+    assert [d.read_iops_max for d in row["storages"] if d.read_iops_max] == (
+        [read_iops] if read_iops else []
+    )
     # OVH publishes neither write IOPS nor throughput
     assert row["storage_write_iops_max"] is None
     assert row["storage_read_throughput_max"] is None

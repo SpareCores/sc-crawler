@@ -332,6 +332,14 @@ class Disk(Json):
     """[Type][sc_crawler.table_fields.StorageType] of the storage."""
     description: Optional[str] = None
     """Optional description of the storage, e.g. temp disk."""
+    read_iops_max: Optional[int] = None
+    """Vendor-published maximum read IOPS of the disk."""
+    write_iops_max: Optional[int] = None
+    """Vendor-published maximum write IOPS of the disk."""
+    read_throughput_max: Optional[int] = None
+    """Vendor-published maximum read throughput of the disk (MB/s)."""
+    write_throughput_max: Optional[int] = None
+    """Vendor-published maximum write throughput of the disk (MB/s)."""
 
 
 class TrafficDirection(str, Enum):

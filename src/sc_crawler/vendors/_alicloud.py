@@ -10,7 +10,7 @@ from os import environ
 from random import shuffle
 from re import sub
 from time import time
-from typing import Optional
+from typing import List, Optional
 
 from alibabacloud_bssopenapi20171214.client import Client as BssClient
 from alibabacloud_bssopenapi20171214.models import QuerySkuPriceListRequest
@@ -46,6 +46,7 @@ from ..table_fields import (
     Allocation,
     CpuAllocation,
     CpuArchitecture,
+    Disk,
     PriceUnit,
     Status,
     StorageType,
@@ -56,6 +57,7 @@ from ..utils import _GIB_TO_GB, _HOURS_PER_MONTH, jsoned_hash
 from ..vendor_helpers import (
     get_region_by_id,
     server_status_from_availability_categories,
+    split_disk_speed,
 )
 
 # StatusCategory values:
@@ -1242,6 +1244,29 @@ def _local_disk_speed(instance_type: dict) -> tuple:
     return (None, None, None, None)
 
 
+def _local_disks(instance_type: dict, storage_type, speed: tuple) -> List[Disk]:
+    """One entry per identical local disk, the speed totals split evenly."""
+    disks = instance_type.get("LocalStorageAmount", 0)
+    if not disks or not storage_type:
+        return []
+    # LocalStorageCapacity is GiB per disk
+    size = round(instance_type.get("LocalStorageCapacity", 0) * _GIB_TO_GB)
+    read_iops, write_iops, read_mbps, write_mbps = (
+        split_disk_speed(total, disks) for total in speed
+    )
+    return [
+        Disk(
+            size=size,
+            storage_type=storage_type,
+            read_iops_max=read_iops,
+            write_iops_max=write_iops,
+            read_throughput_max=read_mbps,
+            write_throughput_max=write_mbps,
+        )
+        for _ in range(disks)
+    ]
+
+
 # `InstanceCategory` spelling of the API changed to match the other vendors: hyphens
 # are replaced by a space and the word after is capitalized (General-purpose ->
 # General Purpose, Compute-optimized with GPU -> Compute Optimized with GPU), plus the
@@ -1808,7 +1833,8 @@ def inventory_servers(vendor):
             / 1000**3
         )
         storage_type = STORAGE_CATEGORY_MAP[instance_type["LocalStorageCategory"]]
-        read_iops, write_iops, read_mbps, write_mbps = _local_disk_speed(instance_type)
+        disk_speed = _local_disk_speed(instance_type)
+        read_iops, write_iops, read_mbps, write_mbps = disk_speed
         gpu_count = _standardize_gpu_count(
             instance_type["GPUSpec"], instance_type.get("GPUAmount", 0)
         )
@@ -1935,7 +1961,7 @@ def inventory_servers(vendor):
                 "accelerators": [],
                 "storage_size": storage_size,
                 "storage_type": storage_type,
-                "storages": [],
+                "storages": _local_disks(instance_type, storage_type, disk_speed),
                 "storage_read_iops_max": read_iops,
                 "storage_write_iops_max": write_iops,
                 "storage_read_throughput_max": read_mbps,

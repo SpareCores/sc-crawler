@@ -1405,10 +1405,16 @@ def _search_servers(zone_name: str) -> List[dict]:
                     # third-gen+ Local SSD (incl. Titanium) is NVMe-only
                     # https://cloud.google.com/compute/docs/disks/local-ssd
                     "storage_type": StorageType.NVME_SSD,
+                    # one entry for all Local SSD partitions with the documented
+                    # VM-level speed
                     "storages": [
                         {
                             "storage_type": StorageType.NVME_SSD,
                             "size": storage_size,
+                            "read_iops_max": read_iops,
+                            "write_iops_max": write_iops,
+                            "read_throughput_max": read_mbps,
+                            "write_throughput_max": write_mbps,
                         }
                     ],
                     "storage_read_iops_max": read_iops,

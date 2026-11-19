@@ -22,6 +22,7 @@ from ..table_fields import (
     DatabaseSecurityFeature,
     DatabaseStorageScope,
     DatabaseWireProtocol,
+    Disk,
     PriceUnit,
     Status,
     StorageType,
@@ -947,7 +948,21 @@ def inventory_servers(vendor):
                     "storage_type": (
                         StorageType.SSD if server["storage_tier"] else None
                     ),
-                    "storages": [],
+                    # the single plan disk, on the Block Storage tier of the plan
+                    "storages": (
+                        [
+                            Disk(
+                                size=server["storage_size"],
+                                storage_type=StorageType.SSD,
+                                read_iops_max=storage_speeds[0],
+                                write_iops_max=storage_speeds[1],
+                                read_throughput_max=storage_speeds[2],
+                                write_throughput_max=storage_speeds[3],
+                            )
+                        ]
+                        if server["storage_tier"] and server["storage_size"]
+                        else []
+                    ),
                     "storage_read_iops_max": storage_speeds[0],
                     "storage_write_iops_max": storage_speeds[1],
                     "storage_read_throughput_max": storage_speeds[2],
