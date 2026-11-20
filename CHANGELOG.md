@@ -24,6 +24,9 @@ Fix(es):
 - `Azure`: the low memory `l` sizes of the D and F families and the memory
   intensive `m` sizes of the F family are their own series, e.g. `Dldsv5`
   instead of `Ddsv5` and `Famsv6` instead of `Fasv6`, as in the Microsoft docs.
+  The M sizes with an extra number before the version (`M48ds_1_v3`) are in
+  `Mdsv3` and not in the SKU family of the API, the original `M` series has no
+  letters (`M` instead of `Ms`), and `Standard_DC8_v2` is in `DCsv2`.
 
 ## v0.11.0 (November 16, 2026)
 

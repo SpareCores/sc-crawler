@@ -963,6 +963,14 @@ def _compatible_storage_ids(server: dict) -> list[str]:
     return storage_ids
 
 
+# The docs list Standard_DC8_v2 in the DCsv2 series, although its name has no s.
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/general-purpose/dcsv2-series
+_VM_DCSV2_RE = recompile(r"(?i)^Standard_DC\d+_v2$")
+# Some M sizes have an extra number before the version (Standard_M48ds_1_v3), it is not
+# part of the series.
+_VM_SIZE_SUFFIX_RE = recompile(r"(?i)_\d+(?=_v\d*$)")
+
+
 def _vm_series(size_name: str, sku_family: str) -> str:
     """Series of a VM size, built like the series of the PostgreSQL databases.
 
@@ -974,10 +982,18 @@ def _vm_series(size_name: str, sku_family: str) -> str:
     know (GPU, HPC, other odd shapes) keep the SKU family of the API, they have no
     database counterpart.
     """
+    if _VM_DCSV2_RE.match(size_name):
+        return "DCsv2"
     try:
-        return _parse_database_name(size_name)[0]
+        series, family, _, version = _parse_database_name(
+            _VM_SIZE_SUFFIX_RE.sub("", size_name)
+        )
     except ValueError:
         return sku_family
+    if family == "M" and not version:
+        # the original M series has no letters (M8ms, M32ls and M64 are all in M)
+        return "M"
+    return series
 
 
 def _standardize_server(server: dict, vendor) -> dict:
