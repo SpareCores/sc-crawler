@@ -963,19 +963,37 @@ def _compatible_storage_ids(server: dict) -> list[str]:
     return storage_ids
 
 
+# The docs list Standard_DC8_v2 in the DCsv2 series, although its name has no s.
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/general-purpose/dcsv2-series
+_VM_DCSV2_RE = recompile(r"(?i)^Standard_DC\d+_v2$")
+# Some M sizes have an extra number before the version (Standard_M48ds_1_v3), it is not
+# part of the series.
+_VM_SIZE_SUFFIX_RE = recompile(r"(?i)_\d+(?=_v\d*$)")
+
+
 def _vm_series(size_name: str, sku_family: str) -> str:
     """Series of a VM size, built like the series of the PostgreSQL databases.
 
     The database series come from `_parse_database_name`, so the same function is used
     here and a database joins the server it runs on, e.g. Standard_D2ds_v5 -> Ddsv5.
-    That drops the isolated i and the m/l/t memory shape letters, so e.g. the low memory
-    Standard_D2lds_v5 is in Ddsv5 too. Sizes the parser does not know (GPU, HPC, other
-    odd shapes) keep the SKU family of the API, they have no database counterpart.
+    That drops the isolated i and the m/t memory shape letters (and l for B and M), but
+    keeps the l of the D and F families and the m of the F family, as the low memory
+    Standard_D2lds_v5 is in the Dldsv5 series, not in Ddsv5. Sizes the parser does not
+    know (GPU, HPC, other odd shapes) keep the SKU family of the API, they have no
+    database counterpart.
     """
+    if _VM_DCSV2_RE.match(size_name):
+        return "DCsv2"
     try:
-        return _parse_database_name(size_name)[0]
+        series, family, _, version = _parse_database_name(
+            _VM_SIZE_SUFFIX_RE.sub("", size_name)
+        )
     except ValueError:
         return sku_family
+    if family == "M" and not version:
+        # the original M series has no letters (M8ms, M32ls and M64 are all in M)
+        return "M"
+    return series
 
 
 def _standardize_server(server: dict, vendor) -> dict:
@@ -2282,8 +2300,13 @@ def _pg_retail_prices(location: str) -> list[dict]:
     )
 
 
-# Size-variant letters are not part of the retail series name (i isolated, m/l/t memory shape).
-_PG_SERIES_SKIP_FEATURES = frozenset("imlt")
+# Size-variant letters are not part of the retail series name (i isolated, m/t memory shape).
+_PG_SERIES_SKIP_FEATURES = frozenset("imt")
+# The l (low memory) is part of the series name in the D and F families (Dldsv5 is not
+# Ddsv5), but not in the B and M families (B1ls is in Bs, M32ls in Ms). The m (memory
+# intensive) is part of the series name in the F family (Famsv6 is not Fasv6).
+_PG_SERIES_SKIP_LOW_MEMORY_FAMILIES = frozenset("BM")
+_PG_SERIES_KEEP_MEMORY_FAMILIES = frozenset("F")
 _PG_DATABASE_NAME_RE = recompile(
     r"(?i)^(?:Standard_|Basic_)?"
     r"(?P<family>DC|EC|[A-Z])"
@@ -2412,7 +2435,8 @@ def _parse_database_name(name: str) -> tuple[str, str, int, str | None]:
     """Parse a Flexible Server SKU into (series, family, vcpus, version).
 
     Series matches Retail product names: ``Standard_D16ds_v6`` → ``Ddsv6``,
-    ``Standard_B1ms`` → ``Bs``, ``Standard_E192ids_v6`` → ``Edsv6``.
+    ``Standard_B1ms`` → ``Bs``, ``Standard_E192ids_v6`` → ``Edsv6``, the low memory
+    ``Standard_D16lds_v5`` → ``Dldsv5`` (not ``Ddsv5``).
     https://learn.microsoft.com/en-us/azure/virtual-machines/vm-naming-conventions
     """
     match = _PG_DATABASE_NAME_RE.match(name)
@@ -2420,9 +2444,12 @@ def _parse_database_name(name: str) -> tuple[str, str, int, str | None]:
         raise ValueError(f"Database name '{name}' does not match the expected format.")
     family = match.group("family").upper()
     features = (match.group("features") or "").lower()
-    series_features = "".join(
-        char for char in features if char not in _PG_SERIES_SKIP_FEATURES
-    )
+    skipped = _PG_SERIES_SKIP_FEATURES
+    if family in _PG_SERIES_SKIP_LOW_MEMORY_FAMILIES:
+        skipped = skipped | {"l"}
+    if family in _PG_SERIES_KEEP_MEMORY_FAMILIES:
+        skipped = skipped - {"m"}
+    series_features = "".join(char for char in features if char not in skipped)
     version = match.group("version")
     series = f"{family}{series_features}"
     if version:
