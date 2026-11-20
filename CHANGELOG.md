@@ -11,8 +11,23 @@ New vendor(s):
   multi-zone readable cluster prices, and the performance tiers of the database
   optimized storage as database storages.
 
+New feature(s):
+
+- Implement database inventories for `AliCloud`: ApsaraDB RDS for PostgreSQL
+  instance types of the Basic, High-availability and Cluster Editions with
+  their pay-as-you-go prices, and the ESSD storage options priced per edition
+  (e.g. `cloud_essd-ha`). Cluster Edition prices are stored for 2 nodes.
+
 Fix(es):
 
+- Add the new `AliCloud` region in Amsterdam (`eu-west-3`) to the known
+  locations, as the region inventory failed on it.
+- Retry the transient network errors (connection resets and timeouts) of the
+  `AliCloud` availability zone lookups, instead of marking the region inactive.
+- Keep the previous `AliCloud` spot prices not sampled in a run for up to 30
+  days since their last observation: they were marked inactive after being
+  reactivated, and the reactivation by `observed_at` also matched the ones
+  just marked inactive.
 - `aws`: Pricing API clients use adaptive retry mode with up to 10 attempts.
   botocore 1.44.0 made the standard retry mode (3 attempts) the default, so
   throttled `GetProducts` calls failed and the vendor was skipped.

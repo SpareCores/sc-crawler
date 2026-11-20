@@ -416,8 +416,9 @@ class Vendor(VendorBase, table=True):
     @log_start_end
     def inventory_databases(self):
         """Get the vendor's all managed database types."""
-        self.set_table_rows_inactive(Database)
+        # the vendor methods might rely on the previous records with their status
         databases = self._get_methods().inventory_databases(self)
+        self.set_table_rows_inactive(Database)
         # show progress bar while downloading
         self.progress_tracker.start_task(
             name="Downloading sc-inspector-data", total=None
