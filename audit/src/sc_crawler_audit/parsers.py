@@ -465,6 +465,81 @@ def oci_cost_estimator(body: bytes, page: SourcePage, vendor: str) -> Extraction
     )
 
 
+_AZURE_SIZE_ROW_RE = re.compile(r"^\|\s*(Standard_[A-Za-z0-9_\-]+)[\s\d]*\|")
+_AZURE_HEADING_RE = re.compile(r"^(#{1,4}) (.+)$")
+
+
+def _azure_size_name(name: str) -> str:
+    """Drop footnote markers glued to a size name (Standard_E2_v3<sup>1</sup>)."""
+    name = re.sub(r"(_v\d)\d+$", r"\1", name)
+    return re.sub(r"^(Standard_[A-Za-z]+\d+[a-z]+)\d$", r"\1", name)
+
+
+def _azure_series_name(heading: str) -> str:
+    """Series name from a page heading, e.g. 'Dldsv5 sizes series' -> 'Dldsv5'."""
+    name = re.sub(r"\((Preview|NVMe|SCSI)\)", "", heading.replace("\\", ""))
+    name = re.sub(r"(?i)^sizes in the\s+", "", name)
+    name = re.sub(
+        r"(?i)\s*(sizes? series|series sizes|series products|series)\s*$", "", name
+    )
+    return name.strip(" -")
+
+
+def azure_size_series(markdown: str, page: SourcePage, vendor: str) -> Extraction:
+    """Sizes and their series from an Azure per-series docs page.
+
+    The first table with size names after a series heading (the "Basics" tab)
+    lists every size of that series. Pages covering more series (e.g. Ev3 and
+    Esv3) have one heading per series. Size names that appear only in later
+    tables are typos in the docs (e.g. Standard_M48bds_v3 on the Mbdsv4 page),
+    so they are only reported in the notes.
+    """
+    if not page.url.endswith("-series"):
+        return _extraction(page, vendor, "azure_size_series")  # family overviews
+    servers, stray, seen = [], [], set()
+    series, tables, in_table = None, 0, False
+    for line in markdown.splitlines():
+        line = line.replace("\\_", "_")
+        heading = _AZURE_HEADING_RE.match(line)
+        if heading:
+            level, text = len(heading.group(1)), heading.group(2).strip()
+            if level == 1 or (
+                re.search(r"(?i)series", text)
+                and not re.search(r"(?i)sizes in series|definition", text)
+            ):
+                series, tables = _azure_series_name(text), 0
+            elif level == 2 and re.search(r"(?i)size(?!.*definition)", text):
+                # e.g. "General Purpose Sizes", then "Compute Optimized Sizes"
+                tables = 0
+            elif level == 2:
+                tables = 2  # e.g. "Size table definitions": no sizes of the series
+            continue
+        row = _AZURE_SIZE_ROW_RE.match(line)
+        if row and not in_table:
+            tables += 1
+        in_table = bool(row) or (in_table and line.startswith("|"))
+        if not row or not series:
+            continue
+        sku = _azure_size_name(row.group(1))
+        if tables == 1 and sku not in seen:
+            seen.add(sku)
+            servers.append(
+                ServerSpec(sku=sku, series=series, evidence_quote=line.strip()[:300])
+            )
+        elif tables > 1 and sku not in seen:
+            stray.append(sku)
+    notes = None
+    if stray:
+        notes = "Only in later tables (docs typos?): " + ", ".join(sorted(set(stray)))
+    return _extraction(page, vendor, "azure_size_series", servers=servers, notes=notes)
+
+
+# parsers of the SKU and series listing of a page, taking its Markdown
+LISTING_PARSERS: Dict[str, Callable[[str, SourcePage, str], Extraction]] = {
+    "azure_size_series": azure_size_series,
+}
+
+
 PARSERS: Dict[str, Callable[[bytes, SourcePage, str], Extraction]] = {
     "aws_ec2_ondemand": aws_ec2_ondemand,
     "aws_ec2_spot": aws_ec2_spot,
