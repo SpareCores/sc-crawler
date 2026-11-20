@@ -55,6 +55,11 @@ def extracted_dir(out_dir: Path, vendor_id: str) -> Path:
     return Path(out_dir) / "extracted" / vendor_id
 
 
+def listing_path(out_dir: Path, vendor_id: str, page_id: str) -> Path:
+    """Extraction file of the deterministic SKU/series listing of a page."""
+    return extracted_dir(out_dir, vendor_id) / f"{page_slug(page_id)}.listing.json"
+
+
 def discovered_path(out_dir: Path, vendor_id: str) -> Path:
     return pages_dir(out_dir, vendor_id) / "_discovered.json"
 
@@ -71,6 +76,7 @@ def child_page(parent: SourcePage, url: str) -> SourcePage:
         kinds=parent.follow.kinds,
         covers=parent.follow.covers,
         complete=parent.follow.complete,
+        listing_parser=parent.follow.listing_parser,
         region=parent.region,
         currency=parent.currency,
         independent=parent.independent,

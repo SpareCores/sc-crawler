@@ -28,6 +28,20 @@ Fix(es):
   days since their last observation: they were marked inactive after being
   reactivated, and the reactivation by `observed_at` also matched the ones
   just marked inactive.
+- `aws`: Pricing API clients use adaptive retry mode with up to 10 attempts.
+  botocore 1.44.0 made the standard retry mode (3 attempts) the default, so
+  throttled `GetProducts` calls failed and the vendor was skipped.
+- Progress bars of a failed vendor are cleaned up: the progress bars of its
+  interrupted steps are removed from the display and its elapsed timer is
+  stopped, instead of counting up while later vendors are being processed. No
+  work was left running, only the display was stale. Task ids are no longer
+  shared between vendors.
+- `Azure`: the low memory `l` sizes of the D and F families and the memory
+  intensive `m` sizes of the F family are their own series, e.g. `Dldsv5`
+  instead of `Ddsv5` and `Famsv6` instead of `Fasv6`, as in the Microsoft docs.
+  The M sizes with an extra number before the version (`M48ds_1_v3`) are in
+  `Mdsv3` and not in the SKU family of the API, the original `M` series has no
+  letters (`M` instead of `Ms`), and `Standard_DC8_v2` is in `DCsv2`.
 
 ## v0.11.0 (November 16, 2026)
 

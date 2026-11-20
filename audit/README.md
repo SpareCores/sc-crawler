@@ -35,6 +35,7 @@ Run `sc-audit` from the repo root: run outputs go to `audit-out/` (git-ignored) 
 sc-data download ──────────────────────► sc-data-all.db (read-only)
 sources.yaml ──► audit fetch ──► <out>/pages/<vendor>/<page>.{html|json, md, meta.json}
                  audit parse ──► <out>/extracted/<vendor>/<page>.json   (machine-readable feeds)
+                             └─► <out>/extracted/<vendor>/<page>.listing.json   (exact SKU/series lists)
      Claude Code subagents ────► <out>/extracted/<vendor>/<page>.json   (all other pages)
                  audit validate
      triage.yaml ─► audit compare ─► <out>/findings.{jsonl,csv}, <out>/report.md
@@ -46,6 +47,9 @@ sources.yaml ──► audit fetch ──► <out>/pages/<vendor>/<page>.{html|j
 2. **Extract**: deterministic parsers (`parsers.py`) for JSON feeds; for everything else,
    Claude Code subagents read the cached Markdown and write JSON matching `schema.Extraction`
    (see the skill at `.claude/skills/vendor-audit/SKILL.md`, which holds the extraction brief).
+   Pages with a `listing_parser` also get an exact, deterministic list of their SKUs and series
+   (`<page>.listing.json`), compared like any other extraction; when the LLM and the parser
+   disagree on a series, the parser wins.
 3. **Compare** (`compare.py`, `export.py`): all matching, unit conversions and tolerances are
    deterministic Python. Our data is read directly from the SQLite dump.
 4. **Report and triage** (`report.py`, `triage.py`): Markdown summary plus every finding in
@@ -122,7 +126,8 @@ Per page:
 | `prices_include_ipv4` | listed prices include a public IPv4 (our IPv4 price is added before comparing) |
 | `implies_availability` | `false` for generic price lists that cover SKU/region pairs which may not be sold |
 | `parser` | name of a deterministic parser in `parsers.PARSERS` |
-| `follow` | discover child pages: `pattern` (regex on absolute URLs), `kinds`, `covers`, `complete`, `max_pages`, `recursive` |
+| `listing_parser` | name of a deterministic parser in `parsers.LISTING_PARSERS` for the exact SKU and series list of the page, run on its Markdown in addition to the LLM extraction |
+| `follow` | discover child pages: `pattern` (regex on absolute URLs), `kinds`, `covers`, `complete`, `listing_parser`, `max_pages`, `recursive` |
 
 Child pages get ids like `<parent id>/<url slug>`. Pages are visited breadth-first, in the same
 order in `fetch` and `iter_pages`, so a page linked from several parents always gets the same id.
@@ -160,7 +165,10 @@ in our data are skipped.
 | `VALUE_MISSING_IN_DB` | the vendor states a value we don't have (info) |
 | `MISSING_IN_DB` | the vendor lists a SKU we don't have |
 | `NOT_AT_VENDOR` | an active SKU, price (per region) or region of ours that is absent from pages marked `complete`; possibly made up or retired. Constrained vCPU variants of listed sizes (Azure `E16-4ads_v5`) and previous-generation types on price pages are excluded. For databases, only pages marked `complete` count as evidence (e.g. AWS documents instance classes of all engines on one page, and PostgreSQL support on another); a series row with a range (Azure "Dcadsv5", 2-96 vCores) covers all our sizes of that family, and a price row on a complete page counts as a listing |
-| `STATUS_MISMATCH` | e.g. active in our data but retiring/retired at the vendor; retired expects `RETIRED`, retiring expects `PLANNED_FOR_RETIREMENT` or `RETIRED`. A retired series is mapped to our servers of that family |
+| `STATUS_MISMATCH` | e.g. active in our data but retiring/retired at the vendor; retired expects `RETIRED`, retiring expects `PLANNED_FOR_RETIREMENT` or `RETIRED`. A retired series is mapped to our servers of that series or family |
+| `SERIES_SPLIT` | one vendor series (the `series` of extracted rows) is split into several of our series, e.g. Azure M sizes in both `M` and `Ms` |
+| `SERIES_MERGED` | one of our series covers several vendor series, e.g. Azure `Ddsv5` holding the `Dldsv5` low-memory sizes |
+| `SERIES_NAME` | our series and the vendor series hold the same SKUs, but are spelled differently (low); only the grouping is compared with high/medium severity |
 | `PRICE_MISMATCH` | outside `--price-tolerance` (default 1%; 25% for spot); monthly prices compared via our monthly cap or `hours_per_month` |
 | `PRICE_MISSING_IN_DB` | the vendor prices a SKU in a region where we have no price |
 | `COMPONENT_PRICE_MISMATCH` | our price vs the vendor's per-vCPU/GiB/GPU/SSD rates × our specs (servers, or databases with `target: database`) |
@@ -238,7 +246,9 @@ entries:
   rates for predefined types (only custom types, which have a premium). Cloud SQL pricing has
   per-vCPU/GiB rates per edition/series, used for component checks.
 - **Azure**: per-series pages are discovered from the docs `toc.json`, as many (e.g. the "d"
-  variants) are not linked from overview pages. VM and PostgreSQL pricing pages are JS-only, so
+  variants) are not linked from overview pages. Their sizes and series are also parsed exactly
+  (`azure_size_series`): the first sizes table after each series heading (the "Basics" tab)
+  lists every size of the series; names only in later tables are docs typos and go to the notes. VM and PostgreSQL pricing pages are JS-only, so
   Azure prices are not checked.
 - **Alibaba**: the price list (`g.alicdn.com/.../instancePrice.json`) is republished about weekly
   under an increasing version; the latest version is found by probing. `originalPrice` is the

@@ -344,7 +344,7 @@ The Crawler uses [SQLModel](https://sqlmodel.tiangolo.com/) /
 database, and you can also use the defined schemas and models to actually read/filter
 a previously pulled DB. Quick examples:
 <!-- fmt:off -->
-```py hl_lines="6"
+```{ .py .repl hl_lines="6" }
 from sc_crawler.tables import Server
 from sqlmodel import create_engine, Session, select
 
