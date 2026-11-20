@@ -44,6 +44,7 @@ class FollowLinks(BaseModel):
     kinds: List[PageKind]
     covers: Optional[str] = None
     complete: bool = False
+    listing_parser: Optional[str] = None
     max_pages: int = 300
     recursive: bool = Field(
         default=False,
@@ -106,6 +107,13 @@ class SourcePage(BaseModel):
         default=None,
         description="Name of a deterministic parser to use instead of LLM extraction.",
     )
+    listing_parser: Optional[str] = Field(
+        default=None,
+        description=(
+            "Name of a deterministic parser for the exact SKU and series listing of "
+            "the page, run in addition to the LLM extraction of the other values."
+        ),
+    )
     follow: Optional[FollowLinks] = None
     notes: Optional[str] = None
 
@@ -145,6 +153,13 @@ class Evidence(BaseModel):
 
 class ServerSpec(Evidence):
     sku: str = Field(description="SKU / instance type / plan name as on the page.")
+    series: Optional[str] = Field(
+        default=None,
+        description=(
+            "Series or family the page lists the SKU under, as written on the page "
+            "(e.g. 'Dldsv5', 'M5', 'N2', 'Msv2 Medium Memory')."
+        ),
+    )
     vcpus: Optional[int] = None
     memory_gib: Optional[float] = None
     cpu_manufacturer: Optional[str] = None

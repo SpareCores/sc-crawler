@@ -31,9 +31,15 @@ pip install -q -e "audit[testing]"   # once: installs the sc-audit command
 
 OUT=audit-out/$(date +%F)
 sc-audit fetch --out $OUT [--vendor X ...]   # official pages -> $OUT/pages/
-sc-audit parse --out $OUT [--vendor X ...]   # JSON feeds, no LLM needed
+sc-audit parse --out $OUT [--vendor X ...]   # JSON feeds and SKU/series lists, no LLM
 sc-audit pending --out $OUT --json [--vendor X ...]  # pages left for you
 ```
+
+When reusing an `$OUT` with extractions written before the `series` field
+existed (no `series` on any of their `servers` rows), delete those pages'
+`$OUT/extracted/<vendor>/<page>.json` files (not the `.listing.json` files of
+the parsers) so `pending` lists them again for extraction. Leave all other
+extractions alone.
 
 Check the `fetch` summary table: report pages with HTTP errors or flagged as
 likely JS-rendered to the user. Some vendors (UpCloud, Vultr marketing pages)
@@ -49,6 +55,13 @@ batches (one vendor per batch; at most ~10 pages or ~400k characters per batch,
 e.g. split Azure's per-series pages), and start one `general-purpose` subagent
 per batch in parallel, with the extraction brief below plus its list of pages
 (each with `markdown`, `output`, `kinds`, `region`, `currency`, `notes`).
+
+Run the subagents on a cheaper model: always pass `model: "sonnet"`. Extraction
+needs no reasoning about our data, but it does need accurate transcription of long,
+dense tables (hundreds of rows, footnotes, merged headers, unit conversions) and
+strict schema compliance, where Haiku drops or misreads rows more often. A wrong
+extraction costs a triage round, which is more than the model price saved. Do not
+use the parent model (e.g. Opus) for extraction.
 
 Do not give subagents any of our own data or findings: they must extract what
 the page says, without being anchored on our values.
@@ -74,6 +87,9 @@ the page says, without being anchored on our values.
 > - `sku`: the exact API/instance type name if shown (e.g. `cx23`,
 >   `Standard_D4s_v5`, `n2-standard-4`, `ecs.g7.xlarge`, `db.m6i.large`, `b3-8`),
 >   otherwise the name as displayed.
+> - `series` (servers only): the series or family the page lists the SKU under,
+>   exactly as written in the page or section heading (e.g. `Dldsv5`, `M5`, `N2`,
+>   `Msv2 Medium Memory`, `CX`); null if the page does not group SKUs by series.
 > - `evidence_quote`: a short verbatim snippet (the table row or sentence, at most
 >   300 characters) that supports the row.
 > - Units: memory in GiB (treat RAM "GB" as GiB unless the page explicitly says
@@ -178,6 +194,12 @@ sample of `medium` ones), open the cached Markdown page
 - `expected`: a known, accepted difference (by design or a modelling choice);
 - `to_verify`: needs a check against the vendor API/console, e.g. two official
   sources disagree; say which.
+
+Series findings compare how SKUs are grouped: `SERIES_SPLIT` (one vendor series
+in several of ours) and `SERIES_MERGED` (several vendor series in one of ours) are
+usually real bugs in the series rules of the vendor module; `SERIES_NAME` is a
+spelling difference only, triaged as `expected` (one entry per pattern) once the
+naming is accepted.
 
 For confirmed findings, look at the `code_hint` function in
 `src/sc_crawler/vendors/_<vendor>.py` and name the likely cause (hardcoded table,
