@@ -21,6 +21,9 @@ Fix(es):
   stopped, instead of counting up while later vendors are being processed. No
   work was left running, only the display was stale. Task ids are no longer
   shared between vendors.
+- `Azure`: the low memory `l` sizes of the D and F families and the memory
+  intensive `m` sizes of the F family are their own series, e.g. `Dldsv5`
+  instead of `Ddsv5` and `Famsv6` instead of `Fasv6`, as in the Microsoft docs.
 
 ## v0.11.0 (November 16, 2026)
 
