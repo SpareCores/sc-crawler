@@ -901,8 +901,23 @@ _TRANSIENT_ERRORS = (
 )
 
 
+def _is_transient_error(error: Exception) -> bool:
+    """Whether an API error is worth retrying.
+
+    Throttling and network errors (see `_TRANSIENT_ERRORS`), and the failures of
+    the service (HTTP 5xx), e.g. the `RequestMetaDataFailed` ("The service
+    request failed. Please try again later") or `ExternalFailure` errors
+    documented for the RDS `DescribePrice` endpoint:
+    https://www.alibabacloud.com/help/en/rds/apsaradb-rds-for-postgresql/api-rds-2014-08-15-describeprice-postgresql
+    """
+    status_code = getattr(error, "statusCode", None)
+    if isinstance(status_code, int) and status_code >= 500:
+        return True
+    return any(transient in str(error) for transient in _TRANSIENT_ERRORS)
+
+
 def _call_with_retries(call, attempts: int = 5, max_wait: int = 5):
-    """Run `call()`, retrying on transient errors (see `_TRANSIENT_ERRORS`).
+    """Run `call()`, retrying on transient errors (see `_is_transient_error`).
 
     Waits 2, 3, ... seconds (up to `max_wait`) between the attempts, and raises
     the last error when all attempts failed or the error is not transient.
@@ -911,8 +926,7 @@ def _call_with_retries(call, attempts: int = 5, max_wait: int = 5):
         try:
             return call()
         except Exception as e:
-            transient = any(error in str(e) for error in _TRANSIENT_ERRORS)
-            if not transient or attempt == attempts - 1:
+            if not _is_transient_error(e) or attempt == attempts - 1:
                 raise
             sleep(min(2 + attempt, max_wait))
 
@@ -1994,6 +2008,10 @@ def inventory_server_prices_spot(vendor):
 
     if not ondemand_instances:
         logger.error("No active ondemand instances found")
+        # not known which servers are still sold: only the old ones expire
+        _expire_previous_rows(
+            vendor, ServerPrice, ServerPrice.allocation == Allocation.SPOT
+        )
         return []
 
     for region_id in ondemand_instances:
@@ -2109,8 +2127,13 @@ def inventory_server_prices_spot(vendor):
     if kept:
         vendor.log(f"Keeping {len(kept)} previous spot prices not sampled now.")
     if not items and not kept:
-        _expire_previous_rows(
-            vendor, ServerPrice, ServerPrice.allocation == Allocation.SPOT
+        # no new records, so the previous ones are not marked inactive by the
+        # caller: none of the recent ones are of servers still sold on-demand,
+        # and the rest are not observed for long
+        vendor.set_table_rows_inactive(
+            ServerPrice,
+            ServerPrice.allocation == Allocation.SPOT,
+            ServerPrice.status == Status.ACTIVE,
         )
     return items + kept
 
@@ -2666,9 +2689,17 @@ def _fetch_rds_offers(client: RdsClient, region_id: str) -> dict:
             zone_versions = available_class["zone_versions"].setdefault(
                 params["zone_id"], []
             )
-            # the newest engine version found in each zone (probed first)
+            # the newest engine version found in each zone (mostly probed
+            # first, but e.g. the oldest is probed before the middle ones)
             if not zone_versions:
                 available_class["zones"].append(params)
+            elif float(params["engine_version"]) > max(map(float, zone_versions)):
+                available_class["zones"] = [
+                    params
+                    if zone_params["zone_id"] == params["zone_id"]
+                    else zone_params
+                    for zone_params in available_class["zones"]
+                ]
             zone_versions.append(params["engine_version"])
         return found
 
@@ -2882,9 +2913,9 @@ def _fetch_rds_price(
     try:
         return _parse_rds_price(_rds_call(client.describe_price_with_options, request))
     except Exception as e:
-        if any(x in str(e) for x in _TRANSIENT_ERRORS):
-            # throttled or unreachable even after the retries: a missing price,
-            # not a missing pricing plan
+        if _is_transient_error(e):
+            # throttled, unreachable or failing even after the retries: a
+            # missing price, not a missing pricing plan
             logger.warning(
                 f"No RDS price for {class_code} in {region_id}/{zone_id}: {e}"
             )
@@ -2894,7 +2925,7 @@ def _fetch_rds_price(
 
 
 class _RdsPriceUnavailable(Exception):
-    """A price that could not be looked up due to transient errors (see `_TRANSIENT_ERRORS`)."""
+    """A price that could not be looked up due to transient errors (see `_is_transient_error`)."""
 
 
 # results of the slow, throttled RDS lookups shared by the database inventories
@@ -3156,6 +3187,17 @@ def inventory_databases(vendor):
     specs = _get_rds_class_specs(vendor)
     offers_complete = all(offer.get("complete", True) for offer in offers.values())
     specs_complete = all(region_specs is not None for region_specs in specs.values())
+    # the price inventories retry the failed regions as well, so retry them
+    # before writing the catalog, not to find instance types only orderable
+    # there just at pricing (to be listed only in the next run)
+    if not offers_complete:
+        offers = _get_rds_offers(vendor)
+        offers_complete = all(offer.get("complete", True) for offer in offers.values())
+    if not specs_complete:
+        specs = _get_rds_class_specs(vendor)
+        specs_complete = all(
+            region_specs is not None for region_specs in specs.values()
+        )
     # previous records to keep when not known to be gone
     previous = {}
     if not (offers_complete and specs_complete):
@@ -3167,17 +3209,22 @@ def inventory_databases(vendor):
             level=WARN,
         )
 
-    # engine versions of the instance types orderable in any region
+    # engine versions of the instance types orderable in any region, and the
+    # disk types offered with those in the zones the instance type is found in
     versions: dict[tuple[str, str], set] = defaultdict(set)
-    # disk types offered for an edition in any zone
-    storage_types: dict[str, set] = defaultdict(set)
+    storage_types: dict[tuple[str, str], set] = defaultdict(set)
     for offer in offers.values():
         for edition_id, edition_classes in offer["classes"].items():
+            zones = offer["zones"].get(edition_id, {})
             for class_code, available in edition_classes.items():
                 versions[(edition_id, class_code)].update(available["versions"])
-        for edition_id, zones in offer["zones"].items():
-            for zone_offer in zones.values():
-                storage_types[edition_id].update(zone_offer["storage_types"])
+                for zone_id, zone_versions in available["zone_versions"].items():
+                    for version in zone_versions:
+                        storage_types[(edition_id, class_code)].update(
+                            zones.get(zone_id, {})
+                            .get("version_storage_types", {})
+                            .get(version, [])
+                        )
 
     classes = _rds_class_editions(specs)
     kept = []
@@ -3242,17 +3289,22 @@ def inventory_databases(vendor):
                 f"{memory_amount / 1024:g} GiB RAM" if memory_amount else None,
                 "ARM" if arm else None,
             ]
-            compatible_storage_types = [
-                storage_type
-                for storage_type in _RDS_STORAGE_TYPES
-                if storage_type in storage_types[edition_id]
-            ]
+            # unknown when not orderable (e.g. retired)
+            compatible_storage_types = (
+                [
+                    storage_type
+                    for storage_type in _RDS_STORAGE_TYPES
+                    if storage_type in storage_types[(edition_id, class_code)]
+                ]
+                if orderable
+                else None
+            )
             sizes = [
                 (
                     _RDS_STORAGE_TYPES[storage_type]["min_size"],
                     _RDS_STORAGE_TYPES[storage_type]["max_size"],
                 )
-                for storage_type in compatible_storage_types
+                for storage_type in compatible_storage_types or []
             ]
             ha_strategy = [edition["ha_strategy"]]
             # https://www.alibabacloud.com/help/doc-detail/42437.htm
@@ -3320,10 +3372,14 @@ def inventory_databases(vendor):
                     ),
                     # Automatic storage expansion of cloud disks in all editions.
                     "storage_extra_autosize": True,
-                    "compatible_storage_ids": [
-                        _rds_storage_id(storage_type, edition_id)
-                        for storage_type in compatible_storage_types
-                    ],
+                    "compatible_storage_ids": (
+                        [
+                            _rds_storage_id(storage_type, edition_id)
+                            for storage_type in compatible_storage_types
+                        ]
+                        if compatible_storage_types is not None
+                        else None
+                    ),
                     # Cloud disk encryption in all editions with ESSDs.
                     "disk_encryption": True,
                     # https://www.alibabacloud.com/help/en/rds/apsaradb-rds-for-postgresql/back-up-an-apsaradb-rds-for-postgresql-instance
@@ -3543,13 +3599,27 @@ def inventory_database_prices(vendor):
                     )
             vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
-    kept = _previous_active_prices(
-        vendor,
-        DatabasePrice,
-        failed,
-        DatabasePrice.allocation == Allocation.ONDEMAND,
-        ids=failed_classes,
-    )
+    kept = [
+        row
+        for row in _previous_active_prices(
+            vendor,
+            DatabasePrice,
+            failed,
+            DatabasePrice.allocation == Allocation.ONDEMAND,
+            ids=failed_classes,
+        )
+        # the instance types not priced in a region with known availability:
+        # only the HA levels still offered (multi-zone only in multiple zones)
+        if row["region_id"] in failed
+        or not (
+            DatabaseHaLevel(row["ha"]) == DatabaseHaLevel.MULTI_ZONE
+            and not _rds_multi_zone(
+                offers[row["region_id"]]["classes"]
+                .get(editions.get(row["database_id"]), {})
+                .get(row["database_id"], {})
+            )
+        )
+    ]
     if failed or failed_classes:
         vendor.log(
             f"Keeping {len(kept)} previous database prices of the regions failing "
@@ -3637,23 +3707,25 @@ def _rds_region_storage_prices(
         )
         for storage_type in sorted(storage_types):
             size = _RDS_STORAGE_TYPES[storage_type]["min_size"]
-            # any zone and engine version of an instance type offering the
-            # disk type
+            # the zones and engine versions of the instance types offering the
+            # disk type: the first one of each instance type first, then the
+            # second ones etc. (trying another instance type first, as a
+            # missing pricing plan is more likely than a failing zone)
+            configs = [
+                [
+                    (zone_id, version)
+                    for zone_id, versions in available["zone_versions"].items()
+                    for version in versions
+                    if storage_type
+                    in zones[zone_id]["version_storage_types"].get(version, [])
+                ]
+                for _, available in classes
+            ]
             candidates = [
-                (class_code, params)
-                for class_code, available in classes
-                if (
-                    params := next(
-                        (
-                            (zone_id, version)
-                            for zone_id, versions in available["zone_versions"].items()
-                            for version in versions
-                            if storage_type
-                            in zones[zone_id]["version_storage_types"].get(version, [])
-                        ),
-                        None,
-                    )
-                )
+                (class_code, class_configs[index])
+                for index in range(max(map(len, configs), default=0))
+                for (class_code, _), class_configs in zip(classes, configs)
+                if index < len(class_configs)
             ]
             storage_id = _rds_storage_id(storage_type, edition_id)
             unavailable = False
