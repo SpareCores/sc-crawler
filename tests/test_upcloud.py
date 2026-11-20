@@ -10,6 +10,7 @@ from sc_crawler.table_fields import (
     DatabaseStorageScope,
     PriceUnit,
     Status,
+    StorageType,
 )
 from sc_crawler.utils import _GIB_TO_GB
 from sc_crawler.vendors._upcloud import (
@@ -826,6 +827,8 @@ def test_upcloud_inventory_databases_unknown_flexible_family_is_unknown_and_warn
     [
         ("maxiops", (100_000, 30_000, 400, None)),
         ("standard", (10_000, 10_000, None, None)),
+        # Archive tier
+        ("hdd", (600, 600, None, None)),
         # plans without bundled storage
         (None, (None, None, None, None)),
     ],
@@ -849,6 +852,13 @@ def test_upcloud_inventory_servers_bundled_storage_speed(storage_tier, expected)
         row["storage_read_throughput_max"],
         row["storage_write_throughput_max"],
     ) == expected
+    expected_type = {"hdd": StorageType.HDD, None: None}.get(
+        storage_tier, StorageType.SSD
+    )
+    assert row["storage_type"] == expected_type
+    assert [d.storage_type for d in row["storages"]] == (
+        [expected_type] if storage_tier else []
+    )
     # the single plan disk carries the same speed
     assert [
         (
@@ -859,6 +869,29 @@ def test_upcloud_inventory_servers_bundled_storage_speed(storage_tier, expected)
         )
         for d in row["storages"]
     ] == ([expected] if storage_tier else [])
+
+
+def test_upcloud_storage_tier_without_disk_has_no_speed():
+    plan = _plan("2xCPU-4GB", "general_purpose", storage_tier="maxiops")
+    plan["storage_size"] = 0
+    with (
+        patch(
+            "sc_crawler.vendors._upcloud._get_server_plans",
+            return_value={"plans": {"plan": [plan]}},
+        ),
+        patch(
+            "sc_crawler.vendors._upcloud._upcloud_server_status",
+            return_value=Status.ACTIVE,
+        ),
+    ):
+        (row,) = inventory_servers(Mock(vendor_id="upcloud"))
+    assert row["storages"] == []
+    assert (
+        row["storage_read_iops_max"],
+        row["storage_write_iops_max"],
+        row["storage_read_throughput_max"],
+        row["storage_write_throughput_max"],
+    ) == (None, None, None, None)
 
 
 def test_upcloud_unknown_storage_tier_is_empty_and_warned_once():

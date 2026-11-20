@@ -153,7 +153,8 @@ For each one, check the docs page cited next to the table in
 first check how the lookup matches: a missing family or disk count may cover
 several server types. If the page now has the figures, tell the user which
 entry to add. Expected gaps: types the docs leave blank (AWS
-`_INSTANCE_STORE_IOPS_NOT_PUBLISHED`, Azure HBv2), and GCP types below
+`_INSTANCE_STORE_IOPS_NOT_PUBLISHED`, Azure HBv2 and the ND/NV GPU sizes, e.g.
+`Standard_ND96isr_H100_v5`, whose pages list disk sizes only), and GCP types below
 `_LOCAL_SSD_MIN_VCPUS` (e.g. `a2-ultragpu-1g`). Put the result in `$OUT/notes.md`.
 
 ## 4. Triage

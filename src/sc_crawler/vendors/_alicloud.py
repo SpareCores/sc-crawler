@@ -1833,7 +1833,8 @@ def inventory_servers(vendor):
             / 1000**3
         )
         storage_type = STORAGE_CATEGORY_MAP[instance_type["LocalStorageCategory"]]
-        disk_speed = _local_disk_speed(instance_type)
+        # no speed without known local disks (the storages list stays empty)
+        disk_speed = _local_disk_speed(instance_type) if storage_type else (None,) * 4
         read_iops, write_iops, read_mbps, write_mbps = disk_speed
         gpu_count = _standardize_gpu_count(
             instance_type["GPUSpec"], instance_type.get("GPUAmount", 0)

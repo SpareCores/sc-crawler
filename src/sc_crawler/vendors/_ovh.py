@@ -33,7 +33,7 @@ from ..utils import (
     _MICROCENTS_PER_CURRENCY_UNIT,
     scmodels_to_dict,
 )
-from ..vendor_helpers import disk_speed_totals
+from ..vendor_helpers import disk_speed_totals, split_disk_speed
 
 
 @cache
@@ -1322,8 +1322,10 @@ def inventory_servers(vendor) -> list[dict]:
                         storage_type=storage_type,
                         # Single IOPS figure without read/write split, stored as read.
                         # Only listed for older families on single-disk entries,
-                        # e.g. 4000 on c2-15.
-                        read_iops_max=disk.get("iops"),
+                        # e.g. 4000 on c2-15; split if ever listed for several disks.
+                        read_iops_max=split_disk_speed(
+                            disk.get("iops"), disk.get("number", 1)
+                        ),
                     )
                 )
         storage_type = storages[0].storage_type if storages else None

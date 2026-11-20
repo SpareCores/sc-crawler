@@ -227,9 +227,16 @@ def test_alicloud_inventory_servers_bundled_storage_speed():
         "LocalStorageAmount": 1,
         "LocalStorageCapacity": 447,
     }
+    # disks with an unknown (empty) category: no disk entries, so no speed
+    unknown_category = {
+        **_instance_type("ecs.d1.2xlarge", "ecs.d1", "Big Data"),
+        "LocalStorageAmount": 4,
+        "LocalStorageCapacity": 5500,
+    }
     instance_types = [
         with_disk,
         _instance_type("ecs.g7.large", "ecs.g7", "General-purpose"),
+        unknown_category,
     ]
     with (
         patch(
@@ -258,9 +265,11 @@ def test_alicloud_inventory_servers_bundled_storage_speed():
     assert speeds == {
         "ecs.i4.large": (112_500, None, 750, 375),
         "ecs.g7.large": (None, None, None, None),
+        "ecs.d1.2xlarge": (None, None, None, None),
     }
     storages = {row["server_id"]: row["storages"] for row in rows}
     assert storages["ecs.g7.large"] == []
+    assert storages["ecs.d1.2xlarge"] == []
     assert storages["ecs.i4.large"] == [
         Disk(
             size=round(447 * 1024**3 / 1000**3),

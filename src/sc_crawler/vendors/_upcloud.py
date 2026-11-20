@@ -29,6 +29,7 @@ from ..table_fields import (
     TrafficDirection,
 )
 from ..utils import _GIB_TO_GB, _HOURS_PER_MONTH, _MIB_PER_GIB, jsoned_hash
+from ..vendor_helpers import disk_speed_totals
 
 # ##############################################################################
 # Cached client wrappers
@@ -910,6 +911,31 @@ def inventory_servers(vendor):
             gpu_count = server.get("gpu_amount", 0)
             gpu_fields = _parse_gpu_model(server.get("gpu_model"), gpu_count)
             storage_speeds = _storage_tier_speeds(server["storage_tier"])
+            # hdd is the API name of the Archive tier
+            storage_type = (
+                (
+                    StorageType.HDD
+                    if server["storage_tier"] == "hdd"
+                    else StorageType.SSD
+                )
+                if server["storage_tier"]
+                else None
+            )
+            # the single plan disk, on the Block Storage tier of the plan
+            storages = (
+                [
+                    Disk(
+                        size=server["storage_size"],
+                        storage_type=storage_type,
+                        read_iops_max=storage_speeds[0],
+                        write_iops_max=storage_speeds[1],
+                        read_throughput_max=storage_speeds[2],
+                        write_throughput_max=storage_speeds[3],
+                    )
+                ]
+                if storage_type and server["storage_size"]
+                else []
+            )
             items.append(
                 {
                     "vendor_id": vendor.vendor_id,
@@ -945,28 +971,9 @@ def inventory_servers(vendor):
                     **gpu_fields,
                     "accelerators": [],  # TODO fill this array
                     "storage_size": server["storage_size"],
-                    "storage_type": (
-                        StorageType.SSD if server["storage_tier"] else None
-                    ),
-                    # the single plan disk, on the Block Storage tier of the plan
-                    "storages": (
-                        [
-                            Disk(
-                                size=server["storage_size"],
-                                storage_type=StorageType.SSD,
-                                read_iops_max=storage_speeds[0],
-                                write_iops_max=storage_speeds[1],
-                                read_throughput_max=storage_speeds[2],
-                                write_throughput_max=storage_speeds[3],
-                            )
-                        ]
-                        if server["storage_tier"] and server["storage_size"]
-                        else []
-                    ),
-                    "storage_read_iops_max": storage_speeds[0],
-                    "storage_write_iops_max": storage_speeds[1],
-                    "storage_read_throughput_max": storage_speeds[2],
-                    "storage_write_throughput_max": storage_speeds[3],
+                    "storage_type": storage_type,
+                    "storages": storages,
+                    **disk_speed_totals(storages),
                     # extra storage devices can use any of the three Block Storage
                     # tiers (hdd is the API name of the Archive tier)
                     # https://upcloud.com/docs/products/cloud-servers/storage/

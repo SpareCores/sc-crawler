@@ -808,13 +808,16 @@ _AZURE_NVME_SPEED_SERIES = tuple(
 )
 
 
+_VCPUS_IN_SIZE = recompile(r"^[A-Z]+(\d+)")
+
+
 def _nvme_speed(name: str) -> tuple:
     """Documented NVMe (read IOPS, write IOPS, read MB/s, write MB/s) of a VM size."""
     size = name.removeprefix("Standard_")
     for pattern, speeds in _AZURE_NVME_SPEED_SERIES:
         if pattern.match(size):
             if isinstance(speeds, dict):
-                vcpus = int(recompile(r"^[A-Z]+(\d+)").match(size)[1])
+                vcpus = int(_VCPUS_IN_SIZE.match(size)[1])
                 return speeds.get(vcpus, (None, None, None, None))
             return speeds
     return (None, None, None, None)
@@ -1039,7 +1042,8 @@ def _standardize_server(server: dict, vendor) -> dict:
 
     def capability_int(name: str, divisor: int = 1) -> Optional[int]:
         value = capability(name)
-        return round(float(value) / divisor) if value else None
+        # "0" means not reported, same as a missing capability
+        return (round(float(value) / divisor) or None) if value else None
 
     architecture = ARCHITECTURE_MAPPING[capability("CpuArchitectureType")]
     gpus, gpu_model, gpu_memory = _gpu_spec(server["name"], capability("GPUs"))

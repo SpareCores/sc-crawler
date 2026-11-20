@@ -529,6 +529,8 @@ def _server_inventory_plan(
             [{"capacity": 1900, "number": 2}],
             2000,
         ),
+        # IOPS listed for several disks: split over them, not counted per disk
+        ([{"capacity": 400, "number": 2, "iops": 4000}], None, 4000),
         # no IOPS published (e.g. b3, c3, r3)
         ([{"capacity": 100, "technology": "NVMe"}], None, None),
         # no bundled disk
@@ -550,10 +552,8 @@ def test_ovh_inventory_servers_bundled_storage_speed(
     (row,) = inventory_servers(_ovh_vendor())
 
     assert row["storage_read_iops_max"] == read_iops
-    # the catalog IOPS stays on the disk it is listed for
-    assert [d.read_iops_max for d in row["storages"] if d.read_iops_max] == (
-        [read_iops] if read_iops else []
-    )
+    # the catalog IOPS stays on the disk(s) it is listed for
+    assert (sum(d.read_iops_max or 0 for d in row["storages"]) or None) == read_iops
     # OVH publishes neither write IOPS nor throughput
     assert row["storage_write_iops_max"] is None
     assert row["storage_read_throughput_max"] is None
