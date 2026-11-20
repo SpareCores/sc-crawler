@@ -34,6 +34,17 @@ Database migrations:
 
 - Add the above 4 columns to the `server` and `server_scd` tables.
 
+Fix(es):
+
+- `aws`: Pricing API clients use adaptive retry mode with up to 10 attempts.
+  botocore 1.44.0 made the standard retry mode (3 attempts) the default, so
+  throttled `GetProducts` calls failed and the vendor was skipped.
+- Progress bars of a failed vendor are cleaned up: the progress bars of its
+  interrupted steps are removed from the display and its elapsed timer is
+  stopped, instead of counting up while later vendors are being processed. No
+  work was left running, only the display was stale. Task ids are no longer
+  shared between vendors.
+
 ## v0.11.0 (November 16, 2026)
 
 ‼ Breaking changes:

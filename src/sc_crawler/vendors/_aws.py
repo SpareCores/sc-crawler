@@ -398,11 +398,27 @@ def _reconcile_server_status(
             server.accelerator_type = AcceleratorType.GPU
 
 
+# the Pricing API has a low request rate limit, and botocore 1.44.0 switched the
+# default retry mode from legacy (5 attempts with exponential backoff) to standard
+# (3 attempts), which is not enough to ride out throttling of the long paginated
+# GetProducts calls, so use adaptive client-side rate limiting with more attempts;
+# total_max_attempts includes the initial request, and unlike max_attempts, it is
+# not rewritten by botocore in this shared dict when creating a client
+_PRICING_CLIENT_CONFIG = Config(retries={"mode": "adaptive", "total_max_attempts": 10})
+
+
+def _pricing_client():
+    """Pricing API client with retries tuned for its low request rate limit."""
+    # pricing API is only available in a few regions
+    return boto3.client(
+        "pricing", region_name="us-east-1", config=_PRICING_CLIENT_CONFIG
+    )
+
+
 @cachier()
 def _boto_price_list(region):
     """Download published AWS price lists. Currently unused."""
-    # pricing API is only available in a few regions
-    client = boto3.client("pricing", region_name="us-east-1")
+    client = _pricing_client()
     # example ListPriceLists response:
     # {
     #     'PriceLists': [
@@ -441,8 +457,7 @@ def _boto_get_products(service_code: str, filters: dict):
         service_code: AWS ServiceCode, e.g. `AmazonEC2`
         filters: `dict` of key/value pairs for `TERM_MATCH` filters
     """
-    # pricing API is only available in a few regions
-    client = boto3.client("pricing", region_name="us-east-1")
+    client = _pricing_client()
 
     matched_filters = [
         {"Type": "TERM_MATCH", "Field": k, "Value": v} for k, v in filters.items()
