@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from .export import Ours, norm
+from .parsers import LISTING_PARSERS
 from .schema import Extraction, PageKind, SourcePage, VendorSources
 from .sources import extracted_dir, iter_pages, listing_path, page_slug
 
@@ -58,6 +59,8 @@ class Finding:
     def key(self) -> tuple:
         return (
             self.type,
+            # the resource kind, e.g. a missing server vs a missing database
+            self.code_hint,
             self.sku and norm(self.sku),
             self.our_id,
             self.region,
@@ -228,7 +231,8 @@ class Comparer:
     # ##########################################################################
     # servers
 
-    def compare_server_spec(self, page: SourcePage, spec):
+    def compare_server_spec(self, page: SourcePage, spec, listing: bool = False):
+        """Compare a server row; `listing` rows only name the SKU and series."""
         self.stats["server_specs"] += 1
         server, matched_by = self.resolve_server(spec.sku, spec, page)
         if server is None:
@@ -280,7 +284,11 @@ class Comparer:
             matched_by=matched_by,
         )
 
-        if server["status"] != "ACTIVE" and spec.status in (None, "active"):
+        # a SKU-only listing row says nothing about the status
+        implied_active = spec.status == "active" or (
+            spec.status is None and not listing
+        )
+        if server["status"] != "ACTIVE" and implied_active:
             # docs pages often stay up for a while after retirement
             retiring = server["status"] in ("RETIRED", "PLANNED_FOR_RETIREMENT")
             self.add(
@@ -1038,8 +1046,11 @@ def load_extractions(
 ) -> List[Tuple[SourcePage, Extraction]]:
     pages = []
     for page in iter_pages(vendor, vendor_id, out_dir):
-        path = extracted_dir(out_dir, vendor_id) / f"{page_slug(page.id)}.json"
-        for path in (path, listing_path(out_dir, vendor_id, page.id)):
+        paths = [extracted_dir(out_dir, vendor_id) / f"{page_slug(page.id)}.json"]
+        # only when enabled, so that a stale listing cannot override the LLM values
+        if page.listing_parser:
+            paths.append(listing_path(out_dir, vendor_id, page.id))
+        for path in paths:
             if path.exists():
                 extraction = Extraction.model_validate_json(
                     path.read_text(encoding="utf-8")
@@ -1060,9 +1071,11 @@ def compare_vendor(
     comparer.stats["pages_with_extractions"] = len({p.id for p, _ in pages})
     comparer.authoritative_pages = {p.id for p, _ in pages if p.spec_authority}
     # specs first so that SKU labels resolved by specs can be reused for prices
+    listing_parsers = {f"parser:{name}" for name in LISTING_PARSERS}
     for page, extraction in pages:
+        listing = extraction.extracted_by in listing_parsers
         for spec in extraction.servers:
-            comparer.compare_server_spec(page, spec)
+            comparer.compare_server_spec(page, spec, listing=listing)
     for page, extraction in pages:
         for price in extraction.server_prices:
             comparer.compare_server_price(page, price)

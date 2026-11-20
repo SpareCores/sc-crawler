@@ -1118,6 +1118,8 @@ def test_series_split_merged_and_name(tmp_path):
             _server("Standard_D2lds_v5", 2, 4096, series="Ddsv5"),  # merged
             _server("Standard_B1ms", 1, 2048, series="Bs"),  # name differs
             _server("Standard_E2s_v5", 2, 16384, series="Esv5"),  # matches
+            # retired, still listed: a SKU-only listing implies no status
+            _server("Standard_A1", 1, 1024, status="RETIRED", series="A"),
         ],
         server_prices=[],
         databases=[],
@@ -1126,8 +1128,9 @@ def test_series_split_merged_and_name(tmp_path):
         zones=[],
     )
     page = SourcePage(
-        id="sizes", url="https://learn.microsoft.com/sizes", kinds=["server_specs"]
-    )
+        id="sizes", url="https://learn.microsoft.com/sizes", kinds=["server_specs"],
+        listing_parser="azure_size_series",
+    )  # fmt: skip
     vendor = VendorSources(allowed_domains=["learn.microsoft.com"], pages=[page])
 
     def rows(*pairs):
@@ -1139,7 +1142,7 @@ def test_series_split_merged_and_name(tmp_path):
         servers=rows(("Standard_M64", "M"), ("Standard_M8ms", "M"),
                      ("Standard_D2ds_v5", "Ddsv5"), ("Standard_D2lds_v5", "Dldsv5"),
                      ("Standard_B1ms", "Bv1"), ("Standard_E2s_v5", "Esv5"),
-                     ("Standard_X2_v9", "Xv9")),
+                     ("Standard_X2_v9", "Xv9"), ("Standard_A1", "A")),
     )  # fmt: skip
     # the LLM extraction of the same page disagrees: the parser wins
     llm = Extraction(
@@ -1162,7 +1165,28 @@ def test_series_split_merged_and_name(tmp_path):
         ],
         key=str,
     )
-    assert stats["series_checked"] == 6
+    assert stats["series_checked"] == 7
     # a SKU we don't have is reported once, with the specs of the LLM extraction
     missing = _by(findings, "MISSING_IN_DB")
     assert [(f.sku, f.theirs["vcpus"]) for f in missing] == [("Standard_X2_v9", 2)]
+    assert not _by(findings, "STATUS_MISMATCH")
+
+    # a stale listing is ignored when the page has no listing parser
+    page.listing_parser = None
+    findings, stats = compare_vendor("azure", vendor, ours, tmp_path)
+    assert not [f for f in findings if f.field == "series"]
+    assert stats["series_checked"] == 1  # Standard_M8ms from the LLM only
+
+
+def test_missing_server_and_database_not_merged():
+    from sc_crawler_audit.compare import Finding
+
+    common = dict(vendor="x", type="MISSING_IN_DB", severity="medium", page_id="p",
+                  url="u", independent=True, sku="small")  # fmt: skip
+    server = Finding(code_hint="vendors/_x.py:inventory_servers", **common)
+    database = Finding(code_hint="vendors/_x.py:inventory_databases", **common)
+    assert server.key() != database.key()
+    # payloads still don't matter for the same resource
+    assert server.key() == Finding(
+        code_hint=server.code_hint, theirs={"vcpus": 2}, **common
+    ).key()

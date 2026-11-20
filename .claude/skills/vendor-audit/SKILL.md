@@ -35,6 +35,12 @@ sc-audit parse --out $OUT [--vendor X ...]   # JSON feeds and SKU/series lists, 
 sc-audit pending --out $OUT --json [--vendor X ...]  # pages left for you
 ```
 
+When reusing an `$OUT` with extractions written before the `series` field
+existed (no `series` on any of their `servers` rows), delete those pages'
+`$OUT/extracted/<vendor>/<page>.json` files (not the `.listing.json` files of
+the parsers) so `pending` lists them again for extraction. Leave all other
+extractions alone.
+
 Check the `fetch` summary table: report pages with HTTP errors or flagged as
 likely JS-rendered to the user. Some vendors (UpCloud, Vultr marketing pages)
 block automated clients: **do not try to work around bot protection** (no
@@ -49,6 +55,13 @@ batches (one vendor per batch; at most ~10 pages or ~400k characters per batch,
 e.g. split Azure's per-series pages), and start one `general-purpose` subagent
 per batch in parallel, with the extraction brief below plus its list of pages
 (each with `markdown`, `output`, `kinds`, `region`, `currency`, `notes`).
+
+Run the subagents on a cheaper model: always pass `model: "sonnet"`. Extraction
+needs no reasoning about our data, but it does need accurate transcription of long,
+dense tables (hundreds of rows, footnotes, merged headers, unit conversions) and
+strict schema compliance, where Haiku drops or misreads rows more often. A wrong
+extraction costs a triage round, which is more than the model price saved. Do not
+use the parent model (e.g. Opus) for extraction.
 
 Do not give subagents any of our own data or findings: they must extract what
 the page says, without being anchored on our values.
