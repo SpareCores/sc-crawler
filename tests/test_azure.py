@@ -1617,6 +1617,26 @@ def test_pg_storage_prices_skip_unsupported_retail_meters():
         ("Standard_B1ms", "BS", "Bs"),
         ("Standard_D4ads_v6", "Dadv6", "Dadsv6"),
         ("Standard_E4ads_v6", "Eadv6", "Eadsv6"),
+        # low memory and memory intensive sizes are separate series in D and F
+        ("Standard_D2lds_v5", "DLDSv5", "Dldsv5"),
+        ("Standard_F16ams_v6", "Famsv6", "Famsv6"),
+        # extra number before the version is not part of the series
+        ("Standard_M48ds_1_v3", "MDSMediumMemoryv3", "Mdsv3"),
+        ("Standard_M128-64bds_3_v3", "MBDSMediumMemoryv3", "Mbdsv3"),
+        ("Standard_M416s_8_v2", "MSv2", "Msv2"),
+        ("Standard_M832ids_16_v3", "MIDSHighMemoryv3", "Mdsv3"),
+        # the original M series has no letters
+        ("Standard_M32ls", "MS", "M"),
+        ("Standard_M8ms", "MS", "M"),
+        ("Standard_M64", "M", "M"),
+        ("Standard_M64-32ms", "MS", "M"),
+        # a number in the name that is not before the version is kept
+        ("Standard_ND96isr_H100_v5", "NDISRH200V5", "NDISRH200V5"),
+        # in the DCsv2 series of the docs, although the name has no s
+        ("Standard_DC8_v2", "DCv2", "DCsv2"),
+        ("Standard_DC4s_v2", "DCSv2", "DCsv2"),
+        # constrained vCPU sizes keep the series of the base size
+        ("Standard_E64-16ds_v5", "EDSv5", "Edsv5"),
         # sizes unknown to the database parser keep the SKU family
         ("Standard_NC24ads_A100_v4", "NCADSA100v4", "NCADSA100v4"),
     ],
@@ -1637,6 +1657,18 @@ def test_parse_database_name_series():
     assert _parse_database_name("Standard_E192ids_v6")[0] == "Edsv6"
     assert _parse_database_name("Standard_EC4as_v5")[0] == "ECasv5"
     assert _parse_database_name("Standard_D16ps_v") == ("Dps", "D", 16, "")
+    # low memory sizes are separate series in D and F, but not in B and M
+    assert _parse_database_name("Standard_D2lds_v5")[0] == "Dldsv5"
+    assert _parse_database_name("Standard_D2ls_v6")[0] == "Dlsv6"
+    assert _parse_database_name("Standard_D16pls_v5")[0] == "Dplsv5"
+    assert _parse_database_name("Standard_F16als_v6")[0] == "Falsv6"
+    # memory intensive is a separate series in F, but not in B
+    assert _parse_database_name("Standard_F16ams_v6")[0] == "Famsv6"
+    assert _parse_database_name("Standard_F16-4amds_v7")[0] == "Famdsv7"
+    assert _parse_database_name("Standard_F16as_v6")[0] == "Fasv6"
+    assert _parse_database_name("Standard_B1ls")[0] == "Bs"
+    assert _parse_database_name("Standard_M32ls")[0] == "Ms"
+    assert _parse_database_name("Standard_M32ms_v2")[0] == "Msv2"
 
 
 def test_pg_engine_versions_from_capability():
