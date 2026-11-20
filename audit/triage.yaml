@@ -442,6 +442,15 @@ entries:
     date: 2026-11-04
   - vendor: upcloud
     type: SPEC_MISMATCH
+    field: storage_gb
+    page: "^pricing$"
+    verdict: confirmed
+    note: "Server plans store the raw API storage_size (GiB) as GB in server.storage_size and in the bundled Disk entry (_upcloud.inventory_servers), e.g. 25 instead of ~27 GB for a 25 GiB disk; the database plans convert with _GIB_TO_GB. Out of scope of PR #182 (review thread r4635269768), to be fixed in a follow-up. Matches no finding yet: our raw values equal the pricing page's 'GB' labels, and the page's plan names don't resolve to our plan ids. After the fix, expect ~7.4% storage_gb mismatches here (unit only, like the postgresql-configurations entry above)."
+    by: claude (claude-code)
+    evidence: audit-runs/2026-11-20.tar.xz
+    date: 2026-11-20
+  - vendor: upcloud
+    type: SPEC_MISMATCH
     field: gpu_model
     match: "GPU-.*xL40S"
     page: "^pricing$"
