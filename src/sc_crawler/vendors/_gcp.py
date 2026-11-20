@@ -236,7 +236,9 @@ def _local_ssd_partition_gib(server_name: str) -> int:
         return 7000 if server_name.endswith("-metal") else 3500
     if family == "z3" and server_name.endswith("-metal"):
         return 6000
-    if family in ["a4x", "z3"] or (family == "c4" and server_name.endswith("-metal")):
+    if family in ["a4x", "z3"] or (
+        family in ["c4", "c4d"] and server_name.endswith("-metal")
+    ):
         return 3000
     return 375
 
@@ -245,13 +247,14 @@ def _local_ssd_partition_gib(server_name: str) -> int:
 # (read IOPS, write IOPS, read MiB/s, write MiB/s), from the performance tables:
 # https://docs.cloud.google.com/compute/docs/disks/local-ssd#performance
 # Titanium SSD scales linearly with the number of attached disks, so listed per
-# disk. Bare metal C4 and Z4D have larger disks (3,000 and 7,000 GiB) with
+# disk. Bare metal C4, C4D and Z4D have larger disks (3,000 and 7,000 GiB) with
 # proportionally higher speed; Z3 and Z4M bare metal follow the VM rates.
 _TITANIUM_SSD_SPEED_PER_DISK = {
     "c4": (150_000, 75_000, 625, 330),
     "c4-metal": (1_200_000, 600_000, 5_000, 2_640),
     "c4a": (150_000, 75_000, 650, 330),
     "c4d": (150_000, 75_000, 625, 330),
+    "c4d-metal": (1_200_000, 600_000, 5_000, 2_640),
     "c4n": (150_000, 75_000, 625, 330),
     "g4": (150_000, 75_000, 625, 330),
     "h4d": (150_000, 75_000, 625, 330),

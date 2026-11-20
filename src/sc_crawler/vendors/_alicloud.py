@@ -1199,6 +1199,15 @@ _LOCAL_DISK_SPEED = {
     "ecs.d3c.7xlarge": (200_000, None, 8_000, 4_000),
     "ecs.d3c.14xlarge": (400_000, None, 16_000, 8_000),
 }
+# i2 and i2g per disk speed by disk capacity (GiB), from the same docs table:
+# used for the disk entries instead of splitting the instance totals
+_LOCAL_DISK_SPEED_PER_DISK = {
+    "ecs.i2": {
+        894: (150_000, None, 1_000, 500),
+        1788: (300_000, None, 2_000, 1_000),
+    },
+}
+_LOCAL_DISK_SPEED_PER_DISK["ecs.i2g"] = _LOCAL_DISK_SPEED_PER_DISK["ecs.i2"]
 # SATA HDD families publish one throughput figure per disk (no read/write
 # split, stored as read), the overall figures are the same x number of disks
 _LOCAL_HDD_READ_MBPS_PER_DISK = {
@@ -1245,13 +1254,21 @@ def _local_disk_speed(instance_type: dict) -> tuple:
 
 
 def _local_disks(instance_type: dict, storage_type, speed: tuple) -> List[Disk]:
-    """One entry per identical local disk, the speed totals split evenly."""
+    """One entry per identical local disk.
+
+    Speed from the documented per-disk figures if any, else the instance totals
+    split evenly.
+    """
     disks = instance_type.get("LocalStorageAmount", 0)
     if not disks or not storage_type:
         return []
     # LocalStorageCapacity is GiB per disk
-    size = round(instance_type.get("LocalStorageCapacity", 0) * _GIB_TO_GB)
-    read_iops, write_iops, read_mbps, write_mbps = (
+    gib = instance_type.get("LocalStorageCapacity", 0)
+    size = round(gib * _GIB_TO_GB)
+    per_disk = _LOCAL_DISK_SPEED_PER_DISK.get(
+        instance_type.get("InstanceTypeFamily"), {}
+    ).get(gib)
+    read_iops, write_iops, read_mbps, write_mbps = per_disk or (
         split_disk_speed(total, disks) for total in speed
     )
     return [

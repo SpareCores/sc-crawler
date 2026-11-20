@@ -25,7 +25,8 @@ New feature(s):
 - `Disk` items of `Server.storages`: `read_iops_max`, `write_iops_max`,
   `read_throughput_max` and `write_throughput_max`, the same speeds per
   entry. Where the vendor only publishes server totals over identical disks
-  (AWS, most Alibaba Cloud types), the totals are split evenly. GCP and Azure
+  (AWS, most Alibaba Cloud types), the totals are split evenly; Alibaba Cloud
+  i2/i2g use their documented per-disk figures. GCP and Azure
   NVMe disks stay one entry with the speed of the group. `storages` is now
   also filled for Alibaba Cloud (one entry per local disk) and UpCloud (the
   plan disk).

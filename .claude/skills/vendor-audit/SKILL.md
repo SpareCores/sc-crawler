@@ -133,7 +133,9 @@ does not publish it, or our lookup misses it. AWS, GCP, Alibaba, UpCloud and par
 of Azure (NVMe sizes) fill them from hardcoded docs tables, so a new server type
 can stay NULL until someone updates the table. The same speeds are stored per
 disk entry in `storages` (AWS and Alibaba split the docs totals evenly), so the
-entries add up to the server totals (within rounding). The crawler logs a
+entries add up to the server totals (within rounding), except Alibaba i2/i2g:
+their documented per-disk figures exceed the instance limit or the instance IOPS
+is not published. The crawler logs a
 warning for unknown Alibaba Cloud, AWS, GCP and UpCloud types, but not for Azure
 NVMe sizes missing from its table, so do not rely on the logs. List the bundled disks
 without any speed:

@@ -312,6 +312,49 @@ def test_alicloud_local_disks(amount, speed, expected):
     } == {(round(1788 * 1024**3 / 1000**3), *expected)}
 
 
+@pytest.mark.parametrize(
+    "family,amount,gib,speed,expected",
+    [
+        # documented per-disk speed, not the instance total / 8 (187,500 IOPS)
+        (
+            "ecs.i2",
+            8,
+            1788,
+            (1_500_000, None, 16_000, 8_000),
+            (300_000, None, 2_000, 1_000),
+        ),
+        # instance IOPS not published, per-disk IOPS is
+        (
+            "ecs.i2",
+            4,
+            1788,
+            (None, None, 8_000, 4_000),
+            (300_000, None, 2_000, 1_000),
+        ),
+        ("ecs.i2g", 1, 894, (150_000, None, 1_000, 500), (150_000, None, 1_000, 500)),
+        # other disk size: falls back to the split
+        ("ecs.i2", 2, 100, (None, None, 400, 200), (None, None, 200, 100)),
+    ],
+)
+def test_alicloud_local_disks_i2_per_disk_speed(family, amount, gib, speed, expected):
+    instance_type = {
+        "InstanceTypeFamily": family,
+        "LocalStorageAmount": amount,
+        "LocalStorageCapacity": gib,
+    }
+    disks = _local_disks(instance_type, StorageType.SSD, speed)
+    assert len(disks) == amount
+    assert {
+        (
+            d.read_iops_max,
+            d.write_iops_max,
+            d.read_throughput_max,
+            d.write_throughput_max,
+        )
+        for d in disks
+    } == {expected}
+
+
 def test_alicloud_local_disks_none():
     speed = (100, 100, 100, 100)
     # no local disk

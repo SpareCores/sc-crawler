@@ -1789,10 +1789,11 @@ def _share_disk_speeds(server: dict, vendor_storage_size: int) -> None:
         return
     if any(getattr(d, field) for d in disks for field in DISK_SPEED_FIELDS):
         return
-    # all disks seen: divide by their sum, as the inspected sizes are rounded down
-    # (e.g. 2x 402 GB vs 805 GB from the vendor), so the shares add up to the total
+    # all (or more) disks seen: divide by their sum, so the shares add up to the
+    # total (inspected sizes are rounded down, e.g. 2x 402 GB vs 805 GB from the
+    # vendor); fewer disks seen: each gets its share of the vendor size
     inspected_size = sum(d.size for d in disks)
-    if abs(inspected_size - vendor_storage_size) <= 0.01 * vendor_storage_size:
+    if inspected_size >= 0.99 * vendor_storage_size:
         vendor_storage_size = inspected_size
     for disk in disks:
         for field in DISK_SPEED_FIELDS:

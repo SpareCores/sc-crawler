@@ -978,6 +978,9 @@ def test_gcp_compatible_storage_names_bare_metal_throughput():
     [
         ("c4-standard-4-lssd", 375),
         ("c4-standard-288-lssd-metal", 3000),
+        ("c4d-standard-384-lssd-metal", 3000),
+        # C4D VM disks stay 375 GiB
+        ("c4d-standard-384-lssd", 375),
         ("a4x-highgpu-4g", 3000),
         ("a4x-maxgpu-4g-metal", 3000),
         ("z3-highmem-8-highlssd", 3000),
@@ -1017,6 +1020,13 @@ def _mib(read_iops, write_iops, read_mib, write_mib):
             6,
             _mib(7_200_000, 3_600_000, 30_000, 15_840),
         ),
+        (
+            "c4d-standard-384-lssd-metal",
+            4,
+            _mib(4_800_000, 2_400_000, 20_000, 10_560),
+        ),
+        # C4D VM with the same totals over 32 smaller disks
+        ("c4d-standard-384-lssd", 32, _mib(4_800_000, 2_400_000, 20_000, 10_560)),
         (
             "z4d-highmem-384-standardlssd-metal",
             12,

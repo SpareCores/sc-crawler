@@ -1,4 +1,5 @@
 from contextlib import ExitStack
+from copy import deepcopy
 from os import path
 from unittest.mock import patch
 
@@ -192,6 +193,18 @@ def _local_ssd_lsblk(count):
     }
 
 
+def test_gcp_inspected_disks_more_than_vendor_share_the_totals():
+    # inspector sees twice the vendor capacity: shares still add up to the total
+    with ExitStack() as stack:
+        _patch_missing_inspector_lookups(stack, _server_lsblk=_local_ssd_lsblk(48))
+        updated = inspect_update_server_dict(_z4d_server_with_speed())
+
+    assert len(updated["storages"]) == 48
+    assert sum(d.read_iops_max for d in updated["storages"]) == pytest.approx(
+        15_600_000, abs=48
+    )
+
+
 @pytest.mark.parametrize("count", [24, 1])
 def test_gcp_inspected_disks_share_the_vendor_speed_totals(count):
     with ExitStack() as stack:
@@ -239,12 +252,13 @@ def test_gcp_vendor_storages_kept_without_inspector_sample():
             "write_throughput_max": 60_398,
         }
     ]
+    expected = deepcopy(server["storages"])
     with ExitStack() as stack:
         _patch_missing_inspector_lookups(stack)
         updated = inspect_update_server_dict(server)
 
     # vendor entry untouched: speed of all partitions on the single entry
-    assert updated["storages"] == server["storages"]
+    assert updated["storages"] == expected
 
 
 def test_missing_nvidia_smi_does_not_mark_server_as_gpu():
