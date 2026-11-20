@@ -378,6 +378,73 @@ def test_azure_inventory_databases_fails_loudly_on_unparsable_capabilities():
             azure_databases(vendor)
 
 
+def test_azure_inventory_databases_series_follows_the_server():
+    vendor = Mock(vendor_id="azure")
+    vendor.regions = [Mock(region_id="centralus", api_reference="centralus")]
+    # B1ms is Bv1 as a VM, the PostgreSQL series (price list) is Bs; D2s_v3 has no server
+    vendor.servers = [
+        SimpleNamespace(
+            api_reference="Standard_B1ms",
+            server_id="Standard_B1ms",
+            series="Bv1",
+            vcpus=1,
+            memory_amount=2048,
+        )
+    ]
+    vendor.progress_tracker = Mock(
+        start_task=Mock(), advance_task=Mock(), hide_task=Mock()
+    )
+    capability = SimpleNamespace(
+        supportedServerVersions=[SimpleNamespace(name="16", status="Available")],
+        storageAutoGrowthSupported="Enabled",
+        supportedFeatures=[],
+        supportedServerEditions=[
+            SimpleNamespace(
+                name="Burstable",
+                supportedStorageEditions=[],
+                supportedServerSkus=[
+                    SimpleNamespace(
+                        name="Standard_B1ms",
+                        vCores=1,
+                        supportedMemoryPerVcoreMb=2048,
+                        supportedHaMode=[],
+                    )
+                ],
+            ),
+            SimpleNamespace(
+                name="GeneralPurpose",
+                supportedStorageEditions=[],
+                supportedServerSkus=[
+                    SimpleNamespace(
+                        name="Standard_D2s_v3",
+                        vCores=2,
+                        supportedMemoryPerVcoreMb=4096,
+                        supportedHaMode=[],
+                    )
+                ],
+            ),
+        ],
+    )
+    with (
+        patch(
+            "sc_crawler.vendors._azure._pg_database_regions",
+            return_value=vendor.regions,
+        ),
+        patch(
+            "sc_crawler.vendors._azure._pg_capabilities",
+            return_value=[capability],
+        ),
+        patch("sc_crawler.vendors._azure._pg_retail_prices", return_value=[]),
+    ):
+        rows = azure_databases(vendor)
+    by_id = {row["database_id"]: row for row in rows}
+    assert by_id["Standard_B1ms"]["series"] == "Bv1"
+    assert by_id["Standard_B1ms"]["server_id"] == "Standard_B1ms"
+    # no server: the parsed series
+    assert by_id["Standard_D2s_v3"]["series"] == "Dsv3"
+    assert by_id["Standard_D2s_v3"]["server_id"] is None
+
+
 def test_azure_inventory_databases_ha_from_supported_ha_mode():
     vendor = Mock(vendor_id="azure")
     vendor.regions = [Mock(region_id="centralus", api_reference="centralus")]
@@ -516,6 +583,7 @@ def test_azure_inventory_databases_adds_quota_hidden_concrete_retail_skus():
             server_id="Standard_E104ids_v5",
             vcpus=104,
             memory_amount=917504,
+            series=None,
         ),
     ]
     vendor.progress_tracker = Mock(
@@ -627,7 +695,11 @@ def test_azure_inventory_databases_skips_series_meter_vm_sizes():
     vendor.regions = [Mock(region_id="westeurope", api_reference="westeurope")]
     vendor.servers = [
         SimpleNamespace(
-            api_reference=name, server_id=name, vcpus=8, memory_amount=32768
+            api_reference=name,
+            server_id=name,
+            vcpus=8,
+            memory_amount=32768,
+            series=None,
         )
         for name in (
             "Standard_DC8as_v5",
@@ -783,18 +855,21 @@ def test_azure_inventory_databases_retail_requires_capabilities_series():
             server_id="Standard_M32dms_v2",
             vcpus=32,
             memory_amount=896000,
+            series=None,
         ),
         SimpleNamespace(
             api_reference="Standard_E104ids_v5",
             server_id="Standard_E104ids_v5",
             vcpus=104,
             memory_amount=917504,
+            series=None,
         ),
         SimpleNamespace(
             api_reference="Standard_DC2as_v5",
             server_id="Standard_DC2as_v5",
             vcpus=2,
             memory_amount=8192,
+            series=None,
         ),
     ]
     vendor.progress_tracker = Mock(

@@ -30,11 +30,12 @@ Fix(es):
 - `Azure`: the VM series are named as in the Microsoft docs, also for the sizes
   that did not follow the naming convention and had the SKU family of the API
   as series: the memory class of the M series (`Msv2 Medium Memory`,
-  `Mdsv3 Very High Memory`), `Bv1` instead of `Bs` for the original B series
-  (PostgreSQL keeps `Bs`), the confidential computing `_cc_` sizes
+  `Mdsv3 Very High Memory`), `Bv1` instead of `Bs` for the original B series,
+  the confidential computing `_cc_` sizes
   (`DCas_cc_v5`), and the GPU, HPC and older series (`ND-H100-v5`, `NCv3`,
   `HBv2`, `FX`, ...). Names with spaces in the docs of the GPU series are
   written with hyphens.
+  The PostgreSQL databases take the series of the server they run on.
 
 ## v0.11.0 (November 16, 2026)
 

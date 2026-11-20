@@ -1028,8 +1028,8 @@ def _vm_series(size_name: str, sku_family: Optional[str]) -> Optional[str]:
     the F family, as the low memory Standard_D2lds_v5 is in the Dldsv5 series, not in
     Ddsv5. On top of that, the M sizes get the memory class of the docs (Msv2 Medium
     Memory), the original M series has no letters, and the original B series is Bv1.
-    The PostgreSQL series of the B sizes stays Bs (no M sizes are offered there), so
-    those databases do not match their server by series.
+    The databases take the series of their server (`inventory_databases`), only the
+    price lookup uses the parsed series (e.g. Bs for B1ms).
     Sizes the parser does not know (GPU, HPC, confidential computing, other odd shapes)
     are named by `_VM_SERIES_BY_SKU_FAMILY`, and keep the SKU family of the API if not
     listed there.
@@ -2920,7 +2920,9 @@ def inventory_databases(vendor):
                 "wire_protocol": DatabaseWireProtocol.POSTGRESQL,
                 "engine_versions": facts["engine_versions"],
                 "family": _pg_edition_family(edition_name),
-                "series": series,
+                # the series of the server it runs on (e.g. Bv1 for B1ms), the parsed series
+                # (the retail price series, e.g. Bs) if there is no such server
+                "series": (server.series if server else None) or series,
                 # unknown (None) for an edition the capabilities API did not list
                 "compatible_storage_ids": (
                     sorted(storage_ids_by_edition[edition_name])
