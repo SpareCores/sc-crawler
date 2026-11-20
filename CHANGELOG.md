@@ -1,4 +1,4 @@
-## v0.11.x (DEVELOPMENT)
+## v0.11.1 (November 20, 2026)
 
 New vendor(s):
 
