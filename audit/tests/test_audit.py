@@ -1187,6 +1187,7 @@ def test_missing_server_and_database_not_merged():
     database = Finding(code_hint="vendors/_x.py:inventory_databases", **common)
     assert server.key() != database.key()
     # payloads still don't matter for the same resource
-    assert server.key() == Finding(
-        code_hint=server.code_hint, theirs={"vcpus": 2}, **common
-    ).key()
+    assert (
+        server.key()
+        == Finding(code_hint=server.code_hint, theirs={"vcpus": 2}, **common).key()
+    )
