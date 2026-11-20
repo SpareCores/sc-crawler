@@ -33,6 +33,7 @@ from ..utils import (
     _MICROCENTS_PER_CURRENCY_UNIT,
     scmodels_to_dict,
 )
+from ..vendor_helpers import disk_speed_totals, split_disk_speed
 
 
 @cache
@@ -1319,6 +1320,12 @@ def inventory_servers(vendor) -> list[dict]:
                     Disk(
                         size=capacity,
                         storage_type=storage_type,
+                        # Single IOPS figure without read/write split, stored as read.
+                        # Only listed for older families on single-disk entries,
+                        # e.g. 4000 on c2-15; split if ever listed for several disks.
+                        read_iops_max=split_disk_speed(
+                            disk.get("iops"), disk.get("number", 1)
+                        ),
                     )
                 )
         storage_type = storages[0].storage_type if storages else None
@@ -1391,6 +1398,8 @@ def inventory_servers(vendor) -> list[dict]:
             "storage_size": sum(disk.size for disk in storages),
             "storage_type": storage_type,
             "storages": storages,
+            # sum over the bundled disks with a known value, None if none is known
+            **disk_speed_totals(storages),
             # Block Storage volumes are currently not available for Metal instances
             # https://docs.ovhcloud.com/en/guides/public-cloud/compute/create-and-configure-an-additional-disk-on-an-instance
             "compatible_storage_ids": (
@@ -1438,6 +1447,8 @@ def inventory_servers(vendor) -> list[dict]:
                     "description": describe(flex_storages),
                     "storage_size": flex_flavors[flex_id],
                     "storages": flex_storages,
+                    # the catalog IOPS are for the classic disk only
+                    **disk_speed_totals(flex_storages),
                 }
             )
 

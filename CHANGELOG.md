@@ -1,4 +1,4 @@
-## v0.11.x (DEVELOPMENT)
+## v0.11.1 (November 20, 2026)
 
 New vendor(s):
 
@@ -10,6 +10,30 @@ New vendor(s):
   PostgreSQL) shapes are listed as databases with single-node, single-zone and
   multi-zone readable cluster prices, and the performance tiers of the database
   optimized storage as database storages.
+
+New feature(s):
+
+- `Server.storage_read_iops_max`, `storage_write_iops_max`,
+  `storage_read_throughput_max` and `storage_write_throughput_max`: the
+  vendor-published maximum performance of the bundled (local) disk(s),
+  summed over all disks, also of different types (a theoretical total). Empty
+  when the vendor does not publish it. Populated for Alibaba Cloud, AWS, GCP
+  and UpCloud from the vendor docs, for Azure from the API (with docs for the
+  NVMe disks of L-series and HPC sizes), and for OVH from the catalog (read
+  IOPS only). Existing rows are not backfilled by the migration, only by the
+  next inventory refresh.
+- `Disk` items of `Server.storages`: `read_iops_max`, `write_iops_max`,
+  `read_throughput_max` and `write_throughput_max`, the same speeds per
+  entry. Where the vendor only publishes server totals over identical disks
+  (AWS, most Alibaba Cloud types), the totals are split evenly; Alibaba Cloud
+  i2/i2g use their documented per-disk figures. GCP and Azure
+  NVMe disks stay one entry with the speed of the group. `storages` is now
+  also filled for Alibaba Cloud (one entry per local disk) and UpCloud (the
+  plan disk).
+
+Database migrations:
+
+- Add the above 4 columns to the `server` and `server_scd` tables.
 
 Fix(es):
 

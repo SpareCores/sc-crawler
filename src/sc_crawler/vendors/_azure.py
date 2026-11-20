@@ -47,7 +47,7 @@ from ..utils import (
     list_search,
     scmodels_to_dict,
 )
-from ..vendor_helpers import preprocess_servers
+from ..vendor_helpers import disk_speed_totals, preprocess_servers
 
 credential = DefaultAzureCredential()
 
@@ -776,6 +776,53 @@ def _gpu_spec(name: str, api_gpus: str | None) -> tuple[float, str | None, int |
     return 0, None, None
 
 
+# NVMe speed of sizes without NvmeMax* capabilities in the Resource SKUs API,
+# as (read IOPS, write IOPS, read MB/s, write MB/s), per vCPU count or for all sizes.
+# A single figure without read/write split is stored as read.
+# L-series: one IOPS and one throughput (MBps = 10^6 bytes/s) figure:
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/storage-optimized/lsv2-series
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/storage-optimized/lsv3-series
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/storage-optimized/lasv3-series
+# HPC: NVMe disks in a striped array, "Temporary storage" in the series overviews:
+# https://learn.microsoft.com/en-us/azure/virtual-machines/hbv3-series-overview
+# https://learn.microsoft.com/en-us/azure/virtual-machines/hbv4-series-overview
+# https://learn.microsoft.com/en-us/azure/virtual-machines/hx-series-overview
+_AZURE_NVME_SPEED_SERIES = (
+    (
+        r"^L\d+a?s_v[23]$",
+        {
+            8: (400_000, None, 2_000, None),
+            16: (800_000, None, 4_000, None),
+            32: (1_500_000, None, 8_000, None),
+            48: (2_200_000, None, 14_000, None),
+            64: (2_900_000, None, 16_000, None),
+            80: (3_800_000, None, 20_000, None),
+        },
+    ),
+    (r"^HB120(-\d+)?rs_v3$", (186_000, 201_000, 7_000, 3_000)),
+    (r"^HB176(-\d+)?rs_v4$", (186_000, 201_000, 12_000, 7_000)),
+    (r"^HX176(-\d+)?rs$", (186_000, 201_000, 12_000, 7_000)),
+)
+_AZURE_NVME_SPEED_SERIES = tuple(
+    (recompile(pattern), speeds) for pattern, speeds in _AZURE_NVME_SPEED_SERIES
+)
+
+
+_VCPUS_IN_SIZE = recompile(r"^[A-Z]+(\d+)")
+
+
+def _nvme_speed(name: str) -> tuple:
+    """Documented NVMe (read IOPS, write IOPS, read MB/s, write MB/s) of a VM size."""
+    size = name.removeprefix("Standard_")
+    for pattern, speeds in _AZURE_NVME_SPEED_SERIES:
+        if pattern.match(size):
+            if isinstance(speeds, dict):
+                vcpus = int(_VCPUS_IN_SIZE.match(size)[1])
+                return speeds.get(vcpus, (None, None, None, None))
+            return speeds
+    return (None, None, None, None)
+
+
 def _parse_server_name(name):
     """Extract information from the server name/size.
 
@@ -1011,6 +1058,11 @@ def _standardize_server(server: dict, vendor) -> dict:
         except Exception:
             return default
 
+    def capability_int(name: str, divisor: int = 1) -> Optional[int]:
+        value = capability(name)
+        # "0" means not reported, same as a missing capability
+        return (round(float(value) / divisor) or None) if value else None
+
     architecture = ARCHITECTURE_MAPPING[capability("CpuArchitectureType")]
     gpus, gpu_model, gpu_memory = _gpu_spec(server["name"], capability("GPUs"))
     # construct a server description as Azure doesn't provide one
@@ -1025,6 +1077,7 @@ def _standardize_server(server: dict, vendor) -> dict:
         description = description + "s"
     # Bundled local disks only. OS disk is a managed disk chosen at deploy time.
     # SKUs without a temp disk report MaxResourceVolumeMB "0" (truthy string).
+    # one entry per disk group (temp disk, all NVMe disks) with the group speed
     storages = []
     temp_mb = capability("MaxResourceVolumeMB")
     # MaxResourceVolumeMB is MiB, e.g. DC1s_v2 reports 51200 and shows 50 GiB in docs
@@ -1034,15 +1087,33 @@ def _standardize_server(server: dict, vendor) -> dict:
                 size=round(float(temp_mb) * 1024**2 / 1e9),
                 storage_type=StorageType.SSD,
                 description="temp disk",
+                # single IOPS number (no read/write split) stored as read
+                read_iops_max=capability_int("CombinedTempDiskAndCachedIOPS"),
+                read_throughput_max=capability_int(
+                    "CombinedTempDiskAndCachedReadBytesPerSecond", 1_000_000
+                ),
+                write_throughput_max=capability_int(
+                    "CombinedTempDiskAndCachedWriteBytesPerSecond", 1_000_000
+                ),
             )
         )
     # NVMe disks are explicitely reported in base 2 unit
     nvme_mib = capability("NvmeDiskSizeInMiB")
     if nvme_mib and float(nvme_mib) > 0:
+        # Resource SKUs API speed, documented speed for sizes not in the API
+        docs = _nvme_speed(server["name"])
         storages.append(
             Disk(
                 size=round(float(nvme_mib) * 1024**2 / 1e9),
                 storage_type=StorageType.NVME_SSD,
+                read_iops_max=capability_int("NvmeMaxReadIops") or docs[0],
+                write_iops_max=capability_int("NvmeMaxWriteIops") or docs[1],
+                read_throughput_max=(
+                    capability_int("NvmeMaxReadBytesPerSecond", 1_000_000) or docs[2]
+                ),
+                write_throughput_max=(
+                    capability_int("NvmeMaxWriteBytesPerSecond", 1_000_000) or docs[3]
+                ),
             )
         )
     if any(disk.storage_type == StorageType.NVME_SSD for disk in storages):
@@ -1097,6 +1168,8 @@ def _standardize_server(server: dict, vendor) -> dict:
         "storage_size": round(sum([s.size for s in storages])),  # int GB
         "storage_type": storage_type,
         "storages": storages,
+        # sum over the bundled disks with a known value, None if none is known
+        **disk_speed_totals(storages),
         "compatible_storage_ids": _compatible_storage_ids(server),
         # TODO: have to implement manual mapping for network_speed related fields
         "network_speed_baseline": None,

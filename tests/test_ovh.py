@@ -481,7 +481,18 @@ def _extend_ovh_get(mock_client, *, availability, capabilities, catalog_addons):
     mock_client.get.side_effect = fake_get
 
 
-def _server_inventory_plan(server_id, *, brick_subtype=None, brick=None):
+def _server_inventory_plan(
+    server_id, *, brick_subtype=None, brick=None, disks=None, nvme_disks=None
+):
+    technical = {
+        "os": {"family": "linux"},
+        "cpu": {"cores": 2, "frequency": 2500},
+        "memory": {"size": 8},
+    }
+    if disks is not None:
+        technical["storage"] = {"disks": disks}
+    if nvme_disks is not None:
+        technical["nvme"] = {"disks": nvme_disks}
     return {
         "product": "publiccloud-instance",
         "planCode": f"{server_id}.hour.consumption",
@@ -492,14 +503,61 @@ def _server_inventory_plan(server_id, *, brick_subtype=None, brick=None):
                 "brick": brick,
                 "brickSubtype": brick_subtype,
             },
-            "technical": {
-                "os": {"family": "linux"},
-                "cpu": {"cores": 2, "frequency": 2500},
-                "memory": {"size": 8},
-            },
+            "technical": technical,
             "tags": ["active"],
         },
     }
+
+
+@pytest.mark.parametrize(
+    "disks,nvme_disks,read_iops",
+    [
+        # single IOPS figure without read/write split, stored as read
+        ([{"capacity": 100, "technology": "SSD", "iops": 4000}], None, 4000),
+        # passthrough NVMe disks have no IOPS: known part only
+        (
+            [
+                {"capacity": 50, "technology": "NVMe", "iops": 2000},
+                {"capacity": 2000, "number": 2, "technology": "NVMe Passthrough"},
+            ],
+            None,
+            2000,
+        ),
+        # extra NVMe disks (i1) have no IOPS: known part only
+        (
+            [{"capacity": 50, "technology": "SSD", "iops": 2000}],
+            [{"capacity": 1900, "number": 2}],
+            2000,
+        ),
+        # IOPS listed for several disks: split over them, not counted per disk
+        ([{"capacity": 400, "number": 2, "iops": 4000}], None, 4000),
+        # no IOPS published (e.g. b3, c3, r3)
+        ([{"capacity": 100, "technology": "NVMe"}], None, None),
+        # no bundled disk
+        (None, None, None),
+    ],
+)
+def test_ovh_inventory_servers_bundled_storage_speed(
+    mock_ovh_client, disks, nvme_disks, read_iops
+):
+    _extend_ovh_get(
+        mock_ovh_client,
+        availability=[],
+        capabilities={},
+        catalog_addons=[
+            _server_inventory_plan("c2-15", disks=disks, nvme_disks=nvme_disks)
+        ],
+    )
+
+    (row,) = inventory_servers(_ovh_vendor())
+
+    assert row["storage_read_iops_max"] == read_iops
+    # the catalog IOPS stays on the disk(s) it is listed for
+    assert (sum(d.read_iops_max or 0 for d in row["storages"]) or None) == read_iops
+    # OVH publishes neither write IOPS nor throughput
+    assert row["storage_write_iops_max"] is None
+    assert row["storage_read_throughput_max"] is None
+    assert row["storage_write_throughput_max"] is None
 
 
 def test_ovh_inventory_servers_maps_plans(mock_ovh_client):
@@ -1350,10 +1408,15 @@ def test_inventory_servers_gen3_ipv4_and_flex_variants(mock_ovh_client):
         catalog_addons=[
             _instance_addon("b3-8", {"capacity": 50, "technology": "NVMe"}),
             _instance_addon("b3-16", {"capacity": 100, "technology": "NVMe"}),
-            _instance_addon("b2-15", {"capacity": 100, "technology": "SSD"}),
+            _instance_addon(
+                "b2-15", {"capacity": 100, "technology": "SSD", "iops": 4000}
+            ),
         ],
     )
     servers = {s["server_id"]: s for s in inventory_servers(_ovh_vendor())}
+    # the catalog IOPS belong to the classic disk, not to the smaller flex disk
+    assert servers["b2-15"]["storage_read_iops_max"] == 4000
+    assert servers["b2-15-flex"]["storage_read_iops_max"] is None
     # b3-8-flex has the same disk as b3-8, so it's skipped
     assert set(servers) == {"b3-8", "b3-16", "b3-16-flex", "b2-15", "b2-15-flex"}
 

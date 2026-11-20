@@ -10,7 +10,9 @@ from sc_crawler.table_fields import (
     DatabaseHaStrategy,
     DatabaseSecurityFeature,
     Status,
+    StorageType,
 )
+from sc_crawler.vendor_helpers import disk_speed_totals
 from sc_crawler.vendors._azure import (
     _PG_PRODUCT_SERIES_RE,
     _azure_sku_lifecycle_status,
@@ -126,6 +128,117 @@ def test_azure_standardize_server_family_and_series():
     row = _standardize_server(server, SimpleNamespace(vendor_id="azure"))
     assert row["family"] == "GPU Accelerated"
     assert row["series"] == "NCASv3_T4"
+
+
+_BASE_CAPABILITIES = [
+    {"name": "CpuArchitectureType", "value": "x64"},
+    {"name": "vCPUs", "value": "2"},
+    {"name": "vCPUsAvailable", "value": "2"},
+    {"name": "MemoryGB", "value": "8"},
+]
+_TEMP_DISK = {
+    "MaxResourceVolumeMB": "76800",
+    "CombinedTempDiskAndCachedIOPS": "9000",
+    "CombinedTempDiskAndCachedReadBytesPerSecond": "125000000",
+    "CombinedTempDiskAndCachedWriteBytesPerSecond": "125000000",
+}
+_TEMP_SPEED_ONLY = {**_TEMP_DISK, "MaxResourceVolumeMB": "0"}
+_NVME_NO_SPEED = {"NvmeDiskSizeInMiB": "112640"}
+_NVME = {
+    **_NVME_NO_SPEED,
+    "NvmeMaxReadIops": "37500",
+    "NvmeMaxWriteIops": "15000",
+    "NvmeMaxReadBytesPerSecond": "180000000",
+    "NvmeMaxWriteBytesPerSecond": "90000000",
+}
+
+
+@pytest.mark.parametrize(
+    "name,capabilities,expected",
+    [
+        # temp disk IOPS has no read/write split, so it only counts as read
+        ("Standard_D2ds_v5", _TEMP_DISK, (9000, None, 125, 125)),
+        ("Standard_D2ds_v6", _NVME, (37500, 15000, 180, 90)),
+        (
+            "Standard_D2ds_v6",
+            _TEMP_DISK | _NVME,
+            (9000 + 37500, 15000, 125 + 180, 125 + 90),
+        ),
+        # temp disk speed is reported even without a temp disk
+        ("Standard_D2s_v5", _TEMP_SPEED_ONLY, (None, None, None, None)),
+        # "0" means not reported
+        (
+            "Standard_D2ds_v5",
+            {**_TEMP_DISK, "CombinedTempDiskAndCachedIOPS": "0"},
+            (None, None, 125, 125),
+        ),
+        # HBv2: NVMe disk without speed in the API or in the docs
+        # (hbv2-series-overview lists the disk only)
+        ("Standard_HB120rs_v2", _NVME_NO_SPEED, (None, None, None, None)),
+        ("Standard_HB120rs_v2", _TEMP_DISK | _NVME_NO_SPEED, (9000, None, 125, 125)),
+        # NVMe speed from the docs: single IOPS and throughput figure as read
+        (
+            "Standard_L8s_v3",
+            _TEMP_DISK | _NVME_NO_SPEED,
+            (9000 + 400_000, None, 125 + 2_000, 125),
+        ),
+        ("Standard_HB176rs_v4", _NVME_NO_SPEED, (186_000, 201_000, 12_000, 7_000)),
+        ("Standard_HB120rs_v3", _NVME_NO_SPEED, (186_000, 201_000, 7_000, 3_000)),
+        # docs fill only the metrics the API leaves empty
+        (
+            "Standard_HX176-24rs",
+            {**_NVME_NO_SPEED, "NvmeMaxReadIops": "190000"},
+            (190_000, 201_000, 12_000, 7_000),
+        ),
+    ],
+)
+def test_azure_standardize_server_bundled_storage_speed(name, capabilities, expected):
+    server = {
+        "name": name,
+        "family": "standardDDSv5Family",
+        "capabilities": _BASE_CAPABILITIES
+        + [{"name": k, "value": v} for k, v in capabilities.items()],
+    }
+    row = _standardize_server(server, SimpleNamespace(vendor_id="azure"))
+    assert (
+        row["storage_read_iops_max"],
+        row["storage_write_iops_max"],
+        row["storage_read_throughput_max"],
+        row["storage_write_throughput_max"],
+    ) == expected
+    # the totals are the sums of the disk group entries
+    assert disk_speed_totals(row["storages"]) == {
+        "storage_read_iops_max": expected[0],
+        "storage_write_iops_max": expected[1],
+        "storage_read_throughput_max": expected[2],
+        "storage_write_throughput_max": expected[3],
+    }
+
+
+def test_azure_standardize_server_storages_speed_per_disk_group():
+    server = {
+        "name": "Standard_L8s_v3",
+        "family": "standardLSv3Family",
+        "capabilities": _BASE_CAPABILITIES
+        + [{"name": k, "value": v} for k, v in (_TEMP_DISK | _NVME).items()],
+    }
+    row = _standardize_server(server, SimpleNamespace(vendor_id="azure"))
+    temp, nvme = row["storages"]
+    assert temp.description == "temp disk"
+    assert (
+        temp.read_iops_max,
+        temp.write_iops_max,
+        temp.read_throughput_max,
+        temp.write_throughput_max,
+    ) == (9000, None, 125, 125)
+    # API values win over the docs table
+    assert nvme.storage_type == StorageType.NVME_SSD
+    assert (
+        nvme.read_iops_max,
+        nvme.write_iops_max,
+        nvme.read_throughput_max,
+        nvme.write_throughput_max,
+    ) == (37500, 15000, 180, 90)
 
 
 def test_azure_sku_lifecycle_status_from_retired_sizes_list():

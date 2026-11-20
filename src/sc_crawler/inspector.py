@@ -30,7 +30,14 @@ from .inspector_helpers import (
 )
 from .logger import logger
 from .table_bases import ServerBase
-from .table_fields import AcceleratorType, DdrGeneration, Disk, Parallelism, StorageType
+from .table_fields import (
+    DISK_SPEED_FIELDS,
+    AcceleratorType,
+    DdrGeneration,
+    Disk,
+    Parallelism,
+    StorageType,
+)
 
 if TYPE_CHECKING:
     from .tables import Database, Server
@@ -1770,6 +1777,31 @@ def _parse_storage_info(
     return storage_info
 
 
+def _share_disk_speeds(server: dict, vendor_storage_size: int) -> None:
+    """Share the vendor-published speed totals over the inspected disks.
+
+    Inspected disks (GCP override) have no speed. The vendor totals cover identical
+    disks, so each disk gets the share of its size in the vendor-reported storage
+    size: robust when the inspector sees a different number of disks.
+    """
+    disks = server.get("storages") or []
+    if not vendor_storage_size or not all(isinstance(d, Disk) for d in disks):
+        return
+    if any(getattr(d, field) for d in disks for field in DISK_SPEED_FIELDS):
+        return
+    # all (or more) disks seen: divide by their sum, so the shares add up to the
+    # total (inspected sizes are rounded down, e.g. 2x 402 GB vs 805 GB from the
+    # vendor); fewer disks seen: each gets its share of the vendor size
+    inspected_size = sum(d.size for d in disks)
+    if inspected_size >= 0.99 * vendor_storage_size:
+        vendor_storage_size = inspected_size
+    for disk in disks:
+        for field in DISK_SPEED_FIELDS:
+            total = server.get(f"storage_{field}")
+            if total:
+                setattr(disk, field, round(total * disk.size / vendor_storage_size))
+
+
 def inspect_update_server_dict(server: dict) -> dict:
     """Update a Server-like dict based on inspector data."""
     server_obj = ServerBase.model_validate(server)
@@ -2018,6 +2050,10 @@ def inspect_update_server_dict(server: dict) -> dict:
                 server[k] = override_mapping(server, k, newval)
         except Exception as e:
             _log_cannot_update_server(server_obj, k, e)
+
+    # GCP storages are replaced by the inspected disks, which have no speed
+    if server.get("vendor_id") == "gcp":
+        _share_disk_speeds(server, server_obj.storage_size)
 
     # standardize GPU model / fractional count (suffixes stripped from model)
     if server.get("accelerator_model"):

@@ -15,7 +15,7 @@ from sc_crawler.table_fields import (
     Status,
     StorageType,
 )
-from sc_crawler.utils import _GIB_TO_GB
+from sc_crawler.utils import _GIB_TO_GB, _MIB_TO_MB
 from sc_crawler.vendors._gcp import (
     _PG_STORAGE_SPECS,
     _PG_TIER_FAMILY_SERIES,
@@ -28,6 +28,7 @@ from sc_crawler.vendors._gcp import (
     _gcp_accelerator_type,
     _gcp_machine_type_status,
     _local_ssd_partition_gib,
+    _local_ssd_speed,
     _machine_family,
     _pg_compute_sku_class,
     _pg_storage_id,
@@ -40,6 +41,7 @@ from sc_crawler.vendors._gcp import (
     _skus_dict,
     _support_key,
     _warn_unknown_family,
+    _warn_unknown_local_ssd_speed,
     _warn_unknown_storage_series,
     _warn_unknown_tier_storage,
     inventory_database_prices,
@@ -791,10 +793,15 @@ def test_gcp_search_servers_fills_gpu_and_bundled_local_ssd_fields():
     }
     assert row["storage_size"] == round(4 * 3000 * 1024**3 / 1000**3)
     assert row["storage_type"] == StorageType.NVME_SSD
+    # no documented speed for A4X: entry without speed
     assert row["storages"] == [
         {
             "storage_type": StorageType.NVME_SSD,
             "size": round(4 * 3000 * 1024**3 / 1000**3),
+            "read_iops_max": None,
+            "write_iops_max": None,
+            "read_throughput_max": None,
+            "write_throughput_max": None,
         }
     ]
 
@@ -971,6 +978,9 @@ def test_gcp_compatible_storage_names_bare_metal_throughput():
     [
         ("c4-standard-4-lssd", 375),
         ("c4-standard-288-lssd-metal", 3000),
+        ("c4d-standard-384-lssd-metal", 3000),
+        # C4D VM disks stay 375 GiB
+        ("c4d-standard-384-lssd", 375),
         ("a4x-highgpu-4g", 3000),
         ("a4x-maxgpu-4g-metal", 3000),
         ("z3-highmem-8-highlssd", 3000),
@@ -983,6 +993,100 @@ def test_gcp_compatible_storage_names_bare_metal_throughput():
 )
 def test_gcp_local_ssd_partition_gib(server_name, expected):
     assert _local_ssd_partition_gib(server_name) == expected
+
+
+def _mib(read_iops, write_iops, read_mib, write_mib):
+    """Expected speed tuple from a docs row (throughput in MiB/s)."""
+    return (
+        read_iops,
+        write_iops,
+        round(read_mib * _MIB_TO_MB),
+        round(write_mib * _MIB_TO_MB),
+    )
+
+
+@pytest.mark.parametrize(
+    "server_name,disks,expected",
+    [
+        # Titanium SSD scales linearly with the number of disks
+        ("c4-standard-4-lssd", 1, _mib(150_000, 75_000, 625, 330)),
+        ("c4-standard-32-lssd", 5, _mib(750_000, 375_000, 3_125, 1_650)),
+        ("c4a-standard-64-lssd", 14, _mib(2_100_000, 1_050_000, 9_100, 4_620)),
+        ("z3-highmem-8-highlssd", 1, _mib(750_000, 500_000, 3_000, 2_500)),
+        ("z4m-highmem-192", 12, _mib(15_600_000, 12_288_000, 75_600, 57_600)),
+        # bare metal with larger disks
+        (
+            "c4-standard-288-lssd-metal",
+            6,
+            _mib(7_200_000, 3_600_000, 30_000, 15_840),
+        ),
+        (
+            "c4d-standard-384-lssd-metal",
+            4,
+            _mib(4_800_000, 2_400_000, 20_000, 10_560),
+        ),
+        # C4D VM with the same totals over 32 smaller disks
+        ("c4d-standard-384-lssd", 32, _mib(4_800_000, 2_400_000, 20_000, 10_560)),
+        (
+            "z4d-highmem-384-standardlssd-metal",
+            12,
+            _mib(15_600_000, 12_288_000, 75_600, 57_600),
+        ),
+        # Z3 bare metal follows the VM rate
+        (
+            "z3-highmem-192-highlssd-metal",
+            12,
+            _mib(9_000_000, 6_000_000, 36_000, 30_000),
+        ),
+        # Local SSD by disk count, not linear (same speed for 4 and 8 disks)
+        ("c3-standard-22-lssd", 4, _mib(680_000, 360_000, 2_650, 1_400)),
+        ("c3-standard-44-lssd", 8, _mib(680_000, 360_000, 2_650, 1_400)),
+        ("a3-ultragpu-8g", 32, _mib(3_200_000, 1_600_000, 12_480, 6_240)),
+    ],
+)
+def test_gcp_local_ssd_speed(server_name, disks, expected):
+    assert _local_ssd_speed(server_name, disks, vcpus=192) == expected
+
+
+@pytest.mark.parametrize(
+    "server_name,disks",
+    [
+        # A4X: no performance figures in the docs
+        ("a4x-highgpu-4g", 4),
+        # disk count missing from the Local SSD table
+        ("c3-standard-x-lssd", 12),
+        # unknown series
+        ("x9-standard-8-lssd", 1),
+    ],
+)
+def test_gcp_local_ssd_speed_unknown_is_empty_and_warned(server_name, disks):
+    _warn_unknown_local_ssd_speed.cache_clear()
+    with patch("sc_crawler.vendors._gcp.logger") as logger:
+        assert _local_ssd_speed(server_name, disks, vcpus=192) == (
+            None,
+            None,
+            None,
+            None,
+        )
+    warnings = [call.args[0] for call in logger.warning.call_args_list]
+    assert len(warnings) == 1
+    assert server_name in warnings[0]
+
+
+@pytest.mark.parametrize(
+    "server_name,disks,vcpus,expected",
+    [
+        # A2 reaches the documented speed only with at least 24 vCPUs
+        ("a2-ultragpu-1g", 1, 12, (None, None, None, None)),
+        ("a2-ultragpu-2g", 2, 24, _mib(340_000, 180_000, 1_320, 700)),
+    ],
+)
+def test_gcp_local_ssd_speed_a2_min_vcpus(server_name, disks, vcpus, expected):
+    _warn_unknown_local_ssd_speed.cache_clear()
+    with patch("sc_crawler.vendors._gcp.logger") as logger:
+        assert _local_ssd_speed(server_name, disks, vcpus) == expected
+    # documented rule, not a missing table row
+    logger.warning.assert_not_called()
 
 
 def test_gcp_search_servers_z4d_titanium_ssd_size():
@@ -1003,6 +1107,23 @@ def test_gcp_search_servers_z4d_titanium_ssd_size():
 
     assert rows[0]["storage_size"] == round(24 * 3500 * _GIB_TO_GB)
     assert rows[0]["storage_type"] == StorageType.NVME_SSD
+    assert (
+        rows[0]["storage_read_iops_max"],
+        rows[0]["storage_write_iops_max"],
+        rows[0]["storage_read_throughput_max"],
+        rows[0]["storage_write_throughput_max"],
+    ) == (15_600_000, 12_288_000, 79_272, 60_398)
+    # one entry for all partitions, with the VM-level speed
+    assert rows[0]["storages"] == [
+        {
+            "storage_type": StorageType.NVME_SSD,
+            "size": round(24 * 3500 * _GIB_TO_GB),
+            "read_iops_max": 15_600_000,
+            "write_iops_max": 12_288_000,
+            "read_throughput_max": 79_272,
+            "write_throughput_max": 60_398,
+        }
+    ]
 
 
 def test_gcp_search_servers_parses_fractional_g4_vgpu():

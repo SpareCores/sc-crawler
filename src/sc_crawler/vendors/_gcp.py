@@ -38,6 +38,7 @@ from ..utils import (
     _GIB_TO_GB,
     _HOURS_PER_MONTH,
     _MIB_PER_GIB,
+    _MIB_TO_MB,
     nesteddefaultdict,
     scmodels_to_dict,
 )
@@ -235,9 +236,84 @@ def _local_ssd_partition_gib(server_name: str) -> int:
         return 7000 if server_name.endswith("-metal") else 3500
     if family == "z3" and server_name.endswith("-metal"):
         return 6000
-    if family in ["a4x", "z3"] or (family == "c4" and server_name.endswith("-metal")):
+    if family in ["a4x", "z3"] or (
+        family in ["c4", "c4d"] and server_name.endswith("-metal")
+    ):
         return 3000
     return 375
+
+
+# Maximum speed of the bundled Local SSD disks as
+# (read IOPS, write IOPS, read MiB/s, write MiB/s), from the performance tables:
+# https://docs.cloud.google.com/compute/docs/disks/local-ssd#performance
+# Titanium SSD scales linearly with the number of attached disks, so listed per
+# disk. Bare metal C4, C4D and Z4D have larger disks (3,000 and 7,000 GiB) with
+# proportionally higher speed; Z3 and Z4M bare metal follow the VM rates.
+_TITANIUM_SSD_SPEED_PER_DISK = {
+    "c4": (150_000, 75_000, 625, 330),
+    "c4-metal": (1_200_000, 600_000, 5_000, 2_640),
+    "c4a": (150_000, 75_000, 650, 330),
+    "c4d": (150_000, 75_000, 625, 330),
+    "c4d-metal": (1_200_000, 600_000, 5_000, 2_640),
+    "c4n": (150_000, 75_000, 625, 330),
+    "g4": (150_000, 75_000, 625, 330),
+    "h4d": (150_000, 75_000, 625, 330),
+    "z3": (750_000, 500_000, 3_000, 2_500),
+    "z4d": (650_000, 512_000, 3_150, 2_400),
+    "z4d-metal": (1_300_000, 1_024_000, 6_300, 4_800),
+    "z4m": (1_300_000, 1_024_000, 6_300, 4_800),
+}
+# Local SSD (non-Titanium) attached via NVMe does not scale linearly, so listed
+# by the number of attached disks.
+_LOCAL_SSD_SERIES = {"a2", "a3", "a4", "c3", "c3d"}
+_LOCAL_SSD_SPEED_BY_DISK_COUNT = {
+    1: (170_000, 90_000, 660, 350),
+    2: (340_000, 180_000, 1_320, 700),
+    3: (510_000, 270_000, 1_980, 1_050),
+    **{count: (680_000, 360_000, 2_650, 1_400) for count in range(4, 9)},
+    16: (1_600_000, 800_000, 6_240, 3_120),
+    24: (2_400_000, 1_200_000, 9_360, 4_680),
+    32: (3_200_000, 1_600_000, 12_480, 6_240),
+}
+# "To reach the stated performance levels": A2 machine types require at least
+# 24 vCPUs (N1 and N2 have no bundled Local SSD)
+_LOCAL_SSD_MIN_VCPUS = {"a2": 24}
+
+
+@cache
+def _warn_unknown_local_ssd_speed(name: str) -> None:
+    """Warn about a machine type without documented Local SSD speed, once per run."""
+    logger.warning(
+        f"Unknown GCP Local SSD speed of {name}, leaving storage speed empty."
+    )
+
+
+def _local_ssd_speed(server_name: str, partition_count: int, vcpus: int) -> tuple:
+    """(read IOPS, write IOPS, read MB/s, write MB/s) of the bundled Local SSD."""
+    family = server_name.split("-")[0].lower()
+    if vcpus < _LOCAL_SSD_MIN_VCPUS.get(family, 0):
+        # documented rule, not a missing table row: no warning
+        return (None, None, None, None)
+    if server_name.endswith("-metal") and f"{family}-metal" in (
+        _TITANIUM_SSD_SPEED_PER_DISK
+    ):
+        family = f"{family}-metal"
+    speed = None
+    if family in _TITANIUM_SSD_SPEED_PER_DISK:
+        speed = tuple(v * partition_count for v in _TITANIUM_SSD_SPEED_PER_DISK[family])
+    elif family in _LOCAL_SSD_SERIES:
+        speed = _LOCAL_SSD_SPEED_BY_DISK_COUNT.get(partition_count)
+    if speed is None:
+        # e.g. A4X: no performance figures in the docs
+        _warn_unknown_local_ssd_speed(server_name)
+        return (None, None, None, None)
+    read_iops, write_iops, read_mib, write_mib = speed
+    return (
+        read_iops,
+        write_iops,
+        round(read_mib * _MIB_TO_MB),
+        round(write_mib * _MIB_TO_MB),
+    )
 
 
 # Machine series that support each Hyperdisk type
@@ -1318,6 +1394,9 @@ def _search_servers(zone_name: str) -> List[dict]:
                     zone_servers[-1]["accelerator_manufacturer"] = "Google"
         bundled = server.bundled_local_ssds
         if bundled and bundled.partition_count:
+            read_iops, write_iops, read_mbps, write_mbps = _local_ssd_speed(
+                server.name, bundled.partition_count, server.guest_cpus
+            )
             storage_size = round(
                 bundled.partition_count
                 * _local_ssd_partition_gib(server.name)
@@ -1329,12 +1408,22 @@ def _search_servers(zone_name: str) -> List[dict]:
                     # third-gen+ Local SSD (incl. Titanium) is NVMe-only
                     # https://cloud.google.com/compute/docs/disks/local-ssd
                     "storage_type": StorageType.NVME_SSD,
+                    # one entry for all Local SSD partitions with the documented
+                    # VM-level speed
                     "storages": [
                         {
                             "storage_type": StorageType.NVME_SSD,
                             "size": storage_size,
+                            "read_iops_max": read_iops,
+                            "write_iops_max": write_iops,
+                            "read_throughput_max": read_mbps,
+                            "write_throughput_max": write_mbps,
                         }
                     ],
+                    "storage_read_iops_max": read_iops,
+                    "storage_write_iops_max": write_iops,
+                    "storage_read_throughput_max": read_mbps,
+                    "storage_write_throughput_max": write_mbps,
                 }
             )
     return zone_servers
