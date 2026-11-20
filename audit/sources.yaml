@@ -12,6 +12,8 @@
 #   possibly not existing at the vendor.
 # - independent: false if our ingest reads the very same source.
 # - parser: deterministic parser for machine-readable sources (no LLM needed).
+# - listing_parser: deterministic parser for the exact SKU and series listing of
+#   a page, in addition to the LLM extraction of its other values.
 # - follow: also fetch linked child pages matching a regex.
 
 vendors:
@@ -293,6 +295,7 @@ vendors:
         follow:
           pattern: "learn\\.microsoft\\.com/en-us/azure/virtual-machines/sizes/(general-purpose|compute-optimized|memory-optimized|storage-optimized|gpu-accelerated|fpga-accelerated|high-performance-compute)/[a-z0-9-]+-(series|family)$"
           kinds: [server_specs, gpu]
+          listing_parser: azure_size_series
           recursive: true
       - id: sizes-toc
         url: "https://learn.microsoft.com/en-us/azure/virtual-machines/toc.json"
@@ -303,6 +306,7 @@ vendors:
         follow:
           pattern: "learn\\.microsoft\\.com/en-us/azure/virtual-machines/sizes/(general-purpose|compute-optimized|memory-optimized|storage-optimized|gpu-accelerated|fpga-accelerated|high-performance-compute)/[a-z0-9-]+-series$"
           kinds: [server_specs, gpu]
+          listing_parser: azure_size_series
       - id: previous-gen-sizes
         url: "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/previous-gen-sizes-list"
         kinds: [lifecycle]

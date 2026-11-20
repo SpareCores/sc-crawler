@@ -1058,3 +1058,136 @@ def test_fetch_replaces_unreadable_metadata(tmp_path, corrupt):
     result = fetch_page("vultr", vendor, page, tmp_path, session=session)
     assert not result.error and not result.cached
     assert json.loads(meta_path.read_text())["status"] == 200
+
+
+AZURE_SERIES_PAGE = r"""
+# Ev3 and Esv3-series
+
+| Host | Value |
+| --- | --- |
+| Processor | Intel |
+
+## Ev3-series
+
+| Size | vCPU |
+| --- | --- |
+| Standard\_E2\_v31 | 2 |
+| Standard\_E64i\_v3 2 | 64 |
+
+| Size | Max NICs |
+| --- | --- |
+| Standard\_E2\_v3 | 2 |
+| Standard\_E4\_v3 | 2 |
+
+## Esv3-series
+
+| Size | vCPU |
+| --- | --- |
+| Standard\_E2s\_v3 | 2 |
+
+## Size table definitions
+
+| Standard\_E99\_v3 | 1 |
+"""
+
+
+def test_azure_size_series_parser():
+    from sc_crawler_audit.parsers import azure_size_series
+
+    url = "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/memory-optimized/ev3-esv3-series"
+    page = SourcePage(id="sizes-toc/ev3-esv3-series", url=url, kinds=["server_specs"])
+    extraction = azure_size_series(AZURE_SERIES_PAGE, page, "azure")
+    assert [(s.sku, s.series) for s in extraction.servers] == [
+        ("Standard_E2_v3", "Ev3"),  # footnote marker dropped
+        ("Standard_E64i_v3", "Ev3"),
+        ("Standard_E2s_v3", "Esv3"),
+    ]
+    # sizes only in a later table are typos in the docs, not sizes of the series
+    assert "Standard_E4_v3" in extraction.notes
+    family = page.model_copy(update={"url": url.replace("ev3-esv3-series", "e-family")})
+    assert azure_size_series(AZURE_SERIES_PAGE, family, "azure").servers == []
+
+
+def test_series_split_merged_and_name(tmp_path):
+    ours = Ours(
+        vendor="azure",
+        servers=[
+            _server("Standard_M64", 64, 1024, series="M"),
+            _server("Standard_M8ms", 8, 1024, series="Ms"),  # split from M
+            _server("Standard_D2ds_v5", 2, 8192, series="Ddsv5"),
+            _server("Standard_D2lds_v5", 2, 4096, series="Ddsv5"),  # merged
+            _server("Standard_B1ms", 1, 2048, series="Bs"),  # name differs
+            _server("Standard_E2s_v5", 2, 16384, series="Esv5"),  # matches
+            # retired, still listed: a SKU-only listing implies no status
+            _server("Standard_A1", 1, 1024, status="RETIRED", series="A"),
+        ],
+        server_prices=[],
+        databases=[],
+        database_prices=[],
+        regions=[],
+        zones=[],
+    )
+    page = SourcePage(
+        id="sizes", url="https://learn.microsoft.com/sizes", kinds=["server_specs"],
+        listing_parser="azure_size_series",
+    )  # fmt: skip
+    vendor = VendorSources(allowed_domains=["learn.microsoft.com"], pages=[page])
+
+    def rows(*pairs):
+        return [{"sku": k, "series": v, "evidence_quote": k} for k, v in pairs]
+
+    listing = Extraction(
+        vendor="azure", page_id="sizes", extracted_at=datetime.now(UTC),
+        extracted_by="parser:azure_size_series",
+        servers=rows(("Standard_M64", "M"), ("Standard_M8ms", "M"),
+                     ("Standard_D2ds_v5", "Ddsv5"), ("Standard_D2lds_v5", "Dldsv5"),
+                     ("Standard_B1ms", "Bv1"), ("Standard_E2s_v5", "Esv5"),
+                     ("Standard_X2_v9", "Xv9"), ("Standard_A1", "A")),
+    )  # fmt: skip
+    # the LLM extraction of the same page disagrees: the parser wins
+    llm = Extraction(
+        vendor="azure", page_id="sizes", extracted_at=datetime.now(UTC),
+        extracted_by="claude-code",
+        servers=rows(("Standard_M8ms", "Ms"))
+        + [{"sku": "Standard_X2_v9", "vcpus": 2, "evidence_quote": "X2"}],
+    )  # fmt: skip
+    target = extracted_dir(tmp_path, "azure")
+    target.mkdir(parents=True)
+    (target / "sizes.json").write_text(llm.model_dump_json())
+    (target / "sizes.listing.json").write_text(listing.model_dump_json())
+    findings, stats = compare_vendor("azure", vendor, ours, tmp_path)
+    series = [(f.type, f.ours, f.theirs) for f in findings if f.field == "series"]
+    assert sorted(series, key=str) == sorted(
+        [
+            ("SERIES_SPLIT", ["M", "Ms"], "M"),
+            ("SERIES_MERGED", "Ddsv5", ["Ddsv5", "Dldsv5"]),
+            ("SERIES_NAME", "Bs", "Bv1"),
+        ],
+        key=str,
+    )
+    assert stats["series_checked"] == 7
+    # a SKU we don't have is reported once, with the specs of the LLM extraction
+    missing = _by(findings, "MISSING_IN_DB")
+    assert [(f.sku, f.theirs["vcpus"]) for f in missing] == [("Standard_X2_v9", 2)]
+    assert not _by(findings, "STATUS_MISMATCH")
+
+    # a stale listing is ignored when the page has no listing parser
+    page.listing_parser = None
+    findings, stats = compare_vendor("azure", vendor, ours, tmp_path)
+    assert not [f for f in findings if f.field == "series"]
+    assert stats["series_checked"] == 1  # Standard_M8ms from the LLM only
+
+
+def test_missing_server_and_database_not_merged():
+    from sc_crawler_audit.compare import Finding
+
+    common = dict(vendor="x", type="MISSING_IN_DB", severity="medium", page_id="p",
+                  url="u", independent=True, sku="small")  # fmt: skip
+    server = Finding(code_hint="vendors/_x.py:inventory_servers", **common)
+    database = Finding(code_hint="vendors/_x.py:inventory_databases", **common)
+    assert server.key() != database.key()
+    # payloads still don't matter for the same resource
+    assert (
+        server.key()
+        == Finding(code_hint=server.code_hint, theirs={"vcpus": 2}, **common).key()
+    )

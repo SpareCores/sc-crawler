@@ -115,13 +115,26 @@ def parse(
     sources: options.sources = None,
 ):
     """Run the deterministic parsers on fetched machine-readable pages."""
-    from .parsers import PARSERS
-    from .sources import extracted_dir, iter_pages, page_slug, pages_dir
+    from .parsers import LISTING_PARSERS, PARSERS
+    from .sources import extracted_dir, iter_pages, listing_path, page_slug, pages_dir
 
     for vendor_id, vendor_sources in selected_vendors(
         load_sources(sources), vendor, exclude_vendor
     ):
         for page in iter_pages(vendor_sources, vendor_id, out):
+            md = pages_dir(out, vendor_id) / f"{page_slug(page.id)}.md"
+            if page.listing_parser and md.exists():
+                listing = LISTING_PARSERS[page.listing_parser](
+                    md.read_text(encoding="utf-8"), page, vendor_id
+                )
+                target = listing_path(out, vendor_id, page.id)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(
+                    listing.model_dump_json(indent=2, exclude_defaults=True),
+                    encoding="utf-8",
+                )
+                if listing.notes:
+                    console.log(f"[yellow]{vendor_id}/{page.id}: {listing.notes}")
             if not page.parser:
                 continue
             raw = pages_dir(out, vendor_id) / f"{page_slug(page.id)}.json"

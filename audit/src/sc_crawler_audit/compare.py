@@ -12,8 +12,9 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from .export import Ours, norm
+from .parsers import LISTING_PARSERS
 from .schema import Extraction, PageKind, SourcePage, VendorSources
-from .sources import extracted_dir, iter_pages, page_slug
+from .sources import extracted_dir, iter_pages, listing_path, page_slug
 
 MIB_PER_GIB = 1024
 
@@ -58,12 +59,16 @@ class Finding:
     def key(self) -> tuple:
         return (
             self.type,
+            # the resource kind, e.g. a missing server vs a missing database
+            self.code_hint,
             self.sku and norm(self.sku),
             self.our_id,
             self.region,
             self.field,
             str(self.ours),
-            str(self.theirs),
+            # a SKU missing in our data is one finding, whatever each page shows
+            # of it (e.g. the specs from the LLM, the series from a listing parser)
+            None if self.type == "MISSING_IN_DB" else str(self.theirs),
         )
 
     def to_dict(self) -> dict:
@@ -226,7 +231,8 @@ class Comparer:
     # ##########################################################################
     # servers
 
-    def compare_server_spec(self, page: SourcePage, spec):
+    def compare_server_spec(self, page: SourcePage, spec, listing: bool = False):
+        """Compare a server row; `listing` rows only name the SKU and series."""
         self.stats["server_specs"] += 1
         server, matched_by = self.resolve_server(spec.sku, spec, page)
         if server is None:
@@ -234,13 +240,13 @@ class Comparer:
                 self.stats["server_specs_ambiguous"] += 1
                 return
             if spec.status in ("retired", "retiring"):
-                # whole series retired: check our servers of that family
+                # whole series retired: check our servers of that series or family
                 series = norm(re.sub(r"[- ]?series$", "", spec.sku, flags=re.I))
                 for s in self.ours.servers:
                     if (
                         s["status"] == "ACTIVE"
                         and series
-                        and norm(s["family"]) == series
+                        and series in (norm(s["series"]), norm(s["family"]))
                     ):
                         self.add(
                             page, "STATUS_MISMATCH", "medium", "server",
@@ -278,7 +284,11 @@ class Comparer:
             matched_by=matched_by,
         )
 
-        if server["status"] != "ACTIVE" and spec.status in (None, "active"):
+        # a SKU-only listing row says nothing about the status
+        implied_active = spec.status == "active" or (
+            spec.status is None and not listing
+        )
+        if server["status"] != "ACTIVE" and implied_active:
             # docs pages often stay up for a while after retirement
             retiring = server["status"] in ("RETIRED", "PLANNED_FOR_RETIREMENT")
             self.add(
@@ -639,7 +649,9 @@ class Comparer:
             # a whole series (e.g. Azure "Dcadsv5" with a vCore range) covers
             # all our sizes of that family, without comparing specs
             family = [
-                db for db in self.ours.databases if norm(db["family"]) == norm(spec.sku)
+                db
+                for db in self.ours.databases
+                if norm(spec.sku) in (norm(db.get("series")), norm(db["family"]))
             ]
             if family:
                 self.mark_database_seen(page, *(db["database_id"] for db in family))
@@ -920,6 +932,79 @@ class Comparer:
                         note="Active region in our data, not on the vendor's region list.",
                     )  # fmt: skip
 
+    # ##########################################################################
+    # series
+
+    def compare_series(self, pages: List[Tuple[SourcePage, Extraction]]):
+        """Check that our series group the SKUs the same way as the vendor's series.
+
+        Only the grouping is compared: one vendor series split into several of
+        ours, or several vendor series merged into one of ours. A one-to-one
+        series spelled differently is only reported as low severity.
+        Deterministic sources (parsers) are used first when sources disagree.
+        """
+        theirs_of: Dict[str, tuple] = {}  # our server id -> (series, page, server)
+        ordered = sorted(
+            pages, key=lambda pe: not pe[1].extracted_by.startswith("parser")
+        )
+        for page, extraction in ordered:
+            for spec in extraction.servers:
+                if not spec.series:
+                    continue
+                server, _ = self.resolve_server(spec.sku)
+                if server is None or server["server_id"] in theirs_of:
+                    continue
+                theirs_of[server["server_id"]] = (spec.series.strip(), page, server)
+        # vendor series by normalized name, ours as is (MSv2 and Msv2 are two series)
+        by_theirs = defaultdict(lambda: defaultdict(list))
+        by_ours = defaultdict(lambda: defaultdict(list))
+        their_name, page_of = {}, {}
+        for series, page, server in theirs_of.values():
+            if not server["series"]:
+                self.stats["series_missing_in_db"] += 1
+                continue
+            self.stats["series_checked"] += 1
+            key = norm(series)
+            their_name.setdefault(key, series)
+            page_of.setdefault(key, page)
+            by_theirs[key][server["series"]].append(server["server_id"])
+            by_ours[server["series"]][key].append(server["server_id"])
+
+        def examples(groups: dict, name=lambda k: k) -> str:
+            return "; ".join(
+                f"{name(k)}: {', '.join(sorted(ids)[:4])}"
+                + (" ..." if len(ids) > 4 else "")
+                for k, ids in sorted(groups.items())
+            )
+
+        for key, ours in sorted(by_theirs.items()):
+            if len(ours) > 1:
+                self.add(
+                    page_of[key], "SERIES_SPLIT", "high", "server", field="series",
+                    sku=their_name[key], ours=sorted(ours), theirs=their_name[key],
+                    note=f"One vendor series, several of ours. {examples(ours)}",
+                )  # fmt: skip
+        for series, theirs in sorted(by_ours.items()):
+            if len(theirs) > 1:
+                names = sorted(their_name[k] for k in theirs)
+                self.add(
+                    page_of[min(theirs)], "SERIES_MERGED", "medium", "server",
+                    field="series", our_id=series, ours=series, theirs=names,
+                    note="Several vendor series in one of ours. "
+                    + examples(theirs, lambda k: their_name[k]),
+                )  # fmt: skip
+        for key, ours in sorted(by_theirs.items()):
+            if len(ours) != 1:
+                continue
+            series = next(iter(ours))
+            if len(by_ours[series]) == 1 and norm(series) != key:
+                self.add(
+                    page_of[key], "SERIES_NAME", "low", "server", field="series",
+                    sku=their_name[key], our_id=series, ours=series,
+                    theirs=their_name[key],
+                    note=f"Same SKUs, different name. {examples(ours)}",
+                )  # fmt: skip
+
     def flag_source_conflicts(self):
         """Spec mismatches where another official page agrees with our value."""
         for finding in self.findings:
@@ -961,11 +1046,16 @@ def load_extractions(
 ) -> List[Tuple[SourcePage, Extraction]]:
     pages = []
     for page in iter_pages(vendor, vendor_id, out_dir):
-        path = extracted_dir(out_dir, vendor_id) / f"{page_slug(page.id)}.json"
-        if path.exists():
-            pages.append(
-                (page, Extraction.model_validate_json(path.read_text(encoding="utf-8")))
-            )
+        paths = [extracted_dir(out_dir, vendor_id) / f"{page_slug(page.id)}.json"]
+        # only when enabled, so that a stale listing cannot override the LLM values
+        if page.listing_parser:
+            paths.append(listing_path(out_dir, vendor_id, page.id))
+        for path in paths:
+            if path.exists():
+                extraction = Extraction.model_validate_json(
+                    path.read_text(encoding="utf-8")
+                )
+                pages.append((page, extraction))
     return pages
 
 
@@ -978,12 +1068,14 @@ def compare_vendor(
 ) -> Tuple[List[Finding], dict]:
     comparer = Comparer(vendor_id, vendor, ours, price_tolerance)
     pages = load_extractions(vendor_id, vendor, out_dir)
-    comparer.stats["pages_with_extractions"] = len(pages)
+    comparer.stats["pages_with_extractions"] = len({p.id for p, _ in pages})
     comparer.authoritative_pages = {p.id for p, _ in pages if p.spec_authority}
     # specs first so that SKU labels resolved by specs can be reused for prices
+    listing_parsers = {f"parser:{name}" for name in LISTING_PARSERS}
     for page, extraction in pages:
+        listing = extraction.extracted_by in listing_parsers
         for spec in extraction.servers:
-            comparer.compare_server_spec(page, spec)
+            comparer.compare_server_spec(page, spec, listing=listing)
     for page, extraction in pages:
         for price in extraction.server_prices:
             comparer.compare_server_price(page, price)
@@ -998,6 +1090,7 @@ def compare_vendor(
         if extraction.regions:
             comparer.compare_regions(page, extraction.regions)
     comparer.completeness(pages)
+    comparer.compare_series(pages)
     comparer.flag_source_conflicts()
     comparer.dedupe()
     return comparer.findings, dict(comparer.stats)
