@@ -969,18 +969,70 @@ _VM_DCSV2_RE = recompile(r"(?i)^Standard_DC\d+_v2$")
 # Some M sizes have an extra number before the version (Standard_M48ds_1_v3), it is not
 # part of the series.
 _VM_SIZE_SUFFIX_RE = recompile(r"(?i)_\d+(?=_v\d*$)")
+# The docs list these M series by memory class, e.g. "Msv2 Medium Memory". The class is
+# in the SKU family of the API (MSMediumMemoryv2, MDSHighMemoryv3, ...), the size names
+# do not show it. The SKU family MSv2 is the high memory one.
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/memory-optimized/msv2-mm-series
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/memory-optimized/mv2-series
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/memory-optimized/mdsv3-mm-series
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/memory-optimized/mdsv3-hm-series
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/memory-optimized/mdsv3-vhm-series
+_VM_MEMORY_CLASS_SERIES = frozenset({"Msv2", "Mdsv2", "Msv3", "Mdsv3", "Msv4", "Mdsv4"})
+_VM_MEMORY_CLASS_RE = recompile(r"(Very)?(High|Medium)Memory")
+# Series of the sizes that the parser does not know: the SKU family of the API (as
+# `_standardize_server` spells it) -> the name of the series in the docs. Names with
+# spaces in the docs are written with hyphens, as for the other GPU series (ND-H100-v5).
+# Each name is the series name on the per-series page, listed on the sizes overview:
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/overview
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/ndh100v5-series
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/ndv2-series
+_VM_SERIES_BY_SKU_FAMILY = {
+    "DSv2": "Dsv2",
+    "DCACCV5": "DCas_cc_v5",
+    "DCADCCV5": "DCads_cc_v5",
+    "ECACCV5": "ECas_cc_v5",
+    "ECADCCV5": "ECads_cc_v5",
+    "FXMDVS": "FX",
+    "HBrsv2": "HBv2",
+    "HCS": "HC",
+    "NCSv3": "NCv3",
+    "NCASv3_T4": "NCasT4_v3",
+    "NCADSA100v4": "NC_A100_v4",
+    "NCadsH100v5": "NCads_H100_v5",
+    "NCCads2023": "NCCads_H100_v5",
+    "NCdsRTXPRO6000BSEv6XL": "NC-RTXPRO6000-BSE-v6",
+    "NDSv2": "NDv2",
+    "NDASv4_A100": "NDasrA100_v4",
+    "NDAMSv4_A100": "NDm_A100_v4",
+    "NDSH100v5": "ND-H100-v5",
+    "NDISRH200V5": "ND-H200-v5",
+    "NDISv5MI300X": "ND-MI300X-v5",
+    "NDISRGB200V6NDR": "ND-GB200-v6",
+    "NDISRGB300V6": "ND-GB300-v6",
+    "NGADSV620v1": "NGads_V620",
+    "NPS": "NP",
+    "NVSv3": "NVv3",
+    "NVSv4": "NVv4",
+    "NVADSA10v5": "NVadsA10_v5",
+    "NVadsV710v5": "NVads-V710-v5",
+}
 
 
-def _vm_series(size_name: str, sku_family: str) -> str:
-    """Series of a VM size, built like the series of the PostgreSQL databases.
+def _vm_series(size_name: str, sku_family: Optional[str]) -> Optional[str]:
+    """Series of a VM size, named as in the Microsoft docs.
 
-    The database series come from `_parse_database_name`, so the same function is used
-    here and a database joins the server it runs on, e.g. Standard_D2ds_v5 -> Ddsv5.
-    That drops the isolated i and the m/t memory shape letters (and l for B and M), but
-    keeps the l of the D and F families and the m of the F family, as the low memory
-    Standard_D2lds_v5 is in the Dldsv5 series, not in Ddsv5. Sizes the parser does not
-    know (GPU, HPC, other odd shapes) keep the SKU family of the API, they have no
-    database counterpart.
+    The series of the sizes that follow the naming convention come from
+    `_parse_database_name`, the function of the PostgreSQL databases, e.g.
+    Standard_D2ds_v5 -> Ddsv5. That drops the isolated i and the m/t memory shape
+    letters (and l for B and M), but keeps the l of the D and F families and the m of
+    the F family, as the low memory Standard_D2lds_v5 is in the Dldsv5 series, not in
+    Ddsv5. On top of that, the M sizes get the memory class of the docs (Msv2 Medium
+    Memory), the original M series has no letters, and the original B series is Bv1.
+    The PostgreSQL series of the B sizes stays Bs (no M sizes are offered there), so
+    those databases do not match their server by series.
+    Sizes the parser does not know (GPU, HPC, confidential computing, other odd shapes)
+    are named by `_VM_SERIES_BY_SKU_FAMILY`, and keep the SKU family of the API if not
+    listed there.
     """
     if _VM_DCSV2_RE.match(size_name):
         return "DCsv2"
@@ -989,10 +1041,23 @@ def _vm_series(size_name: str, sku_family: str) -> str:
             _VM_SIZE_SUFFIX_RE.sub("", size_name)
         )
     except ValueError:
-        return sku_family
-    if family == "M" and not version:
+        return _VM_SERIES_BY_SKU_FAMILY.get(sku_family, sku_family)
+    if not version:
         # the original M series has no letters (M8ms, M32ls and M64 are all in M)
-        return "M"
+        if family == "M":
+            return "M"
+        # the original B series is Bv1 in the docs (the PostgreSQL series stays Bs)
+        if family == "B":
+            return "Bv1"
+    if family == "M":
+        # the x of the very high memory sizes (M896ixds_32_v3) is not in the series
+        series = series.replace("x", "")
+        if series in _VM_MEMORY_CLASS_SERIES:
+            if match := _VM_MEMORY_CLASS_RE.search(sku_family or ""):
+                memory_class = f"{'Very ' if match[1] else ''}{match[2]} Memory"
+                series = f"{series} {memory_class}"
+            elif sku_family == "MSv2":
+                series = f"{series} High Memory"
     return series
 
 

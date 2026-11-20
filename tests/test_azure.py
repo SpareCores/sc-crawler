@@ -125,7 +125,7 @@ def test_azure_standardize_server_family_and_series():
     }
     row = _standardize_server(server, SimpleNamespace(vendor_id="azure"))
     assert row["family"] == "GPU Accelerated"
-    assert row["series"] == "NCASv3_T4"
+    assert row["series"] == "NCasT4_v3"
 
 
 def test_azure_sku_lifecycle_status_from_retired_sizes_list():
@@ -1614,34 +1614,52 @@ def test_pg_storage_prices_skip_unsupported_retail_meters():
         # the SKU family spells these differently from the database series
         ("Standard_D2s_v3", "DSv3", "Dsv3"),
         ("Standard_D2ds_v5", "DDSv5", "Ddsv5"),
-        ("Standard_B1ms", "BS", "Bs"),
+        # the original B series is Bv1 in the docs, the PostgreSQL series is still Bs
+        ("Standard_B1ms", "BS", "Bv1"),
+        ("Standard_B1s", "BS", "Bv1"),
+        ("Standard_B2ls_v2", "Bsv2", "Bsv2"),
         ("Standard_D4ads_v6", "Dadv6", "Dadsv6"),
         ("Standard_E4ads_v6", "Eadv6", "Eadsv6"),
         # low memory and memory intensive sizes are separate series in D and F
         ("Standard_D2lds_v5", "DLDSv5", "Dldsv5"),
         ("Standard_F16ams_v6", "Famsv6", "Famsv6"),
         # extra number before the version is not part of the series
-        ("Standard_M48ds_1_v3", "MDSMediumMemoryv3", "Mdsv3"),
         ("Standard_M128-64bds_3_v3", "MBDSMediumMemoryv3", "Mbdsv3"),
-        ("Standard_M416s_8_v2", "MSv2", "Msv2"),
-        ("Standard_M832ids_16_v3", "MIDSHighMemoryv3", "Mdsv3"),
+        # the M series are listed by memory class in the docs (from the SKU family)
+        ("Standard_M48ds_1_v3", "MDSMediumMemoryv3", "Mdsv3 Medium Memory"),
+        ("Standard_M12s_v3", "MSMediumMemoryv3", "Msv3 Medium Memory"),
+        ("Standard_M416s_8_v2", "MSv2", "Msv2 High Memory"),
+        ("Standard_M128ms_v2", "MSMediumMemoryv2", "Msv2 Medium Memory"),
+        ("Standard_M832ids_16_v3", "MIDSHighMemoryv3", "Mdsv3 High Memory"),
+        ("Standard_M896ixds_32_v3", "MDSVeryHighMemoryv3", "Mdsv3 Very High Memory"),
+        ("Standard_M32lds_v4", "MDSMediumMemoryv4", "Mdsv4 Medium Memory"),
+        ("Standard_M16ls_v4", "MSMediumMemoryv4", "Msv4 Medium Memory"),
+        ("Standard_M32dms_v2", "MDSMediumMemoryv2", "Mdsv2 Medium Memory"),
+        # no memory class in the SKU family: no guess
+        ("Standard_M12ds_v3", "MDSv3", "Mdsv3"),
         # the original M series has no letters
         ("Standard_M32ls", "MS", "M"),
         ("Standard_M8ms", "MS", "M"),
         ("Standard_M64", "M", "M"),
         ("Standard_M64-32ms", "MS", "M"),
         # a number in the name that is not before the version is kept
-        ("Standard_ND96isr_H100_v5", "NDISRH200V5", "NDISRH200V5"),
+        ("Standard_ND96isr_H100_v5", "NDSH100v5", "ND-H100-v5"),
         # in the DCsv2 series of the docs, although the name has no s
         ("Standard_DC8_v2", "DCv2", "DCsv2"),
         ("Standard_DC4s_v2", "DCSv2", "DCsv2"),
         # constrained vCPU sizes keep the series of the base size
         ("Standard_E64-16ds_v5", "EDSv5", "Edsv5"),
-        # sizes unknown to the database parser keep the SKU family
-        ("Standard_NC24ads_A100_v4", "NCADSA100v4", "NCADSA100v4"),
+        # sizes unknown to the database parser are named from the SKU family as in
+        # the docs, or keep the SKU family if they are not listed
+        ("Standard_NC24ads_A100_v4", "NCADSA100v4", "NC_A100_v4"),
+        ("Standard_DC16ads_cc_v5", "DCADCCV5", "DCads_cc_v5"),
+        ("Standard_HB120rs_v2", "HBrsv2", "HBv2"),
+        ("Standard_NX1_v9", "NXFUTUREv9", "NXFUTUREv9"),
+        # missing SKU family: nothing to name it from, no error
+        ("Standard_NC24ads_A100_v4", None, None),
     ],
 )
-def test_azure_vm_series_matches_database_series(size, sku_family, series):
+def test_azure_vm_series(size, sku_family, series):
     assert _vm_series(size, sku_family) == series
 
 
