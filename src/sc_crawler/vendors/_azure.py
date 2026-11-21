@@ -630,11 +630,8 @@ STORAGE_PRICE_UNIT_MAPPING: dict[str, float | None] = {
 # https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/msv2-mdsv2-retirement
 # Fallback of the retirement dates of the API (`_vm_retirement_dates`), for the sizes
 # without date there.
-# Rule format: (compiled regex, retired_on date).
-# - If as_of >= retired_on -> RETIRED.
-# - Else matched -> PLANNED_FOR_RETIREMENT.
-# - No match -> ACTIVE.
-_AZURE_SKU_LIFECYCLE_RULES = (
+# Rule format: (compiled regex on the size name, retirement date).
+_AZURE_RETIREMENT_RULES = (
     (recompile(r"^A\d+$", IGNORECASE), date(2024, 8, 31)),  # noqa: E501  # Av1-series (Basic/Standard)
     (recompile(r"^NC\d+r?$", IGNORECASE), date(2023, 8, 31)),  # NC v1-series
     (recompile(r"^NC\d+r?s_v2$", IGNORECASE), date(2023, 8, 31)),  # NCv2-series
@@ -696,13 +693,13 @@ def _azure_sku_retirement_date(sku_name: str) -> date | None:
     """Retirement date of an Azure VM size, or `None` if not retiring.
 
     The retirement date of the API (see `_vm_retirement_dates`) is used if there is one,
-    the `_AZURE_SKU_LIFECYCLE_RULES` of the docs are the fallback for the other sizes.
+    the `_AZURE_RETIREMENT_RULES` of the docs are the fallback for the other sizes.
     """
     api_retired_on = _vm_retirement_dates().get(sku_name)
     if api_retired_on:
         return api_retired_on
     size = sku_name.removeprefix("Standard_").removeprefix("Basic_")
-    return retirement_date_from_rules(size, _AZURE_SKU_LIFECYCLE_RULES)
+    return retirement_date_from_rules(size, _AZURE_RETIREMENT_RULES)
 
 
 # GPU sizes by series: (size regex, model, GPU memory in GiB, GPUs by vCPUs).
@@ -1840,7 +1837,7 @@ def inventory_servers(vendor):
     """List all available instance types in all regions.
 
     Lifecycle: the retirement date of `_azure_sku_retirement_date` (API, then
-    `_AZURE_SKU_LIFECYCLE_RULES`) is stored in `retirement_date` — RETIRED if
+    `_AZURE_RETIREMENT_RULES`) is stored in `retirement_date` — RETIRED if
     it has passed, PLANNED_FOR_RETIREMENT if not yet, otherwise ACTIVE.
     """
     servers = _servers()

@@ -1054,7 +1054,7 @@ def _server_description(
 # generation shapes (e.g. DenseIO2, HPC2) once confirmed to be still orderable.
 # https://docs.oracle.com/en-us/iaas/Content/Compute/References/computeshapes.htm#previous-generation-shapes
 # Rule format: (compiled regex on the shape name, retirement date).
-_OCI_PREVIOUS_GENERATION_RULES = (
+_OCI_RETIREMENT_RULES = (
     (recompile(r"^(VM|BM)\.Standard2\..*$"), date(2022, 2, 28)),
     # except for the Always Free micro shape
     (recompile(r"^(VM|BM)\.Standard\.E2\.(?!1\.Micro$).*$"), date(2021, 2, 8)),
@@ -1098,9 +1098,7 @@ def _shape_servers(shape: dict, vendor) -> list[dict]:
             )
             for _ in range(config["local_disks"])
         ]
-        retirement_date = retirement_date_from_rules(
-            name, _OCI_PREVIOUS_GENERATION_RULES
-        )
+        retirement_date = retirement_date_from_rules(name, _OCI_RETIREMENT_RULES)
         if shape.get("billing_type") == "ALWAYS_FREE":
             status = Status.INACTIVE
         elif retirement_date:
@@ -1490,7 +1488,7 @@ def inventory_servers(vendor):
     despite being past their "end of orderability" date as per
     <https://docs.oracle.com/en-us/iaas/Content/Compute/References/computeshapes.htm#previous-generation-shapes>,
     so those are PLANNED_FOR_RETIREMENT with that date, see
-    `_OCI_PREVIOUS_GENERATION_RULES`.
+    `_OCI_RETIREMENT_RULES`.
     """
     zone_regions = {zone.api_reference: zone.region_id for zone in vendor.zones}
 

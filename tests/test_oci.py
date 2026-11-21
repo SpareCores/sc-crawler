@@ -25,7 +25,7 @@ from sc_crawler.table_fields import (  # noqa: E402
 from sc_crawler.vendor_helpers import retirement_date_from_rules  # noqa: E402
 from sc_crawler.vendors import _oci  # noqa: E402
 from sc_crawler.vendors._oci import (  # noqa: E402
-    _OCI_PREVIOUS_GENERATION_RULES,
+    _OCI_RETIREMENT_RULES,
     _config,
     _config_hourly_price,
     _parse_processor_description,
@@ -1232,4 +1232,4 @@ def test_inventory_database_storage_prices_without_service(database_api):
     ],
 )
 def test_oci_previous_generation_retirement_dates(name, expected):
-    assert retirement_date_from_rules(name, _OCI_PREVIOUS_GENERATION_RULES) == expected
+    assert retirement_date_from_rules(name, _OCI_RETIREMENT_RULES) == expected

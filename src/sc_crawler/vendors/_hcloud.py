@@ -330,8 +330,9 @@ def _hcloud_server_retirement_date(server, status: Status) -> date | None:
 
 
 # Retirement dates of the types removed from the API, for the ones crawled
-# before the per-location deprecation dates were stored. From the API changelog
-# (date of the removal from the API): https://docs.hetzner.cloud/changelog
+# before the per-location deprecation dates were stored. As in
+# `_hcloud_server_retirement_date`, the day after the last day the type could be
+# ordered, from the API changelog: https://docs.hetzner.cloud/changelog
 # Rule format: (compiled regex on the type name, retirement date).
 _HCLOUD_RETIREMENT_RULES = (
     (recompile(r"^ccx[1-5]1$"), date(2023, 7, 18)),  # Intel dedicated vCPU

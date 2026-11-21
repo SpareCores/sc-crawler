@@ -56,7 +56,7 @@ def test_azure_sku_retirement_date():
     with patch(
         "sc_crawler.vendors._azure._vm_retirement_dates", return_value=api_dates
     ):
-        # from the API, then from _AZURE_SKU_LIFECYCLE_RULES
+        # from the API, then from _AZURE_RETIREMENT_RULES
         assert _azure_sku_retirement_date("Standard_GS5") == date(2028, 6, 1)
         assert _azure_sku_retirement_date("Standard_D2_v3") == date(2029, 11, 15)
         assert _azure_sku_retirement_date("Standard_D2s_v5") is None

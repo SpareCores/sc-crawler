@@ -42,7 +42,7 @@ def retirement_date_from_rules(
     """Retirement date of the first `(pattern, date)` rule fully matching the SKU `name`.
 
     The rules are the vendor-documented retirement dates, e.g.
-    `_AZURE_SKU_LIFECYCLE_RULES`. Returns `None` if no rule matches.
+    `_AZURE_RETIREMENT_RULES`. Returns `None` if no rule matches.
     """
     for pattern, retirement_date in rules:
         if pattern.fullmatch(name):
