@@ -7,19 +7,28 @@ New feature(s):
   i.e. the end of support (shutdown) if published, otherwise the end of sale.
   Empty when no date was announced or it is not known.
 
-Data changes:
+Database migrations:
 
+- Add the `retirement_date` column to the `server`, `server_scd`, `database`
+  and `database_scd` tables.
+
+Fix(es):
+
+- Keep the `PLANNED_FOR_RETIREMENT` and `RETIRED` status of servers and
+  databases no longer returned by the vendor, instead of setting them to
+  `INACTIVE`.
 - `gcp`: the deprecated `n1-megamem-96` and `n1-ultramem-40/80/160` machine
   types are archived with archive rules, as GCP renamed them to
   `m1-megamem-96` and `m1-ultramem-40/80/160` (the old names are aliases). The
   deprecated `z3-highmem-88` and `z3-highmem-176` are archived as well, as
   their API replacements (`z3-highmem-88-highlssd` and
   `z3-highmem-176-standardlssd`) have the same specs and prices.
-
-Database migrations:
-
-- Add the `retirement_date` column to the `server`, `server_scd`, `database`
-  and `database_scd` tables.
+- `oci`: the previous generation `Standard2`, `Standard.E2` (except for the
+  Always Free `VM.Standard.E2.1.Micro`) and `Standard.E3` shapes are
+  `PLANNED_FOR_RETIREMENT` instead of `ACTIVE`, as these are past their end of
+  orderability date, but can still be ordered.
+- `ovh`: PostgreSQL SKUs with an end of sale date of their plan or flavor are
+  `PLANNED_FOR_RETIREMENT` (or `RETIRED` after that date) instead of `ACTIVE`.
 
 ## v0.11.1 (November 20, 2026)
 
