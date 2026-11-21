@@ -4,7 +4,7 @@ import json
 import re
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from functools import cache
 from itertools import chain, repeat
 from logging import DEBUG, WARN
@@ -52,6 +52,7 @@ from ..utils import (
 from ..vendor_helpers import (
     parallel_fetch_servers,
     preprocess_servers,
+    retirement_date_from_rules,
     split_disk_speed,
 )
 
@@ -357,6 +358,29 @@ def _price_list_server_ids() -> Tuple[set[str], set[str]]:
     return priced, reserved
 
 
+# Documented end of sale dates of EC2 instance types, used as the retirement
+# date of the RETIRED ones. There is no such field in the APIs, and the
+# previous generation types are listed without dates:
+# https://docs.aws.amazon.com/ec2/latest/instancetypes/pg.html
+# Rule format: (compiled regex on the instance type, retirement date).
+_AWS_EC2_RETIREMENT_RULES = (
+    # https://docs.aws.amazon.com/ec2/latest/instancetypes/instance-types.html
+    # https://docs.aws.amazon.com/ec2/latest/instancetypes/doc-history.html
+    (re.compile(r"^u-(9|12|18|24)tb1\..*$"), date(2025, 6, 20)),
+)
+
+# Documented end of support dates of the RDS DB instance classes, or the start
+# of the automatic upgrade of the existing instances for the db.m3/r3 classes
+# without an end of support date, used as the retirement date of the RETIRED
+# ones. Rows of PostgreSQL only:
+# https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.DBInstanceClass.Types.html
+# Rule format: (compiled regex on the DB instance class, retirement date).
+_AWS_RDS_RETIREMENT_RULES = (
+    (re.compile(r"^db\.(m3|r3)\..*$"), date(2023, 2, 1)),
+    (re.compile(r"^db\.(m4|r4|t2)\..*$"), date(2024, 12, 31)),
+)
+
+
 def _reconcile_server_status(
     vendor: Vendor, spot_server_ids: Collection[str] = ()
 ) -> None:
@@ -366,7 +390,8 @@ def _reconcile_server_status(
     Otherwise RETIRED if it has on-demand prices but no Reserved terms in the
     price list (closed to new commitments), else INACTIVE (e.g. not offered to
     our account). New instance types often lack Reserved terms too, but they
-    are offered or have spot prices.
+    are offered or have spot prices. RETIRED servers get their retirement date
+    from `_AWS_EC2_RETIREMENT_RULES`.
     """
     regions_servers = _collect_regions_servers(vendor)
     offered_server_ids = {
@@ -386,6 +411,11 @@ def _reconcile_server_status(
             server.status = Status.RETIRED
         else:
             server.status = Status.INACTIVE
+        server.retirement_date = (
+            retirement_date_from_rules(server.server_id, _AWS_EC2_RETIREMENT_RULES)
+            if server.status == Status.RETIRED
+            else None
+        )
         # servers kept ACTIVE only by spot prices are not returned by
         # describe_instance_types, so might miss fields added since last crawled;
         # only GPU manufacturers prove a GPU, other accelerators stay None
@@ -3364,7 +3394,8 @@ def inventory_databases(vendor):
     """List all available AWS RDS PostgreSQL instance types via `boto3` calls.
 
     Lifecycle (`DescribeOrderableDBInstanceOptions`): no orderable options ->
-    RETIRED; otherwise ACTIVE.
+    RETIRED, with the retirement date from `_AWS_RDS_RETIREMENT_RULES`;
+    otherwise ACTIVE.
     """
     vendor.progress_tracker.start_task(name="Searching for database(s)", total=None)
     prices_by_region, deployment_options_by_database = (
@@ -3552,6 +3583,13 @@ def inventory_databases(vendor):
                     # Multi-AZ SLO 99.95%; Single-AZ SLO 99.5% (credit tables).
                     "sla": 99.95 if multi_az or readable else 99.5,
                     "status": status,
+                    "retirement_date": (
+                        retirement_date_from_rules(
+                            database_id, _AWS_RDS_RETIREMENT_RULES
+                        )
+                        if status == Status.RETIRED
+                        else None
+                    ),
                 }
             )
         vendor.progress_tracker.advance_task()

@@ -2,12 +2,13 @@
 
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from functools import cache
 from itertools import chain
 from logging import CRITICAL, INFO, WARN, getLogger
 from os import environ
 from random import shuffle
+from re import compile as recompile
 from re import sub
 from time import time
 from typing import List, Optional
@@ -56,6 +57,7 @@ from ..tables import ServerPrice, Vendor
 from ..utils import _GIB_TO_GB, _HOURS_PER_MONTH, jsoned_hash
 from ..vendor_helpers import (
     get_region_by_id,
+    retirement_date_from_rules,
     server_status_from_availability_categories,
     split_disk_speed,
 )
@@ -1299,6 +1301,25 @@ def _category_spelling(category: str) -> str:
     return sub(r"-(\w)", lambda match: " " + match.group(1).upper(), category)
 
 
+# Documented end of service dates of instance types, used as the retirement date
+# of the PLANNED_FOR_RETIREMENT and RETIRED ones (the APIs return no dates). The
+# retired families of the docs have no dates, and the 2023-10-30 end of sale of
+# the s6, n4, mn4, xn4 and e4 families applies only to the China regions
+# (https://www.alibabacloud.com/notice/ecs20230927), so these are not listed.
+# https://www.alibabacloud.com/help/en/ecs/user-guide/retired-instance-types
+# Rule format: (compiled regex on the instance type, retirement date).
+_ALICLOUD_RETIREMENT_RULES = (
+    # https://www.alibabacloud.com/en/notice/product_change_notification_of_termination_and_migration_of_some_gpu_cloud_server_specifications_6e0
+    (
+        recompile(
+            r"^ecs\.(ga1|gn4|vgn5i|gn5t|ebmgi6s|sgn6ia|vgn6ia|sgn6i-vws|vgn6i|vgn6i-vws)\..*$"
+        ),
+        date(2026, 10, 1),
+    ),
+    # https://www.alibabacloud.com/en/notice/product_changeinstance_offline_announcement_for_ecsebmc48xlarge_and_ecsebmhfg52xlarge_6cc
+    (recompile(r"^ecs\.(ebmc4\.8xlarge|ebmhfg5\.2xlarge)$"), date(2026, 9, 15)),
+)
+
 # The API returns no `InstanceCategory` for these retired families, so the category
 # comes from the docs, written as the API does for the current families (`Shared` for
 # the shared n4, mn4, e4 etc., `High Clock Speed` for the hfc/hfg/hfr families, and the
@@ -1758,7 +1779,8 @@ def inventory_servers(vendor):
     Lifecycle (`DescribeAvailableResource` `StatusCategory`): WithStock and
     WithoutStock (out of stock, but replenished) -> ACTIVE,
     ClosedWithStock -> PLANNED_FOR_RETIREMENT, ClosedWithoutStock -> RETIRED;
-    missing in availability response -> INACTIVE.
+    missing in availability response -> INACTIVE. The retirement date of the
+    PLANNED_FOR_RETIREMENT and RETIRED ones is from `_ALICLOUD_RETIREMENT_RULES`.
     """
     instance_types = _get_instance_types()
     gpu_memory_by_spec = _gpu_memory_by_spec(instance_types)
@@ -1992,6 +2014,11 @@ def inventory_servers(vendor):
                 "outbound_traffic": 0,
                 "ipv4": 0,
                 "status": status,
+                "retirement_date": (
+                    retirement_date_from_rules(server_id, _ALICLOUD_RETIREMENT_RULES)
+                    if status in (Status.PLANNED_FOR_RETIREMENT, Status.RETIRED)
+                    else None
+                ),
             }
         )
 

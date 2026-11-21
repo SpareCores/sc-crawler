@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -10,6 +10,7 @@ from sc_crawler.table_fields import Status
 from sc_crawler.vendors import hcloud
 from sc_crawler.vendors._hcloud import (
     _hcloud_location_status,
+    _hcloud_server_retirement_date,
     _hcloud_server_status,
     _retired_servers,
     _server_cpu,
@@ -250,18 +251,67 @@ def test_hcloud_inventory_servers_sets_series():
 
 
 def test_hcloud_retired_servers_are_known_ones_missing_from_the_api():
-    def _server(server_id, status=Status.INACTIVE):
+    def _server(server_id, name, retirement_date=None, status=Status.INACTIVE):
         return SimpleNamespace(
             server_id=server_id,
+            name=name,
+            retirement_date=retirement_date,
             model_dump=lambda exclude: {"server_id": server_id, "status": status},
         )
 
-    vendor = SimpleNamespace(servers=[_server("1"), _server("2")])
+    vendor = SimpleNamespace(
+        servers=[
+            _server("1", "cx23"),
+            _server("2", "foo"),
+            _server("3", "cx22"),
+            _server("4", "cx32", retirement_date=date(2025, 12, 1)),
+        ]
+    )
     assert _retired_servers(vendor, [SimpleNamespace(id=1)]) == [
-        {"server_id": "2", "status": Status.RETIRED}
+        {"server_id": "2", "status": Status.RETIRED, "retirement_date": None},
+        # from _HCLOUD_RETIREMENT_RULES
+        {
+            "server_id": "3",
+            "status": Status.RETIRED,
+            "retirement_date": date(2026, 1, 1),
+        },
+        # the stored date is kept
+        {
+            "server_id": "4",
+            "status": Status.RETIRED,
+            "retirement_date": date(2025, 12, 1),
+        },
     ]
+    listed = [SimpleNamespace(id=i) for i in range(1, 5)]
+    assert _retired_servers(vendor, listed) == []
+
+
+def test_hcloud_server_retirement_date_is_the_day_after_the_latest_unavailable_after():
+    def _location(unavailable_after):
+        deprecation = (
+            SimpleNamespace(unavailable_after=unavailable_after)
+            if unavailable_after
+            else None
+        )
+        return SimpleNamespace(deprecation=deprecation)
+
+    server = SimpleNamespace(
+        locations=[
+            _location(datetime(2025, 12, 31, 23, 59, 59, tzinfo=UTC)),
+            _location(datetime(2026, 3, 31, 23, 59, 59, tzinfo=UTC)),
+            _location(None),
+        ]
+    )
+    for status in (Status.PLANNED_FOR_RETIREMENT, Status.RETIRED):
+        assert _hcloud_server_retirement_date(server, status) == date(2026, 4, 1)
+    # still offered without deprecation in a location
+    assert _hcloud_server_retirement_date(server, Status.ACTIVE) is None
+    # deprecated without a date
     assert (
-        _retired_servers(vendor, [SimpleNamespace(id=1), SimpleNamespace(id=2)]) == []
+        _hcloud_server_retirement_date(
+            SimpleNamespace(locations=[_location(None)]), Status.PLANNED_FOR_RETIREMENT
+        )
+        is None
     )
 
 

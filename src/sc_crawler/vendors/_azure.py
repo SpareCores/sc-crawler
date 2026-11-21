@@ -47,7 +47,12 @@ from ..utils import (
     list_search,
     scmodels_to_dict,
 )
-from ..vendor_helpers import disk_speed_totals, preprocess_servers
+from ..vendor_helpers import (
+    disk_speed_totals,
+    preprocess_servers,
+    retirement_date_from_rules,
+    status_from_retirement_date,
+)
 
 credential = DefaultAzureCredential()
 
@@ -607,7 +612,7 @@ STORAGE_PRICE_UNIT_MAPPING: dict[str, float | None] = {
 # VM size series lifecycle. Previous-gen without a retirement date stays ACTIVE
 # (Ev4/Esv4, Eav4/Easv4, Edv4/Edsv4, Preview DC).
 # https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirements-and-capacity-restrictions
-# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retired-sizes-list
+# https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/end-of-life-sizes-list
 # https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/previous-gen-sizes-list
 # https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/av1-series-retirement
 # https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/lifecycle/retirement/n-series-migration
@@ -687,28 +692,17 @@ def _vm_retirement_dates() -> dict[str, date]:
     return dates
 
 
-def _azure_sku_lifecycle_status(sku_name: str, as_of: date | None = None) -> Status:
-    """Map an Azure VM / Flexible Server SKU name to Server/Database status.
+def _azure_sku_retirement_date(sku_name: str) -> date | None:
+    """Retirement date of an Azure VM size, or `None` if not retiring.
 
     The retirement date of the API (see `_vm_retirement_dates`) is used if there is one,
     the `_AZURE_SKU_LIFECYCLE_RULES` of the docs are the fallback for the other sizes.
     """
-    current_date = as_of or datetime.now(UTC).date()
-
     api_retired_on = _vm_retirement_dates().get(sku_name)
     if api_retired_on:
-        if current_date >= api_retired_on:
-            return Status.RETIRED
-        return Status.PLANNED_FOR_RETIREMENT
-
+        return api_retired_on
     size = sku_name.removeprefix("Standard_").removeprefix("Basic_")
-    for pattern, retired_on in _AZURE_SKU_LIFECYCLE_RULES:
-        if not pattern.fullmatch(size):
-            continue
-        if retired_on and current_date >= retired_on:
-            return Status.RETIRED
-        return Status.PLANNED_FOR_RETIREMENT
-    return Status.ACTIVE
+    return retirement_date_from_rules(size, _AZURE_SKU_LIFECYCLE_RULES)
 
 
 # GPU sizes by series: (size regex, model, GPU memory in GiB, GPUs by vCPUs).
@@ -1047,6 +1041,7 @@ def _standardize_server(server: dict, vendor) -> dict:
     """Create a Server-compatible dict from an Azure Resource SKU."""
     # example Resource Skus - List response moved to _compute_resources
     family, features = _parse_server_name(server["name"])
+    retirement_date = _azure_sku_retirement_date(server["name"])
     # override family from SKU listing
     family = recompile(r"(?i)family$").sub(
         "", recompile(r"(?i)^standard").sub("", server["family"])
@@ -1179,7 +1174,8 @@ def _standardize_server(server: dict, vendor) -> dict:
         "inbound_traffic": 0,
         "outbound_traffic": 0,
         "ipv4": 0,
-        "status": _azure_sku_lifecycle_status(server["name"]),
+        "retirement_date": retirement_date,
+        "status": status_from_retirement_date(retirement_date),
     }
 
 
@@ -1843,10 +1839,9 @@ def inventory_zones(vendor):
 def inventory_servers(vendor):
     """List all available instance types in all regions.
 
-    Lifecycle: `_azure_sku_lifecycle_status` checks `_AZURE_SKU_LIFECYCLE_RULES`
-    — RETIRED if the retirement date has passed, PLANNED_FOR_RETIREMENT if
-    matched but not yet retired, otherwise ACTIVE. Same function is used for
-    database SKUs.
+    Lifecycle: the retirement date of `_azure_sku_retirement_date` (API, then
+    `_AZURE_SKU_LIFECYCLE_RULES`) is stored in `retirement_date` — RETIRED if
+    it has passed, PLANNED_FOR_RETIREMENT if not yet, otherwise ACTIVE.
     """
     servers = _servers()
     for i in range(len(servers) - 1, -1, -1):

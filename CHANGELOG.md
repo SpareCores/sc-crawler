@@ -1,3 +1,49 @@
+## v0.12.0 (November 21, 2026)
+
+New feature(s):
+
+- `Server.retirement_date` and `Database.retirement_date`: the retirement date
+  announced by the vendor for `PLANNED_FOR_RETIREMENT` and `RETIRED` records,
+  i.e. the end of support (shutdown) if published, otherwise the end of sale.
+  Empty when no date was announced or it is not known.
+  Sources:
+    - `azure`: the `RetirementDateUtc` capability of the Resource SKUs API,
+      with the documented dates of `_AZURE_SKU_LIFECYCLE_RULES` as fallback
+      (already used for the status).
+    - `hcloud`: the latest per-location `deprecation.unavailable_after` of the
+      API (the day after it), and the dates of the API changelog for the types
+      already removed from the API.
+    - `aws`: the documented end of sale of the U-*tb1 instance types, and the
+      end of support of the RDS db.m4/r4/t2 classes (the start of the automatic
+      upgrade for db.m3/r3), set on the `RETIRED` rows.
+    - `alicloud`: the documented end of service of some GPU families, and of
+      `ecs.ebmc4.8xlarge` and `ecs.ebmhfg5.2xlarge`, set on the
+      `PLANNED_FOR_RETIREMENT` and `RETIRED` rows.
+    - `gcp`: the `deprecated.deleted` (or `obsolete`) timestamp of the API,
+      currently empty for all machine types; Cloud SQL tiers inherit it from
+      their machine type.
+    - `ovh`: the `endOfSale` of the plan or flavor lifecycle of the managed
+      databases, which also makes an `ACTIVE` SKU `PLANNED_FOR_RETIREMENT` or
+      `RETIRED` (currently not set for any).
+    - `oci`: the end of orderability of the previous generation Standard2, E2
+      and E3 shapes. These can still be ordered, so they are now
+      `PLANNED_FOR_RETIREMENT` (instead of `ACTIVE`) despite the past date.
+    - `upcloud`, `vultr`: no dates published.
+
+Data changes:
+
+- `gcp`: the deprecated `n1-megamem-96` and `n1-ultramem-40/80/160` machine
+  types are archived with archive rules, as GCP renamed them to
+  `m1-megamem-96` and `m1-ultramem-40/80/160` (the old names are aliases). The
+  deprecated `z3-highmem-88` and `z3-highmem-176` are archived as well, as
+  their API replacements (`z3-highmem-88-highlssd` and
+  `z3-highmem-176-standardlssd`) have the same specs and prices.
+
+Database migrations:
+
+- Add the `retirement_date` column to the `server`, `server_scd`, `database`
+  and `database_scd` tables.
+
 ## v0.11.1 (November 20, 2026)
 
 New vendor(s):
