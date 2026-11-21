@@ -6,29 +6,6 @@ New feature(s):
   announced by the vendor for `PLANNED_FOR_RETIREMENT` and `RETIRED` records,
   i.e. the end of support (shutdown) if published, otherwise the end of sale.
   Empty when no date was announced or it is not known.
-  Sources:
-    - `azure`: the `RetirementDateUtc` capability of the Resource SKUs API,
-      with the documented dates of `_AZURE_SKU_LIFECYCLE_RULES` as fallback
-      (already used for the status).
-    - `hcloud`: the latest per-location `deprecation.unavailable_after` of the
-      API (the day after it), and the dates of the API changelog for the types
-      already removed from the API.
-    - `aws`: the documented end of sale of the U-*tb1 instance types, and the
-      end of support of the RDS db.m4/r4/t2 classes (the start of the automatic
-      upgrade for db.m3/r3), set on the `RETIRED` rows.
-    - `alicloud`: the documented end of service of some GPU families, and of
-      `ecs.ebmc4.8xlarge` and `ecs.ebmhfg5.2xlarge`, set on the
-      `PLANNED_FOR_RETIREMENT` and `RETIRED` rows.
-    - `gcp`: the `deprecated.deleted` (or `obsolete`) timestamp of the API,
-      currently empty for all machine types; Cloud SQL tiers inherit it from
-      their machine type.
-    - `ovh`: the `endOfSale` of the plan or flavor lifecycle of the managed
-      databases, which also makes an `ACTIVE` SKU `PLANNED_FOR_RETIREMENT` or
-      `RETIRED` (currently not set for any).
-    - `oci`: the end of orderability of the previous generation Standard2, E2
-      and E3 shapes. These can still be ordered, so they are now
-      `PLANNED_FOR_RETIREMENT` (instead of `ACTIVE`) despite the past date.
-    - `upcloud`, `vultr`: no dates published.
 
 Data changes:
 
