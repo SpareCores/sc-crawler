@@ -208,6 +208,8 @@ def test_alicloud_local_disk_speed(instance_type, expected):
         _instance_type_with_disks("ecs.d3c.28xlarge", "ecs.d3c", 8, 12800),
         # no figures in the docs at all
         _instance_type_with_disks("ecs.gn5-c4g1.xlarge", "ecs.gn5", 1, 440),
+        # i1 formula without a disk capacity: empty, not 0
+        _instance_type_with_disks("ecs.i1.xlarge", "ecs.i1", 2, 0),
     ],
 )
 def test_alicloud_local_disk_speed_unknown_is_empty_and_warned_once(instance_type):

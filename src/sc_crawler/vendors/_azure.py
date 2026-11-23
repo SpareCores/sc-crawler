@@ -23,6 +23,7 @@ from ..logger import logger
 from ..lookup import map_compliance_frameworks_to_vendor
 from ..sentry import sentry_capture_or_raise
 from ..table_fields import (
+    DISK_SPEED_FIELDS,
     AcceleratorType,
     Allocation,
     CpuAllocation,
@@ -51,6 +52,7 @@ from ..vendor_helpers import (
     disk_speed_totals,
     preprocess_servers,
     retirement_date_from_rules,
+    split_disk_speed
     status_from_retirement_date,
 )
 
@@ -1069,45 +1071,71 @@ def _standardize_server(server: dict, vendor) -> dict:
         description = description + "s"
     # Bundled local disks only. OS disk is a managed disk chosen at deploy time.
     # SKUs without a temp disk report MaxResourceVolumeMB "0" (truthy string).
-    # one entry per disk group (temp disk, all NVMe disks) with the group speed
+    # one entry for the temp disk and one per NVMe disk
     storages = []
+    # NVMe disks are explicitely reported in base 2 unit
+    nvme_mib = capability("NvmeDiskSizeInMiB")
+    nvme_disks = []
+    if nvme_mib and float(nvme_mib) > 0:
+        # e.g. L80as_v3: 10 disks of 1,831,054 MiB (1.92 TB)
+        # missing or "0" per disk size: a single disk
+        per_disk_mib = float(capability("NvmeSizePerDiskInMiB") or 0) or float(nvme_mib)
+        count = max(1, round(float(nvme_mib) / per_disk_mib))
+        # Resource SKUs API speed, documented speed for sizes not in the API;
+        # totals over the NVMe disks, split evenly
+        docs = _nvme_speed(server["name"])
+        nvme_speed = (
+            capability_int("NvmeMaxReadIops") or docs[0],
+            capability_int("NvmeMaxWriteIops") or docs[1],
+            capability_int("NvmeMaxReadBytesPerSecond", 1_000_000) or docs[2],
+            capability_int("NvmeMaxWriteBytesPerSecond", 1_000_000) or docs[3],
+        )
+        read_iops, write_iops, read_mbps, write_mbps = (
+            split_disk_speed(total, count) for total in nvme_speed
+        )
+        nvme_disks = [
+            Disk(
+                size=round(per_disk_mib * 1024**2 / 1e9),
+                storage_type=StorageType.NVME_SSD,
+                read_iops_max=read_iops,
+                write_iops_max=write_iops,
+                read_throughput_max=read_mbps,
+                write_throughput_max=write_mbps,
+            )
+            for _ in range(count)
+        ]
+    else:
+        nvme_speed = (None, None, None, None)
+    temp_speed = (None, None, None, None)
     temp_mb = capability("MaxResourceVolumeMB")
     # MaxResourceVolumeMB is MiB, e.g. DC1s_v2 reports 51200 and shows 50 GiB in docs
     if temp_mb and float(temp_mb) > 0:
+        # single IOPS number (no read/write split) stored as read
+        temp_speed = (
+            capability_int("CombinedTempDiskAndCachedIOPS"),
+            None,
+            capability_int("CombinedTempDiskAndCachedReadBytesPerSecond", 1_000_000),
+            capability_int("CombinedTempDiskAndCachedWriteBytesPerSecond", 1_000_000),
+        )
+        # the API figure is the combined temp disk and host cache limit: above the
+        # NVMe speed of the same size (HBv3: 10,308 vs 7,000 MB/s read) it is not
+        # the speed of the temp disk, so leave it empty
+        if any(
+            temp and nvme and temp > nvme for temp, nvme in zip(temp_speed, nvme_speed)
+        ):
+            temp_speed = (None, None, None, None)
         storages.append(
             Disk(
                 size=round(float(temp_mb) * 1024**2 / 1e9),
                 storage_type=StorageType.SSD,
                 description="temp disk",
-                # single IOPS number (no read/write split) stored as read
-                read_iops_max=capability_int("CombinedTempDiskAndCachedIOPS"),
-                read_throughput_max=capability_int(
-                    "CombinedTempDiskAndCachedReadBytesPerSecond", 1_000_000
-                ),
-                write_throughput_max=capability_int(
-                    "CombinedTempDiskAndCachedWriteBytesPerSecond", 1_000_000
-                ),
+                read_iops_max=temp_speed[0],
+                write_iops_max=temp_speed[1],
+                read_throughput_max=temp_speed[2],
+                write_throughput_max=temp_speed[3],
             )
         )
-    # NVMe disks are explicitely reported in base 2 unit
-    nvme_mib = capability("NvmeDiskSizeInMiB")
-    if nvme_mib and float(nvme_mib) > 0:
-        # Resource SKUs API speed, documented speed for sizes not in the API
-        docs = _nvme_speed(server["name"])
-        storages.append(
-            Disk(
-                size=round(float(nvme_mib) * 1024**2 / 1e9),
-                storage_type=StorageType.NVME_SSD,
-                read_iops_max=capability_int("NvmeMaxReadIops") or docs[0],
-                write_iops_max=capability_int("NvmeMaxWriteIops") or docs[1],
-                read_throughput_max=(
-                    capability_int("NvmeMaxReadBytesPerSecond", 1_000_000) or docs[2]
-                ),
-                write_throughput_max=(
-                    capability_int("NvmeMaxWriteBytesPerSecond", 1_000_000) or docs[3]
-                ),
-            )
-        )
+    storages.extend(nvme_disks)
     if any(disk.storage_type == StorageType.NVME_SSD for disk in storages):
         storage_type = StorageType.NVME_SSD
     elif storages:
@@ -1161,7 +1189,14 @@ def _standardize_server(server: dict, vendor) -> dict:
         "storage_type": storage_type,
         "storages": storages,
         # sum over the bundled disks with a known value, None if none is known
-        **disk_speed_totals(storages),
+        # sum of the group totals (temp disk, NVMe) with a known value: the API
+        # totals, not the sum of the rounded per-disk shares
+        **{
+            f"storage_{field}": sum(v for v in values if v) or None
+            for field, values in zip(
+                DISK_SPEED_FIELDS, zip(temp_speed, nvme_speed), strict=True
+            )
+        },
         "compatible_storage_ids": _compatible_storage_ids(server),
         # TODO: have to implement manual mapping for network_speed related fields
         "network_speed_baseline": None,
