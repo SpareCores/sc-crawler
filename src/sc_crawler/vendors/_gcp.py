@@ -46,6 +46,7 @@ from ..vendor_helpers import (
     add_vendor_id,
     parallel_fetch_servers,
     preprocess_servers,
+    split_disk_speed,
 )
 
 # ##############################################################################
@@ -1408,17 +1409,21 @@ def _search_servers(zone_name: str) -> List[dict]:
                     # third-gen+ Local SSD (incl. Titanium) is NVMe-only
                     # https://cloud.google.com/compute/docs/disks/local-ssd
                     "storage_type": StorageType.NVME_SSD,
-                    # one entry for all Local SSD partitions with the documented
-                    # VM-level speed
+                    # one entry per Local SSD partition, the documented VM-level
+                    # speed split evenly
                     "storages": [
                         {
                             "storage_type": StorageType.NVME_SSD,
-                            "size": storage_size,
-                            "read_iops_max": read_iops,
-                            "write_iops_max": write_iops,
-                            "read_throughput_max": read_mbps,
-                            "write_throughput_max": write_mbps,
+                            "size": round(
+                                _local_ssd_partition_gib(server.name) * _GIB_TO_GB
+                            ),
+                            "read_iops_max": split_disk_speed(read_iops, count),
+                            "write_iops_max": split_disk_speed(write_iops, count),
+                            "read_throughput_max": split_disk_speed(read_mbps, count),
+                            "write_throughput_max": split_disk_speed(write_mbps, count),
                         }
+                        for count in [bundled.partition_count]
+                        for _ in range(count)
                     ],
                     "storage_read_iops_max": read_iops,
                     "storage_write_iops_max": write_iops,

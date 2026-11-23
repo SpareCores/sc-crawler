@@ -793,17 +793,21 @@ def test_gcp_search_servers_fills_gpu_and_bundled_local_ssd_fields():
     }
     assert row["storage_size"] == round(4 * 3000 * 1024**3 / 1000**3)
     assert row["storage_type"] == StorageType.NVME_SSD
-    # no documented speed for A4X: entry without speed
-    assert row["storages"] == [
-        {
-            "storage_type": StorageType.NVME_SSD,
-            "size": round(4 * 3000 * 1024**3 / 1000**3),
-            "read_iops_max": None,
-            "write_iops_max": None,
-            "read_throughput_max": None,
-            "write_throughput_max": None,
-        }
-    ]
+    # one entry per disk; no documented speed for A4X: entries without speed
+    assert (
+        row["storages"]
+        == [
+            {
+                "storage_type": StorageType.NVME_SSD,
+                "size": round(3000 * 1024**3 / 1000**3),
+                "read_iops_max": None,
+                "write_iops_max": None,
+                "read_throughput_max": None,
+                "write_throughput_max": None,
+            }
+        ]
+        * 4
+    )
 
 
 def _srv(name, series, gpu=None, vcpus=8):
@@ -1113,17 +1117,21 @@ def test_gcp_search_servers_z4d_titanium_ssd_size():
         rows[0]["storage_read_throughput_max"],
         rows[0]["storage_write_throughput_max"],
     ) == (15_600_000, 12_288_000, 79_272, 60_398)
-    # one entry for all partitions, with the VM-level speed
-    assert rows[0]["storages"] == [
-        {
-            "storage_type": StorageType.NVME_SSD,
-            "size": round(24 * 3500 * _GIB_TO_GB),
-            "read_iops_max": 15_600_000,
-            "write_iops_max": 12_288_000,
-            "read_throughput_max": 79_272,
-            "write_throughput_max": 60_398,
-        }
-    ]
+    # one entry per partition, the VM-level speed split evenly
+    assert (
+        rows[0]["storages"]
+        == [
+            {
+                "storage_type": StorageType.NVME_SSD,
+                "size": round(3500 * _GIB_TO_GB),
+                "read_iops_max": 650_000,
+                "write_iops_max": 512_000,
+                "read_throughput_max": round(79_272 / 24),
+                "write_throughput_max": round(60_398 / 24),
+            }
+        ]
+        * 24
+    )
 
 
 def test_gcp_search_servers_parses_fractional_g4_vgpu():

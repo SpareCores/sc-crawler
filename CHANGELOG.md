@@ -16,7 +16,8 @@ New feature(s):
 - `Server.storage_read_iops_max`, `storage_write_iops_max`,
   `storage_read_throughput_max` and `storage_write_throughput_max`: the
   vendor-published maximum performance of the bundled (local) disk(s),
-  summed over all disks, also of different types (a theoretical total). Empty
+  summed over the disks with a known speed, also of different types (a
+  theoretical total; partial if only some disks have a known speed). Empty
   when the vendor does not publish it. Populated for Alibaba Cloud, AWS, GCP
   and UpCloud from the vendor docs, for Azure from the API (with docs for the
   NVMe disks of L-series and HPC sizes), and for OVH from the catalog (read
@@ -26,10 +27,15 @@ New feature(s):
   `read_throughput_max` and `write_throughput_max`, the same speeds per
   entry. Where the vendor only publishes server totals over identical disks
   (AWS, most Alibaba Cloud types), the totals are split evenly; Alibaba Cloud
-  i2/i2g use their documented per-disk figures. GCP and Azure
-  NVMe disks stay one entry with the speed of the group. `storages` is now
-  also filled for Alibaba Cloud (one entry per local disk) and UpCloud (the
-  plan disk).
+  i2/i2g use their documented per-disk figures. `storages` now lists one
+  entry per drive also for the GCP Local SSD partitions and the Azure NVMe
+  disks (e.g. 10 x 1,920 GB on `Standard_L80as_v3`, was one entry of the total
+  size), and is now also filled for Alibaba Cloud (one entry per local disk)
+  and UpCloud (the plan disk). Azure temp disk speed is the API's combined
+  temp disk and host cache limit, left empty when above the NVMe speed of the
+  same size (HBv3). Alibaba Cloud i2/i2g server totals stay the instance
+  limits (or empty where not published), so they do not equal the sum of the
+  per-disk figures.
 
 Database migrations:
 
@@ -37,6 +43,10 @@ Database migrations:
 
 Fix(es):
 
+- `upcloud`: plans on the `hdd` (Archive) storage tier have the `HDD` storage
+  type (was `SSD`).
+- `gcp`: C4D bare metal sizes (e.g. `c4d-standard-384-lssd-metal`) have
+  3,000 GiB Local SSD disks (was 375 GiB), so their `storage_size` grows.
 - `aws`: Pricing API clients use adaptive retry mode with up to 10 attempts.
   botocore 1.44.0 made the standard retry mode (3 attempts) the default, so
   throttled `GetProducts` calls failed and the vendor was skipped.

@@ -1242,6 +1242,9 @@ def _local_disk_speed(instance_type: dict) -> tuple:
     if family == "ecs.i1":
         # per disk formula of the docs, by capacity (GiB)
         gib = instance_type.get("LocalStorageCapacity", 0)
+        if not gib:
+            _warn_unknown_local_disk_speed(type_id)
+            return (None, None, None, None)
         iops = min(165 * gib, 240_000) * disks
         return (
             iops,

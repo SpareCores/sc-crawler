@@ -151,17 +151,23 @@ can stay NULL until someone updates the table. The same speeds are stored per
 disk entry in `storages` (AWS and Alibaba split the docs totals evenly), so the
 entries add up to the server totals (within rounding), except Alibaba i2/i2g:
 their documented per-disk figures exceed the instance limit or the instance IOPS
-is not published. The crawler logs a
-warning for unknown Alibaba Cloud, AWS, GCP and UpCloud types, but not for Azure
-NVMe sizes missing from its table, so do not rely on the logs. List the bundled disks
-without any speed:
+is not published. The totals only add up the disks with a known speed, so a
+server can have totals while one of its disks (e.g. the Azure NVMe disks next to
+a temp disk) has none. The crawler logs a warning for unknown Alibaba Cloud,
+AWS, GCP and UpCloud types, but not for Azure NVMe sizes missing from its table,
+so do not rely on the logs. List the bundled disk entries without any speed:
 
 ```sh
-sqlite3 ~/downloads/sc-data-all.db "SELECT vendor_id, server_id, storage_size
-  FROM server WHERE status = 'ACTIVE' AND storage_size > 0
-  AND vendor_id IN ('alicloud', 'aws', 'azure', 'gcp', 'upcloud')
-  AND storage_read_iops_max IS NULL AND storage_write_iops_max IS NULL
-  AND storage_read_throughput_max IS NULL AND storage_write_throughput_max IS NULL
+sqlite3 ~/downloads/sc-data-all.db "SELECT DISTINCT s.vendor_id, s.server_id,
+  json_extract(d.value, '$.storage_type') AS disk_type,
+  json_extract(d.value, '$.description') AS disk_description
+  FROM server s, json_each(s.storages) d
+  WHERE s.status = 'ACTIVE'
+  AND s.vendor_id IN ('alicloud', 'aws', 'azure', 'gcp', 'upcloud')
+  AND json_extract(d.value, '$.read_iops_max') IS NULL
+  AND json_extract(d.value, '$.write_iops_max') IS NULL
+  AND json_extract(d.value, '$.read_throughput_max') IS NULL
+  AND json_extract(d.value, '$.write_throughput_max') IS NULL
   ORDER BY 1, 2"
 ```
 
@@ -173,7 +179,8 @@ several server types. If the page now has the figures, tell the user which
 entry to add. Expected gaps: types the docs leave blank (AWS
 `_INSTANCE_STORE_IOPS_NOT_PUBLISHED`, Azure HBv2 and the ND/NV GPU sizes, e.g.
 `Standard_ND96isr_H100_v5`, whose pages list disk sizes only), and GCP types below
-`_LOCAL_SSD_MIN_VCPUS` (e.g. `a2-ultragpu-1g`). Put the result in `$OUT/notes.md`.
+`_LOCAL_SSD_MIN_VCPUS` (e.g. `a2-ultragpu-1g`), and the HBv3 temp disks (API
+figure above the NVMe speed, left empty). Put the result in `$OUT/notes.md`.
 
 ## 4. Triage
 
