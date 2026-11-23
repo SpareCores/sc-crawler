@@ -49,10 +49,9 @@ from ..utils import (
     scmodels_to_dict,
 )
 from ..vendor_helpers import (
-    disk_speed_totals,
     preprocess_servers,
     retirement_date_from_rules,
-    split_disk_speed
+    split_disk_speed,
     status_from_retirement_date,
 )
 
