@@ -123,7 +123,8 @@ if environ.get("SENTRY_DSN"):
 
     sentry_sdk.init(
         traces_sample_rate=1.0,
-        profiles_sample_rate=1.0,
+        profile_session_sample_rate=1.0,
+        profile_lifecycle="trace",
         before_send=before_send,
     )
 
