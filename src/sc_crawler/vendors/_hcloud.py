@@ -19,7 +19,7 @@ from ..table_fields import (
     StorageType,
     TrafficDirection,
 )
-from ..vendor_helpers import retirement_date_from_rules
+from ..vendor_helpers import checked_retirement_date, retirement_date_from_rules
 
 # ##############################################################################
 # Cached client wrappers
@@ -355,8 +355,13 @@ def _retired_servers(vendor, server_types) -> list[dict]:
         server.model_dump(exclude={"observed_at"})
         | {
             "status": Status.RETIRED,
-            "retirement_date": server.retirement_date
-            or retirement_date_from_rules(server.name, _HCLOUD_RETIREMENT_RULES),
+            "retirement_date": checked_retirement_date(
+                "hcloud",
+                server.server_id,
+                Status.RETIRED,
+                server.retirement_date
+                or retirement_date_from_rules(server.name, _HCLOUD_RETIREMENT_RULES),
+            ),
         }
         for server in vendor.servers
         if server.server_id not in listed

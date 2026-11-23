@@ -1,6 +1,6 @@
 """Inventory of Google Cloud Platform via its APIs: servers, storages, traffic, IPv4 addresses and managed PostgreSQL (Cloud SQL), with their prices."""
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from functools import cache
 from logging import DEBUG, WARNING
 from re import compile as recompile
@@ -45,6 +45,7 @@ from ..utils import (
 )
 from ..vendor_helpers import (
     add_vendor_id,
+    checked_retirement_date,
     parallel_fetch_servers,
     preprocess_servers,
     split_disk_speed,
@@ -1006,7 +1007,12 @@ def _gcp_machine_type_retirement_date(deprecated) -> date | None:
     """
     for timestamp in (deprecated.deleted, deprecated.obsolete):
         if timestamp:
-            return datetime.fromisoformat(timestamp).date()
+            # RFC 3339 with an offset: the UTC date, as `status_from_retirement_date`
+            # compares to today in UTC
+            parsed = datetime.fromisoformat(timestamp)
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=UTC)
+            return parsed.astimezone(UTC).date()
     return None
 
 
@@ -1295,6 +1301,7 @@ def _machine_family(server_name: str) -> Optional[str]:
 def _search_servers(zone_name: str) -> List[dict]:
     zone_servers = []
     for server in _servers(zone_name):
+        status = _gcp_machine_type_status(server.deprecated.state)
         zone_servers.append(
             {
                 "server_id": str(server.id),
@@ -1345,8 +1352,13 @@ def _search_servers(zone_name: str) -> List[dict]:
                 "inbound_traffic": 0,
                 "outbound_traffic": 0,
                 "ipv4": 0,
-                "status": _gcp_machine_type_status(server.deprecated.state),
-                "retirement_date": _gcp_machine_type_retirement_date(server.deprecated),
+                "status": status,
+                "retirement_date": checked_retirement_date(
+                    "gcp",
+                    server.name,
+                    status,
+                    _gcp_machine_type_retirement_date(server.deprecated),
+                ),
             }
         )
         if server.accelerators:

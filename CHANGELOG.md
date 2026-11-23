@@ -16,7 +16,15 @@ Fix(es):
 
 - Keep the `PLANNED_FOR_RETIREMENT` and `RETIRED` status of servers and
   databases no longer returned by the vendor, instead of setting them to
-  `INACTIVE`.
+  `INACTIVE` (also at AWS, where these were reset by the price list check). A
+  kept `PLANNED_FOR_RETIREMENT` record becomes `RETIRED` once its retirement
+  date is reached, or right away without a date, except at Oracle Cloud
+  Infrastructure, where previous generation shapes run past their end of
+  orderability.
+- Log a warning (once per SKU) for `PLANNED_FOR_RETIREMENT` or `RETIRED`
+  servers and databases without a known retirement date, and for Azure
+  retirement dates in an unexpected format.
+- `gcp`: the retirement date is the UTC date of the deprecation timestamp.
 - `gcp`: the deprecated `n1-megamem-96` and `n1-ultramem-40/80/160` machine
   types are archived with archive rules, as GCP renamed them to
   `m1-megamem-96` and `m1-ultramem-40/80/160` (the old names are aliases). The
@@ -496,8 +504,9 @@ Database migrations:
 
 - Refactor the `database` table as described above: replace `ha_supported`
   with `ha` and `ha_strategy`, rename `storage_autoscaling` to
-  `storage_extra_autosize`, drop `support_level`, and add the new capability
-  columns and `api_reference_object`.
+  `storage_extra_autosize`, `engine_auto_upgrade` to `auto_upgrade_versions`
+  and `autotuning` to `autotuning_advice`, drop `support_level`, and add the
+  new capability columns and `api_reference_object`.
 - Add `ha` and `ha_strategy` to the primary key of the `database_price` table.
 
 Fix(es):

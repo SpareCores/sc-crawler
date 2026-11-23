@@ -56,6 +56,7 @@ from ..table_fields import (
 from ..tables import ServerPrice, Vendor
 from ..utils import _GIB_TO_GB, _HOURS_PER_MONTH, jsoned_hash
 from ..vendor_helpers import (
+    checked_retirement_date,
     get_region_by_id,
     retirement_date_from_rules,
     server_status_from_availability_categories,
@@ -2017,10 +2018,13 @@ def inventory_servers(vendor):
                 "outbound_traffic": 0,
                 "ipv4": 0,
                 "status": status,
-                "retirement_date": (
+                "retirement_date": checked_retirement_date(
+                    "alicloud",
+                    server_id,
+                    status,
                     retirement_date_from_rules(server_id, _ALICLOUD_RETIREMENT_RULES)
                     if status in (Status.PLANNED_FOR_RETIREMENT, Status.RETIRED)
-                    else None
+                    else None,
                 ),
             }
         )

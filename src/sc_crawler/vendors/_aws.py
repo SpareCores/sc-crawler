@@ -50,6 +50,7 @@ from ..utils import (
     scmodels_to_dict,
 )
 from ..vendor_helpers import (
+    checked_retirement_date,
     parallel_fetch_servers,
     preprocess_servers,
     retirement_date_from_rules,
@@ -372,7 +373,8 @@ _AWS_EC2_RETIREMENT_RULES = (
 # Documented end of support dates of the RDS DB instance classes, or the start
 # of the automatic upgrade of the existing instances for the db.m3/r3 classes
 # without an end of support date, used as the retirement date of the RETIRED
-# ones. Rows of PostgreSQL only:
+# ones. From the PostgreSQL rows of the tables ("Dates for RDS for PostgreSQL"),
+# as only PostgreSQL is crawled:
 # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.DBInstanceClass.Types.html
 # Rule format: (compiled regex on the DB instance class, retirement date).
 _AWS_RDS_RETIREMENT_RULES = (
@@ -391,7 +393,9 @@ def _reconcile_server_status(
     price list (closed to new commitments), else INACTIVE (e.g. not offered to
     our account). New instance types often lack Reserved terms too, but they
     are offered or have spot prices. RETIRED servers get their retirement date
-    from `_AWS_EC2_RETIREMENT_RULES`.
+    from `_AWS_EC2_RETIREMENT_RULES`. Servers already PLANNED_FOR_RETIREMENT or
+    RETIRED that are neither offered nor priced any more keep their status and
+    date.
     """
     regions_servers = _collect_regions_servers(vendor)
     offered_server_ids = {
@@ -409,12 +413,19 @@ def _reconcile_server_status(
             and server.server_id not in reserved_server_ids
         ):
             server.status = Status.RETIRED
+        elif server.status in (Status.PLANNED_FOR_RETIREMENT, Status.RETIRED):
+            # no longer offered nor priced: kept with its status and date, as by
+            # `set_table_rows_inactive` for the other vendors
+            continue
         else:
             server.status = Status.INACTIVE
-        server.retirement_date = (
+        server.retirement_date = checked_retirement_date(
+            "aws",
+            server.server_id,
+            server.status,
             retirement_date_from_rules(server.server_id, _AWS_EC2_RETIREMENT_RULES)
             if server.status == Status.RETIRED
-            else None
+            else None,
         )
         # servers kept ACTIVE only by spot prices are not returned by
         # describe_instance_types, so might miss fields added since last crawled;
@@ -3583,12 +3594,15 @@ def inventory_databases(vendor):
                     # Multi-AZ SLO 99.95%; Single-AZ SLO 99.5% (credit tables).
                     "sla": 99.95 if multi_az or readable else 99.5,
                     "status": status,
-                    "retirement_date": (
+                    "retirement_date": checked_retirement_date(
+                        "aws",
+                        database_id,
+                        status,
                         retirement_date_from_rules(
                             database_id, _AWS_RDS_RETIREMENT_RULES
                         )
                         if status in (Status.PLANNED_FOR_RETIREMENT, Status.RETIRED)
-                        else None
+                        else None,
                     ),
                 }
             )

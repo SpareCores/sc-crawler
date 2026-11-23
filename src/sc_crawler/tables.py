@@ -1,13 +1,14 @@
 """Table definitions for vendors, regions, zones, and other cloud resources."""
 
 import logging
+from datetime import UTC, datetime
 from importlib import import_module
 from types import ModuleType
 from typing import Callable, Dict, List, Optional
 
 from pydantic import PrivateAttr
 from sqlalchemy import Enum as SaEnum
-from sqlalchemy import ForeignKeyConstraint, literal, update
+from sqlalchemy import ForeignKeyConstraint, literal, or_, update
 from sqlmodel import Relationship, Session, SQLModel, select
 
 from .description_ingestor import (
@@ -238,12 +239,32 @@ class Vendor(VendorBase, table=True):
         Records marked as [ARCHIVED][sc_crawler.table_fields.Status] are kept as-is,
         just like the `PLANNED_FOR_RETIREMENT` and `RETIRED` servers and databases,
         so that these keep their status and retirement date when no longer returned
-        by the vendor.
+        by the vendor. As the vendor no longer updates these, kept
+        `PLANNED_FOR_RETIREMENT` records are set to `RETIRED` once their
+        retirement date is reached, or right away without a date (announced for
+        retirement, then gone). Except at Oracle Cloud Infrastructure, where
+        `PLANNED_FOR_RETIREMENT` shapes have past end of orderability dates while
+        still running.
 
         Examples:
             >>> aws.set_table_rows_inactive(ServerPrice, ServerPrice.price < 10)  # doctest: +SKIP
         """
         if self.session:
+            if hasattr(model, "retirement_date") and self.vendor_id != "oci":
+                retire = (
+                    update(model)
+                    .where(model.vendor_id == self.vendor_id)
+                    .where(model.status == Status.PLANNED_FOR_RETIREMENT)
+                    .where(
+                        or_(
+                            model.retirement_date.is_(None),
+                            model.retirement_date <= datetime.now(UTC).date(),
+                        )
+                    )
+                )
+                for arg in args:
+                    retire = retire.where(arg)
+                self.session.exec(retire.values(status=Status.RETIRED))
             query = (
                 update(model)
                 .where(model.vendor_id == self.vendor_id)

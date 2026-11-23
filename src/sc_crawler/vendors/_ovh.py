@@ -1792,7 +1792,8 @@ def inventory_databases(vendor):
     `STABLE`/`BETA` -> ACTIVE, otherwise INACTIVE. An ACTIVE SKU with an
     `endOfSale` date in the lifecycle of its plan or flavor (`capabilities`) is
     PLANNED_FOR_RETIREMENT or RETIRED, with that retirement date (see
-    `_database_end_of_sale`).
+    `_database_end_of_sale`). A SKU already RETIRED by `END_OF_LIFE` also gets
+    that date when there is one.
 
     Data sources:
 

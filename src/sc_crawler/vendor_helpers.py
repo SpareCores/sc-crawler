@@ -2,10 +2,12 @@
 
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime
+from functools import cache
 from itertools import chain, repeat
 from re import Pattern
 from typing import Callable, Collection, List, Literal, Mapping, Optional
 
+from .logger import logger
 from .table_fields import DISK_SPEED_FIELDS, Disk, Status
 from .tables import Region, Vendor
 
@@ -48,6 +50,31 @@ def retirement_date_from_rules(
         if pattern.fullmatch(name):
             return retirement_date
     return None
+
+
+@cache
+def _warn_missing_retirement_date(vendor_id: str, sku: str, status: Status) -> None:
+    """Warn about a retiring SKU without a known retirement date, once per run."""
+    logger.warning(
+        f"{vendor_id}: {sku} is {status.value} without a known retirement date, "
+        "leaving the retirement date empty."
+    )
+
+
+def checked_retirement_date(
+    vendor_id: str, sku: str, status: Status, retirement_date: Optional[date]
+) -> Optional[date]:
+    """Return `retirement_date`, warning once if a retiring SKU has none.
+
+    `PLANNED_FOR_RETIREMENT` and `RETIRED` SKUs are expected to have a date, so
+    a missing one usually means a rule table or API field to update.
+    """
+    if retirement_date is None and status in (
+        Status.PLANNED_FOR_RETIREMENT,
+        Status.RETIRED,
+    ):
+        _warn_missing_retirement_date(vendor_id, sku, status)
+    return retirement_date
 
 
 def status_from_retirement_date(

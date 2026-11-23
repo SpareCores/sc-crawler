@@ -1,5 +1,6 @@
 """Unit tests for OVHcloud vendor module."""
 
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -1176,6 +1177,69 @@ def test_inventory_databases_without_versions_on_sale_are_inactive(mock_ovh_clie
     rows = inventory_databases(_ovh_vendor())
     assert rows[0]["engine_versions"] == []
     assert rows[0]["status"] == Status.INACTIVE
+
+
+_TODAY = datetime.now(UTC).date()
+
+
+@pytest.mark.parametrize(
+    "offer_status,end_of_sale,status,retirement_date",
+    [
+        # on sale with a future plan end of sale: planned
+        (
+            "STABLE",
+            _TODAY + timedelta(days=30),
+            Status.PLANNED_FOR_RETIREMENT,
+            _TODAY + timedelta(days=30),
+        ),
+        # end of sale reached (inclusive): retired
+        ("STABLE", _TODAY, Status.RETIRED, _TODAY),
+        # already retired by the lifecycle: keeps the date
+        (
+            "END_OF_LIFE",
+            _TODAY - timedelta(days=30),
+            Status.RETIRED,
+            _TODAY - timedelta(days=30),
+        ),
+        # not orderable: stays INACTIVE, no date
+        ("UNAVAILABLE", _TODAY + timedelta(days=30), Status.INACTIVE, None),
+        # no end of sale
+        ("STABLE", None, Status.ACTIVE, None),
+    ],
+)
+def test_inventory_databases_status_from_plan_end_of_sale(
+    mock_ovh_client, offer_status, end_of_sale, status, retirement_date
+):
+    capabilities = _pg_capabilities()
+    if end_of_sale:
+        for plan in capabilities["plans"]:
+            if plan["name"] == "production":
+                plan["lifecycle"] = {"endOfSale": end_of_sale.isoformat()}
+    _extend_ovh_get(
+        mock_ovh_client,
+        availability=[_pg_offer(status=offer_status)],
+        capabilities=capabilities,
+        catalog_addons=[],
+    )
+    (row,) = inventory_databases(_ovh_vendor())
+    assert row["status"] == status
+    assert row["retirement_date"] == retirement_date
+
+
+def test_inventory_databases_ignores_end_of_sale_of_the_engine_version(
+    mock_ovh_client,
+):
+    # `endOfSale` on the availability row is the engine version's, not the SKU's
+    offer = _pg_offer()
+    offer["lifecycle"]["endOfSale"] = (_TODAY + timedelta(days=30)).isoformat()
+    _extend_ovh_get(
+        mock_ovh_client,
+        availability=[offer],
+        capabilities=_pg_capabilities(),
+        catalog_addons=[],
+    )
+    (row,) = inventory_databases(_ovh_vendor())
+    assert (row["status"], row["retirement_date"]) == (Status.ACTIVE, None)
 
 
 def test_get_regions_skips_regions_without_compute_or_databases(mock_ovh_client):

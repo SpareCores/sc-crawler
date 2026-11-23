@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock, patch
 
@@ -16,6 +16,7 @@ from sc_crawler.table_fields import (
     Status,
     StorageType,
 )
+from sc_crawler.vendor_helpers import _warn_missing_retirement_date
 from sc_crawler.vendors import _aws
 from sc_crawler.vendors._aws import (
     _active_region_ids,
@@ -736,6 +737,14 @@ def test_aws_inventory_databases_status_from_orderable_options_and_end_of_suppor
     assert by_id["db.t2.micro"]["status"] == Status.RETIRED
     # not orderable classes are retired without being mapped
     assert by_id["db.t1.micro"]["status"] == Status.RETIRED
+    # retirement date from the documented end of support, only when retiring
+    assert {k: v["retirement_date"] for k, v in by_id.items()} == {
+        "db.m5.large": None,
+        "db.m4.large": None,
+        "db.m6g.large": None,
+        "db.t2.micro": date(2024, 12, 31),
+        "db.t1.micro": None,
+    }
 
 
 def test_aws_inventory_server_prices_deactivates_unoffered_instance_types():
@@ -1326,7 +1335,9 @@ def test_aws_reconcile_server_status(monkeypatch):
         ],
     )
     servers = {
-        server_id: SimpleNamespace(server_id=server_id, accelerator_count=0)
+        server_id: SimpleNamespace(
+            server_id=server_id, accelerator_count=0, status=Status.ACTIVE
+        )
         for server_id in (
             "m5.large",
             "c8a.large",
@@ -1349,6 +1360,63 @@ def test_aws_reconcile_server_status(monkeypatch):
         "u-6tb1.metal": Status.INACTIVE,
         "t3.spotonly": Status.ACTIVE,
     }
+
+
+def test_aws_reconcile_server_status_sets_the_retirement_date(monkeypatch):
+    monkeypatch.setattr(
+        _aws,
+        "_collect_regions_servers",
+        lambda vendor: {"us-east-1": {"u-12tb1.112xlarge": ["use1-az1"]}},
+    )
+    monkeypatch.setattr(
+        _aws,
+        "_get_server_products",
+        lambda: [
+            {
+                "product": {"attributes": {"instanceType": server_id}},
+                "terms": {"OnDemand": {"x": {}}},
+            }
+            for server_id in ("u-9tb1.112xlarge", "m1.small")
+        ],
+    )
+    _warn_missing_retirement_date.cache_clear()
+    servers = {
+        # retired with a documented date
+        "u-9tb1.112xlarge": SimpleNamespace(
+            accelerator_count=0, status=Status.ACTIVE, retirement_date=None
+        ),
+        # retired, no rule: empty date, warned
+        "m1.small": SimpleNamespace(
+            accelerator_count=0, status=Status.ACTIVE, retirement_date=None
+        ),
+        # still offered: no date
+        "u-12tb1.112xlarge": SimpleNamespace(
+            accelerator_count=0, status=Status.ACTIVE, retirement_date=None
+        ),
+        # was retired with a date, no longer priced: kept with its date
+        "u-18tb1.112xlarge": SimpleNamespace(
+            accelerator_count=0,
+            status=Status.RETIRED,
+            retirement_date=date(2025, 6, 20),
+        ),
+        # was active, neither offered nor priced: INACTIVE
+        "c1.medium": SimpleNamespace(
+            accelerator_count=0, status=Status.ACTIVE, retirement_date=None
+        ),
+    }
+    for server_id, server in servers.items():
+        server.server_id = server_id
+    with patch("sc_crawler.vendor_helpers.logger") as logger:
+        _aws._reconcile_server_status(SimpleNamespace(servers=list(servers.values())))
+    assert {k: (v.status, v.retirement_date) for k, v in servers.items()} == {
+        "u-9tb1.112xlarge": (Status.RETIRED, date(2025, 6, 20)),
+        "m1.small": (Status.RETIRED, None),
+        "u-12tb1.112xlarge": (Status.ACTIVE, None),
+        "u-18tb1.112xlarge": (Status.RETIRED, date(2025, 6, 20)),
+        "c1.medium": (Status.INACTIVE, None),
+    }
+    warnings = [call.args[0] for call in logger.warning.call_args_list]
+    assert len(warnings) == 1 and "m1.small" in warnings[0]
 
 
 @pytest.mark.parametrize(
@@ -1410,7 +1478,9 @@ def test_aws_spot_prices_inactive_for_servers_no_longer_available(monkeypatch):
         regions=[region],
         zones=[SimpleNamespace(name="us-east-1a", zone_id="use1-az1", region=region)],
         servers=[
-            SimpleNamespace(server_id=server_id, accelerator_count=0)
+            SimpleNamespace(
+                server_id=server_id, accelerator_count=0, status=Status.ACTIVE
+            )
             for server_id in ("m5.large", "t3.spotonly", "g4ad.xlarge")
         ],
     )

@@ -628,6 +628,33 @@ def test_shape_servers_always_free_is_inactive():
     (server,) = _shape_servers(MICRO, Mock(vendor_id="oci"))
     assert server["status"] == Status.INACTIVE
     assert server["cpu_allocation"] == CpuAllocation.BURSTABLE
+    # the Always Free E2 micro shape is not in the E2 end of orderability
+    assert server["retirement_date"] is None
+
+
+@pytest.mark.parametrize(
+    "name,retirement_date",
+    [
+        ("VM.Standard2.1", date(2022, 2, 28)),
+        ("VM.Standard.E2.2", date(2021, 2, 8)),
+        ("BM.Standard.E3.128", date(2022, 3, 31)),
+    ],
+)
+def test_shape_servers_previous_generation_is_planned_for_retirement(
+    name, retirement_date
+):
+    (server,) = _shape_servers(_fixed_shape(name, 1, 15), Mock(vendor_id="oci"))
+    # end of orderability passed, but the shapes still run: not RETIRED
+    assert server["status"] == Status.PLANNED_FOR_RETIREMENT
+    assert server["retirement_date"] == retirement_date
+
+
+def test_shape_servers_current_generation_has_no_retirement_date():
+    (server,) = _shape_servers(
+        _fixed_shape("VM.Standard3.Flex", 1, 16), Mock(vendor_id="oci")
+    )
+    assert server["status"] == Status.ACTIVE
+    assert server["retirement_date"] is None
 
 
 def test_inventory_regions_status_from_subscriptions():

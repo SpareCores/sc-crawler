@@ -667,6 +667,15 @@ _AZURE_RETIREMENT_RULES = (
 
 
 @cache
+def _warn_unparsed_retirement_date(value) -> None:
+    """Warn about an unexpected `RetirementDateUtc` format, once per value."""
+    logger.warning(
+        f"Unexpected Azure RetirementDateUtc value {value!r}, "
+        "falling back to the documented retirement rules."
+    )
+
+
+@cache
 def _vm_retirement_dates() -> dict[str, date]:
     """Retirement date of the VM sizes from the Compute resource SKUs.
 
@@ -683,6 +692,8 @@ def _vm_retirement_dates() -> dict[str, date]:
             try:
                 retired_on = datetime.strptime(capability["value"], "%m/%d/%Y").date()
             except (TypeError, ValueError):
+                # the regex rules table is used instead
+                _warn_unparsed_retirement_date(capability["value"])
                 break
             if retired_on.year < 9999:
                 dates[resource["name"]] = retired_on

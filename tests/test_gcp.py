@@ -1,4 +1,5 @@
 from contextlib import ExitStack, contextmanager
+from datetime import date
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -2093,6 +2094,7 @@ def test_gcp_inventory_databases_inherits_gce_machine_type_status():
             server_id="n1-standard-4",
             api_reference="n1-standard-4",
             status=Status.PLANNED_FOR_RETIREMENT,
+            retirement_date=date(2027, 1, 2),
         )
     ]
     vendor.progress_tracker = Mock(
@@ -2133,8 +2135,10 @@ def test_gcp_inventory_databases_inherits_gce_machine_type_status():
         rows = inventory_databases(vendor)
     by_id = {row["database_id"]: row for row in rows}
     assert by_id["db-n1-standard-4"]["status"] == Status.PLANNED_FOR_RETIREMENT
+    assert by_id["db-n1-standard-4"]["retirement_date"] == date(2027, 1, 2)
     # no matching GCE machine type
     assert by_id["db-perf-optimized-N-4"]["status"] == Status.ACTIVE
+    assert by_id["db-perf-optimized-N-4"]["retirement_date"] is None
     assert by_id["db-n1-standard-4"]["family"] == "General Purpose"
     assert by_id["db-n1-standard-4"]["series"] == "n1"
     assert by_id["db-perf-optimized-N-4"]["family"] == "General Purpose"

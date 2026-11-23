@@ -84,7 +84,8 @@ class Status(str, Enum):
       child records (e.g. prices of a region), and archived records are not
       updated afterwards. It is our decision on the identity of a record,
       never a vendor signal: end of sale is `RETIRED`, and records no longer
-      returned by a vendor are `INACTIVE`.
+      returned by a vendor are `INACTIVE` (or keep `PLANNED_FOR_RETIREMENT` /
+      `RETIRED`, see above).
     """
 
     ACTIVE = "active"

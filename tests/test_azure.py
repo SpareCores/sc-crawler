@@ -32,6 +32,7 @@ from sc_crawler.vendors._azure import (
     _vm_retirement_dates,
     _vm_series,
     _warn_unknown_disk,
+    _warn_unparsed_retirement_date,
     inventory_storage_prices,
     inventory_storages,
 )
@@ -2039,10 +2040,18 @@ def test_azure_vm_retirement_dates_from_the_compute_resources():
     ]
     # the imported function is the real one, only the module attribute is patched
     _vm_retirement_dates.cache_clear()
-    with patch("sc_crawler.vendors._azure._compute_resources", return_value=resources):
+    _warn_unparsed_retirement_date.cache_clear()
+    with (
+        patch("sc_crawler.vendors._azure._compute_resources", return_value=resources),
+        patch("sc_crawler.vendors._azure.logger") as logger,
+    ):
         dates = _vm_retirement_dates()
     _vm_retirement_dates.cache_clear()
     assert dates == {"Standard_A2m_v2": date(2028, 11, 15)}
+    # unexpected format: falls back to the rules table, with a warning
+    warnings = [call.args[0] for call in logger.warning.call_args_list]
+    assert len(warnings) == 1
+    assert "'soon'" in warnings[0]
 
 
 def test_azure_sku_lifecycle_status_prefers_the_api_retirement_date():
