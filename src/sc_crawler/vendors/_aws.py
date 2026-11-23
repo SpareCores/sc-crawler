@@ -3587,7 +3587,7 @@ def inventory_databases(vendor):
                         retirement_date_from_rules(
                             database_id, _AWS_RDS_RETIREMENT_RULES
                         )
-                        if status == Status.RETIRED
+                        if status in (Status.PLANNED_FOR_RETIREMENT, Status.RETIRED)
                         else None
                     ),
                 }
