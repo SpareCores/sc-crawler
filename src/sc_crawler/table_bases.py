@@ -985,6 +985,38 @@ class ServerFields(
             "the size (GB) and type of each disk."
         ),
     )
+    storage_read_iops_max: Optional[int] = Field(
+        default=None,
+        description=(
+            "The vendor-published maximum read IOPS of the bundled disk(s), "
+            "summed over all disks, also of different types (e.g. temp disk and NVMe), "
+            "so a theoretical total. Per-disk values are in storages."
+        ),
+    )
+    storage_write_iops_max: Optional[int] = Field(
+        default=None,
+        description=(
+            "The vendor-published maximum write IOPS of the bundled disk(s), "
+            "summed over all disks, also of different types (e.g. temp disk and NVMe), "
+            "so a theoretical total. Per-disk values are in storages."
+        ),
+    )
+    storage_read_throughput_max: Optional[int] = Field(
+        default=None,
+        description=(
+            "The vendor-published maximum read throughput (MB/s) of the bundled disk(s), "
+            "summed over all disks, also of different types (e.g. temp disk and NVMe), "
+            "so a theoretical total. Per-disk values are in storages."
+        ),
+    )
+    storage_write_throughput_max: Optional[int] = Field(
+        default=None,
+        description=(
+            "The vendor-published maximum write throughput (MB/s) of the bundled disk(s), "
+            "summed over all disks, also of different types (e.g. temp disk and NVMe), "
+            "so a theoretical total. Per-disk values are in storages."
+        ),
+    )
     compatible_storage_ids: Optional[List[str]] = Field(
         default=None,
         sa_type=JSON(none_as_null=True),
