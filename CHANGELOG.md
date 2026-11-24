@@ -16,6 +16,10 @@ Fix(es):
 - `aws`: Pricing API clients use adaptive retry mode with up to 10 attempts.
   botocore 1.44.0 made the standard retry mode (3 attempts) the default, so
   throttled `GetProducts` calls failed and the vendor was skipped.
+- `aws`: instance types kept `ACTIVE` only by spot prices (e.g. `a1`, not returned
+  by the API any more) get their series, family (the category of the Pricing API,
+  instead of the old family, which was the series name) and compatible storage IDs
+  (all EBS volume types) filled, if their series was not set yet.
 - Progress bars of a failed vendor are cleaned up: the progress bars of its
   interrupted steps are removed from the display and its elapsed timer is
   stopped, instead of counting up while later vendors are being processed. No
