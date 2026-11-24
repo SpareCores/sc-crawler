@@ -88,3 +88,19 @@ def test_hash_all_column_types(table):
     assert len(hashes) == 1
     with Session(engine) as session:
         assert table.hash(session) == hashes
+
+
+def test_hash_rejects_unsupported_types():
+    """Only dates are converted, e.g. a datetime is not silently truncated."""
+    engine = create_sc_engine("sqlite://")
+    table = tables[0]
+    table.__table__.create(engine)
+    with Session(engine) as session:
+        session.execute(
+            table.__table__.insert().values(
+                {c.name: _sample_value(table, c) for c in table.__table__.columns}
+            )
+        )
+        session.commit()
+        with pytest.raises(TypeError, match="Cannot hash datetime value"):
+            table.hash(session, ignored=[])
