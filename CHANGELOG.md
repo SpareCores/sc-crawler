@@ -2,8 +2,7 @@
 
 Fix(es):
 
-- `hash` failed with `TypeError: Object of type date is not JSON
-  serializable` on databases with a `retirement_date` value.
+- Support hashing of date columns (e.g. `returement_date`).
 
 ## v0.12.0 (November 21, 2026)
 
