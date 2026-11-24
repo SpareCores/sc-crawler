@@ -381,39 +381,58 @@ def copy(
 
     # left out rows per table name, to also leave out the rows referencing them
     left_out = {}
-    with Live(panel):
+    # stream the rows from the source and bulk insert them into the blank
+    # target in a single transaction
+    with (
+        Live(panel),
+        source_engine.connect() as source_connection,
+        target_engine.begin() as target_connection,
+    ):
         # tables are ordered so that referenced tables come first
         for table in tables:
-            with Session(source_engine) as source_session:
-                rows = source_session.exec(statement=select(table))
-                items = [row.model_dump() for row in rows]
-            if exclude_status:
-                # (referencing columns, referenced values of the left out rows)
-                references = [
-                    (
-                        fk.column_keys,
-                        {
-                            tuple(row[e.column.name] for e in fk.elements)
-                            for row in left_out[fk.referred_table.name]
-                        },
-                    )
-                    for fk in table.__table__.foreign_key_constraints
+            table_name = table.get_table_name()
+            pid = progress.add_task(f"Copying {table_name}(s)", total=None)
+            # (referencing columns, referenced values of the left out rows)
+            references = [
+                (
+                    fk.column_keys,
+                    {
+                        tuple(row[e.column.name] for e in fk.elements)
+                        for row in left_out[fk.referred_table.name]
+                    },
+                )
+                for fk in table.__table__.foreign_key_constraints
+                if exclude_status
+            ]
+            left_out[table_name] = []
+            copied = 0
+            result = source_connection.execution_options(yield_per=10_000).execute(
+                select(table.__table__)
+            )
+            for rows in result.mappings().partitions():
+                # PostgreSQL JSONB columns lose the key order and older rows
+                # might miss new JSON fields, so normalize as when inserted
+                rows = [
+                    table.__validator__.model_validate(dict(row)).model_dump()
+                    for row in rows
                 ]
-                kept, left_out[table.get_table_name()] = [], []
-                for item in items:
-                    if item["status"] in exclude_status or any(
-                        tuple(item[c] for c in columns) in values
-                        for columns, values in references
-                    ):
-                        left_out[table.get_table_name()].append(item)
-                    else:
-                        kept.append(item)
-                items = kept
-            with Session(target_engine) as target_session:
-                insert_items(table, items, session=target_session, progress=progress)
-                target_session.commit()
-    with target_engine.begin() as connection:
-        command.stamp(alembic_cfg(connection), "heads")
+                if exclude_status:
+                    kept = []
+                    for row in rows:
+                        if row["status"] in exclude_status or any(
+                            tuple(row[c] for c in columns) in values
+                            for columns, values in references
+                        ):
+                            left_out[table_name].append(row)
+                        else:
+                            kept.append(row)
+                    rows = kept
+                if rows:
+                    target_connection.execute(table.__table__.insert(), rows)
+                copied += len(rows)
+                progress.update(pid, completed=copied)
+            progress.update(pid, total=copied)
+        command.stamp(alembic_cfg(target_connection), "heads")
 
 
 @cli.command()

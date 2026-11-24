@@ -1,3 +1,12 @@
+## Unreleased
+
+Maintenance update:
+
+- `sc-crawler copy` is about 4x faster and uses much less memory: it
+  streams the rows of each table from the source database and bulk inserts
+  them in a single transaction, instead of loading whole tables as ORM
+  objects and upserting them in chunks of 100 rows.
+
 ## v0.12.0 (November 21, 2026)
 
 New feature(s):
