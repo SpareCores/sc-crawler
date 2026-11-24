@@ -1,3 +1,9 @@
+## v0.12.x (DEVELOPMENT)
+
+Fix(es):
+
+- Support hashing of date columns (e.g. `retirement_date`).
+
 ## v0.12.0 (November 21, 2026)
 
 New feature(s):

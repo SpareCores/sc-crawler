@@ -365,6 +365,13 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
                 cls.get_table_name(),
                 total=row_count,
             )
+
+        def json_default(value):
+            # plain dates only, so datetime (a date subclass) is rejected too
+            if type(value) is date:
+                return value.isoformat()
+            raise TypeError(f"Cannot hash {type(value).__name__} value: {value!r}")
+
         # no use of a generator as will need to serialize to JSON anyway
         hashes = {}
         for i, row in enumerate(rows):
@@ -374,7 +381,9 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
             keys_id = cls.pk_key(rowdict)
             for dropkey in [*ignored, *pks]:
                 rowdict.pop(dropkey, None)
-            rowhash = sha1(dumps(rowdict, sort_keys=True).encode()).hexdigest()
+            rowhash = sha1(
+                dumps(rowdict, sort_keys=True, default=json_default).encode()
+            ).hexdigest()
             hashes[keys_id] = rowhash
             if progress:
                 # updating the progress bar is expensive, so limit with manu iterations
