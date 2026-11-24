@@ -3,6 +3,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from sc_crawler.table_fields import (
+    AcceleratorType,
     Allocation,
     DatabaseEngine,
     DatabaseHaLevel,
@@ -85,6 +86,35 @@ def test_vultr_inventory_servers_status_from_locations():
     ]
     assert by_id["vc2-1c-1gb"]["compatible_storage_ids"] == expected_storage_ids
     assert by_id["vbm-6c-32gb"]["compatible_storage_ids"] == []
+
+
+@pytest.mark.parametrize(
+    ("plan_id", "brand", "count", "model", "memory_min", "memory_total"),
+    [
+        ("vcg-a16-6c-60g-16vram", "NVIDIA", 1, "A16", 16384, 16384),
+        ("vcg-a16-12c-120g-32vram", "NVIDIA", 2, "A16", 16384, 32768),
+        ("vcg-a40-96c-480g-192vram", "NVIDIA", 4, "A40", 49152, 196608),
+        ("vcg-a100-96c-960g-640vram", "NVIDIA", 8, "A100", 81920, 655360),
+        ("vcg-b200-248c-2826g-1536vram-roce", "NVIDIA", 8, "B200", 196608, 1572864),
+        ("vcg-mi355x-252c-2872g-2304vram", "AMD", 8, "MI355X", 294912, 2359296),
+        ("vcg-mi325x-252c-2872g-1536vram", "AMD", 8, "MI325X", 262144, 2097152),
+    ],
+)
+def test_vultr_inventory_servers_dedicated_metal_gpu_from_plan_id(
+    plan_id, brand, count, model, memory_min, memory_total
+):
+    plan = _plan(plan_id, ["ewr"]) | {"type": "vdm", "gpu_brand": brand}
+    with (
+        patch("sc_crawler.vendors._vultr._get_plans", return_value=[plan]),
+        patch("sc_crawler.vendors._vultr._get_plans_metal", return_value=[]),
+    ):
+        (row,) = inventory_servers(Mock(vendor_id="vultr"))
+    assert row["accelerator_count"] == count
+    assert row["accelerator_type"] == AcceleratorType.GPU
+    assert row["accelerator_manufacturer"] == brand
+    assert row["accelerator_model"] == model
+    assert row["accelerator_memory_min"] == memory_min
+    assert row["accelerator_memory_total"] == memory_total
 
 
 def test_vultr_inventory_databases_maps_plans_and_versions():
