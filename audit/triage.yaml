@@ -639,3 +639,10 @@ entries:
     note: "Bare metal plans (/v2/plans-metal): block storage cannot be attached (docs.vultr.com/support/products/storage/can-i-attach-vultr-block-storage-volume-to-vultr-bare-metal-server), so the empty list is by design (_vultr.py inventory_servers)."
     by: claude (claude-code)
     date: 2026-11-24
+  - vendor: vultr
+    type: STORAGE_IDS_EMPTY
+    match: "vultr-dbaas-.*"
+    verdict: expected
+    note: "Database storage is bundled in the plan and only changes with a plan change (docs.vultr.com/products/storage/databases/postgresql/management/resize-databases), so the empty list is by design (_vultr.py inventory_databases). Confirmed by Gergely on Slack, 2026-11-24 (DEV-1179)."
+    by: claude (claude-code)
+    date: 2026-11-24
