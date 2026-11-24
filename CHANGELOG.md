@@ -1,4 +1,4 @@
-## v0.12.x (development)
+## v0.12.x (DEVELOPMENT)
 
 Fix(es):
 
