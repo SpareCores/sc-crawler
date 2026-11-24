@@ -1,5 +1,6 @@
 """Inventory of Google Cloud Platform via its APIs: servers, storages, traffic, IPv4 addresses and managed PostgreSQL (Cloud SQL), with their prices."""
 
+from datetime import date, datetime
 from functools import cache
 from logging import DEBUG, WARNING
 from re import compile as recompile
@@ -993,6 +994,22 @@ def _gcp_machine_type_status(deprecated_state: str | None) -> Status:
     return _GCP_DEPRECATION_STATE_TO_STATUS.get(deprecated_state or "", Status.ACTIVE)
 
 
+def _gcp_machine_type_retirement_date(deprecated) -> date | None:
+    """Date of the `deleted`, or else `obsolete` (create rejected), DeprecationStatus timestamp.
+
+    The timestamps are optional and were empty for all deprecated machine types
+    (Nov 2026), and no retirement dates of machine types were found in the docs
+    (deprecated N1/Z3 types are aliases of renamed types, M2 obsolete ones are
+    undocumented), so there is no fallback table of dates as for Azure:
+    - <https://docs.cloud.google.com/compute/docs/deprecations>
+    - <https://docs.cloud.google.com/compute/docs/release-notes>
+    """
+    for timestamp in (deprecated.deleted, deprecated.obsolete):
+        if timestamp:
+            return datetime.fromisoformat(timestamp).date()
+    return None
+
+
 # machine types billed with their own Core/Ram SKUs instead of the ones named
 # after the series, e.g. "A3Ultra Instance Core running in Americas" for
 # a3-ultragpu-8g and "M4Ultramem224 Instance Ram running in Americas" for
@@ -1329,6 +1346,7 @@ def _search_servers(zone_name: str) -> List[dict]:
                 "outbound_traffic": 0,
                 "ipv4": 0,
                 "status": _gcp_machine_type_status(server.deprecated.state),
+                "retirement_date": _gcp_machine_type_retirement_date(server.deprecated),
             }
         )
         if server.accelerators:
@@ -2802,6 +2820,7 @@ def inventory_databases(vendor):
         )
         server_id = server.server_id if server is not None else None
         status = server.status if server is not None else Status.ACTIVE
+        retirement_date = server.retirement_date if server is not None else None
         raw_regions = tier.get("region")
         if isinstance(raw_regions, str):
             tier_regions = [raw_regions]
@@ -2940,6 +2959,7 @@ def inventory_databases(vendor):
                     )
                 ),
                 "status": status,
+                "retirement_date": retirement_date,
             }
         )
         vendor.progress_tracker.advance_task()

@@ -1,3 +1,35 @@
+## v0.12.0 (November 21, 2026)
+
+New feature(s):
+
+- `Server.retirement_date` and `Database.retirement_date`: the retirement date
+  announced by the vendor for `PLANNED_FOR_RETIREMENT` and `RETIRED` records,
+  i.e. the end of support (shutdown) if published, otherwise the end of sale.
+  Empty when no date was announced or it is not known.
+
+Database migrations:
+
+- Add the `retirement_date` column to the `server`, `server_scd`, `database`
+  and `database_scd` tables.
+
+Fix(es):
+
+- Keep the `PLANNED_FOR_RETIREMENT` and `RETIRED` status of servers and
+  databases no longer returned by the vendor, instead of setting them to
+  `INACTIVE`.
+- `gcp`: the deprecated `n1-megamem-96` and `n1-ultramem-40/80/160` machine
+  types are archived with archive rules, as GCP renamed them to
+  `m1-megamem-96` and `m1-ultramem-40/80/160` (the old names are aliases). The
+  deprecated `z3-highmem-88` and `z3-highmem-176` are archived as well, as
+  their API replacements (`z3-highmem-88-highlssd` and
+  `z3-highmem-176-standardlssd`) have the same specs and prices.
+- `oci`: the previous generation `Standard2`, `Standard.E2` (except for the
+  Always Free `VM.Standard.E2.1.Micro`) and `Standard.E3` shapes are
+  `PLANNED_FOR_RETIREMENT` instead of `ACTIVE`, as these are past their end of
+  orderability date, but can still be ordered.
+- `ovh`: PostgreSQL SKUs with an end of sale date of their plan or flavor are
+  `PLANNED_FOR_RETIREMENT` (or `RETIRED` after that date) instead of `ACTIVE`.
+
 ## v0.11.1 (November 20, 2026)
 
 New vendor(s):
@@ -111,6 +143,10 @@ New feature(s):
   `VPU` and `NPU` instead of `GPU`.
 - Skip the `nvidia_smi` and `nvbandwidth` inspector tasks on all non-GPU
   accelerators.
+
+Database migrations:
+
+- Add `NPU`, `FPGA` and `VPU` to the `acceleratortype` enum (PostgreSQL).
 
 ## v0.10.3 (November 06, 2026)
 
@@ -299,6 +335,19 @@ New feature(s):
 - Add optional `api_reference_object` JSON column to `Server` (not populated
   yet), as already available for `Database`.
 
+Database migrations:
+
+- Rename the `gpu_count`, `gpu_memory_min`, `gpu_memory_total`,
+  `gpu_manufacturer`, `gpu_family`, `gpu_model` and `gpus` columns of the
+  `server` table to `accelerator_*` and `accelerators`.
+- Add the `accelerator_type` (with the new `acceleratortype` enum),
+  `api_reference_object`, `series` and `compatible_storage_ids` columns to the
+  `server` table.
+- Add the `series` and `compatible_storage_ids` columns to the `database` table.
+- Add the `environment_fields` and `subcategory` columns to the `benchmark` table.
+- Convert the `cpu_flags`, `cpus`, `accelerators` and `storages` columns of the
+  `server` table from `JSON` to `JSONB` (PostgreSQL).
+
 Fix(es):
 
 - `BenchmarkScore.observed_at` is now the crawl timestamp (like in other
@@ -374,6 +423,10 @@ New feature(s):
   Database (model validators reject these on other tables).
 - Map vendor inventory onto those statuses from confirmed APIs and docs.
  
+Database migrations:
+
+- Add `PLANNED_FOR_RETIREMENT` and `RETIRED` to the `status` enum (PostgreSQL).
+
 ## v0.9.1 (August 14, 2026)
 
 ‼ Breaking changes:
@@ -406,6 +459,13 @@ Maintenance update:
   and input-dict translation.
 - Ingest `pgbench` scores for database instances too.
 
+Database migrations:
+
+- Add the `resource_type` column to the `benchmark_score` table, rename its
+  `server_id` column to `resource_id`, and replace `kernel_version` with the
+  `environment` JSON column. Existing rows are server scores.
+- Drop the `database_benchmark_score` table.
+
 Fix(es):
 
 - Fix OVH charges for stopped servers.
@@ -432,6 +492,14 @@ Maintenance update:
   HA deployments can carry distinct prices (e.g. AWS Multi-AZ, Azure 2x HA compute,
   GCP Regional meters). Catalog `database.ha` / `ha_strategy` remain ordered JSON lists.
 
+Database migrations:
+
+- Refactor the `database` table as described above: replace `ha_supported`
+  with `ha` and `ha_strategy`, rename `storage_autoscaling` to
+  `storage_extra_autosize`, drop `support_level`, and add the new capability
+  columns and `api_reference_object`.
+- Add `ha` and `ha_strategy` to the primary key of the `database_price` table.
+
 Fix(es):
 
 - Correct and fill `AWS`, `Azure`, and `GCP` PostgreSQL DBaaS inventory fields (HA levels
@@ -454,6 +522,10 @@ New feature(s):
 - Add PostgreSQL DBaaS support for `AWS`.
 - Add `database_benchmark_score` table for database benchmark results, mirroring `benchmark_score`.
 
+Database migrations:
+
+- Add the `database_benchmark_score` table.
+
 ## v0.8.3 (July 15, 2026)
 
 New feature(s):
@@ -461,6 +533,11 @@ New feature(s):
 - Add PostgreSQL DBaaS catalog tables: `database`, `database_price`, `database_storage`, and
   `database_storage_price`, with SCD mirrors and Alembic migration.
 - Add initial support for `inventory_databases`, `inventory_database_prices`, `inventory_database_storages`, and `inventory_database_storage_prices` methods to selected vendors (now just `Azure` and `GCP` implemented). Note that records collected through this beta release are not yet intended for production use and meant only for initial exploration.
+
+Database migrations:
+
+- Add the `database`, `database_price`, `database_storage` and
+  `database_storage_price` tables.
 
 Fix(es):
 
@@ -477,6 +554,10 @@ Maintenance update:
 - Round raw, normalized, and impact scores.
 
 ## v0.8.1 (June 29, 2026)
+
+Database migrations:
+
+- Make the `description` column of the `server` table non-nullable.
 
 Fix(es):
 
@@ -499,6 +580,11 @@ New feature(s):
   `require`) on workload profile definitions, with `penalty` floor for penalized
   components; apply `require`/`penalize` rules to LLM inference workload
   entries.
+
+Database migrations:
+
+- Add the `source` and `note` columns to the `benchmark` table, and the
+  `score_breakdown` column to the `benchmark_score` table.
 
 Fix(es):
 
@@ -525,6 +611,10 @@ New feature(s):
 
 - Add `ServerDescription` table and ingest generated descriptions from `sc-navigator-descriptions` during server inventory.
 
+Database migrations:
+
+- Add the `server_description` table.
+
 Fix(es):
 
 - Implement `average_time_to_start` data harvesting for the `Server` table.
@@ -540,6 +630,16 @@ New feature(s):
 fill up these columns with proper info.
 - Add `ecpus`, `scalability`, `hw_virt`, `memory_amount_actual`, `network_speed_max`, `network_storage_speed_baseline`, `network_storage_speed_max`, `average_time_to_start` columns to `Server` table, and fill up these columns with proper info (best effort for network speed related fields).
 
+Database migrations:
+
+- Add the `stopped_server_charged`, `billing_increment_seconds`,
+  `minimum_billing_seconds` and `billing_comment` columns to the `vendor` table.
+- Add the `ecpus`, `scalability`, `hw_virt`, `memory_amount_actual`,
+  `network_speed_max`, `network_storage_speed_max`,
+  `network_storage_speed_baseline` and `average_time_to_start` columns to the
+  `server` table, and rename its `network_speed` column to
+  `network_speed_baseline`.
+
 Fix(es):
 
 - Add missing GPU-related data to UpCloud GPU family server instances.
@@ -554,6 +654,10 @@ New feature(s):
   `cicd`), each using a weighted mix of benchmark components.
 - Add `category` field to `Benchmark` table and fill it for existing benchmarks with appropriate categories.
 
+Database migrations:
+
+- Add the `category` column to the `benchmark` table.
+
 Fix(es):
 
 - Add Python 3.14 support by unpinning the `pydantic` dependency and replacing `pydantic.ImportString` with a standard
@@ -567,6 +671,12 @@ Fix(es):
   `Storage` table to reflect units in GB and MB/s.
 
 ## v0.5.0 (Mar 23, 2026)
+
+Database migrations:
+
+- Add the `framework_version` and `kernel_version` columns to the
+  `benchmark_score` table, and move `framework_version` from `config` to the new
+  column.
 
 Fix(es):
 
@@ -588,6 +698,13 @@ Fix(es):
 New benchmark(s):
 
 - membench
+
+Database migrations:
+
+- Replace the `cpu_l1_cache` column of the `server` table with
+  `cpu_l1d_cache` and `cpu_l1i_cache`, add the `cpu_l1d_cache_total`,
+  `cpu_l1i_cache_total`, `cpu_l2_cache_total` and `cpu_l3_cache_total` columns,
+  and convert the existing values to KiB.
 
 Fix(es):
 
@@ -649,6 +766,12 @@ New feature(s):
 - CLI tool to dump database tables to JSON files.
 - Implement Alibaba Cloud's spot instance price sampling.
 - Support for fractional GPU counts in server instances with partial GPU allocation.
+
+Database migrations:
+
+- Reset the migration history: the new initial migration (`dad8a1f0f455`)
+  creates all tables.
+- Change the `gpu_count` column of the `server` table from integer to float.
 
 Housekeeping:
 
@@ -782,6 +905,14 @@ New feature(s):
 - Add `api_reference` and `display_name` to `Datacenter`, `Zone`, and `Server`.
 - Add latitude and longitude coordinates to `Datacenter`.
 - Add `family` to `Server`.
+
+Database migrations:
+
+- Add the `api_reference` and `display_name` columns to the `datacenter`,
+  `zone` and `server` tables, filled from `name` for the existing rows (from
+  `datacenter_id` for the `aws` datacenters).
+- Add the `lon` and `lat` columns to the `datacenter` table.
+- Add the `family` column to the `server` table.
 
 ## v0.1.2 (Apr 24, 2024)
 

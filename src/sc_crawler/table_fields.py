@@ -77,7 +77,8 @@ class Status(str, Enum):
       or defined are set to `INACTIVE` by `pull`, as well as records missing
       from the source by `sync`.
     - `PLANNED_FOR_RETIREMENT` and `RETIRED` are only valid for Server and
-      Database, and are set only from explicit vendor signals.
+      Database, and are set only from explicit vendor signals. These are kept
+      by `pull` when the record is no longer returned by the vendor.
     - `ARCHIVED` is valid for all tables. It is set only from the
       [archive rules][sc_crawler.archive_rules] by `pull` and `sync`, also for
       child records (e.g. prices of a region), and archived records are not

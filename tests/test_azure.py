@@ -12,10 +12,10 @@ from sc_crawler.table_fields import (
     Status,
     StorageType,
 )
-from sc_crawler.vendor_helpers import disk_speed_totals
+from sc_crawler.vendor_helpers import disk_speed_totals, status_from_retirement_date
 from sc_crawler.vendors._azure import (
     _PG_PRODUCT_SERIES_RE,
-    _azure_sku_lifecycle_status,
+    _azure_sku_retirement_date,
     _compatible_storage_ids,
     _disk_sku_names,
     _gpu_spec,
@@ -44,6 +44,10 @@ from sc_crawler.vendors._azure import (
 from sc_crawler.vendors._azure import (
     inventory_databases as azure_databases,
 )
+
+
+def _azure_sku_lifecycle_status(sku_name, as_of=None):
+    return status_from_retirement_date(_azure_sku_retirement_date(sku_name), as_of)
 
 
 @pytest.fixture(autouse=True)

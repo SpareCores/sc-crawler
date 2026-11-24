@@ -1,6 +1,6 @@
 """Tiny helper classes for the most commonly used fields to be inherited by [sc_crawler.tables][]."""
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from functools import cache
 from hashlib import sha1
 from json import dumps
@@ -467,6 +467,17 @@ class HasBenchmarkIdPK(ScModel):
 
 class HasName(ScModel):
     name: str = Field(description="Human-friendly name.")
+
+
+class HasRetirementDate(ScModel):
+    retirement_date: Optional[date] = Field(
+        default=None,
+        description=(
+            "Retirement date announced by the vendor for PLANNED_FOR_RETIREMENT "
+            "and RETIRED records: the end of support (shutdown) if published, "
+            "otherwise the end of sale. Empty when not announced or not known."
+        ),
+    )
 
 
 class HasCategory(ScModel):
@@ -1109,7 +1120,7 @@ class ServerFields(
             ]
 
 
-class ServerBase(MetaColumns, ServerFields):
+class ServerBase(MetaColumns, HasRetirementDate, ServerFields):
     @field_validator("status")
     @classmethod
     def _validate_status(cls, value: Status) -> Status:
@@ -1350,7 +1361,7 @@ class DatabaseFields(
             ]
 
 
-class DatabaseBase(MetaColumns, DatabaseFields):
+class DatabaseBase(MetaColumns, HasRetirementDate, DatabaseFields):
     @field_validator("status")
     @classmethod
     def _validate_status(cls, value: Status) -> Status:

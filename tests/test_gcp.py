@@ -764,7 +764,7 @@ def test_gcp_search_servers_fills_gpu_and_bundled_local_ssd_fields():
         is_shared_cpu=False,
         architecture="ARM64",
         memory_mb=960 * 1024,
-        deprecated=SimpleNamespace(state=""),
+        deprecated=SimpleNamespace(state="", obsolete="", deleted=""),
         accelerators=[
             SimpleNamespace(
                 guest_accelerator_type="nvidia-gb300",
@@ -1102,7 +1102,7 @@ def test_gcp_search_servers_z4d_titanium_ssd_size():
         is_shared_cpu=False,
         architecture="X86_64",
         memory_mb=1512 * 1024,
-        deprecated=SimpleNamespace(state=""),
+        deprecated=SimpleNamespace(state="", obsolete="", deleted=""),
         accelerators=[],
         bundled_local_ssds=SimpleNamespace(partition_count=24),
     )
@@ -1144,7 +1144,7 @@ def test_gcp_search_servers_parses_fractional_g4_vgpu():
         is_shared_cpu=False,
         architecture="X86_64",
         memory_mb=22528,
-        deprecated=SimpleNamespace(state=""),
+        deprecated=SimpleNamespace(state="", obsolete="", deleted=""),
         accelerators=[
             SimpleNamespace(
                 guest_accelerator_type="nvidia-rtx-pro-6000",
@@ -1457,7 +1457,7 @@ def test_gcp_search_servers_tpu_missing_from_catalog_is_google():
         is_shared_cpu=False,
         architecture="X86_64",
         memory_mb=96 * 1024,
-        deprecated=SimpleNamespace(state=""),
+        deprecated=SimpleNamespace(state="", obsolete="", deleted=""),
         accelerators=[
             SimpleNamespace(guest_accelerator_type="tpu7", guest_accelerator_count=1)
         ],
@@ -1480,7 +1480,7 @@ def test_gcp_search_servers_fills_tpu_fields():
         is_shared_cpu=False,
         architecture="X86_64",
         memory_mb=192 * 1024,
-        deprecated=SimpleNamespace(state=""),
+        deprecated=SimpleNamespace(state="", obsolete="", deleted=""),
         accelerators=[
             SimpleNamespace(guest_accelerator_type="ct5lp", guest_accelerator_count=4)
         ],
