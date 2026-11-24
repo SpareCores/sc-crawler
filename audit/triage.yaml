@@ -428,6 +428,13 @@ entries:
     evidence: audit-runs/2026-10-31.tar.xz
     date: 2026-10-31
 
+  - vendor: ovh
+    type: STORAGE_IDS_EMPTY
+    match: "bm-.*"
+    verdict: expected
+    note: "Metal instances: Block Storage volumes are not available for Metal instances (docs.ovhcloud.com/en/guides/public-cloud/compute/create-and-configure-an-additional-disk-on-an-instance), so the empty list is by design (_ovh.py inventory_servers)."
+    by: claude (claude-code)
+    date: 2026-11-24
   # ---------------------------------------------------------------- azure
   - vendor: azure
     type: SPEC_MISMATCH
@@ -623,3 +630,12 @@ entries:
     by: claude (cursor)
     evidence: audit-runs/2026-11-04.tar.xz
     date: 2026-11-04
+
+  # ---------------------------------------------------------------- vultr
+  - vendor: vultr
+    type: STORAGE_IDS_EMPTY
+    match: "vbm-.*"
+    verdict: expected
+    note: "Bare metal plans (/v2/plans-metal): block storage cannot be attached (docs.vultr.com/support/products/storage/can-i-attach-vultr-block-storage-volume-to-vultr-bare-metal-server), so the empty list is by design (_vultr.py inventory_servers)."
+    by: claude (claude-code)
+    date: 2026-11-24
