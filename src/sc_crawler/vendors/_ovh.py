@@ -1,5 +1,6 @@
 """Inventory of OVHcloud Public Cloud via its API: servers, storages, traffic, IPv4 addresses and managed PostgreSQL, with their prices."""
 
+from datetime import date
 from functools import cache
 from os import environ, getenv
 from typing import Any, List, Optional
@@ -32,6 +33,11 @@ from ..utils import (
     _MIB_PER_GIB,
     _MICROCENTS_PER_CURRENCY_UNIT,
     scmodels_to_dict,
+)
+from ..vendor_helpers import (
+    disk_speed_totals,
+    split_disk_speed,
+    status_from_retirement_date,
 )
 
 
@@ -1319,6 +1325,12 @@ def inventory_servers(vendor) -> list[dict]:
                     Disk(
                         size=capacity,
                         storage_type=storage_type,
+                        # Single IOPS figure without read/write split, stored as read.
+                        # Only listed for older families on single-disk entries,
+                        # e.g. 4000 on c2-15; split if ever listed for several disks.
+                        read_iops_max=split_disk_speed(
+                            disk.get("iops"), disk.get("number", 1)
+                        ),
                     )
                 )
         storage_type = storages[0].storage_type if storages else None
@@ -1391,6 +1403,8 @@ def inventory_servers(vendor) -> list[dict]:
             "storage_size": sum(disk.size for disk in storages),
             "storage_type": storage_type,
             "storages": storages,
+            # sum over the bundled disks with a known value, None if none is known
+            **disk_speed_totals(storages),
             # Block Storage volumes are currently not available for Metal instances
             # https://docs.ovhcloud.com/en/guides/public-cloud/compute/create-and-configure-an-additional-disk-on-an-instance
             "compatible_storage_ids": (
@@ -1438,6 +1452,8 @@ def inventory_servers(vendor) -> list[dict]:
                     "description": describe(flex_storages),
                     "storage_size": flex_flavors[flex_id],
                     "storages": flex_storages,
+                    # the catalog IOPS are for the classic disk only
+                    **disk_speed_totals(flex_storages),
                 }
             )
 
@@ -1752,6 +1768,20 @@ def _catalog_suffixes(region) -> tuple[str, ...]:
     return ("",)
 
 
+def _database_end_of_sale(*lifecycles: dict | None) -> date | None:
+    """Earliest `endOfSale` of the plan and flavor `capabilities` lifecycles.
+
+    The `endOfSale` of the `availability` rows is the end of sale of the engine
+    version, not of the plan or flavor, so it is not used here.
+    """
+    dates = [
+        date.fromisoformat(lifecycle["endOfSale"])
+        for lifecycle in lifecycles
+        if lifecycle and lifecycle.get("endOfSale")
+    ]
+    return min(dates, default=None)
+
+
 def inventory_databases(vendor):
     """List Public Cloud Databases for PostgreSQL compute SKUs.
 
@@ -1759,7 +1789,10 @@ def inventory_databases(vendor):
     Rows sharing the same engine/plan/flavor are collapsed into a single SKU.
 
     Lifecycle (`availability[].lifecycle.status`): `END_OF_LIFE` -> RETIRED,
-    `STABLE`/`BETA` -> ACTIVE, otherwise INACTIVE.
+    `STABLE`/`BETA` -> ACTIVE, otherwise INACTIVE. An ACTIVE SKU with an
+    `endOfSale` date in the lifecycle of its plan or flavor (`capabilities`) is
+    PLANNED_FOR_RETIREMENT or RETIRED, with that retirement date (see
+    `_database_end_of_sale`).
 
     Data sources:
 
@@ -1774,6 +1807,7 @@ def inventory_databases(vendor):
     vendor.progress_tracker.hide_task()
 
     flavors = {f["name"]: f for f in capabilities.get("flavors", [])}
+    plans = {p["name"]: p for p in capabilities.get("plans", [])}
     regions = scmodels_to_dict(vendor.regions, keys=["api_reference"])
     server_ids = {server.server_id for server in vendor.servers}
 
@@ -1891,6 +1925,16 @@ def inventory_databases(vendor):
                 sla = offer_sla if sla is None else max(sla, offer_sla)
 
         status = Status.best(offer_statuses) if offer_statuses else Status.INACTIVE
+        end_of_sale = _database_end_of_sale(
+            plans.get(plan, {}).get("lifecycle"), flavor.get("lifecycle")
+        )
+        if end_of_sale and status == Status.ACTIVE:
+            status = status_from_retirement_date(end_of_sale)
+        retirement_date = (
+            end_of_sale
+            if status in (Status.PLANNED_FOR_RETIREMENT, Status.RETIRED)
+            else None
+        )
         spec_parts = [
             f"{vcpus} vCPU{'s' if vcpus != 1 else ''}" if vcpus else None,
             f"{memory} GB RAM" if memory else None,
@@ -1952,6 +1996,7 @@ def inventory_databases(vendor):
                 "autotuning_apply": None,
                 "sla": sla,
                 "status": status,
+                "retirement_date": retirement_date,
                 # https://docs.ovhcloud.com/en/guides/public-cloud/databases/concepts-security-overview
                 "security_features": [
                     DatabaseSecurityFeature.IP_FILTERING,

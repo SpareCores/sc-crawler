@@ -1,5 +1,6 @@
 """Inventory of Google Cloud Platform via its APIs: servers, storages, traffic, IPv4 addresses and managed PostgreSQL (Cloud SQL), with their prices."""
 
+from datetime import date, datetime
 from functools import cache
 from logging import DEBUG, WARNING
 from re import compile as recompile
@@ -38,6 +39,7 @@ from ..utils import (
     _GIB_TO_GB,
     _HOURS_PER_MONTH,
     _MIB_PER_GIB,
+    _MIB_TO_MB,
     nesteddefaultdict,
     scmodels_to_dict,
 )
@@ -45,6 +47,7 @@ from ..vendor_helpers import (
     add_vendor_id,
     parallel_fetch_servers,
     preprocess_servers,
+    split_disk_speed,
 )
 
 # ##############################################################################
@@ -235,9 +238,84 @@ def _local_ssd_partition_gib(server_name: str) -> int:
         return 7000 if server_name.endswith("-metal") else 3500
     if family == "z3" and server_name.endswith("-metal"):
         return 6000
-    if family in ["a4x", "z3"] or (family == "c4" and server_name.endswith("-metal")):
+    if family in ["a4x", "z3"] or (
+        family in ["c4", "c4d"] and server_name.endswith("-metal")
+    ):
         return 3000
     return 375
+
+
+# Maximum speed of the bundled Local SSD disks as
+# (read IOPS, write IOPS, read MiB/s, write MiB/s), from the performance tables:
+# https://docs.cloud.google.com/compute/docs/disks/local-ssd#performance
+# Titanium SSD scales linearly with the number of attached disks, so listed per
+# disk. Bare metal C4, C4D and Z4D have larger disks (3,000 and 7,000 GiB) with
+# proportionally higher speed; Z3 and Z4M bare metal follow the VM rates.
+_TITANIUM_SSD_SPEED_PER_DISK = {
+    "c4": (150_000, 75_000, 625, 330),
+    "c4-metal": (1_200_000, 600_000, 5_000, 2_640),
+    "c4a": (150_000, 75_000, 650, 330),
+    "c4d": (150_000, 75_000, 625, 330),
+    "c4d-metal": (1_200_000, 600_000, 5_000, 2_640),
+    "c4n": (150_000, 75_000, 625, 330),
+    "g4": (150_000, 75_000, 625, 330),
+    "h4d": (150_000, 75_000, 625, 330),
+    "z3": (750_000, 500_000, 3_000, 2_500),
+    "z4d": (650_000, 512_000, 3_150, 2_400),
+    "z4d-metal": (1_300_000, 1_024_000, 6_300, 4_800),
+    "z4m": (1_300_000, 1_024_000, 6_300, 4_800),
+}
+# Local SSD (non-Titanium) attached via NVMe does not scale linearly, so listed
+# by the number of attached disks.
+_LOCAL_SSD_SERIES = {"a2", "a3", "a4", "c3", "c3d"}
+_LOCAL_SSD_SPEED_BY_DISK_COUNT = {
+    1: (170_000, 90_000, 660, 350),
+    2: (340_000, 180_000, 1_320, 700),
+    3: (510_000, 270_000, 1_980, 1_050),
+    **{count: (680_000, 360_000, 2_650, 1_400) for count in range(4, 9)},
+    16: (1_600_000, 800_000, 6_240, 3_120),
+    24: (2_400_000, 1_200_000, 9_360, 4_680),
+    32: (3_200_000, 1_600_000, 12_480, 6_240),
+}
+# "To reach the stated performance levels": A2 machine types require at least
+# 24 vCPUs (N1 and N2 have no bundled Local SSD)
+_LOCAL_SSD_MIN_VCPUS = {"a2": 24}
+
+
+@cache
+def _warn_unknown_local_ssd_speed(name: str) -> None:
+    """Warn about a machine type without documented Local SSD speed, once per run."""
+    logger.warning(
+        f"Unknown GCP Local SSD speed of {name}, leaving storage speed empty."
+    )
+
+
+def _local_ssd_speed(server_name: str, partition_count: int, vcpus: int) -> tuple:
+    """(read IOPS, write IOPS, read MB/s, write MB/s) of the bundled Local SSD."""
+    family = server_name.split("-")[0].lower()
+    if vcpus < _LOCAL_SSD_MIN_VCPUS.get(family, 0):
+        # documented rule, not a missing table row: no warning
+        return (None, None, None, None)
+    if server_name.endswith("-metal") and f"{family}-metal" in (
+        _TITANIUM_SSD_SPEED_PER_DISK
+    ):
+        family = f"{family}-metal"
+    speed = None
+    if family in _TITANIUM_SSD_SPEED_PER_DISK:
+        speed = tuple(v * partition_count for v in _TITANIUM_SSD_SPEED_PER_DISK[family])
+    elif family in _LOCAL_SSD_SERIES:
+        speed = _LOCAL_SSD_SPEED_BY_DISK_COUNT.get(partition_count)
+    if speed is None:
+        # e.g. A4X: no performance figures in the docs
+        _warn_unknown_local_ssd_speed(server_name)
+        return (None, None, None, None)
+    read_iops, write_iops, read_mib, write_mib = speed
+    return (
+        read_iops,
+        write_iops,
+        round(read_mib * _MIB_TO_MB),
+        round(write_mib * _MIB_TO_MB),
+    )
 
 
 # Machine series that support each Hyperdisk type
@@ -916,6 +994,22 @@ def _gcp_machine_type_status(deprecated_state: str | None) -> Status:
     return _GCP_DEPRECATION_STATE_TO_STATUS.get(deprecated_state or "", Status.ACTIVE)
 
 
+def _gcp_machine_type_retirement_date(deprecated) -> date | None:
+    """Date of the `deleted`, or else `obsolete` (create rejected), DeprecationStatus timestamp.
+
+    The timestamps are optional and were empty for all deprecated machine types
+    (Nov 2026), and no retirement dates of machine types were found in the docs
+    (deprecated N1/Z3 types are aliases of renamed types, M2 obsolete ones are
+    undocumented), so there is no fallback table of dates as for Azure:
+    - <https://docs.cloud.google.com/compute/docs/deprecations>
+    - <https://docs.cloud.google.com/compute/docs/release-notes>
+    """
+    for timestamp in (deprecated.deleted, deprecated.obsolete):
+        if timestamp:
+            return datetime.fromisoformat(timestamp).date()
+    return None
+
+
 # machine types billed with their own Core/Ram SKUs instead of the ones named
 # after the series, e.g. "A3Ultra Instance Core running in Americas" for
 # a3-ultragpu-8g and "M4Ultramem224 Instance Ram running in Americas" for
@@ -1252,6 +1346,7 @@ def _search_servers(zone_name: str) -> List[dict]:
                 "outbound_traffic": 0,
                 "ipv4": 0,
                 "status": _gcp_machine_type_status(server.deprecated.state),
+                "retirement_date": _gcp_machine_type_retirement_date(server.deprecated),
             }
         )
         if server.accelerators:
@@ -1318,6 +1413,9 @@ def _search_servers(zone_name: str) -> List[dict]:
                     zone_servers[-1]["accelerator_manufacturer"] = "Google"
         bundled = server.bundled_local_ssds
         if bundled and bundled.partition_count:
+            read_iops, write_iops, read_mbps, write_mbps = _local_ssd_speed(
+                server.name, bundled.partition_count, server.guest_cpus
+            )
             storage_size = round(
                 bundled.partition_count
                 * _local_ssd_partition_gib(server.name)
@@ -1329,12 +1427,26 @@ def _search_servers(zone_name: str) -> List[dict]:
                     # third-gen+ Local SSD (incl. Titanium) is NVMe-only
                     # https://cloud.google.com/compute/docs/disks/local-ssd
                     "storage_type": StorageType.NVME_SSD,
+                    # one entry per Local SSD partition, the documented VM-level
+                    # speed split evenly
                     "storages": [
                         {
                             "storage_type": StorageType.NVME_SSD,
-                            "size": storage_size,
+                            "size": round(
+                                _local_ssd_partition_gib(server.name) * _GIB_TO_GB
+                            ),
+                            "read_iops_max": split_disk_speed(read_iops, count),
+                            "write_iops_max": split_disk_speed(write_iops, count),
+                            "read_throughput_max": split_disk_speed(read_mbps, count),
+                            "write_throughput_max": split_disk_speed(write_mbps, count),
                         }
+                        for count in [bundled.partition_count]
+                        for _ in range(count)
                     ],
+                    "storage_read_iops_max": read_iops,
+                    "storage_write_iops_max": write_iops,
+                    "storage_read_throughput_max": read_mbps,
+                    "storage_write_throughput_max": write_mbps,
                 }
             )
     return zone_servers
@@ -2708,6 +2820,7 @@ def inventory_databases(vendor):
         )
         server_id = server.server_id if server is not None else None
         status = server.status if server is not None else Status.ACTIVE
+        retirement_date = server.retirement_date if server is not None else None
         raw_regions = tier.get("region")
         if isinstance(raw_regions, str):
             tier_regions = [raw_regions]
@@ -2846,6 +2959,7 @@ def inventory_databases(vendor):
                     )
                 ),
                 "status": status,
+                "retirement_date": retirement_date,
             }
         )
         vendor.progress_tracker.advance_task()

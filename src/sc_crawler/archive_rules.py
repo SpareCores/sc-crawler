@@ -53,6 +53,23 @@ _HCLOUD_REASON = (
     "so the location names replaced the datacenter ids."
 )
 
+# GCP machine type ids of the deprecated machine types mapped to the ids of
+# their `deprecated.replacement` in the machineTypes API. The N1 memory-optimized
+# types are documented aliases of the M1 ones: "The machines themselves did not
+# change and the former names are still supported as aliases for these machines."
+# (https://docs.cloud.google.com/compute/docs/memory-optimized-machines and
+# https://cloud.google.com/products/compute/pricing/memory-optimized). The Z3
+# renames are not documented, but the replacements have the same vCPUs, memory,
+# local SSDs (12 x 3,000 GiB) and prices in all zones (checked in Nov 2026).
+_GCP_RENAMED_MACHINE_TYPES = {
+    "9096": "9196",  # n1-megamem-96 -> m1-megamem-96
+    "10040": "11040",  # n1-ultramem-40 -> m1-ultramem-40
+    "10080": "11080",  # n1-ultramem-80 -> m1-ultramem-80
+    "10160": "11160",  # n1-ultramem-160 -> m1-ultramem-160
+    "1742000": "1742013",  # z3-highmem-88 -> z3-highmem-88-highlssd
+    "1742001": "1742018",  # z3-highmem-176 -> z3-highmem-176-standardlssd
+}
+
 archive_rules: List[ArchiveRule] = [
     *[
         ArchiveRule(
@@ -73,6 +90,18 @@ archive_rules: List[ArchiveRule] = [
             reason=_HCLOUD_REASON,
         )
         for old, new in _HCLOUD_DATACENTER_TO_LOCATION.items()
+    ],
+    *[
+        ArchiveRule(
+            table_name="server",
+            match={"vendor_id": "gcp", "server_id": old},
+            successor={"vendor_id": "gcp", "server_id": new},
+            reason=(
+                "Same machine as its successor: GCP renamed it and keeps "
+                "the old name as an alias."
+            ),
+        )
+        for old, new in _GCP_RENAMED_MACHINE_TYPES.items()
     ],
     ArchiveRule(
         table_name="benchmark",
