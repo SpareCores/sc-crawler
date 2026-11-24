@@ -21,6 +21,7 @@ from sc_crawler.vendors._upcloud import (
     inventory_database_storages,
     inventory_databases,
     inventory_servers,
+    inventory_storages,
 )
 
 
@@ -816,3 +817,12 @@ def test_upcloud_inventory_databases_unknown_flexible_family_is_unknown_and_warn
     warnings = [call.args[0] for call in logger.warning.call_args_list]
     assert len(warnings) == 1
     assert "database family future" in warnings[0]
+
+
+def test_upcloud_inventory_storages_converts_gib_to_gb():
+    # docs: "1 GiB – 4 TiB" per volume, stored in GB like the other vendors
+    items = inventory_storages(Mock(vendor_id="upcloud"))
+    assert {s["storage_id"] for s in items} == {"hdd", "maxiops", "standard"}
+    for storage in items:
+        assert storage["min_size"] == 1  # 1 GiB = 1.07 GB
+        assert storage["max_size"] == 4398  # 4096 GiB

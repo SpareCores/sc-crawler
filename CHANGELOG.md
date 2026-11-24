@@ -21,6 +21,9 @@ Fix(es):
   instead of the old family, which was the series name) and compatible storage IDs
   (all EBS volume types) filled, if their series was not set yet, whatever their
   status (also `RETIRED` and `INACTIVE` rows).
+- `gcp`, `upcloud`: storage `min_size` and `max_size` are converted from GiB to
+  GB (the documented unit, as at the other vendors), e.g. 64 TiB is 70369 instead
+  of 65536.
 - Progress bars of a failed vendor are cleaned up: the progress bars of its
   interrupted steps are removed from the display and its elapsed timer is
   stopped, instead of counting up while later vendors are being processed. No

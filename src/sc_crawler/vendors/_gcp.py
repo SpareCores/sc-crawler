@@ -2045,6 +2045,9 @@ def inventory_storages(vendor):
     """
 
     def _record(storage) -> dict:
+        # `valid_disk_size` (e.g. "4GB-65536GB") is in GiB despite the "GB": the
+        # docs list the same limits as "4 GiB" and "64 TiB", so convert to GB
+        # https://cloud.google.com/compute/docs/disks/hyperdisks
         valid_sizes = storage.valid_disk_size.replace("GB", "").split("-")
         perf = STORAGE_PERFORMANCE[storage.name]
         return {
@@ -2057,8 +2060,8 @@ def inventory_storages(vendor):
             ),
             "max_iops": perf["max_iops"],
             "max_throughput": perf["max_throughput"],
-            "min_size": int(valid_sizes[0]),
-            "max_size": int(valid_sizes[1]),
+            "min_size": round(int(valid_sizes[0]) * _GIB_TO_GB),
+            "max_size": round(int(valid_sizes[1]) * _GIB_TO_GB),
         }
 
     ha_name = "hyperdisk-balanced-high-availability"

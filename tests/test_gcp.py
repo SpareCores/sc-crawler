@@ -1669,6 +1669,9 @@ def test_gcp_inventory_storages_maps_pd_and_hyperdisk_performance():
     assert by_name["hyperdisk-balanced"]["max_iops"] == 160_000
     assert by_name["hyperdisk-balanced"]["max_throughput"] == 2_400
     assert by_name["hyperdisk-balanced"]["min_size"] == 4
+    # sizes are GiB in the API ("2048GB-32768GB" = 2 TiB - 32 TiB): stored in GB
+    assert by_name["hyperdisk-throughput"]["min_size"] == 2199
+    assert by_name["hyperdisk-throughput"]["max_size"] == 35184
     assert by_name["hyperdisk-balanced-high-availability"]["storage_id"] == "50001"
     assert by_name["hyperdisk-balanced-high-availability"]["max_iops"] == 100_000
     assert by_name["hyperdisk-ml"]["max_throughput"] == 2_097_152
