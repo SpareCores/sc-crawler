@@ -17,6 +17,7 @@ Fix(es):
   days since their last observation: they were marked inactive after being
   reactivated, and the reactivation by `observed_at` also matched the ones
   just marked inactive.
+- Support hashing of date columns (e.g. `retirement_date`).
 
 ## v0.12.0 (November 21, 2026)
 
