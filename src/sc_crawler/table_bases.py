@@ -374,7 +374,9 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
             keys_id = cls.pk_key(rowdict)
             for dropkey in [*ignored, *pks]:
                 rowdict.pop(dropkey, None)
-            rowhash = sha1(dumps(rowdict, sort_keys=True).encode()).hexdigest()
+            rowhash = sha1(
+                dumps(rowdict, sort_keys=True, default=str).encode()
+            ).hexdigest()
             hashes[keys_id] = rowhash
             if progress:
                 # updating the progress bar is expensive, so limit with manu iterations

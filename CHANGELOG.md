@@ -1,3 +1,10 @@
+## v0.12.x (development)
+
+Fix(es):
+
+- `hash` failed with `TypeError: Object of type date is not JSON
+  serializable` on databases with a `retirement_date` value.
+
 ## v0.12.0 (November 21, 2026)
 
 New feature(s):
