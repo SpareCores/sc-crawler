@@ -31,7 +31,9 @@ flycheck_*
 # dev
 .env
 .venv/
-sc-data-all.db
+*.db
+*.db-shm
+*.db-wal
 
 # IDE
 .vscode/
