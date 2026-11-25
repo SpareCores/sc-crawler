@@ -174,19 +174,6 @@ def block_reasons(
                 AcceleratorType.GPU,
             ):
                 results[task].append("No GPUs available.")
-            # TODO these failed in the past, we should revisit if recent updates (e.g. newer drivers) fixed them
-            if (resource.vendor_id, resource.api_reference) in [
-                ("aws", "g3.4xlarge"),
-                ("aws", "g3.8xlarge"),
-                ("aws", "g3.16xlarge"),
-                ("aws", "g4dn.metal"),
-                ("aws", "p2.8xlarge"),
-                ("aws", "p2.xlarge"),
-                ("aws", "p4d.24xlarge"),
-                ("aws", "g3s.xlarge"),
-                ("gcp", "a2-megagpu-16g"),
-            ]:
-                results[task].append("GPUs not supported by this server type.")
 
         for memreq in [
             ("membench", 0.9),
