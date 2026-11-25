@@ -2042,6 +2042,12 @@ def inventory_storages(vendor):
 
     Capacity ranges are specified in GiB in the Alibaba Cloud documentation and are
     converted to GB here. Throughput values are in MB/s as per the documentation.
+
+    Storage IDs are the `DiskCategory` values of the ECS API, except for ESSDs:
+    the API has a single `cloud_essd` category with a separate `PerformanceLevel`
+    (`PL0` to `PL3`), which are listed here as four storages, so e.g.
+    `cloud_essd-pl1` means `DiskCategory=cloud_essd` and `PerformanceLevel=PL1`
+    when creating a disk.
     """
     disk_info = [
         # NOTE there's only a single `cloud_essd` ID at Alibaba Cloud,
@@ -2053,7 +2059,7 @@ def inventory_storages(vendor):
             "max_size": 65536,
             "max_iops": 10000,
             "max_tp": 180,
-            "info": "Enterprise SSD with performance level 0.",
+            "info": "Enterprise SSD with performance level 0 (API: DiskCategory cloud_essd, PerformanceLevel PL0).",
         },
         {
             "name": "cloud_essd-pl1",
@@ -2061,7 +2067,7 @@ def inventory_storages(vendor):
             "max_size": 65536,
             "max_iops": 50000,
             "max_tp": 350,
-            "info": "Enterprise SSD with performance level 1.",
+            "info": "Enterprise SSD with performance level 1 (API: DiskCategory cloud_essd, PerformanceLevel PL1).",
         },
         {
             "name": "cloud_essd-pl2",
@@ -2069,7 +2075,7 @@ def inventory_storages(vendor):
             "max_size": 65536,
             "max_iops": 100000,
             "max_tp": 750,
-            "info": "Enterprise SSD with performance level 2.",
+            "info": "Enterprise SSD with performance level 2 (API: DiskCategory cloud_essd, PerformanceLevel PL2).",
         },
         {
             "name": "cloud_essd-pl3",
@@ -2077,7 +2083,7 @@ def inventory_storages(vendor):
             "max_size": 65536,
             "max_iops": 1000000,
             "max_tp": 4000,
-            "info": "Enterprise SSD with performance level 3.",
+            "info": "Enterprise SSD with performance level 3 (API: DiskCategory cloud_essd, PerformanceLevel PL3).",
         },
         {
             "name": "cloud_ssd",

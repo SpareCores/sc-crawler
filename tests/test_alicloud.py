@@ -173,6 +173,15 @@ def test_alicloud_disk_category_mapping_matches_storage_ids():
     assert mapped == storage_ids
 
 
+def test_alicloud_essd_descriptions_name_the_api_values():
+    by_id = {s["storage_id"]: s for s in inventory_storages(Mock(vendor_id="a"))}
+    for pl in range(4):
+        description = by_id[f"cloud_essd-pl{pl}"]["description"]
+        assert f"DiskCategory cloud_essd, PerformanceLevel PL{pl}" in description
+    # other categories are the API value as is
+    assert "PerformanceLevel" not in by_id["cloud_ssd"]["description"]
+
+
 def test_alicloud_gpu_memory_by_spec_only_when_unambiguous():
     instance_types = [
         {"InstanceTypeId": "ecs.gn7s-c8g1.2xlarge", "GPUSpec": "NVIDIA A30"},
