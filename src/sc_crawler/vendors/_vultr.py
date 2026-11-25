@@ -397,7 +397,6 @@ def _server_description(
     gpu_model: str | None = None,
     gpu_vram_gb: int | None = None,
 ) -> str:
-    gpu_count = int(gpu_count) if gpu_count is not None else None
     nvme_size = storage_size if storage_type == StorageType.NVME_SSD else 0
     ssd_size = storage_size if storage_type == StorageType.SSD else 0
     memory_size_gib = (
@@ -409,7 +408,7 @@ def _server_description(
         f"{nvme_size} GB NVMe" if nvme_size else None,
         f"{ssd_size} GB SSD" if ssd_size else None,
         (
-            f"{gpu_count}x{gpu_model} {gpu_vram_gb} GiB VRAM"
+            f"{gpu_count:g}x{gpu_model} {gpu_vram_gb} GiB VRAM"
             if gpu_count and gpu_model and gpu_vram_gb
             else None
         ),

@@ -183,6 +183,19 @@ def test_vultr_vdm_partial_gpu_fields(plan_id, gpu_fields, count, memory_total_g
     assert row["accelerator_memory_total"] == memory_total_gb * 1024
 
 
+def test_vultr_fractional_gpu_count():
+    row = _vdm_row(
+        "vcg-a16-2c-16g-4vram",
+        type="vcg",
+        gpu_brand="NVIDIA",
+        gpu_type="NVIDIA_A16",
+        gpu_vram_gb=4,
+        gpu_count="1/4",
+    )
+    assert row["accelerator_count"] == 0.25
+    assert ", 0.25xA16 16 GiB VRAM)" in row["description"]
+
+
 def test_vultr_inventory_databases_maps_plans_and_versions():
     vendor = Mock(vendor_id="vultr")
     with (
