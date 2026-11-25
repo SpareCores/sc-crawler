@@ -4,6 +4,9 @@ Maintenance update:
 
 - `sc-crawler copy` streams the rows of each table and bulk inserts them in a
   single transaction to reduce its run time and memory usage.
+- `sc-crawler copy --exclude-status` leaves out rows only by their own status,
+  and keeps the rows referencing a left out row. `ARCHIVED` records are not
+  affected, as the archive rules archive their child records as well.
 
 Fix(es):
 

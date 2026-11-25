@@ -361,8 +361,9 @@ def copy(
     """Copy the standard Crawler tables of a database into a blank database.
 
     All rows are copied by default. Use `--exclude-status` to leave out rows,
-    e.g. the archived records that are kept only for history. Rows referencing
-    a left out row (e.g. the zones of an excluded region) are also left out.
+    e.g. the archived records that are kept only for history. Rows are left out
+    only by their own status, so with statuses other than `archived`, the rows
+    referencing a left out row (e.g. the zones of an inactive region) are kept.
     """
 
     source_engine = create_engine(source, pool_pre_ping=True)
@@ -379,13 +380,6 @@ def copy(
     )
     panel = Panel(progress, title="Copying tables", expand=False)
 
-    # primary keys of the left out rows per referenced table name, to also leave
-    # out the rows referencing them
-    left_out = {
-        fk.referred_table.name: []
-        for table in tables
-        for fk in table.__table__.foreign_key_constraints
-    }
     # stream the rows from the source and bulk insert them into the blank
     # target in a single transaction
     with (
@@ -397,20 +391,10 @@ def copy(
         for table in tables:
             table_name = table.get_table_name()
             pid = progress.add_task(f"Copying {table_name}(s)", total=None)
-            # (referencing columns, referenced values of the left out rows)
-            references = [
-                (
-                    fk.column_keys,
-                    {
-                        tuple(row[e.column.name] for e in fk.elements)
-                        for row in left_out[fk.referred_table.name]
-                    },
-                )
-                for fk in table.__table__.foreign_key_constraints
-                if exclude_status
-            ]
             copied = 0
             query = select(table.__table__)
+            if exclude_status:
+                query = query.where(table.__table__.c.status.not_in(exclude_status))
             primary_keys = table.get_columns()["primary_keys"]
             # rows differing only in the key order of a JSON primary key become
             # duplicates when validated, so keep the last observed one
@@ -425,20 +409,6 @@ def copy(
                 query
             )
             for rows in result.mappings().partitions():
-                if exclude_status:
-                    kept = []
-                    for row in rows:
-                        if row["status"] in exclude_status or any(
-                            tuple(row[c] for c in columns) in values
-                            for columns, values in references
-                        ):
-                            if table_name in left_out:
-                                left_out[table_name].append(
-                                    {pk: row[pk] for pk in primary_keys}
-                                )
-                        else:
-                            kept.append(row)
-                    rows = kept
                 # PostgreSQL JSONB columns lose the key order and older rows
                 # might miss new JSON fields, so normalize as when inserted
                 rows = [
