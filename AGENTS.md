@@ -82,14 +82,7 @@ Internal and sensitive information (e.g. the shell script that sets the environm
 
 ## Pull requests
 
-Fill in the checklist of `.github/pull_request_template.md`, and check only the items that were actually done. Besides the tests, linters and changelog, it asks for:
-
-- migrations tested on both SQLite and PostgreSQL,
-- `sc-crawler pull` tested on all vendors and records,
-- data changes cross-checked with the vendor pages or other trusted sources,
-- the output of an example run (e.g. an SQLite file) included for major data changes,
-- `docs/add_vendor.md` kept up to date,
-- no red flags from CodeRabbit.
+Fill in the checklist of `.github/pull_request_template.md`, and check only the items that were actually done.
 
 ## Code style
 
