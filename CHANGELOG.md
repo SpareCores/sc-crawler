@@ -4,8 +4,6 @@ Maintenance update:
 
 - `sc-crawler copy` streams the rows of each table and bulk inserts them in a
   single transaction to reduce its run time and memory usage.
-- `sc-crawler copy --exclude-status` only accepts `archived`, and exits with an
-  error on other statuses.
 
 Fix(es):
 

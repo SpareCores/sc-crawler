@@ -711,18 +711,18 @@ def test_copy_exclude_status(tmp_path):
         assert _statuses(session, BenchmarkScore) == {"static_web:rps": Status.ACTIVE}
         assert len(session.exec(select(ArchiveRule)).all()) == len(archive_rules)
 
-    for status in ("inactive", "retired"):
-        target = tmp_path / "rejected.sqlite"
-        result = runner.invoke(
-            cli,
-            [
-                *args,
-                *["--target", f"sqlite:///{target}"],
-                *["--exclude-status", "archived", "--exclude-status", status],
-            ],
-        )
-        assert result.exit_code == 2
-        assert not target.exists()
+    target = tmp_path / "active.sqlite"
+    result = runner.invoke(
+        cli,
+        [
+            *args,
+            *["--target", f"sqlite:///{target}"],
+            *["--exclude-status", "archived", "--exclude-status", "INACTIVE"],
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    with Session(create_engine(f"sqlite:///{target}")) as session:
+        assert _statuses(session, Region) == {"nbg1": Status.ACTIVE}
 
 
 def test_copy_exclude_status_leaves_out_rows_referencing_left_out_rows(tmp_path):
@@ -730,10 +730,10 @@ def test_copy_exclude_status_leaves_out_rows_referencing_left_out_rows(tmp_path)
     with Session(_engine(source)) as session:
         session.add_all(
             [
-                _region("old", Status.ARCHIVED),
+                _region("old", Status.INACTIVE),
                 _zone("old"),
                 _server_price("old"),
-                _benchmark("old", Status.ARCHIVED),
+                _benchmark("old", Status.INACTIVE),
                 _score("old"),
                 _region("nbg1"),
                 _zone("nbg1"),
@@ -749,7 +749,7 @@ def test_copy_exclude_status_leaves_out_rows_referencing_left_out_rows(tmp_path)
         cli,
         [
             *["copy", "--source", f"sqlite:///{source}"],
-            *["--target", f"sqlite:///{target}", "--exclude-status", "archived"],
+            *["--target", f"sqlite:///{target}", "--exclude-status", "inactive"],
         ],
     )
     assert result.exit_code == 0, result.output

@@ -354,19 +354,16 @@ def copy(
         List[Status],
         typer.Option(
             case_sensitive=False,
-            help="Leave out the rows with this status. Only `archived` is supported.",
+            help="Leave out the rows with this status, e.g. `archived`. Can be specified multiple times.",
         ),
     ] = [],
 ):
     """Copy the standard Crawler tables of a database into a blank database.
 
-    All rows are copied by default. Use `--exclude-status archived` to leave out
-    the archived records that are kept only for history. Rows referencing a left
-    out row (e.g. the zones of an archived region) are also left out.
+    All rows are copied by default. Use `--exclude-status` to leave out rows,
+    e.g. the archived records that are kept only for history. Rows referencing
+    a left out row (e.g. the zones of an excluded region) are also left out.
     """
-
-    if any(status != Status.ARCHIVED for status in exclude_status):
-        raise typer.BadParameter("--exclude-status only supports 'archived'.")
 
     source_engine = create_engine(source, pool_pre_ping=True)
     target_engine = create_sc_engine(target, pool_pre_ping=True)
