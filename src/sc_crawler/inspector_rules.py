@@ -59,12 +59,7 @@ _CHEAP_TASKS = [
 ]
 
 # no new inspector runs: cloud credits are exhausted or pending, run out of budget, or vendor abandoned
-_PAUSED_VENDORS = [
-    "alicloud",
-    "aws",
-    "azure",
-    "gcp",
-]
+_PAUSED_VENDORS = ["alicloud", "azure", "gcp"]
 
 
 def has_related_database(server: "Server") -> bool:
@@ -100,22 +95,6 @@ def is_credit_exempt(resource: "Server | Database", task: str) -> bool:
             "pgbench_postgres_ro_durable",
         ] and has_related_database(resource):
             return True
-    if task == "stressng_benchmarks":
-        # www blogpost citing data collected manually in 2024 that we need to repro
-        if (resource.vendor_id, resource.api_reference) in [
-            ("aws", "c6a.large"),
-            ("aws", "c6a.2xlarge"),
-            ("aws", "c6g.xlarge"),
-            ("aws", "m7a.xlarge"),
-            ("aws", "c7a.32xlarge"),
-            ("aws", "c6i.metal"),
-        ]:
-            return True
-    # we need lstopo for KCD Budapest 2026 talk
-    if (resource.vendor_id, resource.api_reference) in [
-        ("aws", "m8azn.metal-12xl")
-    ] and task in _CHEAP_TASKS:
-        return True
     return False
 
 
@@ -129,7 +108,7 @@ def block_reasons(
     A task doesn't run on a resource for any of these reasons:
 
     - All tasks:
-        - Cloud credits or budget exhausted: Alibaba Cloud, AWS, Azure and GCP,
+        - Cloud credits or budget exhausted: Alibaba Cloud, Azure and GCP,
           except for a few explicitly exempted resources and tasks (see
           `is_credit_exempt`).
 
