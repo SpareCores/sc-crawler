@@ -58,6 +58,14 @@ _CHEAP_TASKS = [
     "lsblk_topo",
 ]
 
+# no new inspector runs: cloud credits are exhausted or pending, run out of budget, or vendor abandoned
+_PAUSED_VENDORS = [
+    "alicloud",
+    "aws",
+    "azure",
+    "gcp",
+]
+
 
 def has_related_database(server: "Server") -> bool:
     """Check if the server is the underlying server of any Database of the same Vendor.
@@ -149,13 +157,9 @@ def block_reasons(
         tasks = [tasks]
     results = {task: [] for task in tasks}
     for task in tasks:
-        # cloud credits either exhausted, pending, or abandoned
-        if resource.vendor_id in [
-            "alicloud",
-            "aws",
-            "azure",
-            "gcp",
-        ] and not is_credit_exempt(resource, task):
+        if resource.vendor_id in _PAUSED_VENDORS and not is_credit_exempt(
+            resource, task
+        ):
             results[task].append("Cloud credit/budget exhausted.")
 
         # databases checks: deny if 1-node layout is not supported
