@@ -147,16 +147,13 @@ def test_nvidia_tasks_blocked_for_non_gpu_accelerators(accelerator_type):
     assert reasons["nvbandwidth"] == ["No GPUs available."]
 
 
-def test_nvidia_tasks_blocked_for_unsupported_skus():
-    server = _server(vendor_id="aws", api_reference="g3.4xlarge", accelerator_count=1)
-    reasons = block_reasons(server, "nvidia_smi")
-    assert reasons["nvidia_smi"] == ["GPUs not supported by this server type."]
-
-
-def test_nvidia_tasks_allowed_for_supported_gpu_sku():
-    server = _server(vendor_id="aws", api_reference="g4dn.xlarge", accelerator_count=1)
-    reasons = block_reasons(server, "nvbandwidth")
-    assert reasons["nvbandwidth"] == []
+def test_nvidia_tasks_allowed_on_gpu_servers():
+    for api_reference in ["g4dn.xlarge", "g3.4xlarge"]:
+        server = _server(
+            vendor_id="aws", api_reference=api_reference, accelerator_count=1
+        )
+        reasons = block_reasons(server, ["nvidia_smi", "nvbandwidth"])
+        assert reasons == {"nvidia_smi": [], "nvbandwidth": []}
 
 
 def test_memory_requirements():
@@ -246,18 +243,18 @@ def test_stressnglongrun_limited_to_allowlisted_skus():
 
 def test_multiple_reasons_can_stack():
     server = _server(
-        vendor_id="aws",
-        api_reference="g3.4xlarge",
+        vendor_id="gcp",
         accelerator_count=0,
         memory_amount=512,
         vcpus=64,
     )
     reasons = block_reasons(server, ["nvidia_smi", "geekbench"])
     assert reasons["nvidia_smi"] == [
+        "Cloud credit/budget exhausted.",
         "No GPUs available.",
-        "GPUs not supported by this server type.",
     ]
     assert reasons["geekbench"] == [
+        "Cloud credit/budget exhausted.",
         "Insufficient memory (2.1 GB minimum).",
         "Benchmark doesn't scale beyond 32 cores.",
     ]
