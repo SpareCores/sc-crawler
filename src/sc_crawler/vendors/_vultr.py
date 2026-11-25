@@ -399,10 +399,12 @@ def _server_description(
     gpu_count = int(gpu_count) if gpu_count is not None else None
     nvme_size = storage_size if storage_type == StorageType.NVME_SSD else 0
     ssd_size = storage_size if storage_type == StorageType.SSD else 0
-    memory_size_gb = memory_amount_mib / _MIB_PER_GIB if memory_amount_mib else None
+    memory_size_gib = (
+        round(memory_amount_mib / _MIB_PER_GIB, 2) if memory_amount_mib else None
+    )
     description_parts = [
         f"{vcpus} vCPUs" if vcpus else None,
-        f"{memory_size_gb} GiB RAM" if memory_size_gb else None,
+        f"{memory_size_gib} GiB RAM" if memory_size_gib else None,
         f"{nvme_size} GB NVMe" if nvme_size else None,
         f"{ssd_size} GB SSD" if ssd_size else None,
         (
