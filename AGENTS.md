@@ -57,14 +57,15 @@ sc-crawler copy / hash / archived-by
 
 ## Schema changes and migrations
 
-Migrations live in `src/sc_crawler/alembic/versions/` (named `v<x_y_z>_<message>`), driven by `sc-crawler schemas ...`. Every migration must handle both SCD and non-SCD tables and both SQLite (live, batch table recreation with `insert_after` positioning) and PostgreSQL (offline). Enums need dialect-specific handling. Follow the step-by-step procedure in `src/sc_crawler/alembic/README.md` instead of using raw autogenerate output. User-visible schema and data changes are described in `CHANGELOG.md`: the feature entry notes whether existing rows are backfilled by the migration or only by the next inventory refresh, and each release with a migration lists its DDL changes (tables and columns, including `_scd` tables) under a `Database migrations:` section. The version is in `src/sc_crawler/__init__.py`.
+Migrations live in `src/sc_crawler/alembic/versions/` (named `v<x_y_z>_<message>`), driven by `sc-crawler schemas ...`. Every migration must handle both SCD and non-SCD tables and both SQLite (live, batch table recreation with `insert_after` positioning) and PostgreSQL (offline). Enums need dialect-specific handling. Follow the step-by-step procedure in `src/sc_crawler/alembic/README.md` instead of using raw autogenerate output. Before writing a new migration, check the earlier scripts in `versions/` for a similar change (e.g. adding or renaming columns, extending enums, merging tables, backfilling data) and reuse their patterns. User-visible schema and data changes are described in `CHANGELOG.md`: the feature entry notes whether existing rows are backfilled by the migration or only by the next inventory refresh, and each release with a migration lists its DDL changes (tables and columns, including `_scd` tables) under a `Database migrations:` section. The version is in `src/sc_crawler/__init__.py`.
 
 ## Production and releases
 
-Internal and sensitive information (e.g. the shell script that sets the environment variables for testing `sc-crawler pull`, or the production database and rollout runbooks) is in the `crawler` folder of the private `sc-docs` repo, for maintainers with access: start with the `README.md` there. Never copy its content into this public repo.
+Internal and sensitive information (e.g. the shell script that sets the environment variables for testing `sc-crawler pull`, or the production database and rollout runbooks) is in the `crawler` folder of the private `sc-docs` repo, for maintainers with access: start with the `README.md` there. Never copy its content into this public repo. Never print private keys, passwords, tokens or any other sensitive information in responses, command output or script `echo`s (e.g. no `env`/`printenv` dumps or `set -x` after loading credentials).
 
 - The scheduled crawl runs from the GitHub Actions of the [sc-data-dumps](https://github.com/SpareCores/sc-data-dumps) repo, which install the crawler from the `main` branch of this repo, so **every merge to `main` goes to production on the next run**. Full runs crawl all vendors and records; more frequent spot runs update only the spot prices.
-- The published SQLite dumps are available on the CDN (see `README.md`) and via the [sc-data](https://github.com/SpareCores/sc-data) repo (`sparecores-data` package). Use these to check real data. The CDN path follows the crawler's major.minor version, so a minor version bump starts a new path.
+- The published SQLite dumps are available on the CDN (see `README.md`) and via the [sc-data](https://github.com/SpareCores/sc-data) repo (`sparecores-data` package). The CDN path follows the crawler's major.minor version, so a minor version bump starts a new path.
+- To check real data, first look for local SQLite files (`*.db`) in the root of the local `sc-data` clone (usually the sibling folder `../sc-data`) and of this repo. They can be old, partial (e.g. a single vendor) or on another schema version, so check the modification time, the tables and the latest `observed_at` before relying on one, and open them read-only (e.g. `sqlite3 -readonly`). If there is no suitable file, download the latest published data with `sc-data download /path/to/sc-data.db` (from the `sparecores-data` package; see `sc-data download --help`), and don't overwrite an existing file.
 - Production uses the SCD tables in PostgreSQL, so call out new tables and primary key changes in the PR.
 - Release: bump `__version__`, finalize the `CHANGELOG.md` section (`## vX.Y.Z (Month DD, YYYY)`), then push a `vX.Y.Z` tag (or create a GitHub release). `release.yml` publishes it to PyPI. Versioning: minor for backward-compatible features and new columns, patch for fixes, major for breaking changes or changes that need manual DB work.
 - Major or minor releases (e.g. schema changes) need matching `sc-keeper` PRs and possibly `sc-www` PRs (frontend references column names).
@@ -86,4 +87,9 @@ Internal and sensitive information (e.g. the shell script that sets the environm
 
 ## Repo hygiene
 
-The repo root may contain many git-ignored scratch files (vendor API JSON dumps, `*.log`, `*.sql`, `sc-data-all.db`, ...). They are local artifacts, not source of truth.
+The repo root may contain many git-ignored scratch files (vendor API JSON dumps, `*.log`, `*.sql`, ...). They are local artifacts, not source of truth, but can be handy when implementing vendor-related features, so use them with caution:
+
+- For the shape of an API response, rely on the example responses documented at the API call functions in the vendor modules. Add an example response when writing a new API call function.
+- The API JSON dumps are useful for historical data, e.g. earlier response shapes or prices. They can be outdated or partial, so check the modification time.
+
+For `*.db` files, see "Production and releases".
