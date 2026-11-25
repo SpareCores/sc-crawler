@@ -188,8 +188,8 @@ def insert_items(
 ):
     """Insert items into the related database table using bulk or merge.
 
-    Bulk insert is only supported with SQLite, other databases fall back to
-    the default session.merge (slower) approach.
+    Bulk insert is only supported with SQLite and PostgreSQL, other databases
+    fall back to the default session.merge (slower) approach.
 
     Args:
         model: An SQLModel table definition with primary key(s).

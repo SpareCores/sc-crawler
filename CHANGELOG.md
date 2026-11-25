@@ -1,4 +1,4 @@
-## Unreleased
+## v0.12.x (DEVELOPMENT)
 
 Maintenance update:
 
@@ -6,6 +6,10 @@ Maintenance update:
   streams the rows of each table from the source database and bulk inserts
   them in a single transaction, instead of loading whole tables as ORM
   objects and upserting them in chunks of 100 rows.
+
+Fix(es):
+
+- Support hashing of date columns (e.g. `retirement_date`).
 
 ## v0.12.0 (November 21, 2026)
 
