@@ -8,7 +8,8 @@ Fix(es):
   This fixes the missing GPUs of e.g. `vcg-a16-6c-60g-16vram` and
   `vcg-a100-12c-120g-80vram`. The per-GPU memory of A100 GPUs is 80 GiB instead
   of 40 GiB. `vcg-mi325x-252c-2872g-1536vram` has 8 MI325X GPUs (2048 GiB)
-  instead of 6 (1536 GiB), as its ID has the wrong VRAM total.
+  instead of 6 (1536 GiB), inferred from the bare metal plan with the same
+  prices (`vbm-256c-3072gb-8-mi325x-gpu`).
 
 ## v0.12.0 (November 21, 2026)
 

@@ -214,8 +214,9 @@ _GPU_TYPES: dict[str, dict[str, int | str]] = {
     "AMD_MI355X": {"vram_gb": 288, "family": "CDNA4"},
 }
 
-# Total VRAM (GB) of Dedicated Metal GPU (vdm) plans whose ID is wrong. The plan has the
-# same prices as vbm-256c-3072gb-8-mi325x-gpu in /v2/plans-metal (8x MI325X, 2048 GB).
+# Total VRAM (GB) of Dedicated Metal GPU (vdm) plans, used instead of the VRAM in the ID.
+# Inferred: the plan has the same prices as vbm-256c-3072gb-8-mi325x-gpu in
+# /v2/plans-metal (8x MI325X, 2048 GB).
 _VDM_PLAN_VRAM_GB = {"vcg-mi325x-252c-2872g-1536vram": 2048}
 
 # Vultr Block Storage (VBS) catalog — keys match GET /v2/regions ``options``.
@@ -887,19 +888,25 @@ def inventory_servers(vendor):
         # GPU
         gpu_brand = server.get("gpu_brand", "")
         gpu_type = server.get("gpu_type")
-        gpu_vram_total_gb = server.get("gpu_vram_gb") or 0
+        gpu_vram_total_gb = server.get("gpu_vram_gb", 0)
         gpu_count_from_api = server.get("gpu_count")
-        # Dedicated Metal GPU (vdm) plans only have gpu_brand in /v2/plans, so take
-        # the GPU model and total VRAM from the plan ID, e.g. vcg-a100-12c-120g-80vram
-        if server.get("type") == "vdm" and not gpu_type:
-            parts = server["id"].split("-")
-            gpu_type = f"{gpu_brand}_{parts[1].upper()}"
-            vram = next((p for p in parts if re.fullmatch(r"\d+vram", p)), None)
-            gpu_vram_total_gb = _VDM_PLAN_VRAM_GB.get(
-                server["id"], int(vram.removesuffix("vram")) if vram else 0
-            )
-            if gpu_type not in _GPU_TYPES:
-                _warn_unknown("GPU type", gpu_type)
+        # Dedicated Metal GPU (vdm) plans only have gpu_brand in /v2/plans, so fill the
+        # missing GPU model and total VRAM from the ID, e.g. vcg-a100-12c-120g-80vram
+        if server.get("type") == "vdm":
+            id_model = "".join(server["id"].split("-")[1:2]).upper()
+            id_vram = re.search(r"-(\d+)vram(?:-|$)", server["id"])
+            id_vram_gb = int(id_vram[1]) if id_vram else 0
+            vdm_gpu_type = gpu_type or f"{_extract_manufacturer(gpu_brand)}_{id_model}"
+            vdm_vram_gb = gpu_vram_total_gb or id_vram_gb
+            if vdm_vram_gb == id_vram_gb:
+                vdm_vram_gb = _VDM_PLAN_VRAM_GB.get(server["id"], vdm_vram_gb)
+            if vdm_gpu_type in _GPU_TYPES and vdm_vram_gb:
+                gpu_type = vdm_gpu_type
+                gpu_vram_total_gb = vdm_vram_gb
+            elif not (gpu_type and gpu_vram_total_gb):
+                logger.warning(
+                    f"Cannot fill the missing GPU fields of Vultr plan {server['id']}."
+                )
         gpu_manufacturer_from_type = gpu_type.split("_")[0] if gpu_type else ""
         gpu_manufacturer = _extract_manufacturer(gpu_brand) or _extract_manufacturer(
             gpu_manufacturer_from_type

@@ -88,33 +88,99 @@ def test_vultr_inventory_servers_status_from_locations():
     assert by_id["vbm-6c-32gb"]["compatible_storage_ids"] == []
 
 
-@pytest.mark.parametrize(
-    ("plan_id", "brand", "count", "model", "memory_min", "memory_total"),
-    [
-        ("vcg-a16-6c-60g-16vram", "NVIDIA", 1, "A16", 16384, 16384),
-        ("vcg-a16-12c-120g-32vram", "NVIDIA", 2, "A16", 16384, 32768),
-        ("vcg-a40-96c-480g-192vram", "NVIDIA", 4, "A40", 49152, 196608),
-        ("vcg-a100-96c-960g-640vram", "NVIDIA", 8, "A100", 81920, 655360),
-        ("vcg-b200-248c-2826g-1536vram-roce", "NVIDIA", 8, "B200", 196608, 1572864),
-        ("vcg-mi355x-252c-2872g-2304vram", "AMD", 8, "MI355X", 294912, 2359296),
-        ("vcg-mi325x-252c-2872g-1536vram", "AMD", 8, "MI325X", 262144, 2097152),
-    ],
-)
-def test_vultr_inventory_servers_dedicated_metal_gpu_from_plan_id(
-    plan_id, brand, count, model, memory_min, memory_total
-):
-    plan = _plan(plan_id, ["ewr"]) | {"type": "vdm", "gpu_brand": brand}
+def _vdm_row(plan_id, **gpu_fields):
+    plan = _plan(plan_id, ["ewr"]) | {"type": "vdm"} | gpu_fields
     with (
         patch("sc_crawler.vendors._vultr._get_plans", return_value=[plan]),
         patch("sc_crawler.vendors._vultr._get_plans_metal", return_value=[]),
     ):
         (row,) = inventory_servers(Mock(vendor_id="vultr"))
+    return row
+
+
+@pytest.mark.parametrize(
+    ("plan_id", "brand", "count", "model", "family", "memory_gb"),
+    [
+        ("vcg-a16-6c-60g-16vram", "NVIDIA", 1, "A16", "Ampere", 16),
+        ("vcg-a16-12c-120g-32vram", "NVIDIA", 2, "A16", "Ampere", 16),
+        ("vcg-a16-96c-960g-256vram", "NVIDIA", 16, "A16", "Ampere", 16),
+        ("vcg-a40-24c-120g-48vram", "NVIDIA", 1, "A40", "Ampere", 48),
+        ("vcg-a40-96c-480g-192vram", "NVIDIA", 4, "A40", "Ampere", 48),
+        ("vcg-a100-12c-120g-80vram", "NVIDIA", 1, "A100", "Ampere", 80),
+        ("vcg-a100-96c-960g-640vram", "NVIDIA", 8, "A100", "Ampere", 80),
+        ("vcg-h100-216c-1914gb-640vram", "NVIDIA", 8, "H100", "Hopper", 80),
+        ("vcg-b200-248c-2826g-1536vram", "NVIDIA", 8, "B200", "Blackwell", 192),
+        ("vcg-b200-248c-2826g-1536vram-roce", "NVIDIA", 8, "B200", "Blackwell", 192),
+        ("vcg-mi355x-252c-2872g-2304vram", "AMD", 8, "MI355X", "CDNA4", 288),
+        ("vcg-mi325x-252c-2872g-1536vram", "AMD", 8, "MI325X", "CDNA3", 256),
+        # differently cased brand
+        ("vcg-a16-6c-60g-16vram", "Nvidia", 1, "A16", "Ampere", 16),
+    ],
+)
+def test_vultr_vdm_gpu_from_plan_id(plan_id, brand, count, model, family, memory_gb):
+    row = _vdm_row(plan_id, gpu_brand=brand)
     assert row["accelerator_count"] == count
     assert row["accelerator_type"] == AcceleratorType.GPU
-    assert row["accelerator_manufacturer"] == brand
+    assert row["accelerator_manufacturer"] == brand.upper()
+    assert row["accelerator_family"] == family
     assert row["accelerator_model"] == model
-    assert row["accelerator_memory_min"] == memory_min
-    assert row["accelerator_memory_total"] == memory_total
+    assert row["accelerator_memory_min"] == memory_gb * 1024
+    assert row["accelerator_memory_total"] == count * memory_gb * 1024
+    assert f", {count}x{model} {memory_gb} GiB VRAM)" in row["description"]
+
+
+@pytest.mark.parametrize(
+    ("plan_id", "gpu_fields", "manufacturer"),
+    [
+        ("vcg-a16-6c-60g-16vram", {}, None),
+        ("vcg-a16-6c-60g-16vram", {"gpu_brand": "none"}, None),
+        ("vcg-h200-200c-2000g-1128vram", {"gpu_brand": "NVIDIA"}, "NVIDIA"),
+        ("vcg-a16-6c-60g", {"gpu_brand": "NVIDIA"}, "NVIDIA"),
+        ("foo", {"gpu_brand": "NVIDIA"}, "NVIDIA"),
+    ],
+)
+def test_vultr_vdm_gpu_unresolved_is_empty_and_warned(
+    plan_id, gpu_fields, manufacturer
+):
+    with patch("sc_crawler.vendors._vultr.logger.warning") as warning:
+        row = _vdm_row(plan_id, **gpu_fields)
+    assert row["accelerator_count"] == 0
+    assert row["accelerator_type"] is None
+    assert row["accelerator_manufacturer"] == manufacturer
+    assert row["accelerator_family"] is None
+    assert row["accelerator_model"] is None
+    assert row["accelerator_memory_min"] == 0
+    assert row["accelerator_memory_total"] == 0
+    assert "VRAM" not in row["description"]
+    assert f"Cannot fill the missing GPU fields of Vultr plan {plan_id}." in [
+        call.args[0] for call in warning.call_args_list
+    ]
+
+
+@pytest.mark.parametrize(
+    ("plan_id", "gpu_fields", "count", "memory_total_gb"),
+    [
+        ("vcg-a16-6c-60g-16vram", {"gpu_type": "NVIDIA_A16"}, 1, 16),
+        ("vcg-a16-6c-60g-16vram", {"gpu_type": "NVIDIA_A16", "gpu_count": 1}, 1, 16),
+        ("vcg-a16-6c-60g-16vram", {"gpu_vram_gb": 32}, 2, 32),
+        ("vcg-a16-6c-60g", {"gpu_vram_gb": 16}, 1, 16),
+        ("vcg-mi325x-252c-2872g-1536vram", {"gpu_type": "AMD_MI325X"}, 8, 2048),
+        (
+            "vcg-mi325x-252c-2872g-1536vram",
+            {"gpu_type": "AMD_MI325X", "gpu_vram_gb": 1536},
+            8,
+            2048,
+        ),
+        # a new VRAM value from the API is kept
+        ("vcg-mi325x-252c-2872g-1536vram", {"gpu_vram_gb": 1024}, 4, 1024),
+    ],
+)
+def test_vultr_vdm_partial_gpu_fields(plan_id, gpu_fields, count, memory_total_gb):
+    brand = "AMD" if "mi325x" in plan_id else "NVIDIA"
+    row = _vdm_row(plan_id, gpu_brand=brand, **gpu_fields)
+    assert row["accelerator_count"] == count
+    assert row["accelerator_type"] == AcceleratorType.GPU
+    assert row["accelerator_memory_total"] == memory_total_gb * 1024
 
 
 def test_vultr_inventory_databases_maps_plans_and_versions():
