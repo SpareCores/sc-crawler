@@ -404,7 +404,7 @@ def _server_description(
     )
     description_parts = [
         f"{vcpus} vCPUs" if vcpus else None,
-        f"{memory_size_gib} GiB RAM" if memory_size_gib else None,
+        f"{memory_size_gib:g} GiB RAM" if memory_size_gib else None,
         f"{nvme_size} GB NVMe" if nvme_size else None,
         f"{ssd_size} GB SSD" if ssd_size else None,
         (
@@ -424,10 +424,12 @@ def _database_description(
     storage_size: int | None,
 ) -> str:
     """Build managed database plan description in server-style format."""
-    memory_size_gb = memory_amount_mib / _MIB_PER_GIB if memory_amount_mib else None
+    memory_size_gb = (
+        round(memory_amount_mib / _MIB_PER_GIB, 2) if memory_amount_mib else None
+    )
     description_parts = [
         f"{vcpus} vCPUs" if vcpus else None,
-        f"{memory_size_gb} GiB RAM" if memory_size_gb else None,
+        f"{memory_size_gb:g} GiB RAM" if memory_size_gb else None,
         f"{storage_size} GB SSD" if storage_size else None,
     ]
     description_parts_str = ", ".join(filter(None, description_parts))

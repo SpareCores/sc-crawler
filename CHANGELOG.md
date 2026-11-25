@@ -10,6 +10,8 @@ Fix(es):
   of 40 GiB. `vcg-mi325x-252c-2872g-1536vram` has 8 MI325X GPUs (2048 GiB)
   instead of 6 (1536 GiB), inferred from the bare metal plan with the same
   prices (`vbm-256c-3072gb-8-mi325x-gpu`).
+- `Vultr`: the memory in server and database descriptions is rounded to two
+  decimals without trailing zeros, e.g. `16 GiB` instead of `16.0 GiB`.
 
 ## v0.12.0 (November 21, 2026)
 

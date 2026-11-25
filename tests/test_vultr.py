@@ -10,10 +10,13 @@ from sc_crawler.table_fields import (
     DatabaseHaStrategy,
     PriceUnit,
     Status,
+    StorageType,
 )
 from sc_crawler.vendors._vultr import (
+    _database_description,
     _database_family,
     _database_series,
+    _server_description,
     _server_family,
     _server_series,
     _warn_unknown,
@@ -194,6 +197,22 @@ def test_vultr_fractional_gpu_count():
     )
     assert row["accelerator_count"] == 0.25
     assert ", 0.25xA16 16 GiB VRAM)" in row["description"]
+
+
+@pytest.mark.parametrize(
+    ("memory_mib", "expected"),
+    [
+        (512, "0.5 GiB RAM"),
+        (16384, "16 GiB RAM"),
+        (2063722, "2015.35 GiB RAM"),
+        (3145728, "3072 GiB RAM"),
+    ],
+)
+def test_vultr_description_memory(memory_mib, expected):
+    server = _server_description("F", 4, memory_mib, 384, StorageType.NVME_SSD)
+    assert server == f"F (4 vCPUs, {expected}, 384 GB NVMe)"
+    database = _database_description("F", 4, memory_mib, 384)
+    assert database == f"F (4 vCPUs, {expected}, 384 GB SSD)"
 
 
 def test_vultr_inventory_databases_maps_plans_and_versions():
