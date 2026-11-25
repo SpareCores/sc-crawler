@@ -42,7 +42,7 @@ from .insert import _primary_key_tuple, insert_items
 from .logger import ProgressPanel, ScRichHandler, VendorProgressTracker, logger
 from .lookup import benchmarks, compliance_frameworks, countries
 from .sentry import before_send, sentry_capture_or_raise
-from .table_fields import Status
+from .table_fields import HashableJSON, Status
 from .tables import (
     ArchiveRule,
     Benchmark,
@@ -354,16 +354,19 @@ def copy(
         List[Status],
         typer.Option(
             case_sensitive=False,
-            help="Leave out the rows with this status, e.g. `archived`. Can be specified multiple times.",
+            help="Leave out the rows with this status. Only `archived` is supported.",
         ),
     ] = [],
 ):
     """Copy the standard Crawler tables of a database into a blank database.
 
-    All rows are copied by default. Use `--exclude-status` to leave out rows,
-    e.g. the archived records that are kept only for history. Rows referencing
-    a left out row (e.g. the zones of an excluded region) are also left out.
+    All rows are copied by default. Use `--exclude-status archived` to leave out
+    the archived records that are kept only for history. Rows referencing a left
+    out row (e.g. the zones of an archived region) are also left out.
     """
+
+    if any(status != Status.ARCHIVED for status in exclude_status):
+        raise typer.BadParameter("--exclude-status only supports 'archived'.")
 
     source_engine = create_engine(source, pool_pre_ping=True)
     target_engine = create_sc_engine(target, pool_pre_ping=True)
@@ -379,8 +382,13 @@ def copy(
     )
     panel = Panel(progress, title="Copying tables", expand=False)
 
-    # left out rows per table name, to also leave out the rows referencing them
-    left_out = {}
+    # primary keys of the left out rows per referenced table name, to also leave
+    # out the rows referencing them
+    left_out = {
+        fk.referred_table.name: []
+        for table in tables
+        for fk in table.__table__.foreign_key_constraints
+    }
     # stream the rows from the source and bulk insert them into the blank
     # target in a single transaction
     with (
@@ -404,10 +412,20 @@ def copy(
                 for fk in table.__table__.foreign_key_constraints
                 if exclude_status
             ]
-            left_out[table_name] = []
             copied = 0
+            query = select(table.__table__)
+            primary_keys = table.get_columns()["primary_keys"]
+            # rows differing only in the key order of a JSON primary key become
+            # duplicates when validated, so keep the last observed one
+            dedupe = any(
+                isinstance(column.type, HashableJSON)
+                for column in table.__table__.primary_key
+            )
+            if dedupe:
+                query = query.order_by(table.__table__.c.observed_at.desc())
+            seen = set()
             result = source_connection.execution_options(yield_per=10_000).execute(
-                select(table.__table__)
+                query
             )
             for rows in result.mappings().partitions():
                 # PostgreSQL JSONB columns lose the key order and older rows
@@ -423,10 +441,21 @@ def copy(
                             tuple(row[c] for c in columns) in values
                             for columns, values in references
                         ):
-                            left_out[table_name].append(row)
+                            if table_name in left_out:
+                                left_out[table_name].append(
+                                    {pk: row[pk] for pk in primary_keys}
+                                )
                         else:
                             kept.append(row)
                     rows = kept
+                if dedupe:
+                    unique = []
+                    for row in rows:
+                        key = _primary_key_tuple(row, primary_keys)
+                        if key not in seen:
+                            seen.add(key)
+                            unique.append(row)
+                    rows = unique
                 if rows:
                     target_connection.execute(table.__table__.insert(), rows)
                 copied += len(rows)

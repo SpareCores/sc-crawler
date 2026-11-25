@@ -2,10 +2,10 @@
 
 Maintenance update:
 
-- `sc-crawler copy` is about 4x faster and uses much less memory: it
-  streams the rows of each table from the source database and bulk inserts
-  them in a single transaction, instead of loading whole tables as ORM
-  objects and upserting them in chunks of 100 rows.
+- `sc-crawler copy` streams the rows of each table and bulk inserts them in a
+  single transaction to reduce its run time and memory usage.
+- `sc-crawler copy --exclude-status` only accepts `archived`, and exits with an
+  error on other statuses.
 
 Fix(es):
 
