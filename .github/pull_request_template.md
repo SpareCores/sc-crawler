@@ -18,9 +18,8 @@ PR status:
 Versioning, changelog, and documentation:
 
 - [ ] New features, bugfixes etc are tracked in `CHANGELOG.md`
-- [ ] Package version bumped in `pyproject.toml`
+- [ ] Package version bumped in `src/sc_crawler/__init__.py`
 - [ ] `add_vendor.md` is up-to-date (after schema changes or new learnings that generalizes well to future vendors)
-- [ ] `mkdocs` renders correctly in local preview and has been manually checked on new or updated functions/methods
 
 
 Database:
