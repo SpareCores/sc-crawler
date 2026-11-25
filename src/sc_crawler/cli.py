@@ -425,12 +425,6 @@ def copy(
                 query
             )
             for rows in result.mappings().partitions():
-                # PostgreSQL JSONB columns lose the key order and older rows
-                # might miss new JSON fields, so normalize as when inserted
-                rows = [
-                    table.__validator__.model_validate(dict(row)).model_dump()
-                    for row in rows
-                ]
                 if exclude_status:
                     kept = []
                     for row in rows:
@@ -445,6 +439,12 @@ def copy(
                         else:
                             kept.append(row)
                     rows = kept
+                # PostgreSQL JSONB columns lose the key order and older rows
+                # might miss new JSON fields, so normalize as when inserted
+                rows = [
+                    table.__validator__.model_validate(dict(row)).model_dump()
+                    for row in rows
+                ]
                 if dedupe:
                     unique = []
                     for row in rows:
