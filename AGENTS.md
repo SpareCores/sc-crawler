@@ -49,7 +49,7 @@ sc-crawler copy / hash / archived-by
 
 **Status rules** (from `docs/add_vendor.md`): set `status` on every Server/Database from explicit vendor lifecycle signals only. Do not infer retirement from names like "previous generation". When several signals exist, pick the best (`ACTIVE` > `PLANNED_FOR_RETIREMENT` > `INACTIVE` > `RETIRED`; see `Status.best`). Set `retirement_date` on `PLANNED_FOR_RETIREMENT`/`RETIRED` rows when the vendor publishes one (end of support if published, else end of sale), preferably from the API; docs-only dates go in a `_<VENDOR>_RETIREMENT_RULES` tuple of `(regex, date)` pairs with source URLs, matched by `retirement_date_from_rules`. If the date is the only lifecycle signal, derive `status` with `status_from_retirement_date`. **Never set `ARCHIVED` in vendor code.** Archiving happens only through `archive_rules.py`, which `pull` and `sync` apply on every run. When record ids change, add an old → new `ArchiveRule` per pair, and never remove a rule that has archived records.
 
-**Inspector rules** (`inspector_rules.py`): `sc-keeper` overlays this file from `main` onto the PyPI release with the same version. A CI job checks that it stays compatible with the released package, so it must not depend on unreleased code elsewhere in the package.
+**Inspector rules** (`inspector_rules.py`): `sc-keeper` overlays this file from `main` onto the PyPI release with the same version. A CI job checks that it stays compatible with the released package, so it must not depend on unreleased code elsewhere in the package. After the tests pass on `main`, a change to this file triggers a `sc-keeper` rebuild (`trigger-sc-keeper.yml`), but only if the current `__version__` is already on PyPI. Otherwise the new rules are not used until that version is released and `sc-keeper` is upgraded to it, so mention this in the PR when changing the rules after a version bump.
 
 **Benchmark scoring**: `workload_profiles.py` defines weighted workload profiles. `workload_profile_scores.py` computes compound scores (geometric mean vs. median baselines).
 
@@ -62,6 +62,9 @@ Migrations live in `src/sc_crawler/alembic/versions/` (named `<revision_id>_v<x_
 Internal and sensitive information (e.g. the shell script that sets the environment variables for testing `sc-crawler pull`, or the production database and rollout runbooks) is in the `crawler` folder of the private `sc-docs` repo, for maintainers with access: start with the `README.md` there. Never copy its content into this public repo. Never print private keys, passwords, tokens or any other sensitive information in responses, command output or script `echo`s (e.g. no `env`/`printenv` dumps or `set -x` after loading credentials).
 
 - The scheduled crawl runs from the GitHub Actions of the [sc-data-dumps](https://github.com/SpareCores/sc-data-dumps) repo, which install the crawler from the `main` branch of this repo, so **every merge to `main` goes to production on the next run**. Full runs crawl all vendors and records; more frequent spot runs update only the spot prices.
+- Each push to `main` also publishes the schema and docs, so **field descriptions and docstrings go public at merge**:
+  - `dbdocs.yaml` rebuilds [dbdocs](https://dbdocs.io/spare-cores/sc-crawler) from `sc-crawler schemas create --dialect mysql` and `project.dbml`, so the schema must compile on the MySQL dialect as well.
+  - `trigger-sc-docusaurus.yml` rebuilds docs.sparecores.com when `src/sc_crawler/`, `docs/`, `CHANGELOG.md` or `scripts/gen_md_docs.py` changes.
 - The published SQLite dumps are available on the CDN (see `README.md`) and via the [sc-data](https://github.com/SpareCores/sc-data) repo (`sparecores-data` package). The CDN path follows the crawler's major.minor version, so a minor version bump starts a new path.
 - To check real data, first look for local SQLite files (`*.db`) in the root of the local `sc-data` clone (usually the sibling folder `../sc-data`) and of this repo. They can be old, partial (e.g. a single vendor) or on another schema version, so check the modification time, the tables and the latest `observed_at` before relying on one, and open them read-only (e.g. `sqlite3 -readonly`). If there is no suitable file, download the latest published data with `sc-data download /path/to/sc-data.db` (from the `sparecores-data` package; see `sc-data download --help`), and don't overwrite an existing file.
 - Production uses the SCD tables in PostgreSQL, so call out new tables and primary key changes in the PR.
@@ -75,6 +78,17 @@ Internal and sensitive information (e.g. the shell script that sets the environm
 ## Vendor data audit (`audit/`)
 
 `audit/` is a separate, unpublished project (`sc-audit` CLI, own `pyproject.toml` and tests: `pip install -e "audit[testing]"`, `cd audit && pytest`). It cross-checks the published SQLite dump against official vendor pages only. Outputs go to `audit-out/` (git-ignored). Use the `vendor-audit` skill (`.claude/skills/vendor-audit/`) for audits, and read `audit/README.md` before changing the tool or triaging findings.
+
+## Pull requests
+
+Fill in the checklist of `.github/pull_request_template.md`, and check only the items that were actually done. Besides the tests, linters and changelog, it asks for:
+
+- migrations tested on both SQLite and PostgreSQL,
+- `sc-crawler pull` tested on all vendors and records,
+- data changes cross-checked with the vendor pages or other trusted sources,
+- the output of an example run (e.g. an SQLite file) included for major data changes,
+- `docs/add_vendor.md` kept up to date,
+- no red flags from CodeRabbit.
 
 ## Code style
 
