@@ -1,6 +1,6 @@
 """Tiny helper classes for the most commonly used fields to be inherited by [sc_crawler.tables][]."""
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from functools import cache
 from hashlib import sha1
 from json import dumps
@@ -365,6 +365,13 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
                 cls.get_table_name(),
                 total=row_count,
             )
+
+        def json_default(value):
+            # plain dates only, so datetime (a date subclass) is rejected too
+            if type(value) is date:
+                return value.isoformat()
+            raise TypeError(f"Cannot hash {type(value).__name__} value: {value!r}")
+
         # no use of a generator as will need to serialize to JSON anyway
         hashes = {}
         for i, row in enumerate(rows):
@@ -374,7 +381,9 @@ class ScModel(SQLModel, metaclass=ScMetaModel):
             keys_id = cls.pk_key(rowdict)
             for dropkey in [*ignored, *pks]:
                 rowdict.pop(dropkey, None)
-            rowhash = sha1(dumps(rowdict, sort_keys=True).encode()).hexdigest()
+            rowhash = sha1(
+                dumps(rowdict, sort_keys=True, default=json_default).encode()
+            ).hexdigest()
             hashes[keys_id] = rowhash
             if progress:
                 # updating the progress bar is expensive, so limit with manu iterations
@@ -467,6 +476,17 @@ class HasBenchmarkIdPK(ScModel):
 
 class HasName(ScModel):
     name: str = Field(description="Human-friendly name.")
+
+
+class HasRetirementDate(ScModel):
+    retirement_date: Optional[date] = Field(
+        default=None,
+        description=(
+            "Retirement date announced by the vendor for PLANNED_FOR_RETIREMENT "
+            "and RETIRED records: the end of support (shutdown) if published, "
+            "otherwise the end of sale. Empty when not announced or not known."
+        ),
+    )
 
 
 class HasCategory(ScModel):
@@ -985,6 +1005,38 @@ class ServerFields(
             "the size (GB) and type of each disk."
         ),
     )
+    storage_read_iops_max: Optional[int] = Field(
+        default=None,
+        description=(
+            "The vendor-published maximum read IOPS of the bundled disk(s), "
+            "summed over all disks, also of different types (e.g. temp disk and NVMe), "
+            "so a theoretical total. Per-disk values are in storages."
+        ),
+    )
+    storage_write_iops_max: Optional[int] = Field(
+        default=None,
+        description=(
+            "The vendor-published maximum write IOPS of the bundled disk(s), "
+            "summed over all disks, also of different types (e.g. temp disk and NVMe), "
+            "so a theoretical total. Per-disk values are in storages."
+        ),
+    )
+    storage_read_throughput_max: Optional[int] = Field(
+        default=None,
+        description=(
+            "The vendor-published maximum read throughput (MB/s) of the bundled disk(s), "
+            "summed over all disks, also of different types (e.g. temp disk and NVMe), "
+            "so a theoretical total. Per-disk values are in storages."
+        ),
+    )
+    storage_write_throughput_max: Optional[int] = Field(
+        default=None,
+        description=(
+            "The vendor-published maximum write throughput (MB/s) of the bundled disk(s), "
+            "summed over all disks, also of different types (e.g. temp disk and NVMe), "
+            "so a theoretical total. Per-disk values are in storages."
+        ),
+    )
     compatible_storage_ids: Optional[List[str]] = Field(
         default=None,
         sa_type=JSON(none_as_null=True),
@@ -1077,7 +1129,7 @@ class ServerFields(
             ]
 
 
-class ServerBase(MetaColumns, ServerFields):
+class ServerBase(MetaColumns, HasRetirementDate, ServerFields):
     @field_validator("status")
     @classmethod
     def _validate_status(cls, value: Status) -> Status:
@@ -1318,7 +1370,7 @@ class DatabaseFields(
             ]
 
 
-class DatabaseBase(MetaColumns, DatabaseFields):
+class DatabaseBase(MetaColumns, HasRetirementDate, DatabaseFields):
     @field_validator("status")
     @classmethod
     def _validate_status(cls, value: Status) -> Status:

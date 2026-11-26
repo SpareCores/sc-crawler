@@ -77,7 +77,8 @@ class Status(str, Enum):
       or defined are set to `INACTIVE` by `pull`, as well as records missing
       from the source by `sync`.
     - `PLANNED_FOR_RETIREMENT` and `RETIRED` are only valid for Server and
-      Database, and are set only from explicit vendor signals.
+      Database, and are set only from explicit vendor signals. These are kept
+      by `pull` when the record is no longer returned by the vendor.
     - `ARCHIVED` is valid for all tables. It is set only from the
       [archive rules][sc_crawler.archive_rules] by `pull` and `sync`, also for
       child records (e.g. prices of a region), and archived records are not
@@ -332,6 +333,23 @@ class Disk(Json):
     """[Type][sc_crawler.table_fields.StorageType] of the storage."""
     description: Optional[str] = None
     """Optional description of the storage, e.g. temp disk."""
+    read_iops_max: Optional[int] = None
+    """Vendor-published maximum read IOPS of the disk."""
+    write_iops_max: Optional[int] = None
+    """Vendor-published maximum write IOPS of the disk."""
+    read_throughput_max: Optional[int] = None
+    """Vendor-published maximum read throughput of the disk (MB/s)."""
+    write_throughput_max: Optional[int] = None
+    """Vendor-published maximum write throughput of the disk (MB/s)."""
+
+
+DISK_SPEED_FIELDS = (
+    "read_iops_max",
+    "write_iops_max",
+    "read_throughput_max",
+    "write_throughput_max",
+)
+"""Speed fields of a `Disk`, matching the `storage_*` server columns."""
 
 
 class TrafficDirection(str, Enum):

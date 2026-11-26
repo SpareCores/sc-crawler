@@ -1,7 +1,7 @@
 """Inventory of Hetzner Cloud via its API and manual data entry: servers, storages, traffic and IPv4 addresses, with their prices."""
 
 import os
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from functools import cache
 from re import compile as recompile
 
@@ -19,6 +19,7 @@ from ..table_fields import (
     StorageType,
     TrafficDirection,
 )
+from ..vendor_helpers import retirement_date_from_rules
 
 # ##############################################################################
 # Cached client wrappers
@@ -309,16 +310,54 @@ def _hcloud_server_status(server, now: datetime) -> Status:
     )
 
 
+def _hcloud_server_retirement_date(server, status: Status) -> date | None:
+    """Latest `deprecation.unavailable_after` of the locations, if the type is retiring.
+
+    `unavailable_after` is the last moment the type can be ordered (e.g.
+    `2025-12-31T23:59:59Z`), so the retirement date is the day after it.
+    Types still offered without deprecation in any location have no date.
+    """
+    if status not in (Status.PLANNED_FOR_RETIREMENT, Status.RETIRED):
+        return None
+    dates = [
+        location.deprecation.unavailable_after
+        for location in server.locations
+        if location.deprecation and location.deprecation.unavailable_after
+    ]
+    if not dates:
+        return None
+    return (max(dates) + timedelta(seconds=1)).date()
+
+
+# Retirement dates of the types removed from the API, for the ones crawled
+# before the per-location deprecation dates were stored. As in
+# `_hcloud_server_retirement_date`, the day after the last day the type could be
+# ordered, from the API changelog: https://docs.hetzner.cloud/changelog
+# Rule format: (compiled regex on the type name, retirement date).
+_HCLOUD_RETIREMENT_RULES = (
+    (recompile(r"^ccx[1-5]1$"), date(2023, 7, 18)),  # Intel dedicated vCPU
+    (recompile(r"^ccx[1-6]2$"), date(2023, 9, 27)),  # AMD dedicated vCPU gen1
+    (recompile(r"^cx[1-5]1$"), date(2024, 9, 6)),  # Intel shared vCPU gen1
+    (recompile(r"^cx[2-5]2$"), date(2026, 1, 1)),  # Intel shared vCPU gen2
+)
+
+
 def _retired_servers(vendor, server_types) -> list[dict]:
     """Known servers no longer returned by the API, as RETIRED Server dicts.
 
     The server types endpoint returns the full catalogue (deprecated types
     included until they are removed), so a missing type is retired, not a
-    partial response.
+    partial response. The stored retirement date is kept, falling back to
+    `_HCLOUD_RETIREMENT_RULES`.
     """
     listed = {str(server.id) for server in server_types}
     return [
-        server.model_dump(exclude={"observed_at"}) | {"status": Status.RETIRED}
+        server.model_dump(exclude={"observed_at"})
+        | {
+            "status": Status.RETIRED,
+            "retirement_date": server.retirement_date
+            or retirement_date_from_rules(server.name, _HCLOUD_RETIREMENT_RULES),
+        }
         for server in vendor.servers
         if server.server_id not in listed
     ]
@@ -414,7 +453,8 @@ def inventory_servers(vendor):
     past -> RETIRED, `deprecation` present -> PLANNED_FOR_RETIREMENT,
     empty locations -> INACTIVE, otherwise (including sold out) ACTIVE.
     See `_hcloud_server_status`. Known types removed from the API -> RETIRED,
-    see `_retired_servers`.
+    see `_retired_servers`. The retirement date is the latest
+    `deprecation.unavailable_after`, see `_hcloud_server_retirement_date`.
     """
     now = datetime.now(UTC)
     server_types = _get_server_types()
@@ -424,6 +464,7 @@ def inventory_servers(vendor):
             # CPU info not available via the API,
             # collected from https://www.hetzner.com/cloud/
             cpu = _server_cpu(server)
+            status = _hcloud_server_status(server, now)
             items.append(
                 {
                     "vendor_id": vendor.vendor_id,
@@ -481,7 +522,8 @@ def inventory_servers(vendor):
                         / (1024**3)
                     ),
                     "ipv4": 0,
-                    "status": _hcloud_server_status(server, now),
+                    "status": status,
+                    "retirement_date": _hcloud_server_retirement_date(server, status),
                 }
             )
     return items + _retired_servers(vendor, server_types)

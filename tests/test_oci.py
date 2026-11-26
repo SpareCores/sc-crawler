@@ -1,6 +1,7 @@
 """Unit tests for the Oracle Cloud Infrastructure vendor module."""
 
 from contextlib import contextmanager
+from datetime import date
 from unittest.mock import Mock, patch
 
 import pytest
@@ -21,8 +22,10 @@ from sc_crawler.table_fields import (  # noqa: E402
     StorageType,
     TrafficDirection,
 )
+from sc_crawler.vendor_helpers import retirement_date_from_rules  # noqa: E402
 from sc_crawler.vendors import _oci  # noqa: E402
 from sc_crawler.vendors._oci import (  # noqa: E402
+    _OCI_RETIREMENT_RULES,
     _config,
     _config_hourly_price,
     _parse_processor_description,
@@ -1214,3 +1217,19 @@ def test_inventory_database_storage_prices(database_api):
 def test_inventory_database_storage_prices_without_service(database_api):
     with patch.object(_oci, "_get_database_shapes", return_value=[]):
         assert inventory_database_storage_prices(_database_vendor()) == []
+
+
+@pytest.mark.parametrize(
+    "name, expected",
+    [
+        ("VM.Standard2.1", date(2022, 2, 28)),
+        ("BM.Standard2.52", date(2022, 2, 28)),
+        ("VM.Standard.E2.4", date(2021, 2, 8)),
+        ("VM.Standard.E2.1.Micro", None),
+        ("VM.Standard.E3.Flex", date(2022, 3, 31)),
+        ("VM.Standard3.Flex", None),
+        ("VM.Standard.E4.Flex", None),
+    ],
+)
+def test_oci_previous_generation_retirement_dates(name, expected):
+    assert retirement_date_from_rules(name, _OCI_RETIREMENT_RULES) == expected
