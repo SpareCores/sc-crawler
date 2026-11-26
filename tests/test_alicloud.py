@@ -12,6 +12,7 @@ from sc_crawler.table_fields import (
     Status,
     StorageType,
 )
+from sc_crawler.utils import _GIB_TO_GB
 from sc_crawler.vendor_helpers import server_status_from_availability_categories
 from sc_crawler.vendors._alicloud import (
     _ALICLOUD_STATUS_CATEGORY_TO_SERVER_LIFECYCLE,
@@ -44,6 +45,7 @@ from sc_crawler.vendors._alicloud import (
     _rds_region_prices,
     _rds_region_storage_prices,
     _rds_security_features,
+    _RdsEndpointUnavailable,
     _RdsPriceUnavailable,
     _warn_unknown_category,
     _warn_unknown_local_disk_speed,
@@ -51,6 +53,7 @@ from sc_crawler.vendors._alicloud import (
     inventory_database_storage_prices,
     inventory_database_storages,
     inventory_databases,
+    inventory_regions,
     inventory_server_prices_spot,
     inventory_servers,
     inventory_storages,
@@ -689,6 +692,7 @@ _RDS_PARAMS = {
     ],
     "versions": ["14.0", "17.0"],
     "zone_versions": {"eu-central-1a": ["17.0", "14.0"]},
+    "storage_ranges": {},
 }
 _RDS_PARAMS_MULTI_ZONE = {
     **_RDS_PARAMS,
@@ -1139,6 +1143,53 @@ def test_alicloud_rds_region_prices_try_more_zones():
         )
 
 
+def test_alicloud_rds_region_prices_stop_when_the_endpoint_is_unavailable():
+    params = [{"zone_id": "a", "engine_version": "17.0", "storage_type": "cloud_essd"}]
+    available = {"zones": params, "versions": ["17.0"]}
+    offer = {"classes": {"ha": {"pg.x": available, "pg.y": available}}}
+    editions = {"pg.x": "ha", "pg.y": "ha"}
+    with patch(
+        "sc_crawler.vendors._alicloud._fetch_rds_price",
+        side_effect=_RdsEndpointUnavailable("Read timed out"),
+    ) as fetch:
+        assert _rds_region_prices(Mock(), "r", offer, {}, editions) == (
+            {},
+            {"pg.x", "pg.y"},
+        )
+    assert fetch.call_count == 1
+
+
+def test_alicloud_inventory_databases_unknown_family():
+    rds_specs = {
+        "eu-central-1": {
+            class_code: _rds_spec(class_code, "HighAvailability", group="新型")
+            for class_code in ("pg.n2.2c.2m", "pg.x4.large.2c")
+        }
+    }
+    vendor, rows = _inventory_rds_databases(rds_specs=rds_specs)
+    for row in rows.values():
+        assert row["family"] is None
+        assert row["sla"] is None
+        assert row["description"].startswith("High-availability Edition (")
+    warnings = [c.args[0] for c in vendor.log.call_args_list if "新型" in c.args[0]]
+    assert len(warnings) == 1
+
+
+def test_alicloud_inventory_databases_storage_range_of_the_api():
+    ranges = {"cloud_essd": (5, 128000)}
+    rds_offers = {
+        "eu-central-1": {
+            **_RDS_OFFERS["eu-central-1"],
+            "classes": {
+                "basic": {"pg.n2.2c.1m": {**_RDS_PARAMS, "storage_ranges": ranges}}
+            },
+        }
+    }
+    _, rows = _inventory_rds_databases(rds_offers=rds_offers)
+    assert rows["pg.n2.2c.1m"]["storage_extra_min"] == round(5 * _GIB_TO_GB)
+    assert rows["pg.n2.2c.1m"]["storage_extra_max"] == round(128000 * _GIB_TO_GB)
+
+
 def test_alicloud_inventory_database_prices_keep_the_failed_regions():
     vendor, rows = _inventory_rds_databases()
     vendor.databases = [
@@ -1228,7 +1279,20 @@ def _rds_offers_client(zone_versions, orderable):
             body=Mock(
                 to_map=Mock(
                     return_value={
-                        "DBInstanceClasses": [{"DBInstanceClass": c} for c in found]
+                        "DBInstanceClasses": [
+                            {
+                                "DBInstanceClass": c,
+                                # a smaller range in the zone z-b
+                                "DBInstanceStorageRange": {
+                                    "MinValue": 50 if request.zone_id == "z-b" else 20,
+                                    "MaxValue": 32000
+                                    if request.zone_id == "z-b"
+                                    else 64000,
+                                    "Step": 5,
+                                },
+                            }
+                            for c in found
+                        ]
                     }
                 )
             )
@@ -1269,6 +1333,8 @@ def test_alicloud_fetch_rds_offers_probes_each_older_version_once():
     ]
     # the newest versions first
     assert probes[:3] == [("z-a", "17.0"), ("z-b", "17.0"), ("z-c", "17.0")]
+    # the widest storage range of the zones, by the disk type probed
+    assert classes["pg.a"]["storage_ranges"] == {"cloud_essd": (20, 64000)}
 
 
 def test_alicloud_fetch_rds_offers_middle_versions_in_a_single_zone():
@@ -1355,17 +1421,22 @@ def test_alicloud_fetch_rds_price_warns_when_throttled():
     with (
         patch("sc_crawler.vendors._alicloud.sleep"),
         patch("sc_crawler.vendors._alicloud.logger") as logger,
-        pytest.raises(_RdsPriceUnavailable),
+        patch("sc_crawler.vendors._alicloud._logged_error_codes", set()),
+        pytest.raises(_RdsEndpointUnavailable),
     ):
         _fetch_rds_price(client, "r", "pg.x", "basic", "z", "17.0", "cloud_essd", 20)
     logger.warning.assert_called_once()
 
-    # not sold: no price
+    # other errors (e.g. a missing permission): no price, not "not sold" either
     client.describe_price_with_options.side_effect = Exception("InvalidParameter")
-    assert (
+    with (
+        patch("sc_crawler.vendors._alicloud.logger") as logger,
+        patch("sc_crawler.vendors._alicloud._logged_error_codes", set()),
+        pytest.raises(_RdsPriceUnavailable) as error,
+    ):
         _fetch_rds_price(client, "r", "pg.x", "basic", "z", "17.0", "cloud_essd", 20)
-        is None
-    )
+    assert not isinstance(error.value, _RdsEndpointUnavailable)
+    logger.warning.assert_called_once()
 
 
 def test_alicloud_rds_map_regions_results_are_kept_for_the_session():
@@ -1397,7 +1468,7 @@ def test_alicloud_rds_map_regions_retries_only_the_failed_regions():
     def fetch(client, region_id):
         calls.append(region_id)
         if region_id == "r2" and calls.count("r2") == 1:
-            raise Exception("Connection reset")
+            raise _tea_error("ServiceUnavailable", 503)
         return {"region": region_id}
 
     with (
@@ -1418,6 +1489,19 @@ def test_alicloud_rds_map_regions_retries_only_the_failed_regions():
             "r2": {"region": "r2"},
         }
         assert sorted(calls) == ["r1", "r2", "r2"]
+
+
+def test_alicloud_rds_map_regions_raises_on_bugs(monkeypatch):
+    monkeypatch.delenv("SENTRY_DSN", raising=False)
+    with (
+        patch("sc_crawler.vendors._alicloud._rds_clients", return_value={"r1": Mock()}),
+        patch("sc_crawler.vendors._alicloud._rds_region_results", {}),
+        patch("sc_crawler.vendors._alicloud.cachier", lambda **kwargs: lambda f: f),
+        pytest.raises(KeyError),
+    ):
+        _rds_map_regions(
+            Mock(session=Mock()), "test bug", Mock(side_effect=KeyError), {}
+        )
 
 
 def test_alicloud_storage_price_uses_a_zone_offering_the_disk_type():
@@ -1702,6 +1786,37 @@ def test_alicloud_server_errors_are_transient():
     assert not _is_transient_error(Exception("InvalidParameter"))
 
 
+def test_alicloud_fetch_rds_price_not_sold_and_errors_logged_once():
+    client = Mock()
+    # an instance type not purchasable in the zone: no price, no warning
+    client.describe_price_with_options.side_effect = _tea_error(
+        "Commodity.InvalidComponent", 400
+    )
+    with patch("sc_crawler.vendors._alicloud.logger") as logger:
+        assert (
+            _fetch_rds_price(
+                client, "r", "pg.x", "basic", "z", "17.0", "cloud_essd", 20
+            )
+            is None
+        )
+    logger.warning.assert_not_called()
+
+    # other errors: a warning only for the first one of each error code
+    client.describe_price_with_options.side_effect = _tea_error("Forbidden.RAM", 403)
+    with (
+        patch("sc_crawler.vendors._alicloud.logger") as logger,
+        patch("sc_crawler.vendors._alicloud._logged_error_codes", set()),
+    ):
+        for _ in range(3):
+            with pytest.raises(_RdsPriceUnavailable):
+                _fetch_rds_price(
+                    client, "r", "pg.x", "basic", "z", "17.0", "cloud_essd", 20
+                )
+    logger.warning.assert_called_once()
+    assert "Forbidden.RAM" in logger.warning.call_args.args[0]
+    assert logger.debug.call_count == 2
+
+
 def test_alicloud_fetch_rds_price_retries_service_failures():
     client = Mock()
     client.describe_price_with_options.side_effect = _tea_error(
@@ -1936,3 +2051,19 @@ def test_alicloud_inventory_server_prices_spot_drops_the_ones_not_sold():
     ):
         assert inventory_server_prices_spot(vendor) == []
     expire.assert_called_once()
+
+
+def test_alicloud_inventory_regions_closed_down_are_inactive():
+    regions = [
+        {"RegionId": "eu-central-1", "LocalName": "Germany (Frankfurt)"},
+        {
+            "RegionId": "cn-nanjing",
+            "LocalName": "China (Nanjing - Local Region) Closed Down",
+        },
+    ]
+    with patch("sc_crawler.vendors._alicloud._get_regions", return_value=regions):
+        items = inventory_regions(Mock(vendor_id="alicloud"))
+    assert {item["region_id"]: item["status"] for item in items} == {
+        "eu-central-1": Status.ACTIVE,
+        "cn-nanjing": Status.INACTIVE,
+    }
