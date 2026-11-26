@@ -121,7 +121,7 @@ def block_reasons(
     - Servers:
         - `bw_mem` and `membench`: a few servers with identified performance issues while running this task.
         - `nvidia_smi` and `nvbandwidth`: servers without GPUs.
-        - Not enough memory: `membench` needs 0.9 GB; `compression_text`, `ffmpeg` and `llm` 1 GB; `vllm` and `pgbench_postgres_ro_durable` 2 GB; `geekbench` 2.1 GB.
+        - Not enough memory: `membench` needs 0.9 GB; `compression_text`, `ffmpeg` and `llm` 1 GB; `pgbench_postgres_ro_durable` 2 GB; `geekbench` 2.1 GB; `vllm` 8 GB.
         - `vllm`: fewer than 2 vCPUs (server and GuideLLM contend for the single core; no successful measurements observed).
         - `geekbench` and `passmark`: more than 32 vCPUs, as they don't scale beyond that.
         - `storage`: no bundled storage.
@@ -189,7 +189,7 @@ def block_reasons(
             ("compression_text", 1.0),
             ("ffmpeg", 1.0),
             ("llm", 1.0),
-            ("vllm", 2.0),
+            ("vllm", 8.0),
             ("geekbench", 2.1),
             ("pgbench_postgres_ro_durable", 2.0),
         ]:

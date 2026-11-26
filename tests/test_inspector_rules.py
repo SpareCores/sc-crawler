@@ -162,7 +162,7 @@ def test_memory_requirements():
         ("compression_text", 1.0),
         ("ffmpeg", 1.0),
         ("llm", 1.0),
-        ("vllm", 2.0),
+        ("vllm", 8.0),
         ("geekbench", 2.1),
         ("pgbench_postgres_ro_durable", 2.0),
     ]
