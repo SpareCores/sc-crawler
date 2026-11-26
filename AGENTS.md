@@ -78,7 +78,7 @@ Internal and sensitive information (e.g. the shell script that sets the environm
 
 ## Vendor data audit (`audit/`)
 
-`audit/` is a separate, unpublished project (`sc-audit` CLI, own `pyproject.toml` and tests: `pip install -e "audit[testing]"`, `cd audit && pytest`). It cross-checks the published SQLite dump against official vendor pages only. Outputs go to `audit-out/` (git-ignored). Use the `vendor-audit` skill (`.claude/skills/vendor-audit/`) for audits, and read `audit/README.md` before changing the tool or triaging findings. Delete a `audit/triage.yaml` entry only when the issue it records is fixed (e.g. a fix in our code has reached the audited data). Do not delete or propose deleting entries just because a run lists them as stale: a changed page, a re-extraction or a run over only some vendors or pages can also stop an entry from matching.
+`audit/` is a separate, unpublished project (`sc-audit` CLI, own `pyproject.toml` and tests: `pip install -e "audit[testing]"`, `cd audit && pytest`). It cross-checks the published SQLite dump against official vendor pages only. Outputs go to `audit-out/` (git-ignored). Use the `vendor-audit` skill (`.claude/skills/vendor-audit/`) for audits, and read `audit/README.md` before changing the tool or triaging findings.
 
 ## Pull requests
 
