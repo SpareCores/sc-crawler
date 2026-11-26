@@ -16,10 +16,6 @@
 # false_positive and expected are left out of report.md (kept in findings.csv).
 #
 # Entries matching no finding anymore are listed as stale in report.md.
-# Delete an entry only when the issue it records is fixed (e.g. a fix in our
-# code has reached the audited data). Keep the other stale entries: a changed
-# page, a re-extraction or a run over only some vendors or pages can also stop
-# an entry from matching, and the finding would come back without its verdict.
 
 entries:
 
