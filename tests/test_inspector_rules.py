@@ -341,3 +341,22 @@ def test_azure_database_is_credit_exempt():
         vendor_id="azure", memory_amount=4 * 1024, ha=[DatabaseHaLevel.MULTI_ZONE]
     )
     assert block_reasons(multi_node, "membench")["membench"] == [_SINGLE_NODE_BLOCK]
+
+
+def test_expensive_aws_servers_blocked():
+    for api_reference in [
+        "u7i-12tb.224xlarge",
+        "u-6tb1.56xlarge",
+        "trn2.48xlarge",
+        "trn3.48xlarge",
+    ]:
+        server = _server(vendor_id="aws", api_reference=api_reference)
+        assert block_reasons(server, "membench")["membench"] == [
+            "High-memory and super expensive servers are on hold."
+        ]
+    assert (
+        block_reasons(
+            _server(vendor_id="aws", api_reference="u-3tb1.56xlarge"), "membench"
+        )["membench"]
+        == []
+    )
