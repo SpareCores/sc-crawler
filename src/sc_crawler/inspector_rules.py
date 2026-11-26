@@ -111,6 +111,9 @@ def block_reasons(
         - Cloud credits or budget exhausted: Alibaba Cloud, Azure and GCP,
           except for a few explicitly exempted resources and tasks (see
           `is_credit_exempt`).
+        - Very expensive, specialized AWS server types that the standard workloads
+          don't represent well: high-memory SAP HANA (`u7i`, `u-6tb1`) and
+          Trainium (`trn2`, `trn3`) families.
 
     - Managed databases:
         - Databases that can't be deployed on a single node.
@@ -140,6 +143,12 @@ def block_reasons(
             resource, task
         ):
             results[task].append("Cloud credit/budget exhausted.")
+
+        # exclude high-memory, no-GPU, SAP HANA targeted, super expensive servers for now
+        if resource.vendor_id == "aws" and resource.api_reference.startswith(
+            ("u7i", "u-6tb1", "trn2", "trn3")
+        ):
+            results[task].append("High-memory and super expensive servers are on hold.")
 
         # databases checks: deny if 1-node layout is not supported
         if isinstance(resource, DatabaseBase):
