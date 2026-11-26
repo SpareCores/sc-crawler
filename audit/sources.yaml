@@ -426,6 +426,28 @@ vendors:
         url: "https://www.alibabacloud.com/help/en/ecs/user-guide/regions-and-zones"
         kinds: [regions]
         complete: true
+      - id: rds-pg-instance-types
+        url: "https://www.alibabacloud.com/help/en/rds/apsaradb-rds-for-postgresql/primary-apsaradb-rds-for-postgresql-instance-types"
+        kinds: [db_specs, db_features, lifecycle]
+        notes: >-
+          Instance types of RDS for PostgreSQL per edition (Basic,
+          High-availability, Cluster) and family, with the storage ranges of the
+          cloud disk types.
+      - id: rds-pg-editions
+        url: "https://www.alibabacloud.com/help/en/rds/apsaradb-rds-for-postgresql/product-editions/"
+        kinds: [db_features]
+      - id: rds-pg-cluster-edition
+        url: "https://www.alibabacloud.com/help/en/rds/apsaradb-rds-for-postgresql/rds-cluster-edition"
+        kinds: [db_features]
+      - id: rds-pg-read-only-instances
+        url: "https://www.alibabacloud.com/help/en/rds/apsaradb-rds-for-postgresql/rds-for-postgresql-read-only-instances"
+        kinds: [db_features]
+      - id: rds-pg-backup
+        url: "https://www.alibabacloud.com/help/en/rds/apsaradb-rds-for-postgresql/back-up-an-apsaradb-rds-for-postgresql-instance"
+        kinds: [db_features]
+      - id: rds-sla
+        url: "https://www.alibabacloud.com/help/doc-detail/42437.htm"
+        kinds: [db_features]
 
   hcloud:
     allowed_domains: [hetzner.com]
