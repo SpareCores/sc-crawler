@@ -4,7 +4,7 @@ import json
 import re
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from functools import cache
 from itertools import chain, repeat
 from logging import DEBUG, WARN
@@ -52,6 +52,8 @@ from ..utils import (
 from ..vendor_helpers import (
     parallel_fetch_servers,
     preprocess_servers,
+    retirement_date_from_rules,
+    split_disk_speed,
 )
 
 # ##############################################################################
@@ -356,6 +358,29 @@ def _price_list_server_ids() -> Tuple[set[str], set[str]]:
     return priced, reserved
 
 
+# Documented end of sale dates of EC2 instance types, used as the retirement
+# date of the RETIRED ones. There is no such field in the APIs, and the
+# previous generation types are listed without dates:
+# https://docs.aws.amazon.com/ec2/latest/instancetypes/pg.html
+# Rule format: (compiled regex on the instance type, retirement date).
+_AWS_EC2_RETIREMENT_RULES = (
+    # https://docs.aws.amazon.com/ec2/latest/instancetypes/instance-types.html
+    # https://docs.aws.amazon.com/ec2/latest/instancetypes/doc-history.html
+    (re.compile(r"^u-(9|12|18|24)tb1\..*$"), date(2025, 6, 20)),
+)
+
+# Documented end of support dates of the RDS DB instance classes, or the start
+# of the automatic upgrade of the existing instances for the db.m3/r3 classes
+# without an end of support date, used as the retirement date of the RETIRED
+# ones. Rows of PostgreSQL only:
+# https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.DBInstanceClass.Types.html
+# Rule format: (compiled regex on the DB instance class, retirement date).
+_AWS_RDS_RETIREMENT_RULES = (
+    (re.compile(r"^db\.(m3|r3)\..*$"), date(2023, 2, 1)),
+    (re.compile(r"^db\.(m4|r4|t2)\..*$"), date(2024, 12, 31)),
+)
+
+
 def _reconcile_server_status(
     vendor: Vendor, spot_server_ids: Collection[str] = ()
 ) -> None:
@@ -365,7 +390,8 @@ def _reconcile_server_status(
     Otherwise RETIRED if it has on-demand prices but no Reserved terms in the
     price list (closed to new commitments), else INACTIVE (e.g. not offered to
     our account). New instance types often lack Reserved terms too, but they
-    are offered or have spot prices.
+    are offered or have spot prices. RETIRED servers get their retirement date
+    from `_AWS_EC2_RETIREMENT_RULES`.
     """
     regions_servers = _collect_regions_servers(vendor)
     offered_server_ids = {
@@ -385,6 +411,11 @@ def _reconcile_server_status(
             server.status = Status.RETIRED
         else:
             server.status = Status.INACTIVE
+        server.retirement_date = (
+            retirement_date_from_rules(server.server_id, _AWS_EC2_RETIREMENT_RULES)
+            if server.status == Status.RETIRED
+            else None
+        )
         # servers kept ACTIVE only by spot prices are not returned by
         # describe_instance_types, so might miss fields added since last crawled;
         # only GPU manufacturers prove a GPU, other accelerators stay None
@@ -651,22 +682,714 @@ def _array_expand_by_count(array):
     return list(chain(*array))
 
 
-def _get_storages_of_instance_type(instance_type):
-    """Get individual storages as an array."""
+def _get_storages_of_instance_type(instance_type, iops=(None, None)):
+    """Get individual storages as an array.
+
+    The documented (read, write) IOPS `iops` are totals over the identical
+    volumes, so they are split evenly between the disks.
+    """
     if "InstanceStorageInfo" not in instance_type:
         return []
     info = instance_type["InstanceStorageInfo"]
+    # replicate number of disks
+    disks = _array_expand_by_count(info["Disks"])
+    read_iops = split_disk_speed(iops[0], len(disks))
+    write_iops = split_disk_speed(iops[1], len(disks))
 
     def to_storage(disk, nvme=False):
         kind = disk.get("Type").lower()
         if kind == "ssd" and nvme:
             kind = "nvme ssd"
-        return Disk(size=disk["SizeInGB"], storage_type=kind)
+        return Disk(
+            size=disk["SizeInGB"],
+            storage_type=kind,
+            read_iops_max=read_iops,
+            write_iops_max=write_iops,
+        )
 
-    # replicate number of disks
-    disks = info["Disks"]
-    disks = _array_expand_by_count(disks)
     return [to_storage(disk, nvme=_supports_nvme(info)) for disk in disks]
+
+
+# Instance store "100% random read IOPS / Write IOPS" (aggregated over the
+# volumes, 4,096 byte blocks at queue depth saturation) from the "Instance store
+# specifications" tables of the docs, by family and size. No throughput is listed.
+# https://docs.aws.amazon.com/ec2/latest/instancetypes/gp.html#gp_instance-store
+# https://docs.aws.amazon.com/ec2/latest/instancetypes/co.html#co_instance-store
+# https://docs.aws.amazon.com/ec2/latest/instancetypes/mo.html#mo_instance-store
+# https://docs.aws.amazon.com/ec2/latest/instancetypes/so.html#so_instance-store
+# https://docs.aws.amazon.com/ec2/latest/instancetypes/ac.html#ac_instance-store
+# https://docs.aws.amazon.com/ec2/latest/instancetypes/hpc.html#hpc_instance-store
+# https://docs.aws.amazon.com/ec2/latest/instancetypes/pg.html#pg_instance-store
+_INSTANCE_STORE_IOPS = {
+    "c5ad": {
+        "large": (16_283, 7_105),
+        "xlarge": (32_566, 14_211),
+        "2xlarge": (65_132, 28_421),
+        "4xlarge": (130_262, 56_842),
+        "8xlarge": (260_526, 113_684),
+        "12xlarge": (412_500, 180_000),
+        "16xlarge": (521_052, 227_368),
+        "24xlarge": (825_000, 360_000),
+    },
+    "c5d": {
+        "large": (20_000, 9_000),
+        "xlarge": (40_000, 18_000),
+        "2xlarge": (80_000, 37_000),
+        "4xlarge": (175_000, 75_000),
+        "9xlarge": (350_000, 170_000),
+        "12xlarge": (700_000, 340_000),
+        "18xlarge": (700_000, 340_000),
+        "24xlarge": (1_400_000, 680_000),
+        "metal": (1_400_000, 680_000),
+    },
+    "c6gd": {
+        "medium": (13_438, 5_625),
+        "large": (26_875, 11_250),
+        "xlarge": (53_750, 22_500),
+        "2xlarge": (107_500, 45_000),
+        "4xlarge": (215_000, 90_000),
+        "8xlarge": (430_000, 180_000),
+        "12xlarge": (645_000, 270_000),
+        "16xlarge": (860_000, 360_000),
+        "metal": (860_000, 360_000),
+    },
+    "c6id": {
+        "large": (33_542, 16_771),
+        "xlarge": (67_083, 33_542),
+        "2xlarge": (134_167, 67_084),
+        "4xlarge": (268_333, 134_167),
+        "8xlarge": (536_666, 268_334),
+        "12xlarge": (804_998, 402_500),
+        "16xlarge": (1_073_332, 536_668),
+        "24xlarge": (1_609_996, 805_000),
+        "32xlarge": (2_146_664, 1_073_336),
+        "metal": (2_146_664, 1_073_336),
+    },
+    "c7gd": {
+        "medium": (16_771, 8_385),
+        "large": (33_542, 16_771),
+        "xlarge": (67_083, 33_542),
+        "2xlarge": (134_167, 67_084),
+        "4xlarge": (268_333, 134_167),
+        "8xlarge": (536_666, 268_334),
+        "12xlarge": (804_998, 402_500),
+        "16xlarge": (1_073_332, 536_668),
+        "metal": (1_073_332, 536_668),
+    },
+    "c8gd": {
+        "medium": (16_771, 8_385),
+        "large": (33_542, 16_771),
+        "xlarge": (67_083, 33_542),
+        "2xlarge": (134_167, 67_084),
+        "4xlarge": (268_333, 134_167),
+        "8xlarge": (536_666, 268_334),
+        "12xlarge": (804_999, 402_501),
+        "16xlarge": (1_073_332, 536_668),
+        "24xlarge": (1_609_998, 805_002),
+        "48xlarge": (3_219_996, 1_610_004),
+        "metal-24xl": (1_609_998, 805_002),
+        "metal-48xl": (3_219_996, 1_610_004),
+    },
+    "c8id": {
+        "large": (33_542, 16_771),
+        "xlarge": (67_083, 33_542),
+        "2xlarge": (134_167, 67_084),
+        "4xlarge": (268_333, 134_167),
+        "8xlarge": (536_666, 268_334),
+        "12xlarge": (804_999, 402_501),
+        "16xlarge": (1_073_332, 536_668),
+        "24xlarge": (1_609_998, 805_002),
+        "32xlarge": (2_146_664, 1_073_336),
+        "48xlarge": (3_219_996, 1_610_004),
+        "96xlarge": (6_439_992, 3_220_008),
+        "metal-48xl": (3_219_996, 1_610_004),
+        "metal-96xl": (6_439_992, 3_220_008),
+    },
+    "c9gd": {
+        "medium": (21_802, 10_901),
+        "large": (43_604, 21_802),
+        "xlarge": (87_207, 43_604),
+        "2xlarge": (174_417, 87_209),
+        "4xlarge": (348_832, 174_417),
+        "8xlarge": (697_665, 348_834),
+        "12xlarge": (1_046_496, 523_251),
+        "16xlarge": (1_395_331, 697_668),
+        "24xlarge": (2_092_995, 1_046_502),
+        "48xlarge": (4_185_993, 2_093_004),
+        "metal-48xl": (4_185_993, 2_093_004),
+    },
+    "dl1": {"24xlarge": (1_000_000, 800_000)},
+    "f2": {
+        "6xlarge": (400_000, 125_000),
+        "12xlarge": (800_000, 250_000),
+        "48xlarge": (3_200_000, 1_000_000),
+    },
+    "g4ad": {
+        "xlarge": (10_417, 8_333),
+        "2xlarge": (20_833, 16_667),
+        "4xlarge": (41_667, 33_333),
+        "8xlarge": (83_333, 66_667),
+        "16xlarge": (166_666, 133_332),
+    },
+    "g4dn": {
+        "xlarge": (42_500, 32_500),
+        "2xlarge": (42_500, 32_500),
+        "4xlarge": (85_000, 65_000),
+        "8xlarge": (250_000, 200_000),
+        "12xlarge": (250_000, 200_000),
+        "16xlarge": (250_000, 200_000),
+        "metal": (500_000, 400_000),
+    },
+    "g5": {
+        "xlarge": (40_625, 20_313),
+        "2xlarge": (40_625, 20_313),
+        "4xlarge": (125_000, 62_500),
+        "8xlarge": (250_000, 125_000),
+        "12xlarge": (312_500, 156_250),
+        "16xlarge": (250_000, 125_000),
+        "24xlarge": (312_500, 156_250),
+        "48xlarge": (625_000, 312_500),
+    },
+    "g6": {
+        "xlarge": (40_625, 20_000),
+        "2xlarge": (40_625, 20_000),
+        "4xlarge": (125_000, 40_000),
+        "8xlarge": (250_000, 80_000),
+        "12xlarge": (312_500, 125_000),
+        "16xlarge": (250_000, 80_000),
+        "24xlarge": (312_500, 156_248),
+        "48xlarge": (625_000, 312_496),
+    },
+    "g6e": {
+        "xlarge": (40_625, 20_000),
+        "2xlarge": (40_625, 20_000),
+        "4xlarge": (125_000, 40_000),
+        "8xlarge": (250_000, 80_000),
+        "12xlarge": (312_500, 125_000),
+        "16xlarge": (250_000, 80_000),
+        "24xlarge": (312_500, 156_250),
+        "48xlarge": (625_000, 312_500),
+    },
+    "g6f": {
+        "large": (16_250, 8_000),
+        "xlarge": (27_100, 13_333),
+        "2xlarge": (40_625, 20_000),
+        "4xlarge": (125_000, 40_000),
+    },
+    "g7": {
+        "2xlarge": (127_368, 98_421),
+        "4xlarge": (253_375, 195_789),
+        "8xlarge": (269_211, 208_026),
+        "12xlarge": (550_000, 425_000),
+        "24xlarge": (1_100_000, 850_000),
+        "48xlarge": (2_200_000, 1_700_000),
+    },
+    "g7e": {
+        "2xlarge": (275_000, 137_500),
+        "4xlarge": (275_000, 137_500),
+        "8xlarge": (275_000, 137_500),
+        "12xlarge": (550_000, 275_000),
+        "24xlarge": (1_100_000, 550_000),
+        "48xlarge": (2_200_000, 1_100_000),
+    },
+    "gr6": {"4xlarge": (125_000, 40_000), "8xlarge": (250_000, 80_000)},
+    "gr6f": {"4xlarge": (125_000, 40_000)},
+    "hpc6id": {"32xlarge": (2_146_664, 1_073_336)},
+    "i3": {
+        "large": (103_125, 35_000),
+        "xlarge": (206_250, 70_000),
+        "2xlarge": (412_500, 180_000),
+        "4xlarge": (825_000, 360_000),
+        "8xlarge": (1_650_000, 720_000),
+        "16xlarge": (3_300_000, 1_440_000),
+        "metal": (3_300_000, 1_440_000),
+    },
+    "i3en": {
+        "large": (42_500, 32_500),
+        "xlarge": (85_000, 65_000),
+        "2xlarge": (170_000, 130_000),
+        "3xlarge": (250_000, 200_000),
+        "6xlarge": (500_000, 400_000),
+        "12xlarge": (1_000_000, 800_000),
+        "24xlarge": (2_000_000, 1_600_000),
+        "metal": (2_000_000, 1_600_000),
+    },
+    "i4g": {
+        "large": (31_250, 25_000),
+        "xlarge": (62_500, 50_000),
+        "2xlarge": (125_000, 100_000),
+        "4xlarge": (250_000, 200_000),
+        "8xlarge": (500_000, 400_000),
+        "16xlarge": (1_000_000, 800_000),
+    },
+    "i4i": {
+        "large": (50_000, 27_500),
+        "xlarge": (100_000, 55_000),
+        "2xlarge": (200_000, 110_000),
+        "4xlarge": (400_000, 220_000),
+        "8xlarge": (800_000, 440_000),
+        "12xlarge": (1_200_000, 660_000),
+        "16xlarge": (1_600_000, 880_000),
+        "24xlarge": (2_400_000, 1_320_000),
+        "32xlarge": (3_200_000, 1_760_000),
+        "metal": (3_200_000, 1_760_000),
+    },
+    "i7i": {
+        "large": (75_000, 41_250),
+        "xlarge": (150_000, 82_500),
+        "2xlarge": (300_000, 165_000),
+        "4xlarge": (600_000, 330_000),
+        "8xlarge": (1_200_000, 660_000),
+        "12xlarge": (1_800_000, 990_000),
+        "16xlarge": (2_400_000, 1_320_000),
+        "24xlarge": (3_600_000, 1_980_000),
+        "48xlarge": (7_200_000, 3_960_000),
+        "metal-24xl": (3_600_000, 1_980_000),
+        "metal-48xl": (7_200_000, 3_960_000),
+    },
+    "i7ie": {
+        "large": (54_166, 43_333),
+        "xlarge": (108_333, 86_666),
+        "2xlarge": (216_666, 173_332),
+        "3xlarge": (325_000, 260_000),
+        "6xlarge": (650_000, 520_000),
+        "12xlarge": (1_300_000, 1_040_000),
+        "18xlarge": (1_950_000, 1_560_000),
+        "24xlarge": (2_600_000, 2_080_000),
+        "48xlarge": (5_200_000, 4_160_000),
+        "metal-24xl": (2_600_000, 2_080_000),
+        "metal-48xl": (5_200_000, 4_160_000),
+    },
+    "i8g": {
+        "large": (75_000, 41_250),
+        "xlarge": (150_000, 82_500),
+        "2xlarge": (300_000, 165_000),
+        "4xlarge": (600_000, 330_000),
+        "8xlarge": (1_200_000, 660_000),
+        "12xlarge": (1_800_000, 990_000),
+        "16xlarge": (2_400_000, 1_320_000),
+        "24xlarge": (3_600_000, 1_980_000),
+        "48xlarge": (7_200_000, 3_960_000),
+        "metal-24xl": (3_600_000, 1_980_000),
+        "metal-48xl": (7_200_000, 3_960_000),
+    },
+    "i8ge": {
+        "large": (54_166, 43_333),
+        "xlarge": (108_333, 86_666),
+        "2xlarge": (216_666, 173_332),
+        "3xlarge": (325_000, 260_000),
+        "6xlarge": (650_000, 520_000),
+        "12xlarge": (1_300_000, 1_040_000),
+        "18xlarge": (1_950_000, 1_560_000),
+        "24xlarge": (2_600_000, 2_080_000),
+        "48xlarge": (5_200_000, 4_160_000),
+        "metal-24xl": (2_600_000, 2_080_000),
+        "metal-48xl": (5_200_000, 4_160_000),
+    },
+    "im4gn": {
+        "large": (31_250, 25_000),
+        "xlarge": (62_500, 50_000),
+        "2xlarge": (125_000, 100_000),
+        "4xlarge": (250_000, 200_000),
+        "8xlarge": (500_000, 400_000),
+        "16xlarge": (1_000_000, 800_000),
+    },
+    "is4gen": {
+        "medium": (31_250, 25_000),
+        "large": (62_500, 50_000),
+        "xlarge": (125_000, 100_000),
+        "2xlarge": (250_000, 200_000),
+        "4xlarge": (500_000, 400_000),
+        "8xlarge": (1_000_000, 800_000),
+    },
+    "m5ad": {
+        "large": (30_000, 15_000),
+        "xlarge": (59_000, 29_000),
+        "2xlarge": (117_000, 57_000),
+        "4xlarge": (234_000, 114_000),
+        "8xlarge": (466_666, 233_334),
+        "12xlarge": (700_000, 340_000),
+        "16xlarge": (933_332, 466_668),
+        "24xlarge": (1_400_000, 680_000),
+    },
+    "m5d": {
+        "large": (30_000, 15_000),
+        "xlarge": (59_000, 29_000),
+        "2xlarge": (117_000, 57_000),
+        "4xlarge": (234_000, 114_000),
+        "8xlarge": (466_666, 233_334),
+        "12xlarge": (700_000, 340_000),
+        "16xlarge": (933_332, 466_668),
+        "24xlarge": (1_400_000, 680_000),
+        "metal": (1_400_000, 680_000),
+    },
+    "m5dn": {
+        "large": (29_000, 14_500),
+        "xlarge": (58_000, 29_000),
+        "2xlarge": (116_000, 58_000),
+        "4xlarge": (232_000, 116_000),
+        "8xlarge": (464_000, 232_000),
+        "12xlarge": (700_000, 350_000),
+        "16xlarge": (930_000, 465_000),
+        "24xlarge": (1_400_000, 700_000),
+        "metal": (1_400_000, 700_000),
+    },
+    "m6gd": {
+        "medium": (13_438, 5_625),
+        "large": (26_875, 11_250),
+        "xlarge": (53_750, 22_500),
+        "2xlarge": (107_500, 45_000),
+        "4xlarge": (215_000, 90_000),
+        "8xlarge": (430_000, 180_000),
+        "12xlarge": (645_000, 270_000),
+        "16xlarge": (860_000, 360_000),
+        "metal": (860_000, 360_000),
+    },
+    "m6id": {
+        "large": (33_542, 16_771),
+        "xlarge": (67_083, 33_542),
+        "2xlarge": (134_167, 67_084),
+        "4xlarge": (268_333, 134_167),
+        "8xlarge": (536_666, 268_334),
+        "12xlarge": (804_998, 402_500),
+        "16xlarge": (1_073_332, 536_668),
+        "24xlarge": (1_609_996, 805_000),
+        "32xlarge": (2_146_664, 1_073_336),
+        "metal": (2_146_664, 1_073_336),
+    },
+    "m6idn": {
+        "large": (33_542, 16_771),
+        "xlarge": (67_083, 33_542),
+        "2xlarge": (134_167, 67_084),
+        "4xlarge": (268_333, 134_167),
+        "8xlarge": (536_666, 268_334),
+        "12xlarge": (804_998, 402_500),
+        "16xlarge": (1_073_332, 536_668),
+        "24xlarge": (1_609_996, 805_000),
+        "32xlarge": (2_146_664, 1_073_336),
+        "metal": (2_146_664, 1_073_336),
+    },
+    "m7gd": {
+        "medium": (16_771, 8_385),
+        "large": (33_542, 16_771),
+        "xlarge": (67_083, 33_542),
+        "2xlarge": (134_167, 67_084),
+        "4xlarge": (268_333, 134_167),
+        "8xlarge": (536_666, 268_334),
+        "12xlarge": (804_998, 402_500),
+        "16xlarge": (1_073_332, 536_668),
+        "metal": (1_073_332, 536_668),
+    },
+    "m8gd": {
+        "medium": (16_771, 8_385),
+        "large": (33_542, 16_771),
+        "xlarge": (67_083, 33_542),
+        "2xlarge": (134_167, 67_084),
+        "4xlarge": (268_333, 134_167),
+        "8xlarge": (536_666, 268_334),
+        "12xlarge": (804_999, 402_501),
+        "16xlarge": (1_073_332, 536_668),
+        "24xlarge": (1_609_998, 805_002),
+        "48xlarge": (3_219_996, 1_610_004),
+        "metal-24xl": (1_609_998, 805_002),
+        "metal-48xl": (3_219_996, 1_610_004),
+    },
+    "m8id": {
+        "large": (33_542, 16_771),
+        "xlarge": (67_083, 33_542),
+        "2xlarge": (134_167, 67_084),
+        "4xlarge": (268_333, 134_167),
+        "8xlarge": (536_666, 268_334),
+        "12xlarge": (804_999, 402_501),
+        "16xlarge": (1_073_332, 536_668),
+        "24xlarge": (1_609_998, 805_002),
+        "32xlarge": (2_146_664, 1_073_336),
+        "48xlarge": (3_219_996, 1_610_004),
+        "96xlarge": (6_439_992, 3_220_008),
+        "metal-48xl": (3_219_996, 1_610_004),
+        "metal-96xl": (6_439_992, 3_220_008),
+    },
+    "m8idb": {
+        "large": (33_542, 16_771),
+        "xlarge": (67_083, 33_542),
+        "2xlarge": (134_167, 67_084),
+        "4xlarge": (268_333, 134_167),
+        "8xlarge": (536_666, 268_334),
+        "12xlarge": (804_999, 402_501),
+        "16xlarge": (1_073_332, 536_668),
+        "24xlarge": (1_609_998, 805_002),
+        "32xlarge": (2_146_664, 1_073_336),
+        "48xlarge": (3_219_996, 1_610_004),
+        "96xlarge": (6_439_992, 3_220_008),
+        "metal-48xl": (3_219_996, 1_610_004),
+        "metal-96xl": (6_439_992, 3_220_008),
+    },
+    "m8idn": {
+        "large": (33_542, 16_771),
+        "xlarge": (67_083, 33_542),
+        "2xlarge": (134_167, 67_084),
+        "4xlarge": (268_333, 134_167),
+        "8xlarge": (536_666, 268_334),
+        "12xlarge": (804_999, 402_501),
+        "16xlarge": (1_073_332, 536_668),
+        "24xlarge": (1_609_998, 805_002),
+        "32xlarge": (2_146_664, 1_073_336),
+        "48xlarge": (3_219_996, 1_610_004),
+        "96xlarge": (6_439_992, 3_220_008),
+        "metal-48xl": (3_219_996, 1_610_004),
+        "metal-96xl": (6_439_992, 3_220_008),
+    },
+    "m9gd": {
+        "medium": (21_802, 10_901),
+        "large": (43_604, 21_802),
+        "xlarge": (87_207, 43_604),
+        "2xlarge": (174_417, 87_209),
+        "4xlarge": (348_832, 174_417),
+        "8xlarge": (697_665, 348_834),
+        "12xlarge": (1_046_496, 523_251),
+        "16xlarge": (1_395_331, 697_668),
+        "24xlarge": (2_092_995, 1_046_502),
+        "48xlarge": (4_185_993, 2_093_004),
+        "metal-48xl": (4_185_993, 2_093_004),
+    },
+    "mac-m4": {"metal": (550_000, 275_000)},
+    "mac-m4pro": {"metal": (550_000, 275_000)},
+    "p3dn": {"24xlarge": (700_000, 340_000)},
+    "p4d": {"24xlarge": (2_000_000, 1_600_000)},
+    "p4de": {"24xlarge": (2_000_000, 1_600_000)},
+    "p5": {"4xlarge": (550_000, 275_000), "48xlarge": (4_400_000, 2_200_000)},
+    "p5e": {"48xlarge": (4_400_000, 2_200_000)},
+    "p5en": {"48xlarge": (4_400_000, 2_200_000)},
+    "p6-b200": {"48xlarge": (4_400_000, 2_200_000)},
+    "p6-b300": {"48xlarge": (4_400_000, 2_200_000)},
+    "p6e-gb200": {"36xlarge": (2_550_000, 2_400_000)},
+    "r5ad": {
+        "large": (30_000, 15_000),
+        "xlarge": (59_000, 29_000),
+        "2xlarge": (117_000, 57_000),
+        "4xlarge": (234_000, 114_000),
+        "8xlarge": (466_666, 233_334),
+        "12xlarge": (700_000, 340_000),
+        "16xlarge": (933_332, 466_668),
+        "24xlarge": (1_400_000, 680_000),
+    },
+    "r5d": {
+        "large": (30_000, 15_000),
+        "xlarge": (59_000, 29_000),
+        "2xlarge": (117_000, 57_000),
+        "4xlarge": (234_000, 114_000),
+        "8xlarge": (466_666, 233_334),
+        "12xlarge": (700_000, 340_000),
+        "16xlarge": (933_332, 466_668),
+        "24xlarge": (1_400_000, 680_000),
+        "metal": (1_400_000, 680_000),
+    },
+    "r5dn": {
+        "large": (29_000, 14_500),
+        "xlarge": (58_000, 29_000),
+        "2xlarge": (116_000, 58_000),
+        "4xlarge": (232_000, 116_000),
+        "8xlarge": (464_000, 232_000),
+        "12xlarge": (700_000, 350_000),
+        "16xlarge": (930_000, 465_000),
+        "24xlarge": (1_400_000, 700_000),
+        "metal": (1_400_000, 700_000),
+    },
+    "r6gd": {
+        "medium": (13_438, 5_625),
+        "large": (26_875, 11_250),
+        "xlarge": (53_750, 22_500),
+        "2xlarge": (107_500, 45_000),
+        "4xlarge": (215_000, 90_000),
+        "8xlarge": (430_000, 180_000),
+        "12xlarge": (645_000, 270_000),
+        "16xlarge": (860_000, 360_000),
+        "metal": (860_000, 360_000),
+    },
+    "r6id": {
+        "large": (33_542, 16_771),
+        "xlarge": (67_083, 33_542),
+        "2xlarge": (134_167, 67_084),
+        "4xlarge": (268_333, 134_167),
+        "8xlarge": (536_666, 268_334),
+        "12xlarge": (804_998, 402_500),
+        "16xlarge": (1_073_332, 536_668),
+        "24xlarge": (1_609_996, 805_000),
+        "32xlarge": (2_146_664, 1_073_336),
+        "metal": (2_146_664, 1_073_336),
+    },
+    "r6idn": {
+        "large": (33_542, 16_771),
+        "xlarge": (67_083, 33_542),
+        "2xlarge": (134_167, 67_084),
+        "4xlarge": (268_333, 134_167),
+        "8xlarge": (536_666, 268_334),
+        "12xlarge": (804_998, 402_500),
+        "16xlarge": (1_073_332, 536_668),
+        "24xlarge": (1_609_996, 805_000),
+        "32xlarge": (2_146_664, 1_073_336),
+        "metal": (2_146_664, 1_073_336),
+    },
+    "r7gd": {
+        "medium": (16_771, 8_385),
+        "large": (33_542, 16_771),
+        "xlarge": (67_083, 33_542),
+        "2xlarge": (134_167, 67_084),
+        "4xlarge": (268_333, 134_167),
+        "8xlarge": (536_666, 268_334),
+        "12xlarge": (804_998, 402_500),
+        "16xlarge": (1_073_332, 536_668),
+        "metal": (1_073_332, 536_668),
+    },
+    "r8gd": {
+        "medium": (16_771, 8_385),
+        "large": (33_542, 16_771),
+        "xlarge": (67_083, 33_542),
+        "2xlarge": (134_167, 67_084),
+        "4xlarge": (268_333, 134_167),
+        "8xlarge": (536_666, 268_334),
+        "12xlarge": (804_999, 402_501),
+        "16xlarge": (1_073_332, 536_668),
+        "24xlarge": (1_609_998, 805_002),
+        "48xlarge": (3_219_996, 1_610_004),
+        "metal-24xl": (1_609_998, 805_002),
+        "metal-48xl": (3_219_996, 1_610_004),
+    },
+    "r8id": {
+        "large": (33_542, 16_771),
+        "xlarge": (67_083, 33_542),
+        "2xlarge": (134_167, 67_084),
+        "4xlarge": (268_333, 134_167),
+        "8xlarge": (536_666, 268_334),
+        "12xlarge": (804_999, 402_501),
+        "16xlarge": (1_073_332, 536_668),
+        "24xlarge": (1_609_998, 805_002),
+        "32xlarge": (2_146_664, 1_073_336),
+        "48xlarge": (3_219_996, 1_610_004),
+        "96xlarge": (6_439_992, 3_220_008),
+        "metal-48xl": (3_219_996, 1_610_004),
+        "metal-96xl": (6_439_992, 3_220_008),
+    },
+    "r8idb": {
+        "large": (33_542, 16_771),
+        "xlarge": (67_083, 33_542),
+        "2xlarge": (134_167, 67_084),
+        "4xlarge": (268_333, 134_167),
+        "8xlarge": (536_666, 268_334),
+        "12xlarge": (804_999, 402_501),
+        "16xlarge": (1_073_332, 536_668),
+        "24xlarge": (1_609_998, 805_002),
+        "32xlarge": (2_146_664, 1_073_336),
+        "48xlarge": (3_219_996, 1_610_004),
+        "96xlarge": (6_439_992, 3_220_008),
+        "metal-48xl": (3_219_996, 1_610_004),
+        "metal-96xl": (6_439_992, 3_220_008),
+    },
+    "r8idn": {
+        "large": (33_542, 16_771),
+        "xlarge": (67_083, 33_542),
+        "2xlarge": (134_167, 67_084),
+        "4xlarge": (268_333, 134_167),
+        "8xlarge": (536_666, 268_334),
+        "12xlarge": (804_999, 402_501),
+        "16xlarge": (1_073_332, 536_668),
+        "24xlarge": (1_609_998, 805_002),
+        "32xlarge": (2_146_664, 1_073_336),
+        "48xlarge": (3_219_996, 1_610_004),
+        "96xlarge": (6_439_992, 3_220_008),
+        "metal-48xl": (3_219_996, 1_610_004),
+        "metal-96xl": (6_439_992, 3_220_008),
+    },
+    "r9gd": {
+        "medium": (21_802, 10_901),
+        "large": (43_604, 21_802),
+        "xlarge": (87_207, 43_604),
+        "2xlarge": (174_417, 87_209),
+        "4xlarge": (348_832, 174_417),
+        "8xlarge": (697_665, 348_834),
+        "12xlarge": (1_046_496, 523_251),
+        "16xlarge": (1_395_331, 697_668),
+        "24xlarge": (2_092_995, 1_046_502),
+        "48xlarge": (4_185_993, 2_093_004),
+        "metal-48xl": (4_185_993, 2_093_004),
+    },
+    "trn1": {"2xlarge": (107_500, 45_000), "32xlarge": (1_720_000, 720_000)},
+    "trn1n": {"32xlarge": (1_720_000, 720_000)},
+    "trn2": {"3xlarge": (107_500, 45_000), "48xlarge": (1_720_000, 720_000)},
+    "trn2u": {"48xlarge": (1_720_000, 720_000)},
+    "x2gd": {
+        "medium": (13_438, 5_625),
+        "large": (26_875, 11_250),
+        "xlarge": (53_750, 22_500),
+        "2xlarge": (107_500, 45_000),
+        "4xlarge": (215_000, 90_000),
+        "8xlarge": (430_000, 180_000),
+        "12xlarge": (645_000, 270_000),
+        "16xlarge": (860_000, 360_000),
+        "metal": (860_000, 360_000),
+    },
+    "x2idn": {
+        "16xlarge": (430_000, 180_000),
+        "24xlarge": (645_000, 270_000),
+        "32xlarge": (860_000, 360_000),
+        "metal": (860_000, 360_000),
+    },
+    "x2iedn": {
+        "xlarge": (26_875, 11_250),
+        "2xlarge": (53_750, 22_500),
+        "4xlarge": (107_500, 45_000),
+        "8xlarge": (215_000, 90_000),
+        "16xlarge": (430_000, 180_000),
+        "24xlarge": (645_000, 270_000),
+        "32xlarge": (860_000, 360_000),
+        "metal": (860_000, 360_000),
+    },
+    "x8aedz": {
+        "large": (44_722, 22_361),
+        "xlarge": (89_444, 44_722),
+        "3xlarge": (268_333, 134_167),
+        "6xlarge": (536_666, 268_334),
+        "12xlarge": (1_073_332, 536_668),
+        "24xlarge": (2_146_664, 1_073_336),
+        "metal-12xl": (1_073_332, 536_668),
+        "metal-24xl": (2_146_664, 1_073_336),
+    },
+    "z1d": {
+        "large": (30_000, 15_000),
+        "xlarge": (59_000, 29_000),
+        "2xlarge": (117_000, 57_000),
+        "3xlarge": (175_000, 75_000),
+        "6xlarge": (350_000, 170_000),
+        "12xlarge": (700_000, 340_000),
+        "metal": (700_000, 340_000),
+    },
+}
+# families listed in the docs tables without IOPS (HDD or previous generation)
+_INSTANCE_STORE_IOPS_NOT_PUBLISHED = {
+    *("c1", "c3", "d2", "d3", "d3en", "h1", "i2"),
+    *("m1", "m2", "m3", "r3", "x1", "x1e"),
+}
+
+
+@cache
+def _warn_unknown_instance_store_iops(instance_type: str) -> None:
+    """Warn about an instance type missing from the IOPS table, once per run."""
+    logger.warning(
+        f"Unknown AWS instance store IOPS of {instance_type}, leaving storage speed empty."
+    )
+
+
+def _get_instance_store_iops(instance_type) -> Tuple[Optional[int], Optional[int]]:
+    """Documented (read IOPS, write IOPS) of the instance store volumes."""
+    if "InstanceStorageInfo" not in instance_type:
+        return (None, None)
+    family, size = instance_type["InstanceType"].split(".", 1)
+    iops = _INSTANCE_STORE_IOPS.get(family, {}).get(size)
+    if iops is None:
+        if family not in _INSTANCE_STORE_IOPS_NOT_PUBLISHED:
+            _warn_unknown_instance_store_iops(instance_type["InstanceType"])
+        return (None, None)
+    return iops
 
 
 # The API reports Trainium2 memory as 512 GiB per device (8 TiB in total on
@@ -881,6 +1604,7 @@ def _make_server_from_instance_type(instance_type, vendor) -> dict:
     storage_info = _get_storage_of_instance_type(instance_type)
     network_baseline_gbps, network_max_gbps = _get_network_speed_gbps(instance_type)
     ebs_baseline_gbps, ebs_max_gbps = _get_ebs_network_speed_gbps(instance_type)
+    instance_store_iops = _get_instance_store_iops(instance_type)
     return {
         "server_id": it,
         "vendor_id": vendor.vendor_id,
@@ -910,7 +1634,12 @@ def _make_server_from_instance_type(instance_type, vendor) -> dict:
         "accelerators": _get_gpus_of_instance_type(instance_type),
         "storage_size": storage_info[0],
         "storage_type": storage_info[1],
-        "storages": _get_storages_of_instance_type(instance_type),
+        "storages": _get_storages_of_instance_type(instance_type, instance_store_iops),
+        "storage_read_iops_max": instance_store_iops[0],
+        "storage_write_iops_max": instance_store_iops[1],
+        # throughput is not documented for instance store volumes
+        "storage_read_throughput_max": None,
+        "storage_write_throughput_max": None,
         "network_speed_baseline": network_baseline_gbps,
         "network_speed_max": network_max_gbps,
         "network_storage_speed_baseline": ebs_baseline_gbps,
@@ -2665,7 +3394,8 @@ def inventory_databases(vendor):
     """List all available AWS RDS PostgreSQL instance types via `boto3` calls.
 
     Lifecycle (`DescribeOrderableDBInstanceOptions`): no orderable options ->
-    RETIRED; otherwise ACTIVE.
+    RETIRED, with the retirement date from `_AWS_RDS_RETIREMENT_RULES`;
+    otherwise ACTIVE.
     """
     vendor.progress_tracker.start_task(name="Searching for database(s)", total=None)
     prices_by_region, deployment_options_by_database = (
@@ -2853,6 +3583,13 @@ def inventory_databases(vendor):
                     # Multi-AZ SLO 99.95%; Single-AZ SLO 99.5% (credit tables).
                     "sla": 99.95 if multi_az or readable else 99.5,
                     "status": status,
+                    "retirement_date": (
+                        retirement_date_from_rules(
+                            database_id, _AWS_RDS_RETIREMENT_RULES
+                        )
+                        if status in (Status.PLANNED_FOR_RETIREMENT, Status.RETIRED)
+                        else None
+                    ),
                 }
             )
         vendor.progress_tracker.advance_task()

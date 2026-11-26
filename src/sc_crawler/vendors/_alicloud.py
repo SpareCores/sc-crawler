@@ -2,15 +2,16 @@
 
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from functools import cache
 from itertools import chain
 from logging import CRITICAL, INFO, WARN, getLogger
 from os import environ
 from random import shuffle
+from re import compile as recompile
 from re import sub
 from time import time
-from typing import Optional
+from typing import List, Optional
 
 from alibabacloud_bssopenapi20171214.client import Client as BssClient
 from alibabacloud_bssopenapi20171214.models import QuerySkuPriceListRequest
@@ -46,6 +47,7 @@ from ..table_fields import (
     Allocation,
     CpuAllocation,
     CpuArchitecture,
+    Disk,
     PriceUnit,
     Status,
     StorageType,
@@ -55,7 +57,9 @@ from ..tables import ServerPrice, Vendor
 from ..utils import _GIB_TO_GB, _HOURS_PER_MONTH, jsoned_hash
 from ..vendor_helpers import (
     get_region_by_id,
+    retirement_date_from_rules,
     server_status_from_availability_categories,
+    split_disk_speed,
 )
 
 # StatusCategory values:
@@ -1117,6 +1121,174 @@ def _warn_unknown_category(instance_type_id: str) -> None:
     )
 
 
+# Maximum speed of the local disks bundled with an instance type as
+# (read IOPS, write IOPS, read MB/s, write MB/s), from the "Local disks" section
+# (GB/s x 1000) of https://www.alibabacloud.com/help/en/ecs/user-guide/block-storage-performance
+# Most families publish read IOPS only. Instance types missing from the docs are
+# left empty: the speed does not scale with the number of disks (e.g. the 8-disk
+# ecs.i2.16xlarge has 1.5M read IOPS, not 8 x 300k), and variants with the same
+# disks as a listed type (e.g. ecs.i4-inc.32xlarge) can have different speeds.
+_LOCAL_DISK_SPEED = {
+    "ecs.i5e.2xlarge": (1_400_000, None, 7_000, 4_500),
+    "ecs.i5e.4xlarge": (2_900_000, None, 14_000, 9_000),
+    "ecs.i5e.8xlarge": (5_800_000, None, 28_000, 18_000),
+    "ecs.i5e.12xlarge": (8_700_000, None, 42_000, 27_000),
+    "ecs.i5e.16xlarge": (11_600_000, None, 56_000, 36_000),
+    "ecs.i5e.32xlarge": (23_200_000, None, 112_000, 72_000),
+    "ecs.i5.xlarge": (700_000, None, 3_500, 2_000),
+    "ecs.i5.2xlarge": (1_400_000, None, 7_000, 4_000),
+    "ecs.i5.4xlarge": (2_900_000, None, 14_000, 8_000),
+    "ecs.i5.8xlarge": (5_800_000, None, 28_000, 16_000),
+    "ecs.i5.12xlarge": (8_700_000, None, 42_000, 24_000),
+    "ecs.i5.16xlarge": (11_800_000, None, 56_000, 32_000),
+    "ecs.i5g.8xlarge": (1_400_000, None, 7_000, 4_000),
+    "ecs.i5g.16xlarge": (2_900_000, None, 14_000, 8_000),
+    "ecs.i5ge.3xlarge": (1_400_000, None, 7_000, 4_000),
+    "ecs.i5ge.6xlarge": (2_900_000, None, 14_000, 8_000),
+    "ecs.i5ge.12xlarge": (5_800_000, None, 28_000, 16_000),
+    "ecs.i5ge.24xlarge": (11_800_000, None, 56_000, 32_000),
+    "ecs.i4.large": (112_500, None, 750, 375),
+    "ecs.i4.xlarge": (225_000, None, 1_500, 750),
+    "ecs.i4.2xlarge": (450_000, None, 3_000, 1_500),
+    "ecs.i4.4xlarge": (900_000, None, 6_000, 3_000),
+    "ecs.i4.8xlarge": (1_800_000, None, 12_000, 6_000),
+    "ecs.i4.16xlarge": (3_600_000, None, 24_000, 12_000),
+    "ecs.i4.32xlarge": (7_200_000, None, 48_000, 24_000),
+    **{
+        f"ecs.{family}.{size}": speed
+        for family in ("i4g", "i4r")
+        for size, speed in {
+            "4xlarge": (250_000, None, 1_500, 1_000),
+            "8xlarge": (500_000, None, 3_000, 2_000),
+            "16xlarge": (1_000_000, None, 6_000, 4_000),
+            "32xlarge": (2_000_000, None, 12_000, 8_000),
+        }.items()
+    },
+    "ecs.i3.xlarge": (250_000, None, 1_500, 1_000),
+    "ecs.i3.2xlarge": (500_000, None, 3_000, 2_000),
+    "ecs.i3.4xlarge": (1_000_000, None, 6_000, 4_000),
+    "ecs.i3.8xlarge": (2_000_000, None, 12_000, 8_000),
+    "ecs.i3.13xlarge": (3_000_000, None, 18_000, 12_000),
+    "ecs.i3.26xlarge": (6_000_000, None, 36_000, 24_000),
+    "ecs.i3g.2xlarge": (125_000, None, 750, 500),
+    "ecs.i3g.4xlarge": (250_000, None, 1_500, 1_000),
+    "ecs.i3g.8xlarge": (500_000, None, 3_000, 2_000),
+    "ecs.i3g.13xlarge": (750_000, None, 4_500, 3_000),
+    "ecs.i3g.26xlarge": (1_500_000, None, 9_000, 6_000),
+    # i2ne and i2gne share one table, with i2gne one size up
+    "ecs.i2ne.xlarge": (250_000, None, 1_500, 1_000),
+    "ecs.i2gne.2xlarge": (250_000, None, 1_500, 1_000),
+    "ecs.i2ne.2xlarge": (500_000, None, 3_000, 2_000),
+    "ecs.i2gne.4xlarge": (500_000, None, 3_000, 2_000),
+    "ecs.i2ne.4xlarge": (1_000_000, None, 6_000, 4_000),
+    "ecs.i2gne.8xlarge": (1_000_000, None, 6_000, 4_000),
+    "ecs.i2ne.8xlarge": (2_000_000, None, 12_000, 8_000),
+    "ecs.i2gne.16xlarge": (2_000_000, None, 12_000, 8_000),
+    "ecs.i2ne.16xlarge": (4_000_000, None, 24_000, 16_000),
+    # i2 and i2g: per disk (894 GiB: 150k IOPS, 1 / 0.5 GB/s; 1,788 GiB: 300k,
+    # 2 / 1 GB/s), and the overall speed of ecs.i2.16xlarge only. With more
+    # disks, throughput adds up per disk, but IOPS is not published.
+    "ecs.i2.xlarge": (150_000, None, 1_000, 500),
+    "ecs.i2g.2xlarge": (150_000, None, 1_000, 500),
+    "ecs.i2.2xlarge": (300_000, None, 2_000, 1_000),
+    "ecs.i2g.4xlarge": (300_000, None, 2_000, 1_000),
+    "ecs.i2.4xlarge": (None, None, 4_000, 2_000),
+    "ecs.i2g.8xlarge": (None, None, 4_000, 2_000),
+    "ecs.i2.8xlarge": (None, None, 8_000, 4_000),
+    "ecs.i2g.16xlarge": (None, None, 8_000, 4_000),
+    "ecs.i2.16xlarge": (1_500_000, None, 16_000, 8_000),
+    "ecs.d3c.3xlarge": (100_000, None, 4_000, 2_000),
+    "ecs.d3c.7xlarge": (200_000, None, 8_000, 4_000),
+    "ecs.d3c.14xlarge": (400_000, None, 16_000, 8_000),
+}
+# i2 and i2g per disk speed by disk capacity (GiB), from the same docs table:
+# used for the disk entries instead of splitting the instance totals
+_LOCAL_DISK_SPEED_PER_DISK = {
+    "ecs.i2": {
+        894: (150_000, None, 1_000, 500),
+        1788: (300_000, None, 2_000, 1_000),
+    },
+}
+_LOCAL_DISK_SPEED_PER_DISK["ecs.i2g"] = _LOCAL_DISK_SPEED_PER_DISK["ecs.i2"]
+# SATA HDD families publish one throughput figure per disk (no read/write
+# split, stored as read), the overall figures are the same x number of disks
+_LOCAL_HDD_READ_MBPS_PER_DISK = {
+    "ecs.d1": 190,
+    "ecs.d1ne": 190,
+    "ecs.d2c": 190,
+    "ecs.d2s": 190,
+    "ecs.d3s": 260,
+}
+
+
+@cache
+def _warn_unknown_local_disk_speed(instance_type_id: str) -> None:
+    """Warn about an instance type without documented local disk speed, once per run."""
+    logger.warning(
+        f"Unknown Alibaba Cloud local disk speed of {instance_type_id}, "
+        "leaving storage speed empty."
+    )
+
+
+def _local_disk_speed(instance_type: dict) -> tuple:
+    """(read IOPS, write IOPS, read MB/s, write MB/s) of the bundled local disks."""
+    disks = instance_type.get("LocalStorageAmount", 0)
+    if not disks:
+        return (None, None, None, None)
+    type_id = instance_type["InstanceTypeId"]
+    family = instance_type.get("InstanceTypeFamily")
+    if type_id in _LOCAL_DISK_SPEED:
+        return _LOCAL_DISK_SPEED[type_id]
+    if family in _LOCAL_HDD_READ_MBPS_PER_DISK:
+        return (None, None, _LOCAL_HDD_READ_MBPS_PER_DISK[family] * disks, None)
+    if family == "ecs.i1":
+        # per disk formula of the docs, by capacity (GiB)
+        gib = instance_type.get("LocalStorageCapacity", 0)
+        if not gib:
+            _warn_unknown_local_disk_speed(type_id)
+            return (None, None, None, None)
+        iops = min(165 * gib, 240_000) * disks
+        return (
+            iops,
+            iops,
+            round(min(1.4 * gib, 2_000) * disks),
+            round(min(0.85 * gib, 1_200) * disks),
+        )
+    _warn_unknown_local_disk_speed(type_id)
+    return (None, None, None, None)
+
+
+def _local_disks(instance_type: dict, storage_type, speed: tuple) -> List[Disk]:
+    """One entry per identical local disk.
+
+    Speed from the documented per-disk figures if any, else the instance totals
+    split evenly.
+    """
+    disks = instance_type.get("LocalStorageAmount", 0)
+    if not disks or not storage_type:
+        return []
+    # LocalStorageCapacity is GiB per disk
+    gib = instance_type.get("LocalStorageCapacity", 0)
+    size = round(gib * _GIB_TO_GB)
+    per_disk = _LOCAL_DISK_SPEED_PER_DISK.get(
+        instance_type.get("InstanceTypeFamily"), {}
+    ).get(gib)
+    read_iops, write_iops, read_mbps, write_mbps = per_disk or (
+        split_disk_speed(total, disks) for total in speed
+    )
+    return [
+        Disk(
+            size=size,
+            storage_type=storage_type,
+            read_iops_max=read_iops,
+            write_iops_max=write_iops,
+            read_throughput_max=read_mbps,
+            write_throughput_max=write_mbps,
+        )
+        for _ in range(disks)
+    ]
+
+
 # `InstanceCategory` spelling of the API changed to match the other vendors: hyphens
 # are replaced by a space and the word after is capitalized (General-purpose ->
 # General Purpose, Compute-optimized with GPU -> Compute Optimized with GPU), plus the
@@ -1131,6 +1303,25 @@ def _category_spelling(category: str) -> str:
         return _CATEGORY_SPELLING[category]
     return sub(r"-(\w)", lambda match: " " + match.group(1).upper(), category)
 
+
+# Documented end of service dates of instance types, used as the retirement date
+# of the PLANNED_FOR_RETIREMENT and RETIRED ones (the APIs return no dates). The
+# retired families of the docs have no dates, and the 2023-10-30 end of sale of
+# the s6, n4, mn4, xn4 and e4 families applies only to the China regions
+# (https://www.alibabacloud.com/notice/ecs20230927), so these are not listed.
+# https://www.alibabacloud.com/help/en/ecs/user-guide/retired-instance-types
+# Rule format: (compiled regex on the instance type, retirement date).
+_ALICLOUD_RETIREMENT_RULES = (
+    # https://www.alibabacloud.com/en/notice/product_change_notification_of_termination_and_migration_of_some_gpu_cloud_server_specifications_6e0
+    (
+        recompile(
+            r"^ecs\.(ga1|gn4|vgn5i|gn5t|ebmgi6s|sgn6ia|vgn6ia|sgn6i-vws|vgn6i|vgn6i-vws)\..*$"
+        ),
+        date(2026, 10, 1),
+    ),
+    # https://www.alibabacloud.com/en/notice/product_changeinstance_offline_announcement_for_ecsebmc48xlarge_and_ecsebmhfg52xlarge_6cc
+    (recompile(r"^ecs\.(ebmc4\.8xlarge|ebmhfg5\.2xlarge)$"), date(2026, 9, 15)),
+)
 
 # The API returns no `InstanceCategory` for these retired families, so the category
 # comes from the docs, written as the API does for the current families (`Shared` for
@@ -1591,7 +1782,8 @@ def inventory_servers(vendor):
     Lifecycle (`DescribeAvailableResource` `StatusCategory`): WithStock and
     WithoutStock (out of stock, but replenished) -> ACTIVE,
     ClosedWithStock -> PLANNED_FOR_RETIREMENT, ClosedWithoutStock -> RETIRED;
-    missing in availability response -> INACTIVE.
+    missing in availability response -> INACTIVE. The retirement date of the
+    PLANNED_FOR_RETIREMENT and RETIRED ones is from `_ALICLOUD_RETIREMENT_RULES`.
     """
     instance_types = _get_instance_types()
     gpu_memory_by_spec = _gpu_memory_by_spec(instance_types)
@@ -1683,6 +1875,9 @@ def inventory_servers(vendor):
             / 1000**3
         )
         storage_type = STORAGE_CATEGORY_MAP[instance_type["LocalStorageCategory"]]
+        # no speed without known local disks (the storages list stays empty)
+        disk_speed = _local_disk_speed(instance_type) if storage_type else (None,) * 4
+        read_iops, write_iops, read_mbps, write_mbps = disk_speed
         gpu_count = _standardize_gpu_count(
             instance_type["GPUSpec"], instance_type.get("GPUAmount", 0)
         )
@@ -1809,7 +2004,11 @@ def inventory_servers(vendor):
                 "accelerators": [],
                 "storage_size": storage_size,
                 "storage_type": storage_type,
-                "storages": [],
+                "storages": _local_disks(instance_type, storage_type, disk_speed),
+                "storage_read_iops_max": read_iops,
+                "storage_write_iops_max": write_iops,
+                "storage_read_throughput_max": read_mbps,
+                "storage_write_throughput_max": write_mbps,
                 "compatible_storage_ids": compatible_storage_ids,
                 # TODO: have to implement manual mapping here too, no detailed
                 # network info available for every instance type in API response
@@ -1818,6 +2017,11 @@ def inventory_servers(vendor):
                 "outbound_traffic": 0,
                 "ipv4": 0,
                 "status": status,
+                "retirement_date": (
+                    retirement_date_from_rules(server_id, _ALICLOUD_RETIREMENT_RULES)
+                    if status in (Status.PLANNED_FOR_RETIREMENT, Status.RETIRED)
+                    else None
+                ),
             }
         )
 

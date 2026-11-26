@@ -1,4 +1,5 @@
 from contextlib import ExitStack
+from copy import deepcopy
 from os import path
 from unittest.mock import patch
 
@@ -159,6 +160,105 @@ def test_gcp_inspector_lsblk_skips_boot_persistent_disk_by_model(
 
     assert updated["storage_size"] == 2 * partition_gb
     assert [disk.size for disk in updated["storages"]] == [partition_gb] * 2
+
+
+def _speeds(disk):
+    return (
+        disk.read_iops_max,
+        disk.write_iops_max,
+        disk.read_throughput_max,
+        disk.write_throughput_max,
+    )
+
+
+def _z4d_server_with_speed():
+    return {
+        **_z4d_server(),
+        "storage_read_iops_max": 15_600_000,
+        "storage_write_iops_max": 12_288_000,
+        "storage_read_throughput_max": 79_272,
+        "storage_write_throughput_max": 60_398,
+    }
+
+
+def _local_ssd_lsblk(count):
+    return {
+        "blockdevices": [
+            {"name": "nvme0n1", "size": 10 * 1000**3, "model": "nvme_card-pd"},
+            *(
+                {"name": f"nvme{i}n1", "size": 3500 * 1024**3, "model": "nvme_card"}
+                for i in range(1, count + 1)
+            ),
+        ]
+    }
+
+
+def test_gcp_inspected_disks_more_than_vendor_share_the_totals():
+    # inspector sees twice the vendor capacity: shares still add up to the total
+    with ExitStack() as stack:
+        _patch_missing_inspector_lookups(stack, _server_lsblk=_local_ssd_lsblk(48))
+        updated = inspect_update_server_dict(_z4d_server_with_speed())
+
+    assert len(updated["storages"]) == 48
+    assert sum(d.read_iops_max for d in updated["storages"]) == pytest.approx(
+        15_600_000, abs=48
+    )
+
+
+@pytest.mark.parametrize("count", [24, 1])
+def test_gcp_inspected_disks_share_the_vendor_speed_totals(count):
+    with ExitStack() as stack:
+        _patch_missing_inspector_lookups(stack, _server_lsblk=_local_ssd_lsblk(count))
+        updated = inspect_update_server_dict(_z4d_server_with_speed())
+
+    assert len(updated["storages"]) == count
+    # each disk gets its size share of the vendor total (24 partitions), also
+    # when the inspector sees fewer disks; exact split when all disks are seen
+    share = (
+        1 / 24
+        if count == 24
+        else ((3500 * 1024**3) // 1000**3) / round(24 * 3500 * 1024**3 / 1000**3)
+    )
+    for disk in updated["storages"]:
+        assert _speeds(disk) == (
+            round(15_600_000 * share),
+            round(12_288_000 * share),
+            round(79_272 * share),
+            round(60_398 * share),
+        )
+    assert _speeds(updated["storages"][0])[0] == pytest.approx(650_000, rel=0.001)
+    if count == 24:
+        assert _speeds(updated["storages"][0])[0] == 650_000
+    # the server totals stay the vendor-published ones
+    assert updated["storage_read_iops_max"] == 15_600_000
+
+
+def test_gcp_inspected_disks_without_vendor_speed_stay_empty():
+    with ExitStack() as stack:
+        _patch_missing_inspector_lookups(stack, _server_lsblk=_local_ssd_lsblk(2))
+        updated = inspect_update_server_dict(_z4d_server())
+
+    assert [_speeds(d) for d in updated["storages"]] == [(None,) * 4] * 2
+
+
+def test_gcp_vendor_storages_kept_without_inspector_sample():
+    server = _z4d_server_with_speed()
+    server["storages"] = [
+        {
+            **server["storages"][0],
+            "read_iops_max": 15_600_000,
+            "write_iops_max": 12_288_000,
+            "read_throughput_max": 79_272,
+            "write_throughput_max": 60_398,
+        }
+    ]
+    expected = deepcopy(server["storages"])
+    with ExitStack() as stack:
+        _patch_missing_inspector_lookups(stack)
+        updated = inspect_update_server_dict(server)
+
+    # vendor entry untouched: speed of all partitions on the single entry
+    assert updated["storages"] == expected
 
 
 def test_missing_nvidia_smi_does_not_mark_server_as_gpu():
