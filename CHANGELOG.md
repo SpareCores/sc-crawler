@@ -486,7 +486,7 @@ Fixes:
 - `ovh`: note that billing of stopped servers depends on the location (#117)
 - `azure`: outdated server prices explicitly excluded before the most recent
   record takes precedence (#117)
-- No bogus CPU cache amount for ARM servers whose hypervisor reports zero
+- ARM servers whose hypervisor reports zero no longer have a CPU cache amount
   (#117)
 
 Maintenance:
@@ -639,7 +639,7 @@ Fixes:
   workload profile (v2) scores: `geekbench`, `passmark:database_operations`,
   `passmark:memory_latency` (#92)
 - Computer vision and memory latency benchmarks removed from the mixed
-  inference workload, for an LLM-focused, more useful and fairer score (#92)
+  inference workload, leaving an LLM-focused score (#92)
 - Static web scaling caveat moved from the benchmark descriptions into the
   `note` field (#92)
 - `vultr` and `ovh`: filled and corrected `description` fields in the `Server`
@@ -826,7 +826,7 @@ Fixes:
   of griffe 0.49.0 (#56)
 - `mkdocs<2.0` pinned, as MkDocs 2.0 is incompatible with Material for MkDocs
   (#56)
-- No `mkdocs` build warnings and version incompatibilities (#56)
+- `mkdocs` builds without warnings or version incompatibilities (#56)
 
 ## v0.3.4 (February 5, 2026)
 
@@ -844,7 +844,7 @@ Fixes:
 - Vendor API data preserved by default, only overridden when necessary for
   known API data issues (#45)
 - `alicloud`: instance type retirement status verified (#47)
-- No duplicate records inserted into the database (#48)
+- Duplicate records are not inserted into the database (#48)
 
 Maintenance:
 
@@ -936,7 +936,7 @@ New features:
 Fixes:
 
 - Join references point to the right tables (#25)
-- CPU cores counted in all physical CPUs
+- CPU core count includes all physical CPUs
 - Better standardization and cleanup of the CPU manufacturer, family, and model
   (#24)
 - CPU speed extracted from the CPU description when available, instead of the
@@ -1015,7 +1015,7 @@ New features:
 
 Fixes:
 
-- `aws`: the missed outbound traffic prices (#19)
+- `aws`: missing outbound traffic prices (#19)
 - `hcloud`: outbound traffic price per GB instead of TB (#19)
 - `hcloud`: `datacenter_id` reference in the server prices table (#19)
 
