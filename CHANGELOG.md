@@ -1,5 +1,13 @@
 ## v0.12.x (DEVELOPMENT)
 
+Improvements:
+
+- PassMark Memory Mark depends on the amount of RAM free when the test started,
+  so its score can differ by up to 43% between runs, while the memory speed
+  subtests stay within about 5%. The benchmark's description and note flag
+  this. The `cache` and `data_analysis` workload profiles (now version 2.1) use
+  memory latency and uncached memory read instead of Memory Mark (#190)
+
 Fixes:
 
 - Hashing of date columns (e.g. `retirement_date`) (#197)
