@@ -5,7 +5,7 @@
 - `Server.hypervisor` is an enum instead of free text. The migration converts
   the existing values, also the historical rows of the SCD table (`nitro` →
   `NITRO`, `xen` → `XEN`, `KVM` and `QEMU` → `KVM`, `Microsoft Hyper-V` →
-  `HYPER_V`).
+  `HYPER_V`). Other values are set to empty, also in the SCD history.
 
 New feature(s):
 

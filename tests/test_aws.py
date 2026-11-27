@@ -1565,17 +1565,20 @@ def test_aws_get_products_uses_the_pricing_client():
         ("m4.large", False, "xen", Hypervisor.XEN),
         # not reported by the API: unknown
         ("m9.large", False, None, None),
+        # BareMetal not reported by the API: the reported hypervisor
+        ("m5.xlarge", None, "nitro", Hypervisor.NITRO),
     ],
 )
 def test_aws_hypervisor(instance_type, bare_metal, api_hypervisor, hypervisor):
     raw = {
         "InstanceType": instance_type,
-        "BareMetal": bare_metal,
         "VCpuInfo": {"DefaultVCpus": 2, "DefaultCores": 1},
         "ProcessorInfo": {"SupportedArchitectures": ["x86_64"]},
         "MemoryInfo": {"SizeInMiB": 8192},
         "NetworkInfo": {"NetworkPerformance": "Up to 10 Gigabit", "NetworkCards": []},
     }
+    if bare_metal is not None:
+        raw["BareMetal"] = bare_metal
     if api_hypervisor:
         raw["Hypervisor"] = api_hypervisor
     with patch.object(_aws, "_instance_family", return_value="General Purpose"):

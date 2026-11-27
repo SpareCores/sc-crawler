@@ -1619,7 +1619,7 @@ def _make_server_from_instance_type(instance_type, vendor) -> dict:
         # https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_InstanceTypeInfo.html
         "hypervisor": (
             Hypervisor.BARE_METAL
-            if instance_type["BareMetal"]
+            if instance_type.get("BareMetal")
             else Hypervisor[hypervisor.upper()]
             if (hypervisor := instance_type.get("Hypervisor"))
             else None
