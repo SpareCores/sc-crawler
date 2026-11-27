@@ -9,9 +9,11 @@ New feature(s):
   vendor docs (e.g. the `-metal` suffix at GCP, `BM.` shapes at OCI, Metal
   instances at OVH, `ebm` and `scc` families at Alibaba Cloud, and
   `/v2/plans-metal` plans at Vultr). The migration converts the existing
-  values (`nitro` → `NITRO`, `xen` → `XEN`, `KVM` and `QEMU` → `KVM`,
-  `Microsoft Hyper-V` → `HYPER_V`); bare metal servers and the hypervisor of
-  GCP, OCI and Vultr VMs are filled in by the next inventory refresh.
+  values, also the historical rows of the SCD table (`nitro` → `NITRO`,
+  `xen` → `XEN`, `KVM` and `QEMU` → `KVM`, `Microsoft Hyper-V` →
+  `HYPER_V`); no other values were stored. Bare metal servers and the GCP,
+  OCI and Vultr VMs, which had an empty hypervisor, are filled in only by
+  the next inventory refresh, so their earlier SCD rows stay empty.
   **Breaking**: the stored values and the API values (e.g. `Nitro` and
   `Hyper-V` instead of `nitro` and `Microsoft Hyper-V`) changed.
 
