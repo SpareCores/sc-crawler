@@ -1,5 +1,7 @@
 from unittest.mock import Mock, patch
 
+import pytest
+
 from sc_crawler.table_fields import (
     Allocation,
     DatabaseEngine,
@@ -21,6 +23,7 @@ from sc_crawler.vendors._upcloud import (
     inventory_database_storages,
     inventory_databases,
     inventory_servers,
+    inventory_storage_prices,
     inventory_storages,
 )
 
@@ -826,3 +829,25 @@ def test_upcloud_inventory_storages_converts_gib_to_gb():
     for storage in items:
         assert storage["min_size"] == 1  # 1 GiB = 1.07 GB
         assert storage["max_size"] == 4398  # 4096 GiB
+
+
+def test_upcloud_inventory_storage_prices_per_gb_month():
+    mock_client = Mock()
+    mock_client.get_prices.return_value = {
+        "prices": {
+            "zone": [
+                {
+                    "name": "fi-hel1",
+                    "storage_maxiops": {"price": 0.031},
+                    "server_plan_x": {"price": 1},
+                }
+            ]
+        }
+    }
+    with patch("sc_crawler.vendors._upcloud._client", return_value=mock_client):
+        rows = inventory_storage_prices(Mock(vendor_id="upcloud"))
+    assert len(rows) == 1
+    assert rows[0]["storage_id"] == "maxiops"
+    assert rows[0]["unit"] == PriceUnit.GB_MONTH
+    # cents per GiB and hour -> EUR per GB and month (24 x 30 hours)
+    assert rows[0]["price"] == pytest.approx(0.031 / 100 * 720 / _GIB_TO_GB)

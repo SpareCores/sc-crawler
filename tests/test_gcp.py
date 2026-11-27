@@ -1799,9 +1799,11 @@ def test_gcp_inventory_storage_prices_use_capacity_skus():
         prices = inventory_storage_prices(vendor)
 
     by_id = {p["storage_id"]: p for p in prices}
-    assert by_id["40001"]["price"] == pytest.approx(0.08)
+    # per GiB-month SKUs, stored per GB-month as the sizes
+    assert by_id["40001"]["price"] == pytest.approx(0.08 / _GIB_TO_GB)
+    assert by_id["40001"]["price"] == pytest.approx(0.0745, abs=1e-4)
     assert by_id["40001"]["unit"] == PriceUnit.GB_MONTH
-    assert by_id["50001"]["price"] == pytest.approx(0.16)
+    assert by_id["50001"]["price"] == pytest.approx(0.16 / _GIB_TO_GB)
 
 
 @pytest.mark.parametrize(

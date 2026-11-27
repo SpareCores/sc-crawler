@@ -7,6 +7,7 @@ from Tea.exceptions import TeaException
 
 from sc_crawler.inspector import _standardize_gpu_count
 from sc_crawler.table_fields import AcceleratorType, Status
+from sc_crawler.utils import _GIB_TO_GB
 from sc_crawler.vendor_helpers import server_status_from_availability_categories
 from sc_crawler.vendors._alicloud import (
     _ALICLOUD_STATUS_CATEGORY_TO_SERVER_LIFECYCLE,
@@ -26,6 +27,7 @@ from sc_crawler.vendors._alicloud import (
     _warn_unknown_disk_category,
     _with_stock_regions,
     inventory_servers,
+    inventory_storage_prices,
     inventory_storages,
 )
 
@@ -371,8 +373,8 @@ def _price_client(prices):
 def test_alicloud_disk_price_per_gb_month():
     client = _price_client({("r1", "cloud_auto"): 0.02512})
     price = _get_disk_price(client, "r1", "cloud_auto")
-    # 0.02512 USD per 100 GB and hour, 730 hours a month
-    assert price["price"] == pytest.approx(0.183376)
+    # 0.02512 USD per 100 GiB and hour, 730 hours a month, per GB
+    assert price["price"] == pytest.approx(0.183376 / _GIB_TO_GB)
     assert price["currency"] == "USD"
     with patch("sc_crawler.vendors._alicloud.logger") as logger:
         # not sold in the region: no warning
@@ -426,7 +428,9 @@ def test_alicloud_describe_price_storage_prices_skip_unpriced_regions():
         ("r1", "cloud_essd_entry"),
         ("r2", "cloud_essd_entry"),
     }
-    assert by_key[("r1", "cloud_essd_entry")]["price"] == pytest.approx(0.077599)
+    assert by_key[("r1", "cloud_essd_entry")]["price"] == pytest.approx(
+        0.077599 / _GIB_TO_GB
+    )
     assert by_key[("r1", "cloud_auto")]["unit"].value == "GB/month"
     vendor.log.assert_called_once()
     assert "cloud_auto in r2" in vendor.log.call_args.args[0]
@@ -547,3 +551,37 @@ def test_accelerator_type(gpu_model, gpu_count, expected):
 )
 def test_gpu_manufacturer_of_family(family, expected):
     assert _gpu_manufacturer_of_family(family) == expected
+
+
+def test_alicloud_inventory_storage_prices_per_gb():
+    skus = [
+        {
+            "SkuFactorMap": {
+                "datadisk_category": "cloud_essd",
+                "datadisk_performance_level": "PL1",
+                "vm_region_no": "r1",
+            },
+            "CskuPriceList": [
+                {"Price": "0.0002", "PriceType": "hourPrice", "Currency": "USD"}
+            ],
+        }
+    ]
+    vendor = Mock(vendor_id="alicloud")
+    with (
+        patch(
+            "sc_crawler.vendors._alicloud._get_storage_sku_prices", return_value=skus
+        ),
+        patch(
+            "sc_crawler.vendors._alicloud.get_region_by_id",
+            return_value=Mock(region_id="r1"),
+        ),
+        patch(
+            "sc_crawler.vendors._alicloud._get_describe_price_storage_prices",
+            return_value=[{"storage_id": "cloud_auto"}],
+        ),
+    ):
+        items = inventory_storage_prices(vendor)
+    assert items[0]["storage_id"] == "cloud_essd-pl1"
+    # per GiB and hour in the API, per GB and month here
+    assert items[0]["price"] == pytest.approx(0.0002 * 730 / _GIB_TO_GB)
+    assert items[1] == {"storage_id": "cloud_auto"}

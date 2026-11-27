@@ -2122,7 +2122,9 @@ def inventory_storage_prices(vendor):
                         "region_id": region.region_id,
                         "storage_id": storage.storage_id,
                         "unit": PriceUnit.GB_MONTH,
-                        "price": float(price),
+                        # capacity SKUs are per GiB-month (GiBy.mo), as are the
+                        # sizes (converted to GB in inventory_storages)
+                        "price": float(price) / _GIB_TO_GB,
                         "currency": currency,
                     }
                 )

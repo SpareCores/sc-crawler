@@ -1066,8 +1066,9 @@ def inventory_storage_prices(vendor):
                         "region_id": zone_prices["name"],
                         "storage_id": k[len("storage_") :],
                         "unit": PriceUnit.GB_MONTH,
-                        # UpCloud pricing is per hour, but other providers are per month
-                        "price": v["price"] / 100 * 24 * 30,
+                        # UpCloud pricing is per hour, but other providers are per
+                        # month; per GiB, as the sizes (see UPCLOUD_STORAGES)
+                        "price": v["price"] / 100 * 24 * 30 / _GIB_TO_GB,
                         "currency": "EUR",
                     }
                 )

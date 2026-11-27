@@ -2314,7 +2314,7 @@ def inventory_storages(vendor):
 
 # Disk categories without a `QuerySkuPriceList` price (only cloud, cloud_efficiency,
 # cloud_essd and cloud_ssd are listed there), priced with `DescribePrice` instead,
-# one disk of this size (GB) per region. The price is linear in size (checked on
+# one disk of this size (GiB) per region. The price is linear in size (checked on
 # 40, 200 and 1000 GB, 2026-11-25), and the same call gives the QuerySkuPriceList
 # prices for cloud_essd PL1 and cloud_ssd.
 _DESCRIBE_PRICE_DISK_CATEGORIES = ["cloud_auto", "cloud_essd_entry"]
@@ -2356,7 +2356,11 @@ def _get_disk_price(client: EcsClient, region_id: str, category: str) -> Optiona
         )
         return None
     return {
-        "price": price.original_price / _DESCRIBE_PRICE_DISK_SIZE * _HOURS_PER_MONTH,
+        # the size is in GiB: per GB, as the sizes in inventory_storages
+        "price": price.original_price
+        / _DESCRIBE_PRICE_DISK_SIZE
+        * _HOURS_PER_MONTH
+        / _GIB_TO_GB,
         "currency": price.currency,
     }
 
@@ -2433,6 +2437,9 @@ def inventory_storage_prices(vendor):
         price_type = sku["CskuPriceList"][0]["PriceType"]
         if price_type == "hourPrice":
             storage_price = storage_price * _HOURS_PER_MONTH
+        # per GiB despite the "USD/GB" unit (the docs list disk prices per GiB, as
+        # the sizes): per GB, as the sizes in inventory_storages
+        storage_price = storage_price / _GIB_TO_GB
         items.append(
             {
                 "vendor_id": vendor.vendor_id,

@@ -25,6 +25,9 @@ Fix(es):
 - `gcp`, `upcloud`: storage `min_size` and `max_size` are converted from GiB to
   GB (the documented unit, as at the other vendors), e.g. 64 TiB is 70369 instead
   of 65536.
+- `gcp`, `upcloud`, `alicloud`: storage prices are per GB-month, converted from
+  the per GiB-month (or GiB-hour) vendor prices, as at Azure, so they match the
+  sizes in GB (about 7% lower than before).
 - `alicloud`: the descriptions of the `cloud_essd-pl0` to `cloud_essd-pl3` storages
   name the API values they stand for (`DiskCategory=cloud_essd` and the
   `PerformanceLevel`), also documented in `inventory_storages`.
