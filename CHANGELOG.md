@@ -1,5 +1,11 @@
 ## v0.12.1 (DEVELOPMENT)
 
+‼ Breaking changes:
+
+- `Server.hypervisor` is an enum instead of free text, so its stored values
+  (e.g. `NITRO` and `HYPER_V` instead of `nitro` and `Microsoft Hyper-V`) and
+  its values in the API (e.g. `Nitro` and `Hyper-V`) changed.
+
 New feature(s):
 
 - `Server.hypervisor` is an enum (`KVM`, `XEN`, `NITRO`, `HYPER_V` or
@@ -14,8 +20,6 @@ New feature(s):
   `HYPER_V`); no other values were stored. Bare metal servers and the GCP,
   OCI and Vultr VMs, which had an empty hypervisor, are filled in only by
   the next inventory refresh, so their earlier SCD rows stay empty.
-  **Breaking**: the stored values and the API values (e.g. `Nitro` and
-  `Hyper-V` instead of `nitro` and `Microsoft Hyper-V`) changed.
 
 Database migrations:
 
