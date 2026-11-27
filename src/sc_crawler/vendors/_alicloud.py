@@ -934,13 +934,6 @@ _DOCS_DISK_CATEGORIES = {
 }
 
 
-def _docs_disk_categories(server_id: str, series: Optional[str]) -> Optional[list]:
-    """Data disk categories of an instance type from the docs, if listed."""
-    if server_id in _DOCS_DISK_CATEGORIES:
-        return _DOCS_DISK_CATEGORIES[server_id]
-    return _DOCS_DISK_CATEGORIES.get(series)
-
-
 # the per instance type DataDisk call only answers for these
 _IN_STOCK = {"WithStock", "ClosedWithStock"}
 
@@ -960,47 +953,6 @@ def _call_with_retry(call):
             raise
 
 
-def _with_stock_regions(
-    region_availability_info: dict[str, list[dict]],
-) -> dict[str, list[str]]:
-    """Map instance types to the regions where they are in stock in any zone.
-
-    In stock: WithStock, or ClosedWithStock (to be retired, still orderable).
-    """
-    regions: dict[str, set[str]] = defaultdict(set)
-    for region_id, zones in region_availability_info.items():
-        for zone in zones:
-            for resource in zone.get("AvailableResources", {}).get(
-                "AvailableResource", []
-            ):
-                if resource.get("Type") != "InstanceType":
-                    continue
-                for supported in resource.get("SupportedResources", {}).get(
-                    "SupportedResource", []
-                ):
-                    if supported.get("StatusCategory") in _IN_STOCK:
-                        regions[supported.get("Value")].add(region_id)
-    return {k: sorted(v) for k, v in regions.items()}
-
-
-def _parse_data_disk_categories(zones: list[dict]) -> list[str]:
-    """Data disk categories of a per instance type DataDisk response, over all zones."""
-    return sorted(
-        {
-            supported.get("Value")
-            for zone in zones
-            for resource in zone.get("AvailableResources", {}).get(
-                "AvailableResource", []
-            )
-            if resource.get("Type") == "DataDisk"
-            for supported in resource.get("SupportedResources", {}).get(
-                "SupportedResource", []
-            )
-            if supported.get("Value")
-        }
-    )
-
-
 def _get_instance_type_disk_categories(
     vendor: Vendor, region_availability_info: dict[str, list[dict]]
 ) -> dict[str, list[str]]:
@@ -1018,14 +970,23 @@ def _get_instance_type_disk_categories(
     everywhere are left out (unknown), as are types whose calls all failed.
     """
     ecs_clients: dict[str, EcsClient] = _ecs_clients(vendor)
-    pairs = [
-        (region_id, instance_type)
-        for instance_type, region_ids in _with_stock_regions(
-            region_availability_info
-        ).items()
-        for region_id in region_ids
-        if region_id in ecs_clients
-    ]
+    # regions where the instance type is in stock in any zone
+    pairs = sorted(
+        {
+            (region_id, supported.get("Value"))
+            for region_id, zones in region_availability_info.items()
+            if region_id in ecs_clients
+            for zone in zones
+            for resource in zone.get("AvailableResources", {}).get(
+                "AvailableResource", []
+            )
+            if resource.get("Type") == "InstanceType"
+            for supported in resource.get("SupportedResources", {}).get(
+                "SupportedResource", []
+            )
+            if supported.get("StatusCategory") in _IN_STOCK
+        }
+    )
 
     # None (failed call) is not cached by cachier, so it is retried on the next run
     @cachier(hash_func=jsoned_hash, separate_files=True)
@@ -1049,8 +1010,22 @@ def _get_instance_type_disk_categories(
                 f"Failed to get data disks of {instance_type} in {region_id}: {e}"
             )
             return None
-        return _parse_data_disk_categories(
-            response.body.to_map().get("AvailableZones", {}).get("AvailableZone", [])
+        # union over the zones of the region
+        return sorted(
+            {
+                supported.get("Value")
+                for zone in response.body.to_map()
+                .get("AvailableZones", {})
+                .get("AvailableZone", [])
+                for resource in zone.get("AvailableResources", {}).get(
+                    "AvailableResource", []
+                )
+                if resource.get("Type") == "DataDisk"
+                for supported in resource.get("SupportedResources", {}).get(
+                    "SupportedResource", []
+                )
+                if supported.get("Value")
+            }
         )
 
     vendor.progress_tracker.start_task(
@@ -2091,8 +2066,11 @@ def inventory_servers(vendor):
         server_id = instance_type.get("InstanceTypeId")
         # no answer from the API nor the docs: unknown (None), not "no compatible
         # storage" ([])
-        categories = disk_categories.get(server_id) or _docs_disk_categories(
-            server_id, series
+        # docs: the instance type wins over its series
+        categories = (
+            disk_categories.get(server_id)
+            or _DOCS_DISK_CATEGORIES.get(server_id)
+            or _DOCS_DISK_CATEGORIES.get(series)
         )
         if categories:
             compatible_storage_ids = _compatible_storage_ids(categories)
@@ -2527,89 +2505,6 @@ _DESCRIBE_PRICE_DISK_SIZE = 100
 _NOT_SOLD_PRICE_ERRORS = {"PriceNotFound", "RegionUnauthorized", "RegionDiscontinued"}
 
 
-def _get_disk_price(client: EcsClient, region_id: str, category: str) -> Optional[dict]:
-    """Price of a data disk category per GB and month in a region, if any.
-
-    Uses the `DescribePrice` API endpoint (pay-as-you-go hourly list price).
-    """
-    request = DescribePriceRequest(
-        region_id=region_id,
-        resource_type="disk",
-        price_unit="Hour",
-        data_disk=[
-            DescribePriceRequestDataDisk(
-                category=category, size=_DESCRIBE_PRICE_DISK_SIZE
-            )
-        ],
-    )
-    try:
-        response = _call_with_retry(
-            lambda: client.describe_price_with_options(request, RuntimeOptions())
-        )
-    except TeaException as e:
-        if e.code in _NOT_SOLD_PRICE_ERRORS:
-            logger.debug(f"No {category} price in {region_id}: {e.code}")
-        else:
-            logger.warning(f"Failed to get the {category} price in {region_id}: {e}")
-        return None
-    price_info = response.body.price_info
-    price = price_info.price if price_info else None
-    if price is None or price.original_price is None:
-        logger.warning(
-            f"No price in the {category} DescribePrice answer of {region_id}"
-        )
-        return None
-    return {
-        # the size is in GiB: per GB, as the sizes in inventory_storages
-        "price": price.original_price
-        / _DESCRIBE_PRICE_DISK_SIZE
-        * _HOURS_PER_MONTH
-        / _GIB_TO_GB,
-        "currency": price.currency,
-    }
-
-
-def _get_describe_price_storage_prices(vendor: Vendor) -> list[dict]:
-    """Storage prices of `_DESCRIBE_PRICE_DISK_CATEGORIES` in every region."""
-    ecs_clients: dict[str, EcsClient] = _ecs_clients(vendor)
-    pairs = [
-        (region_id, category)
-        for region_id in ecs_clients
-        for category in _DESCRIBE_PRICE_DISK_CATEGORIES
-    ]
-
-    @cachier(hash_func=jsoned_hash, separate_files=True)
-    def fetch_price(region_id: str, category: str) -> Optional[dict]:
-        return _get_disk_price(ecs_clients[region_id], region_id, category)
-
-    items = []
-    missing = []
-    with ThreadPoolExecutor(max_workers=8) as executor:
-        for (region_id, category), price in zip(
-            pairs, executor.map(lambda p: fetch_price(*p), pairs)
-        ):
-            if price is None:
-                missing.append(f"{category} in {region_id}")
-                continue
-            items.append(
-                {
-                    "vendor_id": vendor.vendor_id,
-                    "region_id": region_id,
-                    "storage_id": category,
-                    "unit": PriceUnit.GB_MONTH,
-                    "price": price["price"],
-                    "currency": price["currency"],
-                }
-            )
-    if missing:
-        vendor.log(
-            f"No storage price for {len(missing)} region and disk pairs "
-            f"(e.g. {', '.join(missing[:5])}).",
-            level=INFO,
-        )
-    return items
-
-
 def inventory_storage_prices(vendor):
     """Fetch storage prices using the `QuerySkuPriceList` API endpoint.
 
@@ -2656,7 +2551,83 @@ def inventory_storage_prices(vendor):
         )
     for unsupported_region in unsupported_regions:
         vendor.log(f"Found non-supported region: {unsupported_region}", level=WARN)
-    items.extend(_get_describe_price_storage_prices(vendor))
+
+    # DescribePrice for the categories QuerySkuPriceList does not list
+    ecs_clients: dict[str, EcsClient] = _ecs_clients(vendor)
+    pairs = [
+        (region_id, category)
+        for region_id in ecs_clients
+        for category in _DESCRIBE_PRICE_DISK_CATEGORIES
+    ]
+
+    # None (no price) is not cached by cachier, so it is retried on the next run
+    @cachier(hash_func=jsoned_hash, separate_files=True)
+    def fetch_price(region_id: str, category: str) -> Optional[dict]:
+        """Pay-as-you-go price of a disk category per GB and month in a region."""
+        request = DescribePriceRequest(
+            region_id=region_id,
+            resource_type="disk",
+            price_unit="Hour",
+            data_disk=[
+                DescribePriceRequestDataDisk(
+                    category=category, size=_DESCRIBE_PRICE_DISK_SIZE
+                )
+            ],
+        )
+        try:
+            response = _call_with_retry(
+                lambda: ecs_clients[region_id].describe_price_with_options(
+                    request, RuntimeOptions()
+                )
+            )
+        except TeaException as e:
+            if e.code in _NOT_SOLD_PRICE_ERRORS:
+                logger.debug(f"No {category} price in {region_id}: {e.code}")
+            else:
+                logger.warning(
+                    f"Failed to get the {category} price in {region_id}: {e}"
+                )
+            return None
+        price_info = response.body.price_info
+        price = price_info.price if price_info else None
+        if price is None or price.original_price is None:
+            logger.warning(
+                f"No price in the {category} DescribePrice answer of {region_id}"
+            )
+            return None
+        return {
+            # the size is in GiB: per GB, as the sizes in inventory_storages
+            "price": price.original_price
+            / _DESCRIBE_PRICE_DISK_SIZE
+            * _HOURS_PER_MONTH
+            / _GIB_TO_GB,
+            "currency": price.currency,
+        }
+
+    missing = []
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        for (region_id, category), price in zip(
+            pairs, executor.map(lambda p: fetch_price(*p), pairs)
+        ):
+            if price is None:
+                missing.append(f"{category} in {region_id}")
+                continue
+            items.append(
+                {
+                    "vendor_id": vendor.vendor_id,
+                    "region_id": region_id,
+                    "storage_id": category,
+                    "unit": PriceUnit.GB_MONTH,
+                    "price": price["price"],
+                    "currency": price["currency"],
+                }
+            )
+    if missing:
+        vendor.log(
+            f"No storage price for {len(missing)} region and disk pairs "
+            f"(e.g. {', '.join(missing[:5])}).",
+            level=INFO,
+        )
     return items
 
 

@@ -6,7 +6,13 @@ from cachier import get_global_params, set_global_params
 from Tea.exceptions import TeaException
 
 from sc_crawler.inspector import _standardize_gpu_count
-from sc_crawler.table_fields import AcceleratorType, Disk, Status, StorageType
+from sc_crawler.table_fields import (
+    AcceleratorType,
+    Disk,
+    PriceUnit,
+    Status,
+    StorageType,
+)
 from sc_crawler.utils import _GIB_TO_GB
 from sc_crawler.vendor_helpers import server_status_from_availability_categories
 from sc_crawler.vendors._alicloud import (
@@ -15,20 +21,15 @@ from sc_crawler.vendors._alicloud import (
     _DISK_CATEGORY_TO_STORAGE_IDS,
     _accelerator_type,
     _compatible_storage_ids,
-    _docs_disk_categories,
-    _get_describe_price_storage_prices,
-    _get_disk_price,
     _get_instance_type_disk_categories,
     _gpu_manufacturer_of_family,
     _gpu_memory_by_spec,
     _instance_category,
     _local_disk_speed,
     _local_disks,
-    _parse_data_disk_categories,
     _warn_unknown_category,
     _warn_unknown_disk_category,
     _warn_unknown_local_disk_speed,
-    _with_stock_regions,
     inventory_servers,
     inventory_storage_prices,
     inventory_storages,
@@ -110,6 +111,9 @@ def test_alicloud_inventory_servers_sets_family_and_series():
         _instance_type("ecs.g7.large", "ecs.g7", "General-purpose"),
         _instance_type("ecs.gn5-c4g1.xlarge", "ecs.gn5", "Compute-optimized with GPU"),
         _instance_type("ecs.hfg5.large", "ecs.hfg5", "General-purpose"),
+        # docs entry of the instance type wins over its series
+        _instance_type("ecs.s2.small", "ecs.s2", "General-purpose"),
+        _instance_type("ecs.s2.large", "ecs.s2", "General-purpose"),
     ]
     with (
         patch(
@@ -141,10 +145,12 @@ def test_alicloud_inventory_servers_sets_family_and_series():
         "cloud_ssd",
         "cloud_efficiency",
     ]
+    assert by_id["ecs.s2.small"]["compatible_storage_ids"] == ["cloud"]
     # neither API nor docs: unknown (None) and one summary warning
     assert by_id["ecs.hfg5.large"]["compatible_storage_ids"] is None
+    assert by_id["ecs.s2.large"]["compatible_storage_ids"] is None
     vendor.log.assert_called_once()
-    assert "1 instance types" in vendor.log.call_args.args[0]
+    assert "2 instance types" in vendor.log.call_args.args[0]
     assert "ecs.hfg5.large" in vendor.log.call_args.args[0]
     assert by_id["ecs.g7.large"]["family"] == "General Purpose"
     assert by_id["ecs.g7.large"]["series"] == "ecs.g7"
@@ -418,29 +424,21 @@ def _availability_zone(zone_id, resource_type, values):
     }
 
 
-def test_alicloud_with_stock_regions():
-    info = {
+def test_alicloud_instance_type_disk_categories_parses_responses():
+    availability = {
         "r1": [
             _availability_zone(
                 "r1a",
                 "InstanceType",
                 [("ecs.g7.large", "WithStock"), ("ecs.n4.large", "WithoutStock")],
             ),
+            # in stock in two zones: still one call for the region
             _availability_zone("r1b", "InstanceType", [("ecs.g7.large", "WithStock")]),
-        ],
-        "r2": [
-            _availability_zone("r2a", "InstanceType", [("ecs.g7.large", "WithStock")]),
             # other resource types are ignored
-            _availability_zone("r2b", "DataDisk", [("ecs.n4.large", "WithStock")]),
+            _availability_zone("r1c", "DataDisk", [("ecs.n4.large", "WithStock")]),
         ],
-        "r3": [],
+        "r2": [],
     }
-    # sold out everywhere (n4): not listed
-    assert _with_stock_regions(info) == {"ecs.g7.large": ["r1", "r2"]}
-    assert _with_stock_regions({}) == {}
-
-
-def test_alicloud_parse_data_disk_categories_merges_zones():
     zones = [
         _availability_zone("a", "DataDisk", [("cloud_essd", "WithStock")]),
         _availability_zone(
@@ -448,11 +446,34 @@ def test_alicloud_parse_data_disk_categories_merges_zones():
             "DataDisk",
             [("cloud_auto", "WithStock"), ("cloud_essd", "WithoutStock")],
         ),
+        # system disks are not data disks
         _availability_zone("c", "SystemDisk", [("cloud_ssd", "WithStock")]),
         {},
     ]
-    assert _parse_data_disk_categories(zones) == ["cloud_auto", "cloud_essd"]
-    assert _parse_data_disk_categories([]) == []
+    calls = []
+
+    def describe(request, runtime):
+        calls.append((request.region_id, request.instance_type))
+        return SimpleNamespace(
+            body=SimpleNamespace(
+                to_map=lambda: {"AvailableZones": {"AvailableZone": zones}}
+            )
+        )
+
+    client = SimpleNamespace(describe_available_resource_with_options=describe)
+    with patch(
+        "sc_crawler.vendors._alicloud._ecs_clients",
+        return_value={"r1": client, "r2": client},
+    ):
+        result = _get_instance_type_disk_categories(
+            Mock(vendor_id="alicloud"), availability
+        )
+    # union over zones; sold out n4 not asked
+    assert result == {"ecs.g7.large": ["cloud_auto", "cloud_essd"]}
+    assert calls == [("r1", "ecs.g7.large")]
+    # nothing in stock: no calls, nothing known
+    with patch("sc_crawler.vendors._alicloud._ecs_clients", return_value={}):
+        assert _get_instance_type_disk_categories(Mock(), {}) == {}
 
 
 def _data_disk_response(categories):
@@ -583,18 +604,6 @@ def test_alicloud_instance_type_disk_categories_retries_throttling():
     vendor.log.assert_not_called()
 
 
-def test_alicloud_docs_disk_categories():
-    assert _docs_disk_categories("ecs.gn5-c4g1.2xlarge", "ecs.gn5") == [
-        "cloud_efficiency",
-        "cloud_ssd",
-    ]
-    # the instance type wins over its series
-    assert _docs_disk_categories("ecs.s2.small", "ecs.s2") == ["cloud"]
-    assert _docs_disk_categories("ecs.s2.large", "ecs.s2") is None
-    assert _docs_disk_categories("ecs.hfg5.large", "ecs.hfg5") is None
-    assert _docs_disk_categories("ecs.x", None) is None
-
-
 def _price_client(prices):
     """DescribePrice client returning hourly prices of 100 GB disks, by category."""
 
@@ -613,31 +622,58 @@ def _price_client(prices):
     return SimpleNamespace(describe_price_with_options=describe)
 
 
-def test_alicloud_disk_price_per_gb_month():
-    client = _price_client({("r1", "cloud_auto"): 0.02512})
-    price = _get_disk_price(client, "r1", "cloud_auto")
-    # 0.02512 USD per 100 GiB and hour, 730 hours a month, per GB
-    assert price["price"] == pytest.approx(0.183376 / _GIB_TO_GB)
-    assert price["currency"] == "USD"
+def _storage_prices(clients):
+    """inventory_storage_prices with DescribePrice clients and no SKU prices."""
+    vendor = Mock(vendor_id="alicloud")
+    with (
+        patch("sc_crawler.vendors._alicloud._get_storage_sku_prices", return_value=[]),
+        patch("sc_crawler.vendors._alicloud._ecs_clients", return_value=clients),
+    ):
+        return vendor, inventory_storage_prices(vendor)
+
+
+def test_alicloud_describe_price_storage_prices():
+    prices = {
+        ("r1", "cloud_auto"): 0.02512,
+        ("r1", "cloud_essd_entry"): 0.01063,
+        # not sold in the region: skipped, no warning
+        ("r2", "cloud_auto"): _api_error("PriceNotFound"),
+        ("r2", "cloud_essd_entry"): 0.01,
+    }
+    client = _price_client(prices)
     with patch("sc_crawler.vendors._alicloud.logger") as logger:
-        # not sold in the region: no warning
-        client = _price_client({("r1", "cloud_auto"): _api_error("PriceNotFound")})
-        assert _get_disk_price(client, "r1", "cloud_auto") is None
-        logger.warning.assert_not_called()
-        # other API errors: warned
-        client = _price_client({("r1", "cloud_auto"): _api_error("InternalError")})
-        assert _get_disk_price(client, "r1", "cloud_auto") is None
-        logger.warning.assert_called_once()
+        vendor, items = _storage_prices({"r1": client, "r2": client})
+    logger.warning.assert_not_called()
+    by_key = {(i["region_id"], i["storage_id"]): i for i in items}
+    assert set(by_key) == {
+        ("r1", "cloud_auto"),
+        ("r1", "cloud_essd_entry"),
+        ("r2", "cloud_essd_entry"),
+    }
+    # 0.02512 USD per 100 GiB and hour, 730 hours a month, per GB
+    assert by_key[("r1", "cloud_auto")]["price"] == pytest.approx(0.183376 / _GIB_TO_GB)
+    assert by_key[("r1", "cloud_essd_entry")]["price"] == pytest.approx(
+        0.077599 / _GIB_TO_GB
+    )
+    assert by_key[("r1", "cloud_auto")]["unit"] == PriceUnit.GB_MONTH
+    assert by_key[("r1", "cloud_auto")]["currency"] == "USD"
+    vendor.log.assert_called_once()
+    assert "cloud_auto in r2" in vendor.log.call_args.args[0]
 
 
-def test_alicloud_disk_price_retries_throttling_and_handles_empty_answer():
-    responses = [
-        _api_error("Throttling.User"),
-        SimpleNamespace(body=SimpleNamespace(price_info=None)),
-    ]
+def test_alicloud_describe_price_errors_retry_and_empty_answer():
+    answers = {
+        # throttled once, then an answer without price
+        "cloud_auto": [
+            _api_error("Throttling.User"),
+            SimpleNamespace(body=SimpleNamespace(price_info=None)),
+        ],
+        # other API error
+        "cloud_essd_entry": [_api_error("InternalError")],
+    }
 
     def describe(request, runtime):
-        response = responses.pop(0)
+        response = answers[request.data_disk[0].category].pop(0)
         if isinstance(response, Exception):
             raise response
         return response
@@ -647,36 +683,11 @@ def test_alicloud_disk_price_retries_throttling_and_handles_empty_answer():
         patch("sc_crawler.vendors._alicloud.sleep") as sleep,
         patch("sc_crawler.vendors._alicloud.logger") as logger,
     ):
-        assert _get_disk_price(client, "r1", "cloud_auto") is None
+        _, items = _storage_prices({"r1": client})
+    assert items == []
     sleep.assert_called_once()
-    logger.warning.assert_called_once()
-
-
-def test_alicloud_describe_price_storage_prices_skip_unpriced_regions():
-    prices = {
-        ("r1", "cloud_auto"): 0.02512,
-        ("r1", "cloud_essd_entry"): 0.01063,
-        ("r2", "cloud_auto"): _api_error("PriceNotFound"),
-        ("r2", "cloud_essd_entry"): 0.01,
-    }
-    vendor = Mock(vendor_id="alicloud")
-    with patch(
-        "sc_crawler.vendors._alicloud._ecs_clients",
-        return_value={"r1": _price_client(prices), "r2": _price_client(prices)},
-    ):
-        items = _get_describe_price_storage_prices(vendor)
-    by_key = {(i["region_id"], i["storage_id"]): i for i in items}
-    assert set(by_key) == {
-        ("r1", "cloud_auto"),
-        ("r1", "cloud_essd_entry"),
-        ("r2", "cloud_essd_entry"),
-    }
-    assert by_key[("r1", "cloud_essd_entry")]["price"] == pytest.approx(
-        0.077599 / _GIB_TO_GB
-    )
-    assert by_key[("r1", "cloud_auto")]["unit"].value == "GB/month"
-    vendor.log.assert_called_once()
-    assert "cloud_auto in r2" in vendor.log.call_args.args[0]
+    # empty answer and other API error: warned
+    assert logger.warning.call_count == 2
 
 
 def test_alicloud_compatible_storage_ids():
@@ -818,13 +829,10 @@ def test_alicloud_inventory_storage_prices_per_gb():
             "sc_crawler.vendors._alicloud.get_region_by_id",
             return_value=Mock(region_id="r1"),
         ),
-        patch(
-            "sc_crawler.vendors._alicloud._get_describe_price_storage_prices",
-            return_value=[{"storage_id": "cloud_auto"}],
-        ),
+        patch("sc_crawler.vendors._alicloud._ecs_clients", return_value={}),
     ):
         items = inventory_storage_prices(vendor)
     assert items[0]["storage_id"] == "cloud_essd-pl1"
     # per GiB and hour in the API, per GB and month here
     assert items[0]["price"] == pytest.approx(0.0002 * 730 / _GIB_TO_GB)
-    assert items[1] == {"storage_id": "cloud_auto"}
+    assert len(items) == 1
