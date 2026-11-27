@@ -2,7 +2,7 @@
 
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, date, datetime, timedelta
+from datetime import date
 from functools import cache
 from itertools import chain
 from logging import CRITICAL, DEBUG, INFO, WARN, getLogger
@@ -42,7 +42,6 @@ from alibabacloud_rds20140815.models import (
 from alibabacloud_tea_openapi.models import Config
 from alibabacloud_tea_util.models import RuntimeOptions
 from cachier import cachier
-from sqlmodel import select
 from Tea.exceptions import TeaException
 
 from ..inspector import (
@@ -73,9 +72,6 @@ from ..table_fields import (
     TrafficDirection,
 )
 from ..tables import (
-    Database,
-    DatabasePrice,
-    DatabaseStoragePrice,
     ServerPrice,
     Vendor,
 )
@@ -2218,19 +2214,12 @@ def inventory_server_prices_spot(vendor):
     Each region worker fetches spot prices for a random sample of instances within sample_time,
     adapting to different response times, parallelized across regions.
 
-    The previous spot prices not sampled in this run are kept for up to 30 days
-    since their last observation (see `_previous_rows`), while the server is
-    sold on-demand in the zone.
+    As a run only samples some of the instances, the previous active spot prices
+    not sampled now are returned as well, while the instance type is sold
+    on-demand in the zone, so the spot prices are refreshed over the runs. The
+    ones sampled without a spot price are dropped.
     """
     sample_time = 120  # seconds
-
-    # before the spot prices are marked inactive (also updating `observed_at`)
-    previous = _previous_rows(
-        vendor,
-        ServerPrice,
-        ServerPrice.allocation == Allocation.SPOT,
-        ServerPrice.status == Status.ACTIVE,
-    )
 
     ecs_clients: dict[str, EcsClient] = _ecs_clients(vendor)
 
@@ -2246,10 +2235,6 @@ def inventory_server_prices_spot(vendor):
 
     if not ondemand_instances:
         logger.error("No active ondemand instances found")
-        # not known which servers are still sold: only the old ones expire
-        _expire_previous_rows(
-            vendor, ServerPrice, ServerPrice.allocation == Allocation.SPOT
-        )
         return []
 
     for region_id in ondemand_instances:
@@ -2259,6 +2244,8 @@ def inventory_server_prices_spot(vendor):
         region_id: str, zone_instance_list: list[tuple[str, str]], client: EcsClient
     ):
         spot_instances = []
+        # (zone_id, instance_type) pairs sampled without a spot price
+        no_spot = set()
         start_time = time()
 
         for zone_id, instance_type in zone_instance_list:
@@ -2287,6 +2274,7 @@ def inventory_server_prices_spot(vendor):
                     ),
                     None,
                 ):
+                    no_spot.add((zone_id, instance_type))
                     continue
 
                 trade_price = next(
@@ -2299,6 +2287,7 @@ def inventory_server_prices_spot(vendor):
                 )
 
                 if not trade_price:
+                    no_spot.add((zone_id, instance_type))
                     continue
 
                 spot_instances.append(
@@ -2330,7 +2319,7 @@ def inventory_server_prices_spot(vendor):
         if not spot_instances:
             logger.info(f"No spot prices found in region {region_id}")
 
-        return spot_instances
+        return spot_instances, {(region_id, *pair) for pair in no_spot}
 
     vendor.progress_tracker.start_task(
         name=f"Fetching spot instance prices for {sample_time} second(s)",
@@ -2338,40 +2327,48 @@ def inventory_server_prices_spot(vendor):
     )
 
     with ThreadPoolExecutor(max_workers=len(ondemand_instances)) as executor:
-        items = executor.map(
-            lambda args: fetch_spot_instance_price(*args),
-            [
-                (region_id, zone_instance_list, ecs_clients[region_id])
-                for region_id, zone_instance_list in ondemand_instances.items()
-            ],
+        results = list(
+            executor.map(
+                lambda args: fetch_spot_instance_price(*args),
+                [
+                    (region_id, zone_instance_list, ecs_clients[region_id])
+                    for region_id, zone_instance_list in ondemand_instances.items()
+                ],
+            )
         )
-    items = list(chain.from_iterable(items))
+    items = list(chain.from_iterable(result[0] for result in results))
+    no_spot = set().union(*(result[1] for result in results))
 
     vendor.progress_tracker.hide_task()
 
     def key(item: dict) -> tuple:
         return (item["region_id"], item["zone_id"], item["server_id"])
 
-    sampled = {key(item) for item in items}
-    # only of the servers still sold on-demand in the zone
+    sampled = {key(item) for item in items} | no_spot
     offered = {
         (region_id, zone_id, server_id)
         for region_id, zone_instance_list in ondemand_instances.items()
         for zone_id, server_id in zone_instance_list
     }
-    kept = [
-        item for item in previous if key(item) not in sampled and key(item) in offered
+    previous = [
+        server_price.model_dump()
+        for server_price in vendor.server_prices
+        if server_price.allocation == Allocation.SPOT
+        and server_price.status == Status.ACTIVE
     ]
-    if kept:
-        vendor.log(f"Keeping {len(kept)} previous spot prices not sampled now.")
-    if not items and not kept:
-        # no new records, so the previous ones are not marked inactive by the
-        # caller: none of the recent ones are of servers still sold on-demand,
-        # and the rest are not observed for long
+    kept = [
+        item for item in previous if key(item) in offered and key(item) not in sampled
+    ]
+    dropped = sum(key(item) not in offered or key(item) in no_spot for item in previous)
+    vendor.log(
+        f"Sampled {len(items)} spot prices, kept {len(kept)} previous ones not "
+        f"sampled now, and dropped {dropped} not sold anymore."
+    )
+    if previous and not items and not kept:
+        # no records to return, so the previous ones are not marked inactive by
+        # the caller
         vendor.set_table_rows_inactive(
-            ServerPrice,
-            ServerPrice.allocation == Allocation.SPOT,
-            ServerPrice.status == Status.ACTIVE,
+            ServerPrice, ServerPrice.allocation == Allocation.SPOT
         )
     return items + kept
 
@@ -3318,25 +3315,17 @@ def _rds_end_of_sale(spec: dict) -> bool:
     return _RDS_END_OF_SALE in memory_class or _RDS_END_OF_SALE_SOON in memory_class
 
 
-def _rds_class_status(
-    spec: dict, orderable: bool, absence_confirmed: bool = True
-) -> Optional[Status]:
+def _rds_class_status(spec: dict, orderable: bool) -> Optional[Status]:
     """Lifecycle of an RDS instance type.
 
     Orderable in at least one region -> ACTIVE, or PLANNED_FOR_RETIREMENT when
     `ListClasses` notes its end of sale. Not orderable anywhere -> RETIRED when
     the end of sale is noted, otherwise unknown (`None`): not to be listed.
-
-    When not found in an incomplete lookup (the absence is not confirmed), an
-    upcoming end of sale is not a reason to retire: PLANNED_FOR_RETIREMENT.
     """
     if orderable:
         return (
             Status.PLANNED_FOR_RETIREMENT if _rds_end_of_sale(spec) else Status.ACTIVE
         )
-    memory_class = spec.get("MemoryClass") or ""
-    if _RDS_END_OF_SALE_SOON in memory_class and not absence_confirmed:
-        return Status.PLANNED_FOR_RETIREMENT
     return Status.RETIRED if _rds_end_of_sale(spec) else None
 
 
@@ -3400,51 +3389,6 @@ def _database_edition_id(database) -> Optional[str]:
     return _RDS_CATEGORY_TO_EDITION.get(category.lower())
 
 
-# previous records kept when not known to be gone are dropped after this long
-# without being observed
-_PREVIOUS_ROWS_MAX_AGE = timedelta(days=30)
-
-
-def _previous_rows(vendor: Vendor, model, *filters) -> list[dict]:
-    """The records of the vendor already in the database, observed recently, as dicts.
-
-    To keep the records not known to be gone (e.g. in the regions failing to be
-    looked up), as the records of the vendor are marked inactive before
-    inserting the new ones. The records keep their `observed_at`, so they are
-    dropped after `_PREVIOUS_ROWS_MAX_AGE` without being observed (the
-    inactivation also updates it, so this is to be called before that).
-
-    Selecting the columns (instead of the ORM objects) keeps the relationships
-    of the vendor (e.g. `vendor.databases`) and the identity map of the session
-    untouched, as those are not refreshed by the bulk inserts of the run.
-    """
-    if not vendor.session:
-        return []
-    rows = vendor.session.exec(
-        select(*model.__table__.columns).where(
-            model.vendor_id == vendor.vendor_id, *filters
-        )
-    )
-    cutoff = datetime.now(UTC) - _PREVIOUS_ROWS_MAX_AGE
-    previous = []
-    for row in rows:
-        observed_at = row.observed_at
-        if observed_at.tzinfo is None:
-            observed_at = observed_at.replace(tzinfo=UTC)
-        if observed_at >= cutoff:
-            previous.append(dict(row._mapping))
-    return previous
-
-
-def _previous_orderable_databases(vendor: Vendor) -> dict[str, dict]:
-    """The orderable databases of the vendor already in the database, see `_previous_rows`."""
-    return {
-        row["database_id"]: row
-        for row in _previous_rows(vendor, Database)
-        if Status(row["status"]).is_orderable
-    }
-
-
 def inventory_databases(vendor):
     """List all ApsaraDB RDS for PostgreSQL instance types.
 
@@ -3461,10 +3405,13 @@ def inventory_databases(vendor):
 
     Lifecycle: ACTIVE when orderable, PLANNED_FOR_RETIREMENT when orderable
     with an end of sale note in `ListClasses`, RETIRED when not orderable
-    anymore with that note. When the orderable instance types or their specs
-    could not be looked up in all regions, the instance types not found are not
-    known to be gone, so the previously inventoried orderable ones are kept as
-    they were.
+    anymore with that note.
+
+    Nothing is returned when the orderable instance types or their specs could
+    not be looked up in all regions (as the instance types not found are not
+    known to be gone), so all instance types are INACTIVE until the next
+    complete run (see `Vendor.inventory_databases`). The database prices are
+    not updated in that run either, see `inventory_database_prices`.
     """
     offers = _get_rds_offers(vendor)
     specs = _get_rds_class_specs(vendor)
@@ -3481,16 +3428,21 @@ def inventory_databases(vendor):
         specs_complete = all(
             region_specs is not None for region_specs in specs.values()
         )
-    # previous records to keep when not known to be gone
-    previous = {}
-    if not (offers_complete and specs_complete):
-        previous = _previous_orderable_databases(vendor)
+    failed = sorted(
+        {region_id for region_id, offer in offers.items() if not offer["complete"]}
+        | {
+            region_id
+            for region_id, region_specs in specs.items()
+            if region_specs is None
+        }
+    )
+    if failed:
         vendor.log(
-            "Database availability or specs are not known in all regions, "
-            f"keeping the {len(previous)} previously orderable instance types "
-            "not found as they were.",
+            "Database availability or specs are not known in all regions "
+            f"({', '.join(failed)}), returning no database instance types.",
             level=WARN,
         )
+        return []
 
     # engine versions of the instance types orderable in any region, and the
     # disk types offered with those in the zones the instance type is found in
@@ -3519,21 +3471,9 @@ def inventory_databases(vendor):
                         )
 
     classes = _rds_class_editions(specs)
-    kept = []
     unknown = sorted(
         class_code for _, class_code in versions if class_code not in classes
     )
-    if not specs_complete:
-        # also the ones not found by any of the lookups, unless the complete
-        # availability lookup confirms that they are not orderable
-        orderable_codes = {class_code for _, class_code in versions}
-        kept += [
-            class_code
-            for class_code in previous
-            if class_code not in classes
-            and (not offers_complete or class_code in orderable_codes)
-        ]
-        unknown = [class_code for class_code in unknown if class_code not in previous]
     if unknown:
         vendor.log(
             f"No specs for {len(unknown)} orderable database instance types "
@@ -3546,20 +3486,9 @@ def inventory_databases(vendor):
     for class_code, (edition_id, spec) in sorted(classes.items()):
         with sentry_capture_or_raise(vendor=vendor):
             orderable = (edition_id, class_code) in versions
-            if not orderable and not offers_complete and class_code in previous:
-                kept.append(class_code)
-                continue
-            status = _rds_class_status(spec, orderable, offers_complete)
+            status = _rds_class_status(spec, orderable)
             if status is None:
                 continue
-            # the end of sale might be noted in the regions without specs
-            if (
-                not specs_complete
-                and status == Status.ACTIVE
-                and previous.get(class_code, {}).get("status")
-                == Status.PLANNED_FOR_RETIREMENT
-            ):
-                status = Status.PLANNED_FOR_RETIREMENT
             edition = _RDS_EDITIONS[edition_id]
             class_group = spec.get("ClassGroup") or ""
             family = _RDS_CLASS_GROUP_TO_FAMILY.get(class_group)
@@ -3701,14 +3630,6 @@ def inventory_databases(vendor):
             f"{', '.join(sorted(unknown_class_groups))}",
             level=WARN,
         )
-    for class_code in sorted(kept):
-        items.append(previous[class_code])
-    if kept:
-        vendor.log(
-            f"Kept {len(kept)} previously orderable database instance types "
-            f"not found (e.g. {', '.join(sorted(kept)[:5])}).",
-            level=WARN,
-        )
     return items
 
 
@@ -3787,49 +3708,6 @@ def _rds_multi_zone(available: dict) -> bool:
     return any(count > 1 for count in zones_by_version.values())
 
 
-def _previous_active_prices(
-    vendor: Vendor, model, region_ids, *filters, ids: Optional[set] = None
-) -> list[dict]:
-    """The active prices of the vendor already in the database, see `_previous_rows`.
-
-    Args:
-        region_ids: All prices of these regions.
-        ids: Optional `(region_id, id)` pairs, where `id` is the value of the
-            first primary key column after the region (e.g. `database_id`).
-    """
-    ids = ids or set()
-    regions = set(region_ids) | {region_id for region_id, _ in ids}
-    if not regions:
-        return []
-    keys = model.get_columns()["primary_keys"]
-    id_key = keys[keys.index("region_id") + 1]
-    return [
-        row
-        for row in _previous_rows(
-            vendor,
-            model,
-            model.region_id.in_(sorted(regions)),
-            model.status == Status.ACTIVE,
-            *filters,
-        )
-        if row["region_id"] in region_ids or (row["region_id"], row[id_key]) in ids
-    ]
-
-
-def _expire_previous_rows(vendor: Vendor, model, *filters) -> None:
-    """Mark the active records not observed for `_PREVIOUS_ROWS_MAX_AGE` inactive.
-
-    For the inventories returning no records at all, as then the previous
-    records are not marked inactive.
-    """
-    if not vendor.session:
-        return
-    cutoff = (datetime.now(UTC) - _PREVIOUS_ROWS_MAX_AGE).replace(tzinfo=None)
-    vendor.set_table_rows_inactive(
-        model, model.status == Status.ACTIVE, model.observed_at < cutoff, *filters
-    )
-
-
 def inventory_database_prices(vendor):
     """List the pay-as-you-go ApsaraDB RDS for PostgreSQL instance prices in all regions.
 
@@ -3838,6 +3716,9 @@ def inventory_database_prices(vendor):
     High-availability Edition price covers both nodes, in a single or in
     multiple zones for the same price; the Cluster Edition is billed per node,
     and stored for the smallest cluster of 2 nodes.
+
+    Nothing is returned (the previous prices are left unchanged) when a region
+    or an instance type could not be priced, see `_RdsPriceUnavailable`.
 
     Data sources:
 
@@ -3911,39 +3792,15 @@ def inventory_database_prices(vendor):
                     )
             vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
-    kept = [
-        row
-        for row in _previous_active_prices(
-            vendor,
-            DatabasePrice,
-            failed,
-            DatabasePrice.allocation == Allocation.ONDEMAND,
-            ids=failed_classes,
-        )
-        # the instance types not priced in a region with known availability:
-        # only the HA levels still offered (multi-zone only in multiple zones)
-        if row["region_id"] in failed
-        or not (
-            DatabaseHaLevel(row["ha"]) == DatabaseHaLevel.MULTI_ZONE
-            and not _rds_multi_zone(
-                offers[row["region_id"]]["classes"]
-                .get(editions.get(row["database_id"]), {})
-                .get(row["database_id"], {})
-            )
-        )
-    ]
     if failed or failed_classes:
         vendor.log(
-            f"Keeping {len(kept)} previous database prices of the regions failing "
-            f"to be looked up ({', '.join(sorted(failed)) or '-'}), and of "
-            f"{len(failed_classes)} instance types failing to be priced.",
+            "Not updating the database prices: failed to look up the regions "
+            f"{', '.join(sorted(failed)) or '-'}, and to price "
+            f"{len(failed_classes)} instance types.",
             level=WARN,
         )
-    if not items and not kept:
-        _expire_previous_rows(
-            vendor, DatabasePrice, DatabasePrice.allocation == Allocation.ONDEMAND
-        )
-    return items + kept
+        return []
+    return items
 
 
 def inventory_database_storages(vendor):
@@ -4081,6 +3938,9 @@ def inventory_database_storage_prices(vendor):
     `inventory_database_prices`: both nodes of the High-availability Edition
     (as billed), and 2 nodes of the Cluster Edition (billed per node).
 
+    Nothing is returned (the previous prices are left unchanged) when a region
+    or a database storage could not be priced, see `_RdsPriceUnavailable`.
+
     Data source: <https://www.alibabacloud.com/help/en/rds/developer-reference/api-rds-2014-08-15-describeprice>
     """
     offers = _get_rds_offers(vendor)
@@ -4142,16 +4002,12 @@ def inventory_database_storage_prices(vendor):
                 )
             vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
-    kept = _previous_active_prices(
-        vendor, DatabaseStoragePrice, failed, ids=failed_storages
-    )
     if failed or failed_storages:
         vendor.log(
-            f"Keeping {len(kept)} previous database storage prices of the regions "
-            f"failing to be looked up ({', '.join(sorted(failed)) or '-'}), and of "
-            f"{len(failed_storages)} storages failing to be priced.",
+            "Not updating the database storage prices: failed to look up the "
+            f"regions {', '.join(sorted(failed)) or '-'}, and to price "
+            f"{len(failed_storages)} storages.",
             level=WARN,
         )
-    if not items and not kept:
-        _expire_previous_rows(vendor, DatabaseStoragePrice)
-    return items + kept
+        return []
+    return items
