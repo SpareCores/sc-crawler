@@ -1,5 +1,6 @@
 """Inventory of Vultr via its API: servers, storages, traffic, IPv4 addresses and managed PostgreSQL, with their prices."""
 
+import re
 from functools import cache
 from os import environ
 
@@ -202,7 +203,7 @@ _GPU_TYPES: dict[str, dict[str, int | str]] = {
     "NVIDIA_A16": {"vram_gb": 16, "family": "Ampere"},
     "NVIDIA_A40": {"vram_gb": 48, "family": "Ampere"},
     "NVIDIA_L40S": {"vram_gb": 48, "family": "Ada Lovelace"},
-    "NVIDIA_A100": {"vram_gb": 40, "family": "Ampere"},
+    "NVIDIA_A100": {"vram_gb": 80, "family": "Ampere"},
     "NVIDIA_A100_PCIE": {"vram_gb": 80, "family": "Ampere"},
     "NVIDIA_A100_SXM": {"vram_gb": 80, "family": "Ampere"},
     "NVIDIA_H100": {"vram_gb": 80, "family": "Hopper"},
@@ -213,40 +214,10 @@ _GPU_TYPES: dict[str, dict[str, int | str]] = {
     "AMD_MI355X": {"vram_gb": 288, "family": "CDNA4"},
 }
 
-# Dedicated Metal GPU (vdm) plans omit gpu_type / gpu_vram_gb / gpu_count in GET /v2/plans.
-# https://www.vultr.com/pricing/ https://www.vultr.com/products/bare-metal/
-_DEDICATED_METAL_GPU_PLANS: dict[str, dict[str, int | str]] = {
-    "vcg-a16-96c-878g-256vram": {
-        "gpu_type": "NVIDIA_A16",
-        "gpu_count": 16,
-        "gpu_vram_total_gb": 256,
-    },
-    "vcg-a100-96c-896g-320vram": {
-        "gpu_type": "NVIDIA_A100",
-        "gpu_count": 4,
-        "gpu_vram_total_gb": 320,
-    },
-    "vcg-h100-216c-1914gb-640vram": {
-        "gpu_type": "NVIDIA_H100",
-        "gpu_count": 8,
-        "gpu_vram_total_gb": 640,
-    },
-    "vcg-b200-248c-2826g-1536vram": {
-        "gpu_type": "NVIDIA_B200",
-        "gpu_count": 8,
-        "gpu_vram_total_gb": 1536,
-    },
-    "vcg-mi325x-252c-2872g-1536vram": {
-        "gpu_type": "AMD_MI325X",
-        "gpu_count": 6,
-        "gpu_vram_total_gb": 1536,
-    },
-    "vcg-mi355x-252c-2872g-2304vram": {
-        "gpu_type": "AMD_MI355X",
-        "gpu_count": 8,
-        "gpu_vram_total_gb": 2304,
-    },
-}
+# Total VRAM (GB) of Dedicated Metal GPU (vdm) plans, used instead of the VRAM in the ID.
+# Inferred: the plan has the same prices as vbm-256c-3072gb-8-mi325x-gpu in
+# /v2/plans-metal (8x MI325X, 2048 GB).
+_VDM_PLAN_VRAM_GB = {"vcg-mi325x-252c-2872g-1536vram": 2048}
 
 # Vultr Block Storage (VBS) catalog — keys match GET /v2/regions ``options``.
 # Performance: https://docs.vultr.com/support/products/storage/what-are-the-performance-expectations-for-block-storage
@@ -428,14 +399,16 @@ def _server_description(
 ) -> str:
     nvme_size = storage_size if storage_type == StorageType.NVME_SSD else 0
     ssd_size = storage_size if storage_type == StorageType.SSD else 0
-    memory_size_gb = memory_amount_mib / _MIB_PER_GIB if memory_amount_mib else None
+    memory_size_gib = (
+        round(memory_amount_mib / _MIB_PER_GIB, 2) if memory_amount_mib else None
+    )
     description_parts = [
         f"{vcpus} vCPUs" if vcpus else None,
-        f"{memory_size_gb} GiB RAM" if memory_size_gb else None,
+        f"{memory_size_gib:g} GiB RAM" if memory_size_gib else None,
         f"{nvme_size} GB NVMe" if nvme_size else None,
         f"{ssd_size} GB SSD" if ssd_size else None,
         (
-            f"{gpu_count}x{gpu_model} {gpu_vram_gb} GiB VRAM"
+            f"{gpu_count:g}x{gpu_model} {gpu_vram_gb} GiB VRAM"
             if gpu_count and gpu_model and gpu_vram_gb
             else None
         ),
@@ -451,10 +424,12 @@ def _database_description(
     storage_size: int | None,
 ) -> str:
     """Build managed database plan description in server-style format."""
-    memory_size_gb = memory_amount_mib / _MIB_PER_GIB if memory_amount_mib else None
+    memory_size_gb = (
+        round(memory_amount_mib / _MIB_PER_GIB, 2) if memory_amount_mib else None
+    )
     description_parts = [
         f"{vcpus} vCPUs" if vcpus else None,
-        f"{memory_size_gb} GiB RAM" if memory_size_gb else None,
+        f"{memory_size_gb:g} GiB RAM" if memory_size_gb else None,
         f"{storage_size} GB SSD" if storage_size else None,
     ]
     description_parts_str = ", ".join(filter(None, description_parts))
@@ -914,17 +889,25 @@ def inventory_servers(vendor):
         # GPU
         gpu_brand = server.get("gpu_brand", "")
         gpu_type = server.get("gpu_type")
-        gpu_vram_total_gb = server.get("gpu_vram_gb") or 0
+        gpu_vram_total_gb = server.get("gpu_vram_gb", 0)
         gpu_count_from_api = server.get("gpu_count")
-        gpu_fallback = _DEDICATED_METAL_GPU_PLANS.get(server["id"])
-        if gpu_fallback:
-            gpu_type = gpu_type or gpu_fallback.get("gpu_type")
-            gpu_vram_total_gb = gpu_vram_total_gb or gpu_fallback.get(
-                "gpu_vram_total_gb", 0
-            )
-            gpu_count_from_api = gpu_count_from_api or gpu_fallback.get("gpu_count")
-            if not gpu_brand and gpu_type:
-                gpu_brand = gpu_type.split("_")[0]
+        # Dedicated Metal GPU (vdm) plans only have gpu_brand in /v2/plans, so fill the
+        # missing GPU model and total VRAM from the ID, e.g. vcg-a100-12c-120g-80vram
+        if server.get("type") == "vdm":
+            id_model = "".join(server["id"].split("-")[1:2]).upper()
+            id_vram = re.search(r"-(\d+)vram(?:-|$)", server["id"])
+            id_vram_gb = int(id_vram[1]) if id_vram else 0
+            vdm_gpu_type = gpu_type or f"{_extract_manufacturer(gpu_brand)}_{id_model}"
+            vdm_vram_gb = gpu_vram_total_gb or id_vram_gb
+            if vdm_vram_gb == id_vram_gb:
+                vdm_vram_gb = _VDM_PLAN_VRAM_GB.get(server["id"], vdm_vram_gb)
+            if vdm_gpu_type in _GPU_TYPES and vdm_vram_gb:
+                gpu_type = vdm_gpu_type
+                gpu_vram_total_gb = vdm_vram_gb
+            elif not (gpu_type and gpu_vram_total_gb):
+                logger.warning(
+                    f"Cannot fill the missing GPU fields of Vultr plan {server['id']}."
+                )
         gpu_manufacturer_from_type = gpu_type.split("_")[0] if gpu_type else ""
         gpu_manufacturer = _extract_manufacturer(gpu_brand) or _extract_manufacturer(
             gpu_manufacturer_from_type
