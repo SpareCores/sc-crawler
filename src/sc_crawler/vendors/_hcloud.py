@@ -479,6 +479,8 @@ def inventory_servers(vendor):
                     "family": _server_family(server),
                     "series": _server_series(server),
                     "vcpus": server.cores,
+                    # all Cloud servers are KVM VMs (bare metal root servers are a
+                    # separate product, not in the Cloud API):
                     # https://docs.hetzner.com/cloud/technical-details/faq/
                     "hypervisor": Hypervisor.KVM,
                     "cpu_allocation": (

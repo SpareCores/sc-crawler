@@ -1156,6 +1156,8 @@ def _standardize_server(server: dict, vendor) -> dict:
         "family": _vm_family_category(server["name"]),
         "series": _vm_series(server["name"], family.strip()),
         "vcpus": int(capability("vCPUsAvailable")),
+        # all VM sizes run on Hyper-V (bare metal is a separate resource type, not crawled):
+        # https://learn.microsoft.com/en-us/azure/templates/microsoft.baremetalinfrastructure/baremetalinstances
         "hypervisor": Hypervisor.HYPER_V,
         "cpu_allocation": (
             CpuAllocation.BURSTABLE
