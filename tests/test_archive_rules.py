@@ -1,18 +1,26 @@
+from datetime import datetime
 from json import dumps
 from os.path import join
 
 import pytest
 from alembic.script import ScriptDirectory
+from pydantic import ValidationError
 from sqlalchemy import Enum as SaEnum
 from sqlalchemy.dialects import postgresql, sqlite
 from sqlmodel import Session, create_engine, select, update
 from typer.testing import CliRunner
 
 from sc_crawler import cli as cli_module
-from sc_crawler.alembic_helpers import pkg_folder
+from sc_crawler.alembic_helpers import get_revision, pkg_folder
 from sc_crawler.archive_rules import archive_rules
 from sc_crawler.cli import cli, supported_vendors
-from sc_crawler.table_fields import Allocation, HashableDict, ResourceType, Status
+from sc_crawler.table_fields import (
+    Allocation,
+    HashableDict,
+    PriceTier,
+    ResourceType,
+    Status,
+)
 from sc_crawler.tables import (
     ArchiveRule,
     Benchmark,
@@ -24,7 +32,11 @@ from sc_crawler.tables import (
     tables,
 )
 from sc_crawler.tables_scd import tables_scd
-from sc_crawler.utils import create_sc_engine, table_name_to_model
+from sc_crawler.utils import (
+    create_sc_engine,
+    hash_database,
+    table_name_to_model,
+)
 
 # child tables of the archived records, as listed in the RFC on archived records
 CHILD_TABLES = {
@@ -714,39 +726,94 @@ def test_copy_exclude_status(tmp_path):
         assert _statuses(session, Region) == {"nbg1": Status.ACTIVE}
 
 
-def test_copy_exclude_status_leaves_out_rows_referencing_left_out_rows(tmp_path):
+def test_copy_validates_only_the_copied_rows(tmp_path):
     source = tmp_path / "source.sqlite"
     with Session(_engine(source)) as session:
-        session.add_all(
-            [
-                _region("old", Status.INACTIVE),
-                _zone("old"),
-                _server_price("old"),
-                _benchmark("old", Status.INACTIVE),
-                _score("old"),
-                _region("nbg1"),
-                _zone("nbg1"),
-                _server_price("nbg1"),
-                _benchmark("static_web:rps"),
-                _score("static_web:rps"),
-            ]
-        )
+        # statuses valid only for servers and databases
+        session.add_all([_region("old", Status.RETIRED), _zone("old", Status.RETIRED)])
+        session.add_all([_region("nbg1"), _zone("nbg1")])
         session.commit()
 
-    target = tmp_path / "active.sqlite"
+    args = ["copy", "--source", f"sqlite:///{source}", "--target"]
+    result = runner.invoke(cli, [*args, f"sqlite:///{tmp_path / 'all.sqlite'}"])
+    assert isinstance(result.exception, ValidationError)
+
+    target = f"sqlite:///{tmp_path / 'active.sqlite'}"
+    result = runner.invoke(cli, [*args, target, "--exclude-status", "retired"])
+    assert result.exit_code == 0, result.output
+    with Session(create_engine(target)) as session:
+        for model in (Region, Zone):
+            assert _statuses(session, model) == {"nbg1": Status.ACTIVE}
+
+
+def test_copy_streams_partitions(tmp_path):
+    source = tmp_path / "source.sqlite"
+    target = tmp_path / "target.sqlite"
+    scores = 10_001
+    with Session(_engine(source)) as session:
+        _seed(session)
+        ArchiveRule.apply(session)
+        session.add_all(
+            [_score("static_web:rps", server_id=f"s{i}") for i in range(scores)]
+        )
+        price = _server_price("nbg1", server_id="tiered")
+        price.price_tiered = [PriceTier(lower=0, upper="Infinity", price=0.5)]
+        session.add(price)
+        session.commit()
+
     result = runner.invoke(
         cli,
-        [
-            *["copy", "--source", f"sqlite:///{source}"],
-            *["--target", f"sqlite:///{target}", "--exclude-status", "inactive"],
-        ],
+        ["copy", "--source", f"sqlite:///{source}", "--target", f"sqlite:///{target}"],
+    )
+    assert result.exit_code == 0, result.output
+    source, target = f"sqlite:///{source}", f"sqlite:///{target}"
+    assert hash_database(source) == hash_database(target)
+    # observed_at is not hashed
+    query = "SELECT resource_id, observed_at FROM benchmark_score ORDER BY 1, 2"
+    with create_engine(source).connect() as conn:
+        observed = conn.exec_driver_sql(query).all()
+    with create_engine(target).connect() as conn:
+        assert conn.exec_driver_sql(query).all() == observed
+        assert len(observed) == scores + 2
+        heads = ScriptDirectory(join(pkg_folder, "alembic")).get_heads()
+        assert [get_revision(conn)] == heads
+
+
+@pytest.mark.parametrize("distance", [1, 10_000])
+@pytest.mark.parametrize("latest", [0, 1])
+def test_copy_dedupes_json_primary_keys(tmp_path, distance, latest):
+    source = tmp_path / "source.sqlite"
+    target = tmp_path / "target.sqlite"
+    # same config with different key order
+    configs = [HashableDict(a=1, b=2), HashableDict(b=2, a=1)]
+    with Session(_engine(source)) as session:
+        for i, config in enumerate(configs):
+            score = _score("static_web:rps", server_id="duplicated")
+            score.config = config
+            score.score = i
+            score.observed_at = datetime(2026, 1, 2 if i == latest else 1)
+            session.add(score)
+            session.flush()
+        # observed between the duplicates, so these can be in other partitions
+        for i in range(distance - 1):
+            score = _score("static_web:rps", server_id=f"s{i}")
+            score.observed_at = datetime(2026, 1, 1, 12)
+            session.add(score)
+        session.commit()
+        assert len(session.exec(select(BenchmarkScore)).all()) == distance + 1
+
+    result = runner.invoke(
+        cli,
+        ["copy", "--source", f"sqlite:///{source}", "--target", f"sqlite:///{target}"],
     )
     assert result.exit_code == 0, result.output
     with Session(create_engine(f"sqlite:///{target}")) as session:
-        for model in (Region, Zone, ServerPrice):
-            assert _statuses(session, model) == {"nbg1": Status.ACTIVE}
-        for model in (Benchmark, BenchmarkScore):
-            assert _statuses(session, model) == {"static_web:rps": Status.ACTIVE}
+        assert len(session.exec(select(BenchmarkScore)).all()) == distance
+        score = session.exec(
+            select(BenchmarkScore).where(BenchmarkScore.resource_id == "duplicated")
+        ).one()
+        assert score.score == latest
+        assert score.config == {"a": 1, "b": 2}
 
 
 def test_downgrade_resets_archived_statuses(tmp_path):

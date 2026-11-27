@@ -42,7 +42,7 @@ from .insert import _primary_key_tuple, insert_items
 from .logger import ProgressPanel, ScRichHandler, VendorProgressTracker, logger
 from .lookup import benchmarks, compliance_frameworks, countries
 from .sentry import before_send, sentry_capture_or_raise
-from .table_fields import Status
+from .table_fields import HashableJSON, Status
 from .tables import (
     ArchiveRule,
     Benchmark,
@@ -361,8 +361,9 @@ def copy(
     """Copy the standard Crawler tables of a database into a blank database.
 
     All rows are copied by default. Use `--exclude-status` to leave out rows,
-    e.g. the archived records that are kept only for history. Rows referencing
-    a left out row (e.g. the zones of an excluded region) are also left out.
+    e.g. the archived records that are kept only for history. Rows are left out
+    only by their own status, so with statuses other than `archived`, the rows
+    referencing a left out row (e.g. the zones of an inactive region) are kept.
     """
 
     source_engine = create_engine(source, pool_pre_ping=True)
@@ -379,41 +380,55 @@ def copy(
     )
     panel = Panel(progress, title="Copying tables", expand=False)
 
-    # left out rows per table name, to also leave out the rows referencing them
-    left_out = {}
-    with Live(panel):
+    # stream the rows from the source and bulk insert them into the blank
+    # target in a single transaction
+    with (
+        Live(panel),
+        source_engine.connect() as source_connection,
+        target_engine.begin() as target_connection,
+    ):
         # tables are ordered so that referenced tables come first
         for table in tables:
-            with Session(source_engine) as source_session:
-                rows = source_session.exec(statement=select(table))
-                items = [row.model_dump() for row in rows]
+            table_name = table.get_table_name()
+            pid = progress.add_task(f"Copying {table_name}(s)", total=None)
+            copied = 0
+            query = select(table.__table__)
             if exclude_status:
-                # (referencing columns, referenced values of the left out rows)
-                references = [
-                    (
-                        fk.column_keys,
-                        {
-                            tuple(row[e.column.name] for e in fk.elements)
-                            for row in left_out[fk.referred_table.name]
-                        },
-                    )
-                    for fk in table.__table__.foreign_key_constraints
+                query = query.where(table.__table__.c.status.not_in(exclude_status))
+            primary_keys = table.get_columns()["primary_keys"]
+            # rows differing only in the key order of a JSON primary key become
+            # duplicates when validated, so keep the last observed one
+            dedupe = any(
+                isinstance(column.type, HashableJSON)
+                for column in table.__table__.primary_key
+            )
+            if dedupe:
+                query = query.order_by(table.__table__.c.observed_at.desc())
+            seen = set()
+            result = source_connection.execution_options(yield_per=10_000).execute(
+                query
+            )
+            for rows in result.mappings().partitions():
+                # PostgreSQL JSONB columns lose the key order and older rows
+                # might miss new JSON fields, so normalize as when inserted
+                rows = [
+                    table.__validator__.model_validate(dict(row)).model_dump()
+                    for row in rows
                 ]
-                kept, left_out[table.get_table_name()] = [], []
-                for item in items:
-                    if item["status"] in exclude_status or any(
-                        tuple(item[c] for c in columns) in values
-                        for columns, values in references
-                    ):
-                        left_out[table.get_table_name()].append(item)
-                    else:
-                        kept.append(item)
-                items = kept
-            with Session(target_engine) as target_session:
-                insert_items(table, items, session=target_session, progress=progress)
-                target_session.commit()
-    with target_engine.begin() as connection:
-        command.stamp(alembic_cfg(connection), "heads")
+                if dedupe:
+                    unique = []
+                    for row in rows:
+                        key = _primary_key_tuple(row, primary_keys)
+                        if key not in seen:
+                            seen.add(key)
+                            unique.append(row)
+                    rows = unique
+                if rows:
+                    target_connection.execute(table.__table__.insert(), rows)
+                copied += len(rows)
+                progress.update(pid, completed=copied)
+            progress.update(pid, total=copied)
+        command.stamp(alembic_cfg(target_connection), "heads")
 
 
 @cli.command()
