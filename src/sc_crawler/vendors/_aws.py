@@ -1620,7 +1620,9 @@ def _make_server_from_instance_type(instance_type, vendor) -> dict:
         "hypervisor": (
             Hypervisor.BARE_METAL
             if instance_type["BareMetal"]
-            else Hypervisor[instance_type["Hypervisor"].upper()]
+            else Hypervisor[hypervisor.upper()]
+            if (hypervisor := instance_type.get("Hypervisor"))
+            else None
         ),
         "family": _instance_family(it),
         "series": series,

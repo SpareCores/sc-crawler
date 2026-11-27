@@ -1563,6 +1563,8 @@ def test_aws_get_products_uses_the_pricing_client():
         ("m5.metal", True, None, Hypervisor.BARE_METAL),
         ("m5.large", False, "nitro", Hypervisor.NITRO),
         ("m4.large", False, "xen", Hypervisor.XEN),
+        # not reported by the API: unknown
+        ("m9.large", False, None, None),
     ],
 )
 def test_aws_hypervisor(instance_type, bare_metal, api_hypervisor, hypervisor):
