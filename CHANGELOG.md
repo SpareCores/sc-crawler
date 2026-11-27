@@ -6,10 +6,6 @@ New feature(s):
   instance types of the Basic, High-availability and Cluster Editions with
   their pay-as-you-go prices, and the ESSD storage options priced per edition
   (e.g. `cloud_essd-ha`). Cluster Edition prices are stored for 2 nodes.
-  When a lookup is still incomplete after the retries (e.g. a region failing
-  or throttled), nothing is returned for that table: the database and storage
-  prices are left unchanged, while all `AliCloud` databases are `INACTIVE`
-  until the next complete run.
 
 Fix(es):
 
@@ -17,11 +13,10 @@ Fix(es):
   locations, as the region inventory failed on it.
 - Retry the transient network errors (connection resets and timeouts) of the
   `AliCloud` availability zone lookups, instead of marking the region inactive.
-- Keep the previous `AliCloud` spot prices not sampled in a run, while the
-  instance type is sold on-demand in the zone, and drop the ones sampled
-  without a spot price. Only the spot prices of the latest run stayed active:
-  the ones observed in the last 30 days were reactivated, then marked inactive
-  again before inserting the new ones.
+- Keep the `AliCloud` spot prices sampled in earlier runs active until a new
+  sample shows no spot price, or the instance type is no longer sold
+  on-demand in the zone. Before, only the spot prices of the latest run stayed
+  active.
 - Mark the `AliCloud` regions returned with "Closed Down" in their name (e.g.
   `cn-nanjing`) inactive.
 - Retry the `AliCloud` API errors with HTTP 5xx and an empty body, and log the
