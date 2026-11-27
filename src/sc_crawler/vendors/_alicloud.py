@@ -6,11 +6,12 @@ from datetime import date
 from functools import cache
 from itertools import chain
 from logging import CRITICAL, DEBUG, INFO, WARN, getLogger
-from math import inf
+from math import inf, isclose
 from os import environ
 from random import shuffle
 from re import compile as recompile
 from re import search, sub
+from threading import Lock
 from time import monotonic, sleep, time
 from typing import List, Optional
 
@@ -39,10 +40,12 @@ from alibabacloud_rds20140815.models import (
 from alibabacloud_rds20140815.models import (
     DescribePriceRequest as RdsDescribePriceRequest,
 )
+from alibabacloud_tea_openapi.exceptions import ServerException
 from alibabacloud_tea_openapi.models import Config
 from alibabacloud_tea_util.models import RuntimeOptions
 from cachier import cachier
-from Tea.exceptions import TeaException
+from darabonba.exceptions import RetryError
+from Tea.exceptions import TeaException, UnretryableException
 
 from ..inspector import (
     _extract_family,
@@ -892,38 +895,30 @@ def _get_zones(client: EcsClient, region_id: str) -> list[dict]:
     return response.body.to_map()["Zones"]["Zone"]
 
 
-# transient errors of the API endpoints worth retrying: throttling, and network
-# errors seen at the endpoints far from the client (connection resets and
-# connect or read timeouts)
-_TRANSIENT_ERRORS = (
-    "Throttling",
-    "Connection aborted",
-    "Connection reset",
-    "timed out",
-    "Max retries exceeded",
-)
-
-
 def _is_transient_error(error: Exception) -> bool:
     """Whether an API error is worth retrying.
 
-    Throttling and network errors (see `_TRANSIENT_ERRORS`), and the failures of
-    the service (HTTP 5xx), e.g. the `RequestMetaDataFailed` ("The service
-    request failed. Please try again later") or `ExternalFailure` errors
-    documented for the RDS `DescribePrice` endpoint:
+    Throttling (`Throttling*` error codes), network errors (connection resets
+    and timeouts, e.g. at the endpoints far from the client, raised by the SDK
+    as an `UnretryableException` of a `RetryError`), and the failures of the
+    service (HTTP 5xx, `ServerException`), e.g. the `RequestMetaDataFailed`
+    ("The service request failed. Please try again later") or `ExternalFailure`
+    errors documented for the RDS `DescribePrice` endpoint:
     https://www.alibabacloud.com/help/en/rds/apsaradb-rds-for-postgresql/api-rds-2014-08-15-describeprice-postgresql
     """
-    # the SDK sets `statusCode` only when the error body is not empty
-    status_code = getattr(error, "statusCode", None) or getattr(
-        error, "status_code", None
-    )
-    if isinstance(status_code, int) and status_code >= 500:
+    if isinstance(error, UnretryableException):
+        return isinstance(error.inner_exception, RetryError)
+    if isinstance(error, ServerException):
         return True
-    return any(transient in str(error) for transient in _TRANSIENT_ERRORS)
+    return isinstance(error, TeaException) and (error.code or "").startswith(
+        "Throttling"
+    )
 
 
-# error codes already logged as a warning, see `_log_api_error`
+# error codes already logged as a warning in the current inventory, see
+# `_log_api_error`, cleared at the start of the inventories using it
 _logged_error_codes: set[str] = set()
+_logged_error_codes_lock = Lock()
 
 
 def _log_api_error(message: str, error: Exception) -> None:
@@ -933,10 +928,12 @@ def _log_api_error(message: str, error: Exception) -> None:
     instance types.
     """
     code = getattr(error, "code", None) or type(error).__name__
-    if code in _logged_error_codes:
+    with _logged_error_codes_lock:
+        logged = code in _logged_error_codes
+        _logged_error_codes.add(code)
+    if logged:
         logger.debug(f"{message}: {error}")
         return
-    _logged_error_codes.add(code)
     logger.warning(
         f"{message}: {code}: {getattr(error, 'message', None) or error} "
         f"(further {code} errors are logged on DEBUG)"
@@ -2218,27 +2215,46 @@ def inventory_server_prices_spot(vendor):
     not sampled now are returned as well, while the instance type is sold
     on-demand in the zone, so the spot prices are refreshed over the runs. The
     ones sampled without a spot price are dropped.
+
+    In the active regions without active on-demand prices, the instances of the
+    previous active spot prices are sampled instead: e.g. when the on-demand
+    prices of a region were not found in the last full run, the spot-only runs
+    until the next full run would drop all the spot prices of the region.
     """
     sample_time = 120  # seconds
+    _logged_error_codes.clear()
 
     ecs_clients: dict[str, EcsClient] = _ecs_clients(vendor)
 
-    ondemand_instances = defaultdict(list)
+    instances = defaultdict(list)
     for server_price in vendor.server_prices:
         if (
             server_price.allocation == Allocation.ONDEMAND
             and server_price.status == Status.ACTIVE
         ):
-            ondemand_instances[server_price.region_id].append(
+            instances[server_price.region_id].append(
                 (server_price.zone_id, server_price.server_id)
             )
+    previous = [
+        server_price.model_dump()
+        for server_price in vendor.server_prices
+        if server_price.allocation == Allocation.SPOT
+        and server_price.status == Status.ACTIVE
+    ]
+    ondemand_regions = set(instances)
+    for item in previous:
+        if (
+            item["region_id"] in ecs_clients
+            and item["region_id"] not in ondemand_regions
+        ):
+            instances[item["region_id"]].append((item["zone_id"], item["server_id"]))
 
-    if not ondemand_instances:
-        logger.error("No active ondemand instances found")
+    if not instances:
+        logger.error("No active on-demand or spot prices found")
         return []
 
-    for region_id in ondemand_instances:
-        shuffle(ondemand_instances[region_id])
+    for region_id in instances:
+        shuffle(instances[region_id])
 
     def fetch_spot_instance_price(
         region_id: str, zone_instance_list: list[tuple[str, str]], client: EcsClient
@@ -2323,16 +2339,16 @@ def inventory_server_prices_spot(vendor):
 
     vendor.progress_tracker.start_task(
         name=f"Fetching spot instance prices for {sample_time} second(s)",
-        total=sum(len(zil) for zil in ondemand_instances.values()),
+        total=sum(len(zil) for zil in instances.values()),
     )
 
-    with ThreadPoolExecutor(max_workers=len(ondemand_instances)) as executor:
+    with ThreadPoolExecutor(max_workers=len(instances)) as executor:
         results = list(
             executor.map(
                 lambda args: fetch_spot_instance_price(*args),
                 [
                     (region_id, zone_instance_list, ecs_clients[region_id])
-                    for region_id, zone_instance_list in ondemand_instances.items()
+                    for region_id, zone_instance_list in instances.items()
                 ],
             )
         )
@@ -2347,15 +2363,9 @@ def inventory_server_prices_spot(vendor):
     sampled = {key(item) for item in items} | no_spot
     offered = {
         (region_id, zone_id, server_id)
-        for region_id, zone_instance_list in ondemand_instances.items()
+        for region_id, zone_instance_list in instances.items()
         for zone_id, server_id in zone_instance_list
     }
-    previous = [
-        server_price.model_dump()
-        for server_price in vendor.server_prices
-        if server_price.allocation == Allocation.SPOT
-        and server_price.status == Status.ACTIVE
-    ]
     kept = [
         item for item in previous if key(item) in offered and key(item) not in sampled
     ]
@@ -2364,11 +2374,14 @@ def inventory_server_prices_spot(vendor):
         f"Sampled {len(items)} spot prices, kept {len(kept)} previous ones not "
         f"sampled now, and dropped {dropped} not sold anymore."
     )
-    if previous and not items and not kept:
+    sampled_regions = {region_id for region_id, _, _ in sampled}
+    if previous and not items and not kept and sampled_regions:
         # no records to return, so the previous ones are not marked inactive by
         # the caller
         vendor.set_table_rows_inactive(
-            ServerPrice, ServerPrice.allocation == Allocation.SPOT
+            ServerPrice,
+            ServerPrice.allocation == Allocation.SPOT,
+            ServerPrice.region_id.in_(sorted(sampled_regions)),
         )
     return items + kept
 
@@ -3244,7 +3257,8 @@ def _rds_map_regions(vendor: Vendor, name: str, fetch, fallback) -> dict[str, di
         return fetch(clients[region_id], region_id)
 
     def fetch_region_or_fallback(region_id: str):
-        # API and network errors fall back, other errors are bugs
+        # API and network errors fall back (the network errors are raised as
+        # `UnretryableException`, a `TeaException`), other errors are bugs
         with sentry_capture_or_raise(vendor=vendor):
             try:
                 return region_id, fetch_region(name, region_id), True
@@ -3644,10 +3658,12 @@ def _rds_region_prices(
 
     Only for the instance types of the `editions` (`{class_code: edition_id}`).
 
-    The `ReferencePrice` of `ListClasses` is used when available, and
-    `DescribePrice` is called for the rest of the orderable instance types, in
-    up to 3 zones the instance type was found in, until priced. Prices are per
-    node in the Cluster Edition.
+    `DescribePrice` is called for the orderable instance types, in up to 3
+    zones the instance type was found in, until priced. The `ReferencePrice` of
+    `ListClasses` is used instead when available, if it matched the
+    `DescribePrice` of the first instance type of the edition priced with both
+    (e.g. it is not for all the nodes of a cluster). Prices are per node in the
+    Cluster Edition.
 
     Returns:
         The prices by instance type, and the instance types not priced due to
@@ -3657,11 +3673,13 @@ def _rds_region_prices(
     failed = set()
     endpoint_unavailable = False
     for edition_id, classes in offer["classes"].items():
+        # whether the reference prices match `DescribePrice`, unknown until checked
+        reference_valid = None
         for class_code, available in classes.items():
             if editions.get(class_code) != edition_id:
                 continue
             reference_price = specs.get(class_code, {}).get("ReferencePrice")
-            if reference_price:
+            if reference_price and reference_valid:
                 # USD cents
                 prices[class_code] = (float(reference_price) / 100, "USD")
                 continue
@@ -3695,6 +3713,18 @@ def _rds_region_prices(
                     break
             if class_code not in prices and unavailable:
                 failed.add(class_code)
+            elif reference_price and reference_valid is None and class_code in prices:
+                price, currency = prices[class_code]
+                reference_valid = currency == "USD" and isclose(
+                    price, float(reference_price) / 100, rel_tol=0.01
+                )
+                if not reference_valid:
+                    logger.warning(
+                        f"RDS reference price of {class_code} in {region_id} "
+                        f"({reference_price} US cents) differs from DescribePrice "
+                        f"({price} {currency}), not using the reference prices of "
+                        f"the {edition_id} edition"
+                    )
     return prices, failed
 
 
@@ -3718,13 +3748,16 @@ def inventory_database_prices(vendor):
     and stored for the smallest cluster of 2 nodes.
 
     Nothing is returned (the previous prices are left unchanged) when a region
-    or an instance type could not be priced, see `_RdsPriceUnavailable`.
+    could not be looked up. The previous active prices of the instance types
+    that could not be priced (see `_RdsPriceUnavailable`) are returned as they
+    are.
 
     Data sources:
 
     - <https://www.alibabacloud.com/help/en/rds/developer-reference/api-rds-2014-08-15-listclasses>
     - <https://www.alibabacloud.com/help/en/rds/developer-reference/api-rds-2014-08-15-describeprice>
     """
+    _logged_error_codes.clear()
     offers = _get_rds_offers(vendor)
     specs = _get_rds_class_specs(vendor)
     clients = _rds_clients(vendor)
@@ -3739,7 +3772,8 @@ def inventory_database_prices(vendor):
     )
 
     def fetch_region_prices(region_id: str):
-        # API and network errors fall back, other errors are bugs
+        # API and network errors fall back (the network errors are raised as
+        # `UnretryableException`, a `TeaException`), other errors are bugs
         with sentry_capture_or_raise(vendor=vendor):
             try:
                 return region_id, _rds_region_prices(
@@ -3792,14 +3826,26 @@ def inventory_database_prices(vendor):
                     )
             vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
-    if failed or failed_classes:
+    if failed:
         vendor.log(
             "Not updating the database prices: failed to look up the regions "
-            f"{', '.join(sorted(failed)) or '-'}, and to price "
-            f"{len(failed_classes)} instance types.",
+            f"{', '.join(sorted(failed))}.",
             level=WARN,
         )
         return []
+    if failed_classes:
+        kept = [
+            price.model_dump()
+            for price in vendor.database_prices
+            if (price.region_id, price.database_id) in failed_classes
+            and price.status == Status.ACTIVE
+        ]
+        vendor.log(
+            f"Failed to price {len(failed_classes)} instance type and region pairs, "
+            f"kept their {len(kept)} previous prices.",
+            level=WARN,
+        )
+        items += kept
     return items
 
 
@@ -3939,10 +3985,13 @@ def inventory_database_storage_prices(vendor):
     (as billed), and 2 nodes of the Cluster Edition (billed per node).
 
     Nothing is returned (the previous prices are left unchanged) when a region
-    or a database storage could not be priced, see `_RdsPriceUnavailable`.
+    could not be looked up. The previous active prices of the database storages
+    that could not be priced (see `_RdsPriceUnavailable`) are returned as they
+    are.
 
     Data source: <https://www.alibabacloud.com/help/en/rds/developer-reference/api-rds-2014-08-15-describeprice>
     """
+    _logged_error_codes.clear()
     offers = _get_rds_offers(vendor)
     specs = _get_rds_class_specs(vendor)
     clients = _rds_clients(vendor)
@@ -3953,7 +4002,8 @@ def inventory_database_storage_prices(vendor):
     )
 
     def fetch_region_prices(region_id: str):
-        # API and network errors fall back, other errors are bugs
+        # API and network errors fall back (the network errors are raised as
+        # `UnretryableException`, a `TeaException`), other errors are bugs
         with sentry_capture_or_raise(vendor=vendor):
             try:
                 return region_id, _rds_region_storage_prices(
@@ -4002,12 +4052,24 @@ def inventory_database_storage_prices(vendor):
                 )
             vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
-    if failed or failed_storages:
+    if failed:
         vendor.log(
             "Not updating the database storage prices: failed to look up the "
-            f"regions {', '.join(sorted(failed)) or '-'}, and to price "
-            f"{len(failed_storages)} storages.",
+            f"regions {', '.join(sorted(failed))}.",
             level=WARN,
         )
         return []
+    if failed_storages:
+        kept = [
+            price.model_dump()
+            for price in vendor.database_storage_prices
+            if (price.region_id, price.database_storage_id) in failed_storages
+            and price.status == Status.ACTIVE
+        ]
+        vendor.log(
+            f"Failed to price {len(failed_storages)} storage and region pairs, "
+            f"kept their {len(kept)} previous prices.",
+            level=WARN,
+        )
+        items += kept
     return items

@@ -1,6 +1,13 @@
 from unittest.mock import Mock, patch
 
 import pytest
+from alibabacloud_tea_openapi.exceptions import (
+    ClientException,
+    ServerException,
+    ThrottlingException,
+)
+from darabonba.exceptions import RetryError
+from Tea.exceptions import UnretryableException
 
 from sc_crawler.inspector import _standardize_gpu_count
 from sc_crawler.table_fields import (
@@ -896,7 +903,9 @@ def test_alicloud_inventory_database_prices_by_edition():
         # pg.n2.2c.2m is listed as available, but has no pricing plan
         if class_code == "pg.n2.2c.2m":
             return None
-        return {"currency": "USD", "modules": {"rds_class": 0.071}}
+        # matching the reference prices
+        price = {"pg.n2.2c.1m": 0.0827, "pg.x4.large.2c": 0.7634}.get(class_code)
+        return {"currency": "USD", "modules": {"rds_class": price or 0.071}}
 
     offers, specs, clients = _rds_patches()
     with (
@@ -908,10 +917,13 @@ def test_alicloud_inventory_database_prices_by_edition():
         ) as fetch,
     ):
         prices = inventory_database_prices(vendor)
-    # only for the orderable instance types without a reference price
+    # for the orderable instance types without a reference price, and the first
+    # one with a reference price in each edition to check it
     assert sorted(call.kwargs["class_code"] for call in fetch.call_args_list) == [
+        "pg.n2.2c.1m",
         "pg.n2.2c.2m",
         "pg.x2e.medium.xc",
+        "pg.x4.large.2c",
     ]
     assert {price["region_id"] for price in prices} == {"eu-central-1"}
     by_key = {
@@ -1073,6 +1085,43 @@ def test_alicloud_rds_region_prices_try_more_zones():
             {},
             {"pg.x"},
         )
+
+
+def test_alicloud_rds_region_prices_check_the_reference_prices():
+    params = [{"zone_id": "a", "engine_version": "17.0", "storage_type": "cloud_essd"}]
+    available = {"zones": params, "versions": ["17.0"]}
+    offer = {"classes": {"cluster": {"pg.x": available, "pg.y": available}}}
+    editions = {"pg.x": "cluster", "pg.y": "cluster"}
+    specs = {"pg.x": {"ReferencePrice": "13.8"}, "pg.y": {"ReferencePrice": "20"}}
+    unit_prices = {"pg.x": 0.069, "pg.y": 0.1}
+
+    def fetch_price(class_code, **kwargs):
+        return {"currency": "USD", "modules": {"rds_class": unit_prices[class_code]}}
+
+    # the reference price is for both nodes, not per node: not used
+    with (
+        patch(
+            "sc_crawler.vendors._alicloud._fetch_rds_price", side_effect=fetch_price
+        ) as fetch,
+        patch("sc_crawler.vendors._alicloud.logger") as logger,
+    ):
+        assert _rds_region_prices(Mock(), "r", offer, specs, editions) == (
+            {"pg.x": (0.069, "USD"), "pg.y": (0.1, "USD")},
+            set(),
+        )
+    assert fetch.call_count == 2
+    logger.warning.assert_called_once()
+
+    # matching: used for the rest of the edition
+    specs = {"pg.x": {"ReferencePrice": "6.9"}, "pg.y": {"ReferencePrice": "10.5"}}
+    with patch(
+        "sc_crawler.vendors._alicloud._fetch_rds_price", side_effect=fetch_price
+    ) as fetch:
+        assert _rds_region_prices(Mock(), "r", offer, specs, editions) == (
+            {"pg.x": (0.069, "USD"), "pg.y": (0.105, "USD")},
+            set(),
+        )
+    assert [call.kwargs["class_code"] for call in fetch.call_args_list] == ["pg.x"]
 
 
 def test_alicloud_rds_region_prices_stop_when_the_endpoint_is_unavailable():
@@ -1342,7 +1391,7 @@ def test_alicloud_rds_multi_zone_needs_a_shared_engine_version():
 
 def test_alicloud_fetch_rds_price_warns_when_throttled():
     client = Mock()
-    client.describe_price_with_options.side_effect = Exception("Throttling.User")
+    client.describe_price_with_options.side_effect = _tea_error("Throttling.User", 400)
     with (
         patch("sc_crawler.vendors._alicloud.sleep"),
         patch("sc_crawler.vendors._alicloud.logger") as logger,
@@ -1353,7 +1402,7 @@ def test_alicloud_fetch_rds_price_warns_when_throttled():
     logger.warning.assert_called_once()
 
     # other errors (e.g. a missing permission): no price, not "not sold" either
-    client.describe_price_with_options.side_effect = Exception("InvalidParameter")
+    client.describe_price_with_options.side_effect = _tea_error("InvalidParameter", 400)
     with (
         patch("sc_crawler.vendors._alicloud.logger") as logger,
         patch("sc_crawler.vendors._alicloud._logged_error_codes", set()),
@@ -1416,6 +1465,19 @@ def test_alicloud_rds_map_regions_retries_only_the_failed_regions():
         assert sorted(calls) == ["r1", "r2", "r2"]
 
 
+def test_alicloud_rds_map_regions_falls_back_on_network_errors():
+    def fetch(client, region_id):
+        raise _network_error("Connection reset by peer")
+
+    with (
+        patch("sc_crawler.vendors._alicloud._rds_clients", return_value={"r": Mock()}),
+        patch("sc_crawler.vendors._alicloud._rds_region_results", {}),
+        patch("sc_crawler.vendors._alicloud.cachier", lambda **kwargs: lambda f: f),
+    ):
+        name = "test lookup with a network error"
+        assert _rds_map_regions(Mock(), name, fetch, "failed") == {"r": "failed"}
+
+
 def test_alicloud_rds_map_regions_raises_on_bugs(monkeypatch):
     monkeypatch.delenv("SENTRY_DSN", raising=False)
     with (
@@ -1475,8 +1537,8 @@ def test_alicloud_storage_price_uses_a_zone_offering_the_disk_type():
 def test_alicloud_call_with_retries_on_transient_errors():
     call = Mock(
         side_effect=[
-            Exception("Connection to ecs.cn-chengdu.aliyuncs.com timed out."),
-            Exception("('Connection aborted.', ConnectionResetError(54))"),
+            _network_error("Connection to ecs.cn-chengdu.aliyuncs.com timed out."),
+            _network_error("('Connection aborted.', ConnectionResetError(54))"),
             "ok",
         ]
     )
@@ -1485,8 +1547,11 @@ def test_alicloud_call_with_retries_on_transient_errors():
     assert [c.args[0] for c in sleep.call_args_list] == [2, 3]
 
     # not transient, or out of attempts
-    for error, calls in (("InvalidParameter", 1), ("Read timed out", 5)):
-        call = Mock(side_effect=Exception(error))
+    for error, calls in (
+        (_tea_error("InvalidParameter", 400), 1),
+        (_network_error("Read timed out"), 5),
+    ):
+        call = Mock(side_effect=error)
         with patch("sc_crawler.vendors._alicloud.sleep"), pytest.raises(Exception):
             _call_with_retries(call)
         assert call.call_count == calls
@@ -1496,7 +1561,7 @@ def test_alicloud_get_zones_retries_timeouts():
     client = Mock()
     response = Mock()
     response.body.to_map.return_value = {"Zones": {"Zone": [{"ZoneId": "a"}]}}
-    client.describe_zones.side_effect = [Exception("Read timed out."), response]
+    client.describe_zones.side_effect = [_network_error("Read timed out."), response]
     with patch("sc_crawler.vendors._alicloud.sleep"):
         assert _get_zones(client, "cn-chengdu") == [{"ZoneId": "a"}]
 
@@ -1556,23 +1621,40 @@ def test_alicloud_storage_price_uses_an_older_engine_version_offering_the_disk_t
 
 
 def _tea_error(code, status_code):
-    from Tea.exceptions import TeaException
-
-    return TeaException(
-        {
-            "code": code,
-            "message": f"{code} message",
-            "data": {"statusCode": status_code, "Code": code},
-        }
+    """An API error, as raised by `do_rpcrequest` of the SDK."""
+    if code.startswith("Throttling"):
+        error_class = ThrottlingException
+    elif status_code >= 500:
+        error_class = ServerException
+    else:
+        error_class = ClientException
+    return error_class(
+        status_code=status_code,
+        code=code,
+        message=f"{code} message",
+        data={"Code": code},
     )
+
+
+def _network_error(message):
+    """A network error, as raised by `do_rpcrequest` of the SDK."""
+    return UnretryableException(None, RetryError(message))
 
 
 def test_alicloud_server_errors_are_transient():
     assert _is_transient_error(_tea_error("RequestMetaDataFailed", 500))
     assert _is_transient_error(_tea_error("ExternalFailure", 500))
     assert not _is_transient_error(_tea_error("Price.PricingPlanResultNotFound", 400))
-    assert _is_transient_error(Exception("Throttling.User"))
-    assert not _is_transient_error(Exception("InvalidParameter"))
+    assert _is_transient_error(_tea_error("Throttling.User", 400))
+    assert not _is_transient_error(_tea_error("InvalidParameter", 400))
+    # not matched in the message
+    assert not _is_transient_error(_tea_error("InvalidParameter.Throttling", 400))
+    assert _is_transient_error(_network_error("Read timed out."))
+    # other errors wrapped by the SDK, or not raised by it
+    assert not _is_transient_error(
+        UnretryableException(None, ValueError("Read timed out."))
+    )
+    assert not _is_transient_error(Exception("Throttling.User"))
 
 
 def test_alicloud_fetch_rds_price_not_sold_and_errors_logged_once():
@@ -1715,8 +1797,8 @@ def test_alicloud_inventory_databases_retries_the_failed_lookups():
     assert "pg.n4.2c.1m" in {row["database_id"] for row in rows}
 
 
-def test_alicloud_inventory_database_prices_nothing_on_failed_quotes():
-    """An instance type failing to be priced leaves all the prices unchanged."""
+def test_alicloud_inventory_database_prices_keep_the_failed_quotes():
+    """The instance types failing to be priced keep their previous prices."""
     vendor, rows = _inventory_rds_databases()
     vendor.databases = [
         Mock(
@@ -1726,18 +1808,45 @@ def test_alicloud_inventory_database_prices_nothing_on_failed_quotes():
         )
         for row in rows.values()
     ]
+
+    def database_price(region_id, database_id, status=Status.ACTIVE):
+        row = {
+            "region_id": region_id,
+            "database_id": database_id,
+            "status": status,
+            "price": 1.0,
+        }
+        return Mock(**row, model_dump=Mock(return_value=row))
+
+    vendor.database_prices = [
+        database_price("eu-central-1", "pg.n2.2c.2m"),
+        database_price("eu-central-1", "pg.x2e.medium.xc", Status.INACTIVE),
+        # priced now
+        database_price("eu-central-1", "pg.n2.2c.1m"),
+    ]
+
+    def fetch_price(class_code, **kwargs):
+        if class_code in ("pg.n2.2c.2m", "pg.x2e.medium.xc"):
+            raise _RdsPriceUnavailable("Forbidden.RAM")
+        price = {"pg.n2.2c.1m": 0.0827, "pg.x4.large.2c": 0.7634}[class_code]
+        return {"currency": "USD", "modules": {"rds_class": price}}
+
     offers, specs, clients = _rds_patches()
     with (
         offers,
         specs,
         clients,
-        patch(
-            "sc_crawler.vendors._alicloud._fetch_rds_price",
-            side_effect=_RdsPriceUnavailable("Forbidden.RAM"),
-        ),
+        patch("sc_crawler.vendors._alicloud._fetch_rds_price", side_effect=fetch_price),
     ):
-        assert inventory_database_prices(vendor) == []
-    assert "2 instance types" in vendor.log.call_args.args[0]
+        prices = inventory_database_prices(vendor)
+    assert sorted((price["database_id"], price["price"]) for price in prices) == [
+        ("pg.n2.2c.1m", 0.0827),
+        ("pg.n2.2c.2m", 1.0),
+        ("pg.n2.medium.1", 0.0827),
+        ("pg.x4.large.2c", 0.7634),
+        ("pg.x4.large.2c", 0.7634),
+    ]
+    assert "2 instance type and region pairs" in vendor.log.call_args.args[0]
 
 
 def test_alicloud_storage_price_tries_other_zones_of_the_same_class():
@@ -1848,3 +1957,133 @@ def test_alicloud_inventory_server_prices_spot_keeps_the_ones_not_sampled():
         ("ecs.unknown", 0.5),
     }
     vendor.set_table_rows_inactive.assert_not_called()
+
+
+def _spot_vendor(*rows):
+    def server_price(region_id, server_id, allocation, price=None):
+        row = {
+            "region_id": region_id,
+            "zone_id": f"{region_id}a",
+            "server_id": server_id,
+            "allocation": allocation,
+            "status": Status.ACTIVE,
+            "price": price,
+        }
+        return Mock(**row, model_dump=Mock(return_value=row))
+
+    return Mock(vendor_id="alicloud", server_prices=[server_price(*r) for r in rows])
+
+
+def _spot_instance_price(spot_prices):
+    def instance_price(instance_type, region_id, **kwargs):
+        if (region_id, instance_type) not in spot_prices:
+            return None
+        price = spot_prices[(region_id, instance_type)]
+        body = Mock()
+        body.price_info.rules.rule = [
+            Mock(description="Preemptible Instance discount" if price else "")
+        ]
+        body.price_info.price.detail_infos.detail_info = [
+            Mock(resource="instanceType", trade_price=price)
+        ]
+        body.price_info.price.currency = "USD"
+        return body
+
+    return instance_price
+
+
+def test_alicloud_inventory_server_prices_spot_without_ondemand_prices():
+    """The active regions without on-demand prices sample the previous spot prices."""
+    from sc_crawler.table_fields import Allocation
+
+    vendor = _spot_vendor(
+        ("r1", "ecs.a", Allocation.ONDEMAND),
+        ("r1", "ecs.a", Allocation.SPOT, 0.5),
+        # no on-demand prices in the region, e.g. a failed lookup in the last
+        # full run: resampled, or kept when not sampled
+        ("r2", "ecs.a", Allocation.SPOT, 0.5),
+        ("r2", "ecs.b", Allocation.SPOT, 0.5),
+        ("r2", "ecs.c", Allocation.SPOT, 0.5),
+        # inactive region
+        ("r3", "ecs.a", Allocation.SPOT, 0.5),
+    )
+    spot_prices = {("r1", "ecs.a"): 0.1, ("r2", "ecs.a"): 0.2, ("r2", "ecs.c"): 0}
+    with (
+        patch(
+            "sc_crawler.vendors._alicloud._ecs_clients",
+            return_value={"r1": Mock(), "r2": Mock()},
+        ),
+        patch(
+            "sc_crawler.vendors._alicloud._get_instance_price",
+            side_effect=_spot_instance_price(spot_prices),
+        ),
+    ):
+        items = inventory_server_prices_spot(vendor)
+    assert {
+        (item["region_id"], item["server_id"], item["price"]) for item in items
+    } == {("r1", "ecs.a", 0.1), ("r2", "ecs.a", 0.2), ("r2", "ecs.b", 0.5)}
+    vendor.set_table_rows_inactive.assert_not_called()
+
+
+def test_alicloud_inventory_server_prices_spot_none_found_in_the_sampled_regions():
+    """Only the spot prices of the sampled regions are marked inactive."""
+    from sc_crawler.table_fields import Allocation
+
+    vendor = _spot_vendor(
+        ("r1", "ecs.a", Allocation.ONDEMAND),
+        ("r1", "ecs.a", Allocation.SPOT, 0.5),
+        # inactive region
+        ("r3", "ecs.a", Allocation.SPOT, 0.5),
+    )
+    with (
+        patch("sc_crawler.vendors._alicloud._ecs_clients", return_value={"r1": Mock()}),
+        patch(
+            "sc_crawler.vendors._alicloud._get_instance_price",
+            side_effect=_spot_instance_price({("r1", "ecs.a"): 0}),
+        ),
+    ):
+        assert inventory_server_prices_spot(vendor) == []
+    vendor.set_table_rows_inactive.assert_called_once()
+    assert vendor.set_table_rows_inactive.call_args.args[2].right.value == ["r1"]
+
+
+def test_alicloud_inventory_database_storage_prices_keep_the_failed_quotes():
+    """The database storages failing to be priced keep their previous prices."""
+    vendor = Mock(vendor_id="alicloud")
+    vendor.database_storages = [
+        Mock(database_storage_id=storage["database_storage_id"])
+        for storage in inventory_database_storages(vendor)
+    ]
+
+    def storage_price(database_storage_id, status=Status.ACTIVE):
+        row = {
+            "region_id": "eu-central-1",
+            "database_storage_id": database_storage_id,
+            "status": status,
+            "price": 1.0,
+        }
+        return Mock(**row, model_dump=Mock(return_value=row))
+
+    vendor.database_storage_prices = [
+        storage_price("cloud_essd-ha"),
+        storage_price("cloud_essd-cluster", Status.INACTIVE),
+    ]
+
+    def fetch_price(edition_id, storage_type, **kwargs):
+        if storage_type != "cloud_essd":
+            return None
+        if edition_id != "basic":
+            raise _RdsPriceUnavailable("Forbidden.RAM")
+        return {"currency": "USD", "modules": {"rds_storage": 0.0006}}
+
+    offers, specs, clients = _rds_patches()
+    with (
+        offers,
+        specs,
+        clients,
+        patch("sc_crawler.vendors._alicloud._fetch_rds_price", side_effect=fetch_price),
+    ):
+        prices = inventory_database_storage_prices(vendor)
+    assert {
+        price["database_storage_id"]: price["price"] for price in prices
+    } == pytest.approx({"cloud_essd-basic": 0.0006 * 730, "cloud_essd-ha": 1.0})

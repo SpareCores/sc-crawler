@@ -15,8 +15,9 @@ Fix(es):
   `AliCloud` availability zone lookups, instead of marking the region inactive.
 - Keep the `AliCloud` spot prices sampled in earlier runs active until a new
   sample shows no spot price, or the instance type is no longer sold
-  on-demand in the zone. Before, only the spot prices of the latest run stayed
-  active.
+  on-demand in the zone. Active regions without on-demand prices (e.g. after a
+  failed lookup) resample their earlier spot prices. Before, only the spot
+  prices of the latest run stayed active.
 - Mark the `AliCloud` regions returned with "Closed Down" in their name (e.g.
   `cn-nanjing`) inactive.
 - Retry the `AliCloud` API errors with HTTP 5xx and an empty body, and log the
