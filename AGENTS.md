@@ -69,7 +69,7 @@ Internal and sensitive information (e.g. the shell script that sets the environm
 - To check real data, first look for local SQLite files (`*.db`) in the root of the local `sc-data` clone (usually the sibling folder `../sc-data`) and of this repo. They can be old, partial (e.g. a single vendor) or on another schema version, so check the modification time, the tables and the latest `observed_at` before relying on one, and open them read-only (e.g. `sqlite3 -readonly`). If there is no suitable file, download the latest published data with `sc-data download /path/to/sc-data.db` (from the `sparecores-data` package; see `sc-data download --help`), and don't overwrite an existing file.
 - Production uses the SCD tables in PostgreSQL, so call out new tables and primary key changes in the PR.
 - **Never merge a PR with a migration before the maintainers' coordinated rollout**: the production database has to be migrated together with the merge, otherwise the next scheduled crawl fails. State this in the PR description.
-- Release: bump `__version__`, finalize the `CHANGELOG.md` section (`## vX.Y.Z (Month DD, YYYY)`), then push a `vX.Y.Z` tag (or create a GitHub release). `release.yml` publishes it to PyPI. Versioning: minor for backward-compatible features and new columns, patch for fixes, major for breaking changes or changes that need manual DB work.
+- Release: bump `__version__`, finalize the `CHANGELOG.md` section (`## vX.Y.Z (Month D, YYYY)`, e.g. `## v0.6.0 (June 3, 2026)`), then push a `vX.Y.Z` tag (or create a GitHub release). `release.yml` publishes it to PyPI. Versioning: minor for backward-compatible features and new columns, patch for fixes, major for breaking changes or changes that need manual DB work.
 - Major or minor releases (e.g. schema changes) need matching `sc-keeper` PRs and possibly `sc-www` PRs (frontend references column names).
 - **Always warn about breaking changes**: when a change can break downstream users (e.g. renamed, removed or retyped tables and columns, changed primary keys, record ids, enum values, JSON field shapes, units, `benchmark_id`s or their `config`, or Python API), warn the user and remind them to notify the affected downstream users before merging. List the change and the affected repos in the PR description as well. Check usage in these repos, and don't notify anyone yourself unless asked:
   - Direct users of the package or the data: `sc-data`, `sc-data-dumps`, `sc-keeper`, `sc-inspector`, `sc-runner`, `sc-www-og`, and external users of the PyPI packages and the published dumps.
@@ -79,6 +79,13 @@ Internal and sensitive information (e.g. the shell script that sets the environm
 ## Vendor data audit (`audit/`)
 
 `audit/` is a separate, unpublished project (`sc-audit` CLI, own `pyproject.toml` and tests: `pip install -e "audit[testing]"`, `cd audit && pytest`). It cross-checks the published SQLite dump against official vendor pages only. Outputs go to `audit-out/` (git-ignored). Use the `vendor-audit` skill (`.claude/skills/vendor-audit/`) for audits, and read `audit/README.md` before changing the tool or triaging findings.
+
+## Changelog
+
+Document every change that users of the package, the schema or the data notice in
+`CHANGELOG.md` in the same PR, under the `## vX.Y.x (DEVELOPMENT)` section. Read
+`.agents/changelog.md` before editing `CHANGELOG.md`; it defines the subsections, the
+entry style and the PR numbers.
 
 ## Pull requests
 
