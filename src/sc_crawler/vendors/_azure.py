@@ -35,6 +35,7 @@ from ..table_fields import (
     DatabaseStorageScope,
     DatabaseWireProtocol,
     Disk,
+    Hypervisor,
     PriceTier,
     PriceUnit,
     Status,
@@ -1155,7 +1156,7 @@ def _standardize_server(server: dict, vendor) -> dict:
         "family": _vm_family_category(server["name"]),
         "series": _vm_series(server["name"], family.strip()),
         "vcpus": int(capability("vCPUsAvailable")),
-        "hypervisor": "Microsoft Hyper-V",
+        "hypervisor": Hypervisor.HYPER_V,
         "cpu_allocation": (
             CpuAllocation.BURSTABLE
             if family.startswith("B")

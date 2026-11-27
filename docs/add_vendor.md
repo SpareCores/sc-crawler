@@ -43,6 +43,10 @@ The functions should return an array of dict representing the related objects. T
 
 Other functions and variables must be prefixed with an underscore to suggest those are internal tools.
 
+## Hypervisor
+
+Set `hypervisor` on every `Server` row to a [Hypervisor][sc_crawler.table_fields.Hypervisor] value, and use `BARE_METAL` for servers without a hypervisor. Prefer an API field (e.g. AWS's `BareMetal` and `Hypervisor`), otherwise a documented naming rule (e.g. the `-metal` suffix at GCP or the `BM.` prefix at OCI), with the source URL in a comment. Leave it empty only when the hypervisor is not known, as an empty value does not mean bare metal. The `Hypervisor vendor` reported by `lscpu` can confirm the vendor's information, but it is not reliable on its own: e.g. KVM with Hyper-V enlightenments reports Microsoft, and ARM servers report no hypervisor.
+
 ## Status and retirement checks
 
 Set `status` on every `Server` and `Database` row. Possible values: `ACTIVE`, `INACTIVE`, `PLANNED_FOR_RETIREMENT`, `RETIRED`. See [Status][sc_crawler.table_fields.Status] for the definition of each.
@@ -154,7 +158,7 @@ def inventory_servers(vendor):
     #             "family": None,
     #             "series": None,
     #             "vcpus": ,
-    #             "hypervisor": None,
+    #             "hypervisor": Hypervisor....,
     #             "cpu_allocation": CpuAllocation....,
     #             "cpu_cores": None,
     #             "cpu_speed": None,

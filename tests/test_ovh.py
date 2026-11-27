@@ -14,6 +14,7 @@ from sc_crawler.table_fields import (
     DatabaseSecurityFeature,
     DatabaseStorageScope,
     DatabaseWireProtocol,
+    Hypervisor,
     PriceUnit,
     Status,
     StorageType,
@@ -603,6 +604,8 @@ def test_ovh_inventory_servers_metal_has_no_compatible_storage(mock_ovh_client):
     rows = inventory_servers(_ovh_vendor())
     by_id = {row["server_id"]: row for row in rows}
 
+    assert by_id["bm-s1"]["hypervisor"] == Hypervisor.BARE_METAL
+    assert by_id["c3-16"]["hypervisor"] == Hypervisor.KVM
     # Block Storage is not available for Metal instances
     assert by_id["bm-s1"]["compatible_storage_ids"] == []
     assert by_id["c3-16"]["compatible_storage_ids"] == [

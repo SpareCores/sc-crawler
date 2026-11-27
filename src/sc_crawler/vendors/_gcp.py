@@ -27,6 +27,7 @@ from ..table_fields import (
     DatabaseSecurityFeature,
     DatabaseStorageScope,
     DatabaseWireProtocol,
+    Hypervisor,
     PriceUnit,
     Status,
     StorageType,
@@ -1307,7 +1308,14 @@ def _search_servers(zone_name: str) -> List[dict]:
                 "family": _machine_family(server.name),
                 "series": server.name.split("-")[0],
                 "vcpus": server.guest_cpus,
-                "hypervisor": None,
+                # bare metal machine types end with -metal, VMs run on a KVM-based hypervisor:
+                # https://docs.cloud.google.com/compute/docs/instances/bare-metal-instances
+                # https://docs.cloud.google.com/compute/docs/instances/nested-virtualization/overview
+                "hypervisor": (
+                    Hypervisor.BARE_METAL
+                    if server.name.endswith("-metal")
+                    else Hypervisor.KVM
+                ),
                 "cpu_allocation": (
                     CpuAllocation.SHARED
                     if server.is_shared_cpu

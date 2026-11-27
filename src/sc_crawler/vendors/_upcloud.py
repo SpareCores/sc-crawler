@@ -23,6 +23,7 @@ from ..table_fields import (
     DatabaseStorageScope,
     DatabaseWireProtocol,
     Disk,
+    Hypervisor,
     PriceUnit,
     Status,
     StorageType,
@@ -949,8 +950,8 @@ def inventory_servers(vendor):
                     "family": family,
                     "series": _server_series(server_data, gpu_count),
                     "vcpus": server["core_number"],
-                    # https://upcloud.com/docs/products/cloud-servers/features/cloud-server-system/#virtualisation
-                    "hypervisor": "KVM",
+                    # https://upcloud.com/docs/products/cloud-servers/system-architecture/
+                    "hypervisor": Hypervisor.KVM,
                     # no dedicated vCPUs in the public cloud offerings
                     "cpu_allocation": CpuAllocation.SHARED,
                     "cpu_cores": None,

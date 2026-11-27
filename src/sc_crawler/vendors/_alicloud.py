@@ -48,6 +48,7 @@ from ..table_fields import (
     CpuAllocation,
     CpuArchitecture,
     Disk,
+    Hypervisor,
     PriceUnit,
     Status,
     StorageType,
@@ -1980,7 +1981,16 @@ def inventory_servers(vendor):
                 "family": family,
                 "series": series,
                 "vcpus": vcpus,
-                "hypervisor": "KVM",
+                # ECS Bare Metal (ebm) and the Super Computing Cluster (scc) families,
+                # which are built on ECS Bare Metal Instances, run without a hypervisor:
+                # https://www.alibabacloud.com/help/en/ecs/user-guide/elastic-bare-metal-server-overview
+                # https://www.alibabacloud.com/help/en/ecs/user-guide/overview-40
+                # others run on the KVM-based X-Dragon hypervisor (reported as KVM by lscpu)
+                "hypervisor": (
+                    Hypervisor.BARE_METAL
+                    if server_id.startswith(("ecs.ebm", "ecs.scc"))
+                    else Hypervisor.KVM
+                ),
                 "cpu_allocation": _determine_cpu_allocation_type(instance_type),
                 "cpu_speed": drop_zero_value(instance_type.get("CpuSpeedFrequency")),
                 "cpu_architecture": CPU_ARCH_MAP[instance_type.get("CpuArchitecture")],

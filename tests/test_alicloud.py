@@ -3,7 +3,13 @@ from unittest.mock import Mock, patch
 import pytest
 
 from sc_crawler.inspector import _standardize_gpu_count
-from sc_crawler.table_fields import AcceleratorType, Disk, Status, StorageType
+from sc_crawler.table_fields import (
+    AcceleratorType,
+    Disk,
+    Hypervisor,
+    Status,
+    StorageType,
+)
 from sc_crawler.vendor_helpers import server_status_from_availability_categories
 from sc_crawler.vendors._alicloud import (
     _ALICLOUD_STATUS_CATEGORY_TO_SERVER_LIFECYCLE,
@@ -220,6 +226,38 @@ def test_alicloud_local_disk_speed_unknown_is_empty_and_warned_once(instance_typ
     warnings = [call.args[0] for call in logger.warning.call_args_list]
     assert len(warnings) == 1
     assert instance_type["InstanceTypeId"] in warnings[0]
+
+
+def test_alicloud_inventory_servers_hypervisor():
+    instance_types = [
+        _instance_type("ecs.g7.large", "ecs.g7", "General-purpose"),
+        _instance_type("ecs.ebmg7.32xlarge", "ecs.ebmg7", "ECS Bare Metal"),
+        _instance_type(
+            "ecs.ebmgn7.26xlarge", "ecs.ebmgn7", "Compute-optimized with GPU"
+        ),
+        _instance_type("ecs.sccg7.32xlarge", "ecs.sccg7", "Super Computing Cluster"),
+    ]
+    with (
+        patch(
+            "sc_crawler.vendors._alicloud._get_instance_types",
+            return_value=instance_types,
+        ),
+        patch(
+            "sc_crawler.vendors._alicloud._get_region_availability_info",
+            return_value={},
+        ),
+        patch(
+            "sc_crawler.vendors._alicloud._get_instance_type_disk_categories",
+            return_value={},
+        ),
+    ):
+        rows = inventory_servers(Mock(vendor_id="alicloud"))
+    assert {row["server_id"]: row["hypervisor"] for row in rows} == {
+        "ecs.g7.large": Hypervisor.KVM,
+        "ecs.ebmg7.32xlarge": Hypervisor.BARE_METAL,
+        "ecs.ebmgn7.26xlarge": Hypervisor.BARE_METAL,
+        "ecs.sccg7.32xlarge": Hypervisor.BARE_METAL,
+    }
 
 
 def test_alicloud_inventory_servers_bundled_storage_speed():

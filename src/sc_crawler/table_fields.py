@@ -372,6 +372,25 @@ class CpuAllocation(str, Enum):
     """Dedicated CPU with known performance."""
 
 
+class Hypervisor(str, Enum):
+    """Hypervisor running the server, or none for bare metal servers.
+
+    Set from the vendor API or the vendor's documentation, so a missing value
+    means unknown, not bare metal.
+    """
+
+    KVM = "KVM"
+    """Linux Kernel-based Virtual Machine, also with QEMU or vendor-specific (e.g. hardened) builds."""
+    XEN = "Xen"
+    """Xen hypervisor."""
+    NITRO = "Nitro"
+    """AWS Nitro hypervisor (KVM-based)."""
+    HYPER_V = "Hyper-V"
+    """Microsoft Hyper-V hypervisor."""
+    BARE_METAL = "Bare metal"
+    """No hypervisor: the operating system runs directly on the physical server."""
+
+
 class CpuArchitecture(str, Enum):
     """CPU architectures."""
 

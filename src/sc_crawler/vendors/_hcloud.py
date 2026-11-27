@@ -14,6 +14,7 @@ from ..table_fields import (
     Allocation,
     CpuAllocation,
     CpuArchitecture,
+    Hypervisor,
     PriceUnit,
     Status,
     StorageType,
@@ -478,7 +479,8 @@ def inventory_servers(vendor):
                     "family": _server_family(server),
                     "series": _server_series(server),
                     "vcpus": server.cores,
-                    "hypervisor": "QEMU",
+                    # https://docs.hetzner.com/cloud/technical-details/faq/
+                    "hypervisor": Hypervisor.KVM,
                     "cpu_allocation": (
                         CpuAllocation.SHARED
                         if server.cpu_type == "shared"

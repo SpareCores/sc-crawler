@@ -21,6 +21,7 @@ from ..table_fields import (
     DatabaseHaStrategy,
     DatabaseSecurityFeature,
     DatabaseWireProtocol,
+    Hypervisor,
     PriceUnit,
     Status,
     StorageType,
@@ -971,7 +972,12 @@ def inventory_servers(vendor):
             "family": family,
             "series": _server_series(server),
             "vcpus": vcpus,
-            "hypervisor": None,
+            # bare metal plans have no hypervisor, the others run on KVM (lscpu reports
+            # Microsoft on most of them due to the Hyper-V enlightenments of QEMU):
+            # https://www.vultr.com/trust-center/
+            "hypervisor": (
+                Hypervisor.BARE_METAL if server["id"] in metal_ids else Hypervisor.KVM
+            ),
             "cpu_allocation": cpu_allocation,
             "cpu_cores": cpu_cores,
             "cpu_speed": cpu_speed_ghz,

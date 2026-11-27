@@ -17,6 +17,7 @@ from sc_crawler.table_fields import (  # noqa: E402
     DatabaseHaLevel,
     DatabaseHaStrategy,
     DatabaseStorageScope,
+    Hypervisor,
     PriceUnit,
     Status,
     StorageType,
@@ -525,6 +526,7 @@ def test_shape_servers_flex():
     assert server["cpu_architecture"] == CpuArchitecture.X86_64
     assert server["cpu_allocation"] == CpuAllocation.DEDICATED
     assert server["cpu_manufacturer"] == "AMD"
+    assert server["hypervisor"] == Hypervisor.KVM
     assert server["memory_amount"] == 32 * 1024
     assert server["storage_size"] == 0
     assert server["storage_type"] is None
@@ -559,6 +561,7 @@ def test_shape_servers_bare_metal_dense_io():
     assert server["server_id"] == "BM.DenseIO.E6.Ax.192"
     assert server["api_reference_object"] == {"shape": "BM.DenseIO.E6.Ax.192"}
     assert server["api_reference"] == "BM.DenseIO.E6.Ax.192"
+    assert server["hypervisor"] == Hypervisor.BARE_METAL
     assert (server["family"], server["series"]) == ("Dense I/O", "DenseIO.E6.Ax")
     assert (server["vcpus"], server["cpu_cores"]) == (384, 192)
     assert server["storage_size"] == 81600
