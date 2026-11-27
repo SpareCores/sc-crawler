@@ -10,6 +10,7 @@ from sc_crawler.table_fields import (
     DatabaseStorageScope,
     PriceUnit,
     Status,
+    StorageType,
 )
 from sc_crawler.utils import _GIB_TO_GB
 from sc_crawler.vendors._upcloud import (
@@ -18,6 +19,7 @@ from sc_crawler.vendors._upcloud import (
     _upcloud_server_status,
     _warn_unknown_database_family,
     _warn_unknown_family,
+    _warn_unknown_storage_tier,
     inventory_database_prices,
     inventory_database_storage_prices,
     inventory_database_storages,
@@ -851,3 +853,110 @@ def test_upcloud_inventory_storage_prices_per_gb_month():
     assert rows[0]["unit"] == PriceUnit.GB_MONTH
     # cents per GiB and hour -> EUR per GB and month (24 x 30 hours)
     assert rows[0]["price"] == pytest.approx(0.031 / 100 * 720 / _GIB_TO_GB)
+
+
+@pytest.mark.parametrize(
+    "storage_tier,expected",
+    [
+        ("maxiops", (100_000, 30_000, 400, None)),
+        ("standard", (10_000, 10_000, None, None)),
+        # Archive tier
+        ("hdd", (600, 600, None, None)),
+        # plans without bundled storage
+        (None, (None, None, None, None)),
+    ],
+)
+def test_upcloud_inventory_servers_bundled_storage_speed(storage_tier, expected):
+    plan = _plan("2xCPU-4GB", "general_purpose", storage_tier=storage_tier)
+    with (
+        patch(
+            "sc_crawler.vendors._upcloud._get_server_plans",
+            return_value={"plans": {"plan": [plan]}},
+        ),
+        patch(
+            "sc_crawler.vendors._upcloud._upcloud_server_status",
+            return_value=Status.ACTIVE,
+        ),
+    ):
+        (row,) = inventory_servers(Mock(vendor_id="upcloud"))
+    assert (
+        row["storage_read_iops_max"],
+        row["storage_write_iops_max"],
+        row["storage_read_throughput_max"],
+        row["storage_write_throughput_max"],
+    ) == expected
+    expected_type = {"hdd": StorageType.HDD, None: None}.get(
+        storage_tier, StorageType.SSD
+    )
+    assert row["storage_type"] == expected_type
+    assert [d.storage_type for d in row["storages"]] == (
+        [expected_type] if storage_tier else []
+    )
+    # the single plan disk carries the same speed
+    assert [
+        (
+            d.read_iops_max,
+            d.write_iops_max,
+            d.read_throughput_max,
+            d.write_throughput_max,
+        )
+        for d in row["storages"]
+    ] == ([expected] if storage_tier else [])
+
+
+def test_upcloud_storage_tier_without_disk_has_no_speed():
+    plan = _plan("2xCPU-4GB", "general_purpose", storage_tier="maxiops")
+    plan["storage_size"] = 0
+    with (
+        patch(
+            "sc_crawler.vendors._upcloud._get_server_plans",
+            return_value={"plans": {"plan": [plan]}},
+        ),
+        patch(
+            "sc_crawler.vendors._upcloud._upcloud_server_status",
+            return_value=Status.ACTIVE,
+        ),
+    ):
+        (row,) = inventory_servers(Mock(vendor_id="upcloud"))
+    assert row["storages"] == []
+    assert (
+        row["storage_read_iops_max"],
+        row["storage_write_iops_max"],
+        row["storage_read_throughput_max"],
+        row["storage_write_throughput_max"],
+    ) == (None, None, None, None)
+
+
+def test_upcloud_unknown_storage_tier_is_empty_and_warned_once():
+    _warn_unknown_storage_tier.cache_clear()
+    plans = [
+        _plan("2xCPU-4GB", "general_purpose", storage_tier="new-tier"),
+        _plan("4xCPU-8GB", "general_purpose", storage_tier="new-tier"),
+    ]
+    with (
+        patch(
+            "sc_crawler.vendors._upcloud._get_server_plans",
+            return_value={"plans": {"plan": plans}},
+        ),
+        patch(
+            "sc_crawler.vendors._upcloud._upcloud_server_status",
+            return_value=Status.ACTIVE,
+        ),
+        patch("sc_crawler.vendors._upcloud.logger") as logger,
+    ):
+        rows = inventory_servers(Mock(vendor_id="upcloud"))
+    assert {row["server_id"] for row in rows} == {"2xCPU-4GB", "4xCPU-8GB"}
+    for row in rows:
+        assert (
+            row["storage_read_iops_max"],
+            row["storage_write_iops_max"],
+            row["storage_read_throughput_max"],
+            row["storage_write_throughput_max"],
+        ) == (None, None, None, None)
+        # the disk is listed without speed
+        assert [(d.size, d.read_iops_max) for d in row["storages"]] == [
+            (row["storage_size"], None)
+        ]
+    warnings = [call.args[0] for call in logger.warning.call_args_list]
+    assert len(warnings) == 1
+    assert "new-tier" in warnings[0]

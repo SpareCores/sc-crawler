@@ -1,5 +1,6 @@
 """Inventory of Oracle Cloud Infrastructure via its API and the public price list: servers, storages, traffic, IPv4 addresses and managed PostgreSQL, with their prices."""
 
+from datetime import date
 from functools import cache
 from math import ceil
 from os import environ, getenv
@@ -33,7 +34,7 @@ from ..table_fields import (
     TrafficDirection,
 )
 from ..utils import _MIB_PER_GIB
-from ..vendor_helpers import parallel_fetch_servers
+from ..vendor_helpers import parallel_fetch_servers, retirement_date_from_rules
 
 _API_TIMEOUT = 30
 # https://docs.oracle.com/en-us/iaas/Content/GSG/Tasks/signingup_topic-Estimating_Costs.htm
@@ -1046,6 +1047,21 @@ def _server_description(
     return f"{family} ({description_parts_str})" if family else description_parts_str
 
 
+# End of orderability dates of the previous generation shapes that can still be
+# ordered (checked in the console in Nov 2026), so these are
+# PLANNED_FOR_RETIREMENT with the (past) end of orderability as the retirement
+# date, instead of being RETIRED from that date. Add the other previous
+# generation shapes (e.g. DenseIO2, HPC2) once confirmed to be still orderable.
+# https://docs.oracle.com/en-us/iaas/Content/Compute/References/computeshapes.htm#previous-generation-shapes
+# Rule format: (compiled regex on the shape name, retirement date).
+_OCI_RETIREMENT_RULES = (
+    (recompile(r"^(VM|BM)\.Standard2\..*$"), date(2022, 2, 28)),
+    # except for the Always Free micro shape
+    (recompile(r"^(VM|BM)\.Standard\.E2\.(?!1\.Micro$).*$"), date(2021, 2, 8)),
+    (recompile(r"^(VM|BM)\.Standard\.E3\..*$"), date(2022, 3, 31)),
+)
+
+
 def _shape_servers(shape: dict, vendor) -> list[dict]:
     """Convert a shape to the list of its server configurations."""
     name = shape["shape"]
@@ -1082,6 +1098,13 @@ def _shape_servers(shape: dict, vendor) -> list[dict]:
             )
             for _ in range(config["local_disks"])
         ]
+        retirement_date = retirement_date_from_rules(name, _OCI_RETIREMENT_RULES)
+        if shape.get("billing_type") == "ALWAYS_FREE":
+            status = Status.INACTIVE
+        elif retirement_date:
+            status = Status.PLANNED_FOR_RETIREMENT
+        else:
+            status = Status.ACTIVE
         items.append(
             {
                 "vendor_id": vendor.vendor_id,
@@ -1169,11 +1192,8 @@ def _shape_servers(shape: dict, vendor) -> list[dict]:
                 "outbound_traffic": 0,
                 # public IPv4 addresses are free of charge (see inventory_ipv4_prices)
                 "ipv4": 1,
-                "status": (
-                    Status.INACTIVE
-                    if shape.get("billing_type") == "ALWAYS_FREE"
-                    else Status.ACTIVE
-                ),
+                "status": status,
+                "retirement_date": retirement_date,
             }
         )
     return items
@@ -1463,11 +1483,12 @@ def inventory_servers(vendor):
 
     Lifecycle: shapes listed in any of the active zones -> ACTIVE, except for
     the Always Free micro shape (limited to two instances per tenancy) ->
-    INACTIVE. There is no lifecycle field or retirement date in the API, and
-    the previous generation shapes (past their "end of orderability" date) are
-    still fully supported and can be launched as per
+    INACTIVE. There is no lifecycle field or retirement date in the API. The
+    previous generation shapes are still fully supported and can be ordered
+    despite being past their "end of orderability" date as per
     <https://docs.oracle.com/en-us/iaas/Content/Compute/References/computeshapes.htm#previous-generation-shapes>,
-    so those are ACTIVE as well.
+    so those are PLANNED_FOR_RETIREMENT with that date, see
+    `_OCI_RETIREMENT_RULES`.
     """
     zone_regions = {zone.api_reference: zone.region_id for zone in vendor.zones}
 

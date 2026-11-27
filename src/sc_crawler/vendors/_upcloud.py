@@ -22,12 +22,14 @@ from ..table_fields import (
     DatabaseSecurityFeature,
     DatabaseStorageScope,
     DatabaseWireProtocol,
+    Disk,
     PriceUnit,
     Status,
     StorageType,
     TrafficDirection,
 )
 from ..utils import _GIB_TO_GB, _HOURS_PER_MONTH, _MIB_PER_GIB, jsoned_hash
+from ..vendor_helpers import disk_speed_totals
 
 # ##############################################################################
 # Cached client wrappers
@@ -506,6 +508,19 @@ UPCLOUD_STORAGES = [
     },
 ]
 
+# Speed of the bundled storage of a plan, assumed to match its Block Storage tier
+# (`storage_tier`), as (read IOPS, write IOPS, read MB/s, write MB/s).
+# IOPS at 4k block size from the tiers table of the docs:
+# https://upcloud.com/docs/products/block-storage/tiers/
+# MaxIOPS throughput is the ~400 MB/s (workload-dependent) figure of the roadmap,
+# same as `max_throughput` above, a single figure without read/write split stored as read:
+# https://upcloud.com/docs/roadmap/#ready-to-use
+UPCLOUD_STORAGE_TIER_SPEEDS = {
+    "maxiops": (100_000, 30_000, 400, None),
+    "standard": (10_000, 10_000, None, None),
+    "hdd": (600, 600, None, None),
+}
+
 # ##############################################################################
 # Internal helpers
 
@@ -530,6 +545,19 @@ def _warn_unknown_database_family(family_key) -> None:
     logger.warning(
         f"Unknown UpCloud database family {family_key}, leaving family empty."
     )
+
+
+@cache
+def _warn_unknown_storage_tier(tier: str) -> None:
+    """Warn about a storage tier missing from the speed mapping, once per tier and run."""
+    logger.warning(f"Unknown UpCloud storage tier {tier}, leaving storage speed empty.")
+
+
+def _storage_tier_speeds(tier) -> tuple:
+    """(read IOPS, write IOPS, read MB/s, write MB/s) of a plan's storage tier."""
+    if tier and tier not in UPCLOUD_STORAGE_TIER_SPEEDS:
+        _warn_unknown_storage_tier(tier)
+    return UPCLOUD_STORAGE_TIER_SPEEDS.get(tier, (None, None, None, None))
 
 
 def _server_family(server: dict):
@@ -885,6 +913,32 @@ def inventory_servers(vendor):
                 continue
             gpu_count = server.get("gpu_amount", 0)
             gpu_fields = _parse_gpu_model(server.get("gpu_model"), gpu_count)
+            storage_speeds = _storage_tier_speeds(server["storage_tier"])
+            # hdd is the API name of the Archive tier
+            storage_type = (
+                (
+                    StorageType.HDD
+                    if server["storage_tier"] == "hdd"
+                    else StorageType.SSD
+                )
+                if server["storage_tier"]
+                else None
+            )
+            # the single plan disk, on the Block Storage tier of the plan
+            storages = (
+                [
+                    Disk(
+                        size=server["storage_size"],
+                        storage_type=storage_type,
+                        read_iops_max=storage_speeds[0],
+                        write_iops_max=storage_speeds[1],
+                        read_throughput_max=storage_speeds[2],
+                        write_throughput_max=storage_speeds[3],
+                    )
+                ]
+                if storage_type and server["storage_size"]
+                else []
+            )
             items.append(
                 {
                     "vendor_id": vendor.vendor_id,
@@ -920,10 +974,9 @@ def inventory_servers(vendor):
                     **gpu_fields,
                     "accelerators": [],  # TODO fill this array
                     "storage_size": server["storage_size"],
-                    "storage_type": (
-                        StorageType.SSD if server["storage_tier"] else None
-                    ),
-                    "storages": [],
+                    "storage_type": storage_type,
+                    "storages": storages,
+                    **disk_speed_totals(storages),
                     # extra storage devices can use any of the three Block Storage
                     # tiers (hdd is the API name of the Archive tier)
                     # https://upcloud.com/docs/products/cloud-servers/storage/

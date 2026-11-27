@@ -1079,9 +1079,18 @@ benchmarks: List[Benchmark] = [
     # https://forums.passmark.com/performancetest/4599-formula-cpu-mark-memory-mark-and-disk-mark?p=54964#post54964
     _passmark(
         name="Memory Mark",
-        description="A composite score of PassMark's Database and Memory test cases",
+        description="A composite score of PassMark's Database and Memory test cases, also factoring in the amount of available RAM.",
         unit=None,
-        note=_benchmark_plateau_note(16),
+        note=(
+            _benchmark_plateau_note(16)
+            + " The score also depends on the amount of RAM that was free when "
+            "the test started (the exact formula is not published by PassMark), "
+            "which can differ between runs on the same instance type. In our "
+            "measurements the Memory Mark changed by up to 43% between runs "
+            "while the underlying memory speed subtests stayed within about 5%, "
+            "so prefer the individual memory tests to compare raw memory "
+            "performance."
+        ),
         subcategory="Memory",
     ),
     _passmark(

@@ -27,6 +27,7 @@ from sc_crawler.vendors._aws import (
     _extract_rds_bundled_storage_size,
     _get_gpu_of_instance_type,
     _get_gpus_of_instance_type,
+    _get_instance_store_iops,
     _get_network_speed_gbps,
     _get_rds_instance_products_by_region,
     _get_server_products,
@@ -37,6 +38,7 @@ from sc_crawler.vendors._aws import (
     _instance_series,
     _server_series_categories,
     _warn_unknown_family,
+    _warn_unknown_instance_store_iops,
     storage_manual_data,
 )
 from sc_crawler.vendors._aws import (
@@ -1296,6 +1298,61 @@ def test_aws_storage_type_nvme_support():
         disk.storage_type
         for disk in _get_storages_of_instance_type(_storage("unsupported"))
     ] == [StorageType.SSD, StorageType.SSD]
+
+
+def test_aws_storages_split_instance_store_iops():
+    # docs total over the 2 identical volumes, split evenly
+    disks = _get_storages_of_instance_type(_storage("required"), (30_000, 15_001))
+    assert [(d.read_iops_max, d.write_iops_max) for d in disks] == [
+        (15_000, 7_500),
+        (15_000, 7_500),
+    ]
+    assert all(
+        d.read_throughput_max is None and d.write_throughput_max is None for d in disks
+    )
+    # unknown IOPS: disks without speed
+    for disk in _get_storages_of_instance_type(_storage("required"), (None, None)):
+        assert (disk.read_iops_max, disk.write_iops_max) == (None, None)
+    # no instance store
+    assert _get_storages_of_instance_type({}, (30_000, 15_000)) == []
+
+
+@pytest.mark.parametrize(
+    "instance_type,expected",
+    [
+        # docs rows
+        ("m5d.large", (30_000, 15_000)),
+        ("i3.metal", (3_300_000, 1_440_000)),
+        # no instance store
+        ("m5.large", (None, None)),
+        # HDD and previous generation rows without IOPS in the docs
+        ("d3.xlarge", (None, None)),
+        ("x1e.xlarge", (None, None)),
+        ("i2.xlarge", (None, None)),
+        # previous generation page
+        ("p3dn.24xlarge", (700_000, 340_000)),
+    ],
+)
+def test_aws_instance_store_iops(instance_type, expected):
+    _warn_unknown_instance_store_iops.cache_clear()
+    it = {"InstanceType": instance_type}
+    if instance_type != "m5.large":
+        it |= _storage("required")
+    with patch("sc_crawler.vendors._aws.logger") as logger:
+        assert _get_instance_store_iops(it) == expected
+    logger.warning.assert_not_called()
+
+
+def test_aws_instance_store_iops_unknown_is_empty_and_warned_once():
+    _warn_unknown_instance_store_iops.cache_clear()
+    # new instance type not in the docs tables yet
+    it = {"InstanceType": "brandnew1.xlarge"} | _storage("required")
+    with patch("sc_crawler.vendors._aws.logger") as logger:
+        assert _get_instance_store_iops(it) == (None, None)
+        assert _get_instance_store_iops(it) == (None, None)
+    warnings = [call.args[0] for call in logger.warning.call_args_list]
+    assert len(warnings) == 1
+    assert "brandnew1.xlarge" in warnings[0]
 
 
 def test_aws_reconcile_server_status(monkeypatch):

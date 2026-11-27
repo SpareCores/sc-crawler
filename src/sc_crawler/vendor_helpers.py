@@ -1,10 +1,12 @@
 """Helpers shared by the vendor modules of [sc_crawler.vendors][], e.g. fetching the servers of all regions in parallel."""
 
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, date, datetime
 from itertools import chain, repeat
+from re import Pattern
 from typing import Callable, Collection, List, Literal, Mapping, Optional
 
-from .table_fields import Status
+from .table_fields import DISK_SPEED_FIELDS, Disk, Status
 from .tables import Region, Vendor
 
 
@@ -32,6 +34,35 @@ def server_status_from_availability_categories(
         return missing_status
 
     return Status.best(mapped)
+
+
+def retirement_date_from_rules(
+    name: str, rules: Collection[tuple[Pattern, date]]
+) -> Optional[date]:
+    """Retirement date of the first `(pattern, date)` rule fully matching the SKU `name`.
+
+    The rules are the vendor-documented retirement dates, e.g.
+    `_AZURE_RETIREMENT_RULES`. Returns `None` if no rule matches.
+    """
+    for pattern, retirement_date in rules:
+        if pattern.fullmatch(name):
+            return retirement_date
+    return None
+
+
+def status_from_retirement_date(
+    retirement_date: Optional[date], as_of: Optional[date] = None
+) -> Status:
+    """Server/Database status from a retirement date.
+
+    `RETIRED` from the retirement date (inclusive), `PLANNED_FOR_RETIREMENT`
+    before, and `ACTIVE` without a retirement date.
+    """
+    if retirement_date is None:
+        return Status.ACTIVE
+    if (as_of or datetime.now(UTC).date()) >= retirement_date:
+        return Status.RETIRED
+    return Status.PLANNED_FOR_RETIREMENT
 
 
 def fetch_servers(fn: Callable, where: str, vendor: Optional[Vendor]) -> List[dict]:
@@ -137,3 +168,19 @@ def get_region_by_id(region_id: str, vendor: Vendor) -> Optional[Region]:
         ),
         None,
     )
+
+
+def disk_speed_totals(storages: List[Disk]) -> dict:
+    """Server `storage_*` speed columns summed over the disks with known values."""
+    return {
+        f"storage_{field}": sum(
+            getattr(disk, field) for disk in storages if getattr(disk, field)
+        )
+        or None
+        for field in DISK_SPEED_FIELDS
+    }
+
+
+def split_disk_speed(total: Optional[int], disks: int) -> Optional[int]:
+    """Speed of one of `disks` identical disks from a published server total."""
+    return round(total / disks) if total and disks else None

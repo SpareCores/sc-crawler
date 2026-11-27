@@ -891,9 +891,12 @@ def test_unmatched_archive_rules():
         assert sum(m.endswith("for its match.") for m in messages) == 5
         assert sum(m.endswith("for its successor.") for m in messages) == 5
 
-        assert ArchiveRule.find_unmatched(sessions, ["server"]) == []
-        assert len(ArchiveRule.find_unmatched(sessions)) == 20
-        assert len(ArchiveRule.find_unmatched([source_session])) == 26
+        # the renamed GCP machine types and their successors are in neither database
+        server_messages = ArchiveRule.find_unmatched(sessions, ["server"])
+        assert len(server_messages) == 12
+        assert all("'vendor_id': 'gcp'" in m for m in server_messages)
+        assert len(ArchiveRule.find_unmatched(sessions)) == 32
+        assert len(ArchiveRule.find_unmatched([source_session])) == 38
 
         rules = [
             ArchiveRule(

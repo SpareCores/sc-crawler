@@ -301,6 +301,39 @@ entries:
     by: bridgend84
     evidence: audit-runs/2026-10-31.tar.xz
     date: 2026-11-02
+  - vendor: gcp
+    type: SERIES_SPLIT
+    match: "N1"
+    verdict: confirmed
+    note: "f1-micro and g1-small are N1 shared-core types (the docs list them under N1), but our series is the name prefix (f1, g1, n1). Small fix in the series rule of _gcp.py."
+    by: claude (claude-code)
+    evidence: audit-runs/2026-11-20.tar.xz
+    date: 2026-11-20
+  - vendor: gcp
+    type: MISSING_IN_DB
+    page: "^cpu-platforms$"
+    verdict: false_positive
+    note: "The CPU platforms page lists series (A2, A3 High, C4 ...), extracted with the series name as sku."
+    by: claude (claude-code)
+    evidence: audit-runs/2026-11-20.tar.xz
+    date: 2026-11-20
+  - vendor: gcp
+    type: FEATURE_MISMATCH
+    field: engine_versions
+    page: "^sql-versions$"
+    verdict: false_positive
+    note: "Extraction lists MySQL, PostgreSQL and SQL Server versions with an engine prefix (e.g. 'PostgreSQL 17'); ours are bare PostgreSQL major versions."
+    by: claude (claude-code)
+    evidence: audit-runs/2026-11-20.tar.xz
+    date: 2026-11-20
+  - vendor: gcp
+    type: SERIES_MERGED
+    match: "a2|a3|a4x"
+    verdict: expected
+    note: "The docs split machine series into sub-variants (A2 Standard/Ultra, A3 Edge/High/Mega/Ultra, A4X/A4X Max); we use the machine series prefix."
+    by: claude (claude-code)
+    evidence: audit-runs/2026-11-20.tar.xz
+    date: 2026-11-20
 
   # ---------------------------------------------------------------- alicloud
   - vendor: alicloud
@@ -362,6 +395,31 @@ entries:
     note: "Sold out in every zone (WithoutStock), so the per instance type DescribeAvailableResource DataDisk call does not answer, and the docs do not list the disks of these families (_alicloud.py _DOCS_DISK_CATEGORIES has the documented ones): unknown by design. Checked 2026-11-27 (DEV-1179): 43 ACTIVE types. Fills itself when back in stock."
     by: claude (claude-code)
     date: 2026-11-27
+  - vendor: alicloud
+    type: NOT_AT_VENDOR
+    match: "ecs\\.(c4|ce4|cm4|m2|t1|s6-c1m\\d|gn5i?-c\\d+g1)\\.\\w+|ecs\\.u0\\.c1m\\d\\.\\w+"
+    verdict: to_verify
+    note: "Legacy families (c4, ce4, cm4, m2, t1, s6, u0, gn5, gn5i) ACTIVE in the 2026-11-20 dump but on no instance family docs page (the extracted SKUs did not change since 2026-11-04). Same pattern as the reviewed old-family entry above: check DescribeAvailableResource (still orderable?) and the retired-instance-types page."
+    by: claude (claude-code)
+    evidence: audit-runs/2026-11-20.tar.xz
+    date: 2026-11-20
+  - vendor: alicloud
+    type: NOT_AT_VENDOR
+    match: "ecs\\.(ebmc8ae|ebmg8ae|ebmgn7ix|ebmgn8te?|ebmgn9t|gn8te|gn8t-\\dx|g7a-nps1)\\.\\w+|ecs\\.i5ge\\.48xlarge"
+    verdict: to_verify
+    note: "Newer, restricted or region-specific types missing from the docs pages (gn8t/gn8te/ebmgn8t*, ebm*8ae, ebmgn9t, g7a-nps1); ecs.i5ge.48xlarge is also missing from the i5ge table and from the block storage performance page (which stops at 24xlarge). Check DescribeAvailableResource."
+    by: claude (claude-code)
+    evidence: audit-runs/2026-11-20.tar.xz
+    date: 2026-11-20
+  - vendor: alicloud
+    type: SERIES_SPLIT
+    match: "(gn8v and gn8v-tee|xn4, n4, mn4, and e4).*"
+    page: "^instance-families$"
+    verdict: expected
+    note: "One docs heading covers several API families (InstanceTypeFamily), which we keep as separate series."
+    by: claude (claude-code)
+    evidence: audit-runs/2026-11-20.tar.xz
+    date: 2026-11-20
 
   # ---------------------------------------------------------------- upcloud
   - vendor: upcloud
@@ -389,6 +447,50 @@ entries:
     by: claude (cursor)
     evidence: audit-runs/2026-11-04.tar.xz
     date: 2026-11-04
+  - vendor: upcloud
+    type: SPEC_MISMATCH
+    field: storage_gb
+    page: "^pricing$"
+    verdict: confirmed
+    note: "Server plans store the raw API storage_size (GiB) as GB in server.storage_size and in the bundled Disk entry (_upcloud.inventory_servers), e.g. 25 instead of ~27 GB for a 25 GiB disk; the database plans convert with _GIB_TO_GB. Out of scope of PR #182 (review thread r4635269768), to be fixed in a follow-up. Matches no finding yet: our raw values equal the pricing page's 'GB' labels, and the page's plan names don't resolve to our plan ids. After the fix, expect ~7.4% storage_gb mismatches here (unit only, like the postgresql-configurations entry above)."
+    by: claude (claude-code)
+    evidence: audit-runs/2026-11-20.tar.xz
+    date: 2026-11-20
+  - vendor: upcloud
+    type: SPEC_MISMATCH
+    field: gpu_model
+    match: "GPU-.*xL40S"
+    page: "^pricing$"
+    theirs: "NVIDIA L4"
+    verdict: false_positive
+    note: "The pricing page has separate L4 and L40S tables with the same cores/memory; the audit resolver matched the composed L4 names ('1 x NVIDIA L4 / 8 cores / 64 GB') to our ACTIVE L40S plans. Our L4 plans (GPU-*xL4) exist but are INACTIVE, see the PRICE_MISSING_IN_DB entry."
+    by: claude (claude-code)
+    evidence: audit-runs/2026-11-20.tar.xz
+    date: 2026-11-20
+  - vendor: upcloud
+    type: PRICE_MISSING_IN_DB
+    page: "^pricing$"
+    verdict: to_verify
+    note: "GPU plans priced on the pricing page (browser save, USD 'Global Price') but without an ACTIVE price for us, e.g. all L4 plans and 1x H100 (INACTIVE in our data). Check plan availability per zone in the API (sold out, or not offered to our account?)."
+    by: claude (claude-code)
+    evidence: audit-runs/2026-11-20.tar.xz
+    date: 2026-11-20
+  - vendor: upcloud
+    type: MISSING_IN_DB
+    page: "^pricing$"
+    verdict: false_positive
+    note: "The pricing page has no plan names: the extraction composes names (e.g. '1 x NVIDIA B200 / 24 cores / 240 GB', 'Premium 8 GB / 4 vCPU / 100 GB') that the resolver cannot map to our API plan ids (GPU-24xCPU-240GB-1xB200, 4xCPU-8GB)."
+    by: claude (claude-code)
+    evidence: audit-runs/2026-11-20.tar.xz
+    date: 2026-11-20
+  - vendor: upcloud
+    type: NOT_AT_VENDOR
+    page: "^pricing$"
+    verdict: false_positive
+    note: "Same naming issue as MISSING_IN_DB: our plan ids (e.g. 1xCPU-1GB) are not matched by the composed names of the extraction."
+    by: claude (claude-code)
+    evidence: audit-runs/2026-11-20.tar.xz
+    date: 2026-11-20
 
   # ---------------------------------------------------------------- ovh
   - vendor: ovh
@@ -434,6 +536,23 @@ entries:
     by: bridgend84
     evidence: audit-runs/2026-10-31.tar.xz
     date: 2026-10-31
+  - vendor: ovh
+    type: NOT_AT_VENDOR
+    match: ".*-flex"
+    page: "^prices$"
+    verdict: expected
+    note: "Flex flavors (the same flavor with a fixed 50 GB disk, from the catalog) are not listed separately on the prices page."
+    by: claude (claude-code)
+    evidence: audit-runs/2026-11-20.tar.xz
+    date: 2026-11-20
+  - vendor: ovh
+    type: SERIES_SPLIT
+    page: "^prices$"
+    verdict: expected
+    note: "The prices page groups flavors by category (General Purpose, Compute/Memory Optimised, GPU Instances), not by series."
+    by: claude (claude-code)
+    evidence: audit-runs/2026-11-20.tar.xz
+    date: 2026-11-20
 
   - vendor: ovh
     type: STORAGE_IDS_EMPTY
@@ -637,8 +756,96 @@ entries:
     by: claude (cursor)
     evidence: audit-runs/2026-11-04.tar.xz
     date: 2026-11-04
+  - vendor: azure
+    type: SERIES_SPLIT
+    match: "M|Mbdsv3|Md?sv3 (High|Medium) Memory|Msv2 High Memory"
+    verdict: confirmed
+    note: "API family names used as series for the M sizes with a _N suffix and the M/Ms sizes (e.g. MDSMediumMemoryv3 vs Mdsv3, Ms vs M). Fixed in 616cf648 (on main, after the audited dump): _vm_series now maps all of them to the docs series. Remove when stale."
+    by: claude (claude-code)
+    evidence: audit-runs/2026-11-20.tar.xz
+    date: 2026-11-20
+  - vendor: azure
+    type: SERIES_MERGED
+    match: "D(a|n|p)?d?sv[5-7]|Fad?sv[67]"
+    verdict: confirmed
+    note: "Low memory l (Dlsv5, Daldsv6 ...) and F-family m/l sizes merged into the base series. Fixed in 49a1dae6 (on main, after the audited dump). Remove when stale."
+    by: claude (claude-code)
+    evidence: audit-runs/2026-11-20.tar.xz
+    date: 2026-11-20
+  - vendor: azure
+    type: SERIES_MERGED
+    match: "Easv4"
+    page: "^sizes-toc/easv4-series$"
+    verdict: false_positive
+    note: "The audit SKU resolver matched a row of the Mdsv4 Medium Memory page to Standard_E32-16as_v4; no page lists it there."
+    by: claude (claude-code)
+    evidence: audit-runs/2026-11-20.tar.xz
+    date: 2026-11-20
+  - vendor: azure
+    type: SERIES_MERGED
+    match: "Msv2"
+    verdict: to_verify
+    note: "Docs have separate High and Medium Memory pages for Msv2 (and Mdsv3/Msv3); with 616cf648 we merge each into one series. Decide whether the memory tiers should be separate series."
+    by: claude (claude-code)
+    evidence: audit-runs/2026-11-20.tar.xz
+    date: 2026-11-20
+  - vendor: azure
+    type: SPEC_MISMATCH
+    field: gpu_count
+    match: "Standard_NV6"
+    ours: "1"
+    theirs: "0.5"
+    verdict: false_positive
+    note: "The docs count M60 boards (2 GPUs each): NV6 has one GPU, half a board."
+    by: claude (claude-code)
+    evidence: audit-runs/2026-11-20.tar.xz
+    date: 2026-11-20
+  - vendor: azure
+    type: SPEC_MISMATCH
+    match: "Standard_(NV(6|12|24)|ND(6|12|24)r?s)"
+    verdict: expected
+    note: "NV and ND (v1) retired in 2023 and INACTIVE for us; _gpu_spec has no M60/P40 mapping, so GPU model and memory are empty. Not worth fixing for retired sizes."
+    by: claude (claude-code)
+    evidence: audit-runs/2026-11-20.tar.xz
+    date: 2026-11-20
+  - vendor: azure
+    match: "(Standard_)?B2afs_v2"
+    page: "^postgresql-compute$"
+    verdict: to_verify
+    note: "Docs row 'B2afs_v2 | 2 | 4 GiB'; ours is 2 GiB and INACTIVE. Check the flexible server capabilities API."
+    by: claude (claude-code)
+    evidence: audit-runs/2026-11-20.tar.xz
+    date: 2026-11-20
+  - vendor: azure
+    type: NOT_AT_VENDOR
+    match: "Standard_(E104is_v5|E112ias_v5)"
+    page: "^postgresql-compute$"
+    verdict: to_verify
+    note: "Isolated sizes in our PostgreSQL data but not on the compute page: check the flexible server capabilities API (still offered?)."
+    by: claude (claude-code)
+    evidence: audit-runs/2026-11-20.tar.xz
+    date: 2026-11-20
+
+  # ---------------------------------------------------------------- oci
+  - vendor: oci
+    type: COMPONENT_PRICE_MISMATCH
+    match: "(VM|BM)\\.Standard\\.(A4|E6)\\.Ax\\..*"
+    page: "^price-list$"
+    verdict: false_positive
+    note: "The extraction skipped the separate 'E6 Ax' and 'A4 Ax' rates, so the plain E6/A4 rates were applied by prefix. Ours match the Ax rates (e.g. VM.Standard.E6.Ax.Flex.1-4: 0.0138 + 4 x 0.0108 = 0.057 USD/h; A4.Ax.Flex.1-4: 0.019 + 4 x 0.0084 = 0.0526)."
+    by: claude (claude-code)
+    evidence: audit-runs/2026-11-20.tar.xz
+    date: 2026-11-20
 
   # ---------------------------------------------------------------- vultr
+  - vendor: vultr
+    type: MISSING_IN_DB
+    page: "^pricing$"
+    verdict: false_positive
+    note: "The pricing page (browser save) has no plan ids: the extraction composes names (e.g. 'Cloud Compute High Performance AMD 2vCPU 4GB', 'AMD MI300X 8x GPU') that the resolver cannot map to our ids (vhp-2c-4gb-amd ...)."
+    by: claude (claude-code)
+    evidence: audit-runs/2026-11-20.tar.xz
+    date: 2026-11-20
   - vendor: vultr
     type: STORAGE_IDS_EMPTY
     match: "vbm-.*"

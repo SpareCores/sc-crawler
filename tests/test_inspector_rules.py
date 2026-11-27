@@ -97,7 +97,7 @@ def test_database_blocked_without_either_none():
 
 def test_database_vendor_and_single_node_reasons_stack():
     database = _database(
-        vendor_id="aws",
+        vendor_id="gcp",
         ha=[DatabaseHaLevel.MULTI_ZONE],
     )
     assert block_reasons(database, "membench")["membench"] == [
@@ -122,9 +122,10 @@ def test_cloud_credit_exhausted():
         assert reasons["membench"] == ["Cloud credit/budget exhausted."]
 
 
-def test_cloud_credit_not_applied_outside_big_clouds():
-    reasons = block_reasons(_server(vendor_id="hcloud"), "membench")
-    assert reasons["membench"] == []
+def test_cloud_credit_not_applied_to_other_vendors():
+    for vendor_id in ["aws", "hcloud"]:
+        reasons = block_reasons(_server(vendor_id=vendor_id), "membench")
+        assert reasons["membench"] == []
 
 
 def test_nvidia_tasks_blocked_without_gpus():
@@ -146,19 +147,13 @@ def test_nvidia_tasks_blocked_for_non_gpu_accelerators(accelerator_type):
     assert reasons["nvbandwidth"] == ["No GPUs available."]
 
 
-def test_nvidia_tasks_blocked_for_unsupported_skus():
-    server = _server(vendor_id="aws", api_reference="g3.4xlarge", accelerator_count=1)
-    reasons = block_reasons(server, "nvidia_smi")
-    assert reasons["nvidia_smi"] == [
-        "Cloud credit/budget exhausted.",
-        "GPUs not supported by this server type.",
-    ]
-
-
-def test_nvidia_tasks_allowed_for_supported_gpu_sku():
-    server = _server(vendor_id="aws", api_reference="g4dn.xlarge", accelerator_count=1)
-    reasons = block_reasons(server, "nvbandwidth")
-    assert reasons["nvbandwidth"] == ["Cloud credit/budget exhausted."]
+def test_nvidia_tasks_allowed_on_gpu_servers():
+    for api_reference in ["g4dn.xlarge", "g3.4xlarge"]:
+        server = _server(
+            vendor_id="aws", api_reference=api_reference, accelerator_count=1
+        )
+        reasons = block_reasons(server, ["nvidia_smi", "nvbandwidth"])
+        assert reasons == {"nvidia_smi": [], "nvbandwidth": []}
 
 
 def test_memory_requirements():
@@ -167,7 +162,7 @@ def test_memory_requirements():
         ("compression_text", 1.0),
         ("ffmpeg", 1.0),
         ("llm", 1.0),
-        ("vllm", 2.0),
+        ("vllm", 8.0),
         ("geekbench", 2.1),
         ("pgbench_postgres_ro_durable", 2.0),
     ]
@@ -235,7 +230,7 @@ def test_stressnglongrun_limited_to_allowlisted_skus():
             _server(vendor_id=vendor_id, api_reference=api_reference),
             "stressnglongrun",
         )["stressnglongrun"]
-        if vendor_id in ["aws", "gcp"]:
+        if vendor_id == "gcp":
             assert reasons == ["Cloud credit/budget exhausted."]
         else:
             assert reasons == []
@@ -248,8 +243,7 @@ def test_stressnglongrun_limited_to_allowlisted_skus():
 
 def test_multiple_reasons_can_stack():
     server = _server(
-        vendor_id="aws",
-        api_reference="g3.4xlarge",
+        vendor_id="gcp",
         accelerator_count=0,
         memory_amount=512,
         vcpus=64,
@@ -258,7 +252,6 @@ def test_multiple_reasons_can_stack():
     assert reasons["nvidia_smi"] == [
         "Cloud credit/budget exhausted.",
         "No GPUs available.",
-        "GPUs not supported by this server type.",
     ]
     assert reasons["geekbench"] == [
         "Cloud credit/budget exhausted.",
@@ -350,23 +343,20 @@ def test_azure_database_is_credit_exempt():
     assert block_reasons(multi_node, "membench")["membench"] == [_SINGLE_NODE_BLOCK]
 
 
-def test_stressng_benchmarks_credit_exempt_skus():
-    exempt = _server(vendor_id="aws", api_reference="c6a.large")
-    assert block_reasons(exempt, "stressng_benchmarks")["stressng_benchmarks"] == []
-    assert block_reasons(exempt, "membench")["membench"] == [
-        "Cloud credit/budget exhausted."
-    ]
-    other = _server(vendor_id="aws", api_reference="c6a.xlarge")
-    assert block_reasons(other, "stressng_benchmarks")["stressng_benchmarks"] == [
-        "Cloud credit/budget exhausted."
-    ]
-
-
-def test_m8azn_cheap_tasks_credit_exempt_without_gpus():
-    server = _server(
-        vendor_id="aws", api_reference="m8azn.metal-12xl", accelerator_count=0
+def test_expensive_aws_servers_blocked():
+    for api_reference in [
+        "u7i-12tb.224xlarge",
+        "u-6tb1.56xlarge",
+        "trn2.48xlarge",
+        "trn3.48xlarge",
+    ]:
+        server = _server(vendor_id="aws", api_reference=api_reference)
+        assert block_reasons(server, "membench")["membench"] == [
+            "High-memory and super expensive servers are on hold."
+        ]
+    assert (
+        block_reasons(
+            _server(vendor_id="aws", api_reference="u-3tb1.56xlarge"), "membench"
+        )["membench"]
+        == []
     )
-    reasons = block_reasons(server, ["lstopo", "nvidia_smi", "llm"])
-    assert reasons["lstopo"] == []
-    assert reasons["nvidia_smi"] == ["No GPUs available."]
-    assert reasons["llm"] == ["Cloud credit/budget exhausted."]

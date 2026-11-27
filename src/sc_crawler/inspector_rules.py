@@ -58,6 +58,9 @@ _CHEAP_TASKS = [
     "lsblk_topo",
 ]
 
+# no new inspector runs: cloud credits are exhausted or pending, run out of budget, or vendor abandoned
+_PAUSED_VENDORS = ["alicloud", "azure", "gcp"]
+
 
 def has_related_database(server: "Server") -> bool:
     """Check if the server is the underlying server of any Database of the same Vendor.
@@ -92,22 +95,6 @@ def is_credit_exempt(resource: "Server | Database", task: str) -> bool:
             "pgbench_postgres_ro_durable",
         ] and has_related_database(resource):
             return True
-    if task == "stressng_benchmarks":
-        # www blogpost citing data collected manually in 2024 that we need to repro
-        if (resource.vendor_id, resource.api_reference) in [
-            ("aws", "c6a.large"),
-            ("aws", "c6a.2xlarge"),
-            ("aws", "c6g.xlarge"),
-            ("aws", "m7a.xlarge"),
-            ("aws", "c7a.32xlarge"),
-            ("aws", "c6i.metal"),
-        ]:
-            return True
-    # we need lstopo for KCD Budapest 2026 talk
-    if (resource.vendor_id, resource.api_reference) in [
-        ("aws", "m8azn.metal-12xl")
-    ] and task in _CHEAP_TASKS:
-        return True
     return False
 
 
@@ -121,17 +108,20 @@ def block_reasons(
     A task doesn't run on a resource for any of these reasons:
 
     - All tasks:
-        - Cloud credits or budget exhausted: Alibaba Cloud, AWS, Azure and GCP,
+        - Cloud credits or budget exhausted: Alibaba Cloud, Azure and GCP,
           except for a few explicitly exempted resources and tasks (see
           `is_credit_exempt`).
+        - Very expensive, specialized AWS server types that the standard workloads
+          don't represent well: high-memory SAP HANA (`u7i`, `u-6tb1`) and
+          Trainium (`trn2`, `trn3`) families.
 
     - Managed databases:
         - Databases that can't be deployed on a single node.
 
     - Servers:
         - `bw_mem` and `membench`: a few servers with identified performance issues while running this task.
-        - `nvidia_smi` and `nvbandwidth`: servers without GPUs, and a few AWS and GCP GPU server types that failed in the past.
-        - Not enough memory: `membench` needs 0.9 GB; `compression_text`, `ffmpeg` and `llm` 1 GB; `vllm` and `pgbench_postgres_ro_durable` 2 GB; `geekbench` 2.1 GB.
+        - `nvidia_smi` and `nvbandwidth`: servers without GPUs.
+        - Not enough memory: `membench` needs 0.9 GB; `compression_text`, `ffmpeg` and `llm` 1 GB; `pgbench_postgres_ro_durable` 2 GB; `geekbench` 2.1 GB; `vllm` 8 GB.
         - `vllm`: fewer than 2 vCPUs (server and GuideLLM contend for the single core; no successful measurements observed).
         - `geekbench` and `passmark`: more than 32 vCPUs, as they don't scale beyond that.
         - `storage`: no bundled storage.
@@ -149,14 +139,16 @@ def block_reasons(
         tasks = [tasks]
     results = {task: [] for task in tasks}
     for task in tasks:
-        # cloud credits either exhausted, pending, or abandoned
-        if resource.vendor_id in [
-            "alicloud",
-            "aws",
-            "azure",
-            "gcp",
-        ] and not is_credit_exempt(resource, task):
+        if resource.vendor_id in _PAUSED_VENDORS and not is_credit_exempt(
+            resource, task
+        ):
             results[task].append("Cloud credit/budget exhausted.")
+
+        # exclude high-memory, no-GPU, SAP HANA targeted, super expensive servers for now
+        if resource.vendor_id == "aws" and resource.api_reference.startswith(
+            ("u7i", "u-6tb1", "trn2", "trn3")
+        ):
+            results[task].append("High-memory and super expensive servers are on hold.")
 
         # databases checks: deny if 1-node layout is not supported
         if isinstance(resource, DatabaseBase):
@@ -191,26 +183,13 @@ def block_reasons(
                 AcceleratorType.GPU,
             ):
                 results[task].append("No GPUs available.")
-            # TODO these failed in the past, we should revisit if recent updates (e.g. newer drivers) fixed them
-            if (resource.vendor_id, resource.api_reference) in [
-                ("aws", "g3.4xlarge"),
-                ("aws", "g3.8xlarge"),
-                ("aws", "g3.16xlarge"),
-                ("aws", "g4dn.metal"),
-                ("aws", "p2.8xlarge"),
-                ("aws", "p2.xlarge"),
-                ("aws", "p4d.24xlarge"),
-                ("aws", "g3s.xlarge"),
-                ("gcp", "a2-megagpu-16g"),
-            ]:
-                results[task].append("GPUs not supported by this server type.")
 
         for memreq in [
             ("membench", 0.9),
             ("compression_text", 1.0),
             ("ffmpeg", 1.0),
             ("llm", 1.0),
-            ("vllm", 2.0),
+            ("vllm", 8.0),
             ("geekbench", 2.1),
             ("pgbench_postgres_ro_durable", 2.0),
         ]:
