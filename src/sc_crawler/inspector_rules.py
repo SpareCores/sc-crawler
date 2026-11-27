@@ -111,6 +111,9 @@ def block_reasons(
         - Cloud credits or budget exhausted: Alibaba Cloud, Azure and GCP,
           except for a few explicitly exempted resources and tasks (see
           `is_credit_exempt`).
+        - Very expensive, specialized AWS server types that the standard workloads
+          don't represent well: high-memory SAP HANA (`u7i`, `u-6tb1`) and
+          Trainium (`trn2`, `trn3`) families.
 
     - Managed databases:
         - Databases that can't be deployed on a single node.
@@ -118,7 +121,7 @@ def block_reasons(
     - Servers:
         - `bw_mem` and `membench`: a few servers with identified performance issues while running this task.
         - `nvidia_smi` and `nvbandwidth`: servers without GPUs.
-        - Not enough memory: `membench` needs 0.9 GB; `compression_text`, `ffmpeg` and `llm` 1 GB; `vllm` and `pgbench_postgres_ro_durable` 2 GB; `geekbench` 2.1 GB.
+        - Not enough memory: `membench` needs 0.9 GB; `compression_text`, `ffmpeg` and `llm` 1 GB; `pgbench_postgres_ro_durable` 2 GB; `geekbench` 2.1 GB; `vllm` 8 GB.
         - `vllm`: fewer than 2 vCPUs (server and GuideLLM contend for the single core; no successful measurements observed).
         - `geekbench` and `passmark`: more than 32 vCPUs, as they don't scale beyond that.
         - `storage`: no bundled storage.
@@ -140,6 +143,12 @@ def block_reasons(
             resource, task
         ):
             results[task].append("Cloud credit/budget exhausted.")
+
+        # exclude high-memory, no-GPU, SAP HANA targeted, super expensive servers for now
+        if resource.vendor_id == "aws" and resource.api_reference.startswith(
+            ("u7i", "u-6tb1", "trn2", "trn3")
+        ):
+            results[task].append("High-memory and super expensive servers are on hold.")
 
         # databases checks: deny if 1-node layout is not supported
         if isinstance(resource, DatabaseBase):
@@ -180,7 +189,7 @@ def block_reasons(
             ("compression_text", 1.0),
             ("ffmpeg", 1.0),
             ("llm", 1.0),
-            ("vllm", 2.0),
+            ("vllm", 8.0),
             ("geekbench", 2.1),
             ("pgbench_postgres_ro_durable", 2.0),
         ]:
