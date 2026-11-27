@@ -23,6 +23,7 @@ from ..table_fields import (
     DatabaseStorageScope,
     DatabaseWireProtocol,
     Disk,
+    Hypervisor,
     PriceUnit,
     Status,
     StorageType,
@@ -1376,9 +1377,14 @@ def inventory_servers(vendor) -> list[dict]:
             "family": family,
             "series": _get_server_series(server_id),
             "vcpus": vcpus,
-            # as per OVH FAQ: https://www.ovhcloud.com/en/public-cloud/virtual-instances/
-            # alsoverified from lscpu on B3-8 instance (2025-11-17)
-            "hypervisor": "KVM",
+            # Metal instances are physical servers, the others run on KVM (also
+            # verified from lscpu on B3-8 instance on 2025-11-17):
+            # https://blog.ovhcloud.com/en/posts/metal-instances-the-power-of-bare-metal-and-the-automation-of-the-cloud-with-pay-as-you-go/
+            "hypervisor": (
+                Hypervisor.BARE_METAL
+                if commercial.get("brickSubtype") == "metal"
+                else Hypervisor.KVM
+            ),
             "cpu_allocation": cpu_allocation,
             "cpu_cores": None,
             "cpu_speed": technical.get("cpu", {}).get("frequency"),

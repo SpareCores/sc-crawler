@@ -32,6 +32,7 @@ from ..table_fields import (
     DatabaseStorageScope,
     DatabaseWireProtocol,
     Disk,
+    Hypervisor,
     PriceTier,
     PriceUnit,
     Status,
@@ -1614,7 +1615,15 @@ def _make_server_from_instance_type(instance_type, vendor) -> dict:
         "api_reference_object": {"instance_type": it},
         "display_name": it,
         "description": _annotate_instance_type(it),
-        "hypervisor": instance_type.get("Hypervisor", None),
+        # Hypervisor is "nitro" or "xen", and missing for bare metal types:
+        # https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_InstanceTypeInfo.html
+        "hypervisor": (
+            Hypervisor.BARE_METAL
+            if instance_type.get("BareMetal")
+            else Hypervisor[hypervisor.upper()]
+            if (hypervisor := instance_type.get("Hypervisor"))
+            else None
+        ),
         "family": _instance_family(it),
         "series": series,
         "compatible_storage_ids": _compatible_storage_ids(instance_type),

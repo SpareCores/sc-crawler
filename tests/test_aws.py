@@ -12,6 +12,7 @@ from sc_crawler.table_fields import (
     DatabaseHaStrategy,
     DatabaseSecurityFeature,
     DatabaseWireProtocol,
+    Hypervisor,
     PriceUnit,
     Status,
     StorageType,
@@ -36,6 +37,7 @@ from sc_crawler.vendors._aws import (
     _get_storages_of_instance_type,
     _instance_family,
     _instance_series,
+    _make_server_from_instance_type,
     _server_series_categories,
     _warn_unknown_family,
     _warn_unknown_instance_store_iops,
@@ -1553,3 +1555,32 @@ def test_aws_get_products_uses_the_pricing_client():
         products = _aws._boto_get_products.__wrapped__("AmazonEC2", {"x": "y"})
     assert products == [{"a": 1}]
     client.get_paginator.assert_called_once_with("get_products")
+
+
+@pytest.mark.parametrize(
+    ("instance_type", "bare_metal", "api_hypervisor", "hypervisor"),
+    [
+        ("m5.metal", True, None, Hypervisor.BARE_METAL),
+        ("m5.large", False, "nitro", Hypervisor.NITRO),
+        ("m4.large", False, "xen", Hypervisor.XEN),
+        # not reported by the API: unknown
+        ("m9.large", False, None, None),
+        # BareMetal not reported by the API: the reported hypervisor
+        ("m5.xlarge", None, "nitro", Hypervisor.NITRO),
+    ],
+)
+def test_aws_hypervisor(instance_type, bare_metal, api_hypervisor, hypervisor):
+    raw = {
+        "InstanceType": instance_type,
+        "VCpuInfo": {"DefaultVCpus": 2, "DefaultCores": 1},
+        "ProcessorInfo": {"SupportedArchitectures": ["x86_64"]},
+        "MemoryInfo": {"SizeInMiB": 8192},
+        "NetworkInfo": {"NetworkPerformance": "Up to 10 Gigabit", "NetworkCards": []},
+    }
+    if bare_metal is not None:
+        raw["BareMetal"] = bare_metal
+    if api_hypervisor:
+        raw["Hypervisor"] = api_hypervisor
+    with patch.object(_aws, "_instance_family", return_value="General Purpose"):
+        server = _make_server_from_instance_type(raw, Mock(vendor_id="aws"))
+    assert server["hypervisor"] == hypervisor

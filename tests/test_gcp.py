@@ -11,6 +11,7 @@ from sc_crawler.table_fields import (
     DatabaseHaLevel,
     DatabaseHaStrategy,
     DatabaseSecurityFeature,
+    Hypervisor,
     PriceUnit,
     Status,
     StorageType,
@@ -777,6 +778,7 @@ def test_gcp_search_servers_fills_gpu_and_bundled_local_ssd_fields():
         rows = _search_servers("us-central1-a")
 
     row = rows[0]
+    assert row["hypervisor"] == Hypervisor.BARE_METAL
     assert row["accelerator_count"] == 4
     assert row["accelerator_type"] == AcceleratorType.GPU
     assert row["accelerator_model"] == "GB300"

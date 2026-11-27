@@ -28,6 +28,7 @@ from ..table_fields import (
     DatabaseStorageScope,
     DatabaseWireProtocol,
     Disk,
+    Hypervisor,
     PriceUnit,
     Status,
     StorageType,
@@ -1135,7 +1136,10 @@ def _shape_servers(shape: dict, vendor) -> list[dict]:
                 "family": family,
                 "series": series,
                 "vcpus": vcpus,
-                "hypervisor": None,
+                # BM shapes are bare metal instances, VMs run on Oracle Linux KVM:
+                # https://docs.oracle.com/en-us/iaas/Content/Compute/References/computeshapes.htm
+                # https://www.oracle.com/a/ocom/docs/oracle-virtualization-datasheet.pdf
+                "hypervisor": Hypervisor.BARE_METAL if kind == "BM" else Hypervisor.KVM,
                 # OCPUs are dedicated physical cores, except for the Always Free
                 # micro shape with 1/8 OCPU and the ability to burst
                 "cpu_allocation": (

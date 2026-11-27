@@ -1,4 +1,22 @@
-## v0.12.x (DEVELOPMENT)
+## v0.12.1 (DEVELOPMENT)
+
+‼ Breaking changes:
+
+- `Server.hypervisor` is an enum instead of free text. The migration converts
+  the existing values, also the historical rows of the SCD table (`nitro` →
+  `NITRO`, `xen` → `XEN`, `KVM` and `QEMU` → `KVM`, `Microsoft Hyper-V` →
+  `HYPER_V`). Other values are set to empty, also in the SCD history.
+
+New feature(s):
+
+- `Server.hypervisor` marks bare metal servers explicitly with `BARE_METAL`,
+  so an empty value means unknown. It is set for all vendors from the next
+  inventory refresh.
+
+Database migrations:
+
+- Convert the `hypervisor` column of the `server` and `server_scd` tables
+  from text to the new `hypervisor` enum (a new enum type in PostgreSQL).
 
 Fix(es):
 

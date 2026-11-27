@@ -40,6 +40,7 @@ from .table_fields import (
     Disk,
     HashableDict,
     HashableJSON,
+    Hypervisor,
     PriceTier,
     PriceUnit,
     ResourceType,
@@ -847,9 +848,13 @@ class ServerFields(
         default=None,
         description="Default number of virtual CPUs (vCPU) of the server.",
     )
-    hypervisor: Optional[str] = Field(
+    hypervisor: Optional[Hypervisor] = Field(
         default=None,
-        description="Hypervisor of the virtual server, e.g. Xen, KVM, Nitro or Dedicated.",
+        description=(
+            "Hypervisor of the server, e.g. KVM, Xen, Nitro or Hyper-V, "
+            "or Bare metal for servers without a hypervisor. "
+            "Empty when not known."
+        ),
     )
     cpu_allocation: CpuAllocation = Field(
         default=None,

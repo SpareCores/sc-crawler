@@ -8,6 +8,7 @@ from sc_crawler.table_fields import (
     DatabaseEngine,
     DatabaseHaLevel,
     DatabaseHaStrategy,
+    Hypervisor,
     PriceUnit,
     Status,
     StorageType,
@@ -89,6 +90,8 @@ def test_vultr_inventory_servers_status_from_locations():
     ]
     assert by_id["vc2-1c-1gb"]["compatible_storage_ids"] == expected_storage_ids
     assert by_id["vbm-6c-32gb"]["compatible_storage_ids"] == []
+    assert by_id["vc2-1c-1gb"]["hypervisor"] == Hypervisor.KVM
+    assert by_id["vbm-6c-32gb"]["hypervisor"] == Hypervisor.BARE_METAL
 
 
 def _vdm_row(plan_id, **gpu_fields):
