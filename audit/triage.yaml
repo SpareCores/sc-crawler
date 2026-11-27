@@ -389,6 +389,13 @@ entries:
     evidence: audit-runs/2026-10-31.tar.xz
     date: 2026-11-02
   - vendor: alicloud
+    type: STORAGE_IDS_MISSING
+    match: "ecs\\.(u0|s6|gn8ia|gn8t|gn7i|c6e|t1|sccg7|g6t|ebmr7|ebmr6e|ebmhfg6|ebmgn9t|ebmgn9ge|ebmgn9gc|ebmgn9g|ebmgn8v|ebmgn8te|ebmgn8t|ebmgn6e|ebmg8ae|ebmg6e|ebmc6e)[.-].*"
+    verdict: expected
+    note: "Sold out in every zone (WithoutStock), so the per instance type DescribeAvailableResource DataDisk call does not answer, and the docs do not list the disks of these families (_alicloud.py _DOCS_DISK_CATEGORIES has the documented ones): unknown by design. Checked 2026-11-27 (DEV-1179): 43 ACTIVE types. Fills itself when back in stock."
+    by: claude (claude-code)
+    date: 2026-11-27
+  - vendor: alicloud
     type: NOT_AT_VENDOR
     match: "ecs\\.(c4|ce4|cm4|m2|t1|s6-c1m\\d|gn5i?-c\\d+g1)\\.\\w+|ecs\\.u0\\.c1m\\d\\.\\w+"
     verdict: to_verify
@@ -547,6 +554,13 @@ entries:
     evidence: audit-runs/2026-11-20.tar.xz
     date: 2026-11-20
 
+  - vendor: ovh
+    type: STORAGE_IDS_EMPTY
+    match: "bm-.*"
+    verdict: expected
+    note: "Metal instances: Block Storage volumes are not available for Metal instances (docs.ovhcloud.com/en/guides/public-cloud/compute/create-and-configure-an-additional-disk-on-an-instance), so the empty list is by design (_ovh.py inventory_servers)."
+    by: claude (claude-code)
+    date: 2026-11-24
   # ---------------------------------------------------------------- azure
   - vendor: azure
     type: SPEC_MISMATCH
@@ -832,3 +846,17 @@ entries:
     by: claude (claude-code)
     evidence: audit-runs/2026-11-20.tar.xz
     date: 2026-11-20
+  - vendor: vultr
+    type: STORAGE_IDS_EMPTY
+    match: "vbm-.*"
+    verdict: expected
+    note: "Bare metal plans (/v2/plans-metal): block storage cannot be attached (docs.vultr.com/support/products/storage/can-i-attach-vultr-block-storage-volume-to-vultr-bare-metal-server), so the empty list is by design (_vultr.py inventory_servers)."
+    by: claude (claude-code)
+    date: 2026-11-24
+  - vendor: vultr
+    type: STORAGE_IDS_EMPTY
+    match: "vultr-dbaas-.*"
+    verdict: expected
+    note: "Database storage is bundled in the plan and only changes with a plan change (docs.vultr.com/products/storage/databases/postgresql/management/resize-databases), so the empty list is by design (_vultr.py inventory_databases). Confirmed by Gergely on Slack, 2026-11-24 (DEV-1179)."
+    by: claude (claude-code)
+    date: 2026-11-24

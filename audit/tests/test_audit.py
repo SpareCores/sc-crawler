@@ -37,6 +37,7 @@ def _server(server_id, vcpus, memory_mib, status="ACTIVE", **kwargs):
         "storage_type": "NVME_SSD",
         "network_speed_baseline": None,
         "network_speed_max": None,
+        "compatible_storage_ids": ["block"],
         **kwargs,
     }
 
@@ -796,6 +797,7 @@ def test_db_series_row_covers_family(tmp_path):
             "storage_size": None, "storage_extra_max": None, "engine_versions": [],
             "ha": [], "ha_strategy": [], "max_read_replicas": 5,
             "continuous_backups": 35, "scheduled_backups": 1, "sla": 99.99,
+            "compatible_storage_ids": ["gp3"],
         }  # fmt: skip
 
     ours = Ours(
@@ -860,6 +862,7 @@ def test_db_not_at_vendor_only_counts_complete_pages(tmp_path):
                 "continuous_backups": 35,
                 "scheduled_backups": 1,
                 "sla": 99.95,
+                "compatible_storage_ids": ["gp3"],
             }  # fmt: skip
             for sku in ["db.m6i.large", "db.m8i.large"]
         ],
@@ -959,6 +962,7 @@ def test_db_spec_mismatch_of_secondary_page_confirmed_by_authority(tmp_path):
             "database_id": "db.m8g.large", "name": "db.m8g.large",
             "api_reference": "db.m8g.large", "status": "ACTIVE", "family": None,
             "vcpus": 2, "memory_amount": 8192, "storage_size": None,
+            "compatible_storage_ids": ["gp3"],
         }],
         database_prices=[], regions=[], zones=[],
     )  # fmt: skip
@@ -1191,3 +1195,110 @@ def test_missing_server_and_database_not_merged():
         server.key()
         == Finding(code_hint=server.code_hint, theirs={"vcpus": 2}, **common).key()
     )
+
+
+def _db(database_id, status="ACTIVE", **kwargs):
+    return {
+        "database_id": database_id, "name": database_id, "api_reference": database_id,
+        "display_name": database_id, "family": None, "series": None,
+        "server_id": None, "status": status, "vcpus": 2, "memory_amount": 8192,
+        "storage_size": None, "storage_extra_max": None, "engine_versions": [],
+        "ha": [], "ha_strategy": [], "max_read_replicas": None,
+        "continuous_backups": None, "scheduled_backups": None, "sla": None,
+        "compatible_storage_ids": ["gp3"], **kwargs,
+    }  # fmt: skip
+
+
+def test_storage_ids_missing_and_empty_without_vendor_pages(tmp_path):
+    ours = Ours(
+        vendor="hcloud",
+        servers=[
+            _server("cx23", 2, 4096),  # has storage ids
+            _server("cx33", 4, 8192, compatible_storage_ids=None),
+            _server("cax11", 2, 4096, compatible_storage_ids=[]),
+            _server("cpx11", 2, 2048, status="INACTIVE", compatible_storage_ids=None),
+            _server("cpx21", 3, 4096, status="RETIRED", compatible_storage_ids=[]),
+        ],
+        server_prices=[],
+        databases=[
+            _db("db-ok"),
+            _db("db-null", compatible_storage_ids=None),
+            _db("db-empty", compatible_storage_ids=[]),
+            _db("db-old", status="INACTIVE", compatible_storage_ids=None),
+        ],
+        database_prices=[],
+        regions=[],
+        zones=[],
+    )
+    # no extraction written: the check needs no vendor page
+    findings, stats = compare_vendor("hcloud", _vendor(), ours, tmp_path)
+    missing = {f.our_id: f for f in _by(findings, "STORAGE_IDS_MISSING")}
+    empty = {f.our_id: f for f in _by(findings, "STORAGE_IDS_EMPTY")}
+    assert set(missing) == {"cx33", "db-null"}
+    assert set(empty) == {"cax11", "db-empty"}
+    assert {f.severity for f in missing.values()} == {"medium"}
+    assert {f.severity for f in empty.values()} == {"low"}
+    assert missing["cx33"].ours is None and empty["cax11"].ours == []
+    assert missing["cx33"].code_hint == "vendors/_hcloud.py:inventory_servers"
+    assert missing["db-null"].code_hint == "vendors/_hcloud.py:inventory_databases"
+    assert {f.page_id for f in findings if f.type.startswith("STORAGE")} == {"our-data"}
+    assert all(f.field == "compatible_storage_ids" for f in missing.values())
+    # active rows only: 3 servers, 3 databases
+    assert stats["storage_ids_checked"] == 6
+
+
+def test_load_ours_decodes_storage_ids(tmp_path):
+    import sqlite3
+
+    from sc_crawler_audit.export import DATABASE_COLUMNS, SERVER_COLUMNS, load_ours
+
+    def columns(text):
+        return [c.strip() for c in text.split(",") if c.strip()]
+
+    path = tmp_path / "data.db"
+    with sqlite3.connect(path) as conn:
+        tables = {
+            "server": ["vendor_id"] + columns(SERVER_COLUMNS),
+            "database": ["vendor_id"] + columns(DATABASE_COLUMNS),
+            "server_price": "vendor_id server_id region_id zone_id operating_system "
+            "allocation unit price price_tiered currency status".split(),
+            "database_price": "vendor_id database_id region_id allocation ha "
+            "ha_strategy unit price currency status".split(),
+            "region": "vendor_id region_id name api_reference display_name aliases "
+            "status".split(),
+            "ipv4_price": "vendor_id region_id unit price currency status".split(),
+            "zone": "vendor_id region_id zone_id name status".split(),
+        }
+        for table, cols in tables.items():
+            conn.execute(f'CREATE TABLE "{table}" ({", ".join(cols)})')
+        for server_id, ids in [("a", '["gp3", "io2"]'), ("b", "[]"), ("c", None)]:
+            conn.execute(
+                "INSERT INTO server (vendor_id, server_id, status, "
+                "compatible_storage_ids) VALUES ('aws', ?, 'ACTIVE', ?)",
+                (server_id, ids),
+            )
+        conn.execute(
+            "INSERT INTO database (vendor_id, database_id, status, "
+            "compatible_storage_ids) VALUES ('aws', 'd', 'ACTIVE', '[\"gp3\"]')"
+        )
+    ours = load_ours(path, "aws")
+    by_id = {s["server_id"]: s["compatible_storage_ids"] for s in ours.servers}
+    assert by_id == {"a": ["gp3", "io2"], "b": [], "c": None}
+    assert ours.databases[0]["compatible_storage_ids"] == ["gp3"]
+
+
+def test_report_shows_page_without_url_as_plain_text(tmp_path):
+    from sc_crawler_audit.compare import Finding
+    from sc_crawler_audit.report import write_report
+
+    finding = Finding(
+        vendor="aws", type="STORAGE_IDS_MISSING", severity="medium",
+        page_id="our-data", url="", independent=True, our_id="a1.large",
+        field="compatible_storage_ids", code_hint="vendors/_aws.py:inventory_servers",
+    )  # fmt: skip
+    path = write_report(
+        [finding], {"aws": {}}, tmp_path, tmp_path / "missing.db", datetime.now(UTC)
+    )
+    report = path.read_text(encoding="utf-8")
+    assert "| our-data |" in report
+    assert "[our-data]()" not in report

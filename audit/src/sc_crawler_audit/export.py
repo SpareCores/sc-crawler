@@ -176,13 +176,15 @@ SERVER_COLUMNS = """
     server_id, name, api_reference, display_name, family, series, status,
     vcpus, cpu_manufacturer, cpu_family, cpu_model, cpu_speed, cpu_allocation,
     memory_amount, accelerator_count, accelerator_model, accelerator_memory_total,
-    storage_size, storage_type, network_speed_baseline, network_speed_max
+    storage_size, storage_type, network_speed_baseline, network_speed_max,
+    compatible_storage_ids
 """
 
 DATABASE_COLUMNS = """
     database_id, name, api_reference, display_name, family, series, server_id, status,
     vcpus, memory_amount, storage_size, storage_extra_max, engine_versions, ha,
-    ha_strategy, max_read_replicas, continuous_backups, scheduled_backups, sla
+    ha_strategy, max_read_replicas, continuous_backups, scheduled_backups, sla,
+    compatible_storage_ids
 """
 
 
@@ -228,8 +230,10 @@ def load_ours(db_path: Path, vendor: str) -> Ours:
             "SELECT region_id, zone_id, name, status FROM zone WHERE vendor_id = ?",
             vendor,
         )
+    for row in servers:
+        row["compatible_storage_ids"] = _json(row["compatible_storage_ids"])
     for row in databases:
-        for key in ("engine_versions", "ha", "ha_strategy"):
+        for key in ("engine_versions", "ha", "ha_strategy", "compatible_storage_ids"):
             row[key] = _json(row[key])
     for row in regions:
         row["aliases"] = _json(row["aliases"])

@@ -28,6 +28,9 @@ CODE_HINTS = {
     "region": "inventory_regions",
 }
 
+# page id of findings from checks of our own data, without a vendor page
+OUR_DATA_PAGE = "our-data"
+
 
 @dataclass
 class Finding:
@@ -1005,6 +1008,42 @@ class Comparer:
                     note=f"Same SKUs, different name. {examples(ours)}",
                 )  # fmt: skip
 
+    def check_storage_ids(self):
+        """Active servers and databases without compatible storage IDs.
+
+        Checks our data only (no vendor page), so it runs for every vendor.
+        NULL means the crawler never filled the field (a gap); an empty list
+        means that no storage can be attached, which is right for some SKUs
+        (e.g. bare metal), so it is reported with a lower severity.
+        """
+        resources = [
+            ("server", "server_id", self.ours.servers),
+            ("database", "database_id", self.ours.databases),
+        ]
+        for hint, id_field, rows in resources:
+            for row in rows:
+                if row["status"] != "ACTIVE":
+                    continue
+                self.stats["storage_ids_checked"] += 1
+                ids = row["compatible_storage_ids"]
+                if ids is None:
+                    type_, severity = "STORAGE_IDS_MISSING", "medium"
+                    note = "Never filled by the crawler."
+                elif ids == []:
+                    type_, severity = "STORAGE_IDS_EMPTY", "low"
+                    note = "No storage can be attached; check if that is right."
+                else:
+                    continue
+                self.findings.append(
+                    Finding(
+                        vendor=self.vendor_id, type=type_, severity=severity,
+                        page_id=OUR_DATA_PAGE, url="", independent=True,
+                        our_id=row[id_field], field="compatible_storage_ids",
+                        ours=ids, note=note,
+                        code_hint=f"vendors/_{self.vendor_id}.py:{CODE_HINTS[hint]}",
+                    )
+                )  # fmt: skip
+
     def flag_source_conflicts(self):
         """Spec mismatches where another official page agrees with our value."""
         for finding in self.findings:
@@ -1091,6 +1130,7 @@ def compare_vendor(
             comparer.compare_regions(page, extraction.regions)
     comparer.completeness(pages)
     comparer.compare_series(pages)
+    comparer.check_storage_ids()
     comparer.flag_source_conflicts()
     comparer.dedupe()
     return comparer.findings, dict(comparer.stats)

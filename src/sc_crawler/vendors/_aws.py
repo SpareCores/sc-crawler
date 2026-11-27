@@ -426,6 +426,18 @@ def _reconcile_server_status(
             and server.accelerator_manufacturer in ("NVIDIA", "AMD")
         ):
             server.accelerator_type = AcceleratorType.GPU
+        # rows last crawled before the series was filled (e.g. a1, which the API does
+        # not return any more), whatever their status (filled for RETIRED and INACTIVE
+        # rows too): their family is the old one (the series name),
+        # the storage is unknown: all EBS volume types, as `_compatible_storage_ids`
+        # gives for the types that can attach EBS (a1 is EBS-only). The API data
+        # cannot confirm it for these. `_make_server_from_instance_type` always sets
+        # the series, so it marks the rows still to be filled.
+        if server.series is None:
+            server.series = _instance_series(server.server_id)
+            server.family = _instance_family(server.server_id)
+            if server.compatible_storage_ids is None:
+                server.compatible_storage_ids = list(storage_manual_data)
 
 
 # the Pricing API has a low request rate limit, and botocore 1.44.0 switched the

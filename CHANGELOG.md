@@ -97,6 +97,35 @@ Fix(es):
 - `aws`: Pricing API clients use adaptive retry mode with up to 10 attempts.
   botocore 1.44.0 made the standard retry mode (3 attempts) the default, so
   throttled `GetProducts` calls failed and the vendor was skipped.
+- `aws`: instance types not returned by the API any more (e.g. `a1`, kept `ACTIVE`
+  by spot prices) get their series, family (the category of the Pricing API,
+  instead of the old family, which was the series name; none for series the
+  Pricing API does not know) and compatible storage IDs
+  (all EBS volume types) filled, if their series was not set yet, whatever their
+  status (also `RETIRED` and `INACTIVE` rows).
+- `gcp`, `upcloud`: storage `min_size` and `max_size` are converted from GiB to
+  GB (the documented unit, as at the other vendors), e.g. 64 TiB is 70369 instead
+  of 65536.
+- `gcp`, `upcloud`, `alicloud`: storage prices are per GB-month, converted from
+  the per GiB-month (or GiB-hour) vendor prices, as at Azure, so they match the
+  sizes in GB (about 7% lower than before).
+- `alicloud`: the descriptions of the `cloud_essd-pl0` to `cloud_essd-pl3` storages
+  name the API values they stand for (`DiskCategory=cloud_essd` and the
+  `PerformanceLevel`), also documented in `inventory_storages`.
+- `alicloud`: compatible storage IDs come from a `DescribeAvailableResource`
+  (`DataDisk`) call per instance type, in every region where it is in stock,
+  instead of `DescribeZones`, which lists the same disk categories for every
+  instance type of a zone (e.g. ESSD for `n4`, which only supports standard SSD
+  and ultra disks). Instance types sold out everywhere get the list of their
+  family from the docs where documented (`d1`, `gn5`, `gn8v`, `r6a`,
+  `s2.small`), otherwise stay unknown. The list is the union over all regions
+  (no per-region lists in the schema). Live run (2026-11-27): 992 of 1067 active
+  lists changed (815 lost categories, e.g. 174 lost ESSD), active types without
+  a list went from 67 to 43; about 8,800 extra API calls, the servers step took
+  about 9 minutes.
+- `alicloud`: new `cloud_auto` (ESSD AutoPL, baseline performance only, the
+  price covers the capacity) and `cloud_essd_entry` (ESSD Entry) storages, with
+  prices from `DescribePrice`, as `QuerySkuPriceList` does not list them.
 - Progress bars of a failed vendor are cleaned up: the progress bars of its
   interrupted steps are removed from the display and its elapsed timer is
   stopped, instead of counting up while later vendors are being processed. No

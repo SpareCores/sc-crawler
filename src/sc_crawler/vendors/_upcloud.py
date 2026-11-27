@@ -470,6 +470,9 @@ def _get_gpu_region_availability(region_id: str) -> dict[str, dict]:
 
 # Block storage tiers. IOPS from docs, MaxIOPS throughput ~400 MB/s (workload-
 # dependent). MaxIOPS v2 is in progress and aims ~2–3× that throughput.
+# Sizes are in GiB as in the docs ("1 GiB – 4 TiB"), converted to GB in
+# inventory_storages.
+# https://upcloud.com/docs/products/block-storage/
 # https://upcloud.com/docs/products/block-storage/tiers/
 # https://upcloud.com/docs/roadmap/#ready-to-use
 UPCLOUD_STORAGES = [
@@ -1093,8 +1096,8 @@ def inventory_storages(vendor):
                 "storage_type": storage["storage_type"],
                 "max_iops": storage["max_iops"],
                 "max_throughput": storage["max_throughput"],
-                "min_size": storage["min_size"],
-                "max_size": storage["max_size"],
+                "min_size": round(storage["min_size"] * _GIB_TO_GB),
+                "max_size": round(storage["max_size"] * _GIB_TO_GB),
             }
         )
     return items
@@ -1116,8 +1119,9 @@ def inventory_storage_prices(vendor):
                         "region_id": zone_prices["name"],
                         "storage_id": k[len("storage_") :],
                         "unit": PriceUnit.GB_MONTH,
-                        # UpCloud pricing is per hour, but other providers are per month
-                        "price": v["price"] / 100 * 24 * 30,
+                        # UpCloud pricing is per hour, but other providers are per
+                        # month; per GiB, as the sizes (see UPCLOUD_STORAGES)
+                        "price": v["price"] / 100 * 24 * 30 / _GIB_TO_GB,
                         "currency": "EUR",
                     }
                 )

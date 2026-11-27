@@ -173,10 +173,12 @@ in our data are skipped.
 | `PRICE_MISSING_IN_DB` | the vendor prices a SKU in a region where we have no price |
 | `COMPONENT_PRICE_MISMATCH` | our price vs the vendor's per-vCPU/GiB/GPU/SSD rates × our specs (servers, or databases with `target: database`) |
 | `FEATURE_MISMATCH` | database SLA, max read replicas, PITR days, max storage, major versions |
+| `STORAGE_IDS_MISSING` | an active server or database of ours has no `compatible_storage_ids` (NULL): the crawler never filled it. Checks our data only (page `our-data`), for every vendor, even without extractions |
+| `STORAGE_IDS_EMPTY` | the same with an empty list: no storage can be attached, which is right for some SKUs (e.g. bare metal; triaged as `expected` per pattern) |
 
 Severity: `high` for vCPUs, memory, GPUs, made-up SKUs and price differences >5%; `medium` for
-other price, status and storage issues; `low` for network, storage type, CPU model, spot prices
-and unconfirmed secondary-source findings; `info` for values we don't have.
+other price, status and storage issues (incl. missing storage IDs); `low` for network, storage type, CPU
+model, spot prices, empty storage IDs and unconfirmed secondary-source findings; `info` for values we don't have.
 
 Status, missing-price and not-at-vendor findings list **our active price regions**, because our
 status is aggregated over all regions while a page may cover only some of them.

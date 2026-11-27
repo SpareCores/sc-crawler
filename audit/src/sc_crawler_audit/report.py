@@ -171,7 +171,8 @@ def write_report(
                 lines.append(
                     f"| {_cell(f.sku)} | {_cell(f.our_id)} | {_cell(f.region)} "
                     f"| {_cell(f.ours)} | {_cell(f.theirs)} | {_cell(f.diff_pct)} "
-                    f"| [{_cell(page)}]({f.url}) | {_cell(f.quote or f.note)} "
+                    f"| {f'[{_cell(page)}]({f.url})' if f.url else _cell(page)} "
+                    f"| {_cell(f.quote or f.note)} "
                     f"| {_triage_cell(f)} |"
                 )
             if len(group) > TOP_N:

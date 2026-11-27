@@ -1798,6 +1798,9 @@ def test_gcp_inventory_storages_maps_pd_and_hyperdisk_performance():
     assert by_name["hyperdisk-balanced"]["max_iops"] == 160_000
     assert by_name["hyperdisk-balanced"]["max_throughput"] == 2_400
     assert by_name["hyperdisk-balanced"]["min_size"] == 4
+    # sizes are GiB in the API ("2048GB-32768GB" = 2 TiB - 32 TiB): stored in GB
+    assert by_name["hyperdisk-throughput"]["min_size"] == 2199
+    assert by_name["hyperdisk-throughput"]["max_size"] == 35184
     assert by_name["hyperdisk-balanced-high-availability"]["storage_id"] == "50001"
     assert by_name["hyperdisk-balanced-high-availability"]["max_iops"] == 100_000
     assert by_name["hyperdisk-ml"]["max_throughput"] == 2_097_152
@@ -1925,9 +1928,11 @@ def test_gcp_inventory_storage_prices_use_capacity_skus():
         prices = inventory_storage_prices(vendor)
 
     by_id = {p["storage_id"]: p for p in prices}
-    assert by_id["40001"]["price"] == pytest.approx(0.08)
+    # per GiB-month SKUs, stored per GB-month as the sizes
+    assert by_id["40001"]["price"] == pytest.approx(0.08 / _GIB_TO_GB)
+    assert by_id["40001"]["price"] == pytest.approx(0.0745, abs=1e-4)
     assert by_id["40001"]["unit"] == PriceUnit.GB_MONTH
-    assert by_id["50001"]["price"] == pytest.approx(0.16)
+    assert by_id["50001"]["price"] == pytest.approx(0.16 / _GIB_TO_GB)
 
 
 @pytest.mark.parametrize(

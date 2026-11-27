@@ -39,6 +39,7 @@ from sc_crawler.vendors._aws import (
     _server_series_categories,
     _warn_unknown_family,
     _warn_unknown_instance_store_iops,
+    storage_manual_data,
 )
 from sc_crawler.vendors._aws import (
     _reconcile_server_status as aws_reconcile_server_status,
@@ -874,6 +875,63 @@ def test_aws_reconcile_server_status_sets_missing_accelerator_type_of_active_ser
     assert no_gpu.accelerator_type is None
 
 
+def test_aws_reconcile_server_status_fills_family_series_and_storage_of_old_rows():
+    region = Mock(
+        region_id="us-east-1",
+        api_reference="us-east-1",
+        aliases=[],
+        status=Status.ACTIVE,
+    )
+    region.name = "US East (N. Virginia)"
+    # a1 is not returned by the API any more: its row has the old family (the series
+    # name), no series and unknown storage
+    a1 = _aws_server_mock("a1.large", Status.ACTIVE)
+    a1.series, a1.family, a1.compatible_storage_ids = None, "a1", None
+    # an old row with known storage keeps it
+    a1_known = _aws_server_mock("a1.xlarge", Status.ACTIVE)
+    a1_known.series, a1_known.family = None, "a1"
+    a1_known.compatible_storage_ids = ["gp3"]
+    # an old row of a series without category in the Pricing API: no family, not the
+    # old one
+    unknown = _aws_server_mock("zz9.large", Status.ACTIVE)
+    unknown.series, unknown.family, unknown.compatible_storage_ids = None, "zz9", None
+    # rows built from the API are not touched, not even with no storage
+    current = _aws_server_mock("m5.large", Status.ACTIVE)
+    current.series, current.family = "m5", "General Purpose"
+    current.compatible_storage_ids = []
+    # not offered, no spot nor list price: INACTIVE, filled as well
+    inactive = _aws_server_mock("a1.medium", Status.ACTIVE)
+    inactive.series, inactive.family, inactive.compatible_storage_ids = None, "a1", None
+    vendor = _aws_vendor(
+        regions=[region], servers=[a1, a1_known, unknown, current, inactive]
+    )
+    with (
+        patch("sc_crawler.vendors._aws._boto_get_products", return_value=[]),
+        patch(
+            "sc_crawler.vendors._aws._describe_instance_type_offerings_per_zone_with_progress",
+            return_value={"m5.large": ["use1-az1"]},
+        ),
+        patch(
+            "sc_crawler.vendors._aws._server_series_categories",
+            return_value={"a1": "General Purpose", "m5": "General Purpose"},
+        ),
+    ):
+        aws_reconcile_server_status(
+            vendor, spot_server_ids={"a1.large", "a1.xlarge", "zz9.large"}
+        )
+    assert (a1.series, a1.family) == ("a1", "General Purpose")
+    assert a1.compatible_storage_ids == list(storage_manual_data)
+    assert (a1_known.series, a1_known.family) == ("a1", "General Purpose")
+    assert a1_known.compatible_storage_ids == ["gp3"]
+    assert (unknown.series, unknown.family) == ("zz9", None)
+    assert unknown.compatible_storage_ids == list(storage_manual_data)
+    assert (current.series, current.family) == ("m5", "General Purpose")
+    assert current.compatible_storage_ids == []
+    assert inactive.status == Status.INACTIVE
+    assert (inactive.series, inactive.family) == ("a1", "General Purpose")
+    assert inactive.compatible_storage_ids == list(storage_manual_data)
+
+
 def test_aws_inventory_database_prices_by_ha_deployment():
     vendor = _aws_vendor(
         regions=[Mock(region_id="us-east-1", status=Status.ACTIVE)],
@@ -1326,7 +1384,7 @@ def test_aws_reconcile_server_status(monkeypatch):
         ],
     )
     servers = {
-        server_id: SimpleNamespace(server_id=server_id, accelerator_count=0)
+        server_id: SimpleNamespace(server_id=server_id, series="s", accelerator_count=0)
         for server_id in (
             "m5.large",
             "c8a.large",
@@ -1360,6 +1418,7 @@ def test_aws_reconcile_spot_only_accelerator_type(monkeypatch, manufacturer, exp
     monkeypatch.setattr(_aws, "_get_server_products", lambda: [])
     server = SimpleNamespace(
         server_id="x.spotonly",
+        series="x",
         accelerator_count=1,
         accelerator_type=None,
         accelerator_manufacturer=manufacturer,
@@ -1410,7 +1469,7 @@ def test_aws_spot_prices_inactive_for_servers_no_longer_available(monkeypatch):
         regions=[region],
         zones=[SimpleNamespace(name="us-east-1a", zone_id="use1-az1", region=region)],
         servers=[
-            SimpleNamespace(server_id=server_id, accelerator_count=0)
+            SimpleNamespace(server_id=server_id, series="s", accelerator_count=0)
             for server_id in ("m5.large", "t3.spotonly", "g4ad.xlarge")
         ],
     )
