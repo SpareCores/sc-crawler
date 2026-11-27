@@ -108,6 +108,12 @@ Fix(es):
   The M sizes with an extra number before the version (`M48ds_1_v3`) are in
   `Mdsv3` and not in the SKU family of the API, the original `M` series has no
   letters (`M` instead of `Ms`), and `Standard_DC8_v2` is in `DCsv2`.
+- PassMark Memory Mark also depends on the amount of RAM that was free when the
+  test started, so the score can differ by up to 43% between runs, while the
+  memory speed subtests stay within about 5%. The benchmark's description and
+  note flag this. The `cache` and `data_analysis` workload profiles (now
+  version 2.1) use memory latency and uncached memory read instead of Memory
+  Mark.
 
 ## v0.11.0 (November 16, 2026)
 

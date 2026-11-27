@@ -235,7 +235,7 @@ WORKLOADS: dict[str, Workload] = {
     ),
     "cache": Workload(
         name="Cache Intensive",
-        version="2.0",
+        version="2.1",
         rationale="In-memory key-value store workload, mixing direct Redis performance metrics with memory speed and latency benchmarks, and single-core CPU performance profiles.",
         benchmarks=[
             # direct Redis benchmarks
@@ -254,9 +254,9 @@ WORKLOADS: dict[str, Workload] = {
             # memory performance benchmarks
             BenchmarkEntry(
                 # NOTE this depends more on the instance family/generation than the size (vCPUs or memory amount)
-                benchmark_id="passmark:memory_mark",
+                benchmark_id="passmark:memory_latency",
                 weight=0.10,
-                label="PassMark Memory Mark (composite)",
+                label="PassMark memory latency (512 MB)",
             ),
             BenchmarkEntry(
                 # TODO migrate to membench with scope:RAM
@@ -307,7 +307,7 @@ WORKLOADS: dict[str, Workload] = {
     # ),
     "data_analysis": Workload(
         name="Data Analysis",
-        version="2.0",
+        version="2.1",
         rationale="Data analysis and ETL workloads are memory-bandwidth-bound and CPU-throughput-driven. The profile combines general CPU performance and memory bandwidth/latency as the primary drivers, supplemented by single-core compression speed as a proxy for serialisation-heavy ETL tasks.",
         benchmarks=[
             BenchmarkEntry(
@@ -335,9 +335,9 @@ WORKLOADS: dict[str, Workload] = {
             ),
             # NOTE this depends more on the instance family/generation than the size (vCPUs or memory amount)
             BenchmarkEntry(
-                benchmark_id="passmark:memory_mark",
+                benchmark_id="passmark:memory_read_uncached",
                 weight=0.10,
-                label="PassMark Memory Mark (composite)",
+                label="PassMark memory read uncached (512 MB)",
             ),
         ],
     ),
