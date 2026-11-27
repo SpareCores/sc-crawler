@@ -413,6 +413,84 @@ entries:
     by: claude (claude-code)
     evidence: audit-runs/2026-11-20.tar.xz
     date: 2026-11-20
+  - vendor: alicloud
+    type: STATUS_MISMATCH
+    match: "ecs\\.(g6e|r6e|ebmr6)\\..*"
+    page: "^instance-families$"
+    verdict: expected
+    note: "The docs list the family without a status; DescribeAvailableResource returns ClosedWithStock / ClosedWithoutStock (end of sale) for these types since the 2026-11-26 pull, mapped to PLANNED_FOR_RETIREMENT / RETIRED (_ALICLOUD_STATUS_CATEGORY_TO_SERVER_LIFECYCLE)."
+    by: claude (claude-code)
+    evidence: audit-runs/2026-11-26.tar.xz
+    date: 2026-11-26
+  - vendor: alicloud
+    type: NOT_AT_VENDOR
+    region: cn-fuzhou
+    verdict: confirmed
+    note: "DescribeRegions still returns it with 'Closed Down' in LocalName (no zones, no prices), but inventory_regions stored it ACTIVE. Fixed on the DEV-957 branch: marked INACTIVE; this entry goes stale after the next pull."
+    by: claude (claude-code)
+    evidence: audit-runs/2026-11-26.tar.xz
+    date: 2026-11-26
+  - vendor: alicloud
+    type: NOT_AT_VENDOR
+    region: cn-nanjing
+    verdict: confirmed
+    note: "Same as cn-fuzhou: 'Closed Down' in LocalName, stored ACTIVE. Fixed on the DEV-957 branch."
+    by: claude (claude-code)
+    evidence: audit-runs/2026-11-26.tar.xz
+    date: 2026-11-26
+  - vendor: alicloud
+    type: NOT_AT_VENDOR
+    region: eu-west-3
+    verdict: expected
+    note: "Amsterdam region launched in 2026, returned by DescribeRegions with zones, but not yet on the docs regions page."
+    by: claude (claude-code)
+    evidence: audit-runs/2026-11-26.tar.xz
+    date: 2026-11-26
+  - vendor: alicloud
+    type: FEATURE_MISMATCH
+    field: max_read_replicas
+    page: "^rds-"
+    verdict: expected
+    note: "Up to 32 read-only instances applies to the High-availability Edition with cloud disks (ours: 32). Basic Edition has none (0), and the Cluster Edition has up to 8 readable secondary nodes (2 to 9 nodes, rds-pg-cluster-edition) instead of read-only instances (ours: 8). The extraction applied 32 to all editions."
+    by: claude (claude-code)
+    evidence: audit-runs/2026-11-26.tar.xz
+    date: 2026-11-26
+  - vendor: alicloud
+    type: FEATURE_MISMATCH
+    field: continuous_backups_days
+    page: "^rds-"
+    verdict: expected
+    note: "Log backups can be kept 7-7300 days, but no longer than the data backups (7-730 days, rds-pg-backup), so point-in-time restore is limited to 730 days (ours). None in the Basic Edition (ours: 0)."
+    by: claude (claude-code)
+    evidence: audit-runs/2026-11-26.tar.xz
+    date: 2026-11-26
+  - vendor: alicloud
+    type: MISSING_IN_DB
+    match: "pg\\.(n1e|n2e)\\..*"
+    page: "^rds-pg-instance-types$"
+    verdict: expected
+    note: "Yitian (ARM) Basic Edition types are subscription only per the docs; we list pay-as-you-go (Postpaid) instance types only."
+    by: claude (claude-code)
+    evidence: audit-runs/2026-11-26.tar.xz
+    date: 2026-11-26
+  - vendor: alicloud
+    type: MISSING_IN_DB
+    match: "pg\\.n2\\.1c\\.1m|pg\\.x[248]\\.(12|16|24)xlarge\\.xc"
+    page: "^rds-pg-instance-types$"
+    verdict: to_verify
+    note: "Current types on the docs, missing from all three Alibaba pulls (2026-11-18, -20, -26). Check with the API whether ListClasses returns them (else the pull logs 'No specs for N orderable database instance types'), and whether DescribeAvailableClasses returns them for Postpaid with ESSD PL1 (_fetch_rds_offers probes cloud_essd only, assuming the instance types do not differ by disk type, and the middle engine versions in one zone only)."
+    by: claude (claude-code)
+    evidence: audit-runs/2026-11-26.tar.xz
+    date: 2026-11-26
+  - vendor: alicloud
+    type: MISSING_IN_DB
+    match: "rds\\.pg\\..*|pg\\.(gn5i-.*|n1\\.micro\\.1|n[248]\\.[a-z0-9]+\\.(1|2c)|x8\\.[a-z0-9]+\\.2)"
+    page: "^rds-pg-instance-types$"
+    verdict: false_positive
+    note: "Phased-out types of the docs, extracted as lifecycle rows, which are compared against the servers, not the databases. 11 of them are PLANNED_FOR_RETIREMENT and 2 RETIRED in our data: still orderable via DescribeAvailableClasses with the end of sale soon note of ListClasses, so the status follows the API."
+    by: claude (claude-code)
+    evidence: audit-runs/2026-11-26.tar.xz
+    date: 2026-11-26
 
   # ---------------------------------------------------------------- upcloud
   - vendor: upcloud

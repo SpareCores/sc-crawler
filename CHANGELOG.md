@@ -1,7 +1,27 @@
 ## v0.12.x (DEVELOPMENT)
 
+New feature(s):
+
+- Implement database inventories for `AliCloud`: ApsaraDB RDS for PostgreSQL
+  instance types of the Basic, High-availability and Cluster Editions with
+  their pay-as-you-go prices, and the ESSD storage options priced per edition
+  (e.g. `cloud_essd-ha`). Cluster Edition prices are stored for 2 nodes.
+
 Fix(es):
 
+- Add the new `AliCloud` region in Amsterdam (`eu-west-3`) to the known
+  locations, as the region inventory failed on it.
+- Retry the transient network errors (connection resets and timeouts) of the
+  `AliCloud` availability zone lookups, instead of marking the region inactive.
+- Keep the `AliCloud` spot prices sampled in earlier runs active until a new
+  sample shows no spot price, or the instance type is no longer sold
+  on-demand in the zone. Active regions without on-demand prices (e.g. after a
+  failed lookup) resample their earlier spot prices. Before, only the spot
+  prices of the latest run stayed active.
+- Mark the `AliCloud` regions returned with "Closed Down" in their name (e.g.
+  `cn-nanjing`) inactive.
+- Retry the `AliCloud` API errors with HTTP 5xx and an empty body, and log the
+  failed price lookups as a warning once per error code (then on DEBUG).
 - Support hashing of date columns (e.g. `retirement_date`).
 - `Vultr`: the GPU model, count and memory of Dedicated Metal GPU (`vdm`)
   plans are taken from the plan ID, as the API only returns the GPU brand.
