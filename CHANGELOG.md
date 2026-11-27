@@ -2,24 +2,16 @@
 
 ‼ Breaking changes:
 
-- `Server.hypervisor` is an enum instead of free text, so its stored values
-  (e.g. `NITRO` and `HYPER_V` instead of `nitro` and `Microsoft Hyper-V`) and
-  its values in the API (e.g. `Nitro` and `Hyper-V`) changed.
+- `Server.hypervisor` is an enum instead of free text. The migration converts
+  the existing values, also the historical rows of the SCD table (`nitro` →
+  `NITRO`, `xen` → `XEN`, `KVM` and `QEMU` → `KVM`, `Microsoft Hyper-V` →
+  `HYPER_V`).
 
 New feature(s):
 
-- `Server.hypervisor` is an enum (`KVM`, `XEN`, `NITRO`, `HYPER_V` or
-  `BARE_METAL`) instead of free text, and bare metal servers are marked
-  explicitly with `BARE_METAL`, so an empty value means unknown. The hypervisor
-  is set for all vendors from the API (AWS `BareMetal` and `Hypervisor`) or the
-  vendor docs (e.g. the `-metal` suffix at GCP, `BM.` shapes at OCI, Metal
-  instances at OVH, `ebm` and `scc` families at Alibaba Cloud, and
-  `/v2/plans-metal` plans at Vultr). The migration converts the existing
-  values, also the historical rows of the SCD table (`nitro` → `NITRO`,
-  `xen` → `XEN`, `KVM` and `QEMU` → `KVM`, `Microsoft Hyper-V` →
-  `HYPER_V`); no other values were stored. Bare metal servers and the GCP,
-  OCI and Vultr VMs, which had an empty hypervisor, are filled in only by
-  the next inventory refresh, so their earlier SCD rows stay empty.
+- `Server.hypervisor` marks bare metal servers explicitly with `BARE_METAL`,
+  so an empty value means unknown. It is set for all vendors from the next
+  inventory refresh.
 
 Database migrations:
 
