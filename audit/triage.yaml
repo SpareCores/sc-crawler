@@ -355,6 +355,13 @@ entries:
     by: bridgend84
     evidence: audit-runs/2026-10-31.tar.xz
     date: 2026-11-02
+  - vendor: alicloud
+    type: STORAGE_IDS_MISSING
+    match: "ecs\\.(u0|s6|gn8ia|gn8t|gn7i|c6e|t1|sccg7|g6t|ebmr7|ebmr6e|ebmhfg6|ebmgn9t|ebmgn9ge|ebmgn9gc|ebmgn9g|ebmgn8v|ebmgn8te|ebmgn8t|ebmgn6e|ebmg8ae|ebmg6e|ebmc6e)[.-].*"
+    verdict: expected
+    note: "Sold out in every zone (WithoutStock), so the per instance type DescribeAvailableResource DataDisk call does not answer, and the docs do not list the disks of these families (_alicloud.py _DOCS_DISK_CATEGORIES has the documented ones): unknown by design. Checked 2026-11-27 (DEV-1179): 43 ACTIVE types. Fills itself when back in stock."
+    by: claude (claude-code)
+    date: 2026-11-27
 
   # ---------------------------------------------------------------- upcloud
   - vendor: upcloud

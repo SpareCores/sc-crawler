@@ -897,7 +897,12 @@ def test_aws_reconcile_server_status_fills_family_series_and_storage_of_old_rows
     current = _aws_server_mock("m5.large", Status.ACTIVE)
     current.series, current.family = "m5", "General Purpose"
     current.compatible_storage_ids = []
-    vendor = _aws_vendor(regions=[region], servers=[a1, a1_known, unknown, current])
+    # not offered, no spot nor list price: INACTIVE, filled as well
+    inactive = _aws_server_mock("a1.medium", Status.ACTIVE)
+    inactive.series, inactive.family, inactive.compatible_storage_ids = None, "a1", None
+    vendor = _aws_vendor(
+        regions=[region], servers=[a1, a1_known, unknown, current, inactive]
+    )
     with (
         patch("sc_crawler.vendors._aws._boto_get_products", return_value=[]),
         patch(
@@ -920,6 +925,9 @@ def test_aws_reconcile_server_status_fills_family_series_and_storage_of_old_rows
     assert unknown.compatible_storage_ids == list(storage_manual_data)
     assert (current.series, current.family) == ("m5", "General Purpose")
     assert current.compatible_storage_ids == []
+    assert inactive.status == Status.INACTIVE
+    assert (inactive.series, inactive.family) == ("a1", "General Purpose")
+    assert inactive.compatible_storage_ids == list(storage_manual_data)
 
 
 def test_aws_inventory_database_prices_by_ha_deployment():

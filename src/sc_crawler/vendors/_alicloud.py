@@ -9,7 +9,7 @@ from logging import CRITICAL, INFO, WARN, getLogger
 from os import environ
 from random import shuffle
 from re import sub
-from time import time
+from time import sleep, time
 from typing import Optional
 
 from alibabacloud_bssopenapi20171214.client import Client as BssClient
@@ -30,6 +30,7 @@ from alibabacloud_ecs20140526.models import (
 from alibabacloud_tea_openapi.models import Config
 from alibabacloud_tea_util.models import RuntimeOptions
 from cachier import cachier
+from Tea.exceptions import TeaException
 
 from ..inspector import (
     _extract_family,
@@ -866,18 +867,29 @@ def _get_zones(client: EcsClient, region_id: str) -> list[dict]:
     return response.body.to_map()["Zones"]["Zone"]
 
 
-# Disk categories of the DescribeZones response mapped to our storage ids (see
+# Data disk categories of the API mapped to our storage ids (see
 # inventory_storages). The API only knows cloud_essd, not its performance levels
 # (PL0-PL3): all four are assumed to be available. Neither the ESSD page nor the
 # instance family overview restricts a PL by instance family: they only say that
 # the instance type can cap the performance (e.g. PL1-PL3 cannot reach their peak on
-# the economy e and the burstable t5/t6 families). Other categories (e.g.
-# ephemeral_ssd, the local disk) are not block storage options in our schema.
-# The overview says sn2ne supports only standard SSD and ultra disk (no ESSD), but
-# the API returned cloud_essd for it in a live run (2026-10-27): not resolved.
+# the economy e and the burstable t5/t6 families).
+# Categories left out on purpose:
+# - ephemeral_ssd: local disk, not a block storage option in our schema;
+# - elastic_ephemeral_disk_standard/premium: temporary data disks ("can be detached
+#   but cannot be reattached to another instance"), not a system disk;
+#   https://www.alibabacloud.com/help/en/ecs/user-guide/elastic-ephemeral-disks
+# - cloud_xssd, cloud_plx: not documented, no price in any region (2026-11-25);
+# - cloud_agentic_disk: "can only be created in disk pool", no price (2026-11-25).
 # https://www.alibabacloud.com/help/en/ecs/user-guide/essds
 # https://www.alibabacloud.com/help/en/ecs/user-guide/overview-of-instance-families
-# https://www.alibabacloud.com/help/en/ecs/developer-reference/api-ecs-2014-05-26-describezones
+_IGNORED_DISK_CATEGORIES = {
+    "ephemeral_ssd",
+    "elastic_ephemeral_disk_standard",
+    "elastic_ephemeral_disk_premium",
+    "cloud_xssd",
+    "cloud_plx",
+    "cloud_agentic_disk",
+}
 _DISK_CATEGORY_TO_STORAGE_IDS = {
     "cloud_essd": [
         "cloud_essd-pl0",
@@ -885,67 +897,200 @@ _DISK_CATEGORY_TO_STORAGE_IDS = {
         "cloud_essd-pl2",
         "cloud_essd-pl3",
     ],
+    "cloud_auto": ["cloud_auto"],
+    "cloud_essd_entry": ["cloud_essd_entry"],
     "cloud_ssd": ["cloud_ssd"],
     "cloud_efficiency": ["cloud_efficiency"],
     "cloud": ["cloud"],
 }
 
+# Data disk categories from the docs, for instance types the API cannot answer for
+# (sold out in every zone, see _get_instance_type_disk_categories). Keyed by
+# instance type or series (the type wins). Docs wording: "standard SSD" / "SSD
+# cloud disk" = cloud_ssd, "ultra disk" = cloud_efficiency, "basic disk" = cloud,
+# "ESSD AutoPL" = cloud_auto; Regional ESSD and elastic ephemeral disks are not
+# modelled. Checked 2026-11-27.
+_DOCS_DISK_CATEGORIES = {
+    # "Supported cloud disk types: standard SSDs and ultra disks."
+    # https://www.alibabacloud.com/help/en/ecs/user-guide/retired-instance-types
+    "ecs.d1": ["cloud_efficiency", "cloud_ssd"],
+    # "Supported cloud disk types: SSD cloud disks and Ultra Disks." (same page)
+    "ecs.gn5": ["cloud_efficiency", "cloud_ssd"],
+    # Series I, ecs.s2.small is only in the non-I/O optimized table: "Non-I/O
+    # optimized instance types support only basic disk." (same page)
+    "ecs.s2.small": ["cloud"],
+    # "Supported cloud disk types: elastic ephemeral disk, ESSD, ESSD AutoPL disks,
+    # and Regional ESSD."
+    # https://www.alibabacloud.com/help/en/ecs/user-guide/gpu-accelerated-compute-optimized-and-vgpu-accelerated-instance-families-1
+    "ecs.gn8v": ["cloud_auto", "cloud_essd"],
+    # "Supported cloud disks: ESSDs, ESSD AutoPL disks, Regional ESSDs, standard SSDs,
+    # and ultra disks."
+    # https://www.alibabacloud.com/help/en/ecs/user-guide/overview-of-instance-families
+    "ecs.r6a": ["cloud_auto", "cloud_efficiency", "cloud_essd", "cloud_ssd"],
+}
 
-def _parse_instance_type_disk_categories(zones: list[dict]) -> dict[str, list[str]]:
-    """Map instance types to their data disk categories from DescribeZones zones.
 
-    Each `AvailableResources.ResourcesInfo` item lists the instance types and the
-    data disk categories that can be used together in that zone.
+def _docs_disk_categories(server_id: str, series: Optional[str]) -> Optional[list]:
+    """Data disk categories of an instance type from the docs, if listed."""
+    if server_id in _DOCS_DISK_CATEGORIES:
+        return _DOCS_DISK_CATEGORIES[server_id]
+    return _DOCS_DISK_CATEGORIES.get(series)
+
+
+# the per instance type DataDisk call only answers for these
+_IN_STOCK = {"WithStock", "ClosedWithStock"}
+
+
+def _call_with_retry(call):
+    """Run an API call, retrying it on throttling with exponential backoff.
+
+    Other API errors (`TeaException`) and the last throttling error are raised.
     """
-    categories: dict[str, set[str]] = defaultdict(set)
-    for zone in zones:
-        for info in zone.get("AvailableResources", {}).get("ResourcesInfo", []):
-            disks = info.get("DataDiskCategories", {}).get(
-                "supportedDataDiskCategory", []
+    for attempt in range(4):
+        try:
+            return call()
+        except TeaException as e:
+            if "Throttling" in str(e.code) and attempt < 3:
+                sleep(2**attempt)
+                continue
+            raise
+
+
+def _with_stock_regions(
+    region_availability_info: dict[str, list[dict]],
+) -> dict[str, list[str]]:
+    """Map instance types to the regions where they are in stock in any zone.
+
+    In stock: WithStock, or ClosedWithStock (to be retired, still orderable).
+    """
+    regions: dict[str, set[str]] = defaultdict(set)
+    for region_id, zones in region_availability_info.items():
+        for zone in zones:
+            for resource in zone.get("AvailableResources", {}).get(
+                "AvailableResource", []
+            ):
+                if resource.get("Type") != "InstanceType":
+                    continue
+                for supported in resource.get("SupportedResources", {}).get(
+                    "SupportedResource", []
+                ):
+                    if supported.get("StatusCategory") in _IN_STOCK:
+                        regions[supported.get("Value")].add(region_id)
+    return {k: sorted(v) for k, v in regions.items()}
+
+
+def _parse_data_disk_categories(zones: list[dict]) -> list[str]:
+    """Data disk categories of a per instance type DataDisk response, over all zones."""
+    return sorted(
+        {
+            supported.get("Value")
+            for zone in zones
+            for resource in zone.get("AvailableResources", {}).get(
+                "AvailableResource", []
             )
-            types = info.get("InstanceTypes", {}).get("supportedInstanceType", [])
-            for instance_type in types:
-                categories[instance_type].update(disks)
-    return {k: sorted(v) for k, v in categories.items()}
+            if resource.get("Type") == "DataDisk"
+            for supported in resource.get("SupportedResources", {}).get(
+                "SupportedResource", []
+            )
+            if supported.get("Value")
+        }
+    )
 
 
-def _get_instance_type_disk_categories(vendor: Vendor) -> dict[str, list[str]]:
+def _get_instance_type_disk_categories(
+    vendor: Vendor, region_availability_info: dict[str, list[dict]]
+) -> dict[str, list[str]]:
     """Fetch the data disk categories of each instance type across all regions.
 
-    Uses the `DescribeZones` API endpoint, one call per region, and returns the union
-    of the categories seen in any zone.
+    Uses the `DescribeAvailableResource` API endpoint with
+    `DestinationResource=DataDisk` and the instance type, one call per region where
+    the instance type is in stock (`_IN_STOCK`), and returns the union over zones
+    and regions.
 
-    NOTE: checked against the live API on 2026-10-27: the response shape matches and
-    98% of the ACTIVE servers got storage ids (the rest are old generations and the
-    hpc8ae/hpc8i types). Whether the categories are accurate per instance type, and
-    not only per zone, is not confirmed.
+    `DescribeZones` is not used: it lists the data disk categories of a zone,
+    the same list for every instance type in it (checked 2026-11-27: e.g. ESSD for
+    n4, ESSD Entry for t6, both wrong per the per type calls and the docs). The per
+    type call only answers where the instance type is in stock, so types sold out
+    everywhere are left out (unknown), as are types whose calls all failed.
     """
     ecs_clients: dict[str, EcsClient] = _ecs_clients(vendor)
+    pairs = [
+        (region_id, instance_type)
+        for instance_type, region_ids in _with_stock_regions(
+            region_availability_info
+        ).items()
+        for region_id in region_ids
+        if region_id in ecs_clients
+    ]
 
+    # None (failed call) is not cached by cachier, so it is retried on the next run
     @cachier(hash_func=jsoned_hash, separate_files=True)
-    def fetch_region_disk_categories(region_id: str) -> dict[str, list[str]]:
-        with sentry_capture_or_raise(vendor=vendor):
-            zones = _get_zones(ecs_clients[region_id], region_id)
-            return _parse_instance_type_disk_categories(zones)
-        return {}
+    def fetch_disk_categories(region_id: str, instance_type: str) -> Optional[list]:
+        request = DescribeAvailableResourceRequest(
+            region_id=region_id,
+            instance_charge_type="PostPaid",
+            destination_resource="DataDisk",
+            resource_type="instance",
+            instance_type=instance_type,
+        )
+        try:
+            response = _call_with_retry(
+                lambda: ecs_clients[region_id].describe_available_resource_with_options(
+                    request, RuntimeOptions()
+                )
+            )
+        except TeaException as e:
+            # API errors only: anything else (e.g. a changed SDK) is raised
+            logger.debug(
+                f"Failed to get data disks of {instance_type} in {region_id}: {e}"
+            )
+            return None
+        return _parse_data_disk_categories(
+            response.body.to_map().get("AvailableZones", {}).get("AvailableZone", [])
+        )
 
     vendor.progress_tracker.start_task(
-        name="Fetching server disk categories", total=len(vendor.regions)
+        name="Fetching server disk categories", total=len(pairs)
     )
     merged: dict[str, set[str]] = defaultdict(set)
+    failed = 0
     with ThreadPoolExecutor(max_workers=8) as executor:
-        for region_categories in executor.map(
-            fetch_region_disk_categories, [r.region_id for r in vendor.regions]
+        for (_, instance_type), categories in zip(
+            pairs, executor.map(lambda p: fetch_disk_categories(*p), pairs)
         ):
-            for instance_type, categories in region_categories.items():
+            if categories is None:
+                failed += 1
+            else:
                 merged[instance_type].update(categories)
             vendor.progress_tracker.advance_task()
     vendor.progress_tracker.hide_task()
-    return {k: sorted(v) for k, v in merged.items()}
+    if failed:
+        vendor.log(
+            f"Failed to get data disks in {failed} of {len(pairs)} region and "
+            "instance type pairs.",
+            level=WARN,
+        )
+    # no category in any region: unknown, not "no compatible storage"
+    return {k: sorted(v) for k, v in merged.items() if v}
+
+
+@cache
+def _warn_unknown_disk_category(category: str) -> None:
+    """Warn about a data disk category we do not know, once per category and run."""
+    logger.warning(
+        f"Unknown Alibaba Cloud data disk category {category}, left out of the "
+        "compatible storage IDs."
+    )
 
 
 def _compatible_storage_ids(disk_categories: list[str]) -> list[str]:
     """Map the data disk categories of an instance type to our storage ids."""
+    for category in disk_categories:
+        if (
+            category not in _DISK_CATEGORY_TO_STORAGE_IDS
+            and category not in _IGNORED_DISK_CATEGORIES
+        ):
+            _warn_unknown_disk_category(category)
     return [
         storage_id
         for category, storage_ids in _DISK_CATEGORY_TO_STORAGE_IDS.items()
@@ -1599,7 +1744,9 @@ def inventory_servers(vendor):
     region_availability_info: dict[str, list[dict]] = _get_region_availability_info(
         vendor
     )
-    disk_categories = _get_instance_type_disk_categories(vendor)
+    disk_categories = _get_instance_type_disk_categories(
+        vendor, region_availability_info
+    )
     no_storage_ids: list[str] = []
 
     CPU_ARCH_MAP = {"X86": CpuArchitecture.X86_64, "ARM": CpuArchitecture.ARM64}
@@ -1747,9 +1894,13 @@ def inventory_servers(vendor):
             ),
         ]
         server_id = instance_type.get("InstanceTypeId")
-        # no entry in DescribeZones: unknown (None), not "no compatible storage" ([])
-        if server_id in disk_categories:
-            compatible_storage_ids = _compatible_storage_ids(disk_categories[server_id])
+        # no answer from the API nor the docs: unknown (None), not "no compatible
+        # storage" ([])
+        categories = disk_categories.get(server_id) or _docs_disk_categories(
+            server_id, series
+        )
+        if categories:
+            compatible_storage_ids = _compatible_storage_ids(categories)
         else:
             compatible_storage_ids = None
             no_storage_ids.append(server_id)
@@ -2037,6 +2188,7 @@ def inventory_storages(vendor):
     Data sources:
 
     - <https://www.alibabacloud.com/help/en/ecs/user-guide/essds>
+    - <https://www.alibabacloud.com/help/en/ecs/user-guide/essd-autopl-disks>
     - <https://www.alibabacloud.com/help/en/ecs/developer-reference/api-ecs-2014-05-26-createdisk>
     - <https://www.alibabacloud.com/help/en/ecs/user-guide/block-storage-performance>
 
@@ -2085,6 +2237,35 @@ def inventory_storages(vendor):
             "max_tp": 4000,
             "info": "Enterprise SSD with performance level 3 (API: DiskCategory cloud_essd, PerformanceLevel PL3).",
         },
+        # ESSD AutoPL: capacity 1 to 65,536 GiB, baseline "same baseline performance
+        # as a PL1 ESSD" (max 50,000 IOPS, 350 MB/s); provisioned performance and
+        # bursts (up to 1,000,000 IOPS, 4,096 MB/s) are billed extra, not modelled
+        # https://www.alibabacloud.com/help/en/ecs/user-guide/essd-autopl-disks
+        {
+            "name": "cloud_auto",
+            "min_size": 1,
+            "max_size": 65536,
+            "max_iops": 50000,
+            "max_tp": 350,
+            "info": (
+                "ESSD AutoPL disk, baseline performance of a PL1 ESSD; provisioned "
+                "performance and bursts (up to 1,000,000 IOPS and 4,096 MB/s) are "
+                "billed extra and not included in the price."
+            ),
+        },
+        # ESSD Entry: 10 to 32,768 GiB, 6,000 IOPS, 150 MB/s; "can be attached only
+        # to universal instance families (U instances) and the e, economy instance
+        # family"
+        # https://www.alibabacloud.com/help/en/ecs/user-guide/block-storage-performance
+        # https://www.alibabacloud.com/help/en/ecs/user-guide/elastic-block-storage-devices
+        {
+            "name": "cloud_essd_entry",
+            "min_size": 10,
+            "max_size": 32768,
+            "max_iops": 6000,
+            "max_tp": 150,
+            "info": "ESSD Entry disk, for the universal (u) and economy (e) families.",
+        },
         {
             "name": "cloud_ssd",
             "min_size": 20,
@@ -2131,8 +2312,102 @@ def inventory_storages(vendor):
     return items
 
 
+# Disk categories without a `QuerySkuPriceList` price (only cloud, cloud_efficiency,
+# cloud_essd and cloud_ssd are listed there), priced with `DescribePrice` instead,
+# one disk of this size (GB) per region. The price is linear in size (checked on
+# 40, 200 and 1000 GB, 2026-11-25), and the same call gives the QuerySkuPriceList
+# prices for cloud_essd PL1 and cloud_ssd.
+_DESCRIBE_PRICE_DISK_CATEGORIES = ["cloud_auto", "cloud_essd_entry"]
+_DESCRIBE_PRICE_DISK_SIZE = 100
+# DescribePrice error codes of disks not sold in a region (seen 2026-11-25)
+_NOT_SOLD_PRICE_ERRORS = {"PriceNotFound", "RegionUnauthorized", "RegionDiscontinued"}
+
+
+def _get_disk_price(client: EcsClient, region_id: str, category: str) -> Optional[dict]:
+    """Price of a data disk category per GB and month in a region, if any.
+
+    Uses the `DescribePrice` API endpoint (pay-as-you-go hourly list price).
+    """
+    request = DescribePriceRequest(
+        region_id=region_id,
+        resource_type="disk",
+        price_unit="Hour",
+        data_disk=[
+            DescribePriceRequestDataDisk(
+                category=category, size=_DESCRIBE_PRICE_DISK_SIZE
+            )
+        ],
+    )
+    try:
+        response = _call_with_retry(
+            lambda: client.describe_price_with_options(request, RuntimeOptions())
+        )
+    except TeaException as e:
+        if e.code in _NOT_SOLD_PRICE_ERRORS:
+            logger.debug(f"No {category} price in {region_id}: {e.code}")
+        else:
+            logger.warning(f"Failed to get the {category} price in {region_id}: {e}")
+        return None
+    price_info = response.body.price_info
+    price = price_info.price if price_info else None
+    if price is None or price.original_price is None:
+        logger.warning(
+            f"No price in the {category} DescribePrice answer of {region_id}"
+        )
+        return None
+    return {
+        "price": price.original_price / _DESCRIBE_PRICE_DISK_SIZE * _HOURS_PER_MONTH,
+        "currency": price.currency,
+    }
+
+
+def _get_describe_price_storage_prices(vendor: Vendor) -> list[dict]:
+    """Storage prices of `_DESCRIBE_PRICE_DISK_CATEGORIES` in every region."""
+    ecs_clients: dict[str, EcsClient] = _ecs_clients(vendor)
+    pairs = [
+        (region_id, category)
+        for region_id in ecs_clients
+        for category in _DESCRIBE_PRICE_DISK_CATEGORIES
+    ]
+
+    @cachier(hash_func=jsoned_hash, separate_files=True)
+    def fetch_price(region_id: str, category: str) -> Optional[dict]:
+        return _get_disk_price(ecs_clients[region_id], region_id, category)
+
+    items = []
+    missing = []
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        for (region_id, category), price in zip(
+            pairs, executor.map(lambda p: fetch_price(*p), pairs)
+        ):
+            if price is None:
+                missing.append(f"{category} in {region_id}")
+                continue
+            items.append(
+                {
+                    "vendor_id": vendor.vendor_id,
+                    "region_id": region_id,
+                    "storage_id": category,
+                    "unit": PriceUnit.GB_MONTH,
+                    "price": price["price"],
+                    "currency": price["currency"],
+                }
+            )
+    if missing:
+        vendor.log(
+            f"No storage price for {len(missing)} region and disk pairs "
+            f"(e.g. {', '.join(missing[:5])}).",
+            level=INFO,
+        )
+    return items
+
+
 def inventory_storage_prices(vendor):
-    """Fetch server prices using the `QuerySkuPriceListRequest` API endpoint."""
+    """Fetch storage prices using the `QuerySkuPriceList` API endpoint.
+
+    Disk categories missing there are priced with `DescribePrice`, see
+    `_DESCRIBE_PRICE_DISK_CATEGORIES`.
+    """
     skus = _get_storage_sku_prices(vendor)
 
     items = []
@@ -2170,6 +2445,7 @@ def inventory_storage_prices(vendor):
         )
     for unsupported_region in unsupported_regions:
         vendor.log(f"Found non-supported region: {unsupported_region}", level=WARN)
+    items.extend(_get_describe_price_storage_prices(vendor))
     return items
 
 

@@ -171,7 +171,11 @@ only, so there is no page to open: `STORAGE_IDS_MISSING` (NULL) is usually a gap
 in `inventory_servers` / `inventory_databases` (e.g. rows the vendor API no
 longer returns); for `STORAGE_IDS_EMPTY`, check the comment next to
 `compatible_storage_ids` in the vendor module: some SKUs cannot attach storage by
-design (bare metal), others are gaps.
+design (bare metal), others are gaps. Alibaba only answers the disk categories
+of instance types that are in stock somewhere: types sold out everywhere stay
+NULL unless the docs list their disks (`_DOCS_DISK_CATEGORIES` in
+`_alicloud.py`); when a vendor page states the supported disks of such a family,
+propose adding it there.
 
 For confirmed findings, look at the `code_hint` function in
 `src/sc_crawler/vendors/_<vendor>.py` and name the likely cause (hardcoded table,
